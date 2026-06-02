@@ -1,0 +1,46 @@
+---
+title: Errors
+---
+
+## Error reference
+
+### Two error envelopes
+
+**Standard Frappe errors** (HTTP 4xx/5xx) return:
+
+```json
+{
+  "exc_type": "LinkValidationError",
+  "exception": "Could not find CRM Program: SigrimaXXX",
+  "_server_messages": "[\"Could not find CRM Program: SigrimaXXX\"]"
+}
+```
+
+**Upsert endpoint failures** (HTTP 200 today, body indicates failure):
+
+```json
+{"message":{"ok":false,"error":"Please specify a reason for losing the lead."}}
+```
+
+Always check `message.ok` for upsert; check HTTP status for everything else.
+
+### Error catalog (and how to fix)
+
+| HTTP | `exc_type` | What it means | How to fix |
+|---|---|---|---|
+| 200 + `ok:false` | (upsert silent-200) | Validation failed inside the upsert endpoint | Read `message.error`. Most common: missing `lost_reason` for `Junk`/`Unqualified` status. |
+| 401 | `AuthenticationError` | Missing or malformed Authorization header | Re-check the header is exactly `token <api_key>:<api_secret>` (lowercase `token`, single space, colon between key & secret). |
+| 403 | `PermissionError` | The authenticated user lacks read/write permission on the doctype or record | Two common causes: (a) you tried `/api/resource/CRM Plan Profile` directly (child tables forbid this — use parent embed); (b) the key isn't System Manager and you're touching a `permlevel=1` field. |
+| 404 | `DoesNotExistError` | The `name` in the URL doesn't exist | Check the lead name was actually created (the upsert response gives you `name`). |
+| 404 | `LinkValidationError` | A Link field value isn't in its master | Read the lookup master first to enumerate valid values. The message names the master that's missing. |
+| 409 | `DuplicateEntryError` | A unique constraint was violated (currently only `custom_lsq_prospect_id`) | Either the value is already taken or your write is racing with another. Upsert by phone avoids this — use it. |
+| 417 | `MandatoryError` | A required field is missing | Body is missing `first_name` or `status`. The upsert endpoint default-fills these — use it. |
+| 429 | `RateLimitExceeded` | You're hitting the API too fast | Back off exponentially (1s, 2s, 4s, …). See [Operations › Rate limits](#tag/operations). |
+| 5xx | (various) | Server error — usually transient | Retry with exponential backoff. If persistent, email Ops with the exact request + response. |
+
+### Specific errors integrators hit most often
+
+- **`LinkValidationError: Could not find CRM Program: ...`** — you sent a program value that doesn't exist. Fix: `GET /api/resource/CRM%20Program` to enumerate, then resend with a valid value.
+- **`Please specify a reason for losing the lead`** — you set `status` to `Junk` or `Unqualified` without `lost_reason`. Add `lost_reason` from the [Lookups → Lost Reason](#tag/lookups) values.
+- **Routing fields silently missing on the lead after a write** — your key isn't System Manager. Email Ops for a new key with the right role.
+- **HTML page returned with login form** — your key is wrong / the header is missing the `token` prefix. Frappe falls back to the website login when auth fails on `/api/resource/...`.

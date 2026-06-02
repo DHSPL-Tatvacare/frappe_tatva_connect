@@ -1,0 +1,68 @@
+---
+title: Concepts
+---
+
+## The data model — what every integrator needs to internalise
+
+Four ideas. If you understand these, the API maps cleanly.
+
+### 1. One patient = one lead
+
+Dedup key: `mobile_no`. **Canonical format is E.164** — `+<country code><digits>`, no hyphens, no spaces. Example: `+919999000123`.
+
+Never create a second lead for the same patient because they joined a new program. Instead, **update the existing lead** (or add a profile row — see point 3).
+
+The [Upsert by phone](#tag/write) endpoint enforces this — it finds-or-creates by `mobile_no`. Safe to retry.
+
+### 2. The lead carries identity, contact, routing. Nothing program-specific.
+
+Universal fields live on `CRM Lead` itself (29 custom fields plus standard Frappe fields). See the [CRMLeadUniversal schema](#tag/write/POST/api/method/upsert_lead_by_phone). Examples: `first_name`, `mobile_no`, `email`, `custom_dob`, `custom_gender`, `custom_caregiver_name`, plus routing (`custom_vertical`, `custom_psp_group`, `custom_current_program`).
+
+Routing is a 3-level chain:
+
+```
+ custom_vertical  →  custom_psp_group  →  custom_current_program
+ (product line)      (sub-line)            (named program/SKU)
+```
+
+Examples:
+- `GoodFlip Care → Anaya → Sigrima` (an Anaya Sigrima patient)
+- `GoodFlip → Insurers → Niva Bupa` (a Niva Bupa insurer lead)
+- `GoodFlip → Insurers → ` blank (a generic GoodFlip retail customer with no insurer)
+
+These fields are **permission-locked** (`permlevel=1`). The System Manager integration key writes them; a regular user key silently drops them.
+
+### 3. Three child profile rows hold program-specific data
+
+```
+  CRM Lead  ─┬─→  Plan Profile               (subscription/PSP/drug/payment/acquisition)
+             ├─→  Lab Profile                (lab values, vitals, conditions, scores)
+             └─→  Care & Providers Profile   (coaches, RM, therapist, doctor, hospital)
+```
+
+Profiles are sliced by **concern**, not by org or program:
+- An Anaya Sigrima patient: Plan (drug-program details + Rx workflow) + Care & Providers (ABM + coach + doctor + hospital).
+- A Niva Bupa insurer lead: Plan (policy + payment) + Lab (HbA1c, lipids, vitals, conditions).
+- A MyTatva subscriber: Plan (subscription) + Lab (metabolic score) + Care & Providers (success coach, RM, diet coach).
+
+A patient on multiple programs simultaneously has **multiple child rows of the SAME type populated together** — multi-program is normal.
+
+Profile children are **`istable=1`** in Frappe. That means:
+- You CANNOT call `/api/resource/CRM Plan Profile` directly (returns 403).
+- You read them embedded under the parent: `GET /api/resource/CRM Lead/<name>` returns `custom_plan_profile: [{...}]` inline.
+- You write them embedded: POST / PUT to the parent with `custom_plan_profile: [{...}]`.
+- A `PUT` REPLACES the entire array — to update one field, use [read-modify-write](#tag/write) or the upsert endpoint (which merges automatically).
+
+### 4. Program-scoped substages live in a master, not as columns
+
+Niva Bupa, Anaya Sigrima/Tukavo/Ujvira/Nivolumab — each program has its own substage workflow (different stages, different naming). Today there are 162 substage rows across 5 programs.
+
+Instead of having a `niva_substage` column, an `anaya_substage` column, etc., we have ONE `CRM Plan Profile.substage` Link field pointing to a master `CRM Lead Substage`. Each row in the master is keyed `{program}-{substage_name}` — e.g. `Niva Bupa-Payment Link Sent`, `Sigrima-Patient Ready for Chemo`.
+
+New programs add ROWS to that master, never new columns on Plan Profile. Enumerate the valid substages for a program via [Lookups → Lead Substage](#tag/lookups).
+
+The **universal lead `status` field** (`New / Contacted / Nurture / Qualified / Converted / Junk / Unqualified`) is independent of substage. Substage is the program-specific operational layer; `status` is the coarse universal layer for cross-program reporting.
+
+### Read this for the deeper rationale
+
+The internal design rationale lives in the team's vault (not public). The above is what you need to USE the API. If something's confusing, email Ops with the specific question.

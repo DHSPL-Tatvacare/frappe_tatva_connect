@@ -1,0 +1,54 @@
+---
+title: Operations
+---
+
+## Operational reference
+
+### Rate limits
+
+Frappe enforces a soft limit of ~25 requests per 5 seconds per API key by default. Bulk operations (backfill / migration scripts) should target **5 requests per second** to stay safe.
+
+When you hit the limit, you get HTTP 429. **Always retry with exponential backoff** — 1s, then 2s, then 4s, etc., capped at ~30s. A simple retry loop:
+
+```python
+import time
+for attempt in range(6):
+    r = requests.post(...)
+    if r.status_code != 429: break
+    time.sleep(2 ** attempt)
+```
+
+If you need sustained throughput above this, email Ops — we can raise the limit per key.
+
+### Retry safety per endpoint
+
+| Endpoint | Safe to retry? |
+|---|---|
+| `POST /api/method/upsert_lead_by_phone` | ✅ Yes — idempotent on `mobile_no`. Same input = same final state. |
+| `PUT /api/resource/CRM Lead/{name}` | ✅ Yes — same payload = same final state. (But profile arrays REPLACE; see [Write](#tag/write).) |
+| `POST /api/resource/CRM Lead` | ⚠️ No — creates duplicate leads if your prior write already succeeded. Use upsert instead. |
+| `POST /api/method/upload_file` | ⚠️ Creates a new File row each time. Dedup client-side by checking `content_hash` if you re-upload. |
+| `DELETE /api/resource/File/{name}` | ✅ Yes (404 on second call is fine). |
+| All GETs | ✅ Yes, always. |
+
+### Versioning policy
+
+This spec is `v1.0.0`. Backwards-compatible changes (new fields on existing schemas, new endpoints, new lookup values) ship without version bumps. **Breaking** changes (field renames, endpoint removals, validation tightening) get advance notice to all integration owners via email, with a migration window of at least 4 weeks.
+
+The `version` in the OpenAPI spec is the docs version. The CRM platform itself is Frappe v15 + Frappe CRM 1.71 today.
+
+### Environment
+
+Only production exists today: `https://one.tatvacare.in`. There's no separate staging endpoint — if you need one, email Ops. Until then, integrations test against production using clearly-test data (e.g. `mobile_no` starting with `+91999999...`) which Ops periodically cleans up.
+
+### Contact
+
+All questions, bug reports, key requests, rate-limit raises, schema clarifications — email `pareekshith.bompally@tatvacare.in`.
+
+For anything affecting an active integration (write errors, data discrepancies, sudden 5xx waves), include in the email:
+1. The exact request URL + method + body.
+2. The full response (status code + body).
+3. The CRM `name` of any lead affected.
+4. Timestamps (ideally with timezone).
+
+Faster resolution if we don't have to back-and-forth for context.

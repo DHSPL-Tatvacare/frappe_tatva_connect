@@ -1,0 +1,12 @@
+{
+  "name": "tatvacare-crm-docs-zudoku",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "zudoku dev",
+    "build": "zudoku build"
+  },
+  "dependencies": {
+    "zudoku": "latest"
+  }
+}

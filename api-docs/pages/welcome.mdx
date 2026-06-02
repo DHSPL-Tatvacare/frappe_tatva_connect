@@ -1,0 +1,28 @@
+---
+title: Welcome
+---
+
+## Welcome
+
+This is the **integration-facing** API for TatvaCare's CRM. It exists so external systems (insurer feeds, MyTatva mobile, lab partners, future ones) can push leads in and read state back. Sales reps work the leads inside the CRM web app — they're not your concern as an integrator.
+
+### Who reads this
+
+- Engineers wiring an **inbound lead feed** into the CRM (e.g. an insurer sending lab-screened leads).
+- Engineers wiring a **parallel-write** from an existing system that already creates leads elsewhere.
+- Anyone who needs to **read** leads / their profiles / their substages from outside the CRM.
+
+### What you'll find on this page
+
+- **Start here** — get a key, make your first call, understand the model.
+- **Architecture** — the conceptual model (one patient, one lead, 3 profiles) and how to introspect the schema at runtime.
+- **API surface** — the endpoints, grouped by direction (Write / Read / Lookups / Attachments).
+- **Reference** — error codes you'll hit, rate limits, retries, versioning, contact.
+
+### What's NOT here
+
+The CRM has many other doctypes (Tasks, Notes, Call Logs, Comments, etc.). They're all available via the standard Frappe REST pattern (see [Discovery](#tag/discovery)), but this spec focuses on Lead — the only thing every integrator touches.
+
+### One reading rule
+
+If a field, value, or behaviour isn't documented here, **don't guess** — use the [Discovery](#tag/discovery) endpoints to introspect the live schema, or email CRM Ops.
