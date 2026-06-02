@@ -69,9 +69,26 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			if not self.message_id:
 				self.send_template()
 			return
-		# Free-text / session message
-		resp = wati.send_session_message(account, wati.normalize_number(self.to), self.message or "")
+		# Session message: an attachment (media) or free-text.
+		number = wati.normalize_number(self.to)
+		if self.attach and self.content_type in ("document", "image", "video", "audio"):
+			resp = self._wati_send_attachment(account, number)
+		else:
+			resp = wati.send_session_message(account, number, self.message or "")
 		self._wati_apply_response(resp)
+
+	def _wati_send_attachment(self, account, number):
+		"""Send the row's attachment through WATI (the file itself, not its name)."""
+		import mimetypes
+
+		caption = self.message or ""
+		if self.attach.startswith("http"):
+			return wati.send_session_file_via_url(account, number, self.attach, caption)
+		# Local Frappe file -> read bytes and upload multipart (works for private files too).
+		file_doc = frappe.get_doc("File", {"file_url": self.attach})
+		filename = file_doc.file_name or self.attach.split("/")[-1]
+		mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+		return wati.send_session_file(account, number, filename, file_doc.get_content(), mimetype, caption)
 
 	def send_template(self):
 		account = self._wati_account()
@@ -138,14 +155,27 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		Success -> store local_message_id (status webhooks thread on its camelCase
 		form). result:false (e.g. "Not enough credits") -> raise, status=Failed.
 		"""
-		if not isinstance(resp, dict) or not resp.get("result"):
+		ok = resp.get("ok") if isinstance(resp, dict) else None
+		result = resp.get("result") if isinstance(resp, dict) else None
+		# Template send -> result:true; file send -> ok:true + result:"<string>";
+		# error (credits/session/bad-params) -> result:false / ok:false.
+		failed = (
+			not isinstance(resp, dict)
+			or ok is False
+			or result is False
+			or (ok is None and result in (None, "", "false", "False"))
+		)
+		if failed:
 			info = resp.get("info") if isinstance(resp, dict) else None
+			if not info and isinstance(resp.get("message"), str):
+				info = resp.get("message")
 			self.status = "Failed"
 			frappe.throw(
 				_("WATI send failed: {0}").format(info or json.dumps(resp)),
 				title=_("WATI Error"),
 			)
-		message_id = resp.get("local_message_id") or (resp.get("message") or {}).get("localMessageId")
+		msg = resp.get("message") if isinstance(resp.get("message"), dict) else {}
+		message_id = resp.get("local_message_id") or msg.get("localMessageId") or msg.get("whatsappMessageId")
 		if message_id:
 			self.message_id = message_id
 		self.status = "Success"

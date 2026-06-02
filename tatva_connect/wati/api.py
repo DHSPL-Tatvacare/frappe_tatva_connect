@@ -73,6 +73,26 @@ def _headers(token: str) -> dict:
 	return {"Authorization": f"Bearer {token}", "Content-Type": CONTENT_TYPE}
 
 
+def _post(url: str, token: str, body: dict) -> dict:
+	"""POST to WATI and ALWAYS return the parsed body (never raise on non-2xx).
+
+	WATI signals some errors as HTTP 200 + {"result": false} (credits, session)
+	and others as a 4xx (e.g. a template sent without its required params).
+	make_post_request raises on the 4xx; we catch it and return WATI's error
+	body so the caller surfaces a clean message instead of a 500.
+	"""
+	try:
+		return make_post_request(url, headers=_headers(token), data=json.dumps(body))
+	except Exception as e:
+		resp = getattr(frappe.flags, "integration_request", None)
+		if resp is not None:
+			try:
+				return resp.json()
+			except Exception:
+				return {"result": False, "info": (getattr(resp, "text", "") or str(e))[:400]}
+		return {"result": False, "info": str(e)[:400]}
+
+
 def send_template_message(account, to_number: str, template_name: str, broadcast_name: str, parameters=None):
 	"""POST /api/v1/sendTemplateMessage (singular — returns local_message_id).
 
@@ -86,14 +106,48 @@ def send_template_message(account, to_number: str, template_name: str, broadcast
 		"broadcast_name": broadcast_name,
 		"parameters": parameters or [],
 	}
-	return make_post_request(url, headers=_headers(token), data=json.dumps(body))
+	return _post(url, token, body)
 
 
 def send_session_message(account, to_number: str, message: str):
 	"""POST /api/v1/sendSessionMessage/{number} — free-text within an open 24h session."""
 	token = account.get_password("token")
 	url = f"{account.url}/api/v1/sendSessionMessage/{to_number}?messageText={frappe.utils.quote(message or '')}"
-	return make_post_request(url, headers=_headers(token), data=json.dumps({}))
+	return _post(url, token, {})
+
+
+def send_session_file(account, to_number: str, filename: str, content: bytes, mimetype: str, caption: str = ""):
+	"""POST /api/v1/sendSessionFile/{number}?caption= — multipart upload (field 'file')."""
+	import requests
+
+	token = account.get_password("token")
+	url = f"{account.url}/api/v1/sendSessionFile/{to_number}"
+	params = {"caption": caption} if caption else {}
+	# Multipart: do NOT set Content-Type (requests sets the boundary).
+	try:
+		resp = requests.post(
+			url,
+			headers={"Authorization": f"Bearer {token}"},
+			params=params,
+			files={"file": (filename, content, mimetype or "application/octet-stream")},
+			timeout=60,
+		)
+		try:
+			return resp.json()
+		except Exception:
+			return {"result": False, "info": (resp.text or "")[:400]}
+	except Exception as e:
+		return {"result": False, "info": str(e)[:400]}
+
+
+def send_session_file_via_url(account, to_number: str, file_url: str, caption: str = ""):
+	"""POST /api/v1/sendSessionFileViaUrl/{number}?fileUrl=&caption= — for http(s) files."""
+	token = account.get_password("token")
+	url = (
+		f"{account.url}/api/v1/sendSessionFileViaUrl/{to_number}"
+		f"?fileUrl={frappe.utils.quote(file_url)}&caption={frappe.utils.quote(caption or '')}"
+	)
+	return _post(url, token, {})
 
 
 def get_messages(account, number: str, page_size: int = 50, page_number: int = 1):

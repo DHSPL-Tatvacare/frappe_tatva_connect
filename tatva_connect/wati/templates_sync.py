@@ -34,6 +34,13 @@ def sync_from_wati(account_name=None):
 		name = t.get("elementName")
 		if not name:
 			continue
+		# Capture the template's variable structure as a hint (sample values for
+		# {{1}}, {{2}}…). The actual {{N}} -> CRM Lead field mapping lives in
+		# `field_names`, set by the operator — we never overwrite it on re-sync.
+		custom_params = t.get("customParams") or []
+		sample_values = ", ".join(
+			str(p.get("paramValue") or p.get("paramName") or "") for p in custom_params
+		)
 		values = {
 			"template_name": name,
 			"actual_name": name,
@@ -41,6 +48,7 @@ def sync_from_wati(account_name=None):
 			"status": "APPROVED",
 			"category": t.get("category") or "UTILITY",
 			"template": t.get("body") or "",
+			"sample_values": sample_values,
 			"whatsapp_account": account_name,
 		}
 		if frappe.db.exists("WhatsApp Templates", name):

@@ -22,18 +22,20 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templat
 
 class WATITemplates(WhatsAppTemplates):
 	def validate(self):
-		# Read-only catalog. Templates live on WATI; we only mirror them (via
-		# tatva_connect.wati.templates_sync, which writes with db_insert/db_update
-		# and therefore bypasses this validate). Any ORM save — a manual "Create
-		# New Template", an edit, or upstream's Meta fetch — is blocked here so we
-		# never create a phantom local template or touch Meta.
-		frappe.throw(
-			_(
-				"WhatsApp Templates are managed on WATI and mirrored read-only. "
-				"Manual create/edit is disabled — use the 'Sync from WATI' button to refresh."
-			),
-			title=_("Templates are read-only (WATI)"),
-		)
+		# Templates live on WATI and are mirrored (sync uses db_insert/db_update,
+		# which bypass this validate). We BLOCK manual creation (no phantom local
+		# templates) but ALLOW editing an existing row so operators can set the
+		# `field_names` variable->lead-field mapping. We never push to WATI/Meta
+		# (after_insert/update_template are no-ops), and the synced fields (body,
+		# actual_name, etc.) get refreshed on the next sync regardless.
+		if self.is_new():
+			frappe.throw(
+				_(
+					"WhatsApp Templates are managed on WATI and mirrored read-only. "
+					"Manual creation is disabled — use the 'Sync from WATI' button to import them."
+				),
+				title=_("Templates are read-only (WATI)"),
+			)
 
 	def after_insert(self):
 		# Defensive no-op (db_insert never calls this; manual insert is blocked in validate).
