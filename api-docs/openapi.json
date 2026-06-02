@@ -2347,7 +2347,7 @@
         }
       }
     },
-    "/api/method/tatva_crm.acefone.handler.make_acefone_call": {
+    "/api/method/tatva_connect.acefone.handler.make_acefone_call": {
       "post": {
         "tags": [
           "Telephony"

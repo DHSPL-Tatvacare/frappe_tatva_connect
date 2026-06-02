@@ -10,6 +10,8 @@ audience: any LLM (or new team member) starting work on this project
 
 The primer. If you (LLM or human) just walked into this project, read this in full before doing anything else. Every claim below is sourced from a doc in this folder — follow the wikilinks for detail.
 
+> **📍 Vault location + current focus.** The strategy/docs vault is the Obsidian vault at `/Users/dhspl/Programs/tc-work/tatvacare-obsidian/`, and the active folder for this project is **`Projects/frappe-crm/Frappe Migration 101/`**. **For the time being, focus on Frappe Migration 101** — all wikilinks below resolve inside that folder. Prose/strategy/runbooks → vault; code + buildable artifacts → this repo.
+
 > **Read this first — what this file describes.** The sections further down (folder convention, "What lives where") describe the **Obsidian vault** (`Frappe Migration 101/`), which is the strategy/docs home. **This git repo (`tatva_frappe_custom`) is the CODE home** — its canonical layout is the next section. Rule of thumb: prose/strategy/runbooks → vault; code + buildable artifacts → this repo.
 
 > **Repo home:** **https://github.com/devops-tatvacare/tatva_frappe_custom** (public). The single working repo for the custom Frappe app (WATI override, Acefone telephony, future overrides) **and** the API docs site.
@@ -27,7 +29,7 @@ The primer. If you (LLM or human) just walked into this project, read this in fu
 ```
 tatva_frappe_custom/                 # this git repo;  install with:  bench get-app <repo-url>
 ├── <app_name>/                      # ← the Frappe app PACKAGE. Create with `bench new-app <app_name>`.
-│   │                                #   app_name = snake_case python identifier (e.g. tatva_crm).
+│   │                                #   app_name = snake_case python identifier (e.g. tatva_connect).
 │   │                                #   Repo/GitHub name MAY differ from app_name.
 │   ├── __init__.py                  #   holds __version__
 │   ├── hooks.py                     # ★ ALL customization registers here (see rules below)
@@ -176,7 +178,7 @@ Frappe Migration 101/
 - 6 custom doctypes; 28 CRM Lead custom fields.
 - Side Panel has 19 ghost tabs; Data Fields has 1 empty tab. Both fixes paused per user.
 - `server_script_enabled=1` is set at the COMMON config level (NOT site). If you ever rebuild, set it via `bench set-config -g`, not `bench set-config`.
-- `frappe.crm` Grid.vue has NO `read_only` prop — governance needs permlevel-1 + a validate hook in `tatva_crm` (custom app, not yet built).
+- `frappe.crm` Grid.vue has NO `read_only` prop — governance needs permlevel-1 + a validate hook in `tatva_connect` (custom app, not yet built).
 - `disable_document_sharing=1` does NOT stop the `lead_owner` auto-DocShare (owner-share leak).
 
 ## What's NOT in this folder (and that's intentional)
