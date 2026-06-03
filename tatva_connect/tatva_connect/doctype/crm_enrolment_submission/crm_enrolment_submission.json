@@ -35,7 +35,7 @@
   {"fieldname": "intake_form", "fieldtype": "Link", "label": "Intake Form", "options": "CRM Intake Form", "reqd": 1, "hidden": 1},
   {"fieldname": "patient_name", "fieldtype": "Data", "label": "Patient Name", "reqd": 1, "in_list_view": 1},
   {"fieldname": "phone", "fieldtype": "Phone", "label": "Patient Phone Number", "reqd": 1, "in_list_view": 1, "description": "10-digit mobile (pick country code)."},
-  {"fieldname": "city", "fieldtype": "Data", "label": "City", "reqd": 1, "description": "Pick your State first, then type to search."},
+  {"fieldname": "city", "fieldtype": "Link", "label": "City", "options": "CRM City", "reqd": 1, "read_only_depends_on": "eval:!doc.state", "description": "Pick your State first, then type to search."},
   {"fieldname": "state", "fieldtype": "Select", "label": "State / UT", "reqd": 1, "options": "\nAndhra Pradesh\nArunachal Pradesh\nAssam\nBihar\nChhattisgarh\nGoa\nGujarat\nHaryana\nHimachal Pradesh\nJharkhand\nKarnataka\nKerala\nMadhya Pradesh\nMaharashtra\nManipur\nMeghalaya\nMizoram\nNagaland\nOdisha\nPunjab\nRajasthan\nSikkim\nTamil Nadu\nTelangana\nTripura\nUttar Pradesh\nUttarakhand\nWest Bengal\nAndaman and Nicobar Islands\nChandigarh\nDadra and Nagar Haveli and Daman and Diu\nDelhi\nJammu and Kashmir\nLadakh\nLakshadweep\nPuducherry\nOthers"},
   {"fieldname": "state_manual", "fieldtype": "Data", "label": "State (if Others) — specify", "depends_on": "eval:doc.state=='Others'", "mandatory_depends_on": "eval:doc.state=='Others'"},
 
