@@ -8,43 +8,67 @@ function setupForm({ doc, $dialog, call, createToast }) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
-  const notify = (title, ok) =>
-    createToast({ title, icon: ok ? 'check' : 'x', iconClasses: ok ? 'text-green-600' : 'text-red-600' })
+  // frappe-ui toast renders the `message` prop and colours by `type`
+  // ('success'/'error') — NOT `title`/`iconClasses` (those render blank).
+  const notify = (msg, ok) => createToast({ message: msg, type: ok ? 'success' : 'error' })
 
-  let refreshing = false
-  function showSpinner(on) {
-    const ID = 'wati-refresh-spinner'
-    let el = document.getElementById(ID)
-    if (on && !el) {
-      el = document.createElement('div')
-      el.id = ID
-      el.textContent = '⟳  Refreshing WhatsApp…'
-      // Design tokens first (frappe-ui CSS vars), hex only as a safety fallback.
-      el.style.cssText =
-        'position:fixed;bottom:16px;right:16px;z-index:9999;' +
-        'background:var(--surface-gray-7,#1f2937);color:var(--ink-white,#fff);' +
-        'padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.2);'
-      document.body.appendChild(el)
-    } else if (!on && el) {
-      el.remove()
+  // One-time keyframe for the in-button spinner.
+  if (!document.getElementById('wati-spin-style')) {
+    const st = document.createElement('style')
+    st.id = 'wati-spin-style'
+    st.textContent =
+      '@keyframes wati-spin{to{transform:rotate(360deg)}}' +
+      '.wati-spin{animation:wati-spin .7s linear infinite;vertical-align:-2px}'
+    document.head.appendChild(st)
+  }
+
+  const BTN_LABEL = 'Refresh WhatsApp'
+  function refreshButton() {
+    // match the header action button by its label (tolerate the busy "⟳ " prefix)
+    return Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim().replace(/^⟳\s*/, '') === BTN_LABEL,
+    )
+  }
+  function setBtnBusy(busy) {
+    const btn = refreshButton()
+    if (!btn) return
+    if (busy) {
+      if (!btn.dataset.watiOrig) btn.dataset.watiOrig = btn.innerHTML
+      // frappe-ui's own LoadingIndicator SVG, inlined (opacity inlined since the
+      // Tailwind opacity-*/animate-spin classes aren't JIT-scanned for injected DOM).
+      btn.innerHTML =
+        '<svg class="wati-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" ' +
+        'xmlns="http://www.w3.org/2000/svg">' +
+        '<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle>' +
+        '<path fill="currentColor" opacity="0.75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 ' +
+        '5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>&nbsp;' +
+        BTN_LABEL
+      btn.style.opacity = '0.7'
+      btn.style.pointerEvents = 'none'
+    } else if (btn.dataset.watiOrig) {
+      btn.innerHTML = btn.dataset.watiOrig
+      delete btn.dataset.watiOrig
+      btn.style.opacity = ''
+      btn.style.pointerEvents = ''
     }
   }
 
+  let refreshing = false
   async function refreshMessages() {
     if (refreshing) return // guard against double-clicks during the (latency-prone) call
     refreshing = true
-    showSpinner(true)
+    setBtnBusy(true) // spinner INSIDE the "Refresh WhatsApp" button + disabled
     try {
       const res = await call('tatva_connect.api.whatsapp.refresh_messages_from_wati', {
         reference_doctype: doc.doctype, reference_name: doc.name,
       })
       notify('Synced ' + (res && res.count != null ? res.count : 0) + ' messages from WATI', true)
-      // No page reload: refresh_messages_from_wati emits the `whatsapp_message`
-      // realtime event, so the open WhatsApp panel re-fetches the thread inline.
+      // No page reload: refresh_messages_from_wati emits the whatsapp_message realtime
+      // event, so the open WhatsApp panel re-fetches the thread inline.
     } catch (e) {
       notify((e && e.message) || 'WhatsApp refresh failed', false)
     } finally {
-      showSpinner(false)
+      setBtnBusy(false)
       refreshing = false
     }
   }
