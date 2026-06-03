@@ -2,29 +2,96 @@
 title: "Telephony"
 ---
 
-Calls show up on a lead's **Calls** tab the same way messages show up on the WhatsApp tab — as rows in a doctype. For calls that doctype is **`CRM Call Log`**, and reading it is live on the API today.
+Calls show up on a lead's **Calls** tab the same way messages show up on the WhatsApp tab — as rows in a doctype. For calls that doctype is **`CRM Call Log`** (native to the CRM), and the provider is **Acefone**. The CRM never runs a softphone; Acefone is a phone-bridge.
 
 ## The CRM Call Log
 
 One row per call, inbound or outbound. The fields an integrator cares about:
 
 - **`type`** — `Incoming` or `Outgoing`
-- **`status`** — `Initiated` / `Ringing` / `In Progress` / `Completed` / `Failed` / `Busy` / `No Answer`
+- **`status`** — `Initiated` / `Ringing` / `In Progress` / `Completed` / `Failed` / `Busy` / `No Answer` / `Queued` / `Canceled`
 - **`from`** / **`to`** — the numbers
 - **`duration`** — call length in seconds
 - **`recording_url`** — the recording (private; patient PII)
-- **`telephony_medium`** — which provider placed the call
+- **`telephony_medium`** — which provider placed the call (now includes `Acefone`)
+- **`custom_acefone_account`** — which Acefone account handled the call
 - **`reference_doctype`** / **`reference_docname`** — the lead this call is linked to
 
-A row links to its lead through `reference_doctype` = `CRM Lead` and `reference_docname` = the lead's name — exactly like every other activity record. Read a lead's calls by filtering on those two fields.
+Read a lead's calls by filtering on the reference pair:
+
+```bash
+curl -G -H 'Authorization: token KEY:SECRET' \
+  --data-urlencode 'filters=[["reference_doctype","=","CRM Lead"],["reference_docname","=","CRM-LEAD-2026-00123"]]' \
+  --data-urlencode 'fields=["type","status","from","to","duration","telephony_medium","creation"]' \
+  --data-urlencode 'order_by=creation desc' \
+  'https://one.tatvacare.in/api/resource/CRM Call Log'
+```
 
 ## Inbound vs outbound
 
-- **Inbound calls log themselves.** When a patient calls in, a provider webhook creates the `CRM Call Log` row and matches the number to a lead, so it appears on the Calls tab automatically — no integration work on your side.
-- **Outbound click-to-call** rings the agent first, then bridges to the patient (a phone bridge, not a browser softphone), and writes a matching log row that walks to a terminal status.
+- **Inbound calls log themselves.** Acefone POSTs a call event (CDR) to our webhook → a `CRM Call Log` row is created/updated and matched to a lead by the caller's number → it appears on the Calls tab automatically. No integrator work.
+- **Outbound click-to-call** rings the agent first, then bridges to the patient, and writes a matching log row that walks to a terminal status. Trigger it with:
 
-## Status
+```
+POST /api/method/tatva_connect.acefone.handler.make_acefone_call
+```
+```json
+{ "reference_doctype": "CRM Lead", "reference_name": "CRM-LEAD-2026-00123" }
+```
+Acefone's click-to-call returns no call id, so we create the row as `Initiated` and reconcile the later webhook to it (via a `custom_identifier` passthrough, falling back to number + recency). Requires System Manager.
 
-> **Building now.** Reading `CRM Call Log` works today. The provider integration — **Acefone** for automatic inbound logging and click-to-call — is in build. Until it deploys, `telephony_medium` has no `Acefone` value and the click-to-call endpoint below is not yet live.
+## Multi-account routing
+
+Different product lines / groups / programs can call through **different Acefone accounts** (each its own agent line, DID, and API token) — the same model as WhatsApp's WATI accounts:
+
+- **`Acefone Account`** — one record per account (agent number, caller-id/DID, token).
+- **`Acefone Account Routing`** — rules mapping **Product Line / Group / Program → an Acefone Account**. Most-specific wins (Program > Group > Product Line); no global default (an unmatched lead's call is blocked, never sent through the wrong account); duplicate/ambiguous rules are rejected.
+- Inbound calls are attributed to an account by matching the CDR's DID to each account's caller-id.
+
+## Kill-switch
+
+**`Acefone Settings → Enabled`** — when off, both outbound calls and inbound logging stop.
+
+## Configure accounts & routing over the API
+
+Accounts and routing rules are plain doctypes — manage them entirely over REST (no DB access). Needs **System Manager** (Acefone Account also allows Sales Manager).
+
+**Add an Acefone account** (one per account; carries the agent line, DID, token):
+```bash
+curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
+  -d '{
+    "account_name": "Anaya Telephony",
+    "enabled": 1,
+    "base_url": "https://api.acefone.in",
+    "api_token": "<Acefone API token>",
+    "agent_number": "918010000001",
+    "caller_id": "918000000001"
+  }' \
+  'https://one.tatvacare.in/api/resource/Acefone Account'
+```
+`api_token` / `click_to_call_api_key` are Password fields — stored encrypted, never read back. `caller_id` is the DID (used as the outbound caller-id and to attribute inbound calls).
+
+**Add a routing rule** (taxonomy → account):
+```bash
+curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
+  -d '{ "acefone_account": "Anaya Telephony", "vertical": "GoodFlip" }' \
+  'https://one.tatvacare.in/api/resource/Acefone Account Routing'
+```
+Fields: `vertical` (→ CRM Vertical), `psp_group` (→ CRM Group), `program` (→ CRM Program), `acefone_account` (→ Acefone Account). Fill only the axes you want; most-specific wins. Axis values are the names of existing CRM Vertical / CRM Group / CRM Program records (`GET /api/resource/CRM Vertical` …).
+
+**List / inspect:**
+```
+GET /api/resource/Acefone Account?fields=["name","agent_number","caller_id","enabled"]
+GET /api/resource/Acefone Account Routing?fields=["name","vertical","psp_group","program","acefone_account"]
+```
+
+**Kill-switch + webhook secret** (single — update with PUT):
+```bash
+curl -X PUT -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
+  -d '{ "enabled": 1, "webhook_verify_token": "<secret>" }' \
+  'https://one.tatvacare.in/api/resource/Acefone Settings/Acefone Settings'
+```
+
+> **Rollout note.** Reading `CRM Call Log` is live today. The Acefone integration (automatic inbound logging + click-to-call) is built and verified on the dev bench; it goes live with the next deploy. A `404` on the click-to-call method means it isn't deployed on that environment yet.
 
 → **API Reference:** [Telephony endpoints](/docs/api/telephony).

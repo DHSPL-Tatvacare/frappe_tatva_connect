@@ -6,7 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class WATIAccountRouting(Document):
+class AcefoneAccountRouting(Document):
 	def validate(self):
 		# Two rules with the IDENTICAL (vertical, group, program) triple are equally
 		# specific and could both match a lead -> ambiguous routing. Block the
@@ -18,7 +18,7 @@ class WATIAccountRouting(Document):
 
 		mine = _triple(self)
 		for other in frappe.get_all(
-			"WATI Account Routing",
+			"Acefone Account Routing",
 			filters={"name": ["!=", self.name or ""]},
 			fields=["name", "vertical", "psp_group", "program"],
 		):

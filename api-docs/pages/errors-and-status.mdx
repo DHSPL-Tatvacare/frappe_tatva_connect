@@ -1,0 +1,70 @@
+---
+title: "Errors & status"
+---
+
+When something fails anywhere in the CRM — a webhook, an outbound API call, a scheduled job, a server method — it's recorded in a doctype. You can read all of it over REST, so you can check what's failing and see status without shell access. Everything here needs **System Manager**.
+
+## The four places to look
+
+| Doctype | What it captures |
+|---|---|
+| **`Error Log`** | Any server-side exception / traceback (everything `frappe.log_error` writes — our integrations log here). The first place to look. |
+| **`Integration Request`** | Every **outbound** call we make to a provider (WATI, Acefone) — URL, status, the request we sent, and the response/`error` we got back. |
+| **`Scheduled Job Log`** | Scheduled-job runs (e.g. the 6-hourly WATI template sync). See [Jobs](/docs/jobs). |
+| **`WhatsApp Notification Log`** | Automated WhatsApp notification triggers (success/failure). |
+
+## Recent errors (start here)
+
+```bash
+curl -G -H 'Authorization: token KEY:SECRET' \
+  --data-urlencode 'fields=["name","method","creation","reference_doctype","reference_name"]' \
+  --data-urlencode 'order_by=creation desc' \
+  --data-urlencode 'limit_page_length=30' \
+  'https://one.tatvacare.in/api/resource/Error Log'
+```
+`method` is the error title. Read one in full (with the traceback in `error`):
+```
+GET /api/resource/Error Log/<name>
+```
+
+**Filter to a specific integration** — our handlers log with recognisable titles:
+```bash
+# WATI-related errors
+--data-urlencode 'filters=[["method","like","%WATI%"]]'
+# Acefone-related errors
+--data-urlencode 'filters=[["method","like","%Acefone%"]]'
+```
+Example titles you'll see: `WATI inbound: unresolved account`, `WATI scheduled template sync failed`, `WATI template sync skipped one`, `Acefone webhook: processing failed`, `Acefone recording fetch failed`.
+
+## Outbound provider calls (did the send/call actually go out?)
+
+`Integration Request` logs every outbound HTTP call to a provider, with the response:
+```bash
+curl -G -H 'Authorization: token KEY:SECRET' \
+  --data-urlencode 'fields=["name","status","url","output","error","creation"]' \
+  --data-urlencode 'order_by=creation desc' \
+  --data-urlencode 'limit_page_length=30' \
+  'https://one.tatvacare.in/api/resource/Integration Request'
+```
+- `status` — `Completed` / `Failed` / `Queued`.
+- `url` — which provider endpoint (filter `url like "%wati.io%"` or `%acefone%`).
+- `data` / `output` — the request we sent and the provider's raw response (the response is where a WATI `result:false` or an Acefone error message shows up).
+
+## Automated WhatsApp triggers
+
+```bash
+curl -G -H 'Authorization: token KEY:SECRET' \
+  --data-urlencode 'fields=["name","template","meta_data","creation"]' \
+  --data-urlencode 'order_by=creation desc' \
+  'https://one.tatvacare.in/api/resource/WhatsApp Notification Log'
+```
+`meta_data` carries `{transport: "wati", to: ...}` on success or `{error: ...}` on failure.
+
+## A quick health sweep
+
+1. **`Error Log`** filtered to the last hour → anything red?
+2. **`Integration Request`** with `status = Failed` → outbound calls that didn't land.
+3. **`Scheduled Job Log`** with `status = Failed` → background jobs that broke.
+4. The relevant **kill-switch** (`WATI Settings` / `Acefone Settings` → `Enabled`) is on.
+
+> These are read-only over the API. To clear/seen-mark an `Error Log` or re-run a job, use the Desk UI (`/app/error-log`, `/app/integration-request`).

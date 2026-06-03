@@ -222,3 +222,9 @@ tenant is logged for you to fix (never mis-filed to the wrong account).
   not yet translated to WATI. Body-only templates are fully supported.
 - The local `WhatsApp Templates` rows are a **read-only mirror** — edit templates on
   WATI, then re-sync. Editing the body locally won't push anywhere.
+- **Triple error toasts** — a frappe-ui quirk (its `frappeRequest` invokes `onError`
+  twice and re-throws), so one backend error shows ~3 toasts. Affects *all* of crm,
+  not just WATI; cosmetic; not fixable without forking the frontend bundle.
+- **Buttons** (Send Template hijack, Refresh WhatsApp) are shipped as **CRM Form
+  Scripts** + a capture-phase DOM click interceptor — no crm fork. crm merges actions
+  from all enabled form scripts, so WATI and Acefone scripts coexist.

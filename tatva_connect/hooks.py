@@ -20,6 +20,11 @@ override_doctype_class = {
 # (and any caller) syncs the read-only WATI mirror — never reaches Meta.
 override_whitelisted_methods = {
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.wati.templates_sync.sync_from_wati",
+	# Acefone rides crm's NATIVE call UI (no fork): the native phone icon's call
+	# method becomes an Acefone bridge call, and the call-log fetch gains a
+	# playable recording path for Acefone. See tatva_connect/acefone/bridge.py.
+	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.acefone.bridge.make_a_call",
+	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.acefone.bridge.get_call_log",
 }
 
 # Safety-net: re-sync every WATI account's templates every 6 hours so the local
@@ -35,7 +40,18 @@ scheduler_events = {
 fixtures = [
 	{
 		"dt": "Custom Field",
-		"filters": [["name", "in", ["WhatsApp Account-custom_is_wati", "WhatsApp Account-custom_wati_channel_number"]]],
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"WhatsApp Account-custom_is_wati",
+					"WhatsApp Account-custom_wati_channel_number",
+					"CRM Telephony Agent-acefone_number",
+					"CRM Call Log-custom_acefone_account",
+				],
+			]
+		],
 	},
 ]
 

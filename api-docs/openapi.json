@@ -49,7 +49,8 @@
       "tags": [
         "Reference Data",
         "Schema",
-        "Tags"
+        "Tags",
+        "Errors & Logs"
       ]
     }
   ],
@@ -97,6 +98,10 @@
     {
       "name": "Jobs",
       "description": "Scheduled and background jobs. `Scheduled Job Type` holds the definitions (method, cron, stopped, last run); `Scheduled Job Log` holds the execution history. Both are read-only over the API and require System Manager. There is no REST endpoint to trigger a job (Desk / bench only). See the Jobs guide for the inventory."
+    },
+    {
+      "name": "Errors & Logs",
+      "description": "Operational visibility, read-only. Error Log = server exceptions/tracebacks; Integration Request = outbound provider calls + responses; plus Scheduled Job Log (see Jobs) and WhatsApp Notification Log. Requires System Manager. See the Errors & status guide for a health sweep."
     }
   ],
   "security": [
@@ -2303,8 +2308,8 @@
         "tags": [
           "Telephony"
         ],
-        "summary": "Click-to-call a lead (planned)",
-        "description": "> **Status \u2014 planned.** This surface ships with the integration rollout; it is **not deployed yet**, so the live server returns `404`. The shape below is the contract you'll integrate against.\n\nRings the agent first, then bridges to the lead's `mobile_no` (a phone bridge, not a browser softphone). Creates a `CRM Call Log` row in `Initiated` and walks it to a terminal status via the Acefone webhook.",
+        "summary": "Click-to-call a lead (Acefone)",
+        "description": "Ring the agent and bridge to the lead/deal's number via Acefone. Creates an Initiated CRM Call Log; the account is chosen by the lead's Product Line / Group / Program routing (no route -> blocked). The async webhook reconciles the row to a terminal status. Requires System Manager.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2312,10 +2317,15 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "lead"
+                  "reference_doctype",
+                  "reference_name"
                 ],
                 "properties": {
-                  "lead": {
+                  "reference_doctype": {
+                    "type": "string",
+                    "example": "CRM Lead"
+                  },
+                  "reference_name": {
                     "type": "string",
                     "example": "CRM-LEAD-2026-00123"
                   }
@@ -3663,6 +3673,388 @@
               "type": "string"
             },
             "example": "20"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/WhatsApp Account": {
+      "post": {
+        "tags": [
+          "WhatsApp"
+        ],
+        "summary": "Add a WATI account",
+        "description": "Create a WhatsApp/WATI account (one per WATI tenant). `token` is a Password field (stored encrypted, never read back). System Manager only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "token"
+                ],
+                "properties": {
+                  "account_name": {
+                    "type": "string",
+                    "example": "Anaya WATI 360078"
+                  },
+                  "url": {
+                    "type": "string",
+                    "example": "https://live-mt-server.wati.io/360078"
+                  },
+                  "token": {
+                    "type": "string",
+                    "description": "WATI JWT (Password \u2014 write-only)."
+                  },
+                  "custom_is_wati": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "custom_wati_channel_number": {
+                    "type": "string",
+                    "example": "919876500000",
+                    "description": "WABA number (digits) \u2014 inbound attribution key."
+                  },
+                  "status": {
+                    "type": "string",
+                    "example": "Active"
+                  },
+                  "is_default_outgoing": {
+                    "type": "integer",
+                    "example": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created \u2014 returns the new record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/WATI Account Routing": {
+      "post": {
+        "tags": [
+          "WhatsApp"
+        ],
+        "summary": "Add a WATI routing rule",
+        "description": "Map a lead's Product Line / Group / Program to a WhatsApp account. Fill only the axes you want (blank = any); most-specific wins; duplicate triples are rejected. Axis values are names of existing CRM Vertical / CRM Group / CRM Program records. System Manager only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "whatsapp_account"
+                ],
+                "properties": {
+                  "whatsapp_account": {
+                    "type": "string",
+                    "example": "Anaya WATI 360078"
+                  },
+                  "vertical": {
+                    "type": "string",
+                    "example": "GoodFlip",
+                    "description": "CRM Vertical name (optional)."
+                  },
+                  "psp_group": {
+                    "type": "string",
+                    "description": "CRM Group name (optional)."
+                  },
+                  "program": {
+                    "type": "string",
+                    "description": "CRM Program name (optional)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created \u2014 returns the new record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Acefone Account": {
+      "post": {
+        "tags": [
+          "Telephony"
+        ],
+        "summary": "Add an Acefone account",
+        "description": "Create an Acefone account (one per account; carries the agent line, DID, token). `api_token`/`click_to_call_api_key` are Password fields (write-only). `caller_id` is the DID \u2014 outbound caller-id and inbound attribution key. System Manager or Sales Manager.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "account_name"
+                ],
+                "properties": {
+                  "account_name": {
+                    "type": "string",
+                    "example": "Anaya Telephony"
+                  },
+                  "enabled": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "base_url": {
+                    "type": "string",
+                    "example": "https://api.acefone.in"
+                  },
+                  "api_token": {
+                    "type": "string",
+                    "description": "Acefone API token (Password \u2014 write-only)."
+                  },
+                  "agent_number": {
+                    "type": "string",
+                    "example": "918010000001"
+                  },
+                  "caller_id": {
+                    "type": "string",
+                    "example": "918000000001"
+                  },
+                  "click_to_call_api_key": {
+                    "type": "string",
+                    "description": "Optional (Support API)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created \u2014 returns the new record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Acefone Account Routing": {
+      "post": {
+        "tags": [
+          "Telephony"
+        ],
+        "summary": "Add an Acefone routing rule",
+        "description": "Map a lead's Product Line / Group / Program to an Acefone account. Fill only the axes you want; most-specific wins; duplicate triples are rejected. System Manager only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "acefone_account"
+                ],
+                "properties": {
+                  "acefone_account": {
+                    "type": "string",
+                    "example": "Anaya Telephony"
+                  },
+                  "vertical": {
+                    "type": "string",
+                    "example": "GoodFlip",
+                    "description": "CRM Vertical name (optional)."
+                  },
+                  "psp_group": {
+                    "type": "string",
+                    "description": "CRM Group name (optional)."
+                  },
+                  "program": {
+                    "type": "string",
+                    "description": "CRM Program name (optional)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created \u2014 returns the new record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Error Log": {
+      "get": {
+        "tags": [
+          "Errors & Logs"
+        ],
+        "summary": "List recent errors",
+        "description": "Server-side exceptions/tracebacks (everything `frappe.log_error` writes). `method` is the error title \u2014 filter `method like \"%WATI%\"` or `%Acefone%` for an integration. Read one by name to get the full traceback in `error`.\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'fields=[\"name\",\"method\",\"creation\"]' \\\n  --data-urlencode 'order_by=creation desc' --data-urlencode 'limit_page_length=30' \\\n  'https://one.tatvacare.in/api/resource/Error Log'\n```",
+        "parameters": [
+          {
+            "name": "filters",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[[\"method\",\"like\",\"%Acefone%\"]]"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[\"name\",\"method\",\"creation\"]"
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "creation desc"
+          },
+          {
+            "name": "limit_page_length",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "30"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Integration Request": {
+      "get": {
+        "tags": [
+          "Errors & Logs"
+        ],
+        "summary": "List outbound provider calls",
+        "description": "Every outbound HTTP call we make to a provider (WATI, Acefone) with its response. `status` = Completed/Failed; `url` = the endpoint (filter `url like \"%wati.io%\"` or `%acefone%`); `data`/`output` = request sent / raw provider response; `error` = failure detail.",
+        "parameters": [
+          {
+            "name": "filters",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[[\"status\",\"=\",\"Failed\"]]"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[\"name\",\"status\",\"url\",\"output\",\"error\",\"creation\"]"
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "creation desc"
+          },
+          {
+            "name": "limit_page_length",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "30"
           }
         ],
         "responses": {

@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:account_name",
+ "creation": "2026-06-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "account_name",
+  "enabled",
+  "column_break_top",
+  "agent_number",
+  "caller_id",
+  "section_break_api",
+  "base_url",
+  "api_token",
+  "column_break_api",
+  "click_to_call_api_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "account_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "description": "Enable this Acefone account for send/receive.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_top",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The originating line that click-to-call rings (account-level default; overridden per agent by CRM Telephony Agent.acefone_number when set).",
+   "fieldname": "agent_number",
+   "fieldtype": "Data",
+   "label": "Agent Number"
+  },
+  {
+   "description": "The DID shown to the customer on outbound calls AND the match key for inbound CDRs (did_number).",
+   "fieldname": "caller_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Caller ID / DID"
+  },
+  {
+   "fieldname": "section_break_api",
+   "fieldtype": "Section Break",
+   "hide_border": 1,
+   "label": "API"
+  },
+  {
+   "default": "https://api.acefone.in",
+   "description": "Acefone API base URL (no trailing slash).",
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "label": "Base URL"
+  },
+  {
+   "description": "Bearer token for the Acefone REST API (click-to-call etc.) for this tenant.",
+   "fieldname": "api_token",
+   "fieldtype": "Password",
+   "label": "API Token"
+  },
+  {
+   "fieldname": "column_break_api",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Optional separate key for the Acefone 'Support' click-to-call variant.",
+   "fieldname": "click_to_call_api_key",
+   "fieldtype": "Password",
+   "label": "Click-to-Call API Key"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Acefone Account",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
