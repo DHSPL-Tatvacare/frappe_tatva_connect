@@ -11,7 +11,8 @@ HOSPITALS = [("Kasturba Manipal", "Manipal"), ("Apollo", "Pune"), ("Tata Memoria
 
 MAPPINGS = [
 	{"source_field": "patient_name", "target": "lead:first_name"},
-	{"source_field": "city", "target": "lead:custom_city"},
+	{"source_field": "city", "manual_field": "city_manual", "master_doctype": "CRM City", "target": "lead:custom_city"},
+	{"source_field": "state", "manual_field": "state_manual", "target": "lead:custom_state"},
 	{"source_field": "doctor", "manual_field": "doctor_manual", "master_doctype": "CRM Doctor", "target": "care:doctor_name"},
 	{"source_field": "hospital", "manual_field": "hospital_manual", "master_doctype": "CRM Hospital", "target": "care:hospital_name"},
 	{"source_field": "nivolumab_dosage", "manual_field": "nivolumab_dosage_manual", "target": "plan:nivo_dosage"},
