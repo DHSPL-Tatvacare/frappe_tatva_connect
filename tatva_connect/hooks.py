@@ -87,6 +87,12 @@ fixtures = [
 	},
 	# The public enrolment Web Form ships as a fixture (carries its fields).
 	{"dt": "Web Form", "filters": [["name", "=", "nivolumab-patient-enrolment"]]},
+	# Field-property overrides on CRM data-model doctypes (profile Select fields with
+	# no options -> free-text, so form-written values both store AND display).
+	{"dt": "Property Setter", "filters": [["name", "in", [
+		"CRM Plan Profile-nivo_indication-fieldtype",
+		"CRM Plan Profile-nivo_indication-options",
+	]]]},
 ]
 
 # Apps
