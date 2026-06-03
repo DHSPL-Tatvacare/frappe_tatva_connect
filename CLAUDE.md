@@ -1,196 +1,97 @@
 ---
-title: CLAUDE.md — Frappe Migration 101 (primer)
-tags: [frappe-crm, claude, context-primer]
-status: current
-updated: 2026-06-01
-audience: any LLM (or new team member) starting work on this project
+title: CLAUDE.md — tatva_connect repo constitution
+tags: [frappe-crm, claude, repo-rules]
+status: authoritative
+updated: 2026-06-03
+audience: any LLM or engineer working in this repository
 ---
 
-# CLAUDE.md — Frappe Migration 101
+# CLAUDE.md — working in this repo
 
-The primer. If you (LLM or human) just walked into this project, read this in full before doing anything else. Every claim below is sourced from a doc in this folder — follow the wikilinks for detail.
+This repo (`tatva_frappe_custom`, public: github.com/devops-tatvacare/tatva_frappe_custom) is the **code home** for the TatvaCare Frappe CRM: the custom app **`tatva_connect`** (WATI WhatsApp, Acefone telephony, future overrides) **and** the API docs site (`api-docs/`).
 
-> **📍 Vault location + current focus.** The strategy/docs vault is the Obsidian vault at `/Users/dhspl/Programs/tc-work/tatvacare-obsidian/`, and the active folder for this project is **`Projects/frappe-crm/Frappe Migration 101/`**. **For the time being, focus on Frappe Migration 101** — all wikilinks below resolve inside that folder. Prose/strategy/runbooks → vault; code + buildable artifacts → this repo.
+Three homes, kept separate — know which you're in:
 
-> **Read this first — what this file describes.** The sections further down (folder convention, "What lives where") describe the **Obsidian vault** (`Frappe Migration 101/`), which is the strategy/docs home. **This git repo (`tatva_frappe_custom`) is the CODE home** — its canonical layout is the next section. Rule of thumb: prose/strategy/runbooks → vault; code + buildable artifacts → this repo.
+| Home | Holds | Where |
+|---|---|---|
+| **This repo** | code + buildable artifacts (`tatva_connect/`, `api-docs/`, `docs/plans/`) | here |
+| **Strategy vault** | research, designs, decisions, runbooks, live state | Obsidian: `tatvacare-obsidian/Projects/frappe-crm/Frappe Migration 101/` |
+| **Auto-memory** | session-to-session operational facts | `~/.claude/projects/.../memory/` |
 
-> **Repo home:** **https://github.com/devops-tatvacare/tatva_frappe_custom** (public). The single working repo for the custom Frappe app (WATI override, Acefone telephony, future overrides) **and** the API docs site.
->
-> **Two deploy lanes (keep them straight):**
-> - **App code** (WATI/Acefone) → bake into the custom Docker image → reinstall (`apps.json` → rebuild `tatva-frappe:1.x` → `install-app`/`migrate`/`build`). Changes occasionally.
-> - **Docs content** (`api-docs/`) → fast file push: `VM_SSH_HOST=… VM_SSH_PW=… ./api-docs/deploy-docs.sh` → lands in the Frappe `sites` volume, served by nginx at `/docs`. Changes often; **never** rides the image rebuild.
->
-> Secrets (VM host/password) are **env vars**, never committed — this repo is public.
+**For anything about the dev bench, the build/test loop, git flow, or shipping a change to prod → read the vault's `07-deploy-mechanics/` first.** This file does not repeat that; it states the invariants and points there.
 
-## This repository — canonical layout (codified, do not reinvent)
+---
 
-`tatva_frappe_custom` is a **standard Frappe app repo** (installable via `bench get-app`) that also carries the API docs site. Layout grounded in the live `frappe/crm` + `frappe/helpdesk` apps and the [official Frappe app docs](https://docs.frappe.io/framework/user/en/basics/apps).
+## Repository layout (codified — do not reinvent)
+
+A standard Frappe v15 app repo that also carries the docs site.
 
 ```
-tatva_frappe_custom/                 # this git repo;  install with:  bench get-app <repo-url>
-├── <app_name>/                      # ← the Frappe app PACKAGE. Create with `bench new-app <app_name>`.
-│   │                                #   app_name = snake_case python identifier (e.g. tatva_connect).
-│   │                                #   Repo/GitHub name MAY differ from app_name.
-│   ├── __init__.py                  #   holds __version__
-│   ├── hooks.py                     # ★ ALL customization registers here (see rules below)
-│   ├── modules.txt   patches.txt    #   module list / data-migration patches (run on `bench migrate`)
-│   ├── config/                      #   desktop.py, docs.py
-│   ├── <module>/doctype/<dt>/       #   custom doctypes live under a module
-│   ├── overrides/                   #   override classes (referenced from hooks.py)
-│   ├── api/                         #   @frappe.whitelist() endpoints
-│   ├── public/{js,css}/             #   bundled frontend assets
-│   ├── templates/   www/            #   jinja templates / web pages
-│   ├── fixtures/                    #   exported Custom Field / Property Setter (auto-applied on migrate)
-│   └── tests/
-├── api-docs/                        # Zudoku docs site (served at /docs). NOT part of the app —
-│   │                                #   mirrors how frappe/crm keeps its Vue `frontend/` in the same repo.
-│   └── zudoku.config.ts, package.json, openapi.json, pages/*.mdx, deploy-docs.sh
-├── nginx/frappe.conf.template       # Frappe frontend nginx template + the permanent /docs route
-├── pyproject.toml                   # ★ app packaging — Frappe v15 uses pyproject.toml, NOT setup.py
-├── README.md   license.txt   .gitignore   # .gitignore excludes node_modules/, dist/, __pycache__/
+tatva_frappe_custom/                 # install with: bench get-app <repo-url>
+├── tatva_connect/                   # the Frappe app PACKAGE (snake_case; scaffold via `bench new-app`)
+│   ├── hooks.py                     # ★ ALL customization registers here (see Coding invariants)
+│   ├── modules.txt  patches.txt     # module list / migrations (run on `bench migrate`)
+│   ├── <module>/doctype/<dt>/       # custom doctypes
+│   ├── api/                         # @frappe.whitelist() endpoints
+│   ├── fixtures/                    # Custom Field / Property Setter JSON (auto-applied on migrate)
+│   ├── wati/  acefone/              # the integrations (each has its own README.md)
+│   └── public/{js,css}/  templates/ www/  tests/
+├── api-docs/                        # Zudoku docs site → served at /docs (deploy-docs.sh)
+├── docs/plans/                      # executable per-phase plans that ship with the code
+├── nginx/frappe.conf.template       # frontend nginx template + the /docs route
+└── pyproject.toml                   # ★ v15 packaging (NOT setup.py)  · README · license · .gitignore
 ```
 
-**Codified rules (so we never re-decide):**
-1. **Scaffold with `bench new-app <app_name>`** — never hand-build the skeleton. `app_name` is snake_case (valid python identifier); the repo/GitHub name can differ (`tatva_frappe_custom`).
-2. **`pyproject.toml`, not `setup.py`** — the v15 standard (older Frappe docs still show `setup.py`/`requirements.txt`; ignore that). Verified in the live `crm`/`helpdesk` apps.
-3. **All customization goes through `hooks.py`**: `doc_events` (validate / on_update), `override_doctype_class` (swap a controller), `override_whitelisted_methods` (swap an API), `scheduler_events` (cron), `app_include_js/css` (assets). No monkey-patching scattered elsewhere.
-4. **Schema as code via fixtures** — put `fixtures = ["Custom Field", "Property Setter", ...]` in `hooks.py`, run `bench export-fixtures`. Custom fields/property setters become version-controlled JSON, auto-applied on `bench migrate`. ★ This is the real "don't reinvent" win — it replaces the manual field creation in redeploy-runbook Phases 11–12.
-5. **Docs live in `api-docs/`** (build/deploy via `api-docs/deploy-docs.sh`; the `/docs` nginx route is `nginx/frappe.conf.template`). See [[project_docs_portal]] / vault runbook Phase 17.
-6. **Install path:** `bench get-app <repo-url>` → `bench --site crm.local install-app <app_name>` → for prod, add to the custom image's `apps.json` and rebuild (vault runbook Phases 2–3).
+Packaging rules: scaffold with `bench new-app` (never hand-build the skeleton); `pyproject.toml`, not `setup.py`; `.gitignore` excludes `node_modules/`, `dist/`, `__pycache__/`, and `.devbench/`.
 
-Sources: [Frappe app basics](https://docs.frappe.io/framework/user/en/basics/apps) · [fixtures on install](https://docs.frappe.io/framework/user/en/guides/app-development/how-to-create-custom-fields-during-app-installation) · live `frappe/crm` + `frappe/helpdesk` (pyproject.toml + in-repo `frontend/`).
+---
 
-## What this folder is
+## Coding invariants
 
-The single source of truth for the TatvaCare Frappe CRM migration. Replaces LeadSquared. One Frappe install on one Azure VM. One folder for everything: infra, app config, data model, migration, integrations, runbooks, scripts.
+1. **No fork. Ever.** Never edit or patch `frappe/crm`, `frappe_whatsapp`, or any upstream app, and never open PRs to them. All customization lives in `tatva_connect`, registered through **`hooks.py`**. The toolbox, in order of preference:
+   - `override_doctype_class` — swap a controller (e.g. WATI's WhatsApp Message/Notification/Templates).
+   - `override_whitelisted_methods` — swap a server method (e.g. Acefone's `make_a_call`, `get_call_log`).
+   - `doc_events`, `scheduler_events` — hook validate/on_update/cron.
+   - **Custom Field / Property Setter fixtures** — extend native doctypes as version-controlled JSON.
+   - **CRM Form Script** (+ capture-phase DOM interception) — add/hijack frontend actions without touching the Vue bundle.
+   - **Enable a native "slot", then override its backend** — e.g. Acefone rides the Exotel slot to get the native phone icon, with `make_a_call` overridden.
+   - **If a clean override is genuinely impossible → STOP and surface it. Do not fork to force it.**
+2. **Schema as code.** Custom fields, property setters, and patches live in `tatva_connect` and apply on `bench migrate`. No manual field creation on any environment.
+3. **Single source of truth = this repo.** Edit here. The local bench runs a *copy* of the app — changes only take effect after you sync it in (see `07-deploy-mechanics/02-dev-workflow`).
+4. **Clean, low-complexity functions.** Keep cyclomatic + cognitive complexity low; small functions; match the style, naming, and comment density of the surrounding code. No clever indirection, no speculative abstraction.
+5. **Integration discipline.** WhatsApp is **WATI only — never Meta**, on every code path. Provider routing (WATI/Acefone accounts) is **most-specific-wins with no global default** — an unmatched lead is blocked, never sent through the wrong account. Every integration has a kill-switch. Secrets are env vars / Password fields — never committed (this repo is public).
+6. **Never guess an API.** Read the source, Context7, or `--help` before using unfamiliar syntax. Don't fabricate config values or pretend access exists.
 
-This used to be scattered across `Architecture/`, `Decisions/`, `Developer/`, `Investigations/`, `Memory/`. All consolidated into here 2026-06-01. The old sub-folders no longer exist in the vault.
+---
 
-Folder convention:
-- `NN-kebab-case.md` files (`NN` = 2-digit order within folder)
-- Every doc has YAML frontmatter (`title`, `status`, `updated`)
-- Wikilinks `[[file-name]]` use the **filename slug** (not path) — Obsidian resolves
-- `99-archive/` holds superseded docs (never delete; one-line "superseded by" note when known)
-- `scripts/` holds the executable scripts (vmssh, schema bootstrap, migration scripts)
+## Deploying invariants
 
-## The 60-second context
+**The full how-to is `07-deploy-mechanics/` in the vault.** The non-negotiables:
 
-| Question | Answer |
+1. **Dev-first, always.** Build and prove on the local `.devbench`; deploy to prod only after local proof. Never experiment on prod.
+2. **Two lanes, kept separate** — pick by what changed:
+   - **App code** (`tatva_connect`) → bake into the prod image (`apps.json` → rebuild → `install-app`/`migrate`/`build`). Changes occasionally.
+   - **Docs** (`api-docs/`) → fast file push (`./api-docs/deploy-docs.sh` → sites volume → nginx `/docs`). Changes often; **never** rides the image rebuild.
+3. **Git:** feature branch → fast-forward merge into `main` → push. Pushing to GitHub does **not** touch prod. Commit only when a slice is locally proven (or when asked).
+4. **No prod-downtime drama** unless it's live to customers (VPN-internal today).
+
+---
+
+## How we work (standing direction)
+
+- **Plain English, tight responses.** Lead with the answer. Propose ONE thing, ask if it's good — no option matrices, no jargon walls, no closing summaries. The user is product-fluent, not DevOps — give exact commands for infra tasks.
+- **Confirm before non-trivial edits.** For multi-step work: a 3–5 bullet plan, then wait. "Update and stop" means stop — no verification runs, no Playwright, no "let me also fix this."
+- **Pause before anything risky** — editing a doctype field, running a migration, restarting the backend, touching compose, force-push, dropping a table. Explain in a few bullets and wait, even when the right move feels obvious.
+- **LSQ + Frappe are first-class peers** during migration — both fire until Frappe reaches high fidelity, then LSQ writes are removed. Never call Frappe a fallback.
+
+---
+
+## Where to look
+
+| Need | Go to |
 |---|---|
-| What does this Frappe install hold? | Patient Support Program **leads** for TatvaCare. Replacing LeadSquared. |
-| Where? | One Azure VM (`goodflip-care-frappe`, 4 vCPU / 16 GB RAM / 60 GB disk). |
-| URL? | `https://one.tatvacare.in` (HTTPS terminated by an external Azure ingress, not the VM). |
-| Stack? | Docker compose (11 services declared / 10 running steady-state) — `tatva-frappe:1.1` custom image with `frappe + crm + telephony + helpdesk + payments + lms`. |
-| DB? | MariaDB 11.8 inside container `crm-db-1`. Site = `crm.local`. |
-| Auth? | `Authorization: token <key>:<secret>` — but **API keys run the user's role/perm checks**, they do NOT bypass perms. |
-| Data model? | **Lean core (~26 fields on CRM Lead) + 3 child "profile" doctypes** (Oncology / MyTatva Health / Metabolic). New verticals = new profile doctype, not new column. |
-| Dedup key? | `mobile_no` (verified — 0 collisions on 11,762 prior leads). Format convergence to E.164 pending. |
-| Status types? | New(Open) · Contacted/Nurture(Ongoing) · Qualified/Converted(Won) · **Junk/Unqualified(Lost — both require `lost_reason`)**. |
-| Routing chain? | `Vertical (Product Line) → Group → Program`. All Links to lookup doctypes, all permlevel-1 (manager-only). |
-| Custom endpoint? | One: `POST /api/method/upsert_lead_by_phone` — finds-or-creates a lead by `mobile_no`. Has a known silent-200 bug pending fix. |
-
-## What lives where (this folder)
-
-```
-Frappe Migration 101/
-├── CLAUDE.md                           ← you are here
-├── 00-keep-in-mind.md                  ⭐ gotchas that have cost us hours — READ FIRST
-├── README.md                           ← human-facing index
-├── 01-infrastructure/                  ← VM, Docker, bench, nginx, redeploy runbook
-│   ├── 01-vm-and-access.md             (creds, SSH, IPs)
-│   ├── 02-docker-architecture.md       (11 services / 10 steady-state, image lineage, volumes)
-│   ├── 03-bench-and-site-config.md     (common_site_config, site_config, server_script_enabled)
-│   ├── 04-backup-runbook.md            (Ofelia backup, restore steps)
-│   ├── 05-nginx-and-network-flow.md    (full traffic flow, frontend nginx config)
-│   ├── 06-redeploy-end-to-end.md       ⭐ LINEAR step-by-step rebuild on a fresh VM
-│   └── 07-observability-and-telemetry.md (metrics/logs/tracing — Sentry, OTel, Loki, Prometheus; what's built-in vs external)
-├── 02-apps/                            ← CRM/Helpdesk/LMS app config
-│   ├── 01-apps-installed.md            (5 apps, versions, role mapping)
-│   ├── 02-app-launcher-and-routing.md  (/apps tile router, URL paths)
-│   ├── 03-adding-frappe-apps-runbook.md
-│   └── 04-lms-helpdesk-research.md     (peer-app reasoning + doctypes)
-├── 03-crm/                             ← the migration target
-│   ├── 01-data-model.md                ⭐ THE current-truth data model
-│   ├── 02-doctypes-inventory.md        (live snapshot — 6 custom doctypes)
-│   ├── 03-custom-fields-inventory.md   (live — 28 CRM Lead fields, 49+36+9 profile fields)
-│   ├── 04-server-scripts-and-apis.md   (upsert API + REST shape)
-│   ├── 05-roles-and-permissions.md     (4-tier role model)
-│   ├── 06-decisions-log-data-model.md
-│   ├── 07-decisions-log-permissions.md
-│   ├── 08-frappe-code-reads.md         ⭐ source-verified findings from frappe/crm GitHub
-│   ├── 09-learnings-and-gotchas.md
-│   ├── 10-admin-setup-contract.md
-│   ├── 11-admin-db-model-contract.md
-│   └── 12-ui-layouts-state.md          (current Side Panel + Data Fields state — has known gaps)
-├── 04-migration/
-│   ├── 01-migration-overview.md        ⭐ where each workstream stands
-│   ├── 02-lsq-anaya-migration.md       (M1+M2 done, M3+M4 pending)
-│   ├── 03-parallel-write-implementation.md  (MyTatvaCore code spec)
-│   ├── 04-steady-state-update-scope.md (phone-key, unique lock, vertical moves)
-│   ├── 05-profile-architecture-plan.md (the rebuild plan we executed)
-│   └── 06-scripts-inventory.md         (vmssh, schema bootstrap, migration scripts)
-├── 05-integrations/
-│   ├── 00-integrations-overview.md
-│   ├── 01-wati-whatsapp.md             (WATI fork-and-port plan)
-│   ├── 02-ozonetel-telephony.md        (Ozonetel adapter design)
-│   ├── 03-mytatva-core-integration-contract.md  (what MyTatvaCore implements)
-│   └── 04-lsq-export-and-orchestration.md
-├── 06-runbooks/                        (operational how-tos, grows over time)
-├── 99-archive/                         (superseded docs, memory snapshot, legacy indexes)
-└── scripts/
-    ├── vmssh.sh                        (expect-based SSH wrapper)
-    ├── frappe-crm-create-fields-v2.py  ⚠️ LEGACY (pre-pivot v2 model — see scripts inventory)
-    ├── frappe-crm-create-fields.py     ⚠️ LEGACY v1 — do NOT run
-    ├── anaya-migrate-to-frappe.py      (LSQ → Frappe Anaya backfill)
-    └── frappe-doctype-dump.py          (snapshot the schema)
-```
-
-## How to use this folder when working a task
-
-| Task | Start at |
-|---|---|
-| "How do I rebuild this on a new VM?" | [[01-infrastructure/06-redeploy-end-to-end]] |
-| "What does the data model look like?" | [[03-crm/01-data-model]] then [[03-crm/03-custom-fields-inventory]] |
-| "How do I write a lead from an external system?" | [[03-crm/04-server-scripts-and-apis]] |
-| "Why does the right pane show 19 tabs?" | [[03-crm/12-ui-layouts-state]] |
-| "Why doesn't `read_only` work on a child table grid?" | [[03-crm/08-frappe-code-reads]] — Grid.vue has no read_only prop |
-| "What stage is the migration at?" | [[04-migration/01-migration-overview]] |
-| "I need to SSH the VM" | [[01-infrastructure/01-vm-and-access]] then `scripts/vmssh.sh` |
-| "How do I add a Frappe app?" | [[02-apps/03-adding-frappe-apps-runbook]] |
-| "WATI / Ozonetel design?" | [[05-integrations/01-wati-whatsapp]] · [[05-integrations/02-ozonetel-telephony]] |
-
-## Standing user direction (DO NOT depart from these)
-
-1. **LSQ + Frappe are first-class peers**, not sidecar. Both fire on every event until Frappe achieves "high fidelity", THEN we remove LSQ writes. Never call Frappe a fallback/secondary.
-2. **WATI is non-negotiable** — chatbot flows + templates already on WATI. Never suggest Meta Cloud direct as a swap; always fork-and-port.
-3. **No prod-snapshot/downtime warnings** unless the user says it's live to customers. The install is private to the team via VPN today.
-4. **Plain English. Tight responses.** No jargon walls. No option matrices — propose ONE thing, ask if it's good. User is product-fluent, not DevOps; give exact commands for infra tasks. No closing summaries.
-5. **No upstream contributions.** This is a private fork. Don't open PRs to `frappe/frappe`, `frappe/crm`, etc.
-6. **Confirm before non-trivial edits.** For multi-step work: 3-5 bullet plan, then wait. "Update and stop" means stop — no verification, no Playwright, no "let me also fix this."
-7. **Never guess library APIs.** Read source / Context7 / `--help`. Don't fabricate config values or pretend access exists.
-8. **Phone format converges to E.164** (`+919999000123` — no hyphens, no spaces) once we own all writers. Migrated data is currently `+91-XXXXXXXXXX` — needs normalize-then-lock.
-9. **Side Panel default-open rule: only the FIRST tab `opened: true`, all others `opened: false`.** Apply to every doctype's Side Panel (CRM Lead, CRM Deal, Contact, Organization, etc.) — agent never sees a wall of expanded sections. Whoever lays out the side panel orders tabs so the most-used tab is first.
-
-## Live state to remember (don't re-verify each turn)
-
-- 23 leads in the system today (20 sample + 3 webhook-test). The 12,060-lead Anaya backfill was wiped during the model rebuild; re-migration is pending.
-- 1 server script (`Upsert Lead By Phone`) — has a known silent-200 bug; fix paused.
-- 6 custom doctypes; 28 CRM Lead custom fields.
-- Side Panel has 19 ghost tabs; Data Fields has 1 empty tab. Both fixes paused per user.
-- `server_script_enabled=1` is set at the COMMON config level (NOT site). If you ever rebuild, set it via `bench set-config -g`, not `bench set-config`.
-- `frappe.crm` Grid.vue has NO `read_only` prop — governance needs permlevel-1 + a validate hook in `tatva_connect` (custom app, not yet built).
-- `disable_document_sharing=1` does NOT stop the `lead_owner` auto-DocShare (owner-share leak).
-
-## What's NOT in this folder (and that's intentional)
-
-- **Code** — lives in `/Users/dhspl/dummy/scripts/` (vault has a copy under `scripts/`) and in the MyTatvaCore repo.
-- **Backups** — DB dumps live on the VM, not in the vault.
-- **Hourly memory** — operational state lives in the auto-memory system at `~/.claude/projects/-Users-dhspl-dummy/memory/`. A snapshot of the memory as-of-2026-06-01 is in `99-archive/memory-snapshot-2026-06-01/`.
-
-## When you're about to do something risky
-
-Examples: change a doctype's field, run a migration script, restart the backend, edit a Server Script, touch the Docker compose file, force-push, drop a table.
-
-→ Pause. Explain in 3-5 bullets. Wait for user confirmation. Even if "the right thing to do" feels obvious. The user has been burned by autonomous edits.
-
-See also: [[README]] (human-facing index of this folder).
+| Dev bench, build/test loop, git, ship-to-prod, gotchas | vault `07-deploy-mechanics/` |
+| Project strategy, data model, live state, runbooks | vault `Frappe Migration 101/CLAUDE.md` (primer) |
+| WATI integration (authoritative) | vault `05-integrations/01-wati-whatsapp` · code `tatva_connect/wati/README.md` |
+| Acefone telephony (authoritative) | vault `05-integrations/02-acefone-telephony` · code `tatva_connect/acefone/README.md` |
+| Fresh-VM prod rebuild | vault `01-infrastructure/06-redeploy-end-to-end` |
