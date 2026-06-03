@@ -98,3 +98,25 @@ def account_for_channel(channel_number, account_hint=None):
 
 	accounts = frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1}, pluck="name")
 	return accounts[0] if len(accounts) == 1 else None
+
+
+@frappe.whitelist()
+def lead_has_route(reference_doctype=None, reference_name=None):
+	"""Does a WATI account route to this lead? Reuses the SAME resolver used to
+	send (resolve_account_for_lead) — single source of truth. The WhatsApp tab/UI
+	gate calls this so it tracks routing rules automatically (no hardcoded group).
+
+	Fail-safe: any error (incl. an ambiguous/tie config that raises) returns
+	has_route=False — consistent with 'no route -> send blocked -> hide UI' — and
+	is logged, so a misconfiguration surfaces in Error Log rather than silently
+	showing WhatsApp on an unrouted lead.
+	"""
+	try:
+		if reference_doctype != "CRM Lead" or not reference_name:
+			return {"has_route": False, "account": None}
+		lead = frappe.get_cached_doc("CRM Lead", reference_name)
+		account = resolve_account_for_lead(lead)
+		return {"has_route": bool(account), "account": account}
+	except Exception:
+		frappe.log_error(title="WATI lead_has_route failed", message=frappe.get_traceback())
+		return {"has_route": False, "account": None}

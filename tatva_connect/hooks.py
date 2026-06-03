@@ -57,6 +57,10 @@ scheduler_events = {
 	},
 }
 
+# Ship the CRM Form Scripts (WATI send-template + WhatsApp UI gate) from their .js
+# source files on every migrate — keeps them version-controlled and in sync.
+after_migrate = ["tatva_connect.wati.seed_form_scripts.seed"]
+
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
