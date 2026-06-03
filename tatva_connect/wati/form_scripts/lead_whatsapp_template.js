@@ -11,17 +11,41 @@ function setupForm({ doc, $dialog, call, createToast }) {
   const notify = (title, ok) =>
     createToast({ title, icon: ok ? 'check' : 'x', iconClasses: ok ? 'text-green-600' : 'text-red-600' })
 
+  let refreshing = false
+  function showSpinner(on) {
+    const ID = 'wati-refresh-spinner'
+    let el = document.getElementById(ID)
+    if (on && !el) {
+      el = document.createElement('div')
+      el.id = ID
+      el.textContent = '⟳  Refreshing WhatsApp…'
+      // Design tokens first (frappe-ui CSS vars), hex only as a safety fallback.
+      el.style.cssText =
+        'position:fixed;bottom:16px;right:16px;z-index:9999;' +
+        'background:var(--surface-gray-7,#1f2937);color:var(--ink-white,#fff);' +
+        'padding:8px 14px;border-radius:8px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.2);'
+      document.body.appendChild(el)
+    } else if (!on && el) {
+      el.remove()
+    }
+  }
+
   async function refreshMessages() {
-    notify('Refreshing WhatsApp messages from WATI…', true)
+    if (refreshing) return // guard against double-clicks during the (latency-prone) call
+    refreshing = true
+    showSpinner(true)
     try {
       const res = await call('tatva_connect.api.whatsapp.refresh_messages_from_wati', {
         reference_doctype: doc.doctype, reference_name: doc.name,
       })
       notify('Synced ' + (res && res.count != null ? res.count : 0) + ' messages from WATI', true)
-      // Reload so the WhatsApp tab shows the reconciled thread.
-      setTimeout(() => window.location.reload(), 700)
+      // No page reload: refresh_messages_from_wati emits the `whatsapp_message`
+      // realtime event, so the open WhatsApp panel re-fetches the thread inline.
     } catch (e) {
       notify((e && e.message) || 'WhatsApp refresh failed', false)
+    } finally {
+      showSpinner(false)
+      refreshing = false
     }
   }
 

@@ -8,6 +8,7 @@ import json
 import re
 
 import frappe
+from frappe import _
 
 
 @frappe.whitelist()
@@ -141,6 +142,53 @@ def get_field_options(reference_doctype, reference_name):
 	return groups
 
 
+def _enforce_manual_template_cap(reference_doctype, reference_name):
+	"""Block a MANUAL template send that exceeds the per-number rate cap.
+
+	Scoped to THIS endpoint (the manual chat-box/picker path), so automated
+	WhatsApp Notification sends are never throttled — that's the abuse vector we
+	cap, no manual-vs-automated guessing needed. Counts prior Outgoing Template
+	rows on the same lead within each rolling window; an unset/<=0 cap disables
+	that window. See project_whatsapp_template_rate_cap.
+	"""
+	from frappe.utils import add_to_date, cint, now_datetime
+
+	now = now_datetime()
+	for field, default, hours in (("template_cap_per_hour", 5, 1), ("template_cap_per_day", 10, 24)):
+		# Read the raw Singles row, NOT get_single_value: a missing Int single casts
+		# to 0 there, which we'd wrongly read as "disabled". The raw value is None
+		# only when the field was never saved -> apply the default cap. An EXPLICIT
+		# "0" the operator saved means they disabled this window.
+		raw = frappe.db.get_value(
+			"Singles",
+			{"doctype": "Tatva Automation Settings", "field": field},
+			"value",
+			order_by=None,  # tabSingles has no `modified` column
+		)
+		cap = default if raw in (None, "") else cint(raw)
+		if cap <= 0:
+			continue
+		count = frappe.db.count(
+			"WhatsApp Message",
+			{
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"message_type": "Template",
+				"type": "Outgoing",
+				"creation": [">=", add_to_date(now, hours=-hours)],
+			},
+		)
+		if count >= cap:
+			window = _("hour") if hours == 1 else _("24 hours")
+			frappe.throw(
+				_(
+					"Template limit reached — {0} already sent to this patient in the last {1}. "
+					"Please wait before sending another, or send a template later."
+				).format(count, window),
+				title=_("WhatsApp template limit"),
+			)
+
+
 @frappe.whitelist()
 def send_template_with_params(reference_doctype, reference_name, template, to, body_param=None):
 	"""Send a template with the agent-filled variable values (body_param JSON).
@@ -151,6 +199,7 @@ def send_template_with_params(reference_doctype, reference_name, template, to, b
 	from crm.api.whatsapp import validate_access
 
 	validate_access(reference_doctype, reference_name)
+	_enforce_manual_template_cap(reference_doctype, reference_name)
 	doc = frappe.new_doc("WhatsApp Message")
 	doc.update(
 		{
@@ -181,6 +230,36 @@ _WATI_STATUS = {
 }
 _MEDIA_TYPES = {"text", "image", "video", "audio", "document"}
 _FALSY = (False, "false", "False", 0, "0", None, "")
+
+
+@frappe.whitelist()
+def whatsapp_window_state(reference_doctype, reference_name):
+	"""Is the WhatsApp 24-hour customer-service window OPEN for this record?
+
+	OPEN iff the customer sent an inbound WhatsApp message within the last 24h —
+	Meta's rule, and the canonical definition (WATI exposes no window flag). Drives
+	the UI: when CLOSED, the free-text input box is hidden and only template
+	messages may be sent; a new inbound reopens it. Read-only, fail-open-to-closed.
+	"""
+	from frappe.utils import add_to_date, get_datetime, now_datetime
+
+	from crm.api.whatsapp import validate_access
+
+	validate_access(reference_doctype, reference_name)
+	last = frappe.db.get_value(
+		"WhatsApp Message",
+		{"reference_doctype": reference_doctype, "reference_name": reference_name, "type": "Incoming"},
+		"creation",
+		order_by="creation desc",
+	)
+	if not last:
+		return {"open": False, "last_inbound": None, "expires_at": None}
+	expires = add_to_date(get_datetime(last), hours=24)
+	return {
+		"open": get_datetime(now_datetime()) < expires,
+		"last_inbound": str(last),
+		"expires_at": str(expires),
+	}
 
 
 def _row_from_wati_item(it, number, ref_doctype, ref_name):
@@ -309,4 +388,12 @@ def refresh_messages_from_wati(reference_doctype, reference_name):
 	for row in rows:
 		_insert_history_row(row)
 	frappe.db.commit()
+	# The reconcile uses direct DB writes (no controller events), so crm's
+	# WhatsApp panel never hears about the rebuilt thread. Emit the SAME realtime
+	# event crm publishes on WhatsApp Message.on_update -> the open panel re-fetches
+	# inline (whatsappMessages.reload()), so the UI needs no page reload.
+	frappe.publish_realtime(
+		"whatsapp_message",
+		{"reference_doctype": reference_doctype, "reference_name": reference_name},
+	)
 	return {"count": len(rows), "account": account_name}

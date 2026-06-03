@@ -13,6 +13,7 @@ import frappe
 SCRIPTS = [
 	("WATI Send Template (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_template.js"),
 	("WATI WhatsApp Gate (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_gate.js"),
+	("WATI WhatsApp Window (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_window.js"),
 ]
 
 

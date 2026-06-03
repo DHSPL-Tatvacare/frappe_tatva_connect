@@ -6,7 +6,10 @@
  "engine": "InnoDB",
  "field_order": [
   "intro",
-  "enable_followup_task_automation"
+  "enable_followup_task_automation",
+  "section_whatsapp_caps",
+  "template_cap_per_hour",
+  "template_cap_per_day"
  ],
  "fields": [
   {
@@ -20,6 +23,25 @@
    "fieldname": "enable_followup_task_automation",
    "fieldtype": "Check",
    "label": "Enable Follow-up Task Automation (WhatsApp → task)"
+  },
+  {
+   "fieldname": "section_whatsapp_caps",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Template Send Caps (manual rep sends)"
+  },
+  {
+   "default": "5",
+   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling hour. 0 = no hourly cap. Automated notifications are never capped.",
+   "fieldname": "template_cap_per_hour",
+   "fieldtype": "Int",
+   "label": "Template Cap / Hour / Number"
+  },
+  {
+   "default": "10",
+   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling day. 0 = no daily cap.",
+   "fieldname": "template_cap_per_day",
+   "fieldtype": "Int",
+   "label": "Template Cap / Day / Number"
   }
  ],
  "index_web_pages_for_search": 1,
