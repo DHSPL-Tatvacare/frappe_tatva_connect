@@ -12,6 +12,10 @@ FOLLOWUP_DUE_HOURS = 4
 
 
 def on_inbound_message(doc, method=None):
+	# Master switch — OFF by default (esp. in prod so it never fires on a historical
+	# backfill). Flip Tatva Automation Settings → Enable Follow-up Task Automation ON.
+	if not frappe.db.get_single_value("Tatva Automation Settings", "enable_followup_task_automation"):
+		return
 	if (doc.type or "") != "Incoming":
 		return
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_name:

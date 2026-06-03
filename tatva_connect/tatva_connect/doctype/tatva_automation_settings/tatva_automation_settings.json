@@ -1,0 +1,48 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "intro",
+  "enable_followup_task_automation"
+ ],
+ "fields": [
+  {
+   "fieldname": "intro",
+   "fieldtype": "HTML",
+   "options": "<p>Master switches for tatva_connect event automations. <b>Keep OFF in production until the historical-lead migration is complete</b>, so automations don't fire on backfilled data. Turn ON afterwards.</p>"
+  },
+  {
+   "default": "0",
+   "description": "When ON, an inbound WhatsApp message (linked to a lead) auto-creates one open follow-up task for the lead's owner. Default OFF.",
+   "fieldname": "enable_followup_task_automation",
+   "fieldtype": "Check",
+   "label": "Enable Follow-up Task Automation (WhatsApp → task)"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Tatva Automation Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
