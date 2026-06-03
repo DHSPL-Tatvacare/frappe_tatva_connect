@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "zudoku dev",
+    "dev": "DOCS_ENV=local zudoku dev",
     "build": "zudoku build"
   },
   "dependencies": {
