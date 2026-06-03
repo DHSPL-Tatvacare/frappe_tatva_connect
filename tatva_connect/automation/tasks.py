@@ -5,6 +5,26 @@ from frappe.utils import add_to_date, cint, now_datetime
 
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
+CALL_LEAD_TYPE = "Call Lead"
+_SWITCH = ("Tatva Automation Settings", "enable_followup_task_automation")
+
+
+def on_lead_assignment(doc, method=None):
+	"""ToDo.after_insert — when a CRM Lead is assigned to an agent, raise ONE open
+	'Call Lead' task for that agent (the on-lead-create follow-up). Fires after the
+	Assignment Rule sets the owner; gated by the master switch (OFF by default)."""
+	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
+		return
+	if not frappe.db.get_single_value(*_SWITCH):
+		return
+	lead_name = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_name") or doc.reference_name
+	create_followup_task(
+		lead=doc.reference_name,
+		task_type=CALL_LEAD_TYPE,
+		due_in_hours=24,
+		assigned_to=doc.allocated_to,
+		title=_("Call lead — {0}").format(lead_name),
+	)
 
 
 def seed_checklist(doc, method=None):

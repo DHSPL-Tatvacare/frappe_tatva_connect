@@ -33,6 +33,10 @@ def process_submission(doc, method=None):
 	if not cfg.enabled:
 		return
 
+	# Public form: never surface internal notices (e.g. assignment's "Shared with
+	# … Read access") to the patient. Request-scoped; auto-resets next request.
+	frappe.flags.mute_messages = True
+
 	mobile = _normalize_phone(doc.get("phone"))
 	name = frappe.db.get_value("CRM Lead", {"mobile_no": mobile}, "name")
 	lead = frappe.get_doc("CRM Lead", name) if name else frappe.new_doc("CRM Lead")

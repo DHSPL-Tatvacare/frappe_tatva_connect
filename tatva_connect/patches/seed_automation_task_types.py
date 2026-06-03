@@ -1,7 +1,7 @@
 """Seed the CRM Task Type records the automations reference by name."""
 import frappe
 
-SEED_TYPES = ["WhatsApp Follow-up"]
+SEED_TYPES = ["WhatsApp Follow-up", "Call Lead"]
 
 
 def execute():

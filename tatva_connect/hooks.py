@@ -47,6 +47,10 @@ doc_events = {
 	"CRM Enrolment Submission": {
 		"after_insert": "tatva_connect.automation.intake.process_submission",
 	},
+	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up).
+	"ToDo": {
+		"after_insert": "tatva_connect.automation.tasks.on_lead_assignment",
+	},
 }
 
 # Safety-net: re-sync every WATI account's templates every 6 hours so the local
