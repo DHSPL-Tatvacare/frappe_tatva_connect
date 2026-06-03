@@ -30,5 +30,37 @@
   "property_type": "Text",
   "row_name": null,
   "value": ""
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Lead",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_previous_program",
+  "is_system_generated": 1,
+  "modified": "2026-06-04 02:36:20.434223",
+  "module": null,
+  "name": "CRM Lead-custom_previous_program-ignore_user_permissions",
+  "property": "ignore_user_permissions",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Lead",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_origin_vertical",
+  "is_system_generated": 1,
+  "modified": "2026-06-04 02:36:20.617960",
+  "module": null,
+  "name": "CRM Lead-custom_origin_vertical-ignore_user_permissions",
+  "property": "ignore_user_permissions",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]

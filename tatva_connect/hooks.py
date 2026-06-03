@@ -96,6 +96,12 @@ fixtures = [
 	{"dt": "Property Setter", "filters": [["name", "in", [
 		"CRM Plan Profile-nivo_indication-fieldtype",
 		"CRM Plan Profile-nivo_indication-options",
+		# Scoping fix: exclude the secondary (history) Link fields from User Permission
+		# matching, so a Program/Vertical-scoped user is filtered by the CURRENT field
+		# only. Without this, a blank/different previous_program/origin_vertical fails the
+		# match under strict perms and HIDES valid in-scope leads. See docs/plans.
+		"CRM Lead-custom_previous_program-ignore_user_permissions",
+		"CRM Lead-custom_origin_vertical-ignore_user_permissions",
 	]]]},
 ]
 
