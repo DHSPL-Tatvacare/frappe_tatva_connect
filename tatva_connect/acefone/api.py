@@ -90,13 +90,15 @@ def click_to_call(account, destination_number, agent_number, caller_id=None, cus
 	NO synchronous call id; `custom_identifier` (we pass the CRM Call Log name)
 	is echoed back in the CDR webhook for deterministic correlation.
 	"""
+	# Acefone wants BARE DIGITS — a leading "+" is rejected ("Unable to process this
+	# request"). Normalize all numbers here (the single choke point).
 	body = {
-		"agent_number": str(agent_number),
-		"destination_number": str(destination_number),
+		"agent_number": normalize_number(agent_number),
+		"destination_number": normalize_number(destination_number),
 		"async": "1",
 	}
 	if caller_id:
-		body["caller_id"] = str(caller_id)
+		body["caller_id"] = normalize_number(caller_id)
 	if custom_identifier:
 		body["custom_identifier"] = str(custom_identifier)
 	return _post(account, "click_to_call", body)
