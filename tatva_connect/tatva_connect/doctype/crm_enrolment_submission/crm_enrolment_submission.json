@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "intake_form",
+  "patient_name",
+  "phone",
+  "city",
+  "providers_section",
+  "doctor",
+  "doctor_manual",
+  "hospital",
+  "hospital_manual",
+  "drug_section",
+  "nivolumab_dosage",
+  "nivolumab_indication",
+  "nivolumab_indication_manual",
+  "remarks",
+  "prescription",
+  "result_section",
+  "lead",
+  "processed",
+  "error"
+ ],
+ "fields": [
+  {"fieldname": "intake_form", "fieldtype": "Link", "label": "Intake Form", "options": "CRM Intake Form", "reqd": 1, "hidden": 1},
+  {"fieldname": "patient_name", "fieldtype": "Data", "label": "Patient Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "phone", "fieldtype": "Data", "label": "Patient Phone Number", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "city", "fieldtype": "Data", "label": "City"},
+
+  {"fieldname": "providers_section", "fieldtype": "Section Break", "label": "Doctor & Hospital"},
+  {"fieldname": "doctor", "fieldtype": "Link", "label": "Doctor", "options": "CRM Doctor", "description": "Search and pick. If not listed, leave blank and type it below."},
+  {"fieldname": "doctor_manual", "fieldtype": "Data", "label": "Doctor (not listed) — type name", "depends_on": "eval:!doc.doctor", "mandatory_depends_on": "eval:!doc.doctor"},
+  {"fieldname": "hospital", "fieldtype": "Link", "label": "Hospital", "options": "CRM Hospital", "description": "Search and pick. If not listed, leave blank and type it below."},
+  {"fieldname": "hospital_manual", "fieldtype": "Data", "label": "Hospital (not listed) — type name", "depends_on": "eval:!doc.hospital", "mandatory_depends_on": "eval:!doc.hospital"},
+
+  {"fieldname": "drug_section", "fieldtype": "Section Break", "label": "Nivolumab"},
+  {"fieldname": "nivolumab_dosage", "fieldtype": "Data", "label": "Nivolumab Dosage", "reqd": 1},
+  {"fieldname": "nivolumab_indication", "fieldtype": "Select", "label": "Nivolumab Indication", "reqd": 1, "options": "\nNSCLC\nGI\nRCC\nSCCHN\nUrothelial Carcinoma\nMelanoma\nCHL\nmCRC\nGynecology cancer\nBreast Cancer\nSarcoma\nHCC\nNeuroendocrine Cancer\nOthers"},
+  {"fieldname": "nivolumab_indication_manual", "fieldtype": "Data", "label": "Indication (if Others) — specify", "depends_on": "eval:doc.nivolumab_indication=='Others'", "mandatory_depends_on": "eval:doc.nivolumab_indication=='Others'"},
+  {"fieldname": "remarks", "fieldtype": "Small Text", "label": "Remarks", "reqd": 1},
+  {"fieldname": "prescription", "fieldtype": "Attach", "label": "Upload Prescription"},
+
+  {"fieldname": "result_section", "fieldtype": "Section Break", "label": "Processing (system)"},
+  {"fieldname": "lead", "fieldtype": "Link", "label": "CRM Lead", "options": "CRM Lead", "read_only": 1},
+  {"fieldname": "processed", "fieldtype": "Check", "label": "Processed", "read_only": 1},
+  {"fieldname": "error", "fieldtype": "Small Text", "label": "Error", "read_only": 1}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Enrolment Submission",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

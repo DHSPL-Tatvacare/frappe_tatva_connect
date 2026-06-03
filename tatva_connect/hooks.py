@@ -43,6 +43,10 @@ doc_events = {
 	"WhatsApp Message": {
 		"after_insert": "tatva_connect.automation.whatsapp.on_inbound_message",
 	},
+	# Generic web-intake: a Web Form lands a submission row -> upsert a routed lead.
+	"CRM Enrolment Submission": {
+		"after_insert": "tatva_connect.automation.intake.process_submission",
+	},
 }
 
 # Safety-net: re-sync every WATI account's templates every 6 hours so the local
@@ -73,6 +77,8 @@ fixtures = [
 			]
 		],
 	},
+	# The public enrolment Web Form ships as a fixture (carries its fields).
+	{"dt": "Web Form", "filters": [["name", "=", "nivolumab-patient-enrolment"]]},
 ]
 
 # Apps
