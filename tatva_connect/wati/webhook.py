@@ -112,7 +112,16 @@ def webhook(**kwargs):
 
 
 def process_event(payload: dict, account_hint=None):
-	"""Background worker: persist one CRM-relevant event."""
+	"""Background worker: persist one CRM-relevant event.
+
+	Runs as a system user: the webhook is a guest endpoint, but persistence (and any
+	downstream automation like assigning a follow-up task) must run privileged —
+	otherwise native CRM Task assignment hits a Guest PermissionError. The token +
+	membership filter in webhook() already gate what reaches here.
+	"""
+	if frappe.session.user == "Guest":
+		frappe.set_user("Administrator")
+
 	if payload.get("eventType") == "message" and _falsy(payload.get("owner")):
 		_ingest_inbound(payload, account_hint)
 	elif payload.get("localMessageId"):
