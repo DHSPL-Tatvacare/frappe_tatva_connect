@@ -2,6 +2,22 @@
 import frappe
 from frappe import _
 
+from tatva_connect.wati.phone import to_e164
+
+# Phone-type fields on CRM Lead we keep canonical (+E.164). mobile_no is the dedup +
+# WhatsApp-inbound match key; the rest are normalized for consistency.
+PHONE_FIELDS = ("mobile_no", "phone", "custom_alternate_number", "custom_caregiver_phone")
+
+
+def normalize_lead_phones(doc, method=None):
+	"""Canonicalise phone fields to +E.164 on every write (validate), so dedup and
+	WhatsApp-inbound lookup are reliable no matter how a writer formatted the number.
+	Runs BEFORE dedup_guard (hooks.py orders them)."""
+	for f in PHONE_FIELDS:
+		val = doc.get(f)
+		if val:
+			doc.set(f, to_e164(val))
+
 
 def dedup_guard(doc, method=None):
 	"""Block a second CRM Lead with the same ``mobile_no`` — platform-wide dedup.
@@ -16,15 +32,16 @@ def dedup_guard(doc, method=None):
 	if not doc.mobile_no:
 		return
 
+	mobile = to_e164(doc.mobile_no)  # compare on the canonical form (stored leads are canonical)
 	existing = frappe.db.get_value(
 		"CRM Lead",
-		{"mobile_no": doc.mobile_no, "name": ["!=", doc.name or ""]},
+		{"mobile_no": mobile, "name": ["!=", doc.name or ""]},
 		"name",
 	)
 	if existing:
 		frappe.throw(
 			_("A lead with mobile number {0} already exists ({1}). Update that lead instead.").format(
-				doc.mobile_no, existing
+				mobile, existing
 			),
 			title=_("Duplicate lead"),
 		)

@@ -28,11 +28,20 @@ def resolve_account_for_lead(lead):
 	group = lead.get("custom_psp_group")
 	vertical = lead.get("custom_vertical")
 
+	# Only route to a WATI account that is Active. This is the per-account kill-switch:
+	# set an account Inactive and its leads are blocked (never sent through a dead
+	# tenant) rather than silently delivered.
+	active = set(
+		frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1, "status": "Active"}, pluck="name")
+	)
+
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(
 		"WATI Account Routing",
 		fields=["whatsapp_account", "program", "psp_group", "vertical"],
 	):
+		if rule.whatsapp_account not in active:
+			continue
 		# Every axis the rule specifies must match the lead.
 		if rule.program and rule.program != program:
 			continue
@@ -61,11 +70,19 @@ def resolve_account_for_lead(lead):
 
 
 def resolve_for_message(msg):
-	"""Resolve the account for an outgoing WhatsApp Message linked to a CRM Lead."""
-	if msg.reference_doctype != "CRM Lead" or not msg.reference_name:
+	"""Resolve the account for an outgoing WhatsApp Message linked to a CRM Lead or
+	CRM Deal (a Deal routes via its originating lead)."""
+	dt, dn = msg.reference_doctype, msg.reference_name
+	if not dn:
 		return None
-	lead = frappe.get_cached_doc("CRM Lead", msg.reference_name)
-	return resolve_account_for_lead(lead)
+	if dt == "CRM Deal":
+		lead_name = frappe.db.get_value("CRM Deal", dn, "lead")
+		if not lead_name:
+			return None
+		return resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", lead_name))
+	if dt == "CRM Lead":
+		return resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", dn))
+	return None
 
 
 def account_for_channel(channel_number, account_hint=None):

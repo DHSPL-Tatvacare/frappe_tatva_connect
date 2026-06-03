@@ -31,7 +31,11 @@ override_whitelisted_methods = {
 # Providers only persist their own records; every side-effect hangs off here.
 doc_events = {
 	"CRM Lead": {
-		"before_insert": "tatva_connect.automation.leads.dedup_guard",
+		# canonicalise phones (+E.164) first, then dedup on the canonical value
+		"validate": [
+			"tatva_connect.automation.leads.normalize_lead_phones",
+			"tatva_connect.automation.leads.dedup_guard",
+		],
 	},
 	"CRM Task": {
 		# seed first (fills the checklist from the template), then enforce (gates Done)

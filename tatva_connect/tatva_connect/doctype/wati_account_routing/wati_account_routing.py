@@ -8,6 +8,17 @@ from frappe.model.document import Document
 
 class WATIAccountRouting(Document):
 	def validate(self):
+		# No global default: a rule must scope at least one axis. An all-blank rule
+		# would match every lead (score 0) and silently become a catch-all.
+		if not (self.vertical or self.psp_group or self.program):
+			frappe.throw(
+				_(
+					"Set at least one of Product Line / Group / Program. An all-blank rule "
+					"would act as a global default, which is not allowed."
+				),
+				title=_("Invalid routing rule"),
+			)
+
 		# Two rules with the IDENTICAL (vertical, group, program) triple are equally
 		# specific and could both match a lead -> ambiguous routing. Block the
 		# duplicate at the source so resolution stays deterministic.

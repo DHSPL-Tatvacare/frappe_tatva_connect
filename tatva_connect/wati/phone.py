@@ -10,10 +10,16 @@ import frappe
 from tatva_connect.wati.api import normalize_number
 
 
-def to_e164(number: str) -> str:
-	"""Canonical stored form: '+<digits>' (strip hyphens/spaces, keep one '+')."""
+def to_e164(number: str, default_cc: str = "91") -> str:
+	"""Canonical stored form: '+<digits>'. Strips hyphens/spaces; a bare 10-digit
+	Indian mobile gets the country code prepended, so 9876543210, +91-9876543210 and
+	919876543210 all become +919876543210. Empty -> returned unchanged."""
 	digits = normalize_number(number)
-	return ("+" + digits) if digits else (number or "")
+	if not digits:
+		return number or ""
+	if len(digits) == 10:
+		digits = default_cc + digits
+	return "+" + digits
 
 
 def sweep(doctype: str = "CRM Lead", field: str = "mobile_no") -> dict:
