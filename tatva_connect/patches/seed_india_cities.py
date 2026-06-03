@@ -1,8 +1,8 @@
-"""Seed the CRM City master from the bundled India city list (dr5hn, ODbL).
+"""Seed the CRM City master from the bundled India city+state list (dr5hn, ODbL).
 
-One-time bulk load so the City picker is populated. Idempotent — only inserts
-names not already present. New cities also grow organically via the form's
-"city isn't listed" manual path.
+Each entry is [city_name, state]. State matches the form's State options exactly, so
+the cascade (pick State -> search its cities) works. Idempotent: refreshes state on
+existing rows and inserts new ones.
 """
 import json
 import os
@@ -15,15 +15,21 @@ def execute():
 	if not os.path.exists(path):
 		return
 	with open(path) as f:
-		cities = json.load(f)
-	existing = set(frappe.get_all("CRM City", pluck="name"))
+		rows = json.load(f)
 	now = frappe.utils.now()
-	rows = [[c, c, "Administrator", "Administrator", now, now] for c in cities if c not in existing]
-	if rows:
+	existing = {c.name: c.state for c in frappe.get_all("CRM City", fields=["name", "state"])}
+	to_insert = []
+	for city, state in rows:
+		if city in existing:
+			if existing[city] != state:
+				frappe.db.set_value("CRM City", city, "state", state, update_modified=False)
+		else:
+			to_insert.append([city, city, state, "Administrator", "Administrator", now, now])
+	if to_insert:
 		frappe.db.bulk_insert(
 			"CRM City",
-			fields=["name", "city_name", "owner", "modified_by", "creation", "modified"],
-			values=rows,
+			fields=["name", "city_name", "state", "owner", "modified_by", "creation", "modified"],
+			values=to_insert,
 			ignore_duplicates=True,
 		)
-		frappe.db.commit()
+	frappe.db.commit()
