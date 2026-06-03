@@ -29,7 +29,9 @@ def list_automations(app=None, doctype=None, include_disabled=0):
 	# --- code layer (hooks) ---
 	doc_events = []
 	for dt, events in (frappe.get_hooks("doc_events") or {}).items():
-		if doctype and dt != doctype:
+		# When filtering by a doctype, keep the "*" wildcard too — those handlers
+		# (assignment rule, workflow, etc.) DO fire on that doctype.
+		if doctype and dt != doctype and dt != "*":
 			continue
 		if not isinstance(events, dict):
 			continue

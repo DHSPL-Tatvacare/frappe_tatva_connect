@@ -45,7 +45,11 @@ def enforce_checklist(doc, method=None):
 def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None):
 	"""Idempotent follow-up task. Throttle: ONE open task per lead per type — if one
 	is already open, return it untouched. Otherwise create it (assigned + due in
-	`due_in_hours`). Also the method the WhatsApp inbound event calls."""
+	`due_in_hours`). Also the method the WhatsApp inbound event calls.
+
+	Best-effort throttle: the check-then-insert isn't locked, so two near-simultaneous
+	inbound messages for the same lead could rarely create two tasks. Acceptable — a
+	duplicate follow-up is merely noisy, never wrong."""
 	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
 
