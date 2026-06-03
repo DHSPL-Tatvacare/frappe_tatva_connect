@@ -26,7 +26,6 @@
   "nivolumab_dosage",
   "nivolumab_dosage_manual",
   "nivolumab_indication",
-  "nivolumab_indication_manual",
   "remarks",
   "prescription",
   "result_section",
@@ -56,7 +55,6 @@
   {"fieldname": "nivolumab_dosage", "fieldtype": "Select", "label": "Nivolumab Dosage", "reqd": 1, "options": "\n40 mg\n100 mg\nOthers"},
   {"fieldname": "nivolumab_dosage_manual", "fieldtype": "Data", "label": "Dosage (if Others) — specify", "depends_on": "eval:doc.nivolumab_dosage=='Others'", "mandatory_depends_on": "eval:doc.nivolumab_dosage=='Others'"},
   {"fieldname": "nivolumab_indication", "fieldtype": "Select", "label": "Nivolumab Indication", "reqd": 1, "options": "\nNSCLC\nGI\nRCC\nSCCHN\nUrothelial Carcinoma\nMelanoma\nCHL\nmCRC\nGynecology cancer\nBreast Cancer\nSarcoma\nHCC\nNeuroendocrine Cancer\nOthers"},
-  {"fieldname": "nivolumab_indication_manual", "fieldtype": "Data", "label": "Indication (if Others) — specify", "depends_on": "eval:doc.nivolumab_indication=='Others'", "mandatory_depends_on": "eval:doc.nivolumab_indication=='Others'"},
   {"fieldname": "remarks", "fieldtype": "Small Text", "label": "Remarks", "reqd": 1},
   {"fieldname": "prescription", "fieldtype": "Attach", "label": "Upload Prescription"},
 

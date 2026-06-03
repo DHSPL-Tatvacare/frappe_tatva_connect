@@ -16,7 +16,7 @@ MAPPINGS = [
 	{"source_field": "doctor", "manual_field": "doctor_manual", "master_doctype": "CRM Doctor", "target": "care:doctor_name"},
 	{"source_field": "hospital", "manual_field": "hospital_manual", "master_doctype": "CRM Hospital", "target": "care:hospital_name"},
 	{"source_field": "nivolumab_dosage", "manual_field": "nivolumab_dosage_manual", "target": "plan:nivo_dosage"},
-	{"source_field": "nivolumab_indication", "manual_field": "nivolumab_indication_manual", "target": "plan:nivo_indication"},
+	{"source_field": "nivolumab_indication", "target": "plan:nivo_indication"},
 	{"source_field": "remarks", "target": "note:Enrolment remarks"},
 ]
 
