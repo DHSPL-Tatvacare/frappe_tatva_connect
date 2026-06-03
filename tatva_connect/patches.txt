@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 tatva_connect.patches.add_whatsapp_message_id_unique_index
 tatva_connect.patches.add_acefone_telephony_medium
+tatva_connect.patches.seed_automation_task_types

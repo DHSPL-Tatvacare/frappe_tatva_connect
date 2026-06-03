@@ -17,3 +17,6 @@ __pycache__/
 
 # local dev bench (frappe_docker) — never commit
 .devbench/
+
+# internal planning docs — kept local, NOT in the public repo
+docs/

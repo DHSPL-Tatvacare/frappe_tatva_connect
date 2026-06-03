@@ -27,6 +27,24 @@ override_whitelisted_methods = {
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.acefone.bridge.get_call_log",
 }
 
+# Event-driven automations (the single home — see tatva_connect/automation/).
+# Providers only persist their own records; every side-effect hangs off here.
+doc_events = {
+	"CRM Lead": {
+		"before_insert": "tatva_connect.automation.leads.dedup_guard",
+	},
+	"CRM Task": {
+		# seed first (fills the checklist from the template), then enforce (gates Done)
+		"validate": [
+			"tatva_connect.automation.tasks.seed_checklist",
+			"tatva_connect.automation.tasks.enforce_checklist",
+		],
+	},
+	"WhatsApp Message": {
+		"after_insert": "tatva_connect.automation.whatsapp.on_inbound_message",
+	},
+}
+
 # Safety-net: re-sync every WATI account's templates every 6 hours so the local
 # mirror is almost always current (manual "Sync from WATI" stays real-time).
 scheduler_events = {
@@ -49,6 +67,8 @@ fixtures = [
 					"WhatsApp Account-custom_wati_channel_number",
 					"CRM Telephony Agent-acefone_number",
 					"CRM Call Log-custom_acefone_account",
+					"CRM Task-custom_task_type",
+					"CRM Task-custom_checklist",
 				],
 			]
 		],
