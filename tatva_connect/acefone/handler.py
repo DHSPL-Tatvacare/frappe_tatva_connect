@@ -111,7 +111,10 @@ def _process(payload: dict, direction: str, completed: bool):
 	"""Create or update one CRM Call Log row from an Acefone CDR payload."""
 	frappe.publish_realtime("acefone_call", payload)
 
-	call_id = payload.get("uuid") or payload.get("call_id")
+	# Acefone's `call_id` is STABLE across every trigger of one call ("tracks the
+	# different triggers for a particular call"); `uuid` VARIES per leg/connection.
+	# So key on call_id first for idempotency — a transferred call stays one row.
+	call_id = payload.get("call_id") or payload.get("uuid")
 	customer_number = (
 		payload.get("customer_number")
 		or payload.get("customer_number_with_prefix")

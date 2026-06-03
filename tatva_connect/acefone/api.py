@@ -16,10 +16,11 @@ call id), so correlation back to a CRM Call Log row is carried via
 """
 import json
 import re
+from urllib.parse import urlencode
 
 import frappe
 from frappe import _
-from frappe.integrations.utils import make_post_request
+from frappe.integrations.utils import make_get_request, make_post_request
 
 API_VERSION = "v1"
 SETTINGS = "Acefone Settings"
@@ -102,3 +103,42 @@ def click_to_call(account, destination_number, agent_number, caller_id=None, cus
 	if custom_identifier:
 		body["custom_identifier"] = str(custom_identifier)
 	return _post(account, "click_to_call", body)
+
+
+def _get(account, endpoint: str, params: dict) -> dict:
+	"""GET from Acefone (per-account), always returning a parsed body.
+
+	Mirrors `_post`: never raise on a non-2xx — surface Acefone's error body so the
+	reconcile logs a clean message instead of a 500.
+	"""
+	query = urlencode({k: v for k, v in (params or {}).items() if v not in (None, "")})
+	url = f"{base_url_of(account)}/{API_VERSION}/{endpoint.lstrip('/')}"
+	if query:
+		url = f"{url}?{query}"
+	try:
+		return make_get_request(url, headers=_headers(account))
+	except Exception as e:
+		resp = getattr(frappe.flags, "integration_request", None)
+		if resp is not None:
+			try:
+				return resp.json()
+			except Exception:
+				return {"success": False, "message": (getattr(resp, "text", "") or str(e))[:400]}
+		return {"success": False, "message": str(e)[:400]}
+
+
+def get_call_report(account, from_date=None, to_date=None, page=1, limit=100, **filters) -> dict:
+	"""GET /v1/call-report on `account` — the authoritative PULL source for calls.
+
+	Each record carries `recording_file_link` (the recording URL) and `unique_id`
+	(the call's unique id), plus `call_hint` (direction), `source`/`destination`,
+	`call_answered_by`, `status`, and timestamps. Filterable by from_date/to_date,
+	`call_id`, `did`, `dest_num`, `call_status`; paginated (`page`, `limit`).
+
+	Dates are passed through verbatim — the caller formats them to Acefone's
+	expected 'YYYY-MM-DD HH:MM:SS'. Returns Acefone's parsed body (shape pinned on
+	the first live capture — see reconcile.py).
+	"""
+	params = {"from_date": from_date, "to_date": to_date, "page": page, "limit": limit}
+	params.update(filters)
+	return _get(account, "call-report", params)
