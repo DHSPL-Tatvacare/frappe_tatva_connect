@@ -74,6 +74,7 @@ Packaging rules: scaffold with `bench new-app` (never hand-build the skeleton); 
    - **Docs** (`api-docs/`) → fast file push (`./api-docs/deploy-docs.sh` → sites volume → nginx `/docs`). Changes often; **never** rides the image rebuild.
 3. **Git:** feature branch → fast-forward merge into `main` → push. Pushing to GitHub does **not** touch prod. Commit only when a slice is locally proven (or when asked).
 4. **No prod-downtime drama** unless it's live to customers (VPN-internal today).
+5. **Only clean code + verified config promote — dev litter NEVER moves.** The dev bench is a scratchpad: it accumulates test users, throwaway leads, demo doctypes, ad-hoc patches. **None of that is a deploy artifact.** What moves to prod is exactly (a) the committed repo (code + doctypes + fixtures + patches) and (b) the explicit, documented config in the cutover plan (`docs/plans/`). If something works on dev but isn't in the repo or the plan, it does **not** exist for prod — re-create it cleanly from the plan, never copy the bench. This holds for this push and every future one.
 
 ---
 

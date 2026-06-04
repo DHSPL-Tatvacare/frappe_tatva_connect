@@ -111,11 +111,11 @@ def _lead_axes(doc):
 		v = frappe.db.get_value(
 			"CRM Lead",
 			doc.reference_docname,
-			["custom_vertical", "custom_psp_group", "custom_current_program"],
+			["custom_vertical", "custom_group", "custom_current_program"],
 			as_dict=True,
 		)
 		if v:
-			return (v.custom_vertical or ""), (v.custom_psp_group or ""), (v.custom_current_program or "")
+			return (v.custom_vertical or ""), (v.custom_group or ""), (v.custom_current_program or "")
 	return "", "", ""
 
 

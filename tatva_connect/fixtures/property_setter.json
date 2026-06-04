@@ -62,5 +62,21 @@
   "property_type": "Check",
   "row_name": null,
   "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Lead",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_current_program",
+  "is_system_generated": 1,
+  "modified": "2026-06-04 03:00:00.000000",
+  "module": null,
+  "name": "CRM Lead-custom_current_program-permlevel",
+  "property": "permlevel",
+  "property_type": "Int",
+  "row_name": null,
+  "value": "0"
  }
 ]

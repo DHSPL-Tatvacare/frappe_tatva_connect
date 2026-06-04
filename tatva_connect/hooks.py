@@ -102,6 +102,9 @@ fixtures = [
 		# match under strict perms and HIDES valid in-scope leads. See docs/plans.
 		"CRM Lead-custom_previous_program-ignore_user_permissions",
 		"CRM Lead-custom_origin_vertical-ignore_user_permissions",
+		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0).
+		# Vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
+		"CRM Lead-custom_current_program-permlevel",
 	]]]},
 ]
 

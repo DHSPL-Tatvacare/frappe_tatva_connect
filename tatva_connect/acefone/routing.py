@@ -25,7 +25,7 @@ def resolve_account_for_lead(lead):
 	ambiguous config — raise rather than pick one silently.
 	"""
 	program = lead.get("custom_current_program")
-	group = lead.get("custom_psp_group")
+	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
 
 	best, best_score, tie = None, -1, False
@@ -78,7 +78,7 @@ def resolve_for_reference(reference_doctype, reference_name):
 	if reference_doctype == "CRM Deal":
 		deal = frappe.get_cached_doc("CRM Deal", reference_name)
 		# A Deal may carry the taxonomy directly, or via a linked lead.
-		if deal.get("custom_vertical") or deal.get("custom_psp_group") or deal.get(
+		if deal.get("custom_vertical") or deal.get("custom_group") or deal.get(
 			"custom_current_program"
 		):
 			return resolve_account_for_lead(deal)

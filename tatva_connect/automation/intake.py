@@ -15,7 +15,7 @@ _TABLE = {
 	"care": "custom_care_providers_profile",
 	"lab": "custom_lab_profile",
 }
-_ROUTING = ("source", "custom_vertical", "custom_psp_group", "custom_current_program", "custom_origin_vertical")
+_ROUTING = ("source", "custom_vertical", "custom_group", "custom_current_program", "custom_origin_vertical")
 
 
 def _normalize_phone(raw: str) -> str:

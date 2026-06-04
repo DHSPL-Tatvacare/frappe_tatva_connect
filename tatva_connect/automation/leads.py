@@ -20,12 +20,15 @@ def normalize_lead_phones(doc, method=None):
 
 
 def dedup_guard(doc, method=None):
-	"""Block a second CRM Lead with the same ``mobile_no`` — platform-wide dedup.
+	"""Block a duplicate CRM Lead on the same product line — per-line dedup.
 
-	``mobile_no`` is the permanent dedup key. This fires on EVERY insert path
-	(REST POST, the CRM "Create Lead" modal, imports, the intake Web Form). The
-	``upsert_lead_by_phone`` endpoint finds-or-updates an existing number first,
-	so it only ever inserts a genuinely new number and never trips this guard.
+	The dedup anchor is ``mobile_no + custom_vertical + custom_group``: one lead =
+	one patient on one product-line+group. The SAME phone on a DIFFERENT line/group
+	is a separate lead by design, so the guard only trips when all three match.
+
+	Fires on EVERY insert path (REST POST, the CRM "Create Lead" modal, imports,
+	the intake Web Form). The ``lead_create`` endpoint finds-or-updates an existing
+	(phone, line, group) lead first, so a re-send never trips this guard.
 
 	No mobile_no -> nothing to dedup (some leads are email/name only).
 	"""
@@ -35,13 +38,19 @@ def dedup_guard(doc, method=None):
 	mobile = to_e164(doc.mobile_no)  # compare on the canonical form (stored leads are canonical)
 	existing = frappe.db.get_value(
 		"CRM Lead",
-		{"mobile_no": mobile, "name": ["!=", doc.name or ""]},
+		{
+			"mobile_no": mobile,
+			"custom_vertical": doc.custom_vertical,
+			"custom_group": doc.custom_group,
+			"name": ["!=", doc.name or ""],
+		},
 		"name",
 	)
 	if existing:
 		frappe.throw(
-			_("A lead with mobile number {0} already exists ({1}). Update that lead instead.").format(
-				mobile, existing
-			),
+			_(
+				"A lead with mobile number {0} already exists on this product line ({1}). "
+				"Update that lead instead."
+			).format(mobile, existing),
 			title=_("Duplicate lead"),
 		)

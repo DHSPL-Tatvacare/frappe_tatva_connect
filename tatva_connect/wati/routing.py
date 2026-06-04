@@ -25,7 +25,7 @@ def resolve_account_for_lead(lead):
 	ambiguous config — raise rather than pick one silently.
 	"""
 	program = lead.get("custom_current_program")
-	group = lead.get("custom_psp_group")
+	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
 
 	# Only route to a WATI account that is Active. This is the per-account kill-switch:

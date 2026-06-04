@@ -38,7 +38,7 @@ def execute():
 				"description": "Tishtha Nivolumab patient enrolment (replaces the LSQ form).",
 				"source": "Nivolumab",
 				"custom_vertical": "GoodFlip Care",
-				"custom_psp_group": "Anaya",
+				"custom_group": "Anaya",
 				"custom_current_program": "Nivolumab",
 				"custom_origin_vertical": "GoodFlip Care",
 				"mappings": MAPPINGS,
