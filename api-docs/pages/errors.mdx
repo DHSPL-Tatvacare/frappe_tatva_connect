@@ -33,7 +33,7 @@ A failure raises a normal Frappe error with a non-2xx HTTP status and the error 
 | 403 | `PermissionError` | You're not authorised | Common causes: (a) a partner key hit `/api/resource/*` directly — use the `tatva_connect.api.partner.*` methods; (b) the caller is neither a partner with a Lead API Mapping nor a System Manager; (c) a partner reached a lead outside its line. |
 | 404 | `DoesNotExistError` | The lead `name` doesn't exist (or isn't in your scope) | Check the lead name (the `lead_create` response gives you `name`). A partner only sees leads on its own line. |
 | 404 | `LinkValidationError` | A Link field value isn't in its master | Read the lookup master first to enumerate valid values. The message names the master that's missing. |
-| 409 | `DuplicateEntryError` | A unique constraint was violated (currently only `custom_lsq_prospect_id`) | Either the value is already taken or your write is racing with another. `lead_create` upserts on the lead grain, so for re-sends it won't duplicate. |
+| 409 | `DuplicateEntryError` | A unique constraint was violated (currently only `custom_lsq_prospect_id`) | Either the value is already taken or your write is racing with another. `lead_create` matches on the lead grain, so for re-sends it won't duplicate. |
 | 417 | `MandatoryError` | A required field is missing | Body is missing `mobile_no` (the anchor). `lead_create` default-fills `first_name`/`status`. |
 | 429 | `RateLimitExceeded` | You're hitting the API too fast | Back off exponentially (1s, 2s, 4s, …). See [Operations › Rate limits](/docs/operations). |
 | 5xx | (various) | Server error — usually transient | Retry with exponential backoff. If persistent, email Ops with the exact request + response. |

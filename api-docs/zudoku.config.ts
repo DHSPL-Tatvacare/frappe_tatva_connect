@@ -32,11 +32,21 @@ const config: ZudokuConfig = {
     },
     { type: "link", to: "/api", label: "API Reference", icon: "code" },
   ],
+  search: { type: "pagefind" },
+  navigationRules: [
+    // API Reference: keep "Getting started" expanded; expandAllTags:false collapses the rest.
+    { type: "modify", match: "Getting started", set: { collapsed: false } },
+  ],
   redirects: [{ from: "/", to: "/introduction" }],
   apis: {
     type: "file",
     input: "./openapi.json",
     path: "/api",
+    options: {
+      // Collapse every API-reference tag group by default; tags opt back open via
+      // `x-zudoku-collapsed: false` in openapi.json (today: Authentication / Getting started).
+      expandAllTags: false,
+    },
   },
   docs: {
     files: "/pages/**/*.{md,mdx}",

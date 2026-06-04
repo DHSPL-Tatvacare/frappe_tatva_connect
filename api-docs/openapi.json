@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare CRM API",
     "version": "1.0.0",
-    "description": "Reference for integrating with the TatvaCare CRM \u2014 the single source of truth for patient leads across every TatvaCare product line.\n\n## What this API does\n\nWrite leads (create / update / upsert / delete, singly or in bulk). Read leads. Discover at runtime exactly the fields you may send. Attach files. It's the systems door into the CRM \u2014 external systems put leads in and read state back, while internal teams work those leads in the CRM web app.\n\n## The shape\n\n```\n CRM Lead (one lead per patient \u00d7 product line + group)\n   \u251c\u2500\u2500 Plan Profile           \u2014 what plan / PSP / insurance / drug program / subscription\n   \u251c\u2500\u2500 Lab Profile            \u2014 lab values, vitals, conditions, scores\n   \u2514\u2500\u2500 Care & Providers       \u2014 coaches, RM, therapist, doctor, hospital\n```\n\nThe lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1\u20133 child rows populated. Multi-program is normal.\n\n**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone number on a *different* product line or group is a **separate** lead \u2014 one patient can own several leads, one per line they're enrolled in. Re-sending the same (phone + line + group) trio updates that one lead; it never duplicates.\n\n## Where to start\n\n- **New here?** Read [Welcome](/docs/welcome), then [Authentication](/docs/api/authentication), then the [Quickstart](/docs/quickstart).\n- **New to Frappe?** Start with [What's a DocType?](/docs/frappe-doctypes) \u2014 the concepts this API is built on, in plain English.\n- **Already have a key?** Jump to [Create a lead](/docs/api/leads).\n- **Need to know what fields you may send?** Call `lead_schema` — it returns exactly the fields YOUR key may send/read (see [Schema](/docs/api/schema)).\n\nEvery endpoint is tested live in the **API Reference** \u2014 open an endpoint, paste your key, and hit **Send**.",
+    "description": "Reference for integrating with the TatvaCare CRM \u2014 the single source of truth for patient leads across every TatvaCare product line.\n\n## What this API does\n\nWrite leads (create / update / upsert / delete, singly or in bulk). Read leads. Discover at runtime exactly the fields you may send. Attach files. It's the systems door into the CRM \u2014 external systems put leads in and read state back, while internal teams work those leads in the CRM web app.\n\n## The shape\n\n```\n CRM Lead (one lead per patient \u00d7 product line + group)\n   \u251c\u2500\u2500 Plan Profile           \u2014 what plan / PSP / insurance / drug program / subscription\n   \u251c\u2500\u2500 Lab Profile            \u2014 lab values, vitals, conditions, scores\n   \u2514\u2500\u2500 Care & Providers       \u2014 coaches, RM, therapist, doctor, hospital\n```\n\nThe lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1\u20133 child rows populated. Multi-program is normal.\n\n**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone number on a *different* product line or group is a **separate** lead \u2014 one patient can own several leads, one per line they're enrolled in. Re-sending the same (phone + line + group) trio updates that one lead; it never duplicates.\n\n## Where to start\n\n- **New here?** Read [Welcome](/docs/welcome), then [Authentication](/docs/api/authentication), then the [Quickstart](/docs/quickstart).\n- **New to Frappe?** Start with [What's a DocType?](/docs/frappe-doctypes) \u2014 the concepts this API is built on, in plain English.\n- **Already have a key?** Jump to [Create a lead](/docs/api/leads).\n- **Need to know what fields you may send?** Call `lead_schema` \u2014 it returns exactly the fields YOUR key may send/read (see [Schema](/docs/api/schema)).\n\nEvery endpoint is tested live in the **API Reference** \u2014 open an endpoint, paste your key, and hit **Send**.",
     "contact": {
       "name": "TatvaCare CRM Ops",
       "email": "pareekshith.bompally@tatvacare.in"
@@ -25,6 +25,7 @@
     {
       "name": "Resources",
       "tags": [
+        "Partner Lead API",
         "Leads",
         "Files"
       ]
@@ -62,8 +63,13 @@
   ],
   "tags": [
     {
+      "name": "Partner Lead API",
+      "description": "## The partner lead API\n\nOne set of gated methods under `/api/method/tatva_connect.api.partner.<fn>` is the **entire surface** for partners \u2014 raw `/api/resource/CRM Lead` returns **403** for partner keys. Internal System Manager keys may still use raw REST, but these methods are the supported, idempotent path for everyone.\n\nA **partner** key has routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line, and may only use its **Allowed Fields** subset. A **trusted internal** key sends routing in the body, sees all lines, and uses the full catalog. Both call the *same* endpoints \u2014 the difference is config on the key, not different code.\n\nCall `lead_schema` first to discover exactly what YOUR key may send/read."
+    },
+    {
       "name": "Authentication",
-      "description": "## How to authenticate\n\nEvery request needs an `Authorization` header. Format:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe word `token` is **literal lowercase**, followed by a single space, then `api_key`, a colon `:`, then `api_secret`. No `Bearer`, no quotes, no JWT.\n\nExample (placeholder \u2014 not a real key):\n\n```\nAuthorization: token 000000000000000:000000000000000\n```\n\n### Two kinds of key\n\nThere are exactly two caller types, and which one you are decides how you authenticate and what you can do:\n\n| Caller | Who | Routing | Field access | Scope |\n|---|---|---|---|---|\n| **Trusted internal** | First-party systems (e.g. MyTatvaCore). Key user has the **System Manager** role. | You **send** routing (`custom_vertical` / `custom_group` / `custom_current_program` / `source`) in the body. | Full catalog. | All leads. |\n| **External partner** | Third parties (insurers, referral partners). Key user is **role-less** + has one `Lead API Mapping` row. | Routing is **forced server-side** from your mapping row \u2014 any routing you send is ignored. | Only the fields ticked in your mapping's **Allowed Fields** grid (empty grid = full catalog). | Only leads on YOUR line (your vertical + group). |\n\nBoth call the **same** partner endpoints (`/api/method/tatva_connect.api.partner.*`). The difference is configuration on your key, not different code.\n\n### How to get a key\n\n1. **Email** `pareekshith.bompally@tatvacare.in` with: integration name, who owns it, expected request volume, and which fields you need to send/read.\n2. **You receive** a dedicated user (e.g. `mytatva-writer@tatvacare.in`) plus its `api_key:api_secret` pair.\n   - **Internal** integrations get the **System Manager** role (so they may send routing and use the full field catalog).\n   - **External partners** get a **role-less** user plus one **`Lead API Mapping`** row that pins their forced routing (`source` / `vertical` / `group` / `program`) and their **Allowed Fields** subset. Your `source` value is created for you. You cannot move a lead to another line, see other lines' leads, see other doctypes, or send/read any field outside your grid.\n3. **Store** the pair as one environment variable: `FRAPPE_API_TOKEN=\"000000000000000:000000000000000\"`. Treat it like a database password.\n\n### Discover what you can do \u2014 call `lead_schema`\n\nDon't hardcode a field list. `GET /api/method/tatva_connect.api.partner.lead_schema` returns exactly the parent + child fields YOUR key may send/read (with type/required/options) and your routing mode (`forced` for partners, `caller-supplied` for internal). Two partners calling it get different lists. This \u2014 plus a one-page note of your forced line \u2014 is your contract.\n\n### One key per integration\n\nDon't share keys across systems. Each integration gets its own user + key so we can revoke / rotate / audit per integration. If you need a key for staging plus a separate one for prod, request both.\n\n### Verify your key works\n\nThe fastest handshake \u2014 returns the authenticated user's email if the key is valid:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' \\\n     https://one.tatvacare.in/api/method/frappe.auth.get_logged_user\n```\n\nSuccess returns `{\"message\":\"mytatva-writer@tatvacare.in\"}`. A `401` means the header is malformed (most often: missing the literal word `token`, extra spaces, swapped key/secret order).\n\n### Rotation, revocation, leakage\n\nIf a key is ever leaked, exposed in logs, committed to git \u2014 email CRM Ops immediately. We'll revoke it (the user gets disabled) and reissue a fresh pair. The new pair has different values; update your env var and redeploy.\n\nRoutine rotation isn't enforced today; we'll add a schedule if/when compliance requires it.\n\n### What the key can NOT do\n\n- It can't bypass field-level validation (Link values must exist, required fields can't be empty).\n- It can't call non-whitelisted methods (anything not documented here).\n- It can't see leads outside the CRM site (it's scoped to this site only).\n- **Partner keys** additionally can't touch raw `/api/resource/*` (you get **403**) — the partner methods under `/api/method/tatva_connect.api.partner.*` are your entire surface — and can't set routing, see another line's leads, or use any field outside their Allowed Fields grid."
+      "description": "## How to authenticate\n\nEvery request needs an `Authorization` header. Format:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe word `token` is **literal lowercase**, followed by a single space, then `api_key`, a colon `:`, then `api_secret`. No `Bearer`, no quotes, no JWT.\n\nExample (placeholder \u2014 not a real key):\n\n```\nAuthorization: token 000000000000000:000000000000000\n```\n\n### Two kinds of key\n\nThere are exactly two caller types, and which one you are decides how you authenticate and what you can do:\n\n| Caller | Who | Routing | Field access | Scope |\n|---|---|---|---|---|\n| **Trusted internal** | First-party systems (e.g. MyTatvaCore). Key user has the **System Manager** role. | You **send** routing (`custom_vertical` / `custom_group` / `custom_current_program` / `source`) in the body. | Full catalog. | All leads. |\n| **External partner** | Third parties (insurers, referral partners). Key user is **role-less** + has one `Lead API Mapping` row. | Routing is **forced server-side** from your mapping row \u2014 any routing you send is ignored. | Only the fields ticked in your mapping's **Allowed Fields** grid (empty grid = full catalog). | Only leads on YOUR line (your vertical + group). |\n\nBoth call the **same** partner endpoints (`/api/method/tatva_connect.api.partner.*`). The difference is configuration on your key, not different code.\n\n### How to get a key\n\n1. **Email** `pareekshith.bompally@tatvacare.in` with: integration name, who owns it, expected request volume, and which fields you need to send/read.\n2. **You receive** a dedicated user (e.g. `mytatva-writer@tatvacare.in`) plus its `api_key:api_secret` pair.\n   - **Internal** integrations get the **System Manager** role (so they may send routing and use the full field catalog).\n   - **External partners** get a **role-less** user plus one **`Lead API Mapping`** row that pins their forced routing (`source` / `vertical` / `group` / `program`) and their **Allowed Fields** subset. Your `source` value is created for you. You cannot move a lead to another line, see other lines' leads, see other doctypes, or send/read any field outside your grid.\n3. **Store** the pair as one environment variable: `FRAPPE_API_TOKEN=\"000000000000000:000000000000000\"`. Treat it like a database password.\n\n### Discover what you can do \u2014 call `lead_schema`\n\nDon't hardcode a field list. `GET /api/method/tatva_connect.api.partner.lead_schema` returns exactly the parent + child fields YOUR key may send/read (with type/required/options) and your routing mode (`forced` for partners, `caller-supplied` for internal). Two partners calling it get different lists. This \u2014 plus a one-page note of your forced line \u2014 is your contract.\n\n### One key per integration\n\nDon't share keys across systems. Each integration gets its own user + key so we can revoke / rotate / audit per integration. If you need a key for staging plus a separate one for prod, request both.\n\n### Verify your key works\n\nThe fastest handshake \u2014 returns the authenticated user's email if the key is valid:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' \\\n     https://one.tatvacare.in/api/method/frappe.auth.get_logged_user\n```\n\nSuccess returns `{\"message\":\"mytatva-writer@tatvacare.in\"}`. A `401` means the header is malformed (most often: missing the literal word `token`, extra spaces, swapped key/secret order).\n\n### Rotation, revocation, leakage\n\nIf a key is ever leaked, exposed in logs, committed to git \u2014 email CRM Ops immediately. We'll revoke it (the user gets disabled) and reissue a fresh pair. The new pair has different values; update your env var and redeploy.\n\nRoutine rotation isn't enforced today; we'll add a schedule if/when compliance requires it.\n\n### What the key can NOT do\n\n- It can't bypass field-level validation (Link values must exist, required fields can't be empty).\n- It can't call non-whitelisted methods (anything not documented here).\n- It can't see leads outside the CRM site (it's scoped to this site only).\n- **Partner keys** additionally can't touch raw `/api/resource/*` (you get **403**) \u2014 the partner methods under `/api/method/tatva_connect.api.partner.*` are your entire surface \u2014 and can't set routing, see another line's leads, or use any field outside their Allowed Fields grid.",
+      "x-zudoku-collapsed": false
     },
     {
       "name": "Leads",
@@ -154,7 +160,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "**Required** — the dedup anchor (with product line + group). E.164 format: `+<country code><digits>`, no hyphens, no spaces.",
+            "description": "**Required** \u2014 the dedup anchor (with product line + group). E.164 format: `+<country code><digits>`, no hyphens, no spaces.",
             "example": "+919999000123"
           },
           "phone": {
@@ -240,7 +246,7 @@
               "Tukavo",
               "Ujvira"
             ],
-            "description": "The PRIMARY program. Link to `CRM Program`. **`permlevel=0`** — rep-writable, so a rep can self-handoff a program within their line (only `custom_vertical` + `custom_group` are manager-locked at `permlevel=1`). Multi-program patients are supported via profile-row presence (see [Concepts](/docs/concepts))."
+            "description": "The PRIMARY program. Link to `CRM Program`. **`permlevel=0`** \u2014 rep-writable, so a rep can self-handoff a program within their line (only `custom_vertical` + `custom_group` are manager-locked at `permlevel=1`). Multi-program patients are supported via profile-row presence (see [Concepts](/docs/concepts))."
           },
           "custom_previous_program": {
             "type": "string",
@@ -946,7 +952,7 @@
       },
       "UpsertLeadRequest": {
         "type": "object",
-        "description": "Request body for `POST /api/method/tatva_connect.api.partner.lead_create`. Only `mobile_no` is strictly required (the dedup anchor); `first_name` and `status` are default-filled if missing (`(no name)` and `New`). All other fields are optional and must be within the fields your key is allowed to send (call `lead_schema` to see them). Partners never send routing — it's forced server-side. Profile children embed as arrays and merge field-by-field.",
+        "description": "Request body for `POST /api/method/tatva_connect.api.partner.lead_create`. Only `mobile_no` is strictly required (the dedup anchor); `first_name` and `status` are default-filled if missing (`(no name)` and `New`). All other fields are optional and must be within the fields your key is allowed to send (call `lead_schema` to see them). Partners never send routing \u2014 it's forced server-side. Profile children embed as arrays and merge field-by-field.",
         "allOf": [
           {
             "$ref": "#/components/schemas/CRMLeadUniversal"
@@ -1370,6 +1376,139 @@
             "description": "Set once keys are generated; the secret is never returned on read."
           }
         }
+      },
+      "BulkResultEntry": {
+        "type": "object",
+        "description": "One record's outcome in a bulk response. `ok` tells you whether that single record succeeded; `action`/`name` are present on success, `error` on failure.",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "0-based position of this record in the request array."
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "True if this record succeeded (its own savepoint committed)."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "deleted"
+            ],
+            "description": "What happened to this record (present only on success)."
+          },
+          "name": {
+            "type": "string",
+            "description": "CRM Lead id (present only on success)."
+          },
+          "error": {
+            "type": "string",
+            "description": "Failure message for this record (present only on failure)."
+          }
+        },
+        "required": [
+          "index",
+          "ok"
+        ]
+      },
+      "BulkResponse": {
+        "type": "object",
+        "description": "Partial-success envelope shared by all bulk write methods. Each record runs in its own savepoint \u2014 one bad row reports its error, the rest still commit. Payload wrapped in `message` (Frappe method convention).",
+        "properties": {
+          "message": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "description": "Always true \u2014 the batch ran (individual rows may have failed)."
+              },
+              "total": {
+                "type": "integer",
+                "description": "Records received."
+              },
+              "succeeded": {
+                "type": "integer",
+                "description": "Records that committed."
+              },
+              "failed": {
+                "type": "integer",
+                "description": "Records that were rolled back and reported."
+              },
+              "results": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BulkResultEntry"
+                },
+                "description": "Per-record outcome, in request order."
+              }
+            },
+            "required": [
+              "ok",
+              "total",
+              "succeeded",
+              "failed",
+              "results"
+            ]
+          }
+        }
+      },
+      "CuratedLead": {
+        "type": "object",
+        "description": "A lead as the caller is allowed to see it: their allowed parent fields plus the read-only identity/routing block (`name`, `source`, `custom_vertical`, `custom_group`, `custom_current_program`). `lead_get` / `lead_get_bulk` additionally inline the profile children (filtered to allowed fields); `lead_list` returns no children.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CRMLeadUniversal"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "CRM Lead primary key.",
+                "example": "CRM-LEAD-2026-00123"
+              },
+              "source": {
+                "type": "string",
+                "description": "Lead source (read-only; forced for partners)."
+              },
+              "custom_vertical": {
+                "type": "string",
+                "description": "Product line (read-only)."
+              },
+              "custom_group": {
+                "type": "string",
+                "description": "Group (read-only)."
+              },
+              "custom_current_program": {
+                "type": "string",
+                "description": "Current program (read-only)."
+              }
+            }
+          }
+        ]
+      },
+      "LeadUpdateRequest": {
+        "type": "object",
+        "description": "Request body for `lead_update`. Carries the CRM `name` (the id `lead_create` returned) plus any allowed fields to change. Parent fields you SEND are updated, fields you OMIT are left alone; profile children merge field-by-field. Partners may not change routing (it's forced).",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CRMLeadUniversal"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "CRM Lead id to update.",
+                "example": "CRM-LEAD-2026-00123"
+              }
+            }
+          }
+        ]
       }
     },
     "examples": {
@@ -1637,6 +1776,372 @@
             "file_size": 184231
           }
         }
+      },
+      "LeadSchemaResponse": {
+        "summary": "lead_schema \u2014 a partner with a labs+plan grid",
+        "value": {
+          "message": {
+            "lead": [
+              {
+                "fieldname": "mobile_no",
+                "label": "Mobile No",
+                "type": "Data",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "first_name",
+                "label": "First Name",
+                "type": "Data",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "status",
+                "label": "Status",
+                "type": "Link",
+                "required": true,
+                "options": "CRM Lead Status"
+              }
+            ],
+            "children": {
+              "custom_lab_profile": [
+                {
+                  "fieldname": "hba1c",
+                  "label": "HbA1c",
+                  "type": "Float",
+                  "required": false,
+                  "options": null
+                },
+                {
+                  "fieldname": "report_date",
+                  "label": "Report Date",
+                  "type": "Date",
+                  "required": false,
+                  "options": null
+                }
+              ],
+              "custom_plan_profile": [
+                {
+                  "fieldname": "policy_number",
+                  "label": "Policy Number",
+                  "type": "Data",
+                  "required": false,
+                  "options": null
+                }
+              ]
+            },
+            "child_write": "Send each child as a JSON array under its key, e.g. custom_lab_profile=[{...}]. The existing row is merged field-by-field.",
+            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
+            "bulk": {
+              "max_per_call": 100,
+              "list_page_max": 200,
+              "list_filters": [
+                "status",
+                "created_after",
+                "created_before",
+                "updated_after",
+                "updated_before",
+                "mobile_no"
+              ]
+            },
+            "routing": {
+              "mode": "forced",
+              "source": "Niva Bupa",
+              "vertical": "Metabolic",
+              "group": "Niva Bupa",
+              "program": "Niva Bupa",
+              "note": "Your routing is fixed. Any routing fields you send are ignored."
+            }
+          }
+        }
+      },
+      "LeadSchemaResponseInternal": {
+        "summary": "lead_schema \u2014 a trusted internal (System Manager) key",
+        "value": {
+          "message": {
+            "lead": [
+              {
+                "fieldname": "mobile_no",
+                "label": "Mobile No",
+                "type": "Data",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "first_name",
+                "label": "First Name",
+                "type": "Data",
+                "required": false,
+                "options": null
+              }
+            ],
+            "children": {},
+            "child_write": "Send each child as a JSON array under its key, e.g. custom_lab_profile=[{...}]. The existing row is merged field-by-field.",
+            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
+            "bulk": {
+              "max_per_call": 100,
+              "list_page_max": 200,
+              "list_filters": [
+                "status",
+                "created_after",
+                "created_before",
+                "updated_after",
+                "updated_before",
+                "mobile_no"
+              ]
+            },
+            "routing": {
+              "mode": "caller-supplied",
+              "fields": [
+                "source",
+                "custom_vertical",
+                "custom_group",
+                "custom_current_program"
+              ],
+              "note": "Trusted caller: send these routing fields in the body."
+            }
+          }
+        }
+      },
+      "CuratedLeadGet": {
+        "summary": "lead_get \u2014 one curated lead with children",
+        "value": {
+          "message": {
+            "first_name": "Asha",
+            "mobile_no": "+919000000001",
+            "status": "New",
+            "name": "CRM-LEAD-2026-00123",
+            "source": "Niva Bupa",
+            "custom_vertical": "Metabolic",
+            "custom_group": "Niva Bupa",
+            "custom_current_program": "Niva Bupa",
+            "custom_lab_profile": [
+              {
+                "hba1c": 7.2,
+                "report_date": "2026-05-30"
+              }
+            ],
+            "custom_plan_profile": [
+              {
+                "policy_number": "NB-POL-0001"
+              }
+            ]
+          }
+        }
+      },
+      "LeadUpdateRequest": {
+        "summary": "lead_update \u2014 flip status on a known lead",
+        "value": {
+          "name": "CRM-LEAD-2026-00123",
+          "status": "Contacted",
+          "custom_lab_profile": [
+            {
+              "hba1c": 6.9
+            }
+          ]
+        }
+      },
+      "LeadUpdateResponse": {
+        "summary": "lead_update \u2014 updated",
+        "value": {
+          "message": {
+            "ok": true,
+            "action": "updated",
+            "name": "CRM-LEAD-2026-00123",
+            "source": "Niva Bupa",
+            "vertical": "Metabolic",
+            "group": "Niva Bupa",
+            "program": "Niva Bupa"
+          }
+        }
+      },
+      "LeadDeleteResponse": {
+        "summary": "lead_delete \u2014 deleted",
+        "value": {
+          "message": {
+            "ok": true,
+            "action": "deleted",
+            "name": "CRM-LEAD-2026-00123"
+          }
+        }
+      },
+      "LeadCreateBulkRequest": {
+        "summary": "lead_create_bulk \u2014 two leads",
+        "value": {
+          "leads": [
+            {
+              "mobile_no": "9000000001",
+              "first_name": "Asha",
+              "custom_lab_profile": [
+                {
+                  "hba1c": 7.2
+                }
+              ]
+            },
+            {
+              "mobile_no": "9000000002",
+              "first_name": "Ravi",
+              "status": "New"
+            }
+          ]
+        }
+      },
+      "LeadUpdateBulkRequest": {
+        "summary": "lead_update_bulk \u2014 two updates by name",
+        "value": {
+          "updates": [
+            {
+              "name": "CRM-LEAD-2026-00123",
+              "status": "Contacted"
+            },
+            {
+              "name": "CRM-LEAD-2026-00124",
+              "custom_lab_profile": [
+                {
+                  "hba1c": 6.5
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "LeadDeleteBulkRequest": {
+        "summary": "lead_delete_bulk \u2014 delete by name",
+        "value": {
+          "names": [
+            "CRM-LEAD-2026-00123",
+            "CRM-LEAD-2026-00124"
+          ]
+        }
+      },
+      "BulkSuccessMixed": {
+        "summary": "Bulk \u2014 partial success (one row failed)",
+        "value": {
+          "message": {
+            "ok": true,
+            "total": 2,
+            "succeeded": 1,
+            "failed": 1,
+            "results": [
+              {
+                "index": 0,
+                "ok": true,
+                "action": "created",
+                "name": "CRM-LEAD-2026-00125"
+              },
+              {
+                "index": 1,
+                "ok": false,
+                "error": "mobile_no is required"
+              }
+            ]
+          }
+        }
+      },
+      "BulkDeleteSuccess": {
+        "summary": "lead_delete_bulk \u2014 both deleted",
+        "value": {
+          "message": {
+            "ok": true,
+            "total": 2,
+            "succeeded": 2,
+            "failed": 0,
+            "results": [
+              {
+                "index": 0,
+                "ok": true,
+                "action": "deleted",
+                "name": "CRM-LEAD-2026-00123"
+              },
+              {
+                "index": 1,
+                "ok": true,
+                "action": "deleted",
+                "name": "CRM-LEAD-2026-00124"
+              }
+            ]
+          }
+        }
+      },
+      "LeadGetBulkRequestNames": {
+        "summary": "lead_get_bulk \u2014 by names",
+        "value": {
+          "names": [
+            "CRM-LEAD-2026-00123",
+            "CRM-LEAD-2026-00124"
+          ]
+        }
+      },
+      "LeadGetBulkRequestMobiles": {
+        "summary": "lead_get_bulk \u2014 by mobile_nos",
+        "value": {
+          "mobile_nos": [
+            "9000000001",
+            "9000000002"
+          ]
+        }
+      },
+      "LeadGetBulkResponse": {
+        "summary": "lead_get_bulk \u2014 found 1 of 2 (out-of-scope omitted)",
+        "value": {
+          "message": {
+            "ok": true,
+            "requested": 2,
+            "found": 1,
+            "leads": [
+              {
+                "first_name": "Asha",
+                "mobile_no": "+919000000001",
+                "status": "New",
+                "name": "CRM-LEAD-2026-00123",
+                "source": "Niva Bupa",
+                "custom_vertical": "Metabolic",
+                "custom_group": "Niva Bupa",
+                "custom_current_program": "Niva Bupa",
+                "custom_lab_profile": [
+                  {
+                    "hba1c": 7.2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "LeadListResponse": {
+        "summary": "lead_list \u2014 page of curated leads (no children)",
+        "value": {
+          "message": {
+            "ok": true,
+            "total": 137,
+            "count": 2,
+            "offset": 0,
+            "limit": 20,
+            "leads": [
+              {
+                "first_name": "Asha",
+                "mobile_no": "+919000000001",
+                "status": "New",
+                "name": "CRM-LEAD-2026-00123",
+                "source": "Niva Bupa",
+                "custom_vertical": "Metabolic",
+                "custom_group": "Niva Bupa",
+                "custom_current_program": "Niva Bupa"
+              },
+              {
+                "first_name": "Ravi",
+                "mobile_no": "+919000000002",
+                "status": "Contacted",
+                "name": "CRM-LEAD-2026-00124",
+                "source": "Niva Bupa",
+                "custom_vertical": "Metabolic",
+                "custom_group": "Niva Bupa",
+                "custom_current_program": "Niva Bupa"
+              }
+            ]
+          }
+        }
       }
     }
   },
@@ -1764,7 +2269,7 @@
           "Leads"
         ],
         "summary": "Create a lead",
-        "description": "Standard Frappe create. **Internal System Manager keys only** — partner keys get 403 here and must use `lead_create`. **Prefer `lead_create`** anyway unless you specifically need create-only semantics (e.g. you've verified the lead doesn't exist and want a hard error if it does).\n\nUnlike `lead_create`: not idempotent on the lead grain, will not merge with an existing lead, and does not enforce the partner allowed-fields/routing rules.",
+        "description": "Standard Frappe create. **Internal System Manager keys only** \u2014 partner keys get 403 here and must use `lead_create`. **Prefer `lead_create`** anyway unless you specifically need create-only semantics (e.g. you've verified the lead doesn't exist and want a hard error if it does).\n\nUnlike `lead_create`: not idempotent on the lead grain, will not merge with an existing lead, and does not enforce the partner allowed-fields/routing rules.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2002,12 +2507,317 @@
         }
       }
     },
+    "/api/method/tatva_connect.api.partner.lead_schema": {
+      "get": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Discover the fields your key may use",
+        "description": "**Discovery \u2014 call this in your integration code instead of hardcoding a field list.** Returns exactly the parent + child fields THIS key may send/read (each with `fieldname`, `label`, `type`, `required`, `options`), the child-write/dedup notes, the bulk/list limits, and your `routing` mode. Two partners get **different** lists, driven by their Allowed Fields grid. `routing.mode` is `forced` for partners (with the fixed line) and `caller-supplied` for trusted internal keys.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's allowed fields + routing mode (wrapped in `message`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrappeDocResponse"
+                },
+                "examples": {
+                  "Partner": {
+                    "$ref": "#/components/examples/LeadSchemaResponse"
+                  },
+                  "Internal": {
+                    "$ref": "#/components/examples/LeadSchemaResponseInternal"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is neither a partner with a Lead API Mapping nor a System Manager.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_get": {
+      "get": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Read one lead by name or mobile_no",
+        "description": "Fetch ONE lead by `name` **or** `mobile_no`. Returns only the caller's allowed fields plus the read-only routing block, with profile children (`custom_lab_profile`, `custom_plan_profile`) inlined and filtered to allowed fields. A partner only sees leads on their own line; a lookup outside scope returns 404 `DoesNotExistError`. Pass exactly one of `name` / `mobile_no`.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id (the value `lead_create` returned). Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "10-digit Indian number (auto-normalised to `+91\u2026`) or an already-`+`-prefixed number. Use this OR `name`.",
+            "example": "9000000001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The curated lead (wrapped in `message`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrappeDocResponse"
+                },
+                "examples": {
+                  "One lead": {
+                    "$ref": "#/components/examples/CuratedLeadGet"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised (no Lead API Mapping and not a System Manager), or the lead is outside your line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_list": {
+      "get": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "List leads, filtered and paginated",
+        "description": "List leads on the caller's line, filtered + paginated. Honours a **curated, safe set of filters only** (never arbitrary fields) and always auto-scopes to your line. Returns curated parent fields, **no children** \u2014 use `lead_get` for the full record. Page size defaults to 20, max 200; page with `offset`.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact lead status (e.g. `New`, `Contacted`).",
+            "example": "New"
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "`creation` >= this date/datetime.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "`creation` <= this date/datetime.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "updated_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "`modified` >= this date/datetime.",
+            "example": "2026-05-01"
+          },
+          {
+            "name": "updated_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "`modified` <= this date/datetime.",
+            "example": "2026-06-01"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact phone (auto-normalised to `+91\u2026`).",
+            "example": "9000000001"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "example": 50,
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "example": 0,
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of curated leads (no children), wrapped in `message`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "total": {
+                          "type": "integer",
+                          "description": "Total matching leads (ignores paging)."
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "Leads in this page."
+                        },
+                        "offset": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "leads": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CuratedLead"
+                          }
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "total",
+                        "count",
+                        "offset",
+                        "limit",
+                        "leads"
+                      ]
+                    }
+                  }
+                },
+                "examples": {
+                  "Page": {
+                    "$ref": "#/components/examples/LeadListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised (no Lead API Mapping and not a System Manager).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/method/tatva_connect.api.partner.lead_create": {
       "post": {
         "tags": [
-          "Leads"
+          "Partner Lead API"
         ],
-        "summary": "Create or upsert a lead",
+        "summary": "Create or update a lead",
         "description": "**The default write endpoint for ~99% of integrations.** Idempotent on the lead grain (`mobile_no` + product line + group). Safe to retry. Finds the existing lead matching that trio and updates it, or creates a new one. Returns the CRM `name` \u2014 PUT it back to `lead_update`. Profile children are passed as embedded arrays.\n\n### What you may send\n\nOnly the fields YOUR key is allowed to send \u2014 call `lead_schema` to see them. A partner's routing (`source` / `vertical` / `group` / `program`) is **forced** from their `Lead API Mapping` row; any routing fields a partner sends are silently ignored. A trusted System Manager key sends routing in the body. Fields outside your allowed set are dropped.\n\n### How it merges\n\nFor an existing lead, parent fields you SEND are updated; fields you OMIT are LEFT ALONE. Profile children **merge field-by-field** into the existing row (a partial write never wipes the row).\n\n### Default-fill behaviour\n\n- Missing `first_name` \u2192 set to `(no name)`\n- Missing `status` \u2192 set to `New`\n- Profile arrays accept either actual JSON arrays or stringified JSON.\n\n### Common pitfalls\n\n- Sending an unknown Link value (e.g. mistyped program name) \u2192 `LinkValidationError`. Fix: read [Lookups](/docs/api/reference-data) first.\n- Setting `status` to `Junk` or `Unqualified` without `lost_reason` \u2192 `ValidationError: Please specify a reason for losing the lead.`\n- Sending fields outside your allowed set \u2192 silently dropped (not an error). Confirm with `lead_schema`.\n\n### Related\n\n[Read \u203a Get one lead](/docs/api/leads) to fetch the lead back after writing. [Lookups](/docs/api/reference-data) to enumerate valid Link values before writing.",
         "requestBody": {
           "required": true,
@@ -2070,6 +2880,507 @@
           },
           "401": {
             "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_create_bulk": {
+      "post": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Create or update many leads",
+        "description": "Create-or-update up to **100** leads in one call. Body: `{\"leads\":[{...}, \u2026]}`. Each record uses the same idempotent phone+line dedup and field rules as `lead_create`, and runs in its own savepoint \u2014 **partial success**: one bad row reports its error, the rest still commit. Over 100 records returns a clean error (page the rest).\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "leads"
+                ],
+                "properties": {
+                  "leads": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/UpsertLeadRequest"
+                    },
+                    "description": "Up to 100 lead payloads (same shape as `lead_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Two leads": {
+                  "$ref": "#/components/examples/LeadCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran (per-record outcomes under `message.results`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResponse"
+                },
+                "examples": {
+                  "Partial success": {
+                    "$ref": "#/components/examples/BulkSuccessMixed"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised (no Lead API Mapping and not a System Manager).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_get_bulk": {
+      "post": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Read many leads by names or mobile_nos",
+        "description": "Read up to **100** leads in one call by `names` **or** `mobile_nos` (send one). Returns the curated leads found (allowed fields + read-only routing + inlined children). Out-of-scope or missing ids are simply omitted \u2014 `found` may be less than `requested`. Uses POST because the id list travels in the body.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "names": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 100 CRM Lead ids. Use this OR `mobile_nos`."
+                  },
+                  "mobile_nos": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 100 phone numbers (auto-normalised). Use this OR `names`."
+                  }
+                },
+                "description": "Send exactly one of `names` / `mobile_nos`."
+              },
+              "examples": {
+                "By names": {
+                  "$ref": "#/components/examples/LeadGetBulkRequestNames"
+                },
+                "By mobile_nos": {
+                  "$ref": "#/components/examples/LeadGetBulkRequestMobiles"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The curated leads found (wrapped in `message`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "requested": {
+                          "type": "integer",
+                          "description": "Ids/numbers you asked for."
+                        },
+                        "found": {
+                          "type": "integer",
+                          "description": "Leads returned (\u2264 requested; out-of-scope omitted)."
+                        },
+                        "leads": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CuratedLead"
+                          }
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "requested",
+                        "found",
+                        "leads"
+                      ]
+                    }
+                  }
+                },
+                "examples": {
+                  "Found 1 of 2": {
+                    "$ref": "#/components/examples/LeadGetBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised (no Lead API Mapping and not a System Manager).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_update": {
+      "put": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Update a lead by CRM name",
+        "description": "Update an existing lead identified by its CRM `name` (the id `lead_create` returned). Send `name` plus any allowed fields; parent fields you SEND are updated, fields you OMIT are LEFT ALONE, and profile children **merge field-by-field** (a partial write never wipes the row). A partner is scope-checked \u2014 updating a lead on another line returns 403, and a partner can never move a lead to a different line (routing is forced).\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadUpdateRequest"
+              },
+              "examples": {
+                "Update": {
+                  "$ref": "#/components/examples/LeadUpdateRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lead updated. Payload under `message`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpsertLeadResponse"
+                },
+                "examples": {
+                  "Updated": {
+                    "$ref": "#/components/examples/LeadUpdateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised, or the lead is outside your line (partner scope check).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_update_bulk": {
+      "put": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Update many leads",
+        "description": "Update up to **100** leads in one call. Body: `{\"updates\":[{\"name\":\u2026, \u2026fields}, \u2026]}` \u2014 each entry needs its CRM `name` plus the fields to change. Same merge semantics and partner scope-check as `lead_update`, applied per record in its own savepoint (**partial success**).\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "updates"
+                ],
+                "properties": {
+                  "updates": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/CRMLeadUniversal"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "name"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "description": "CRM Lead id to update.",
+                              "example": "CRM-LEAD-2026-00123"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "description": "Up to 100 update payloads; each carries `name` + allowed fields."
+                  }
+                }
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/LeadUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran (per-record outcomes under `message.results`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResponse"
+                },
+                "examples": {
+                  "Partial success": {
+                    "$ref": "#/components/examples/BulkSuccessMixed"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised, or a record is outside your line (per-record partner scope check).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_delete": {
+      "delete": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Delete a lead by CRM name",
+        "description": "Delete a lead by its CRM `name` (query param or body). A partner is scope-checked \u2014 deleting a lead on another line returns 403. A lead with linked activity (calls, tasks, notes) raises `LinkExistsError`, so a worked lead can't be silently nuked.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id to delete (may also be sent in the JSON body).",
+            "example": "CRM-LEAD-2026-00123"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lead deleted. Payload under `message`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrappeDocResponse"
+                },
+                "examples": {
+                  "Deleted": {
+                    "$ref": "#/components/examples/LeadDeleteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised, or the lead is outside your line (partner scope check).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Partner Lead API"
+        ],
+        "summary": "Delete many leads",
+        "description": "Delete up to **100** leads by CRM `name`. Body: `{\"names\":[\u2026]}`. Each delete runs in its own savepoint (**partial success**) and is partner scope-checked; a lead with linked activity fails with `LinkExistsError` for that row while the rest proceed.\n\n> **Partner vs internal.** A **partner** key has its routing **forced** from its `Lead API Mapping` row, is **scoped** to its own line (vertical + group), and may only send/read the fields ticked in its **Allowed Fields** grid. A **trusted internal** key (System Manager, no mapping) sends routing in the body, sees all lines, and uses the full catalog. **Partner keys get 403 on raw `/api/resource/*`** \u2014 these `partner.*` methods are their entire surface.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "names"
+                ],
+                "properties": {
+                  "names": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 100 CRM Lead ids to delete."
+                  }
+                }
+              },
+              "examples": {
+                "Names": {
+                  "$ref": "#/components/examples/LeadDeleteBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran (per-record outcomes under `message.results`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResponse"
+                },
+                "examples": {
+                  "All deleted": {
+                    "$ref": "#/components/examples/BulkDeleteSuccess"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad/missing API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorised, or a record is outside your line (per-record partner scope check).",
             "content": {
               "application/json": {
                 "schema": {
