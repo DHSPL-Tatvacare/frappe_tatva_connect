@@ -26,4 +26,4 @@ In this CRM, the lead carries identity + contact + routing on the parent, and **
 - You **cannot** create a child row on its own — there's no `/api/resource/...` you POST a profile to (direct child-table access returns 403, by design). You send child rows *embedded in the parent* lead, exactly as above.
 - A `Link` value must exist first. `custom_current_program: "Sigrima"` only works if `Sigrima` is a row in `CRM Program` — check via [Reference Data](/docs/api/reference-data).
 
-→ **Try it:** [Upsert a lead by phone](/docs/api/leads#upsert-a-lead-by-phone-recommended) — its examples show profile child rows embedded in the body.
+→ **Try it:** [Create a lead](/docs/api/leads) — its examples show profile child rows embedded in the body.

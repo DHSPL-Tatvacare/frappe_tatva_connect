@@ -14,10 +14,10 @@ Because every record is a DocType, Frappe exposes **every DocType over REST auto
 | `PUT` | `/api/resource/CRM Lead/{name}` | update |
 | `DELETE` | `/api/resource/CRM Lead/{name}` | delete |
 
-**2. Method API — `/api/method/<dotted.path>`** for custom server functions — e.g. `upsert_lead_by_phone`, which finds-or-creates a lead by `mobile_no` (safer than a raw create).
+**2. Method API — `/api/method/<dotted.path>`** for custom server functions — e.g. the partner lead methods under `tatva_connect.api.partner.*` (`lead_create`, `lead_get`, `lead_list`, …), which find-or-create and read leads with the right scoping and merge behaviour.
 
 Responses are predictable: a single doc is `{ "data": {...} }`, a list is `{ "data": [...] }`, a method returns `{ "message": <result> }`.
 
-**Why it matters for you:** you rarely need a custom endpoint. Listing leads, reading one, fetching master data — it's all the resource API pointed at the right DocType. Reach for the method API only for `upsert_lead_by_phone` (the recommended way to write leads) and counts.
+**Why it matters for you:** the resource API above is available to **internal System Manager keys** only. **Partner keys must use the method API** (`tatva_connect.api.partner.*`) — raw `/api/resource/CRM Lead` returns **403** for them. So for partners, the lead methods (`lead_create` to write, `lead_get` / `lead_list` to read) are the entire surface; the resource shapes are shown here so you understand the response envelope.
 
-→ **Try it:** [List leads](/docs/api/leads#list-leads-filtered-paginated) · [Upsert a lead](/docs/api/leads#upsert-a-lead-by-phone-recommended).
+→ **Try it:** [List leads](/docs/api/leads) · [Create a lead](/docs/api/leads).

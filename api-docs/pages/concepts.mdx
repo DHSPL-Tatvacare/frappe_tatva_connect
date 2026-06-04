@@ -6,23 +6,23 @@ title: Concepts
 
 Four ideas. If you understand these, the API maps cleanly.
 
-### 1. One patient = one lead
+### 1. One lead per patient × product line + group
 
-Dedup key: `mobile_no`. **Canonical format is E.164** — `+<country code><digits>`, no hyphens, no spaces. Example: `+919999000123`.
+Dedup anchor: `mobile_no` + `custom_vertical` (product line) + `custom_group`. **Phone format is E.164** — `+<country code><digits>`, no hyphens, no spaces. Example: `+919999000123`.
 
-Never create a second lead for the same patient because they joined a new program. Instead, **update the existing lead** (or add a profile row — see point 3).
+The same phone on a *different* product line or group is a **separate** lead — one patient can own several leads, one per line they're enrolled in (e.g. GoodFlip-direct vs GoodFlip-via-insurer are different groups → different leads). Within a single line, never create a second lead for the same patient because they joined a new program — instead **update the existing lead** (or add a profile row — see point 3).
 
-The [Upsert by phone](/docs/api/leads) endpoint enforces this — it finds-or-creates by `mobile_no`. Safe to retry.
+The [Create a lead](/docs/api/leads) endpoint (`lead_create`) enforces this — it finds-or-creates by that trio. Safe to retry. For a partner, the line is fixed by their mapping, so dedup is simply phone within their line.
 
 ### 2. The lead carries identity, contact, routing. Nothing program-specific.
 
-Universal fields live on `CRM Lead` itself (29 custom fields plus standard Frappe fields). See the [CRMLeadUniversal schema](/docs/api/leads#upsert-a-lead-by-phone-recommended). Examples: `first_name`, `mobile_no`, `email`, `custom_dob`, `custom_gender`, `custom_caregiver_name`, plus routing (`custom_vertical`, `custom_psp_group`, `custom_current_program`).
+Universal fields live on `CRM Lead` itself (29 custom fields plus standard Frappe fields). See the [CRMLeadUniversal schema](/docs/api/leads). Examples: `first_name`, `mobile_no`, `email`, `custom_dob`, `custom_gender`, `custom_caregiver_name`, plus routing (`custom_vertical`, `custom_group`, `custom_current_program`).
 
 Routing is a 3-level chain:
 
 ```
- custom_vertical  →  custom_psp_group  →  custom_current_program
- (product line)      (sub-line)            (named program/SKU)
+ custom_vertical  →  custom_group  →  custom_current_program
+ (product line)      (sub-line)        (named program/SKU)
 ```
 
 Examples:
@@ -30,7 +30,7 @@ Examples:
 - `GoodFlip → Insurers → Niva Bupa` (a Niva Bupa insurer lead)
 - `GoodFlip → Insurers → ` blank (a generic GoodFlip retail customer with no insurer)
 
-These fields are **permission-locked** (`permlevel=1`). The System Manager integration key writes them; a regular user key silently drops them.
+`custom_vertical` + `custom_group` are **permission-locked** (`permlevel=1`, manager-only); `custom_current_program` is `permlevel=0` (a rep may self-handoff a program within their line). Partners never set routing — it's forced from their `Lead API Mapping`. A trusted System Manager integration key sends routing in the body; a regular user key silently drops the `permlevel=1` fields.
 
 ### 3. Three child profile rows hold program-specific data
 
@@ -49,9 +49,9 @@ A patient on multiple programs simultaneously has **multiple child rows of the S
 
 Profile children are **`istable=1`** in Frappe. That means:
 - You CANNOT call `/api/resource/CRM Plan Profile` directly (returns 403).
-- You read them embedded under the parent: `GET /api/resource/CRM Lead/<name>` returns `custom_plan_profile: [{...}]` inline.
-- You write them embedded: POST / PUT to the parent with `custom_plan_profile: [{...}]`.
-- A `PUT` REPLACES the entire array — to update one field, use [read-modify-write](/docs/api/leads) or the upsert endpoint (which merges automatically).
+- You read them embedded under the parent: `lead_get` returns `custom_plan_profile: [{...}]` inline.
+- You write them embedded: send `custom_plan_profile: [{...}]` in your `lead_create` / `lead_update` body.
+- `lead_create` / `lead_update` **merge** child rows field-by-field, so a partial write never wipes the row. (A raw REST `PUT` to `/api/resource/CRM Lead/<name>`, available to internal keys only, REPLACES the whole array — use [read-modify-write](/docs/api/leads) there.)
 
 ### 4. Program-scoped substages live in a master, not as columns
 

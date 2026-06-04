@@ -16,25 +16,25 @@ title: Errors
 }
 ```
 
-**Upsert endpoint failures** (HTTP 200 today, body indicates failure):
+A successful `lead_create` / `lead_update` returns `message.ok: true`:
 
 ```json
-{"message":{"ok":false,"error":"Please specify a reason for losing the lead."}}
+{"message":{"ok":true,"action":"created","name":"CRM-LEAD-2026-NNNNN","vertical":"GoodFlip","group":"Insurers","program":"Niva Bupa"}}
 ```
 
-Always check `message.ok` for upsert; check HTTP status for everything else.
+A failure raises a normal Frappe error with a non-2xx HTTP status and the error envelope above. Check HTTP status everywhere.
 
 ### Error catalog (and how to fix)
 
 | HTTP | `exc_type` | What it means | How to fix |
 |---|---|---|---|
-| 200 + `ok:false` | (upsert silent-200) | Validation failed inside the upsert endpoint | Read `message.error`. Most common: missing `lost_reason` for `Junk`/`Unqualified` status. |
+| 400/417 | `ValidationError` | A write failed validation | Read the message. Most common: missing `lost_reason` for `Junk`/`Unqualified` status. |
 | 401 | `AuthenticationError` | Missing or malformed Authorization header | Re-check the header is exactly `token <api_key>:<api_secret>` (lowercase `token`, single space, colon between key & secret). |
-| 403 | `PermissionError` | The authenticated user lacks read/write permission on the doctype or record | Two common causes: (a) you tried `/api/resource/CRM Plan Profile` directly (child tables forbid this — use parent embed); (b) the key isn't System Manager and you're touching a `permlevel=1` field. |
-| 404 | `DoesNotExistError` | The `name` in the URL doesn't exist | Check the lead name was actually created (the upsert response gives you `name`). |
+| 403 | `PermissionError` | You're not authorised | Common causes: (a) a partner key hit `/api/resource/*` directly — use the `tatva_connect.api.partner.*` methods; (b) the caller is neither a partner with a Lead API Mapping nor a System Manager; (c) a partner reached a lead outside its line. |
+| 404 | `DoesNotExistError` | The lead `name` doesn't exist (or isn't in your scope) | Check the lead name (the `lead_create` response gives you `name`). A partner only sees leads on its own line. |
 | 404 | `LinkValidationError` | A Link field value isn't in its master | Read the lookup master first to enumerate valid values. The message names the master that's missing. |
-| 409 | `DuplicateEntryError` | A unique constraint was violated (currently only `custom_lsq_prospect_id`) | Either the value is already taken or your write is racing with another. Upsert by phone avoids this — use it. |
-| 417 | `MandatoryError` | A required field is missing | Body is missing `first_name` or `status`. The upsert endpoint default-fills these — use it. |
+| 409 | `DuplicateEntryError` | A unique constraint was violated (currently only `custom_lsq_prospect_id`) | Either the value is already taken or your write is racing with another. `lead_create` upserts on the lead grain, so for re-sends it won't duplicate. |
+| 417 | `MandatoryError` | A required field is missing | Body is missing `mobile_no` (the anchor). `lead_create` default-fills `first_name`/`status`. |
 | 429 | `RateLimitExceeded` | You're hitting the API too fast | Back off exponentially (1s, 2s, 4s, …). See [Operations › Rate limits](/docs/operations). |
 | 5xx | (various) | Server error — usually transient | Retry with exponential backoff. If persistent, email Ops with the exact request + response. |
 

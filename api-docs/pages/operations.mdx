@@ -24,9 +24,9 @@ If you need sustained throughput above this, email Ops — we can raise the limi
 
 | Endpoint | Safe to retry? |
 |---|---|
-| `POST /api/method/upsert_lead_by_phone` | ✅ Yes — idempotent on `mobile_no`. Same input = same final state. |
-| `PUT /api/resource/CRM Lead/{name}` | ✅ Yes — same payload = same final state. (But profile arrays REPLACE; see [Write](/docs/api/leads).) |
-| `POST /api/resource/CRM Lead` | ⚠️ No — creates duplicate leads if your prior write already succeeded. Use upsert instead. |
+| `POST .../partner.lead_create` | ✅ Yes — idempotent on the lead grain (phone + line + group). Same input = same final state. |
+| `PUT .../partner.lead_update` | ✅ Yes — same payload = same final state. Profile children merge field-by-field (never replaced). |
+| `POST/PUT/DELETE .../partner.lead_*_bulk` | ✅ Yes — each record is upsert/by-name, so a replay converges. Partial-success response reports any per-row errors. |
 | `POST /api/method/upload_file` | ⚠️ Creates a new File row each time. Dedup client-side by checking `content_hash` if you re-upload. |
 | `DELETE /api/resource/File/{name}` | ✅ Yes (404 on second call is fine). |
 | All GETs | ✅ Yes, always. |

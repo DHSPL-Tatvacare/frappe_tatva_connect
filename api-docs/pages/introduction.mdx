@@ -16,7 +16,7 @@ It's the systems door into the CRM: external systems put leads in and read state
 ## The shape
 
 ```
- CRM Lead (one row per patient — deduped by mobile_no)
+ CRM Lead (one lead per patient × product line + group)
    ├── Plan Profile           — what plan / PSP / insurance / drug program / subscription
    ├── Lab Profile            — lab values, vitals, conditions, scores
    └── Care & Providers       — coaches, RM, therapist, doctor, hospital
@@ -24,11 +24,13 @@ It's the systems door into the CRM: external systems put leads in and read state
 
 The lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1–3 child rows populated; multi-program is normal.
 
+**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone on a different line or group is a separate lead — one patient can own several leads. Re-sending the same trio updates that one lead; it never duplicates.
+
 ## Where to start
 
 - **New here?** Read [Welcome](/docs/welcome), then [Authentication](/docs/api/authentication), then the [Quickstart](/docs/quickstart).
 - **New to Frappe?** Start with [What's a DocType?](/docs/frappe-doctypes) — the concepts this API is built on, in plain English.
-- **Already have a key?** Jump to [Upsert a lead by phone](/docs/api/leads#upsert-a-lead-by-phone-recommended).
-- **Need to know what fields exist?** [Introspect a doctype](/docs/api/schema#introspect-a-doctypes-full-schema).
+- **Already have a key?** Jump to [Create a lead](/docs/api/leads).
+- **Need to know what fields you may send?** Call [`lead_schema`](/docs/api/schema) — it returns exactly the fields your key may send/read.
 
 Every endpoint is tested live in the **API Reference** — open an endpoint, paste your key, and hit **Send**.

@@ -14,12 +14,19 @@ curl -H 'Authorization: token <api_key>:<api_secret>' \
 ```
 Expected: `{"message":"<your-integration-user>@tatvacare.in"}`. If you get HTML or a 401, the auth header is wrong — see [Authentication](/docs/api/authentication).
 
-### 2. Get the valid routing values
+### 2. Discover what you may send
 
-Routing fields on `CRM Lead` (`custom_vertical`, `custom_psp_group`, `custom_current_program`) are Links to small lookup tables. Read them first so you know what to send:
+Call `lead_schema` to get exactly the fields YOUR key may send/read and your routing mode (`forced` if you're a partner, `caller-supplied` if you're an internal System Manager key):
 
 ```bash
-curl -H 'Authorization: token KEY:SECRET' \
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
+```
+
+If you're a **partner**, your routing is fixed — skip straight to step 3. If you're an **internal** key, you supply routing (`custom_vertical`, `custom_group`, `custom_current_program`); read their valid values from the lookup tables first:
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
      https://one.tatvacare.in/api/resource/CRM%20Vertical
 # → {"data":[{"name":"GoodFlip"},{"name":"GoodFlip Care"},{"name":"Pill Up"},{"name":"TatvaPractice"}]}
 ```
@@ -28,34 +35,34 @@ Repeat for `CRM Group` and `CRM Program`. See [Lookups](/docs/api/reference-data
 
 ### 3. Create your first lead (minimum payload)
 
-The [Upsert](/docs/api/leads) endpoint is the recommended write — idempotent on `mobile_no`, safe to retry.
+`lead_create` is the default write — idempotent on the lead grain (phone + line + group), safe to retry.
 
 ```bash
-curl -X POST -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
-     -d '{"mobile_no":"+919999000099","first_name":"Test Lead","status":"New"}' \
-     https://one.tatvacare.in/api/method/upsert_lead_by_phone
+curl -X POST -H 'Authorization: token <api_key>:<api_secret>' -H 'Content-Type: application/json' \
+     -d '{"mobile_no":"+919900000000","first_name":"Test Lead","status":"New"}' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_create
 ```
 
-Expected response — note the `name` returned, that's the CRM's primary key for this lead:
+Expected response — note the `name` returned, that's the CRM's primary key for this lead (PUT it back to `lead_update`):
 
 ```json
-{"message":{"ok":true,"action":"created","name":"CRM-LEAD-2026-NNNNN","mobile_no":"+919999000099"}}
+{"message":{"ok":true,"action":"created","name":"CRM-LEAD-2026-NNNNN","vertical":"GoodFlip","group":"Insurers","program":"Niva Bupa"}}
 ```
 
-**Always check `message.ok`** (boolean), NOT the HTTP status. The endpoint returns HTTP 200 even on failure — a known quirk pending patch.
+A validation or permission failure raises a normal Frappe error (non-2xx) — see [Errors](/docs/errors).
 
 ### 4. Read it back
 
 ```bash
-curl -H 'Authorization: token KEY:SECRET' \
-     'https://one.tatvacare.in/api/resource/CRM%20Lead/CRM-LEAD-2026-NNNNN'
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     'https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-NNNNN'
 ```
 
-Returns the full lead doc with embedded `custom_plan_profile[]`, `custom_lab_profile[]`, `custom_care_providers_profile[]` arrays. They'll be empty since you didn't send any child rows.
+Returns the lead with your allowed fields plus embedded `custom_plan_profile[]` / `custom_lab_profile[]` arrays. They'll be empty since you didn't send any child rows.
 
 ### What's next
 
-- Add a **profile row** to your write — see [Write › Upsert by phone](/docs/api/leads) examples.
+- Add a **profile row** to your write — see [Create a lead](/docs/api/leads) examples.
 - Read the [Concepts](/docs/concepts) page to understand WHY there are 3 profile children.
 - Bookmark [Discovery](/docs/api/schema) for runtime schema introspection.
 - Check [Errors](/docs/errors) before you ship anything.
