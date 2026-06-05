@@ -4,36 +4,85 @@ title: Operations
 
 ## Operational reference
 
-### Rate limits
+### Reading the response (paths)
 
-Frappe enforces a soft limit of ~25 requests per 5 seconds per API key by default. Bulk operations (backfill / migration scripts) should target **5 requests per second** to stay safe.
+The gated **partner methods** (`tatva_connect.api.partner.lead_*`) return a **top-level** body — there is **no `message` wrapper** and no `exc_type`. Read these exact paths:
 
-When you hit the limit, you get HTTP 429. **Always retry with exponential backoff** — 1s, then 2s, then 4s, etc., capped at ~30s. A simple retry loop:
+| You want… | Path | Notes |
+|---|---|---|
+| Did it succeed? | `data.status` *(top level)* | `"success"` or `"error"`. Check this first, always. |
+| What happened? | `action` | `created` / `updated` / `deleted` / `fetched`. (Absent on `lead_schema`.) |
+| The result | `data.*` | The lead/payload. e.g. `data.name`, `data.leads[]`, `data.total`. |
+| The CRM id | `data.name` | PUT it back to `lead_update`. |
+| An error | `error.code` + `error.message` | Branch on `error.code` (stable). See [Errors](/docs/errors). |
+| A bulk batch | `summary.*` + `results[]` | `summary.total/succeeded/failed` (writes) or `summary.requested/found/not_found` (get). |
+| One bulk row | `results[i].status`, then `results[i].action`/`results[i].name`/`results[i].data` or `results[i].error.code` | Results are **input-ordered** — `results[i]` matches the i-th item you sent. |
 
-```python
-import time
-for attempt in range(6):
-    r = requests.post(...)
-    if r.status_code != 429: break
-    time.sleep(2 ** attempt)
+A successful create looks like this — note the absence of any `message` key:
+
+```json
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "CRM-LEAD-2026-00123",
+    "source": "Niva Bupa",
+    "vertical": "GoodFlip",
+    "group": "Insurers",
+    "program": "Niva Bupa"
+  }
+}
 ```
 
-If you need sustained throughput above this, email Ops — we can raise the limit per key.
+> **Native `/api/resource/*` calls are different** — those still use Frappe's `message`/`data` wrapper. The paths above apply only to the `partner.*` methods.
+
+### Rate limits
+
+The partner API enforces **100 requests per 60 seconds, per API key**, **across all endpoints** (every key has its own independent budget). Go over it and you get:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
+    "retry_after": 42
+  }
+}
+```
+
+with **HTTP 429**. The `error.retry_after` field tells you **exactly** how many seconds to wait before the window resets — honour it rather than guessing.
+
+```python
+import time, requests
+
+def call_with_retry(do_request, max_attempts=6):
+    for attempt in range(max_attempts):
+        r = do_request()
+        if r.status_code != 429:
+            return r
+        body = r.json()
+        wait = body.get("error", {}).get("retry_after") or (2 ** attempt)
+        time.sleep(wait)
+    return r
+```
+
+For a backfill/migration, stay well under the cap (e.g. throttle to a few writes per second) and prefer the **bulk** endpoints (up to 100 records per call) — one bulk call costs one request against the budget. If you need a sustained higher limit, email Ops to raise it per key.
 
 ### Retry safety per endpoint
 
 | Endpoint | Safe to retry? |
 |---|---|
-| `POST .../partner.lead_create` | ✅ Yes — idempotent on the lead grain (phone + line + group). Same input = same final state. |
-| `PUT .../partner.lead_update` | ✅ Yes — same payload = same final state. Profile children merge field-by-field (never replaced). |
-| `POST/PUT/DELETE .../partner.lead_*_bulk` | ✅ Yes — each record is create-or-update / by-name, so a replay converges. Partial-success response reports any per-row errors. |
-| `POST /api/method/upload_file` | ⚠️ Creates a new File row each time. Dedup client-side by checking `content_hash` if you re-upload. |
-| `DELETE /api/resource/File/{name}` | ✅ Yes (404 on second call is fine). |
-| All GETs | ✅ Yes, always. |
+| `POST .../partner.lead_create` | ✅ Yes — idempotent on the lead grain (`mobile_no` + product line + group). Same input ⇒ same final state. |
+| `PUT .../partner.lead_update` | ✅ Yes — same payload ⇒ same final state. Profile children merge field-by-field; multi-row children upsert by their key. Nothing is clobbered. |
+| `POST/PUT/DELETE .../partner.lead_*_bulk` | ✅ Yes — each record is create-or-update / by-name, so a replay converges. The partial-success `results[]` reports any per-row errors. |
+| `GET .../partner.lead_get`, `lead_list`, `POST lead_get_bulk` | ✅ Yes, always (reads). |
+| `POST /api/method/upload_file` | ⚠️ Creates a new File row each time. Dedup client-side via `content_hash` if you re-upload. |
+| `DELETE /api/resource/File/{name}` | ✅ Yes (404 on the second call is fine). |
 
 ### Versioning policy
 
-This spec is `v1.0.0`. Backwards-compatible changes (new fields on existing schemas, new endpoints, new lookup values) ship without version bumps. **Breaking** changes (field renames, endpoint removals, validation tightening) get advance notice to all integration owners via email, with a migration window of at least 4 weeks.
+This spec is `v1.0.0`. Backwards-compatible changes (new fields on existing schemas, new endpoints, new lookup values, **a new field/table/partner granted via config**) ship without version bumps. **Breaking** changes (field renames, endpoint removals, validation tightening) get advance notice to all integration owners via email, with a migration window of at least 4 weeks.
 
 The `version` in the OpenAPI spec is the docs version. The CRM platform itself is Frappe v15 + Frappe CRM 1.71 today.
 
@@ -50,5 +99,3 @@ For anything affecting an active integration (write errors, data discrepancies, 
 2. The full response (status code + body).
 3. The CRM `name` of any lead affected.
 4. Timestamps (ideally with timezone).
-
-Faster resolution if we don't have to back-and-forth for context.

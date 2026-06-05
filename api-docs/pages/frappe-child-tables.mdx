@@ -20,10 +20,50 @@ In this CRM, the lead carries identity + contact + routing on the parent, and **
 }
 ```
 
-`custom_lab_profile` is a child table — a list of rows. A lead can carry a Lab Profile, a Plan Profile, and a Care & Providers profile (each its own child table); a patient typically has 1–3 populated.
+`custom_lab_profile` is a child table — a list of rows. A lead can carry several profiles (Lab, Plan, Acquisition, Drug Program, Care & Providers); which fields YOUR key may send is defined by your Allowed Fields grid — call [`lead_schema`](/docs/api/leads) to see them.
 
-**Why it matters for you:**
+## How child rows are written: upsert-by-key (never clobber)
+
+When you send a child array, the API does **not** replace the existing rows. It **merges** by each row's **natural key**:
+
+- **New key** → a new row is appended.
+- **Same key** → that row is updated, and **only the fields you sent change** (omitted fields are left alone).
+- **Rows you don't mention** → untouched.
+- **Delete one row** → send `{ "<key_field>": <value>, "_delete": true }`.
+
+This means a partial write — say, just an updated `hba1c` for an existing report date — never wipes the rest of that row, and never duplicates it.
+
+### The required key per multi-row child
+
+A **multi-row** child must carry its **key field** on every row you send — it's the row's address. The key is **required** even if it isn't in your Allowed Fields grid (the schema marks it `required`). Today's keys:
+
+| Child table | Key field (required) | Rows |
+|---|---|---|
+| `custom_lab_profile` | `report_date` | Multi-row — one per lab report date. |
+| `custom_plan_profile` | `program_start_date` | Multi-row — one per program start. |
+| `custom_drug_program_profile` | `cycle_date` | Multi-row — one per treatment cycle. |
+| `custom_acquisition_profile` | — | Single-row — merges onto the one row. |
+| `custom_care_providers_profile` | — | Single-row — merges onto the one row. |
+
+Whether a child is multi-row (and which field is its key) is **discoverable** — `lead_schema` returns `children.<table>.multi_row` and `children.<table>.key_field`. Read it at runtime rather than hardcoding.
+
+```json
+// Upsert: update the 2026-05-18 lab row's hba1c, ADD a new row for 2026-06-20,
+// and DELETE the 2026-01-10 row — all in one write. Other rows untouched.
+{
+  "custom_lab_profile": [
+    { "report_date": "2026-05-18", "hba1c": 6.9 },
+    { "report_date": "2026-06-20", "hba1c": 6.4, "fbs": 110 },
+    { "report_date": "2026-01-10", "_delete": true }
+  ]
+}
+```
+
+When you read a lead back (`lead_get` / `lead_get_bulk`), each child row always carries its `name` (our internal row id) **and** its key field — so you can address it on the next write.
+
+## Why it matters for you
+
 - You **cannot** create a child row on its own — there's no `/api/resource/...` you POST a profile to (direct child-table access returns 403, by design). You send child rows *embedded in the parent* lead, exactly as above.
-- A `Link` value must exist first. `custom_current_program: "Sigrima"` only works if `Sigrima` is a row in `CRM Program` — check via [Reference Data](/docs/api/reference-data).
+- A `Link` value must exist first. `custom_current_program: "Sigrima"` only works if `Sigrima` is a row in `CRM Program` — check via [Discovery](/docs/frappe-discovery).
 
 → **Try it:** [Create a lead](/docs/api/leads) — its examples show profile child rows embedded in the body.

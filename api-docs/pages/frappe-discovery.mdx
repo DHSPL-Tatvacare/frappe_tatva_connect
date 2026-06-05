@@ -2,18 +2,38 @@
 title: "Discovery — introspect, don't hardcode"
 ---
 
-The CRM's fields evolve — new verticals add new profile fields over time. So **don't hardcode the field list in your integration.** Ask the CRM what fields a DocType has, at runtime.
+These docs deliberately do **not** dump a master field list. The fields you may send and read are **per-partner** (driven by your Allowed Fields grid) and they **evolve** — new verticals add new profile fields over time. So the source of truth is the API itself, at runtime, for **your** key.
 
-A DocType's own definition is itself a document (in the `DocType` DocType — yes, really), so you read its schema over the same REST API:
+## `lead_schema` is your per-partner source of truth
+
+Call `lead_schema` first in any integration. It returns **exactly** the parent + child fields THIS key may send/read — with each field's `fieldname`, `label`, `type`, `required`, and `options` — plus the child-write rules, the dedup grain, the bulk limits, and your routing mode:
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
+```
+
+Two partners hitting this get **different** field lists. Read it; don't hardcode a list copied from a doc — a doc can't know what your key is allowed to do.
+
+What to read out of `data`:
+
+- **`data.lead[]`** — allowed parent (CRM Lead) fields.
+- **`data.children.<table>`** — per child table: `multi_row` (bool), `key_field` (the required key on a multi-row child — see [Child tables](/docs/frappe-child-tables)), and `fields[]`.
+- **`data.routing.mode`** — `forced` (partner; line fixed) or `caller-supplied` (internal key sends routing).
+- **`data.dedup`** / **`data.bulk`** — the lead grain and the bulk/list limits.
+
+## Going deeper: native DocType introspection
+
+For values behind a `Link`/`Select` (e.g. which `CRM Program` rows exist), a DocType's own definition is itself a document, so you read its schema over the same REST API:
 
 ```
 GET /api/resource/DocType/CRM Lead
 ```
 
-You get back every field with its `fieldname`, `label`, `fieldtype`, and — for `Select`/`Link` fields — its allowed `options`. That tells you exactly what you can write, what type each field is, and which values a `Link`/`Select` will accept, with no guessing and no waiting on a docs update.
+You get every field with its `fieldname`, `label`, `fieldtype`, and — for `Select`/`Link` fields — its allowed `options`. (This is a System-Manager-only call.)
 
-**The pattern to build:** *read the schema → map your data → write.* When we add a field, your code adapts instead of breaking. Pair this with the [Reference Data](/docs/api/reference-data) lookups for the live valid values of status, source, program, and the rest.
+**The pattern to build:** *read the schema (`lead_schema` for your contract; `DocType` for link values) → map your data → write.* When we add a field or grant you a new one, your code adapts instead of breaking.
 
 **Example:** before pushing leads with a new `custom_current_program`, introspect `CRM Program` to confirm the program exists rather than hardcoding a name that may have been renamed.
 
-→ **Try it:** [Introspect a doctype's full schema](/docs/api/schema#introspect-a-doctypes-full-schema).
+→ **Try it:** [Discover the fields your key may use](/docs/api/leads) · [Introspect a doctype's full schema](/docs/api/schema#introspect-a-doctypes-full-schema).

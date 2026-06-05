@@ -12,7 +12,7 @@ This walks you through the minimum to go from zero to a verified lead in product
 curl -H 'Authorization: token <api_key>:<api_secret>' \
      https://one.tatvacare.in/api/method/frappe.auth.get_logged_user
 ```
-Expected: `{"message":"<your-integration-user>@tatvacare.in"}`. If you get HTML or a 401, the auth header is wrong — see [Authentication](/docs/api/authentication).
+Expected: `{"message":"<your-integration-user>@tatvacare.in"}` (this is a *native* Frappe method, so it uses the `message` wrapper). If you get HTML or a 401, the auth header is wrong — see [Authentication](/docs/api/authentication).
 
 ### 2. Discover what you may send
 
@@ -43,13 +43,23 @@ curl -X POST -H 'Authorization: token <api_key>:<api_secret>' -H 'Content-Type: 
      https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_create
 ```
 
-Expected response — note the `name` returned, that's the CRM's primary key for this lead (PUT it back to `lead_update`):
+Expected response — **top-level** `status`/`action`/`data` (the partner methods do **not** wrap the payload in `message`). Note `data.name`, the CRM's primary key for this lead (PUT it back to `lead_update`):
 
 ```json
-{"message":{"ok":true,"action":"created","name":"CRM-LEAD-2026-NNNNN","vertical":"GoodFlip","group":"Insurers","program":"Niva Bupa"}}
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "CRM-LEAD-2026-NNNNN",
+    "source": "Niva Bupa",
+    "vertical": "GoodFlip",
+    "group": "Insurers",
+    "program": "Niva Bupa"
+  }
+}
 ```
 
-A validation or permission failure raises a normal Frappe error (non-2xx) — see [Errors](/docs/errors).
+A validation or permission failure returns the unified error contract — `{"status":"error","error":{"code":…,"message":…}}` with a matching HTTP status. See [Errors](/docs/errors) and [Reading the response (paths)](/docs/operations#reading-the-response-paths).
 
 ### 4. Read it back
 

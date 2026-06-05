@@ -1,24 +1,57 @@
 # tatva_frappe_custom
 
-Single working repo for TatvaCare's custom Frappe CRM work — custom app code (hooks/overrides) **and** the API documentation portal.
+TatvaCare's in-house customization layer for our Frappe CRM. It holds the custom app
+**`tatva_connect`** plus the API documentation portal (`api-docs/`).
+
+This is **not a general-purpose Frappe app.** Every doctype, field, override, and automation
+here encodes TatvaCare's Patient Support Program processes, integrations, and data model.
+It is built to run against *our* CRM, *our* WhatsApp/telephony accounts, and *our* routing
+taxonomy — nothing here is meant to be reused elsewhere.
+
+---
+
+## What `tatva_connect` adds on top of the framework
+
+**Custom doctypes (TatvaCare data model)**
+- Lead child-profile tables — Plan, Lab, Care Providers, Acquisition, Drug Program.
+- Routing taxonomy — Vertical, Group, Program; plus Lead Stage, City, Doctor, Hospital, Task Type.
+- Partner API config — Lead API Field, Lead API Mapping (+ child).
+- Integration config — WATI Settings/Account Routing, Acefone Settings/Account/Routing, Automation Settings.
+- Intake + task-checklist doctypes for web enrolment and follow-up.
+
+**Overrides (no forking — all via `hooks.py`)**
+- WhatsApp Message / Notification / Templates → routed through **WATI** (never Meta).
+- Click-to-call + call-log → **Acefone**, riding the native CRM telephony UI.
+
+**Partner Lead API** (`tatva_connect/api/partner.py`)
+- A gated, per-partner create/get/update/delete/bulk surface over CRM Lead, with
+  per-line dedup, child-table upsert-by-key, anti-enumeration, rate limiting, and a
+  uniform error contract.
+
+**Automations & schema-as-code**
+- Lead validate chain (phone/routing canonicalization, dedup, stage validation, headline-metric sync).
+- Inbound WhatsApp handling, web-intake → routed lead, follow-up task creation.
+- Custom fields, property setters, layouts, and master data ship as **fixtures**; structural
+  changes ship as **patches** — so `bench migrate` reproduces the full schema.
+
+**API docs portal** (`api-docs/`)
+- The Zudoku site served at `https://one.tatvacare.in/docs`. Build/ship with `cd api-docs && ./deploy-docs.sh`.
+
+---
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `api-docs/` | The **Zudoku** docs site → served at `https://one.tatvacare.in/docs`. Buildable static project. |
-| `api-docs/openapi.json` | Canonical API contract (drives the **API Reference** tab). |
-| `api-docs/pages/*.mdx` | **Documentation** tab guide pages (hand-edited; grow these). |
-| `api-docs/deploy-docs.sh` | Build + ship docs to the VM (content-only; no infra change). |
-| `nginx/frappe.conf.template` | Frappe frontend nginx template = stock **+** the permanent `/docs` route. Bind-mounted via `crm-compose.yml`. |
-| _(later)_ | custom Frappe app code — hooks, overrides, custom doctypes. |
+| `tatva_connect/` | The Frappe app — hooks, doctypes, api, automation, wati/, acefone/, fixtures, patches. |
+| `api-docs/` | The documentation portal (buildable static site). |
+| `nginx/` | Frontend nginx template carrying the durable `/docs` route. |
 
-## Docs
+Strategy, architecture, and runbooks live in the internal Obsidian vault, not in this repo.
 
-- **Update & deploy:** `cd api-docs && ./deploy-docs.sh` (needs node, npm, expect).
-- **How `/docs` is served durably + full infra:** see the DR runbook **Phase 17** in the Obsidian vault (`Frappe Migration 101/01-infrastructure/06-redeploy-end-to-end.md`).
+---
 
-## Notes
-
-- Strategy/architecture/runbook docs live in the Obsidian vault, not here. This repo holds **code + buildable artifacts**.
-- The live VM/Docker is unchanged by editing this repo; only `deploy-docs.sh` (content) and runbook Phase 17 (one-time route setup) touch the server.
+> **Footnote — please do not clone.** This is heavy, TatvaCare-specific customization wired to
+> our environment, accounts, and data. It is published for our own deployment workflow, not for
+> reuse. If you clone or run it elsewhere, you do so entirely at your own risk — it is unsupported
+> and will not behave sensibly outside TatvaCare's setup.
