@@ -14,6 +14,8 @@ SCRIPTS = [
 	("WATI Send Template (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_template.js"),
 	("WATI WhatsApp Gate (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_gate.js"),
 	("WATI WhatsApp Window (CRM Lead)", "CRM Lead", "Form", "lead_whatsapp_window.js"),
+	("Hide Status Pill (CRM Lead)", "CRM Lead", "Form", "lead_hide_status_pill.js"),
+	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead_data_tab_gate.js"),
 ]
 
 

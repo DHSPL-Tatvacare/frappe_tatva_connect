@@ -1,12 +1,13 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "hash",
+ "autoname": "naming_series:",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "naming_series",
   "intake_form",
   "patient_name",
   "phone",
@@ -32,6 +33,7 @@
   "error"
  ],
  "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "ENROL-.YYYY.-.#####", "default": "ENROL-.YYYY.-.#####", "reqd": 1, "hidden": 1, "no_copy": 1, "print_hide": 1, "set_only_once": 1},
   {"fieldname": "intake_form", "fieldtype": "Link", "label": "Intake Form", "options": "CRM Intake Form", "reqd": 1, "hidden": 1},
   {"fieldname": "patient_name", "fieldtype": "Data", "label": "Patient Name", "reqd": 1, "in_list_view": 1},
   {"fieldname": "phone", "fieldtype": "Phone", "label": "Patient Phone Number", "reqd": 1, "in_list_view": 1, "description": "10-digit mobile (pick country code)."},

@@ -5,9 +5,28 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Axes that form the composite-unique key + the autoname `format:` string.
+_KEY_FIELDS = ("vertical", "psp_group", "program")
+
+
+def _canonicalize(doc):
+	# The name is `format:{vertical}::{psp_group}::{program}`, built BEFORE validate
+	# (set_new_name runs at insert ahead of validate), so blank axes must be one
+	# sentinel — NULL, never "" — before the name is built. Else (N,NULL,NULL) and
+	# (N,'','') diverge in the row but collapse in the rendered name. Run from
+	# before_insert (pre-name) AND validate (covers the edit path).
+	for f in _KEY_FIELDS:
+		if not (doc.get(f) or "").strip():
+			doc.set(f, None)
+
 
 class WATIAccountRouting(Document):
+	def before_insert(self):
+		_canonicalize(self)
+
 	def validate(self):
+		_canonicalize(self)
+
 		# No global default: a rule must scope at least one axis. An all-blank rule
 		# would match every lead (score 0) and silently become a catch-all.
 		if not (self.vertical or self.psp_group or self.program):
@@ -20,10 +39,10 @@ class WATIAccountRouting(Document):
 			)
 
 		# Two rules with the IDENTICAL (vertical, group, program) triple are equally
-		# specific and could both match a lead -> ambiguous routing. Block the
-		# duplicate at the source so resolution stays deterministic.
-		# Compare in Python (not a filtered exists) so empty Link axes — which the
-		# DB may store as NULL OR "" — match uniformly.
+		# specific and could both match a lead -> ambiguous routing. `format:` only
+		# enforces uniqueness at insert, so this also blocks a tuple-duplicate created
+		# by an in-place edit. Compare in Python (canonical None) so empty Link axes
+		# match uniformly.
 		def _triple(d):
 			return ((d.vertical or ""), (d.psp_group or ""), (d.program or ""))
 

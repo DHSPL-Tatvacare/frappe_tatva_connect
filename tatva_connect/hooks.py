@@ -31,10 +31,18 @@ override_whitelisted_methods = {
 # Providers only persist their own records; every side-effect hangs off here.
 doc_events = {
 	"CRM Lead": {
+		# canonicalise empty routing fields (''->None) BEFORE dedup, so the
+		# {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
+		"before_validate": [
+			"tatva_connect.automation.leads.canonicalize_routing_fields",
+		],
 		# canonicalise phones (+E.164) first, then dedup on the canonical value
 		"validate": [
 			"tatva_connect.automation.leads.normalize_lead_phones",
 			"tatva_connect.automation.leads.dedup_guard",
+			"tatva_connect.automation.leads.validate_stage",
+			# mirror the latest lab row's headline metrics up to the core Lead fields
+			"tatva_connect.automation.leads.sync_headline_metrics",
 		],
 	},
 	"CRM Task": {
@@ -46,6 +54,12 @@ doc_events = {
 	},
 	"WhatsApp Message": {
 		"after_insert": "tatva_connect.automation.whatsapp.on_inbound_message",
+	},
+	# the partner-API catalog is data-driven (read from Lead API Field, cached) —
+	# drop the cache whenever a catalog row changes so the API picks it up at once.
+	"Lead API Field": {
+		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
+		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
 	# Generic web-intake: a Web Form lands a submission row -> upsert a routed lead.
 	"CRM Enrolment Submission": {
@@ -74,28 +88,38 @@ after_migrate = ["tatva_connect.wati.seed_form_scripts.seed"]
 fixtures = [
 	{
 		"dt": "Custom Field",
+		# Full parity (schema-as-code): ship EVERY custom field we add to native doctypes,
+		# not a curated subset, so a fresh `bench migrate` reproduces the ENTIRE Lead schema
+		# (all 42 CRM Lead fields incl. routing/stage/headline/footprint/child-links) on a
+		# clean server. Every Custom Field on these doctypes is ours (modules own native
+		# fields in JSON, not as Custom Fields); workflow_state is Frappe-managed (excluded).
 		"filters": [
-			[
-				"name",
-				"in",
-				[
-					"WhatsApp Account-custom_is_wati",
-					"WhatsApp Account-custom_wati_channel_number",
-					"CRM Telephony Agent-acefone_number",
-					"CRM Call Log-custom_acefone_account",
-					"CRM Task-custom_task_type",
-					"CRM Task-custom_checklist",
-				],
-			]
+			["dt", "in", ["CRM Lead", "CRM Task", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account"]],
+			["fieldname", "!=", "workflow_state"],
 		],
 	},
 	# The public enrolment Web Form ships as a fixture (carries its fields).
 	{"dt": "Web Form", "filters": [["name", "=", "nivolumab-patient-enrolment"]]},
+	# CRM Lead layouts (side panel / quick entry / grid rows) are currently live-only
+	# DB records — capture them so they're reproducible. `bench export-fixtures` writes
+	# the live JSON here; the group-layout repoint patch (fix_group_layout_slot) runs on
+	# migrate BEFORE the export so the captured side-panel/quick-entry use custom_group,
+	# not the dead custom_psp_group. (Phase 3.)
+	{"dt": "CRM Fields Layout", "filters": [["name", "in", [
+		"CRM Lead-Side Panel",
+		"CRM Lead-Quick Entry",
+		# The Data tab (profile child-tables + clinical sections). Captured so the
+		# section structure ships with the app — incl. the P9 Acquisition + Drug
+		# Program sections the program gate (lead_data_tab_gate.js) shows/hides. (P10.)
+		"CRM Lead-Data Fields",
+	]]]},
 	# Field-property overrides on CRM data-model doctypes (profile Select fields with
 	# no options -> free-text, so form-written values both store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
-		"CRM Plan Profile-nivo_indication-fieldtype",
-		"CRM Plan Profile-nivo_indication-options",
+		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override
+		# follows the field (the migration recreates these on the new doctype + drops the stale Plan ones).
+		"CRM Drug Program Profile-nivo_indication-fieldtype",
+		"CRM Drug Program Profile-nivo_indication-options",
 		# Scoping fix: exclude the secondary (history) Link fields from User Permission
 		# matching, so a Program/Vertical-scoped user is filtered by the CURRENT field
 		# only. Without this, a blank/different previous_program/origin_vertical fails the
@@ -105,7 +129,47 @@ fixtures = [
 		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0).
 		# Vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
 		"CRM Lead-custom_current_program-permlevel",
+		# Field governance (Phase 3): clinical + patient fields are API-owned -> read-only
+		# (agents can't hand-edit). Lead-detail fields stay writable. Priority Text is
+		# admin-only (permlevel 1). Global default grid columns via in_list_view on the
+		# child profile DocFields (NOT the per-user gear).
+		"CRM Lead-mobile_no-read_only",
+		"CRM Lead-first_name-read_only",
+		"CRM Lead-last_name-read_only",
+		"CRM Lead-custom_gender-read_only",
+		"CRM Lead-custom_dob-read_only",
+		"CRM Lead-custom_patient_id-read_only",
+		"CRM Lab Profile-hba1c-read_only",
+		"CRM Lab Profile-fbs-read_only",
+		"CRM Lab Profile-total_cholesterol-read_only",
+		"CRM Lab Profile-triglycerides-read_only",
+		"CRM Lab Profile-ldl-read_only",
+		"CRM Lab Profile-hdl-read_only",
+		"CRM Lab Profile-vldl-read_only",
+		"CRM Lab Profile-creatinine-read_only",
+		"CRM Lab Profile-egfr-read_only",
+		"CRM Lab Profile-alt_sgpt-read_only",
+		"CRM Lab Profile-ggt-read_only",
+		"CRM Lab Profile-tsh-read_only",
+		"CRM Lab Profile-height_feet-read_only",
+		"CRM Lab Profile-weight_kg-read_only",
+		"CRM Lab Profile-report_date-read_only",
+		"CRM Lab Profile-report_date-in_list_view",
+		"CRM Lab Profile-hba1c-in_list_view",
+		"CRM Lab Profile-fbs-in_list_view",
+		"CRM Plan Profile-policy_number-in_list_view",
+		"CRM Plan Profile-member_id-in_list_view",
+		"CRM Plan Profile-payment_link-in_list_view",
+		"CRM Plan Profile-plan_name-in_list_view",
 	]]]},
+	# Master data (routing taxonomy): the Link targets for the CRM Lead routing fields
+	# (custom_vertical / custom_group / custom_current_program). Seeded so a fresh prod has
+	# the masters the leads reference — without these the Link fields point at empty doctypes.
+	# Simple field-named masters, no inter-deps. (CRM Lead Stage is seeded via seed_lead_stages;
+	# CRM City via seed_india_cities.)
+	{"dt": "CRM Vertical"},
+	{"dt": "CRM Group"},
+	{"dt": "CRM Program"},
 ]
 
 # Apps
@@ -300,7 +364,9 @@ fixtures = [
 # Request Events
 # ----------------
 # before_request = ["tatva_connect.utils.before_request"]
-# after_request = ["tatva_connect.utils.after_request"]
+# Rewrite framework-layer errors (bad key / malformed body / not-whitelisted) on
+# partner-API paths into the unified {status:error, error:{code,message}} contract.
+after_request = ["tatva_connect.api.partner.normalise_partner_response"]
 
 # Job Events
 # ----------

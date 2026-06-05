@@ -180,12 +180,19 @@ def _ingest_inbound(event: dict, account_hint=None):
 
 
 def _update_status(event: dict):
-	row = frappe.db.get_value("WhatsApp Message", {"message_id": event.get("localMessageId")}, "name")
-	if not row:
+	# A shared number can mirror the same message onto >1 lead (composite identity),
+	# so update EVERY row carrying this message_id, not just the first.
+	rows = frappe.get_all(
+		"WhatsApp Message",
+		filters={"message_id": event.get("localMessageId")},
+		pluck="name",
+	)
+	if not rows:
 		return
 	# Map by eventType (robust to a missing statusString — e.g. failures).
 	status = STATUS_BY_EVENT.get(event.get("eventType"))
 	if not status:
 		return
-	frappe.db.set_value("WhatsApp Message", row, "status", status, update_modified=False)
+	for row in rows:
+		frappe.db.set_value("WhatsApp Message", row, "status", status, update_modified=False)
 	frappe.db.commit()

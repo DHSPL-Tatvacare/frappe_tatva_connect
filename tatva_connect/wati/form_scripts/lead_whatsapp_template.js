@@ -192,6 +192,44 @@ function setupForm({ doc, $dialog, call, createToast }) {
     })
   }
 
+  // Gate the "Refresh WhatsApp" header action on the SAME routing signal the
+  // WhatsApp tab uses (tatva_connect.wati.routing.lead_has_route). The header
+  // action is returned synchronously below (crm renders it once), so we hide the
+  // rendered button when the lead has no WATI route. Fail-safe = hide (consistent
+  // with "no route = WhatsApp blocked"); a route-check error logs server-side.
+  function setRefreshHidden(hidden) {
+    const btn = refreshButton()
+    if (!btn) return
+    btn.style.display = hidden ? 'none' : ''
+  }
+  let routeHidden = false
+  function reapplyRoute() {
+    if (routeHidden) setRefreshHidden(true)
+  }
+  if (window.__watiRefreshGateObserver) {
+    try {
+      window.__watiRefreshGateObserver.disconnect()
+    } catch (e) {}
+  }
+  const refreshObs = new MutationObserver(reapplyRoute)
+  window.__watiRefreshGateObserver = refreshObs
+  refreshObs.observe(document.body, { childList: true, subtree: true })
+
+  call('tatva_connect.wati.routing.lead_has_route', {
+    reference_doctype: doc.doctype,
+    reference_name: doc.name,
+  })
+    .then((r) => {
+      routeHidden = !(r && r.has_route)
+      setRefreshHidden(routeHidden)
+    })
+    .catch(() => {
+      routeHidden = true // fail-safe: hide when we can't confirm a route
+      setRefreshHidden(true)
+    })
+  // re-assert shortly after load (the header action can render after setup runs)
+  ;[150, 500, 1200].forEach((t) => setTimeout(reapplyRoute, t))
+
   if (window.__watiSendTemplateHandler) {
     document.removeEventListener('click', window.__watiSendTemplateHandler, true)
   }

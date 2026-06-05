@@ -5,14 +5,34 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Axes that may be blank and so must be canonicalised before the name is built.
+# task_type is reqd (never blank) but is still part of the key for the dup-guard.
+_BLANK_AXES = ("vertical", "psp_group", "program")
+
+
+def _canonicalize(doc):
+	# The name is `format:{task_type}::{vertical}::{psp_group}::{program}`, built
+	# BEFORE validate (set_new_name runs at insert ahead of validate), so blank axes
+	# must be one sentinel — NULL, never "" — before the name is built. Else a row
+	# with NULL and a row with "" diverge yet collapse in the rendered name. Run from
+	# before_insert (pre-name) AND validate (covers the edit path).
+	for f in _BLANK_AXES:
+		if not (doc.get(f) or "").strip():
+			doc.set(f, None)
+
 
 class CRMTaskChecklistTemplate(Document):
+	def before_insert(self):
+		_canonicalize(self)
+
 	def validate(self):
-		# Two templates with the IDENTICAL (task_type, vertical, group, program)
-		# quad are equally specific -> ambiguous which checklist applies. Block the
-		# duplicate at the source so resolution stays deterministic. Compare in
-		# Python (not a filtered exists) so blank Link axes — which the DB may store
-		# as NULL OR "" — match uniformly. Mirrors the routing dup-guards.
+		_canonicalize(self)
+
+		# Two templates with the IDENTICAL (task_type, vertical, group, program) quad
+		# are equally specific -> ambiguous which checklist applies. `format:` only
+		# enforces uniqueness at insert, so this also blocks a tuple-duplicate created
+		# by an in-place edit. Compare in Python (canonical None) so blank Link axes
+		# match uniformly. Mirrors the routing dup-guards.
 		def _key(d):
 			return ((d.task_type or ""), (d.vertical or ""), (d.psp_group or ""), (d.program or ""))
 

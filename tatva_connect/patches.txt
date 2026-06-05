@@ -10,4 +10,22 @@ tatva_connect.patches.seed_automation_task_types
 tatva_connect.patches.seed_nivolumab_intake
 tatva_connect.patches.seed_india_cities
 tatva_connect.patches.normalize_lead_phones
+tatva_connect.patches.canonicalize_lead_routing
+# P9: move acquisition + drug-program data out of CRM Plan Profile into the new
+# children (copy -> verify -> drop), THEN re-point the catalog to the new sections.
+tatva_connect.patches.split_plan_profile
 tatva_connect.patches.seed_lead_api_fields
+# Force the content-changed P9 catalog seed (is_row_key + acq:*/drug:* + de-list) to
+# re-run on installs where the original seed already executed (patches run once by name).
+tatva_connect.patches.reseed_lead_api_fields_p9
+tatva_connect.patches.rename_to_naming_standard
+tatva_connect.patches.seed_lead_stages
+tatva_connect.patches.add_stage_to_side_panel
+tatva_connect.patches.fix_group_layout_slot
+# Rename the stale Custom Field record (custom_psp_group -> custom_group) BEFORE fixtures
+# sync, so the conventionally-named fixture doesn't create a duplicate group field on prod.
+tatva_connect.patches.fix_custom_group_field_name
+# B5: shared-number fix — replace the global message_id unique index with a composite
+# (message_id, reference_name) so one number can mirror onto multiple leads (same patient,
+# two programs) without DuplicateEntryError on refresh / inbound.
+tatva_connect.patches.recreate_whatsapp_message_id_index_composite

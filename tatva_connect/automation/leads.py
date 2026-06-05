@@ -1,12 +1,49 @@
 """CRM Lead automations."""
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
 from tatva_connect.wati.phone import to_e164
 
 # Phone-type fields on CRM Lead we keep canonical (+E.164). mobile_no is the dedup +
 # WhatsApp-inbound match key; the rest are normalized for consistency.
 PHONE_FIELDS = ("mobile_no", "phone", "custom_alternate_number", "custom_caregiver_phone")
+
+# Headline metrics surfaced on the core Lead for list/sort/kanban. Each maps a
+# CRM Lead parent field -> the CRM Lab Profile child field it mirrors. Auto-synced
+# from the LATEST lab row on every write; agents never hand-maintain these.
+HEADLINE_LAB_MAP = {
+	"custom_latest_hba1c": "hba1c",
+	"custom_latest_fbs": "fbs",
+	"custom_height_feet": "height_feet",
+	"custom_weight_kg": "weight_kg",
+	"custom_last_report_date": "report_date",
+}
+
+# Oncology PSP programs whose leads carry the Drug Program (chemo-cycle) profile, NOT a
+# metabolic plan. This drives the Data-tab section gate (lead_section_gate): a lead on one
+# of these programs sees the Drug Program section and hides the metabolic ones, and vice
+# versa. Like HEADLINE_LAB_MAP, this is a code identity knob (Plane B, §A4) — an explicit,
+# small set kept in code on purpose, not partner-onboarding config. Add a program here when
+# a new oncology PSP launches.
+DRUG_PROGRAM_PROGRAMS = ("Tukavo", "Nivolumab", "Sigrima", "Ujvira")
+
+# Routing fields the dedup anchor keys on. An omitted field arrives as '' (form/import)
+# or None (API); both MUST canonicalise to one value so the {mobile, vertical, group}
+# anchor and every stored lead agree. We pick NULL: dedup_guard's get_value then builds
+# IS NULL, which matches the NULL we store here (instead of missing '' rows).
+ROUTING_FIELDS = ("custom_vertical", "custom_group", "custom_current_program")
+
+
+def canonicalize_routing_fields(doc, method=None):
+	"""Canonicalise empty routing fields ''->None on every write (before_validate),
+	one direction, consistently. The dedup anchor keys on {mobile, vertical, group}; if
+	some rows store '' and others NULL for an omitted line, get_value's IS NULL misses
+	the '' rows -> a duplicate lead slips through. Storing only NULL closes that gap.
+	Runs BEFORE dedup_guard (before_validate precedes validate)."""
+	for f in ROUTING_FIELDS:
+		if doc.get(f) == "":
+			doc.set(f, None)
 
 
 def normalize_lead_phones(doc, method=None):
@@ -54,3 +91,88 @@ def dedup_guard(doc, method=None):
 			).format(mobile, existing),
 			title=_("Duplicate lead"),
 		)
+
+
+def validate_stage(doc, method=None):
+	"""Single combined Stage pick: custom_stage links one selectable leaf of
+	CRM Lead Stage (a substage, or a main stage with no substages). Validate it's
+	on the lead's program, and derive the read-only custom_main_stage for grouping.
+	Empty = lifecycle not set yet. Soft, clear errors — no silent corrections.
+	"""
+	if not doc.custom_stage:
+		doc.custom_main_stage = None
+		return
+
+	stage = frappe.db.get_value(
+		"CRM Lead Stage", doc.custom_stage, ["program", "stage", "substage_of", "selectable"], as_dict=True
+	)
+	if not stage:
+		return
+
+	program = doc.custom_current_program
+	if program and stage.program != program:
+		frappe.throw(
+			_("Stage {0} belongs to a different program. Pick a stage for {1}.").format(
+				doc.custom_stage, program
+			),
+			title=_("Invalid stage"),
+		)
+	if not stage.selectable:
+		frappe.throw(
+			_("{0} is a grouping stage, not a pickable one. Pick a specific stage.").format(doc.custom_stage),
+			title=_("Invalid stage"),
+		)
+
+	# derive the main stage: a substage's parent, else the stage itself
+	if stage.substage_of:
+		doc.custom_main_stage = frappe.db.get_value("CRM Lead Stage", stage.substage_of, "stage")
+	else:
+		doc.custom_main_stage = stage.stage
+
+
+def _latest_lab_row(doc):
+	"""The most recent CRM Lab Profile child row, or None. 'Latest' = newest
+	report_date; rows with no date sort last, ties broken by grid order (idx)."""
+	rows = doc.get("custom_lab_profile") or []
+	if not rows:
+		return None
+	# cstr keys the sort uniformly whether report_date is a date object or an ISO
+	# string (Frappe types child values inconsistently across write paths).
+	return max(rows, key=lambda r: (cstr(r.report_date), r.idx or 0))
+
+
+def sync_headline_metrics(doc, method=None):
+	"""Copy the latest lab row's headline values up to the core Lead fields, so ops
+	can sort/scan/kanban on them. Idempotent: re-derives from the child each write,
+	whether the change came from the partner API or a UI/grid edit. No lab row leaves
+	the headlines as-is (don't clobber on an unrelated save)."""
+	# Defensive (P9): during the profile-restructure migration the lab table's columns
+	# may briefly be out of sync with the doc meta — skip rather than throw on a live
+	# Lead save if the source lab column is missing.
+	if not frappe.db.has_column("CRM Lab Profile", "hba1c"):
+		return
+	row = _latest_lab_row(doc)
+	if not row:
+		return
+	for parent_field, lab_field in HEADLINE_LAB_MAP.items():
+		doc.set(parent_field, row.get(lab_field))
+
+
+@frappe.whitelist()
+def lead_section_gate(reference_name=None):
+	"""Does this lead belong to the oncology drug-program world? The Data-tab gate
+	(lead_data_tab_gate.js) calls this to decide which profile sections to show: a
+	drug-program lead sees the Drug Program section and hides the metabolic ones; a
+	metabolic lead does the reverse. The program->world mapping (DRUG_PROGRAM_PROGRAMS)
+	lives here, so the JS never hardcodes a program list.
+
+	Fail-safe: any error returns drug_program=False and is logged, so the gate shows
+	everything (a wrong hide could strand data) rather than failing silently."""
+	try:
+		if not reference_name:
+			return {"drug_program": False}
+		program = frappe.db.get_value("CRM Lead", reference_name, "custom_current_program")
+		return {"drug_program": program in DRUG_PROGRAM_PROGRAMS}
+	except Exception:
+		frappe.log_error(title="lead_section_gate failed", message=frappe.get_traceback())
+		return {"drug_program": False}

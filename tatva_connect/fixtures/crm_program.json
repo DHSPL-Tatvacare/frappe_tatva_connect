@@ -1,0 +1,58 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.484001",
+  "name": "Tukavo",
+  "program_name": "Tukavo"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.487744",
+  "name": "Nivolumab",
+  "program_name": "Nivolumab"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.492808",
+  "name": "Ujvira",
+  "program_name": "Ujvira"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.497857",
+  "name": "GoodFlip",
+  "program_name": "GoodFlip"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.500207",
+  "name": "Anyra - Retina",
+  "program_name": "Anyra - Retina"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.504094",
+  "name": "Eisai - Alzheimers",
+  "program_name": "Eisai - Alzheimers"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.475761",
+  "name": "Niva Bupa",
+  "program_name": "Niva Bupa"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Program",
+  "modified": "2026-05-26 16:13:50.489937",
+  "name": "Sigrima",
+  "program_name": "Sigrima"
+ }
+]

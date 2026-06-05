@@ -265,8 +265,12 @@ def whatsapp_window_state(reference_doctype, reference_name):
 def _row_from_wati_item(it, number, ref_doctype, ref_name):
 	"""Translate one WATI getMessages item into a WhatsApp Message row dict.
 
-	`id` is WATI's stable per-message key (present on every item) — we use it as
-	both the row name and message_id so a refresh is idempotent and can't duplicate.
+	`id` is WATI's stable per-message key (present on every item). We keep it as
+	`message_id` (status threading keys on it), but the row NAME is scoped per-lead
+	(`{ref_name}-{id}`) so one WhatsApp number shared by two leads (same patient in
+	two programs) can mirror the same message onto BOTH leads without colliding on
+	the primary key or the unique index. A refresh stays idempotent per lead (the
+	delete is scoped to this lead, the deterministic name reinserts the same rows).
 	Returns None for non-chat items (ticket/assignment events, empty system rows).
 	"""
 	event_type = it.get("eventType")
@@ -277,7 +281,7 @@ def _row_from_wati_item(it, number, ref_doctype, ref_name):
 	status = _WATI_STATUS.get((it.get("statusString") or "").upper(), "")
 	created = it.get("created")
 	base = {
-		"name": wid,
+		"name": f"{ref_name}-{wid}",
 		"message_id": wid,
 		"creation": created,
 		"conversation_id": it.get("conversationId"),
