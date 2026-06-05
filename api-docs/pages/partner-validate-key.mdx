@@ -1,0 +1,46 @@
+---
+title: Validate your API key
+---
+
+Before you build anything, confirm your key works. There's a single, side-effect-free way to do it: call **`lead_schema`** with your key. It reads nothing and writes nothing — it just tells you what your key is allowed to see.
+
+```bash
+curl -i -H 'Authorization: token <api_key>:<api_secret>' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
+```
+
+## How to read the result
+
+| You get | What it means | What to do |
+|---|---|---|
+| **`200`** with a `data` object listing your fields | Your key works, and `data` *is* your granted schema. | You're ready — head to the [Quickstart](/docs/partner-quickstart). |
+| **`401`** `unauthorized` | The key is missing, malformed, or wrong. | Re-check the header is exactly `Authorization: token <api_key>:<api_secret>` — lowercase `token`, one space, colon-joined. See [Conventions](/docs/conventions#auth). |
+| **`403`** `forbidden` | The header is well-formed, but this key isn't permitted here. | Confirm you're using the key issued for the Partner Lead API. If you need broader access, email Ops. |
+
+A `200` response looks like this (trimmed) — the `data` block is the exact set of fields and child tables your key may use:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "lead": [
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "required": false },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false }
+    ],
+    "children": { "...": "..." },
+    "routing": { "mode": "forced", "...": "..." }
+  }
+}
+```
+
+:::tip{title="Your key is your contract"}
+
+Two keys get two different schemas. What comes back here is what *your* integration should build against — don't copy a field list from anywhere else. Read [Discover your schema](/docs/discover-schema) for the full walkthrough.
+
+:::
+
+## Next
+
+- **[Quickstart](/docs/partner-quickstart)** — key → header → first schema call → first lead.
+- **[Discover your schema](/docs/discover-schema)** — the call every integration starts with.
+- **[Errors](/docs/partner-errors)** — the one error shape, and how to branch on it.

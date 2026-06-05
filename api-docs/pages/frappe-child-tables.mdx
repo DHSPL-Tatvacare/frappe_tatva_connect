@@ -2,7 +2,7 @@
 title: "Child tables & Links"
 ---
 
-Two field types connect DocTypes to each other — and they're the heart of how this CRM models a patient.
+Two field types connect DocTypes to each other — and they're the heart of how this CRM models a lead and its related records.
 
 **`Link` = a foreign key.** A `Link` field stores the `name` (ID) of a document in *another* DocType. `CRM Lead.status` links to `CRM Lead Status`; `custom_current_program` links to `CRM Program`. The value must already exist in the target DocType, or the write is rejected.
 
@@ -20,7 +20,7 @@ In this CRM, the lead carries identity + contact + routing on the parent, and **
 }
 ```
 
-`custom_lab_profile` is a child table — a list of rows. A lead can carry several profiles (Lab, Plan, Acquisition, Drug Program, Care & Providers); which fields YOUR key may send is defined by your Allowed Fields grid — call [`lead_schema`](/docs/api/leads) to see them.
+`custom_lab_profile` is a child table — a list of rows. A lead can carry several profiles (Lab, Plan, Acquisition, Drug Program, Care & Providers); which fields YOUR key may send is whatever your key is granted — call [`lead_schema`](/docs/discover-schema) to see them.
 
 ## How child rows are written: upsert-by-key (never clobber)
 
@@ -35,7 +35,7 @@ This means a partial write — say, just an updated `hba1c` for an existing repo
 
 ### The required key per multi-row child
 
-A **multi-row** child must carry its **key field** on every row you send — it's the row's address. The key is **required** even if it isn't in your Allowed Fields grid (the schema marks it `required`). Today's keys:
+A **multi-row** child must carry its **key field** on every row you send — it's the row's address. The key is **required** even if your key wasn't granted it (the schema marks it `required`). Today's keys:
 
 | Child table | Key field (required) | Rows |
 |---|---|---|

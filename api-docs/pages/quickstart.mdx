@@ -16,7 +16,7 @@ Expected: `{"message":"<your-integration-user>@tatvacare.in"}` (this is a *nativ
 
 ### 2. Discover what you may send
 
-Call `lead_schema` to get exactly the fields YOUR key may send/read and your routing mode (`forced` if you're a partner, `caller-supplied` if you're an internal System Manager key):
+Call `lead_schema` to get exactly the fields YOUR key may send/read and your routing mode (`forced` if you're a partner, `caller-supplied` if you're an internal key):
 
 ```bash
 curl -H 'Authorization: token <api_key>:<api_secret>' \

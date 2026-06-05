@@ -1,0 +1,132 @@
+---
+title: Reading values
+---
+
+Every response is JSON. To pull a value out, you follow its **dotted path** from the top of the body. This page is the whole loop: check `status`, branch on `action` or `error.code`, then read your value by its path.
+
+:::tip{title="The one rule"}
+
+**Check `status` first → branch on `action` (success) or `error.code` (failure) → read your value by its dotted path.** That's every response, every time.
+
+:::
+
+## Paths, by example
+
+A field lives at a dotted path from the body. Child rows are arrays, so you index them.
+
+| You want | Path |
+|---|---|
+| Did it succeed? | `status` — `"success"` or `"error"` |
+| What happened | `action` — `created` / `updated` / `deleted` / `fetched` |
+| The lead id | `data.name` |
+| A top-level field | `data.first_name`, `data.status` |
+| The latest lab's HbA1c | `data.custom_lab_profile[0].hba1c` |
+| A specific lab row's date | `data.custom_lab_profile[1].report_date` |
+| An error code | `error.code` |
+| The 3rd item in a bulk reply | `results[2].status`, `results[2].name` |
+
+Child arrays are returned newest-first, so `[0]` is the most recent row. Bulk `results[]` is **input-ordered** — `results[2]` is the outcome of the 3rd item you sent.
+
+## Read one value, three ways
+
+Pull the latest HbA1c out of a `lead_get` response:
+
+<CodeTabs>
+
+```bash title="curl + jq"
+curl -s -H 'Authorization: token KEY:SECRET' \
+  'https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123' \
+  | jq '.data.custom_lab_profile[0].hba1c'
+```
+
+```python title="Python"
+import requests
+
+r = requests.get(
+    "https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get",
+    headers={"Authorization": "token KEY:SECRET"},
+    params={"name": "CRM-LEAD-2026-00123"},
+)
+body = r.json()
+if body["status"] == "success":
+    labs = body["data"].get("custom_lab_profile", [])
+    hba1c = labs[0]["hba1c"] if labs else None
+    print(hba1c)
+```
+
+```javascript title="Node"
+const res = await fetch(
+  "https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123",
+  { headers: { Authorization: "token KEY:SECRET" } },
+);
+const body = await res.json();
+if (body.status === "success") {
+  const labs = body.data.custom_lab_profile ?? [];
+  const hba1c = labs[0]?.hba1c ?? null;
+  console.log(hba1c);
+}
+```
+
+</CodeTabs>
+
+## The full loop on a write
+
+Check `status`, then branch on `action` for a success or `error.code` for a failure:
+
+<CodeTabs>
+
+```python title="Python"
+r = requests.post(url, headers=headers, json={"mobile_no": "+919900000000", "first_name": "Asha"})
+body = r.json()
+
+if body["status"] == "success":
+    lead_id = body["data"]["name"]          # data.name
+    print(body["action"], lead_id)          # "created" / "updated"
+else:
+    code = body["error"]["code"]            # error.code — branch on this
+    if code == "rate_limited":
+        wait = body["error"]["retry_after"]
+    elif code == "validation_error":
+        bad = body["error"].get("fields", [])
+    print(code, body["error"]["message"])
+```
+
+```javascript title="Node"
+const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ mobile_no: "+919900000000", first_name: "Asha" }) });
+const body = await res.json();
+
+if (body.status === "success") {
+  const leadId = body.data.name;           // data.name
+  console.log(body.action, leadId);        // "created" / "updated"
+} else {
+  const code = body.error.code;            // error.code — branch on this
+  if (code === "rate_limited") {
+    const wait = body.error.retry_after;
+  } else if (code === "validation_error") {
+    const bad = body.error.fields ?? [];
+  }
+  console.log(code, body.error.message);
+}
+```
+
+</CodeTabs>
+
+## Reading a bulk reply
+
+Bulk replies put per-record outcomes in `results[]`, in the order you sent them. Walk it and read each row's own `status`:
+
+```python title="Python"
+body = r.json()
+print(body["summary"])                       # {"total":2,"succeeded":1,"failed":1}
+for row in body["results"]:                   # results[i] = your i-th input
+    if row["status"] == "success":
+        print(row["index"], row["name"])      # results[i].name
+    else:
+        print(row["index"], row["error"]["code"])  # results[i].error.code
+```
+
+:::note{title="Partner paths are top-level"}
+
+These dotted paths read straight from the top of the body — there's no extra wrapper to unwrap. (If you've used native Frappe REST elsewhere, those wrap results under `message`/`data`; the partner methods don't.)
+
+:::

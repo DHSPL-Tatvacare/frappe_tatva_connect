@@ -38,7 +38,7 @@ POST /api/method/tatva_connect.acefone.handler.make_acefone_call
 ```json
 { "reference_doctype": "CRM Lead", "reference_name": "CRM-LEAD-2026-00123" }
 ```
-Acefone's click-to-call returns no call id, so we create the row as `Initiated` and reconcile the later webhook to it (via a `custom_identifier` passthrough, falling back to number + recency). Requires System Manager.
+Acefone's click-to-call returns no call id, so we create the row as `Initiated` and reconcile the later webhook to it (via a `custom_identifier` passthrough, falling back to number + recency). Requires an internal admin key.
 
 ## Multi-account routing
 
@@ -54,7 +54,7 @@ Different product lines / groups / programs can call through **different Acefone
 
 ## Configure accounts & routing over the API
 
-Accounts and routing rules are plain doctypes — manage them entirely over REST (no DB access). Needs **System Manager** (Acefone Account also allows Sales Manager).
+Accounts and routing rules are plain doctypes — manage them entirely over REST (no DB access). Needs an internal admin key (Acefone Account also allows Sales Manager).
 
 **Add an Acefone account** (one per account; carries the agent line, DID, token):
 ```bash

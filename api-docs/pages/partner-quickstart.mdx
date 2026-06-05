@@ -1,0 +1,76 @@
+---
+title: Quickstart
+---
+
+:::rocket{title="From zero to a live lead"}
+
+Get your key, set the header, ask the API what you can send, then create a lead and read it back. Copy the response of one call into the next.
+
+:::
+
+## 1. Get a key
+
+Contact **TatvaCare Ops** for an API key and secret. You'll receive two strings — an `api_key` and an `api_secret`. Keep the secret somewhere safe; it's shown once.
+
+Every request carries them in one header, joined by a colon:
+
+```
+Authorization: token <api_key>:<api_secret>
+```
+
+Literal lowercase `token`, one space, then `key:secret`. See [Conventions](/docs/conventions#auth) for the exact format.
+
+## 2. Discover what you can send
+
+Always start here. `lead_schema` returns the exact fields your key may read and write, which are required, and how each child table works.
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
+```
+
+You get back a `data` object listing your `lead` fields, your `children` (each with `multi_row` and `key_field`), and your `routing` (fixed to your key — you don't set it). Read the full walkthrough on **[Discover your schema](/docs/discover-schema)**.
+
+## 3. Create your first lead
+
+`lead_create` is the everyday write. It's idempotent on phone-within-your-line, so it's always safe to retry. Send the smallest payload that works — just a phone, plus whatever your schema marks required:
+
+```bash
+curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
+     -H 'Content-Type: application/json' \
+     -d '{"mobile_no":"+919900000000","first_name":"Test Lead"}' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_create
+```
+
+The response is **top-level** `status` / `action` / `data` — note `data.name`, the lead's id. You'll PUT that back to `lead_update` later.
+
+```json
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "CRM-LEAD-2026-00123",
+    "source": "…",
+    "vertical": "…",
+    "group": "…",
+    "program": "…"
+  }
+}
+```
+
+The `source` / `vertical` / `group` / `program` come back filled in **for you** — that's your fixed routing, stamped server-side. If a call fails, you get one consistent error shape instead — see [Errors](/docs/partner-errors).
+
+## 4. Read it back
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     'https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123'
+```
+
+You get the lead with your allowed fields, and any child tables inlined as arrays (empty here, since you didn't send rows yet). Pull values out by their dotted path — see [Reading values](/docs/reading-values).
+
+## What's next
+
+- Add a **child row** to a write — labs, plan, care team. Discover the row key first via [`lead_schema`](/docs/discover-schema).
+- Skim [Response shapes & codes](/docs/responses) so your client knows what to expect.
+- Bookmark [Errors](/docs/partner-errors) and [Rate limits](/docs/rate-limits) before you ship.

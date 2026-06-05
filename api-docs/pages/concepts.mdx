@@ -6,11 +6,11 @@ title: Concepts
 
 Four ideas. If you understand these, the API maps cleanly.
 
-### 1. One lead per patient × product line + group
+### 1. One lead per person × product line + group
 
 Dedup anchor: `mobile_no` + `custom_vertical` (product line) + `custom_group`. **Phone format is E.164** — `+<country code><digits>`, no hyphens, no spaces. Example: `+919999000123`.
 
-The same phone on a *different* product line or group is a **separate** lead — one patient can own several leads, one per line they're enrolled in (e.g. GoodFlip-direct vs GoodFlip-via-insurer are different groups → different leads). Within a single line, never create a second lead for the same patient because they joined a new program — instead **update the existing lead** (or add a profile row — see point 3).
+The same phone on a *different* product line or group is a **separate** lead — one person can own several leads, one per line they're enrolled in (e.g. GoodFlip-direct vs GoodFlip-via-insurer are different groups → different leads). Within a single line, never create a second lead for the same person because they joined a new program — instead **update the existing lead** (or add a profile row — see point 3).
 
 The [Create a lead](/docs/api/leads) endpoint (`lead_create`) enforces this — it finds-or-creates by that trio. Safe to retry. For a partner, the line is fixed by their mapping, so dedup is simply phone within their line.
 
@@ -26,11 +26,11 @@ Routing is a 3-level chain:
 ```
 
 Examples:
-- `GoodFlip Care → Anaya → Sigrima` (an Anaya Sigrima patient)
+- `GoodFlip Care → Anaya → Sigrima` (an Anaya Sigrima lead)
 - `GoodFlip → Insurers → Niva Bupa` (a Niva Bupa insurer lead)
 - `GoodFlip → Insurers → ` blank (a generic GoodFlip retail customer with no insurer)
 
-`custom_vertical` + `custom_group` are **permission-locked** (`permlevel=1`, manager-only); `custom_current_program` is `permlevel=0` (a rep may self-handoff a program within their line). Partners never set routing — it's forced from their `Lead API Mapping`. A trusted System Manager integration key sends routing in the body; a regular user key silently drops the `permlevel=1` fields.
+`custom_vertical` + `custom_group` are locked once set (only an admin moves a lead between lines); `custom_current_program` can change within a line. Partners never set routing — it's set for you, server-side, from your key.
 
 ### 3. Three child profile rows hold program-specific data
 
@@ -41,11 +41,11 @@ Examples:
 ```
 
 Profiles are sliced by **concern**, not by org or program:
-- An Anaya Sigrima patient: Plan (drug-program details + Rx workflow) + Care & Providers (ABM + coach + doctor + hospital).
+- An Anaya Sigrima lead: Plan (drug-program details + Rx workflow) + Care & Providers (ABM + coach + doctor + hospital).
 - A Niva Bupa insurer lead: Plan (policy + payment) + Lab (HbA1c, lipids, vitals, conditions).
 - A MyTatva subscriber: Plan (subscription) + Lab (metabolic score) + Care & Providers (success coach, RM, diet coach).
 
-A patient on multiple programs simultaneously has **multiple child rows of the SAME type populated together** — multi-program is normal.
+A lead on multiple programs simultaneously has **multiple child rows of the SAME type populated together** — multi-program is normal.
 
 Profile children are **`istable=1`** in Frappe. That means:
 - You CANNOT call `/api/resource/CRM Plan Profile` directly (returns 403).

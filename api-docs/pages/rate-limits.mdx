@@ -1,0 +1,70 @@
+---
+title: Rate limits
+---
+
+Your key gets **100 requests per 60 seconds**, across all endpoints. Each key has its own independent budget. Go over it and the next call returns:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
+    "retry_after": 42
+  }
+}
+```
+
+with **HTTP 429**. The `error.retry_after` field tells you **exactly** how many seconds until your budget resets — honour it rather than guessing.
+
+:::tip{title="Respect retry_after"}
+
+On a `429`, sleep `error.retry_after` seconds, then retry. Don't hammer — every rejected call still counts toward keeping you over the line.
+
+:::
+
+## A retry helper
+
+<CodeTabs>
+
+```python title="Python"
+import time
+
+def call_with_retry(do_request, max_attempts=6):
+    for attempt in range(max_attempts):
+        r = do_request()
+        if r.status_code != 429:
+            return r
+        body = r.json()
+        wait = body.get("error", {}).get("retry_after") or (2 ** attempt)
+        time.sleep(wait)
+    return r
+```
+
+```javascript title="Node"
+async function callWithRetry(doRequest, maxAttempts = 6) {
+  let res;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    res = await doRequest();
+    if (res.status !== 429) return res;
+    const body = await res.clone().json();
+    const wait = body?.error?.retry_after ?? 2 ** attempt;
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
+  return res;
+}
+```
+
+</CodeTabs>
+
+## Spend your budget wisely
+
+- **Use bulk.** Up to 100 records travel in **one** request — so a 100-lead batch costs one call against your budget, not 100. Prefer `lead_create_bulk` / `lead_update_bulk` / `lead_get_bulk` for any volume.
+- **Throttle backfills.** For a one-off migration, stay well under the cap — a few requests per second is plenty, and combined with bulk you move thousands of leads without ever hitting `429`.
+- **Cache reads.** If you're re-reading the same lead in a loop, hold the response instead of re-fetching.
+
+:::note{title="Need a higher ceiling?"}
+
+If a sustained integration genuinely needs more than 100/min, email **TatvaCare Ops** — the limit is set per key and can be raised.
+
+:::

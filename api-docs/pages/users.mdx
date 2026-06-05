@@ -26,7 +26,7 @@ One call creates the account and assigns its roles; `send_welcome_email: 1` trig
 
 This is exactly how the `api_key:api_secret` pair in [Authentication](/docs/api/authentication) is produced:
 
-1. **Create** a dedicated user (e.g. `mytatva-writer@tatvacare.in`) with the role its writes need — System Manager if it must set the permission-locked routing fields.
+1. **Create** a dedicated user (e.g. `you@yourcompany.com`) with the role its writes need — an admin role if it must set the locked routing fields.
 2. **Generate keys** for that user — the response returns the `api_secret` **once**.
 3. **Hand** the `api_key:api_secret` pair to the integration as a single secret.
 

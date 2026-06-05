@@ -1,0 +1,131 @@
+---
+title: Discover your schema
+---
+
+`GET lead_schema` is the heart of this API. It tells you — for **your** key, right now — exactly which fields you can send and read, which are required, how your routing is set, and how each child table behaves. Every integration starts here.
+
+:::sparkles{title="Run this first, always"}
+
+Don't hardcode a field list copied from a doc. Two keys get two different schemas, and grants change over time. Read `lead_schema` at startup, build your payloads from it, and your integration adapts instead of breaking.
+
+:::
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
+```
+
+## What comes back
+
+The response is top-level `status` + `data`. Here's a trimmed example for a key granted a few lab and plan fields:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "lead": [
+      { "fieldname": "mobile_no",  "label": "Mobile No",  "type": "Data", "required": false, "options": null },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false, "options": null },
+      { "fieldname": "status",     "label": "Status",     "type": "Link", "required": true,  "options": "CRM Lead Status" }
+    ],
+    "children": {
+      "custom_lab_profile": {
+        "multi_row": true,
+        "key_field": "report_date",
+        "fields": [
+          { "fieldname": "hba1c",       "label": "HbA1c",       "type": "Float", "required": false, "options": null },
+          { "fieldname": "report_date", "label": "Report Date", "type": "Date",  "required": true,  "options": null }
+        ]
+      },
+      "custom_plan_profile": {
+        "multi_row": false,
+        "key_field": null,
+        "fields": [
+          { "fieldname": "policy_number", "label": "Policy Number", "type": "Data", "required": false, "options": null }
+        ]
+      }
+    },
+    "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
+    "bulk": { "max_per_call": 100, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
+    "routing": {
+      "mode": "forced",
+      "source": "…", "vertical": "…", "group": "…", "program": "…",
+      "note": "Your routing is fixed. Any routing fields you send are ignored."
+    }
+  }
+}
+```
+
+## How to read each block
+
+| Block | What it tells you |
+|---|---|
+| `data.lead[]` | Your top-level lead fields. Each carries `fieldname`, `label`, `type`, `required`, and (for Link/Select) the allowed `options`. |
+| `data.children` | One entry per child table you can use — keyed by its array name (e.g. `custom_lab_profile`). |
+| `data.children.<t>.multi_row` | `true` = the table holds many rows, addressed by a key. `false` = a single row that you merge into. |
+| `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row (the row's "primary key"). `null` on single-row tables. |
+| `data.children.<t>.fields[]` | The fields you may send/read in that table — same shape as `lead[]`. The `key_field` is always present and `required`. |
+| `data.routing` | Your fixed routing (`mode: "forced"`). It's stamped on every lead you write; anything you send for it is ignored. |
+| `data.dedup` | The rule that makes a lead unique (phone within your line). |
+| `data.bulk` | Bulk caps and the filters `lead_list` accepts. |
+
+## Required fields
+
+A field with `"required": true` must be present on a create. Read this straight from the schema rather than assuming — your required set is whatever your key is granted, and it can differ from another partner's.
+
+## Child tables: how rows are written
+
+Child tables are sent as JSON arrays nested in the same lead body. There are two kinds, and the schema tells you which is which.
+
+### Multi-row tables (`multi_row: true`) — upsert by key
+
+Each row is addressed by its `key_field`. The write **merges by that key** — it never replaces the whole array:
+
+- **New key** → a new row is appended.
+- **Same key** → that row is updated, and **only the fields you sent change**. Omitted fields stay.
+- **Rows you don't mention** → left untouched.
+- **Delete one row** → send `{ "<key_field>": <value>, "_delete": true }`.
+
+Every row you send **must** carry its `key_field` — it's the row's address. The schema marks it `required` even if it isn't in your field grant.
+
+```json
+// Update the 2026-05-18 lab row's hba1c, add a new row for 2026-06-20,
+// and delete the 2026-01-10 row — all in one write. Other rows untouched.
+{
+  "mobile_no": "+919900000000",
+  "custom_lab_profile": [
+    { "report_date": "2026-05-18", "hba1c": 6.9 },
+    { "report_date": "2026-06-20", "hba1c": 6.4, "fbs": 110 },
+    { "report_date": "2026-01-10", "_delete": true }
+  ]
+}
+```
+
+### Single-row tables (`multi_row: false`) — merge the one row
+
+Send a one-element array; the fields you send are merged onto the single row (created if it doesn't exist yet). Sending two distinct rows is ambiguous and returns a `validation_error`.
+
+```json
+{
+  "mobile_no": "+919900000000",
+  "custom_plan_profile": [
+    { "policy_number": "NB-POL-0001" }
+  ]
+}
+```
+
+:::caution{title="Partial writes never clobber"}
+
+Whether multi-row or single-row, sending only some fields updates only those fields. The rest of the row — and every row you didn't mention — is left exactly as it was. So you can safely send incremental updates as new data arrives.
+
+:::
+
+## Routing is set for you
+
+Your `source`, product line (`vertical`), `group`, and `program` are fixed to your key and stamped on every lead automatically. They come back on reads as read-only context. You don't send them, and you can't move a lead to a different line.
+
+## Reading rows back
+
+When you read a lead (`lead_get` / `lead_get_bulk`), each child row carries its `name` (the row's id) and its `key_field`, so you always know how to address it on the next write.
+
+→ **Try it live:** [Discover the fields your key may use](/docs/partner-api) in the API Reference.

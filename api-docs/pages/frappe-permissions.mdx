@@ -9,7 +9,7 @@ So what a token can do = what its user's **roles** allow. Permissions are set pe
 In practice:
 
 - Your key is tied to a dedicated integration user. If that user's role has Read + Write + Create but **not** Delete, then `DELETE /api/resource/CRM Lead/{name}` returns **403** — safe by design.
-- Some fields are **permission-locked** at `permlevel=1` (manager-only) — `custom_vertical` and `custom_group`. A normal user silently *drops* those on write; that's why internal integration keys carry the System Manager role. (`custom_current_program` is now `permlevel=0` — rep-writable.) Partner keys never set routing at all — it's forced server-side from their `Lead API Mapping` row.
+- Some routing fields are **admin-only** — `custom_vertical` and `custom_group`. A normal key silently *drops* those on write; internal integration keys carry an admin role. (`custom_current_program` is rep-writable.) Partner keys never set routing at all — it's set for them server-side.
 - Writes are still validated regardless of role: `Link` values must exist, required fields can't be empty — the key can't get around that.
 
 **Why it matters for you:** if a write seems to "succeed" but a field didn't stick, it's almost always a permission level on that field — not a bug in your payload. Ask for a key scoped to exactly what your integration needs (and no more).

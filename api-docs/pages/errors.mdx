@@ -8,8 +8,8 @@ This CRM has **two** API surfaces, and they speak **different** envelopes. Know 
 
 | You're calling… | Envelope | Auth role |
 |---|---|---|
-| **Gated partner methods** — `tatva_connect.api.partner.lead_*` (`lead_create`, `lead_get`, `lead_list`, the bulk variants) | **The unified partner contract** below — top-level `status` + `error.code`. **No `message` wrapper, no `exc_type`.** | A partner with a `Lead API Mapping`, or a System Manager. |
-| **Native Frappe REST** — `/api/resource/*`, `/api/method/<other>` | Frappe's native shape: success under `message`/`data`, failure as `{exc_type, exception, _server_messages}`. | System Manager (partners get 403 here). |
+| **Gated partner methods** — `tatva_connect.api.partner.lead_*` (`lead_create`, `lead_get`, `lead_list`, the bulk variants) | **The unified partner contract** below — top-level `status` + `error.code`. **No `message` wrapper, no `exc_type`.** | Your partner key. |
+| **Native Frappe REST** — `/api/resource/*`, `/api/method/<other>` | Frappe's native shape: success under `message`/`data`, failure as `{exc_type, exception, _server_messages}`. | Internal first-party keys (partner keys get 403 here). |
 
 If you're integrating leads, you're on the **partner methods** — read that section. The native shape only matters for direct `/api/resource/*` calls (admin/back-office).
 
@@ -43,7 +43,7 @@ This holds even for the earliest framework-layer failures — a bad API key or a
 | `validation_error` | 400 | A field failed validation. | Read `error.message`; check `error.fields`. Most common: missing `lost_reason` for `Junk`/`Unqualified` status, or an unknown `Link` value (program/source). |
 | `bad_request` | 400 | The request body was malformed (e.g. invalid JSON). | Fix the JSON / `Content-Type`. |
 | `unauthorized` | 401 | Missing or invalid API key. | Header must be exactly `Authorization: token <api_key>:<api_secret>` (lowercase `token`, one space, colon-joined). |
-| `forbidden` | 403 | Caller is neither a mapped partner nor a System Manager — **or** a partner key hit raw `/api/resource/*`. | Use the `partner.*` methods; ask Ops for a key with the right mapping. |
+| `forbidden` | 403 | Your key isn't permitted for this call — **or** a partner key hit raw `/api/resource/*`. | Use the `partner.*` methods; ask Ops for a key with the right mapping. |
 | `not_found` | 404 | The lead doesn't exist **or** is outside your line. | **These two are deliberately identical** (anti-enumeration) — no id, no scope hint. Re-check the `name`; a partner only sees its own line. |
 | `duplicate` | 409 | A unique constraint was violated. | The value is taken or your write raced another. `lead_create` matches on the lead grain, so re-sends don't duplicate. |
 | `cannot_delete` | 409 | The lead has linked activity (calls/tasks/notes). | A worked lead can't be silently nuked. The message is **generic by design** — it never enumerates the linked records. |
@@ -72,13 +72,13 @@ So: check the top-level `status`, then walk `results[].status` per row. Don't as
 - **`validation_error` — "Could not find CRM Program: …"** — you sent a program that doesn't exist. Introspect `CRM Program` (see [Discovery](/docs/frappe-discovery)) to enumerate valid values, then resend.
 - **`validation_error` — "Please specify a reason for losing the lead."** — you set `status` to `Junk`/`Unqualified` without `lost_reason`. Add it.
 - **`unauthorized` + an HTML login page** — your key is wrong or the header is missing the `token` prefix. Frappe falls back to the website login when auth fails on `/api/resource/*`; the partner methods return the JSON contract instead.
-- **`forbidden` on a field you sent** — partners may only send the fields ticked in their **Allowed Fields** grid; call `lead_schema` to see yours.
+- **`forbidden` on a field you sent** — your key may only send the fields it's granted; call `lead_schema` to see yours.
 
 ---
 
 ## Native Frappe errors (`/api/resource/*` only)
 
-Direct REST calls (System Manager only) return Frappe's native envelope:
+Direct REST calls (internal first-party keys) return Frappe's native envelope:
 
 ```json
 {

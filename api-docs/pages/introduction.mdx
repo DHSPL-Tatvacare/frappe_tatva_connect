@@ -2,29 +2,29 @@
 title: TatvaCare CRM API
 ---
 
-Reference for integrating with the TatvaCare CRM — the single source of truth for patient leads across every TatvaCare product line.
+Reference for integrating with the TatvaCare CRM — the single source of truth for leads across every TatvaCare product line.
 
 ## What this API does
 
 - **Write leads** — create or update by phone (idempotent), single or bulk.
 - **Read leads** — fetch one, list with filters, or count.
 - **Discover the data model** — introspect any doctype's schema at runtime.
-- **Attach files** — upload patient documents against a lead.
+- **Attach files** — upload documents against a lead.
 
 It's the systems door into the CRM: external systems put leads in and read state back, while internal teams work those leads in the CRM web app.
 
 ## The shape
 
 ```
- CRM Lead (one lead per patient × product line + group)
+ CRM Lead (one lead per person × product line + group)
    ├── Plan Profile           — what plan / PSP / insurance / drug program / subscription
    ├── Lab Profile            — lab values, vitals, conditions, scores
    └── Care & Providers       — coaches, RM, therapist, doctor, hospital
 ```
 
-The lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1–3 child rows populated; multi-program is normal.
+The lead carries identity, contact, and routing fields. The three children carry concern-specific data. A lead typically has 1–3 child rows populated; multi-program is normal.
 
-**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone on a different line or group is a separate lead — one patient can own several leads. Re-sending the same trio updates that one lead; it never duplicates.
+**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone on a different line or group is a separate lead — one person can own several leads. Re-sending the same trio updates that one lead; it never duplicates.
 
 ## Where to start
 

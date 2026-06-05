@@ -21,7 +21,7 @@ The CRM never calls a provider directly. It **inserts a `WhatsApp Message` row**
 
 Multi-sender is built in: one **`WhatsApp Account`** row per WATI tenant/number. Which account a lead sends through is decided by **routing rules** (see below), so different product lines / groups / programs send from different numbers. Inbound messages are attributed back to the account that received them.
 
-> **Auth:** every call below uses the standard `Authorization: token KEY:SECRET` header and requires **System Manager** (these are not exposed to plain CRM users). The picker helpers used by the in-app dialog (`list_templates`, `get_field_options`, `get_template_variables`) are UI-internal and not part of this integration surface.
+> **Auth:** every call below uses the standard `Authorization: token KEY:SECRET` header and requires an internal admin key (these are not exposed to plain CRM users). The picker helpers used by the in-app dialog (`list_templates`, `get_field_options`, `get_template_variables`) are UI-internal and not part of this integration surface.
 
 ---
 
@@ -105,7 +105,7 @@ https://one.tatvacare.in/api/method/tatva_connect.wati.webhook.webhook?token=<se
 
 ## Configure accounts & routing over the API
 
-Accounts and routing rules are plain doctypes — manage them entirely over REST (no DB access). All of this needs **System Manager**.
+Accounts and routing rules are plain doctypes — manage them entirely over REST (no DB access). All of this needs an internal admin key.
 
 **Add a WATI account** (one per WATI tenant):
 ```bash

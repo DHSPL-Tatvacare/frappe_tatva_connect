@@ -33,10 +33,11 @@ _LAB_CHILD = "custom_lab_profile"
 _ACQ_CHILD = "custom_acquisition_profile"
 _DRUG_CHILD = "custom_drug_program_profile"
 
-# Catalog keys this patch removes (de-listed in P9). The seed never deletes on its
-# own; these are removed explicitly so the split-out doctypes don't leave dead rows.
+# Catalog keys this patch removes. The seed never deletes on its own; these are
+# removed explicitly so the split-out doctypes don't leave dead rows.
+# NOTE: plan:priority_text was wrongly de-listed in P9 — it's a real Niva Bupa field
+# (Priority Text column in the lead sheet), restored 2026-06-05.
 CATALOG_DELIST = [
-	"plan:priority_text",
 	"plan:substage",
 ]
 
@@ -60,6 +61,7 @@ CATALOG_SEED = [
 	("plan:member_id", "plan", _PLAN, _PLAN_CHILD, "Plan — Member ID", 0),
 	("plan:payment_link", "plan", _PLAN, _PLAN_CHILD, "Plan — Payment Link", 0),
 	("plan:plan_name", "plan", _PLAN, _PLAN_CHILD, "Plan — Plan Name", 0),
+	("plan:priority_text", "plan", _PLAN, _PLAN_CHILD, "Plan — Priority Text", 0),
 	# -- Lab. Multi-row, key report_date.
 	("lab:report_date", "lab", _LAB, _LAB_CHILD, "Lab — Report Date", 1),
 	("lab:hba1c", "lab", _LAB, _LAB_CHILD, "Lab — HbA1c", 0),

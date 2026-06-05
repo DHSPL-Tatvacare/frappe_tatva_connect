@@ -1,0 +1,49 @@
+---
+title: Welcome
+---
+
+One API to push leads into TatvaCare and read their state back. You hold a key; that key decides exactly which fields you can read and write, and which product line your leads belong to. Build against what your key gives you — nothing here is one-size-fits-all.
+
+:::tip{title="Your key is your contract"}
+
+There is **no fixed payload**. Your fields, which ones are required, and how the child tables work are all whatever your key is granted. You discover them by calling **[`GET lead_schema`](/docs/discover-schema)** — that response *is* your contract. Run it first, build from what you get back.
+
+:::
+
+## What you can do
+
+- **Create or update leads** — by phone, idempotent, one at a time or up to 100 at once.
+- **Read leads** — fetch one by id or phone, or list a page of them with simple filters.
+- **Delete leads** — by id, single or bulk.
+- **Discover your schema** — ask the API exactly what your key may send and read, at runtime.
+
+Everything is a single HTTPS call with a bearer-style token header. Every endpoint has a live **try-it** console in the [API Reference](/docs/partner-api).
+
+## How a lead is shaped
+
+A lead has a flat set of top-level fields (name, phone, status, and whatever else your key is granted) plus a few **child tables** that hold richer, repeating data — lab reports, plan details, the care team. You send children as JSON arrays nested in the same body.
+
+```
+ Lead
+   ├── top-level fields        — first_name, mobile_no, status, …
+   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]
+```
+
+Which children exist for *you*, and what keys address their rows, comes straight from `lead_schema`. Don't hardcode a list from this page — ask your key.
+
+## One lead per phone, per line
+
+A lead is unique per **phone number within your product line**. Re-sending the same phone updates that same lead; it never creates a duplicate. That makes every write safe to retry. The product line itself is fixed to your key — you never set or change it.
+
+## Where to go next
+
+- **[Quickstart](/docs/partner-quickstart)** — key → header → first schema call → first lead, in four steps.
+- **[Discover your schema](/docs/discover-schema)** — the call every integration starts with.
+- **[Reading values](/docs/reading-values)** — pull any value out of a response by its dotted path.
+- **[Errors](/docs/partner-errors)** — the one error shape, and how to branch on it.
+
+:::note{title="Questions or a new field?"}
+
+Need a field your key doesn't have yet, a higher rate limit, or help with a write that's failing? Contact **TatvaCare Ops** — see [Conventions](/docs/conventions) for what to include.
+
+:::

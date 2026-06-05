@@ -11,7 +11,7 @@ The CRM runs work on a clock (scheduled jobs, e.g. the 6-hourly WhatsApp templat
 | **`Scheduled Job Type`** | One row per scheduled job — its method, frequency/cron, whether it's stopped, and when it last ran. The **definitions**. |
 | **`Scheduled Job Log`** | One row per execution — timestamp, status (`Scheduled` / `Complete` / `Failed`), and error details. The **history**. |
 
-Both are normal doctypes, so you read them over the same REST API as everything else. **Auth:** `Authorization: token KEY:SECRET`, and you need **System Manager** (these aren't exposed to plain CRM users). There is **no REST endpoint to *trigger* a job** — running on demand is Desk- or bench-only (see below).
+Both are normal doctypes, so you read them over the same REST API as everything else. **Auth:** `Authorization: token KEY:SECRET`, and you need an internal admin key (these aren't exposed to plain CRM users). There is **no REST endpoint to *trigger* a job** — running on demand is Desk- or bench-only (see below).
 
 ## List every scheduled job
 
