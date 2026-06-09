@@ -20,14 +20,6 @@ HEADLINE_LAB_MAP = {
 	"custom_last_report_date": "report_date",
 }
 
-# Oncology PSP programs whose leads carry the Drug Program (chemo-cycle) profile, NOT a
-# metabolic plan. This drives the Data-tab section gate (lead_section_gate): a lead on one
-# of these programs sees the Drug Program section and hides the metabolic ones, and vice
-# versa. Like HEADLINE_LAB_MAP, this is a code identity knob (Plane B, §A4) — an explicit,
-# small set kept in code on purpose, not partner-onboarding config. Add a program here when
-# a new oncology PSP launches.
-DRUG_PROGRAM_PROGRAMS = ("Tukavo", "Nivolumab", "Sigrima", "Ujvira")
-
 # Routing fields the dedup anchor keys on. An omitted field arrives as '' (form/import)
 # or None (API); both MUST canonicalise to one value so the {mobile, vertical, group}
 # anchor and every stored lead agree. We pick NULL: dedup_guard's get_value then builds
@@ -62,6 +54,8 @@ def dedup_guard(doc, method=None):
 	The dedup anchor is ``mobile_no + custom_vertical + custom_group``: one lead =
 	one patient on one product-line+group. The SAME phone on a DIFFERENT line/group
 	is a separate lead by design, so the guard only trips when all three match.
+	Program is NOT part of identity — it is a mutable attribute (custom_current_program
+	can transition on the one lead), so it never participates in dedup.
 
 	Fires on EVERY insert path (REST POST, the CRM "Create Lead" modal, imports,
 	the intake Web Form). The ``lead_create`` endpoint finds-or-updates an existing
@@ -163,8 +157,11 @@ def lead_section_gate(reference_name=None):
 	"""Does this lead belong to the oncology drug-program world? The Data-tab gate
 	(lead_data_tab_gate.js) calls this to decide which profile sections to show: a
 	drug-program lead sees the Drug Program section and hides the metabolic ones; a
-	metabolic lead does the reverse. The program->world mapping (DRUG_PROGRAM_PROGRAMS)
-	lives here, so the JS never hardcodes a program list.
+	metabolic lead does the reverse.
+
+	The 'world' is CONFIG, not code: each `CRM Program` row self-declares it via the
+	`custom_is_drug_program` flag. A new oncology program = a CRM Program row with that
+	box ticked — no code change, and the JS never hardcodes a program list.
 
 	Fail-safe: any error returns drug_program=False and is logged, so the gate shows
 	everything (a wrong hide could strand data) rather than failing silently."""
@@ -172,7 +169,8 @@ def lead_section_gate(reference_name=None):
 		if not reference_name:
 			return {"drug_program": False}
 		program = frappe.db.get_value("CRM Lead", reference_name, "custom_current_program")
-		return {"drug_program": program in DRUG_PROGRAM_PROGRAMS}
+		is_drug = bool(program) and bool(frappe.db.get_value("CRM Program", program, "custom_is_drug_program"))
+		return {"drug_program": is_drug}
 	except Exception:
 		frappe.log_error(title="lead_section_gate failed", message=frappe.get_traceback())
 		return {"drug_program": False}

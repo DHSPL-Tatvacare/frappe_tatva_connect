@@ -4,55 +4,63 @@
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.484001",
   "name": "Tukavo",
-  "program_name": "Tukavo"
+  "program_name": "Tukavo",
+  "custom_is_drug_program": 1
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.487744",
   "name": "Nivolumab",
-  "program_name": "Nivolumab"
+  "program_name": "Nivolumab",
+  "custom_is_drug_program": 1
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.492808",
   "name": "Ujvira",
-  "program_name": "Ujvira"
+  "program_name": "Ujvira",
+  "custom_is_drug_program": 1
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.497857",
   "name": "GoodFlip",
-  "program_name": "GoodFlip"
+  "program_name": "GoodFlip",
+  "custom_is_drug_program": 0
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.500207",
   "name": "Anyra - Retina",
-  "program_name": "Anyra - Retina"
+  "program_name": "Anyra - Retina",
+  "custom_is_drug_program": 0
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.504094",
   "name": "Eisai - Alzheimers",
-  "program_name": "Eisai - Alzheimers"
+  "program_name": "Eisai - Alzheimers",
+  "custom_is_drug_program": 0
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.475761",
   "name": "Niva Bupa",
-  "program_name": "Niva Bupa"
+  "program_name": "Niva Bupa",
+  "custom_is_drug_program": 0
  },
  {
   "docstatus": 0,
   "doctype": "CRM Program",
   "modified": "2026-05-26 16:13:50.489937",
   "name": "Sigrima",
-  "program_name": "Sigrima"
+  "program_name": "Sigrima",
+  "custom_is_drug_program": 1
  }
 ]

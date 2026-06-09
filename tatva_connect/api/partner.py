@@ -196,6 +196,42 @@ def _allowed_keys(user, has_mapping):
 	return list(cat["keys"])
 
 
+def _allowed_programs(user, has_mapping):
+	"""The programs a multi-program key may set per lead. Read from the mapping's
+	`allowed_programs` grid. Empty for forced-program keys (Niva) and trusted internal —
+	in those paths it is never consulted, so their behaviour is unchanged."""
+	if not has_mapping:
+		return []
+	return frappe.get_all(
+		"Lead API Mapping Program",
+		filters={"parent": user, "parenttype": "Lead API Mapping"},
+		pluck="program",
+	)
+
+
+def _resolve_program(item, mp, allowed_programs):
+	"""Resolve the lead's program from the key's MODE — all derived from config (the
+	mapping's `program` field + its `allowed_programs` rows), nothing hardcoded:
+	  * FORCED  - mapping pins a program (e.g. Niva): return it unchanged.
+	  * LIST    - mapping program blank + allowed_programs set (e.g. Anaya): the caller MUST
+	              send custom_current_program, and it must be one of allowed_programs
+	              (membership already guarantees it is a real CRM Program).
+	  * NONE    - mapping program blank + allowed_programs empty: no program.
+	  * trusted - no mapping (internal caller): whatever it sent, unchanged."""
+	if mp and mp.program:
+		return mp.program
+	if mp:
+		prog = (item.get("custom_current_program") or "").strip()
+		if not allowed_programs:
+			return None  # NONE mode
+		if not prog:
+			frappe.throw(_("custom_current_program is required for this key"))
+		if prog not in allowed_programs:
+			frappe.throw(_("Program '{0}' is not permitted for this key").format(prog))
+		return prog
+	return item.get("custom_current_program")
+
+
 def _split_keys(keys):
 	"""namespaced keys -> (parent_fieldnames, {child_fieldname: [fieldnames]})."""
 	cat = _catalog()
@@ -398,13 +434,20 @@ def _curate(doc, parent_fields, child_allow):
 
 # -- per-record core (shared by singular + bulk) -----------------------------
 
-def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow):
+def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
 	"""Create-or-upsert one lead from a dict. Returns (doc, action)."""
 	mobile = _norm_phone(item.get("mobile_no"))
 	if not mobile:
 		frappe.throw(_("mobile_no is required"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	parent["mobile_no"] = mobile
+
+	program = _resolve_program(item, mp, allowed_programs)
+	# "List mode" key (mapping program blank, e.g. Anaya): the caller supplies
+	# custom_current_program per lead. Program is a MUTABLE ATTRIBUTE, never identity ->
+	# the dedup lane is phone + product line + group for EVERY key. Re-sending a patient
+	# with a new program transitions the SAME lead; it never creates a second one.
+	open_program = bool(mp and not mp.program)
 
 	anchor_vertical = mp.vertical if mp else item.get("custom_vertical")
 	anchor_group = mp.crm_group if mp else item.get("custom_group")
@@ -419,6 +462,8 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow):
 		_apply_children(doc, children)
 		if mp:
 			_force_routing(doc, mp)
+		if open_program and program:
+			doc.custom_current_program = program
 		doc.save(ignore_permissions=True)
 		return doc, "updated"
 
@@ -429,6 +474,8 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow):
 	_apply_children(doc, children)
 	if mp:
 		_force_routing(doc, mp)
+	if open_program:
+		doc.custom_current_program = program
 	doc.insert(ignore_permissions=True)
 	return doc, "created"
 
@@ -707,11 +754,28 @@ def lead_schema(**kwargs):
 		               "Single-row children merge onto the one row. Delete a row with "
 		               "{<key_field>, \"_delete\": true}.",
 		"dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same "
-		         "trio updates that lead; a different line creates a new one.",
+		         "patient updates that lead. Program is NOT part of identity: sending the same "
+		         "patient with a different program transitions the SAME lead, never a new one.",
 		"bulk": {"max_per_call": BULK_MAX, "list_page_max": LIST_MAX,
 		         "list_filters": list(LIST_FILTERS.keys()) + ["mobile_no"]},
 	}
-	if mp:
+	if mp and not mp.program:
+		# Open-program key: line + group forced; program mode is LIST if the key has an
+		# allowed_programs set, else NONE. Both derived from config, no hardcoding.
+		ap = _allowed_programs(user, True)
+		out["routing"] = {
+			"mode": "list" if ap else "none",
+			"source": mp.source, "vertical": mp.vertical, "group": mp.crm_group,
+			"program": None,
+			"allowed_programs": ap,
+			"program_required": bool(ap),
+			"note": (
+				"Line and group are fixed. Send custom_current_program from allowed_programs on "
+				"every lead. Program is a mutable attribute, NOT identity: the same patient on a "
+				"new program is the SAME lead (a transition)."
+			) if ap else "Line and group are fixed. This key uses no program.",
+		}
+	elif mp:
 		out["routing"] = {
 			"mode": "forced", "source": mp.source, "vertical": mp.vertical,
 			"group": mp.crm_group, "program": mp.program,
@@ -754,7 +818,8 @@ def lead_get(**kwargs):
 def lead_create(**kwargs):
 	"""Create-or-upsert a lead by phone. Returns the CRM `name` to PUT back to."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
-	doc, action = _upsert_one(frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow)
+	allowed_programs = _allowed_programs(user, bool(mp))
+	doc, action = _upsert_one(frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
 	return _result(doc, action)
 
 
@@ -785,10 +850,11 @@ def lead_delete(**kwargs):
 def lead_create_bulk(**kwargs):
 	"""Create-or-upsert many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	allowed_programs = _allowed_programs(user, bool(mp))
 	leads = _read_list(frappe.form_dict, "leads") or []
 
 	def one(i, item):
-		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow)
+		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
 		return {"index": i, "status": "success", "action": action, "name": doc.name}
 
 	return _run_bulk(leads, one)
