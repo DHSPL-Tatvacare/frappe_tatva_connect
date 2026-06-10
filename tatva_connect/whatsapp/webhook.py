@@ -111,6 +111,25 @@ def webhook(**kwargs):
 	return "ok"
 
 
+@frappe.whitelist()
+def webhook_urls():
+	"""Admin helper: the exact per-account webhook URL to register on each WATI
+	dashboard. Each URL carries ?account=<WhatsApp Account name> (precedence #1 in
+	account_for_channel) so inbound attribution never depends on a WATI payload field.
+	System Manager only (default @frappe.whitelist gating). Returns {account: url}."""
+	from urllib.parse import quote
+
+	from frappe.utils import get_url
+
+	token = frappe.db.get_single_value("CRM WATI Settings", "webhook_verify_token") or ""
+	host = get_url().rstrip("/")
+	base = f"{host}/api/method/tatva_connect.whatsapp.webhook.webhook"
+	out = {}
+	for account in frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1}, pluck="name"):
+		out[account] = f"{base}?token={quote(token)}&account={quote(account)}"
+	return out
+
+
 def process_event(payload: dict, account_hint=None):
 	"""Background worker: persist one CRM-relevant event.
 
@@ -150,33 +169,64 @@ def _already_ingested(event: dict) -> bool:
 def _ingest_inbound(event: dict, account_hint=None):
 	if _already_ingested(event):
 		return
-	lead = _lead_for_number(wati.normalize_number(event.get("waId")))
-	if not lead:
+	sender = wati.normalize_number(event.get("waId"))  # digits, no '+'
+	if not sender:
 		return
 	account = _account_for_channel(event.get("channelPhoneNumber"), account_hint)
-	if not account:
-		# Don't drop a real customer message; store it (the lead tab links by
-		# reference, not account) and flag the unresolved tenant for the operator.
+
+	# Account-aware: attach to every lead sharing this conversation (phone + account).
+	targets = []
+	if account:
+		from tatva_connect.whatsapp import routing
+
+		targets = routing.leads_for_number_and_account("+" + sender, account)
+
+	# Fallbacks — never silently drop a real customer message:
+	#  - account unknown (2+ tenants, no hint/channel match), or
+	#  - account known but no lead on it (e.g. lead on a different account only).
+	if not targets:
+		first = _lead_for_number(sender)
+		if not first:
+			return
+		targets = [first]
 		frappe.log_error(
-			title="WATI inbound: unresolved account",
-			message=f"waId={event.get('waId')} channel={event.get('channelPhoneNumber')} hint={account_hint}",
+			title="WATI inbound: account-unmatched, fell back to first lead",
+			message=f"waId={event.get('waId')} channel={event.get('channelPhoneNumber')} "
+			f"hint={account_hint} resolved_account={account} attached_to={first}",
 		)
-	frappe.get_doc(
+
+	wid = event.get("whatsappMessageId")
+	for lead in targets:
+		_insert_inbound_row(event, account, lead, wid)
+	frappe.db.commit()
+
+
+def _insert_inbound_row(event: dict, account, lead, wid):
+	"""Insert one inbound row for `lead`. Name is scoped per-lead ({lead}-{wid}) — the
+	SAME scheme reconcile uses — so the same message mirrors onto >1 same-account lead
+	without colliding on the PK / composite index. Per-lead idempotent."""
+	name = f"{lead}-{wid}" if wid else None
+	if name and frappe.db.exists("WhatsApp Message", name):
+		return
+	doc = frappe.get_doc(
 		{
 			"doctype": "WhatsApp Message",
 			"type": "Incoming",
 			"from": event.get("waId"),
 			"message": event.get("text"),
 			"content_type": event.get("type") or "text",
-			"message_id": event.get("whatsappMessageId"),
+			"message_id": wid,
 			"conversation_id": event.get("conversationId"),
 			"profile_name": event.get("senderName"),
 			"whatsapp_account": account,
 			"reference_doctype": "CRM Lead",
 			"reference_name": lead,
 		}
-	).insert(ignore_permissions=True)
-	frappe.db.commit()
+	)
+	if name:
+		doc.name = name
+		doc.flags.name_set = True
+	doc.insert(ignore_permissions=True)
 
 
 def _update_status(event: dict):

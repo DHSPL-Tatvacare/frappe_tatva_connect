@@ -69,6 +69,30 @@ def resolve_account_for_lead(lead):
 	return best
 
 
+def leads_for_number_and_account(number_e164, account):
+	"""Inbound attribution: every CRM Lead with this phone whose routing resolves to
+	`account`. This is the inverse of resolve_account_for_lead — it scopes an inbound
+	message to exactly the leads sharing its conversation (phone + account), never
+	across accounts. Returns [] if account is falsy."""
+	if not account or not number_e164:
+		return []
+	bare = number_e164.lstrip("+")
+	names = frappe.get_all(
+		"CRM Lead",
+		filters={"mobile_no": ["in", ["+" + bare, bare]]},
+		pluck="name",
+	)
+	out = []
+	for name in names:
+		try:
+			if resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", name)) == account:
+				out.append(name)
+		except Exception:
+			# one lead's ambiguous/raising routing must not block the others
+			continue
+	return out
+
+
 def resolve_for_message(msg):
 	"""Resolve the account for an outgoing WhatsApp Message linked to a CRM Lead or
 	CRM Deal (a Deal routes via its originating lead)."""
