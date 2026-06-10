@@ -226,7 +226,23 @@ def _insert_inbound_row(event: dict, account, lead, wid):
 	if name:
 		doc.name = name
 		doc.flags.name_set = True
+	doc.flags.tatva_pinned_lead = lead  # restored in before_save (see pin_inbound_reference)
 	doc.insert(ignore_permissions=True)
+
+
+def pin_inbound_reference(doc, method=None):
+	"""before_save: restore the account-matched lead that crm.api.whatsapp.validate
+	overwrote with first-lead-by-phone. crm registers an unconditional `validate`
+	doc_event on WhatsApp Message that rewrites reference_name from the phone; Frappe
+	runs validate BEFORE before_save, so re-pinning here wins — and runs before the row
+	is written and before crm's on_update realtime, so both use the right lead.
+
+	Flag-gated + Incoming-only: never touches outbound (no flag) or reconcile (db_insert,
+	no validate). Does not alter routing/account logic."""
+	pinned = doc.flags.get("tatva_pinned_lead")
+	if pinned and (doc.type or "") == "Incoming":
+		doc.reference_doctype = "CRM Lead"
+		doc.reference_name = pinned
 
 
 def _update_status(event: dict):

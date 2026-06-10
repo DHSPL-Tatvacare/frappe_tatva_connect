@@ -54,6 +54,9 @@ doc_events = {
 		],
 	},
 	"WhatsApp Message": {
+		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone.
+		# Runs after crm validate, before db_insert + crm on_update. Inbound-only (flag-gated).
+		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
 		"after_insert": "tatva_connect.whatsapp.inbound.on_inbound_message",
 	},
 	# the partner-API catalog is data-driven (read from CRM Lead API Field, cached) —
