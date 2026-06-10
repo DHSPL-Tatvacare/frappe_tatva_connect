@@ -82,7 +82,12 @@ scheduler_events = {
 
 # Ship the CRM Form Scripts (WATI send-template + WhatsApp UI gate) from their .js
 # source files on every migrate — keeps them version-controlled and in sync.
-after_migrate = ["tatva_connect.form_scripts_seed.seed"]
+after_migrate = [
+	"tatva_connect.form_scripts_seed.seed",
+	# Master-data seeds: install-app baselines patches.txt without running it, so seed
+	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
+	"tatva_connect.seeds.seed_master_data",
+]
 
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
@@ -254,8 +259,9 @@ required_apps = ["crm", "frappe_whatsapp"]
 # ------------
 
 # before_install = "tatva_connect.install.before_install"
-# Fresh-install seeding (install-app baselines patches.txt without running it).
-after_install = "tatva_connect.install.after_install"
+# Fresh-install master-data seeding is handled on after_migrate (tatva_connect.seeds),
+# which runs after fixtures so the Linked masters exist. See seeds.py.
+# after_install = "tatva_connect.install.after_install"
 
 # Uninstallation
 # ------------

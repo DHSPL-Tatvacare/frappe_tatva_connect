@@ -22,6 +22,10 @@ MAPPINGS = [
 
 
 def execute():
+	# The Intake Form Links source -> CRM Lead Source "Nivolumab", a custom source not
+	# created by FCRM. Ensure it exists so a fresh-DB seed doesn't fail Link validation.
+	if not frappe.db.exists("CRM Lead Source", "Nivolumab"):
+		frappe.get_doc({"doctype": "CRM Lead Source", "source_name": "Nivolumab"}).insert(ignore_permissions=True)
 	for dn, city in DOCTORS:
 		if not frappe.db.exists("CRM Doctor", dn):
 			frappe.get_doc({"doctype": "CRM Doctor", "doctor_name": dn, "city": city}).insert(ignore_permissions=True)
