@@ -38,14 +38,34 @@ def process_submission(doc, method=None):
 	frappe.flags.mute_messages = True
 
 	mobile = _normalize_phone(doc.get("phone"))
-	name = frappe.db.get_value("CRM Lead", {"mobile_no": mobile}, "name")
+
+	# M-3: resolve on the canonical lead grain — mobile + vertical + group — using the
+	# form's FORCED routing (cfg). A find-or-create on phone ALONE would hijack an
+	# existing lead on a different (line, group); instead, a different trio yields a
+	# SECOND lead and the existing lead's routing is never overwritten.
+	name = frappe.db.get_value(
+		"CRM Lead",
+		{
+			"mobile_no": mobile,
+			"custom_vertical": cfg.get("custom_vertical"),
+			"custom_group": cfg.get("custom_group"),
+		},
+		"name",
+	)
 	lead = frappe.get_doc("CRM Lead", name) if name else frappe.new_doc("CRM Lead")
 	lead.mobile_no = mobile
 	lead.status = lead.status or "New"
 
-	for f in _ROUTING:
-		if cfg.get(f):
-			lead.set(f, cfg.get(f))
+	# Routing is set on CREATE only. On a matched lead we must NEVER rewrite its
+	# vertical/group/program — finding by the trio already guarantees vertical+group
+	# match; program is a mutable attribute transitioned deliberately, not by a form.
+	if not name:
+		for f in _ROUTING:
+			if cfg.get(f):
+				lead.set(f, cfg.get(f))
+		# Provenance (hygiene rule 8): stamp which intake form created this lead.
+		if not (lead.get("custom_source_origin") or "").strip():
+			lead.custom_source_origin = "Intake form: {0}".format(cfg.name)
 
 	notes = []
 	for m in cfg.mappings:
@@ -78,29 +98,65 @@ def process_submission(doc, method=None):
 	doc.db_set("processed", 1, update_modified=False)
 
 
+# Pick-only reference masters — NEVER auto-created from a form (governed reseed only).
+# Doctor/Hospital are growth entities (auto-add OK); City is curated/state-aware.
+_PICK_ONLY_MASTERS = {"CRM City"}
+
+
 def _resolve_value(doc, m):
 	"""Pick value, else the manual companion. If manual is used and a master is
-	configured, auto-create that master record so it joins the pick-list next time."""
+	configured, auto-add that master (normalized, match-or-create) so it joins the
+	pick-list next time — unless it's a pick-only master (City)."""
 	picked = (doc.get(m.source_field) or "").strip()
 	manual = (doc.get(m.manual_field) or "").strip() if m.manual_field else ""
 
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
 	if manual and (not picked or picked == "Others" or picked == "Other"):
 		if m.master_doctype:
-			_ensure_master(m.master_doctype, manual)
+			# The display field the value lands in is the part after the target prefix
+			# (e.g. care:doctor_name -> doctor_name). Derived, not stored on the map.
+			display_field = (m.target or "").partition(":")[2] or None
+			canonical = _ensure_master(m.master_doctype, display_field, manual)
+			return canonical or manual
 		return manual
 	return picked
 
 
-def _ensure_master(doctype, value):
-	if frappe.db.exists(doctype, value):
-		return
-	autoname = frappe.get_meta(doctype).autoname or ""
-	field = autoname.split(":", 1)[1] if autoname.startswith("field:") else None
+def _ensure_master(doctype, display_field, value):
+	"""Match-or-create a master on the NORMALIZED display value (case-insensitive).
+
+	* Never auto-creates a pick-only master (City) — returns the raw value so the
+	  lead still records what was typed, but no junk master row is born.
+	* Matches an EXISTING row whose normalized display value equals the normalized
+	  input (so "Apollo "/"apollo"/"Apollo" all reuse one row); else inserts one.
+	* Returns the canonical display value to store on the lead.
+	"""
+	from tatva_connect.taxonomy.normalize import normalize_display
+
+	if not display_field:
+		return value
+	canonical = normalize_display(value)
+	if not canonical:
+		return value
+
+	# Case-insensitive match on the normalized display value (not on opaque `name`).
+	existing = frappe.get_all(
+		doctype, filters={display_field: ["like", canonical]}, fields=[display_field], limit=1
+	)
+	if existing:
+		return existing[0].get(display_field)
+
+	if doctype in _PICK_ONLY_MASTERS:
+		# Pick-only: do not grow from a form. Keep the typed value on the lead.
+		return canonical
+
 	d = frappe.new_doc(doctype)
-	if field:
-		d.set(field, value)
+	d.set(display_field, canonical)
+	# Governed growth (Phase 3): flag form-born rows for ops review/merge.
+	if frappe.get_meta(doctype).has_field("review_pending"):
+		d.set("review_pending", 1)
 	d.insert(ignore_permissions=True)
+	return d.get(display_field)
 
 
 def _apply_target(lead, target, val):

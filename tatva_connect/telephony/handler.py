@@ -133,7 +133,7 @@ def _process(payload: dict, direction: str, completed: bool):
 
 	doc = _find_existing(call_id, direction, customer_number, payload)
 	if doc:
-		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number)
+		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
 			doc.custom_acefone_account = account_name
 		doc.save(ignore_permissions=True)
@@ -142,7 +142,7 @@ def _process(payload: dict, direction: str, completed: bool):
 		doc.id = call_id
 		doc.type = call_type
 		doc.telephony_medium = TELEPHONY_MEDIUM
-		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number)
+		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
 			doc.custom_acefone_account = account_name
 		doc.insert(ignore_permissions=True)
@@ -185,7 +185,7 @@ def _status_from_cdr(payload: dict, completed: bool) -> str:
 	return "In Progress"
 
 
-def _apply(doc, payload: dict, status: str, call_type: str, customer_number):
+def _apply(doc, payload: dict, status: str, call_type: str, customer_number, account_name=None):
 	"""Overlay CDR fields onto a CRM Call Log doc (create or update path)."""
 	doc.status = status
 
@@ -222,39 +222,66 @@ def _apply(doc, payload: dict, status: str, call_type: str, customer_number):
 			doc.caller = agent_user
 
 	# Resolve + link the lead (set BOTH reference_* and the links child table).
-	_link_lead(doc, customer_number)
+	_link_lead(doc, customer_number, account_name)
 
 
-def _link_lead(doc, customer_number):
-	"""Resolve customer number -> Contact/Lead/Deal and link the call log.
+def _link_lead(doc, customer_number, account_name=None):
+	"""Resolve customer number -> CRM Lead and link the call log (M-4).
 
-	Mirrors crm Exotel's link(): get_contact_by_phone_number returns a dict; a
-	["lead"]/["deal"] key promotes the doctype. Does NOT auto-create. We set the
-	reference_* pair (for the Calls-tab feed) AND link_with_reference_doc (parity
-	with how crm stores call links).
+	Anchored, account-disambiguated match instead of CRM `get_contact`'s loose
+	substring `LIKE` + most-recently-modified pick:
+
+	  1. Anchor on the phone (last-10 / E.164), never a free substring.
+	  2. On a SHARED phone with several leads, pick the one whose taxonomy routes
+	     to the RECEIVING Acefone account (`account_name`) — mirroring the WhatsApp
+	     phone+account scoping — so an inbound call lands on the right product-line
+	     lead, not "first" / "most recent".
+	  3. If we can't disambiguate (no account, or no lead routes to it), fall back
+	     to the single anchored lead if there's exactly one; otherwise leave the
+	     call unlinked rather than guess and misattribute.
+
+	Sets the reference_* pair (for the Calls-tab feed) AND link_with_reference_doc
+	(parity with how crm stores call links).
 	"""
 	if not customer_number:
 		return
-	try:
-		from crm.integrations.api import get_contact_by_phone_number
 
-		contact = get_contact_by_phone_number(str(customer_number))
-	except Exception:
-		frappe.log_error(title="Acefone: contact lookup failed", message=frappe.get_traceback())
+	lead_name = _resolve_lead_for_call(customer_number, account_name)
+	if not lead_name:
 		return
 
-	if not contact or not contact.get("name"):
-		return
+	doc.reference_doctype = "CRM Lead"
+	doc.reference_docname = lead_name
+	doc.link_with_reference_doc("CRM Lead", lead_name)
 
-	doctype, docname = "Contact", contact.get("name")
-	if contact.get("lead"):
-		doctype, docname = "CRM Lead", contact.get("lead")
-	elif contact.get("deal"):
-		doctype, docname = "CRM Deal", contact.get("deal")
 
-	doc.reference_doctype = doctype
-	doc.reference_docname = docname
-	doc.link_with_reference_doc(doctype, docname)
+def _resolve_lead_for_call(customer_number, account_name):
+	"""Anchored phone match + receiving-account disambiguation. Returns a lead name
+	or None (None = leave unlinked rather than attach to the wrong lead)."""
+	digits = acefone.normalize_number(customer_number)
+	if not digits:
+		return None
+	last10 = digits[-10:]
+
+	# Anchor: leads whose stored mobile_no ends in the same last-10 (stored E.164).
+	candidates = frappe.get_all(
+		"CRM Lead", filters={"mobile_no": ["like", f"%{last10}"]}, pluck="name"
+	)
+	if not candidates:
+		return None
+	if len(candidates) == 1:
+		return candidates[0]
+
+	# Shared phone: disambiguate by the receiving account's routing (same as WhatsApp).
+	if account_name:
+		scoped = routing.leads_for_number_and_account(candidates, account_name)
+		if len(scoped) == 1:
+			return scoped[0]
+		# 0 or >1 routed to this account — ambiguous; do not guess.
+		return None
+
+	# No receiving account known and 2+ leads share the phone — don't guess.
+	return None
 
 
 def _find_existing(call_id, direction, customer_number, payload):

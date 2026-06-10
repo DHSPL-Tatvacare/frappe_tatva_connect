@@ -3,6 +3,10 @@
 
 from frappe.model.document import Document
 
+from tatva_connect.taxonomy.normalize import normalize_field
+
 
 class CRMProgram(Document):
-	pass
+	def validate(self):
+		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
+		normalize_field(self, "program_name")

@@ -16,6 +16,10 @@ tatva_connect.patches.rename_doctypes_telephony
 tatva_connect.patches.add_whatsapp_message_id_unique_index
 tatva_connect.patches.add_acefone_telephony_medium
 tatva_connect.patches.seed_automation_task_types
+# Doc B Phase 1 (M-1): converge existing dev rows to the new entity-master keys
+# (Doctor/Hospital -> hash via rename_doc; City -> wipe+reseed composite). Runs
+# BEFORE the seeds so they re-insert idempotently against the new keying.
+tatva_connect.patches.converge_entity_masters
 tatva_connect.patches.seed_nivolumab_intake
 tatva_connect.patches.seed_india_cities
 tatva_connect.patches.normalize_lead_phones

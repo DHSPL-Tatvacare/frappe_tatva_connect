@@ -1,14 +1,15 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:hospital_name",
+ "autoname": "hash",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "hospital_name",
-  "city"
+  "city",
+  "review_pending"
  ],
  "fields": [
   {
@@ -16,19 +17,25 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Hospital Name",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "fieldname": "city",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "City"
+  },
+  {
+   "default": "0",
+   "description": "Auto-added from an intake form; ops should confirm/merge.",
+   "fieldname": "review_pending",
+   "fieldtype": "Check",
+   "label": "Review Pending"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-06-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Hospital",
@@ -52,7 +59,10 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "hospital_name,city",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "hospital_name"
 }

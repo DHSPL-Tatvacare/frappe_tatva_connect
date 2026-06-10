@@ -1,16 +1,46 @@
 {
- "actions": [], "allow_rename": 1, "autoname": "field:city_name",
- "creation": "2026-06-03 00:00:00.000000", "doctype": "DocType", "editable_grid": 1, "engine": "InnoDB",
- "field_order": ["city_name", "state"],
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{city_name}::{state}",
+ "creation": "2026-06-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "city_name",
+  "state"
+ ],
  "fields": [
-  {"fieldname": "city_name", "fieldtype": "Data", "in_list_view": 1, "label": "City", "reqd": 1, "unique": 1},
-  {"fieldname": "state", "fieldtype": "Data", "in_list_view": 1, "label": "State"}
+  {
+   "fieldname": "city_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "City",
+   "reqd": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "State"
+  }
  ],
- "index_web_pages_for_search": 1, "links": [], "modified": "2026-06-03 00:00:00.000000",
- "modified_by": "Administrator", "module": "Taxonomy", "name": "CRM City", "owner": "Administrator",
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM City",
+ "owner": "Administrator",
  "permissions": [
-  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"System Manager","share":1,"write":1},
-  {"read":1,"role":"Sales User"}
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"read": 1, "role": "Sales User"}
  ],
- "row_format": "Dynamic", "sort_field": "modified", "sort_order": "DESC", "states": []
+ "row_format": "Dynamic",
+ "search_fields": "city_name,state",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "city_name"
 }

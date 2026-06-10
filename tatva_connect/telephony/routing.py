@@ -28,11 +28,21 @@ def resolve_account_for_lead(lead):
 	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
 
+	# M-5: only route to an ENABLED Acefone account. This is the per-account
+	# kill-switch — disable an account and its rules become unselectable (the lead
+	# is blocked, never dialled through a dead tenant) rather than silently routed.
+	# Mirrors wati.routing's Active-only filter.
+	active = set(
+		frappe.get_all("CRM Acefone Account", filters={"enabled": 1}, pluck="name")
+	)
+
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(
 		"CRM Acefone Account Routing",
 		fields=["acefone_account", "program", "psp_group", "vertical"],
 	):
+		if rule.acefone_account not in active:
+			continue
 		# Every axis the rule specifies must match the lead.
 		if rule.program and rule.program != program:
 			continue
@@ -58,6 +68,26 @@ def resolve_account_for_lead(lead):
 			title=_("Ambiguous Acefone route"),
 		)
 	return best
+
+
+def leads_for_number_and_account(lead_names, account):
+	"""Inbound attribution (M-4): of the candidate leads sharing a phone, return those
+	whose taxonomy routes to `account`. The inverse of resolve_account_for_lead — it
+	scopes an inbound call to exactly the leads on the receiving account's line, never
+	across accounts. Returns [] if account is falsy. Mirrors wati.routing.
+
+	`lead_names` are already-anchored candidates (same last-10 phone)."""
+	if not account or not lead_names:
+		return []
+	out = []
+	for name in lead_names:
+		try:
+			if resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", name)) == account:
+				out.append(name)
+		except Exception:
+			# one lead's ambiguous/raising routing must not block the others
+			continue
+	return out
 
 
 def resolve_for_reference(reference_doctype, reference_name):
