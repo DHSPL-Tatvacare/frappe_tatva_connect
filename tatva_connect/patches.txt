@@ -1,6 +1,15 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+# Register modules.txt -> Module Def FIRST, before any doctype sync (migrate on an
+# existing site doesn't; add_module_defs runs only at install-app). Idempotent.
+tatva_connect.patches.register_modules
+# Doctype renames to the CRM * standard. pre_model_sync so the tables are renamed
+# BEFORE model-sync imports the new-named JSON. The whatsapp/telephony renames run
+# before rename_to_naming_standard (post) which renames ROWS in those tables.
+tatva_connect.patches.rename_doctypes_partner_api
+tatva_connect.patches.rename_doctypes_whatsapp
+tatva_connect.patches.rename_doctypes_telephony
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -29,3 +38,5 @@ tatva_connect.patches.fix_custom_group_field_name
 # (message_id, reference_name) so one number can mirror onto multiple leads (same patient,
 # two programs) without DuplicateEntryError on refresh / inbound.
 tatva_connect.patches.recreate_whatsapp_message_id_index_composite
+# C1: ensure the CRM Task Quick Entry layout carries custom_task_type + custom_checklist.
+tatva_connect.patches.set_task_quick_entry_layout

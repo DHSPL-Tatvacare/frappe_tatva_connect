@@ -380,7 +380,7 @@
   "name": "CRM Call Log-custom_acefone_account",
   "no_copy": 0,
   "non_negative": 0,
-  "options": "Acefone Account",
+  "options": "CRM Acefone Account",
   "permlevel": 0,
   "placeholder": null,
   "precision": "",

@@ -2,7 +2,7 @@
 
 Partners are role-less System Users. Raw `/api/resource/*` returns 403 for them
 (crm's `org_hierarchy.has_lead_permission` blocks non-managers). These methods are
-their entire contract — every one resolves the caller's `Lead API Mapping` row:
+their entire contract — every one resolves the caller's `CRM Lead API Mapping` row:
 
   * has an enabled mapping row  -> EXTERNAL partner. Routing (source / vertical /
       group / program) is FORCED from the row; reads/writes are scoped to that
@@ -35,10 +35,10 @@ from frappe.utils import cint, cstr
 
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:
-# it lives in the `Lead API Field` master, one row per namespaced `section:fieldname`
+# it lives in the `CRM Lead API Field` master, one row per namespaced `section:fieldname`
 # key, carrying its routing (section / target doctype / child-table fieldname).
 # `_catalog()` reads + caches that table; everything below derives from it, so
-# exposing a new partner field = one `Lead API Field` row, no code change.
+# exposing a new partner field = one `CRM Lead API Field` row, no code change.
 #
 # The only structural code-side constant: the parent (non-child) section is "lead".
 # A row whose `child_table_field` is set is a child section; everything else is
@@ -49,7 +49,7 @@ PARENT_SECTION = "lead"
 
 
 def _build_catalog():
-	"""Read the `Lead API Field` table into the structured catalog the API uses.
+	"""Read the `CRM Lead API Field` table into the structured catalog the API uses.
 	Returns a dict (everything below is derived from these keys):
 	  keys           ordered list of `section:fieldname` (sort_field=field_key)
 	  key_set        set(keys)
@@ -60,7 +60,7 @@ def _build_catalog():
 	                     row that carries is_row_key; its presence = multi-row, A4)
 	"""
 	rows = frappe.get_all(
-		"Lead API Field",
+		"CRM Lead API Field",
 		fields=["field_key", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key"],
 		order_by="field_key asc",
 	)
@@ -85,7 +85,7 @@ def _build_catalog():
 
 
 def _catalog():
-	"""The cached catalog. Invalidated by clear_catalog_cache on Lead API Field write."""
+	"""The cached catalog. Invalidated by clear_catalog_cache on CRM Lead API Field write."""
 	cached = frappe.cache().get_value(_CATALOG_CACHE_KEY)
 	if cached is None:
 		cached = _build_catalog()
@@ -94,7 +94,7 @@ def _catalog():
 
 
 def clear_catalog_cache(doc=None, method=None):
-	"""doc_events hook (Lead API Field on_update/on_trash) — drop the cached catalog."""
+	"""doc_events hook (CRM Lead API Field on_update/on_trash) — drop the cached catalog."""
 	frappe.cache().delete_value(_CATALOG_CACHE_KEY)
 
 # Forced for partners, accepted from a trusted System Manager. Never a catalog field.
@@ -170,12 +170,12 @@ def _resolve_caller():
 	The mapping row's name == partner_user (autoname field:partner_user)."""
 	user = frappe.session.user
 	mp = frappe.db.get_value(
-		"Lead API Mapping", {"partner_user": user, "enabled": 1},
+		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
 		["source", "vertical", "crm_group", "program"], as_dict=True,
 	)
 	is_sysmgr = "System Manager" in frappe.get_roles(user)
 	if not mp and not is_sysmgr:
-		frappe.throw(_("Not authorised: no Lead API Mapping for {0}").format(user), frappe.PermissionError)
+		frappe.throw(_("Not authorised: no CRM Lead API Mapping for {0}").format(user), frappe.PermissionError)
 	return user, mp, is_sysmgr
 
 
@@ -185,8 +185,8 @@ def _allowed_keys(user, has_mapping):
 	cat = _catalog()
 	if has_mapping:
 		picked = frappe.get_all(
-			"Lead API Mapping Field",
-			filters={"parent": user, "parenttype": "Lead API Mapping"},
+			"CRM Lead API Mapping Field",
+			filters={"parent": user, "parenttype": "CRM Lead API Mapping"},
 			pluck="field",
 		)
 		picked = {k for k in picked if k in cat["key_set"]}
@@ -203,8 +203,8 @@ def _allowed_programs(user, has_mapping):
 	if not has_mapping:
 		return []
 	return frappe.get_all(
-		"Lead API Mapping Program",
-		filters={"parent": user, "parenttype": "Lead API Mapping"},
+		"CRM Lead API Mapping Program",
+		filters={"parent": user, "parenttype": "CRM Lead API Mapping"},
 		pluck="program",
 	)
 
@@ -365,7 +365,7 @@ def _apply_children(doc, children):
 			_apply_multi_row(doc, cf, incoming, key_field, title)
 		else:
 			_apply_single_row(doc, cf, incoming, title)
-	from tatva_connect.automation.leads import sync_headline_metrics
+	from tatva_connect.lead.leads import sync_headline_metrics
 	sync_headline_metrics(doc)
 
 

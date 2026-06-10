@@ -1,0 +1,42 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:field_key",
+ "creation": "2026-06-04 00:00:00.000000",
+ "description": "Catalog of fields a partner API key CAN be granted (the platform superset). The partner API (tatva_connect.api.partner) reads its catalog + routing FROM this table. Tick a subset per partner in CRM Lead API Mapping > Allowed Fields. Add a row here (+ the underlying doctype field) to expose a new partner field with no code change.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "field_key",
+  "label",
+  "section_key",
+  "target_doctype",
+  "child_table_field",
+  "fieldname",
+  "is_row_key"
+ ],
+ "fields": [
+  {"fieldname": "field_key", "fieldtype": "Data", "label": "Field Key", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "section:fieldname, e.g. lab:hba1c"},
+  {"fieldname": "label", "fieldtype": "Data", "label": "Label", "in_list_view": 1},
+  {"fieldname": "section_key", "fieldtype": "Data", "label": "Section", "reqd": 1, "in_list_view": 1, "description": "Routing section, e.g. lead / plan / lab. Parent (lead) vs child sections."},
+  {"fieldname": "target_doctype", "fieldtype": "Data", "label": "Target DocType", "reqd": 1, "description": "DocType the field lives on, e.g. CRM Lead, CRM Lab Profile."},
+  {"fieldname": "child_table_field", "fieldtype": "Data", "label": "Child Table Field", "description": "For child sections only: the CRM Lead child-table fieldname this section writes into, e.g. custom_lab_profile. Blank for the parent (lead) section."},
+  {"fieldname": "fieldname", "fieldtype": "Data", "label": "Fieldname", "reqd": 1, "description": "The fieldname on the target doctype."},
+  {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "in_list_view": 1, "description": "For a child section: mark the ONE field that is this child's natural row key (the upsert-by-key address). A child section with a row-key field is multi-row; one without is single-row. Replaces the old hardcoded CHILD_CONFIG."}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Partner API",
+ "name": "CRM Lead API Field",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "field_key",
+ "sort_order": "ASC",
+ "states": []
+}
