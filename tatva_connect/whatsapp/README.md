@@ -145,7 +145,7 @@ Desk → **WhatsApp Account** → New:
 
 ### Step 2 — Sync that account's templates
 Desk → **WhatsApp Templates** list → **Sync from WATI** (or run
-`tatva_connect.wati.templates_sync.sync_from_wati` with no argument to sync **all**
+`tatva_connect.whatsapp.templates_sync.sync_from_wati` with no argument to sync **all**
 WATI accounts at once). Templates are stored **per account** — the record name is
 `templatename::Account Name`, so two tenants can both have e.g. `appointment_reminder`
 without clobbering each other. The picker only ever shows the templates of the
@@ -191,7 +191,7 @@ On **each** WATI tenant, register the inbound webhook URL and tell us which acco
 it belongs to by adding `&account=<WhatsApp Account name>`:
 
 ```
-https://<host>/api/method/tatva_connect.wati.webhook.webhook?token=<secret>&account=<WhatsApp Account name>
+https://<host>/api/method/tatva_connect.whatsapp.webhook.webhook?token=<secret>&account=<WhatsApp Account name>
 ```
 - `<secret>` = **WATI Settings → Webhook Verify Token** (shared).
 - `&account=...` tells us which tenant received the message, so inbound is filed

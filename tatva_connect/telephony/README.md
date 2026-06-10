@@ -71,8 +71,8 @@ Native `CRM Call Log` gains a Custom Field `custom_acefone_account` (which accou
 1. **Acefone Account** (Desk → New): account_name, enabled, base_url (`https://api.acefone.in`), api_token, agent_number, caller_id (DID). Or via API: `POST /api/resource/Acefone Account`.
 2. **Acefone Account Routing** rules: vertical / psp_group / program → Acefone Account. Most-specific wins; duplicates rejected; no global default.
 3. **CRM Telephony Agent** → set each agent's `acefone_number`.
-4. **Enable the Exotel slot** (CRM Exotel Settings → Enabled) so the phone icon appears, and **Acefone Settings → Enabled** (kill-switch on).
-5. **Register webhooks** per account: `https://<host>/api/method/tatva_connect.acefone.handler.{inbound_answered,inbound_complete,outbound_answered,outbound_complete}?key=<Acefone Settings webhook_verify_token>`.
+4. **Enable the Exotel slot** (CRM Exotel Settings → Enabled) so the phone icon appears, and **CRM Acefone Settings → Enabled** (kill-switch on).
+5. **Register webhooks** per account: `https://<host>/api/method/tatva_connect.telephony.handler.{inbound_answered,inbound_complete,outbound_answered,outbound_complete}?key=<CRM Acefone Settings webhook_verify_token>`.
 
 ## Credentials to provide (to go live)
 1. **API Token** (long-life) → `Acefone Account.api_token`.
