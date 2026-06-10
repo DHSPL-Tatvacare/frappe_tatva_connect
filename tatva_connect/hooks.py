@@ -176,7 +176,10 @@ fixtures = [
 # Apps
 # ------------------
 
-# required_apps = []
+# Hard deps: we override frappe_whatsapp doctypes and extend crm. Declaring them
+# enforces install order so the custom_field.json fixture (which has WhatsApp Account
+# fields) never aborts and silently drops the CRM Lead fields with it.
+required_apps = ["crm", "frappe_whatsapp"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -251,7 +254,8 @@ fixtures = [
 # ------------
 
 # before_install = "tatva_connect.install.before_install"
-# after_install = "tatva_connect.install.after_install"
+# Fresh-install seeding (install-app baselines patches.txt without running it).
+after_install = "tatva_connect.install.after_install"
 
 # Uninstallation
 # ------------
