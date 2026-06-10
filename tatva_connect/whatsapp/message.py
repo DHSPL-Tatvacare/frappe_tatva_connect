@@ -47,6 +47,24 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			)
 		self.whatsapp_account = account
 
+	def before_insert(self):
+		# Capture the lead this OUTBOUND row was explicitly filed under, BEFORE crm's
+		# validate (which runs after before_insert) rewrites reference_name to the first
+		# lead by phone. Restored in before_save. The send itself happens in super's
+		# before_insert and uses the correct account (resolved here, pre-clobber).
+		# Inbound attribution is handled separately (webhook.pin_inbound_reference).
+		if (self.type or "") == "Outgoing" and self.reference_doctype and self.reference_name:
+			self.flags.tatva_intended_ref = (self.reference_doctype, self.reference_name)
+		super().before_insert()
+
+	def before_save(self):
+		# Undo crm.api.whatsapp.validate's clobber for outbound rows on a shared phone:
+		# restore the lead the sender filed it under so the sent message renders in the
+		# right lead's tab. Runs after crm's validate, before the row is written.
+		intended = self.flags.get("tatva_intended_ref")
+		if intended and (self.type or "") == "Outgoing":
+			self.reference_doctype, self.reference_name = intended
+
 	def _wati_account(self):
 		"""Return the linked WhatsApp Account doc iff it's a WATI tenant, else None."""
 		if not self.whatsapp_account:
