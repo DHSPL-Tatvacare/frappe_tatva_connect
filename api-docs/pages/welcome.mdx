@@ -2,7 +2,7 @@
 title: Welcome
 ---
 
-This is the **integration-facing** API for TatvaCare's CRM. It exists so external systems — insurer feeds, the MyTatva mobile app, lab partners, and more to come — can push leads in and read state back. The CRM web app is where internal teams work those leads day to day; this API is the door for systems.
+This is the **integration-facing** API for TatvaCare's CRM. It exists so external systems — insurer feeds, the Product Line C mobile app, lab partners, and more to come — can push leads in and read state back. The CRM web app is where internal teams work those leads day to day; this API is the door for systems.
 
 ### Who reads this
 
@@ -17,10 +17,10 @@ This is the **integration-facing** API for TatvaCare's CRM. It exists so externa
 
 ### Scope today — and where it's growing
 
-This spec focuses on **Lead**, the record every integrator touches. The CRM has other doctypes too — Tasks, Notes, Call Logs, Comments, and more — all reachable through the same Frappe REST pattern. We're building the documented surface out as integrations need it: if you need one that isn't covered yet, introspect it live (see [Discovery](/docs/frappe-discovery)) or ask CRM Ops and we'll add it.
+This spec focuses on **Lead**, the record every integrator touches. The CRM has other doctypes too — Tasks, Notes, Call Logs, Comments, and more — all reachable through the same Frappe REST pattern. We're building the documented surface out as integrations need it: if you need one that isn't covered yet, introspect it live (see [Schema discovery](/frappe-discovery)) or ask CRM Ops and we'll add it.
 
-Two channel surfaces are already being built out — [WhatsApp](/docs/whatsapp) and [Telephony](/docs/telephony). Both follow the same "it's just a doctype" pattern: read a lead's messages or calls with a filtered list, exactly like everything else here.
+Two channel surfaces are already being built out — [WhatsApp](/whatsapp) and [Telephony](/telephony). Both follow the same "it's just a doctype" pattern: read a lead's messages or calls with a filtered list, exactly like everything else here.
 
 ### One reading rule
 
-If a field, value, or behaviour isn't documented here, don't guess — use the [Schema](/docs/api/schema) endpoint to introspect the live model, or email CRM Ops.
+If a field, value, or behaviour isn't documented here, don't guess — use the [Schema](/api/schema) endpoint to introspect the live model, or email CRM Ops.

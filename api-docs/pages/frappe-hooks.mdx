@@ -1,0 +1,48 @@
+---
+title: Server hooks
+---
+
+import { Mermaid } from "zudoku/mermaid";
+
+Frappe runs server-side logic at fixed points in a record's **lifecycle** — on save, on insert, on delete. Our CRM attaches its own logic to those points through one file (`hooks.py`), so behavior is customized **without forking** Frappe or the CRM.
+
+## Lifecycle
+
+Every write passes through the same ordered steps, and custom logic can hook any of them:
+
+<Mermaid chart={`flowchart LR
+    A[before_validate] --> B[validate] --> C[(Saved to DB)] --> D[after_insert / on_update] --> E[on_trash, on delete]
+`} />
+
+| Hook | Runs | Typical use |
+|---|---|---|
+| `before_validate` | before checks | clean / normalize input |
+| `validate` | before save | enforce rules; reject bad data |
+| `after_insert` | once, on create | trigger a follow-up |
+| `on_update` | every save | keep related records in sync |
+| `on_trash` | on delete | block or cascade |
+
+## Worked examples
+
+All registered as `doc_events` in `hooks.py` — no core code is touched:
+
+- **On a lead's `validate`** — normalize the phone to E.164, enforce one lead per `phone + line + group` (the [identity rule](/concepts)), validate the stage, and mirror the latest lab values up to the lead.
+- **On a task's `validate`** — fill its checklist from a template, then block "Done" until the checklist is complete.
+- **On an inbound message `after_insert`** — process and route it.
+
+## Other extension seams
+
+The same no-fork principle covers more than lifecycle events:
+
+| Seam | What it does |
+|---|---|
+| **Controller override** | swap the class behind a DocType (e.g. route messaging through a chosen provider) |
+| **Method override** | replace a server method with a custom one |
+| **Scheduler events** | run jobs on a schedule (e.g. a periodic sync) |
+| **Fixtures** | ship custom fields and config **as code**, applied on migrate |
+| **Form scripts** | add front-end behavior without editing the app bundle |
+
+## In practice
+
+- Custom logic runs **server-side**, so it applies no matter how a record is written — UI, REST, or the partner API. A `validate` rule you can't see still runs on your write.
+- This is why a write can be rejected for a reason that isn't in your payload — a duplicate clash, an incomplete checklist. The rule lives in a hook, not the field.

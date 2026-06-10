@@ -1,49 +1,42 @@
 ---
-title: Welcome
+title: Overview
 ---
 
-One API to push leads into TatvaCare and read their state back. You hold a key; that key decides exactly which fields you can read and write, and which product line your leads belong to. Build against what your key gives you — nothing here is one-size-fits-all.
+One API to push leads into TatvaCare and read their state back. Your key decides which fields you may read and write, and which product line and group your leads belong to — there is no fixed payload.
 
 :::tip{title="Your key is your contract"}
 
-There is **no fixed payload**. Your fields, which ones are required, and how the child tables work are all whatever your key is granted. You discover them by calling **[`GET lead_schema`](/docs/discover-schema)** — that response *is* your contract. Run it first, build from what you get back.
+Your fields, which are required, and how the child tables work are all defined by your key. Discover them by calling **[`GET lead_schema`](/discover-schema)** — that response is your contract. Build from it; never hardcode a field list.
 
 :::
 
 ## What you can do
 
 - **Create or update leads** — by phone, idempotent, one at a time or up to 100 at once.
-- **Read leads** — fetch one by id or phone, or list a page of them with simple filters.
+- **Read leads** — fetch one by id or phone, or list a page with simple filters.
 - **Delete leads** — by id, single or bulk.
-- **Discover your schema** — ask the API exactly what your key may send and read, at runtime.
+- **Discover your schema** — ask the API what your key may send and read, at runtime.
 
-Everything is a single HTTPS call with a bearer-style token header. Every endpoint has a live **try-it** console in the [API Reference](/docs/partner-api).
+Every call is a single HTTPS request with a token header. Each endpoint has a live try-it console in the [Partner API Reference](/partner-api).
 
-## How a lead is shaped
+## The model in brief
 
-A lead has a flat set of top-level fields (name, phone, status, and whatever else your key is granted) plus a few **child tables** that hold richer, repeating data — lab reports, plan details, the care team. You send children as JSON arrays nested in the same body.
+- **One lead per patient** — identified by `phone + product line + group`. Re-sending updates that lead; it never duplicates, so every write is safe to retry.
+- **Product line and group are fixed to your key** — you never send them.
+- **Program is a mutable attribute, not identity** — your key sends it (List mode), has it stamped (Forced), or has none. The same patient on a new program stays the same lead.
+- **Child tables** hold richer, repeating data — lab reports, plan details, the care team — sent as JSON arrays in the same body.
 
-```
- Lead
-   ├── top-level fields        — first_name, mobile_no, status, …
-   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]
-```
-
-Which children exist for *you*, and what keys address their rows, comes straight from `lead_schema`. Don't hardcode a list from this page — ask your key.
-
-## One lead per phone, per line
-
-A lead is unique per **phone number within your product line**. Re-sending the same phone updates that same lead; it never creates a duplicate. That makes every write safe to retry. The product line itself is fixed to your key — you never set or change it.
+Full detail: [Lead identity](/concepts).
 
 ## Where to go next
 
-- **[Quickstart](/docs/partner-quickstart)** — key → header → first schema call → first lead, in four steps.
-- **[Discover your schema](/docs/discover-schema)** — the call every integration starts with.
-- **[Reading values](/docs/reading-values)** — pull any value out of a response by its dotted path.
-- **[Errors](/docs/partner-errors)** — the one error shape, and how to branch on it.
+- **[Quickstart](/partner-quickstart)** — from key to first lead, in four steps.
+- **[Schema discovery](/discover-schema)** — the call every integration starts with.
+- **[Reading responses](/reading-values)** — pull any value from a response by its path.
+- **[Errors](/partner-errors)** — the one error shape, and how to branch on it.
 
-:::note{title="Questions or a new field?"}
+:::note{title="Need a field or a higher limit?"}
 
-Need a field your key doesn't have yet, a higher rate limit, or help with a write that's failing? Contact **TatvaCare Ops** — see [Conventions](/docs/conventions) for what to include.
+If your key lacks a field you need, wants a higher rate limit, or a write is failing, contact **TatvaCare Ops** — see [Conventions](/conventions) for what to include.
 
 :::

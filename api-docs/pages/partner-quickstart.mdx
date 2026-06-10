@@ -2,11 +2,7 @@
 title: Quickstart
 ---
 
-:::rocket{title="From zero to a live lead"}
-
-Get your key, set the header, ask the API what you can send, then create a lead and read it back. Copy the response of one call into the next.
-
-:::
+Get your key, set the header, discover what you can send, then create a lead and read it back — copying each response into the next call.
 
 ## 1. Get a key
 
@@ -18,7 +14,7 @@ Every request carries them in one header, joined by a colon:
 Authorization: token <api_key>:<api_secret>
 ```
 
-Literal lowercase `token`, one space, then `key:secret`. See [Conventions](/docs/conventions#auth) for the exact format.
+Literal lowercase `token`, one space, then `key:secret`. See [Conventions](/conventions#auth) for the exact format.
 
 ## 2. Discover what you can send
 
@@ -29,20 +25,24 @@ curl -H 'Authorization: token <api_key>:<api_secret>' \
      https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema
 ```
 
-You get back a `data` object listing your `lead` fields, your `children` (each with `multi_row` and `key_field`), and your `routing` (fixed to your key — you don't set it). Read the full walkthrough on **[Discover your schema](/docs/discover-schema)**.
+You get back a `data` object listing your `lead` fields, your `children` (each with `multi_row` and `key_field`), and your `routing` (fixed to your key — you don't set it). Read the full walkthrough on **[Schema discovery](/discover-schema)**.
 
 ## 3. Create your first lead
 
-`lead_create` is the everyday write. It's idempotent on phone-within-your-line, so it's always safe to retry. Send the smallest payload that works — just a phone, plus whatever your schema marks required:
+`lead_create` is the everyday write. It's idempotent on the patient's identity (phone + your line + group), so it's always safe to retry. Send the smallest payload that works — a phone, plus whatever your schema marks required.
+
+If your key is **List mode**, `custom_current_program` is required — send one of your allowed programs:
 
 ```bash
 curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
      -H 'Content-Type: application/json' \
-     -d '{"mobile_no":"+919900000000","first_name":"Test Lead"}' \
+     -d '{"mobile_no":"+919900000000","first_name":"Asha","custom_current_program":"<one-of-your-allowed-programs>"}' \
      https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_create
 ```
 
-The response is **top-level** `status` / `action` / `data` — note `data.name`, the lead's id. You'll PUT that back to `lead_update` later.
+A **Forced**-mode key omits the program (it's stamped for you); a **None**-mode key has no program. Check your mode with [`lead_schema`](/discover-schema).
+
+The response is **top-level** `status` / `action` / `data`. Note `data.name` — the lead's **unique ID** (e.g. `CRM-LEAD-2026-00123`); you use it to update or read the lead later.
 
 ```json
 {
@@ -58,7 +58,13 @@ The response is **top-level** `status` / `action` / `data` — note `data.name`,
 }
 ```
 
-The `source` / `vertical` / `group` / `program` come back filled in **for you** — that's your fixed routing, stamped server-side. If a call fails, you get one consistent error shape instead — see [Errors](/docs/partner-errors).
+The `source` / `vertical` / `group` come back filled **for you** — your fixed routing, stamped server-side. `program` is either stamped (Forced mode) or the value you sent (List mode). If a call fails, you get one consistent error shape instead — see [Errors](/partner-errors).
+
+:::tip{title="Transitions are just another write"}
+
+Re-send the same patient with a different `custom_current_program` and the **same lead** updates — the program flips, everything else carries over. There is never a second lead for the same patient on your line + group.
+
+:::
 
 ## 4. Read it back
 
@@ -67,10 +73,10 @@ curl -H 'Authorization: token <api_key>:<api_secret>' \
      'https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123'
 ```
 
-You get the lead with your allowed fields, and any child tables inlined as arrays (empty here, since you didn't send rows yet). Pull values out by their dotted path — see [Reading values](/docs/reading-values).
+You get the lead with your allowed fields, and any child tables inlined as arrays (empty here, since you didn't send rows yet). Pull values out by their dotted path — see [Reading responses](/reading-values).
 
 ## What's next
 
-- Add a **child row** to a write — labs, plan, care team. Discover the row key first via [`lead_schema`](/docs/discover-schema).
-- Skim [Response shapes & codes](/docs/responses) so your client knows what to expect.
-- Bookmark [Errors](/docs/partner-errors) and [Rate limits](/docs/rate-limits) before you ship.
+- Add a **child row** to a write — labs, plan, care team. Discover the row key first via [`lead_schema`](/discover-schema).
+- Skim [Response shapes](/responses) so your client knows what to expect.
+- Bookmark [Errors](/partner-errors) and [Rate limits](/rate-limits) before you ship.

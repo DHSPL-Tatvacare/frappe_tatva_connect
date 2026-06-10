@@ -1,5 +1,5 @@
 ---
-title: "Child tables & Links"
+title: Child tables
 ---
 
 Two field types connect DocTypes to each other — and they're the heart of how this CRM models a lead and its related records.
@@ -20,9 +20,9 @@ In this CRM, the lead carries identity + contact + routing on the parent, and **
 }
 ```
 
-`custom_lab_profile` is a child table — a list of rows. A lead can carry several profiles (Lab, Plan, Acquisition, Drug Program, Care & Providers); which fields YOUR key may send is whatever your key is granted — call [`lead_schema`](/docs/discover-schema) to see them.
+`custom_lab_profile` is a child table — a list of rows. A lead can carry several profiles (Lab, Plan, Acquisition, Drug Program, Care & Providers); which fields YOUR key may send is whatever your key is granted — call [`lead_schema`](/discover-schema) to see them.
 
-## How child rows are written: upsert-by-key (never clobber)
+## Writing child rows
 
 When you send a child array, the API does **not** replace the existing rows. It **merges** by each row's **natural key**:
 
@@ -33,7 +33,7 @@ When you send a child array, the API does **not** replace the existing rows. It 
 
 This means a partial write — say, just an updated `hba1c` for an existing report date — never wipes the rest of that row, and never duplicates it.
 
-### The required key per multi-row child
+### Row keys
 
 A **multi-row** child must carry its **key field** on every row you send — it's the row's address. The key is **required** even if your key wasn't granted it (the schema marks it `required`). Today's keys:
 
@@ -61,9 +61,9 @@ Whether a child is multi-row (and which field is its key) is **discoverable** �
 
 When you read a lead back (`lead_get` / `lead_get_bulk`), each child row always carries its `name` (our internal row id) **and** its key field — so you can address it on the next write.
 
-## Why it matters for you
+## In practice
 
 - You **cannot** create a child row on its own — there's no `/api/resource/...` you POST a profile to (direct child-table access returns 403, by design). You send child rows *embedded in the parent* lead, exactly as above.
-- A `Link` value must exist first. `custom_current_program: "Sigrima"` only works if `Sigrima` is a row in `CRM Program` — check via [Discovery](/docs/frappe-discovery).
+- A `Link` value must exist first. `custom_current_program: "Program B"` only works if `Program B` is a row in `CRM Program` — check via [Schema discovery](/frappe-discovery).
 
-→ **Try it:** [Create a lead](/docs/api/leads) — its examples show profile child rows embedded in the body.
+→ **Try it:** [Create a lead](/api/leads) — its examples show profile child rows embedded in the body.

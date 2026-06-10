@@ -1,8 +1,16 @@
 ---
-title: Validate your API key
+title: Authentication
 ---
 
 Before you build anything, confirm your key works. There's a single, side-effect-free way to do it: call **`lead_schema`** with your key. It reads nothing and writes nothing — it just tells you what your key is allowed to see.
+
+:::tip{title="Use the playground without re-typing your key"}
+
+Paste your key once below — it's saved in this browser. Then in any operation's playground, pick the **Partner API key** identity and it's applied automatically.
+
+:::
+
+<ApiKeyInput />
 
 ```bash
 curl -i -H 'Authorization: token <api_key>:<api_secret>' \
@@ -13,8 +21,8 @@ curl -i -H 'Authorization: token <api_key>:<api_secret>' \
 
 | You get | What it means | What to do |
 |---|---|---|
-| **`200`** with a `data` object listing your fields | Your key works, and `data` *is* your granted schema. | You're ready — head to the [Quickstart](/docs/partner-quickstart). |
-| **`401`** `unauthorized` | The key is missing, malformed, or wrong. | Re-check the header is exactly `Authorization: token <api_key>:<api_secret>` — lowercase `token`, one space, colon-joined. See [Conventions](/docs/conventions#auth). |
+| **`200`** with a `data` object listing your fields | Your key works, and `data` *is* your granted schema. | You're ready — head to the [Quickstart](/partner-quickstart). |
+| **`401`** `unauthorized` | The key is missing, malformed, or wrong. | Re-check the header is exactly `Authorization: token <api_key>:<api_secret>` — lowercase `token`, one space, colon-joined. See [Conventions](/conventions#auth). |
 | **`403`** `forbidden` | The header is well-formed, but this key isn't permitted here. | Confirm you're using the key issued for the Partner Lead API. If you need broader access, email Ops. |
 
 A `200` response looks like this (trimmed) — the `data` block is the exact set of fields and child tables your key may use:
@@ -35,12 +43,12 @@ A `200` response looks like this (trimmed) — the `data` block is the exact set
 
 :::tip{title="Your key is your contract"}
 
-Two keys get two different schemas. What comes back here is what *your* integration should build against — don't copy a field list from anywhere else. Read [Discover your schema](/docs/discover-schema) for the full walkthrough.
+Two keys get two different schemas. What comes back here is what *your* integration should build against — don't copy a field list from anywhere else. Read [Schema discovery](/discover-schema) for the full walkthrough.
 
 :::
 
 ## Next
 
-- **[Quickstart](/docs/partner-quickstart)** — key → header → first schema call → first lead.
-- **[Discover your schema](/docs/discover-schema)** — the call every integration starts with.
-- **[Errors](/docs/partner-errors)** — the one error shape, and how to branch on it.
+- **[Quickstart](/partner-quickstart)** — key → header → first schema call → first lead.
+- **[Schema discovery](/discover-schema)** — the call every integration starts with.
+- **[Errors](/partner-errors)** — the one error shape, and how to branch on it.

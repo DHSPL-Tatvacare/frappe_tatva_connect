@@ -60,7 +60,7 @@ Accounts and routing rules are plain doctypes — manage them entirely over REST
 ```bash
 curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
   -d '{
-    "account_name": "Anaya Telephony",
+    "account_name": "Group A Telephony",
     "enabled": 1,
     "base_url": "https://api.acefone.in",
     "api_token": "<Acefone API token>",
@@ -74,7 +74,7 @@ curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
 **Add a routing rule** (taxonomy → account):
 ```bash
 curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
-  -d '{ "acefone_account": "Anaya Telephony", "vertical": "GoodFlip" }' \
+  -d '{ "acefone_account": "Group A Telephony", "vertical": "Product Line B" }' \
   'https://one.tatvacare.in/api/resource/Acefone Account Routing'
 ```
 Fields: `vertical` (→ CRM Vertical), `psp_group` (→ CRM Group), `program` (→ CRM Program), `acefone_account` (→ Acefone Account). Fill only the axes you want; most-specific wins. Axis values are the names of existing CRM Vertical / CRM Group / CRM Program records (`GET /api/resource/CRM Vertical` …).
@@ -94,4 +94,4 @@ curl -X PUT -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/j
 
 > **Rollout note.** Reading `CRM Call Log` is live today. The Acefone integration (automatic inbound logging + click-to-call) is built and verified on the dev bench; it goes live with the next deploy. A `404` on the click-to-call method means it isn't deployed on that environment yet.
 
-→ **API Reference:** [Telephony endpoints](/docs/api/telephony).
+→ **API Reference:** [Telephony endpoints](/api/telephony).

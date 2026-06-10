@@ -14,7 +14,7 @@ The gated **partner methods** (`tatva_connect.api.partner.lead_*`) return a **to
 | What happened? | `action` | `created` / `updated` / `deleted` / `fetched`. (Absent on `lead_schema`.) |
 | The result | `data.*` | The lead/payload. e.g. `data.name`, `data.leads[]`, `data.total`. |
 | The CRM id | `data.name` | PUT it back to `lead_update`. |
-| An error | `error.code` + `error.message` | Branch on `error.code` (stable). See [Errors](/docs/errors). |
+| An error | `error.code` + `error.message` | Branch on `error.code` (stable). See [Errors](/errors). |
 | A bulk batch | `summary.*` + `results[]` | `summary.total/succeeded/failed` (writes) or `summary.requested/found/not_found` (get). |
 | One bulk row | `results[i].status`, then `results[i].action`/`results[i].name`/`results[i].data` or `results[i].error.code` | Results are **input-ordered** — `results[i]` matches the i-th item you sent. |
 
@@ -26,10 +26,10 @@ A successful create looks like this — note the absence of any `message` key:
   "action": "created",
   "data": {
     "name": "CRM-LEAD-2026-00123",
-    "source": "Niva Bupa",
-    "vertical": "GoodFlip",
-    "group": "Insurers",
-    "program": "Niva Bupa"
+    "source": "Program D",
+    "vertical": "Product Line B",
+    "group": "Group B",
+    "program": "Program D"
   }
 }
 ```

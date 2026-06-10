@@ -1,10 +1,10 @@
 ---
-title: "Discovery — introspect, don't hardcode"
+title: Schema discovery
 ---
 
 These docs deliberately do **not** dump a master field list. The fields you may send and read are **per-partner** (scoped to what your key is granted) and they **evolve** — new verticals add new profile fields over time. So the source of truth is the API itself, at runtime, for **your** key.
 
-## `lead_schema` is your per-partner source of truth
+## Your schema
 
 Call `lead_schema` first in any integration. It returns **exactly** the parent + child fields THIS key may send/read — with each field's `fieldname`, `label`, `type`, `required`, and `options` — plus the child-write rules, the dedup grain, the bulk limits, and your routing mode:
 
@@ -18,11 +18,11 @@ Two partners hitting this get **different** field lists. Read it; don't hardcode
 What to read out of `data`:
 
 - **`data.lead[]`** — allowed parent (CRM Lead) fields.
-- **`data.children.<table>`** — per child table: `multi_row` (bool), `key_field` (the required key on a multi-row child — see [Child tables](/docs/frappe-child-tables)), and `fields[]`.
+- **`data.children.<table>`** — per child table: `multi_row` (bool), `key_field` (the required key on a multi-row child — see [Child tables](/frappe-child-tables)), and `fields[]`.
 - **`data.routing.mode`** — `forced` (partner; line fixed) or `caller-supplied` (internal key sends routing).
 - **`data.dedup`** / **`data.bulk`** — the lead grain and the bulk/list limits.
 
-## Going deeper: native DocType introspection
+## DocType introspection
 
 For values behind a `Link`/`Select` (e.g. which `CRM Program` rows exist), a DocType's own definition is itself a document, so you read its schema over the same REST API:
 
@@ -36,4 +36,4 @@ You get every field with its `fieldname`, `label`, `fieldtype`, and — for `Sel
 
 **Example:** before pushing leads with a new `custom_current_program`, introspect `CRM Program` to confirm the program exists rather than hardcoding a name that may have been renamed.
 
-→ **Try it:** [Discover the fields your key may use](/docs/api/leads) · [Introspect a doctype's full schema](/docs/api/schema#introspect-a-doctypes-full-schema).
+→ **Try it:** [Discover the fields your key may use](/api/leads) · [Introspect a doctype's full schema](/api/schema#introspect-a-doctypes-full-schema).

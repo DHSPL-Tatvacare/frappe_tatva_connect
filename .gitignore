@@ -21,3 +21,6 @@ __pycache__/
 # internal planning docs — kept local, NOT in the public repo
 docs/
 custom-user-work/
+
+# playwright mcp scratch (browser logs/snapshots)
+.playwright-mcp/

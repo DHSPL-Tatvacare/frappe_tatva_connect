@@ -39,9 +39,9 @@ if body["status"] == "error":
 | `unauthorized` | 401 | Missing or invalid API key. | Header must be exactly `Authorization: token <api_key>:<api_secret>` — lowercase `token`, one space, colon-joined. |
 | `forbidden` | 403 | Your key isn't permitted to make this call. | Use the `partner.*` lead methods; if you need broader access, email Ops. |
 | `not_found` | 404 | The lead doesn't exist **or** is outside your line. | These two are **deliberately identical** — re-check the `name`. You only ever see leads on your own line. |
-| `duplicate` | 409 | A unique constraint was violated. | Usually a race. `lead_create` is idempotent on phone-within-line, so a plain re-send won't duplicate. |
+| `duplicate` | 409 | A unique constraint was violated. | Usually a race. `lead_create` is idempotent on phone + product line + group, so a plain re-send won't duplicate. |
 | `cannot_delete` | 409 | The lead has linked activity (calls, tasks, notes). | A worked lead can't be silently removed. The message is generic by design. |
-| `rate_limited` | 429 | You're over your request budget. | Wait `error.retry_after` seconds, then retry. See [Rate limits](/docs/rate-limits). |
+| `rate_limited` | 429 | You're over your request budget. | Wait `error.retry_after` seconds, then retry. See [Rate limits](/rate-limits). |
 | `server_error` | 500 | Unexpected — logged on our side. | Retry with exponential backoff; if it persists, email Ops with the request + response. |
 
 :::caution{title="Not-found is intentionally vague"}
@@ -68,7 +68,7 @@ When a write fails validation, `error.fields` often names exactly what to fix:
 The most common ones:
 
 - **A required field is missing** — check `lead_schema` for which fields your key marks `required`.
-- **A multi-row child row has no key** — every row in a multi-row table needs its `key_field` (e.g. `report_date`). See [Discover your schema](/docs/discover-schema#child-tables-how-rows-are-written).
+- **A multi-row child row has no key** — every row in a multi-row table needs its `key_field` (e.g. `report_date`). See [Schema discovery](/discover-schema#child-tables-how-rows-are-written).
 - **An unknown option value** — a Link/Select field got a value that isn't in its `options`. Read the valid options from `lead_schema`.
 - **A single-row child got two rows** — single-row tables accept one row only.
 
@@ -89,4 +89,4 @@ A bulk call returns **HTTP 200** even when some rows fail. Each `results[]` entr
 
 So check the top-level `status`, then walk `results[].status` per row — don't assume a 200 means every row landed. The failed row's savepoint is rolled back; the rest still commit, so a re-send of just the failures is safe.
 
-→ See [Reading values](/docs/reading-values) for pulling `error.code` and `error.fields` out by path, and [Rate limits](/docs/rate-limits) for handling `429`.
+→ See [Reading responses](/reading-values) for pulling `error.code` and `error.fields` out by path, and [Rate limits](/rate-limits) for handling `429`.

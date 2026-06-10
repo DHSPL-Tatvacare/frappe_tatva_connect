@@ -1,33 +1,33 @@
 ---
-title: "Roles & permissions"
+title: Role tiers
 ---
 
-[Permissions in 60 seconds](/docs/frappe-permissions) covers the one rule you must internalise: **a key acts as a user, and never bypasses permissions.** This page is the reference — the role model behind the CRM, and the endpoints to inspect exactly what a key can do.
+[Access control](/frappe-permissions) covers the one rule you must internalise: **a key acts as a user, and never bypasses permissions.** This page is the reference — the role model behind the CRM, and the endpoints to inspect exactly what a key can do.
 
-## What decides what a key can do
+## Three layers
 
 Three layers stack, from coarse to fine:
 
 1. **Roles** — what *actions* on what *doctypes*. A role grants Read / Write / Create / Delete (and more) per doctype. A user's effective access is the union of all their roles.
-2. **User Permissions** — *which rows* a user may see. This is row-level scoping: a user restricted to `for_value = Anaya` on `CRM Group` only sees Anaya's leads. A user with no such row sees everything.
-3. **Field-level permissions** — *which fields* a user may write. Routing fields like `custom_vertical` are admin-only; a lower-privileged key silently drops them on write — see [Leads](/docs/api/leads).
+2. **User Permissions** — *which rows* a user may see. This is row-level scoping: a user restricted to `for_value = Group A` on `CRM Group` only sees Group A's leads. A user with no such row sees everything.
+3. **Field-level permissions** — *which fields* a user may write. Routing fields like `custom_vertical` are admin-only; a lower-privileged key silently drops them on write — see [Leads](/api/leads).
 
-## The role tiers in this CRM
+## Four tiers
 
 - **Super Admin** — full access; the tier internal integration keys use, so they can write the admin-only routing fields.
 - **CRM Admin** — manages CRM configuration and all leads, without server administration.
 - **Group / Program Admin** — full access scoped to one group or program via User Permissions.
 - **Regular User** — works their own scoped queue.
 
-## Inspect it over the API
+## Inspecting access
 
 You can read the whole picture instead of guessing:
 
-- **Who am I?** [`get_logged_user`](/docs/api/authentication#verify-api-key-handshake) returns the user your key acts as.
-- **What roles does that user hold?** [Read the User doc](/docs/api/users#read-a-user-with-roles) — its `roles` child table lists them.
-- **What rows are they scoped to?** [List `User Permission`](/docs/api/roles-and-permissions#list-record-level-scoping-user-permissions) filtered by `user`.
-- **Can they do one specific thing?** Ask [`has_permission`](/docs/api/roles-and-permissions#check-a-permission) directly, before you attempt the write.
+- **Who am I?** [`get_logged_user`](/api/authentication#verify-api-key-handshake) returns the user your key acts as.
+- **What roles does that user hold?** [Read the User doc](/api/users#read-a-user-with-roles) — its `roles` child table lists them.
+- **What rows are they scoped to?** [List `User Permission`](/api/roles-and-permissions#list-record-level-scoping-user-permissions) filtered by `user`.
+- **Can they do one specific thing?** Ask [`has_permission`](/api/roles-and-permissions#check-a-permission) directly, before you attempt the write.
 
-To create accounts and mint their keys, see [Users & onboarding](/docs/users).
+To create accounts and mint their keys, see [User onboarding](/users).
 
-→ **API Reference:** [Roles & permissions endpoints](/docs/api/roles-and-permissions).
+→ **API Reference:** [Roles & permissions endpoints](/api/roles-and-permissions).

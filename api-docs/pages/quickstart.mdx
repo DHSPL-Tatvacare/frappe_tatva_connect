@@ -12,7 +12,7 @@ This walks you through the minimum to go from zero to a verified lead in product
 curl -H 'Authorization: token <api_key>:<api_secret>' \
      https://one.tatvacare.in/api/method/frappe.auth.get_logged_user
 ```
-Expected: `{"message":"<your-integration-user>@tatvacare.in"}` (this is a *native* Frappe method, so it uses the `message` wrapper). If you get HTML or a 401, the auth header is wrong — see [Authentication](/docs/api/authentication).
+Expected: `{"message":"<your-integration-user>@tatvacare.in"}` (this is a *native* Frappe method, so it uses the `message` wrapper). If you get HTML or a 401, the auth header is wrong — see [Authentication](/api/authentication).
 
 ### 2. Discover what you may send
 
@@ -28,10 +28,10 @@ If you're a **partner**, your routing is fixed — skip straight to step 3. If y
 ```bash
 curl -H 'Authorization: token <api_key>:<api_secret>' \
      https://one.tatvacare.in/api/resource/CRM%20Vertical
-# → {"data":[{"name":"GoodFlip"},{"name":"GoodFlip Care"},{"name":"Pill Up"},{"name":"TatvaPractice"}]}
+# → {"data":[{"name":"Product Line B"},{"name":"Product Line A"},{"name":"Pill Up"},{"name":"TatvaPractice"}]}
 ```
 
-Repeat for `CRM Group` and `CRM Program`. See [Lookups](/docs/api/reference-data).
+Repeat for `CRM Group` and `CRM Program`. See [Lookups](/api/reference-data).
 
 ### 3. Create your first lead (minimum payload)
 
@@ -51,15 +51,15 @@ Expected response — **top-level** `status`/`action`/`data` (the partner method
   "action": "created",
   "data": {
     "name": "CRM-LEAD-2026-NNNNN",
-    "source": "Niva Bupa",
-    "vertical": "GoodFlip",
-    "group": "Insurers",
-    "program": "Niva Bupa"
+    "source": "Program D",
+    "vertical": "Product Line B",
+    "group": "Group B",
+    "program": "Program D"
   }
 }
 ```
 
-A validation or permission failure returns the unified error contract — `{"status":"error","error":{"code":…,"message":…}}` with a matching HTTP status. See [Errors](/docs/errors) and [Reading the response (paths)](/docs/operations#reading-the-response-paths).
+A validation or permission failure returns the unified error contract — `{"status":"error","error":{"code":…,"message":…}}` with a matching HTTP status. See [Errors](/errors) and [Reading the response (paths)](/operations#reading-the-response-paths).
 
 ### 4. Read it back
 
@@ -72,7 +72,7 @@ Returns the lead with your allowed fields plus embedded `custom_plan_profile[]` 
 
 ### What's next
 
-- Add a **profile row** to your write — see [Create a lead](/docs/api/leads) examples.
-- Read the [Concepts](/docs/concepts) page to understand WHY there are 3 profile children.
-- Bookmark [Discovery](/docs/api/schema) for runtime schema introspection.
-- Check [Errors](/docs/errors) before you ship anything.
+- Add a **profile row** to your write — see [Create a lead](/api/leads) examples.
+- Read the [Lead identity](/concepts) page to understand WHY there are 3 profile children.
+- Bookmark [Discovery](/api/schema) for runtime schema introspection.
+- Check [Errors](/errors) before you ship anything.

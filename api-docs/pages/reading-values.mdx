@@ -1,5 +1,5 @@
 ---
-title: Reading values
+title: Reading responses
 ---
 
 Every response is JSON. To pull a value out, you follow its **dotted path** from the top of the body. This page is the whole loop: check `status`, branch on `action` or `error.code`, then read your value by its path.
@@ -18,7 +18,7 @@ A field lives at a dotted path from the body. Child rows are arrays, so you inde
 |---|---|
 | Did it succeed? | `status` — `"success"` or `"error"` |
 | What happened | `action` — `created` / `updated` / `deleted` / `fetched` |
-| The lead id | `data.name` |
+| The lead's unique ID | `data.name` |
 | A top-level field | `data.first_name`, `data.status` |
 | The latest lab's HbA1c | `data.custom_lab_profile[0].hba1c` |
 | A specific lab row's date | `data.custom_lab_profile[1].report_date` |

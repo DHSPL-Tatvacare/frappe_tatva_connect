@@ -47,7 +47,7 @@ This holds even for the earliest framework-layer failures — a bad API key or a
 | `not_found` | 404 | The lead doesn't exist **or** is outside your line. | **These two are deliberately identical** (anti-enumeration) — no id, no scope hint. Re-check the `name`; a partner only sees its own line. |
 | `duplicate` | 409 | A unique constraint was violated. | The value is taken or your write raced another. `lead_create` matches on the lead grain, so re-sends don't duplicate. |
 | `cannot_delete` | 409 | The lead has linked activity (calls/tasks/notes). | A worked lead can't be silently nuked. The message is **generic by design** — it never enumerates the linked records. |
-| `rate_limited` | 429 | Over **100 requests / 60s** for your key. | Back off `error.retry_after` seconds (the response tells you exactly). See [Rate limits](/docs/operations#rate-limits). |
+| `rate_limited` | 429 | Over **100 requests / 60s** for your key. | Back off `error.retry_after` seconds (the response tells you exactly). See [Rate limits](/operations#rate-limits). |
 | `server_error` | 500 | Unexpected — logged on our side. | Retry with exponential backoff; if it persists, email Ops with the request + response. |
 
 ### Per-row errors in bulk
@@ -65,11 +65,11 @@ A bulk call returns **HTTP 200** even when some rows fail. Each entry in `result
 }
 ```
 
-So: check the top-level `status`, then walk `results[].status` per row. Don't assume a 200 means every row landed. See [Reading the response (paths)](/docs/operations#reading-the-response-paths).
+So: check the top-level `status`, then walk `results[].status` per row. Don't assume a 200 means every row landed. See [Reading the response (paths)](/operations#reading-the-response-paths).
 
 ### Errors integrators hit most often
 
-- **`validation_error` — "Could not find CRM Program: …"** — you sent a program that doesn't exist. Introspect `CRM Program` (see [Discovery](/docs/frappe-discovery)) to enumerate valid values, then resend.
+- **`validation_error` — "Could not find CRM Program: …"** — you sent a program that doesn't exist. Introspect `CRM Program` (see [Schema discovery](/frappe-discovery)) to enumerate valid values, then resend.
 - **`validation_error` — "Please specify a reason for losing the lead."** — you set `status` to `Junk`/`Unqualified` without `lost_reason`. Add it.
 - **`unauthorized` + an HTML login page** — your key is wrong or the header is missing the `token` prefix. Frappe falls back to the website login when auth fails on `/api/resource/*`; the partner methods return the JSON contract instead.
 - **`forbidden` on a field you sent** — your key may only send the fields it's granted; call `lead_schema` to see yours.
@@ -83,8 +83,8 @@ Direct REST calls (internal first-party keys) return Frappe's native envelope:
 ```json
 {
   "exc_type": "LinkValidationError",
-  "exception": "Could not find CRM Program: SigrimaXXX",
-  "_server_messages": "[\"Could not find CRM Program: SigrimaXXX\"]"
+  "exception": "Could not find CRM Program: Program BXXX",
+  "_server_messages": "[\"Could not find CRM Program: Program BXXX\"]"
 }
 ```
 

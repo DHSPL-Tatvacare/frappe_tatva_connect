@@ -1,14 +1,14 @@
 ---
-title: "What's a DocType?"
+title: DocTypes
 ---
 
 This CRM runs on **Frappe**, and Frappe has one core idea: the **DocType**. If you know relational databases, a DocType is *a table + its form + its API for one kind of record* — all defined in one place.
 
 - **DocType** = a *type* of thing you store. `CRM Lead` is a DocType. So are `File`, `CRM Program`, `CRM Lead Status`.
 - **Document** (or "doc") = one *record* of that type — one lead, one file.
-- **Fields** = the columns. Each has a type: `Data` (short text), `Int`, `Float`, `Date`, `Select` (a fixed list), `Check` (0/1 boolean), `Link` (a pointer to another DocType — like a foreign key), `Table` (a child table — see the next page).
+- **Fields** = the columns. Each has a type: `Data` (short text), `Int`, `Float`, `Date`, `Select` (a fixed list), `Check` (0/1 boolean), `Link` (a pointer to another DocType — like a foreign key), `Table` (a child table — see [Child tables](/frappe-child-tables)).
 
-You don't define the table, the form, and the endpoints separately. Define the DocType once and Frappe gives you all three — which is why every DocType has a REST API for free (two pages on).
+You don't define the table, the form, and the endpoints separately. Define the DocType once and Frappe gives you all three — which is why every DocType has a REST API for free — see [REST API](/frappe-rest-api).
 
 **Example** — one `CRM Lead` document:
 
@@ -23,6 +23,6 @@ You don't define the table, the form, and the endpoints separately. Define the D
 
 `name` is the unique ID Frappe assigns every document (here auto-generated as `CRM-LEAD-2026-NNNNN`). `status` is a `Link` field — it points to a row in the `CRM Lead Status` DocType, not a free-text string.
 
-**Why it matters for you:** writing a lead means creating a `CRM Lead` document. Setting its status means using a value that *exists* in `CRM Lead Status` — the [Reference Data](/docs/api/reference-data) endpoints list every valid value.
+**Why it matters for you:** writing a lead means creating a `CRM Lead` document. Setting its status means using a value that *exists* in `CRM Lead Status` — the [Reference Data](/api/reference-data) endpoints list every valid value.
 
-→ **Try it:** [Read one lead](/docs/api/leads#read-one-lead-with-embedded-profile-rows) to see a real `CRM Lead` document.
+→ **Try it:** [Read one lead](/api/leads#read-one-lead-with-embedded-profile-rows) to see a real `CRM Lead` document.

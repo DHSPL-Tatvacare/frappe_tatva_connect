@@ -48,7 +48,7 @@ POST /api/method/tatva_connect.api.whatsapp.send_template_with_params
 {
   "reference_doctype": "CRM Lead",
   "reference_name": "CRM-LEAD-2026-00123",
-  "template": "3_days_before_chemo::Anaya WATI 360078",
+  "template": "3_days_before_chemo::Group A WATI 360078",
   "to": "+919059067327",
   "body_param": "{\"1\": \"Asha\", \"2\": \"12 Jun\"}"
 }
@@ -76,13 +76,13 @@ Templates are **managed on WATI**, not in Frappe — we mirror the approved ones
 ```
 POST /api/method/tatva_connect.wati.templates_sync.sync_from_wati
 ```
-- No body → syncs **every** WATI account. Pass `{"account_name": "Anaya WATI 360078"}` to sync just one.
+- No body → syncs **every** WATI account. Pass `{"account_name": "Group A WATI 360078"}` to sync just one.
 - Records are keyed per account (`name::Account`), so two tenants can share a template name without colliding; `actual_name` holds the real WATI send-name.
 
 List approved templates for an account:
 ```bash
 curl -G -H 'Authorization: token KEY:SECRET' \
-  --data-urlencode 'filters=[["status","=","APPROVED"],["whatsapp_account","=","Anaya WATI 360078"]]' \
+  --data-urlencode 'filters=[["status","=","APPROVED"],["whatsapp_account","=","Group A WATI 360078"]]' \
   --data-urlencode 'fields=["name","actual_name","category","template"]' \
   'https://one.tatvacare.in/api/resource/WhatsApp Templates'
 ```
@@ -111,7 +111,7 @@ Accounts and routing rules are plain doctypes — manage them entirely over REST
 ```bash
 curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
   -d '{
-    "account_name": "Anaya WATI 360078",
+    "account_name": "Group A WATI 360078",
     "url": "https://live-mt-server.wati.io/360078",
     "token": "<WATI JWT>",
     "custom_is_wati": 1,
@@ -126,7 +126,7 @@ curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
 **Add a routing rule** (taxonomy → account):
 ```bash
 curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
-  -d '{ "whatsapp_account": "Anaya WATI 360078", "vertical": "GoodFlip" }' \
+  -d '{ "whatsapp_account": "Group A WATI 360078", "vertical": "Product Line B" }' \
   'https://one.tatvacare.in/api/resource/WATI Account Routing'
 ```
 Fields: `vertical` (→ CRM Vertical), `psp_group` (→ CRM Group), `program` (→ CRM Program), `whatsapp_account` (→ WhatsApp Account). Fill only the axes you want — leave the rest blank; most-specific wins. The axis values are the **names of existing** CRM Vertical / CRM Group / CRM Program records — list them with `GET /api/resource/CRM Vertical` etc.

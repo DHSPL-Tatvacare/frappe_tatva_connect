@@ -1,17 +1,93 @@
 ---
-title: "Permissions in 60 seconds"
+title: Access control
 ---
 
-One rule prevents most surprises: **an API key authenticates *as a user*, and runs the exact same permission checks as the web UI. A key never bypasses permissions.**
+import { Mermaid } from "zudoku/mermaid";
 
-So what a token can do = what its user's **roles** allow. Permissions are set per Role × DocType, with separate flags for Read / Write / Create / **Delete** / and more.
+Frappe decides *who can see and do what* by stacking a few independent checks. An API key authenticates **as a user** and runs the **exact same checks as the web UI — a key never bypasses permissions.**
 
-In practice:
+## Four gates
 
-- Your key is tied to a dedicated integration user. If that user's role has Read + Write + Create but **not** Delete, then `DELETE /api/resource/CRM Lead/{name}` returns **403** — safe by design.
-- Some routing fields are **admin-only** — `custom_vertical` and `custom_group`. A normal key silently *drops* those on write; internal integration keys carry an admin role. (`custom_current_program` is rep-writable.) Partner keys never set routing at all — it's set for them server-side.
-- Writes are still validated regardless of role: `Link` values must exist, required fields can't be empty — the key can't get around that.
+Four checks run in order, and **all must pass (AND)** — App → Record type → Field → Row:
 
-**Why it matters for you:** if a write seems to "succeed" but a field didn't stick, it's almost always a permission level on that field — not a bug in your payload. Ask for a key scoped to exactly what your integration needs (and no more).
+| Gate | The question | Decided by |
+|---|---|---|
+| **1 · App** | Can you open the app at all? | the **roles** on your user |
+| **2 · Record type** | Can your role *read / write / create / delete* this kind of record? | **Role Permissions** (per role × record type) |
+| **3 · Field** | Which fields inside can you see or edit? | a field's **level** (`0` = open, `1`+ = locked) + a Role Permission at that level |
+| **4 · Row** | Which *individual records* can you see? | **User Permissions** (row-level fences) |
 
-→ **Try it:** [Verify your API key](/docs/api/authentication#verify-api-key-handshake) — it returns the user your key acts as.
+The CRM adds one more, leads only: a regular user sees their **own/assigned** leads, a manager sees **all** — applied on top of the four.
+
+<Mermaid chart={`flowchart TD
+    A([Open a record]) --> B{1 - App: do you have a role for it?}
+    B -- no --> X1[Stop: no access to the app]
+    B -- yes --> C{2 - Record type: can your role see this kind of record?}
+    C -- no --> X2[Stop: this record type is invisible]
+    C -- yes --> D{3 - Field: is each field unlocked for your role?}
+    D -- locked --> D0[That field is hidden; the record still loads]
+    D -- ok --> E{4 - Row: does a User Permission allow this record?}
+    D0 --> E
+    E -- no --> X3[Stop: this record is hidden]
+    E -- yes --> F([You see the record, with only the fields you are allowed])
+`} />
+
+## Role permissions
+
+A **role** (e.g. *User*, *Manager*) is just a label; it has no power until permissions are attached to it. Those are **permission rows**, one per combination:
+
+```
+(record type) × (role) × (field level) × { read, write, create, delete, … }
+```
+
+- **Level 0** is the normal record. A `read` here lets the role open it.
+- **Level 1+** are *locked field groups*. A field marked level 1 is **stripped from the response** for anyone whose roles have no level-1 grant — this is how a sensitive field (a payment link, a policy number) is shown to admins but hidden from everyone else.
+
+A user's effective permission is the **union of all their roles**.
+
+## User permissions
+
+A Role Permission says *"you may read Leads."* A **User Permission** adds *"…but only these leads."* One record = **one fence on one field**:
+
+| Field | Meaning | Example |
+|---|---|---|
+| **User** | who is fenced | `james@example.com` |
+| **Allow** | the master to restrict by | `CRM Group` |
+| **For Value** | the allowed value | `Group A` |
+| **Applicable For** | which record type the fence bites on | `CRM Lead` |
+
+→ *"When James opens Leads, show only leads whose Group = Group A."* The fenced field must be a **Link** field. To fence on more than one field, you add **more records** — you never edit the record type itself.
+
+## Combining fences
+
+This is the part that trips everyone up. Frappe combines a user's fences like this:
+
+> **Across different fields → AND** (the record must match *every* field).
+> **Within the same field → OR** (*any* listed value matches).
+
+| James's fences | What he sees |
+|---|---|
+| Group = A | Group A leads only |
+| Group = A · **Line = X** | Group A **AND** Line X — miss either, it's hidden |
+| Group = A · Group = B | Group A **OR** Group B |
+| Group = A · Group = B · Line = X | (A **OR** B) **AND** Line X |
+
+Final visibility = **the role/ownership set AND every fence**. Watch for an impossible combination — e.g. *Group = A* AND *Program = (a program that isn't in A)* resolves to **zero** records.
+
+## Key rules
+
+- **Permissions add up — there is no "deny."** A user gets the **sum** of all their roles. To restrict someone you **remove** the broad role; you can't cancel it by adding a narrow one.
+- **A top-tier admin role ignores fences.** A system-admin role sees everything — never rely on a User Permission to contain one.
+- **Strict mode is on.** A fenced user does **not** see records where the fenced field is *blank* — every record must be tagged, or it's invisible to them.
+
+## Integration keys
+
+Your key is tied to a user, so it can do exactly what that user's roles + fences allow:
+
+- No Delete grant on a record type → `DELETE` returns **403**. Safe by design.
+- A field above the key's level → **silently dropped** on write; the rest saves. If a value "didn't stick", it's almost always a field-level lock, not a payload bug.
+- Writes are validated regardless of role — `Link` values must exist, required fields can't be empty.
+
+Ask for a key scoped to exactly what your integration needs, and no more.
+
+→ The role tiers we use and how to assign them: **[Role tiers](/roles-and-permissions)** · **[User onboarding](/users)**. Check what a key can do, live: [Verify API key](/api/authentication#verify-api-key-handshake).

@@ -1,38 +1,38 @@
 ---
-title: Concepts
+title: Lead identity
 ---
 
-## The data model — what every integrator needs to internalise
+Four ideas cover the whole API.
 
-Four ideas. If you understand these, the API maps cleanly.
+## Identity tuple
 
-### 1. One lead per person × product line + group
+A lead is identified by a **three-part key (a tuple)**:
 
-Dedup anchor: `mobile_no` + `custom_vertical` (product line) + `custom_group`. **Phone format is E.164** — `+<country code><digits>`, no hyphens, no spaces. Example: `+919999000123`.
+| Part | Field | Meaning |
+|---|---|---|
+| Phone | `mobile_no` | the patient's number, **E.164** format (`+<country><digits>`, no spaces or hyphens) — e.g. `+919999000123` |
+| Product line | `custom_vertical` | the line of business the lead belongs to |
+| Group | `custom_group` | the unit within that line (e.g. a partner, or a program family) |
 
-The same phone on a *different* product line or group is a **separate** lead — one person can own several leads, one per line they're enrolled in (e.g. GoodFlip-direct vs GoodFlip-via-insurer are different groups → different leads). Within a single line, never create a second lead for the same person because they joined a new program — instead **update the existing lead** (or add a profile row — see point 3).
+**One lead = one `phone + product line + group`.** Re-sending the same trio **updates** that lead — never a duplicate, so every write is safe to retry. The same phone under a **different** product line or group is a **separate** lead.
 
-The [Create a lead](/docs/api/leads) endpoint (`lead_create`) enforces this — it finds-or-creates by that trio. Safe to retry. For a partner, the line is fixed by their mapping, so dedup is simply phone within their line.
+Product line and group are **fixed to your key** — you never send them; the API stamps them server-side.
 
-### 2. The lead carries identity, contact, routing. Nothing program-specific.
+## Program attribute
 
-Universal fields live on `CRM Lead` itself (29 custom fields plus standard Frappe fields). See the [CRMLeadUniversal schema](/docs/api/leads). Examples: `first_name`, `mobile_no`, `email`, `custom_dob`, `custom_gender`, `custom_caregiver_name`, plus routing (`custom_vertical`, `custom_group`, `custom_current_program`).
+`custom_current_program` records the lead's current program. It is **not** part of identity: it can **change** on the same lead (a *transition*), and changing it never creates a second lead.
 
-Routing is a 3-level chain:
+Whether you send it depends on your key's **program mode** — the only thing that differs between keys:
 
-```
- custom_vertical  →  custom_group  →  custom_current_program
- (product line)      (sub-line)        (named program/SKU)
-```
+| Mode | Send `custom_current_program`? | Behavior |
+|---|---|---|
+| **Forced** | No | one program is stamped for you; anything you send is ignored |
+| **List** | **Yes, required** | send one from your allowed set; it is validated. Re-sending with a different one transitions the same lead |
+| **None** | No | no program |
 
-Examples:
-- `GoodFlip Care → Anaya → Sigrima` (an Anaya Sigrima lead)
-- `GoodFlip → Insurers → Niva Bupa` (a Niva Bupa insurer lead)
-- `GoodFlip → Insurers → ` blank (a generic GoodFlip retail customer with no insurer)
+Call [`lead_schema`](/discover-schema) to see your mode and, for **List**, your allowed programs.
 
-`custom_vertical` + `custom_group` are locked once set (only an admin moves a lead between lines); `custom_current_program` can change within a line. Partners never set routing — it's set for you, server-side, from your key.
-
-### 3. Three child profile rows hold program-specific data
+## Child profiles
 
 ```
   CRM Lead  ─┬─→  Plan Profile               (subscription/PSP/drug/payment/acquisition)
@@ -41,9 +41,9 @@ Examples:
 ```
 
 Profiles are sliced by **concern**, not by org or program:
-- An Anaya Sigrima lead: Plan (drug-program details + Rx workflow) + Care & Providers (ABM + coach + doctor + hospital).
-- A Niva Bupa insurer lead: Plan (policy + payment) + Lab (HbA1c, lipids, vitals, conditions).
-- A MyTatva subscriber: Plan (subscription) + Lab (metabolic score) + Care & Providers (success coach, RM, diet coach).
+- A drug-program lead: Plan (drug-program details + Rx workflow) + Care & Providers (coach + doctor + hospital).
+- An insurer lead: Plan (policy + payment) + Lab (lab values, vitals, conditions).
+- A subscription lead: Plan (subscription) + Lab (metabolic score) + Care & Providers (coach + relationship manager + diet coach).
 
 A lead on multiple programs simultaneously has **multiple child rows of the SAME type populated together** — multi-program is normal.
 
@@ -51,18 +51,14 @@ Profile children are **`istable=1`** in Frappe. That means:
 - You CANNOT call `/api/resource/CRM Plan Profile` directly (returns 403).
 - You read them embedded under the parent: `lead_get` returns `custom_plan_profile: [{...}]` inline.
 - You write them embedded: send `custom_plan_profile: [{...}]` in your `lead_create` / `lead_update` body.
-- `lead_create` / `lead_update` **merge** child rows field-by-field, so a partial write never wipes the row. (A raw REST `PUT` to `/api/resource/CRM Lead/<name>`, available to internal keys only, REPLACES the whole array — use [read-modify-write](/docs/api/leads) there.)
+- `lead_create` / `lead_update` **merge** child rows field-by-field, so a partial write never wipes the row. (A raw REST `PUT` to `/api/resource/CRM Lead/<name>`, available to internal keys only, REPLACES the whole array — use [read-modify-write](/api/leads) there.)
 
-### 4. Program-scoped substages live in a master, not as columns
+## Substages
 
-Niva Bupa, Anaya Sigrima/Tukavo/Ujvira/Nivolumab — each program has its own substage workflow (different stages, different naming). Today there are 162 substage rows across 5 programs.
+Each program has its own substage workflow — different stages, different naming. Today there are substage rows across all the active programs.
 
-Instead of having a `niva_substage` column, an `anaya_substage` column, etc., we have ONE `CRM Plan Profile.substage` Link field pointing to a master `CRM Lead Substage`. Each row in the master is keyed `{program}-{substage_name}` — e.g. `Niva Bupa-Payment Link Sent`, `Sigrima-Patient Ready for Chemo`.
+Instead of a separate substage column per program, we have ONE `CRM Plan Profile.substage` Link field pointing to a master `CRM Lead Substage`. Each row in the master is keyed `{program}-{substage_name}` — e.g. `Program A-Step One Done`, `Program B-Step Two Done`.
 
-New programs add ROWS to that master, never new columns on Plan Profile. Enumerate the valid substages for a program via [Lookups → Lead Substage](/docs/api/reference-data).
+New programs add ROWS to that master, never new columns on Plan Profile. Enumerate the valid substages for a program via [Lookups → Lead Substage](/api/reference-data).
 
 The **universal lead `status` field** (`New / Contacted / Nurture / Qualified / Converted / Junk / Unqualified`) is independent of substage. Substage is the program-specific operational layer; `status` is the coarse universal layer for cross-program reporting.
-
-### Read this for the deeper rationale
-
-The internal design rationale lives in the team's vault (not public). The above is what you need to USE the API. If something's confusing, email Ops with the specific question.

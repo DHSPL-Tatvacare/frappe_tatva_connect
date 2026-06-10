@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare Partner API",
     "version": "1.0.0",
-    "description": "Push leads into TatvaCare and read their state back. Your key decides exactly which fields you can read and write, and which product line your leads belong to — there is no fixed payload.\n\n## What this API does\n\nCreate or update leads by phone (idempotent), single or in bulk. Read one or list many. Delete by id. And **discover your schema** at runtime — call `lead_schema` to see exactly what your key may send and read.\n\n## The shape\n\n```\n Lead (one per phone, per product line + group)\n   ├── top-level fields        — first_name, mobile_no, status, …\n   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]\n```\n\nA lead is unique per phone + product line + group — re-sending the same patient updates that lead, it never duplicates, so every write is safe to retry. Product line and group are fixed to your key; the program is a mutable attribute (sent in *List* mode, stamped in *Forced* mode) and is never part of identity.\n\n## Where to start\n\n- **New here?** Read the [Overview](/partner-welcome) and [Quickstart](/partner-quickstart).\n- **Building a request?** Call [`lead_schema`](/discover-schema) first — it returns your fields, which are required, and how your child tables work.\n- **Reading a response?** See [Reading responses](/reading-values) and [Errors](/partner-errors).\n\nEvery endpoint has a live **try-it** console below — open it, paste your key, and hit **Send**.",
+    "description": "Push leads into TatvaCare and read their state back. Your key decides exactly which fields you can read and write, and which product line your leads belong to — there is no fixed payload.\n\n## What this API does\n\nCreate or update leads by phone (idempotent), single or in bulk. Read one or list many. Delete by id. And **discover your schema** at runtime — call `lead_schema` to see exactly what your key may send and read.\n\n## The shape\n\n```\n Lead (one per phone, per product line)\n   ├── top-level fields        — first_name, mobile_no, status, …\n   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]\n```\n\nA lead is unique per phone within your line — re-sending the same phone updates that lead, it never duplicates, so every write is safe to retry. Your product line is fixed to your key.\n\n## Where to start\n\n- **New here?** Read the [Welcome](/docs/partner-welcome) and [Quickstart](/docs/partner-quickstart).\n- **Building a request?** Call [`lead_schema`](/docs/discover-schema) first — it returns your fields, which are required, and how your child tables work.\n- **Reading a response?** See [Reading values](/docs/reading-values) and [Errors](/docs/partner-errors).\n\nEvery endpoint has a live **try-it** console below — open it, paste your key, and hit **Send**.",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -16,26 +16,32 @@
   ],
   "x-tagGroups": [
     {
-      "name": "Authentication",
+      "name": "Getting started",
       "tags": [
+        "Getting started",
         "Authentication"
       ]
     },
     {
-      "name": "Lead",
+      "name": "Partner Lead API",
       "tags": [
-        "Lead"
+        "Partner Lead API"
       ]
     }
   ],
   "tags": [
+    {
+      "name": "Getting started",
+      "description": "## Getting started\n\nThree steps to your first call:\n\n1. **Get a key** — you'll receive an API key + secret for your product line from TatvaCare Ops.\n2. **Set the header** on every request — see **Authentication** below.\n3. **Verify + discover** — call **Verify your API key**, then call `lead_schema` to see exactly which fields your key is granted, and build your create/update from that.\n\nThere is no fixed payload — your key decides your fields and your line.",
+      "x-zudoku-collapsed": false
+    },
     {
       "name": "Authentication",
       "description": "## How to authenticate\n\nEvery request needs an `Authorization` header:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nLiteral lowercase `token`, a single space, then your key and secret joined by a colon. Use **Verify your API key** below to confirm the header is right before any lead call.",
       "x-zudoku-collapsed": false
     },
     {
-      "name": "Lead",
+      "name": "Partner Lead API",
       "description": "Your entire surface — the gated lead methods. Each one resolves what your key is allowed to do: your fixed product line, and the fields you may send and read. Start with `lead_schema` to discover your contract, then create, read, update, or delete. Bulk variants handle up to 100 records per call.",
       "x-zudoku-collapsed": false
     }
@@ -51,13 +57,13 @@
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "Format: `token <api_key>:<api_secret>` — literal lowercase `token`, single space, key:secret joined by `:`. See Conventions for how to request a key and verify it."
+        "description": "Format: `token <api_key>:<api_secret>` — literal lowercase `token`, single space, key:secret joined by `:`. See [Conventions](/docs/conventions#auth) for how to request a key and verify it."
       }
     },
     "schemas": {
       "CRMLeadUniversal": {
         "type": "object",
-        "description": "Universal fields on `CRM Lead` itself. The top-level fields your key may send/read live here; child tables embed as arrays. Call `lead_schema` to see exactly which fields your key is granted.",
+        "description": "Universal fields on `CRM Lead` itself. The top-level fields your key may send/read live here; child tables embed as arrays. Call [`lead_schema`](/docs/discover-schema) to see exactly which fields your key is granted.",
         "properties": {
           "name": {
             "type": "string",
@@ -93,7 +99,7 @@
           },
           "status": {
             "type": "string",
-            "description": "**Required on create.** Universal lifecycle status. New leads start as `New`. Junk and Unqualified are 'Lost' type and require `lost_reason`. Read the allowed values from `lead_schema`.",
+            "description": "**Required on create.** Universal lifecycle status. New leads start as `New`. Junk and Unqualified are 'Lost' type and require `lost_reason`. Read the allowed values from [`lead_schema`](/docs/discover-schema).",
             "enum": [
               "New",
               "Contacted",
@@ -107,7 +113,7 @@
           },
           "source": {
             "type": "string",
-            "description": "Lead acquisition channel. Link to `CRM Lead Source`. Read the allowed values from `lead_schema`."
+            "description": "Lead acquisition channel. Link to `CRM Lead Source`. Read the allowed values from [`lead_schema`](/docs/discover-schema)."
           },
           "lead_owner": {
             "type": "string",
@@ -141,7 +147,7 @@
               "Pill Up",
               "TatvaPractice"
             ],
-            "description": "**Permission-locked** (`permlevel=1`). Top-level product line. Link to `CRM Vertical`. See `lead_schema`."
+            "description": "**Permission-locked** (`permlevel=1`). Top-level product line. Link to `CRM Vertical`. See [Concepts › routing chain](/docs/discover-schema)."
           },
           "custom_group": {
             "type": "string",
@@ -166,7 +172,7 @@
               "Program A",
               "Program C"
             ],
-            "description": "The PRIMARY program. Link to `CRM Program`. **`permlevel=0`** — rep-writable, so a rep can self-handoff a program within their line (only `custom_vertical` + `custom_group` are manager-locked at `permlevel=1`). Multi-program patients are supported via profile-row presence (see `lead_schema`)."
+            "description": "The PRIMARY program. Link to `CRM Program`. **`permlevel=0`** — rep-writable, so a rep can self-handoff a program within their line (only `custom_vertical` + `custom_group` are manager-locked at `permlevel=1`). Multi-program patients are supported via profile-row presence (see [Discover your schema](/docs/discover-schema))."
           },
           "custom_previous_program": {
             "type": "string",
@@ -269,7 +275,7 @@
             "items": {
               "$ref": "#/components/schemas/PlanProfile"
             },
-            "description": "**Embedded child rows** (max 1 today). Plan / PSP / subscription / drug-program / payment / acquisition / dx-funnel data. On PUT, the array REPLACES the existing rows — see `lead_schema`."
+            "description": "**Embedded child rows** (max 1 today). Plan / PSP / subscription / drug-program / payment / acquisition / dx-funnel data. On PUT, the array REPLACES the existing rows — see [Write › profile semantics](/docs/api)."
           },
           "custom_lab_profile": {
             "type": "array",
@@ -302,38 +308,524 @@
             "description": "**Read-only.** Last-modified timestamp. Useful for change-tracking / delta sync.",
             "readOnly": true
           }
-        }
+        },
+        "required": [
+          "first_name",
+          "status"
+        ]
       },
       "PlanProfile": {
         "type": "object",
-        "description": "A plan / subscription / program profile row, sent as a JSON array under `custom_plan_profile`. The exact fields your key may send and read are **key-specific** — discover them via `lead_schema` (`data.children.custom_plan_profile.fields`). Never hardcode a field list.",
-        "additionalProperties": true,
+        "description": "A child table of the lead holding plan-shaped data: subscription / enrollment, payment + insurer fields, acquisition (UTM + signup), and a program substage. Single-row — your fields merge onto the one row. The exact fields your key may use come from [`lead_schema`](/docs/discover-schema).",
         "properties": {
-          "name": {
+          "signup_date": {
             "type": "string",
-            "description": "The row's unique ID (read-only; present when you read a lead back)."
+            "format": "date",
+            "description": "Date the patient signed up (any platform)."
+          },
+          "mobile_app_signup_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date specifically of mobile app sign-up."
+          },
+          "signed_up_on_app": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Boolean flag (0/1). Whether the patient signed up via mobile app."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Mobile app platform — Android / iOS / Web."
+          },
+          "user_source": {
+            "type": "string",
+            "description": "Free-text source identifier (granular than `CRM Lead Source`)."
+          },
+          "utm_source": {
+            "type": "string",
+            "description": "UTM source (marketing attribution)."
+          },
+          "utm_medium": {
+            "type": "string",
+            "description": "UTM medium."
+          },
+          "utm_campaign": {
+            "type": "string",
+            "description": "UTM campaign."
+          },
+          "utm_term": {
+            "type": "string",
+            "description": "UTM term."
+          },
+          "utm_content": {
+            "type": "string",
+            "description": "UTM content."
+          },
+          "utm_disease": {
+            "type": "string",
+            "description": "UTM disease tag — used in disease-targeted campaigns."
+          },
+          "utm_therapy_area": {
+            "type": "string",
+            "description": "UTM therapy-area tag."
+          },
+          "source_campaign": {
+            "type": "string",
+            "description": "Source campaign (alternate naming used by some campaigns)."
+          },
+          "source_medium": {
+            "type": "string",
+            "description": "Source medium."
+          },
+          "source_content": {
+            "type": "string",
+            "description": "Source content."
+          },
+          "plan_name": {
+            "type": "string",
+            "description": "Name of the plan / PSP / subscription the patient is enrolled in."
+          },
+          "plan_duration": {
+            "type": "string",
+            "description": "Plan duration (e.g. `3 months`, `12 months`)."
+          },
+          "plan_includes_cgm": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Boolean. Whether the plan includes a Continuous Glucose Monitor."
+          },
+          "cgm_brand": {
+            "type": "string",
+            "description": "CGM device brand (e.g. Abbott, Dexcom)."
+          },
+          "sensor_count": {
+            "type": "integer",
+            "description": "Number of CGM sensors included."
+          },
+          "transmitter_count": {
+            "type": "integer",
+            "description": "Number of CGM transmitters included."
+          },
+          "bca_device": {
+            "type": "string",
+            "description": "Body Composition Analyzer device, if part of the plan."
+          },
+          "recurrence": {
+            "type": "string",
+            "description": "Plan recurrence pattern (monthly / quarterly / annual)."
+          },
+          "program_duration": {
+            "type": "string",
+            "description": "Program / treatment duration."
+          },
+          "program_start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the program / treatment starts."
+          },
+          "program_end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the program / treatment ends."
+          },
+          "program_price": {
+            "type": "number",
+            "description": "Program price in INR."
+          },
+          "dx_landing_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: patient landed on the lab-test booking page. Stamp current time when the LSQ flag fires."
+          },
+          "dx_intent_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: patient indicated intent to book."
+          },
+          "dx_details_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: patient submitted personal details."
+          },
+          "dx_address_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: patient submitted address."
+          },
+          "dx_slot_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: patient selected a slot."
+          },
+          "dx_confirmed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Diagnostic funnel step: booking confirmed."
+          },
+          "labtest_booked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Lab test booking completed (terminal funnel step)."
+          },
+          "invoice_uploaded": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Boolean. Whether the patient has uploaded an invoice."
+          },
+          "invoice_amount": {
+            "type": "number",
+            "description": "Invoice amount in INR."
+          },
+          "payment_link": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL the patient can use to complete payment."
+          },
+          "paying_status": {
+            "type": "string",
+            "description": "Free-text payment status (e.g. Paid, Pending, Defaulted)."
+          },
+          "coins_balance": {
+            "type": "integer",
+            "description": "Patient's loyalty/wallet coin balance."
+          },
+          "policy_number": {
+            "type": "string",
+            "description": "Insurer policy number (e.g. Program D policy)."
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Insurer member identifier within the policy."
+          },
+          "priority_text": {
+            "type": "string",
+            "description": "Admin-only priority note."
+          },
+          "patient_indication": {
+            "type": "string",
+            "description": "Clinical indication (e.g. `HER2+ MBC`)."
+          },
+          "cancer_stage": {
+            "type": "string",
+            "description": "Cancer stage (e.g. `Stage IV`)."
+          },
+          "brain_mets_category": {
+            "type": "string",
+            "description": "Brain metastases category."
+          },
+          "tucavo_brain_mets": {
+            "type": "string",
+            "description": "Program A brain-mets indicator."
+          },
+          "side_effects": {
+            "type": "string",
+            "description": "Side effects experienced."
+          },
+          "side_effects_detail": {
+            "type": "string",
+            "description": "Free-text side-effects detail."
+          },
+          "pcr_received": {
+            "type": "string",
+            "description": "PCR (Pathology) report received status."
+          },
+          "reason_for_no_indication": {
+            "type": "string",
+            "description": "Reason if `patient_indication` couldn't be set."
+          },
+          "physio_or_dietician": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Boolean. Whether the plan includes physio / dietician."
+          },
+          "tucatinib_chemo_cycle": {
+            "type": "integer",
+            "description": "Tucatinib chemo cycle number."
+          },
+          "tucatinib_indication": {
+            "type": "string",
+            "description": "Tucatinib clinical indication."
+          },
+          "tucatinib_psp": {
+            "type": "string",
+            "description": "Tucatinib Patient Support Program identifier."
+          },
+          "tucatinib_dosage": {
+            "type": "string",
+            "description": "Tucatinib dosage."
+          },
+          "tukavo_psp": {
+            "type": "string",
+            "description": "Program A Patient Support Program identifier."
+          },
+          "sigrima_pap_category": {
+            "type": "string",
+            "description": "Program B Patient Assistance Program category."
+          },
+          "sigrima_psp_category": {
+            "type": "string",
+            "description": "Program B PSP category."
+          },
+          "sigrima_psp_enabled": {
+            "type": "string",
+            "description": "Program B PSP enabled flag."
+          },
+          "ujvira_chemo_cycle_number": {
+            "type": "integer",
+            "description": "Program C chemo cycle number."
+          },
+          "ujvira_indication": {
+            "type": "string",
+            "description": "Program C clinical indication."
+          },
+          "ujvira_pap_category": {
+            "type": "string",
+            "description": "Program C PAP category."
+          },
+          "ujvira_dosage": {
+            "type": "string",
+            "description": "Program C dosage."
+          },
+          "nivo_chemo_cycle": {
+            "type": "integer",
+            "description": "Program H chemo cycle number."
+          },
+          "nivo_indication": {
+            "type": "string",
+            "description": "Program H clinical indication."
+          },
+          "nivo_pap_category": {
+            "type": "string",
+            "description": "Program H PAP category."
+          },
+          "nivo_dosage": {
+            "type": "string",
+            "description": "Program H dosage."
+          },
+          "capecitabine_dosage": {
+            "type": "string",
+            "description": "Capecitabine dosage."
+          },
+          "vivitra_enabled": {
+            "type": "string",
+            "description": "Vivitra (Trastuzumab biosimilar) enabled flag."
+          },
+          "vivitra_free_required": {
+            "type": "string",
+            "description": "Whether free Vivitra is required."
+          },
+          "vivitra_order_cycle_number": {
+            "type": "integer",
+            "description": "Vivitra order cycle."
+          },
+          "vivitra_order_id": {
+            "type": "string",
+            "description": "Vivitra order identifier."
+          },
+          "transition_from_sigrima": {
+            "type": "string",
+            "description": "Transition marker if patient came from Program B."
+          },
+          "transition_from_ujvira": {
+            "type": "string",
+            "description": "Transition marker if patient came from Program C."
+          },
+          "transition_old_to_new_pap": {
+            "type": "string",
+            "description": "Transition from old PAP to new PAP."
+          },
+          "rx_status": {
+            "type": "string",
+            "description": "Prescription review status (e.g. Pending / Approved / Rejected)."
+          },
+          "rx_reviewed_by": {
+            "type": "string",
+            "format": "email",
+            "description": "Email of the user who reviewed the prescription. Link to `User`."
+          },
+          "rx_rejection_reason": {
+            "type": "string",
+            "description": "Reason the prescription was rejected (if applicable)."
+          },
+          "substage": {
+            "type": "string",
+            "description": "**Program-scoped operational stage.** Link to `CRM Lead Substage`. Value format is `{program}-{substage_name}` (e.g. `Program D-Payment Link Sent`, `Program B-Patient Ready for Chemo`). Enumerate valid values for a program via [Lookups › Lead Substage](/docs/discover-schema). The universal `status` field on `CRM Lead` is independent of substage — see [Concepts › substages](/docs/discover-schema).",
+            "example": "Program D-Payment Link Sent"
           }
         }
       },
       "LabProfile": {
         "type": "object",
-        "description": "A lab-values & vitals profile row, sent as a JSON array under `custom_lab_profile`. The exact fields your key may send and read are **key-specific** — discover them via `lead_schema` (`data.children.custom_lab_profile.fields`). Never hardcode a field list.",
-        "additionalProperties": true,
+        "description": "A multi-row child table of the lead, one row per lab report (keyed by `report_date`): lab values, vitals, conditions, and metabolic scores. The exact fields your key may use come from [`lead_schema`](/docs/discover-schema).",
         "properties": {
-          "name": {
+          "hba1c": {
+            "type": "number",
+            "description": "HbA1c — 3-month average blood sugar (%)."
+          },
+          "fbs": {
+            "type": "number",
+            "description": "Fasting Blood Sugar (mg/dL)."
+          },
+          "ldl": {
+            "type": "number",
+            "description": "LDL Cholesterol (mg/dL)."
+          },
+          "hdl": {
+            "type": "number",
+            "description": "HDL Cholesterol (mg/dL)."
+          },
+          "vldl": {
+            "type": "number",
+            "description": "VLDL Cholesterol (mg/dL)."
+          },
+          "total_cholesterol": {
+            "type": "number",
+            "description": "Total Cholesterol (mg/dL)."
+          },
+          "triglycerides": {
+            "type": "number",
+            "description": "Triglycerides (mg/dL)."
+          },
+          "tsh": {
+            "type": "number",
+            "description": "TSH — Thyroid Stimulating Hormone."
+          },
+          "creatinine": {
+            "type": "number",
+            "description": "Creatinine (mg/dL) — kidney function marker."
+          },
+          "egfr": {
+            "type": "number",
+            "description": "eGFR — Estimated Glomerular Filtration Rate (kidney)."
+          },
+          "alt_sgpt": {
+            "type": "number",
+            "description": "ALT / SGPT — liver enzyme."
+          },
+          "ggt": {
+            "type": "number",
+            "description": "GGT — liver enzyme."
+          },
+          "height_feet": {
+            "type": "number",
+            "description": "Patient height in feet."
+          },
+          "weight_kg": {
+            "type": "number",
+            "description": "Patient weight in kg."
+          },
+          "bmi": {
+            "type": "number",
+            "description": "Body Mass Index. Caller-computed today (no auto-calc hook yet). Formula: `weight_kg / (height_meters^2)`."
+          },
+          "primary_condition": {
             "type": "string",
-            "description": "The row's unique ID (read-only; present when you read a lead back)."
+            "description": "Patient's primary medical condition. Free text today; will become a Link master when the option list is locked."
+          },
+          "comorbid_conditions": {
+            "type": "string",
+            "description": "Comma-separated co-morbid conditions. Will move to a child Table doctype when multi-select pattern is needed."
+          },
+          "initial_metabolic_score": {
+            "type": "number",
+            "description": "Initial metabolic score from assessment."
+          },
+          "final_metabolic_score": {
+            "type": "number",
+            "description": "Final / latest metabolic score."
+          },
+          "metabolic_questionnaire_link": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the metabolic questionnaire PDF / form."
+          },
+          "assessment_responses": {
+            "type": "string",
+            "description": "Raw assessment payload — typically a JSON-as-string blob with all questionnaire responses."
+          },
+          "report_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the lab report was generated (`YYYY-MM-DD`)."
           }
         }
       },
       "CareProvidersProfile": {
         "type": "object",
-        "description": "A care-team & providers profile row, sent as a JSON array under `custom_care_providers_profile`. The exact fields your key may send and read are **key-specific** — discover them via `lead_schema` (`data.children.custom_care_providers_profile.fields`). Never hardcode a field list.",
-        "additionalProperties": true,
+        "description": "A single-row child table of the lead: the patient's care team (coaches, RM, therapist) and medical providers (treating doctor + hospital). The exact fields your key may use come from [`lead_schema`](/docs/discover-schema).",
         "properties": {
-          "name": {
+          "success_coach_name": {
             "type": "string",
-            "description": "The row's unique ID (read-only; present when you read a lead back)."
+            "description": "Success Coach name — primary internal contact for the patient."
+          },
+          "rm_name": {
+            "type": "string",
+            "description": "Relationship Manager name — handles calls and follow-ups."
+          },
+          "therapist_name": {
+            "type": "string",
+            "description": "Therapist / counsellor name."
+          },
+          "diet_coach_name": {
+            "type": "string",
+            "description": "Diet coach name."
+          },
+          "exercise_coach_name": {
+            "type": "string",
+            "description": "Exercise coach name."
+          },
+          "abm_name": {
+            "type": "string",
+            "description": "Area Business Manager — operational lead handler for PSP-style engagements."
+          },
+          "doctor_name": {
+            "type": "string",
+            "description": "Treating doctor's short name."
+          },
+          "doctor_full_name": {
+            "type": "string",
+            "description": "Treating doctor's full name."
+          },
+          "hospital_name": {
+            "type": "string",
+            "description": "Hospital short name."
+          },
+          "hospital_full_name": {
+            "type": "string",
+            "description": "Hospital full name."
+          },
+          "hospital_city": {
+            "type": "string",
+            "description": "Hospital city short code."
+          },
+          "hospital_city_name": {
+            "type": "string",
+            "description": "Hospital city full name."
+          },
+          "hospital_state": {
+            "type": "string",
+            "description": "Hospital state."
+          },
+          "hospital_type": {
+            "type": "string",
+            "description": "Hospital type (e.g. Private, Government, Trust)."
+          },
+          "coach_appointment_booked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the patient's first coach appointment was booked."
           }
         }
       },
@@ -361,6 +853,9 @@
           },
           {
             "type": "object",
+            "required": [
+              "name"
+            ],
             "properties": {
               "name": {
                 "type": "string",
@@ -373,7 +868,7 @@
       },
       "PartnerError": {
         "type": "object",
-        "description": "Every failure returns this one envelope — even framework errors (bad key, malformed body) are normalized, so you never see a raw traceback. Branch on `error.code` (stable, machine-readable), show `error.message` to a human, and the HTTP status mirrors the code. Full `error.code` → HTTP map: see the Errors page.",
+        "description": "Every failure on a partner method returns this exact envelope — including framework-layer errors (bad key, malformed body), which are normalised so you never see a raw traceback. Branch on `error.code` (stable, machine-readable); show `error.message` to a human; the HTTP status mirrors the code. See the **Errors** page for the full `error.code` → HTTP map.",
         "properties": {
           "status": {
             "type": "string",
@@ -415,13 +910,21 @@
                 "type": "integer",
                 "description": "Present only on `rate_limited` (429): seconds until your key's budget resets."
               }
-            }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
           }
-        }
+        },
+        "required": [
+          "status",
+          "error"
+        ]
       },
       "PartnerWriteResponse": {
         "type": "object",
-        "description": "Success envelope from `lead_create` / `lead_update` / `lead_delete`. **Top-level — there is no `message` wrapper** (the gated partner methods emit the body directly). Read `status` first, then `action`, then `data`. A failure instead returns the PartnerError envelope with a non-2xx status.",
+        "description": "Success envelope from `lead_create` / `lead_update` / `lead_delete`. **Top-level — there is no `message` wrapper** (the gated partner methods emit the body directly). Read `status` first, then `action`, then `data`. A failure instead returns the [PartnerError](#partnererror) envelope with a non-2xx status.",
         "properties": {
           "status": {
             "type": "string",
@@ -465,7 +968,12 @@
             },
             "description": "On `deleted`, only `name` is present."
           }
-        }
+        },
+        "required": [
+          "status",
+          "action",
+          "data"
+        ]
       },
       "PartnerReadResponse": {
         "type": "object",
@@ -486,7 +994,12 @@
           "data": {
             "description": "The curated lead (`lead_get`) or the page object `{total,count,offset,limit,leads[]}` (`lead_list`)."
           }
-        }
+        },
+        "required": [
+          "status",
+          "action",
+          "data"
+        ]
       },
       "PartnerSchemaResponse": {
         "type": "object",
@@ -526,15 +1039,19 @@
               },
               "routing": {
                 "type": "object",
-                "description": "`forced` / `list` / `none` for a partner (line + group always fixed); `caller-supplied` for a trusted internal caller."
+                "description": "`mode:forced` (partner, line fixed) or `caller-supplied` (internal)."
               }
             }
           }
-        }
+        },
+        "required": [
+          "status",
+          "data"
+        ]
       },
       "PartnerBulkResultEntry": {
         "type": "object",
-        "description": "One record's outcome in a bulk response. `status` is `success` or `error` per row. On `success`: `action`+`name` (writes) or `data` (lead_get_bulk). On `error`: the same `error:{code,message}` block as the top-level PartnerError.",
+        "description": "One record's outcome in a bulk response. `status` is `success` or `error` per row. On `success`: `action`+`name` (writes) or `data` (lead_get_bulk). On `error`: the same `error:{code,message}` block as the top-level [PartnerError](#partnererror).",
         "properties": {
           "index": {
             "type": "integer",
@@ -582,7 +1099,11 @@
             },
             "description": "Present on a failed row (its savepoint rolled back)."
           }
-        }
+        },
+        "required": [
+          "index",
+          "status"
+        ]
       },
       "PartnerBulkResponse": {
         "type": "object",
@@ -606,7 +1127,12 @@
             },
             "description": "Per-record outcome, in request order."
           }
-        }
+        },
+        "required": [
+          "status",
+          "summary",
+          "results"
+        ]
       }
     },
     "examples": {
@@ -651,7 +1177,7 @@
             {
               "policy_number": "NB-XXXXXX",
               "member_id": "M-XXXXXX",
-              "payment_link": "https://pay.example/abc"
+              "payment_link": "https://niva.example/pay/abc"
             }
           ],
           "custom_lab_profile": [
@@ -673,7 +1199,7 @@
       },
       "OncologyPSPLead": {
         "summary": "Full — oncology PSP lead (drug program + care team)",
-        "description": "Illustrative shape for a Group A / Program B clinical lead. The Plan Profile fields shown are examples only — your key's actual fields come from `lead_schema`. Care & Providers carries the assigned coach, doctor, and hospital.",
+        "description": "Realistic shape for an Group A Program B clinical lead. Plan Profile has drug-specific fields + the program substage; Care & Providers has the assigned coach + doctor + hospital.",
         "value": {
           "mobile_no": "+919800000001",
           "first_name": "Sunita Rao",
@@ -687,7 +1213,8 @@
             {
               "patient_indication": "HER2+ MBC",
               "cancer_stage": "Stage IV",
-              "program_start_date": "2026-05-01",
+              "sigrima_psp_category": "PSP A",
+              "vivitra_enabled": "Yes",
               "substage": "Program B-Patient Ready for Chemo"
             }
           ],
@@ -820,7 +1347,7 @@
               ]
             },
             "child_write": "Send each child as a JSON array under its key. Multi-row children are upsert-by-key on key_field: a new key adds a row, the same key updates that row (only sent fields change), omitted rows are untouched. Single-row children merge onto the one row. Delete a row with {<key_field>, \"_delete\": true}.",
-            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same patient updates that lead. Program is NOT part of identity: sending the same patient with a different program transitions the SAME lead, never a new one.",
+            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
             "bulk": {
               "max_per_call": 100,
               "list_page_max": 200,
@@ -1120,10 +1647,10 @@
     "/api/method/tatva_connect.api.partner.lead_schema": {
       "get": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Output Schema",
-        "description": "Returns the exact fields **your key** may send and read, which are required, your routing mode, and how each child table works — call this instead of hardcoding a field list, since two keys get different schemas. Full walkthrough: [Schema discovery](/discover-schema).",
+        "summary": "Discover the fields your key may use",
+        "description": "**Discovery — call this in your integration code instead of hardcoding a field list.** Returns exactly the parent + child fields THIS key may send/read (each with `fieldname`, `label`, `type`, `required`, `options`), the child-write/dedup notes, the bulk/list limits, and your `routing` mode. Two keys get **different** lists — build from what *your* key returns. `routing.mode` is `forced` — your line is fixed to your key.",
         "security": [
           {
             "apiKeyAuth": []
@@ -1199,10 +1726,10 @@
     "/api/method/tatva_connect.api.partner.lead_get": {
       "get": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Get Lead Data",
-        "description": "Fetch one lead by `name` — its unique ID, e.g. `CRM-LEAD-2026-00123` — or by `mobile_no`. Returns your allowed fields plus read-only routing, with child profiles inlined. You only see leads on your own line; an out-of-scope lookup returns `404 not_found`.",
+        "summary": "Read one lead by name or mobile_no",
+        "description": "Fetch ONE lead by `name` **or** `mobile_no`. Returns only the caller's allowed fields plus the read-only routing block, with profile children (`custom_lab_profile`, `custom_plan_profile`) inlined and filtered to allowed fields. You only see leads on your own line; a lookup outside it returns a 404 `not_found`. Pass exactly one of `name` / `mobile_no`.",
         "security": [
           {
             "apiKeyAuth": []
@@ -1216,7 +1743,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123` (returned by Create Lead). Use this OR `mobile_no`.",
+            "description": "CRM Lead id (the value `lead_create` returned). Use this OR `mobile_no`.",
             "example": "CRM-LEAD-2026-00123"
           },
           {
@@ -1226,7 +1753,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "10-digit Indian number (auto-normalized to `+91…`) or an already-`+`-prefixed number. Use this OR `name`.",
+            "description": "10-digit Indian number (auto-normalised to `+91…`) or an already-`+`-prefixed number. Use this OR `name`.",
             "example": "9000000001"
           }
         ],
@@ -1317,10 +1844,10 @@
     "/api/method/tatva_connect.api.partner.lead_list": {
       "get": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "List Leads",
-        "description": "List leads on your line with a curated set of safe filters, paginated (page size defaults to 20, max 200). Returns curated parent fields only — **no children**; use Get Lead Data for a full record.",
+        "summary": "List leads, filtered and paginated",
+        "description": "List leads on the caller's line, filtered + paginated. Honours a **curated, safe set of filters only** (never arbitrary fields) and always auto-scopes to your line. Returns curated parent fields, **no children** — use `lead_get` for the full record. Page size defaults to 20, max 200; page with `offset`.",
         "security": [
           {
             "apiKeyAuth": []
@@ -1388,7 +1915,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Exact phone (auto-normalized to `+91…`).",
+            "description": "Exact phone (auto-normalised to `+91…`).",
             "example": "9000000001"
           },
           {
@@ -1485,10 +2012,10 @@
     "/api/method/tatva_connect.api.partner.lead_create": {
       "post": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Create Lead",
-        "description": "The default write for most integrations. Idempotent on lead identity (`mobile_no` + product line + group): it updates the matching lead or creates a new one, so it is always safe to retry. Returns `name`, the lead's unique ID. Identity model: [Concepts](/concepts).",
+        "summary": "Create or update a lead",
+        "description": "**The default write endpoint for ~99% of integrations.** Idempotent on the lead grain (`mobile_no` + product line + group). Safe to retry. Finds the existing lead matching that trio and updates it, or creates a new one. Returns the CRM `name` — PUT it back to `lead_update`. Profile children are passed as embedded arrays.\n\n### What you may send\n\nOnly the fields YOUR key is allowed to send — call `lead_schema` to see them. Your routing (`source` / product line / `group` / `program`) is **set for you** and stamped server-side — any routing fields you send are ignored. Fields outside your allowed set are dropped.\n\n### How it merges\n\nFor an existing lead, parent fields you SEND are updated; fields you OMIT are LEFT ALONE. Profile children **merge field-by-field** into the existing row (a partial write never wipes the row).\n\n### Default-fill behaviour\n\n- Missing `first_name` → set to `(no name)`\n- Missing `status` → set to `New`\n- Profile arrays accept either actual JSON arrays or stringified JSON.\n\n### Common pitfalls\n\n- Sending an unknown option value (e.g. a status that isn't valid) → `validation_error`. Read the allowed values from `lead_schema` first.\n- Setting `status` to a 'lost' value without its required reason → `validation_error`.\n- Sending fields outside your allowed set → silently dropped (not an error). Confirm with `lead_schema`.\n\n### Related\n\n[Read one lead](/docs/api) to fetch the lead back after writing. [Discover your schema](/docs/discover-schema) to read your fields, required flags, and child keys before writing.\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1518,7 +2045,7 @@
         },
         "responses": {
           "200": {
-            "description": "Lead created or updated (top-level `status`/`action`/`data`).",
+            "description": "Lead created or upserted (top-level `status`/`action`/`data`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1536,7 +2063,7 @@
             }
           },
           "403": {
-            "description": "Your key isn't permitted, or the lead is outside your line.",
+            "description": "Your key isn't permitted to make this call. (or a partner reached outside their line).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1589,10 +2116,10 @@
     "/api/method/tatva_connect.api.partner.lead_create_bulk": {
       "post": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Bulk Create",
-        "description": "Create or update up to 100 leads in one call — body `{\"leads\": [ ... ]}`. Same idempotent identity and field rules as Create Lead; each row commits in its own savepoint, so one bad row reports its error while the rest still commit (**partial success**). Over 100 rows is rejected.",
+        "summary": "Create or update many leads",
+        "description": "Create-or-update up to **100** leads in one call. Body: `{\"leads\":[{...}, …]}`. Each record uses the same idempotent phone+line dedup and field rules as `lead_create`, and runs in its own savepoint — **partial success**: one bad row reports its error, the rest still commit. Over 100 records returns a clean error (page the rest).\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "security": [
           {
             "apiKeyAuth": []
@@ -1604,6 +2131,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "leads"
+                ],
                 "properties": {
                   "leads": {
                     "type": "array",
@@ -1693,10 +2223,10 @@
     "/api/method/tatva_connect.api.partner.lead_get_bulk": {
       "post": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Bulk Read",
-        "description": "Read up to 100 leads in one call by `names` or `mobile_nos` (send one). Returns the leads found — allowed fields, read-only routing, inlined children; out-of-scope or missing ids are omitted, so `found` may be less than `requested`. POST because the id list travels in the body.",
+        "summary": "Read many leads by names or mobile_nos",
+        "description": "Read up to **100** leads in one call by `names` **or** `mobile_nos` (send one). Returns the curated leads found (allowed fields + read-only routing + inlined children). Out-of-scope or missing ids are simply omitted — `found` may be less than `requested`. Uses POST because the id list travels in the body.",
         "security": [
           {
             "apiKeyAuth": []
@@ -1715,7 +2245,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `CRM-LEAD-2026-00123`). Use this OR `mobile_nos`."
+                    "description": "Up to 100 CRM Lead ids. Use this OR `mobile_nos`."
                   },
                   "mobile_nos": {
                     "type": "array",
@@ -1723,7 +2253,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 phone numbers (auto-normalized). Use this OR `names`."
+                    "description": "Up to 100 phone numbers (auto-normalised). Use this OR `names`."
                   }
                 },
                 "description": "Send exactly one of `names` / `mobile_nos`."
@@ -1809,10 +2339,10 @@
     "/api/method/tatva_connect.api.partner.lead_update": {
       "put": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Update Lead",
-        "description": "Update a lead by `name` — its unique ID, e.g. `CRM-LEAD-2026-00123`. Fields you send are updated, fields you omit are left alone, and child profiles merge field-by-field, so a partial write never wipes a row. You can only update leads on your own line.",
+        "summary": "Update a lead by CRM name",
+        "description": "Update an existing lead identified by its CRM `name` (the id `lead_create` returned). Send `name` plus any allowed fields; parent fields you SEND are updated, fields you OMIT are LEFT ALONE, and profile children **merge field-by-field** (a partial write never wipes the row). You can only update leads on your own line, and you can never move a lead to a different line (routing is fixed to your key).\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "security": [
           {
             "apiKeyAuth": []
@@ -1835,7 +2365,7 @@
         },
         "responses": {
           "200": {
-            "description": "Lead updated (top-level `status`/`action`/`data`).",
+            "description": "Lead created or upserted (top-level `status`/`action`/`data`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1920,10 +2450,10 @@
     "/api/method/tatva_connect.api.partner.lead_update_bulk": {
       "put": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Bulk Update",
-        "description": "Update up to 100 leads in one call — body `{\"updates\": [ {\"name\": ..., ...} ]}`. Each entry needs the lead's `name` plus the fields to change; same merge semantics and line scope as Update Lead, per record in its own savepoint (**partial success**).",
+        "summary": "Update many leads",
+        "description": "Update up to **100** leads in one call. Body: `{\"updates\":[{\"name\":…, …fields}, …]}` — each entry needs its CRM `name` plus the fields to change. Same merge semantics and partner scope-check as `lead_update`, applied per record in its own savepoint (**partial success**).\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "security": [
           {
             "apiKeyAuth": []
@@ -1935,6 +2465,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "updates"
+                ],
                 "properties": {
                   "updates": {
                     "type": "array",
@@ -1946,6 +2479,9 @@
                         },
                         {
                           "type": "object",
+                          "required": [
+                            "name"
+                          ],
                           "properties": {
                             "name": {
                               "type": "string",
@@ -2038,10 +2574,10 @@
     "/api/method/tatva_connect.api.partner.lead_delete": {
       "delete": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Delete Lead",
-        "description": "Delete a lead by `name` (its unique ID), in the query or body. You can only delete leads on your own line. A lead with linked activity (calls, tasks, notes) cannot be deleted and returns `cannot_delete` — see [Errors](/partner-errors).",
+        "summary": "Delete a lead by CRM name",
+        "description": "Delete a lead by its CRM `name` (query param or body). You can only delete leads on your own line. A lead with linked activity (calls, tasks, notes) raises `LinkExistsError`, so a worked lead can't be silently nuked.\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "security": [
           {
             "apiKeyAuth": []
@@ -2055,7 +2591,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123`, to delete (may also be sent in the JSON body).",
+            "description": "CRM Lead id to delete (may also be sent in the JSON body).",
             "example": "CRM-LEAD-2026-00123"
           }
         ],
@@ -2156,10 +2692,10 @@
     "/api/method/tatva_connect.api.partner.lead_delete_bulk": {
       "delete": {
         "tags": [
-          "Lead"
+          "Partner Lead API"
         ],
-        "summary": "Bulk Delete",
-        "description": "Delete up to 100 leads by `name` — body `{\"names\": [ ... ]}`. Each delete runs in its own savepoint (**partial success**) and is line-scoped; a lead with linked activity fails for that row while the rest proceed.",
+        "summary": "Delete many leads",
+        "description": "Delete up to **100** leads by CRM `name`. Body: `{\"names\":[…]}`. Each delete runs in its own savepoint (**partial success**) and is partner scope-checked; a lead with linked activity fails with `LinkExistsError` for that row while the rest proceed.\n\n> 🔑 **Discover your fields first.** There's no fixed payload — your granted fields, which are required, and each child table's key all come from **`lead_schema`**. Call it, read `required` / `multi_row` / `key_field`, then build this request. See [Discover your schema](/docs/discover-schema).",
         "security": [
           {
             "apiKeyAuth": []
@@ -2171,6 +2707,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "names"
+                ],
                 "properties": {
                   "names": {
                     "type": "array",
@@ -2178,7 +2717,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `CRM-LEAD-2026-00123`) to delete."
+                    "description": "Up to 100 CRM Lead ids to delete."
                   }
                 }
               },
@@ -2262,8 +2801,8 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Verify API Key",
-        "description": "Confirms your `Authorization` header is correct — it returns the account your key belongs to. Make it your first call when integrating, and a health-check in CI: anything other than `200` means your auth is wrong. Setup: [Authentication](/partner-validate-key).",
+        "summary": "Verify your API key",
+        "description": "The fastest way to confirm your `Authorization` header is correct — it returns the account your key belongs to. Make this your first call when integrating, and a health-check in CI. Anything other than HTTP 200 means your auth is wrong; fix it before any lead call.\n\n_For now this is the shared key-check endpoint; a partner-specific verify endpoint may be added later._",
         "security": [
           {
             "apiKeyAuth": []

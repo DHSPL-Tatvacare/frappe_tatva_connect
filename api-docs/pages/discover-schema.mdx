@@ -1,12 +1,12 @@
 ---
-title: Discover your schema
+title: Schema discovery
 ---
 
-`GET lead_schema` is the heart of this API. It tells you — for **your** key, right now — exactly which fields you can send and read, which are required, how your routing is set, and how each child table behaves. Every integration starts here.
+`GET lead_schema` returns, for your key: the exact fields you may send and read, which are required, your routing mode, and how each child table works.
 
-:::sparkles{title="Run this first, always"}
+:::note{title="Discover, don't hardcode"}
 
-Don't hardcode a field list copied from a doc. Two keys get two different schemas, and grants change over time. Read `lead_schema` at startup, build your payloads from it, and your integration adapts instead of breaking.
+Two keys get different schemas, and grants change over time. Read `lead_schema` at startup and build your payloads from its response — never copy a fixed field list from this page.
 
 :::
 
@@ -45,12 +45,15 @@ The response is top-level `status` + `data`. Here's a trimmed example for a key 
         ]
       }
     },
-    "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
+    "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same patient updates that lead. Program is NOT part of identity: sending the same patient with a different program transitions the SAME lead, never a new one.",
     "bulk": { "max_per_call": 100, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
     "routing": {
-      "mode": "forced",
-      "source": "…", "vertical": "…", "group": "…", "program": "…",
-      "note": "Your routing is fixed. Any routing fields you send are ignored."
+      "mode": "list",
+      "source": "…", "vertical": "…", "group": "…",
+      "program": null,
+      "allowed_programs": ["Program A", "Program B", "Program C"],
+      "program_required": true,
+      "note": "Line and group are fixed. Send custom_current_program from allowed_programs on every lead. Program is a mutable attribute, not identity: the same patient on a new program is the same lead (a transition)."
     }
   }
 }
@@ -65,9 +68,22 @@ The response is top-level `status` + `data`. Here's a trimmed example for a key 
 | `data.children.<t>.multi_row` | `true` = the table holds many rows, addressed by a key. `false` = a single row that you merge into. |
 | `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row (the row's "primary key"). `null` on single-row tables. |
 | `data.children.<t>.fields[]` | The fields you may send/read in that table — same shape as `lead[]`. The `key_field` is always present and `required`. |
-| `data.routing` | Your fixed routing (`mode: "forced"`). It's stamped on every lead you write; anything you send for it is ignored. |
-| `data.dedup` | The rule that makes a lead unique (phone within your line). |
+| `data.routing.mode` | `forced` (one program stamped for you) · `list` (you must send `custom_current_program`, one of `allowed_programs`) · `none` (no program). Line and group are always fixed for you. |
+| `data.routing.allowed_programs` | **List mode only** — the programs you may set per lead. `program_required: true` means a create must carry `custom_current_program`. |
+| `data.dedup` | The rule that makes a lead unique: phone + product line + group. Program is an attribute, not identity. |
 | `data.bulk` | Bulk caps and the filters `lead_list` accepts. |
+
+### Each field's attributes
+
+Every entry in `lead[]` (and in a child table's `fields[]`) describes one field:
+
+| Attribute | Meaning |
+|---|---|
+| `fieldname` | the key you send/read in JSON — e.g. `mobile_no` |
+| `label` | the human-readable name — e.g. "Mobile No" |
+| `type` | the data type — `Data`, `Int`, `Float`, `Date`, `Link`, `Select`, … |
+| `required` | `true` = must be present when you create the lead |
+| `options` | for `Link`/`Select`, the allowed target or values; `null` otherwise |
 
 ## Required fields
 
@@ -120,12 +136,16 @@ Whether multi-row or single-row, sending only some fields updates only those fie
 
 :::
 
-## Routing is set for you
+## Routing: line & group are fixed; program depends on your mode
 
-Your `source`, product line (`vertical`), `group`, and `program` are fixed to your key and stamped on every lead automatically. They come back on reads as read-only context. You don't send them, and you can't move a lead to a different line.
+Your `source`, product line (`vertical`), and `group` are fixed to your key and stamped on every lead automatically — you don't send them, and you can't move a lead to a different line or group. The **program** depends on your `mode`:
+
+- **Forced** — stamped for you, like the rest of your routing.
+- **List** — **you send** `custom_current_program` on every lead, validated to your `allowed_programs`. It is a mutable attribute: re-sending a patient with a different program transitions the **same lead** (a transition), it never makes a second one.
+- **None** — no program.
 
 ## Reading rows back
 
-When you read a lead (`lead_get` / `lead_get_bulk`), each child row carries its `name` (the row's id) and its `key_field`, so you always know how to address it on the next write.
+When you read a lead (`lead_get` / `lead_get_bulk`), each child row carries its `name` — the row's unique ID, e.g. `a1b2c3` — and its `key_field`, so you always know how to address it on the next write.
 
-→ **Try it live:** [Discover the fields your key may use](/docs/partner-api) in the API Reference.
+→ **Try it live** in the [Partner API Reference](/partner-api).

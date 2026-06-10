@@ -23,13 +23,13 @@ A `200` with your schema means you're in. Contact **TatvaCare Ops** to request a
 
 ## Phone format
 
-Phone numbers are E.164: `+<country code><digits>`, no spaces or hyphens — e.g. `+919999000123`. A bare 10-digit Indian number is auto-normalised to `+91…`, but sending the full E.164 form is the safe default.
+Phone numbers are E.164: `+<country code><digits>`, no spaces or hyphens — e.g. `+919999000123`. A bare 10-digit Indian number is auto-normalized to `+91…`, but sending the full E.164 form is the safe default.
 
 ## Idempotency & retry safety
 
 | Call | Safe to retry? |
 |---|---|
-| `lead_create` | **Yes** — idempotent on phone-within-your-line. The same input converges to the same lead; it never duplicates. |
+| `lead_create` | **Yes** — idempotent on phone + product line + group. The same input converges to the same lead; it never duplicates. |
 | `lead_update` | **Yes** — same payload, same final state. Children merge by key; nothing is clobbered. |
 | `lead_delete` | **Yes** — a second delete of a gone lead just returns `not_found`. |
 | bulk variants | **Yes** — each record is by-key, so a replay converges. Re-send only the failed rows from `results[]`. |
@@ -39,13 +39,13 @@ Because writes are idempotent, the right response to a network hiccup or a `5xx`
 
 ## Partial updates never clobber
 
-A write touches **only the fields you send**. Omitted top-level fields keep their values; in child tables, omitted fields and unmentioned rows are left alone. Send incremental updates freely as new data arrives — see [Discover your schema](/docs/discover-schema#child-tables-how-rows-are-written).
+A write touches **only the fields you send**. Omitted top-level fields keep their values; in child tables, omitted fields and unmentioned rows are left alone. Send incremental updates freely as new data arrives — see [Schema discovery](/discover-schema#child-tables-how-rows-are-written).
 
 ## Versioning
 
 This API is `v1`. Backward-compatible changes — new fields, new endpoints, new option values, or a new field granted to your key — ship without a version bump and won't break your integration. Anything **breaking** (a field rename, an endpoint removal, tighter validation) gets advance notice by email to integration owners, with a migration window of at least four weeks.
 
-Because your contract is whatever [`lead_schema`](/docs/discover-schema) returns, code that reads the schema at runtime adapts to additive changes automatically.
+Because your contract is whatever [`lead_schema`](/discover-schema) returns, code that reads the schema at runtime adapts to additive changes automatically.
 
 ## Environment
 

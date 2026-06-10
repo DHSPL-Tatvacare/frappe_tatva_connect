@@ -1,0 +1,29 @@
+---
+title: Forms
+---
+
+A DocType doesn't only define data — Frappe **auto-generates its form** too. You never hand-build a screen; the fields and their layout come from the DocType definition. Knowing how the form is laid out helps you read what a CRM user sees, and how it maps to what the [REST API](/frappe-rest-api) exposes.
+
+## Two zones
+
+A record's form has two areas, and they render different kinds of field:
+
+| Zone | Shows | Doesn't show |
+|---|---|---|
+| **Side panel** (right) | scalar fields — name, phone, status, dates | child tables |
+| **Data tab** (centre) | child-table grids (the profile rows) | — |
+
+So a lead's identity and contact fields sit in the **side panel**; its [child profiles](/frappe-child-tables) (lab, plan, care team) render as grids in the **Data tab**. A child table placed in the side panel simply won't appear — child grids render only in the Data tab.
+
+## Conditional fields
+
+A field can be shown only when a condition holds. For example, a program-specific field can appear only for leads on that program and stay hidden otherwise — so each user sees a form tailored to the record in front of them.
+
+## Locked fields
+
+Sensitive fields can be **locked by level**: a field at level 1 or higher is hidden or read-only for anyone whose role isn't granted that level. This is the field gate from [Access control](/frappe-permissions) — e.g. a payment link or a routing field shown to admins but not to a regular user.
+
+## In practice
+
+- The form is the **human** view; the API is the **machine** view. What you can send and read over the API is whatever your key is granted — discover it with [`lead_schema`](/frappe-discovery), not by reading the form.
+- A field missing from the form for one user is often a **locked field**, not a missing field — see [Access control](/frappe-permissions).

@@ -1,10 +1,10 @@
 ---
-title: "Users & onboarding"
+title: User onboarding
 ---
 
 Every account in the CRM — a human agent or a machine integration — is a **`User`**, and its **roles** decide what it can do. This page covers the two admin jobs: onboarding an account, and minting an API key for an integration.
 
-## A user is just a doctype too
+## Users are records
 
 Read and manage users over the same REST API as everything else:
 
@@ -15,16 +15,16 @@ Read and manage users over the same REST API as everything else:
 
 The built-in `Administrator` account is specially protected and returns `403` on read; ordinary users read fine.
 
-## Onboarding a human agent
+## Onboarding a person
 
 One call creates the account and assigns its roles; `send_welcome_email: 1` triggers Frappe's set-your-password email.
 
 - Create the `User` with `email`, `first_name`, the role(s) they need, and `send_welcome_email: 1`.
-- To scope them to one group or program, add a [User Permission](/docs/api/roles-and-permissions#create-a-record-level-restriction-scope-a-user) afterwards.
+- To scope them to one group or program, add a [User Permission](/api/roles-and-permissions#create-a-record-level-restriction-scope-a-user) afterwards.
 
-## Onboarding an integration (the key flow)
+## Onboarding an integration
 
-This is exactly how the `api_key:api_secret` pair in [Authentication](/docs/api/authentication) is produced:
+This is exactly how the `api_key:api_secret` pair in [Authentication](/api/authentication) is produced:
 
 1. **Create** a dedicated user (e.g. `you@yourcompany.com`) with the role its writes need — an admin role if it must set the locked routing fields.
 2. **Generate keys** for that user — the response returns the `api_secret` **once**.
@@ -32,8 +32,8 @@ This is exactly how the `api_key:api_secret` pair in [Authentication](/docs/api/
 
 > **⚠ `generate_keys` rotates.** Calling it invalidates the user's previous `api_secret` immediately, and the new secret is shown **only in that one response**. Capture it then — if you lose it you must regenerate, which breaks the old one.
 
-## One account per integration
+## One key per integration
 
 Give each integration its own user + key — never share. That way a key can be revoked, rotated, or audited per integration without touching the others.
 
-→ **API Reference:** [Users endpoints](/docs/api/users) · [Roles & permissions](/docs/api/roles-and-permissions).
+→ **API Reference:** [Users endpoints](/api/users) · [Roles & permissions](/api/roles-and-permissions).

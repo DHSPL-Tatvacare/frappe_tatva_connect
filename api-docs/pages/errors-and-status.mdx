@@ -10,7 +10,7 @@ When something fails anywhere in the CRM — a webhook, an outbound API call, a 
 |---|---|
 | **`Error Log`** | Any server-side exception / traceback (everything `frappe.log_error` writes — our integrations log here). The first place to look. |
 | **`Integration Request`** | Every **outbound** call we make to a provider (WATI, Acefone) — URL, status, the request we sent, and the response/`error` we got back. |
-| **`Scheduled Job Log`** | Scheduled-job runs (e.g. the 6-hourly WATI template sync). See [Jobs](/docs/jobs). |
+| **`Scheduled Job Log`** | Scheduled-job runs (e.g. the 6-hourly WATI template sync). See [Jobs](/jobs). |
 | **`WhatsApp Notification Log`** | Automated WhatsApp notification triggers (success/failure). |
 
 ## Recent errors (start here)
