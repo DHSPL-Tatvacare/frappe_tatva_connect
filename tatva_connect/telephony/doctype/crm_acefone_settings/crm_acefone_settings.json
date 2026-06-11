@@ -14,8 +14,8 @@
  ],
  "fields": [
   {
-   "default": "1",
-   "description": "Master kill-switch for all Acefone send/receive (across every account).",
+   "default": "0",
+   "description": "Master kill-switch for all Acefone send/receive (across every account). Ships OFF (dormant) — enable per deployment.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"

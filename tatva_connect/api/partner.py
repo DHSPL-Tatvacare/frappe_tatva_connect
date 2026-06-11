@@ -210,26 +210,18 @@ def _allowed_programs(user, has_mapping):
 
 
 def _resolve_program(item, mp, allowed_programs):
-	"""Resolve the lead's program from the key's MODE — all derived from config (the
-	mapping's `program` field + its `allowed_programs` rows), nothing hardcoded:
-	  * FORCED  - mapping pins a program (e.g. Niva): return it unchanged.
-	  * LIST    - mapping program blank + allowed_programs set (e.g. Anaya): the caller MUST
-	              send custom_current_program, and it must be one of allowed_programs
-	              (membership already guarantees it is a real CRM Program).
-	  * NONE    - mapping program blank + allowed_programs empty: no program.
-	  * trusted - no mapping (internal caller): whatever it sent, unchanged."""
-	if mp and mp.program:
-		return mp.program
-	if mp:
-		prog = (item.get("custom_current_program") or "").strip()
-		if not allowed_programs:
-			return None  # NONE mode
-		if not prog:
-			frappe.throw(_("custom_current_program is required for this key"))
-		if prog not in allowed_programs:
-			frappe.throw(_("Program '{0}' is not permitted for this key").format(prog))
-		return prog
-	return item.get("custom_current_program")
+	"""Resolve the lead's program from the key's MODE. The forced/list/none logic lives
+	in the shared resolver (tatva_connect.taxonomy.program_mode) — the SAME brain the
+	enrolment form uses — so both intake paths behave identically. Only the trusted
+	(no-mapping, internal caller) case is partner-specific and stays here."""
+	if not mp:
+		return item.get("custom_current_program")  # trusted internal caller, unchanged
+	from tatva_connect.taxonomy.program_mode import resolve_program
+
+	return resolve_program(
+		mp.program, allowed_programs, item.get("custom_current_program"),
+		field_label="custom_current_program", source_label="key",
+	)
 
 
 def _split_keys(keys):

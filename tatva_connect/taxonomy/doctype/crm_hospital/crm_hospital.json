@@ -1,13 +1,16 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "hash",
+ "autoname": "format:{vertical}::{group}::{program}::{hospital_name}",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "hospital_name",
+  "vertical",
+  "group",
+  "program",
   "city",
   "review_pending"
  ],
@@ -17,6 +20,33 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Hospital Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product Line",
+   "options": "CRM Vertical",
+   "reqd": 1
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Group",
+   "options": "CRM Group",
+   "reqd": 1
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Program",
+   "options": "CRM Program",
    "reqd": 1
   },
   {

@@ -7,13 +7,12 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
-  "webhook_verify_token",
-  "default_broadcast_name"
+  "webhook_verify_token"
  ],
  "fields": [
   {
-   "default": "1",
-   "description": "Master kill-switch for all WATI send/receive.",
+   "default": "0",
+   "description": "Master kill-switch for all WATI send/receive. Ships OFF (dormant) — enable per deployment.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
@@ -23,12 +22,6 @@
    "fieldname": "webhook_verify_token",
    "fieldtype": "Data",
    "label": "Webhook Verify Token"
-  },
-  {
-   "default": "tatvacare_crm",
-   "fieldname": "default_broadcast_name",
-   "fieldtype": "Data",
-   "label": "Default Broadcast Name"
   }
  ],
  "grid_page_length": 50,

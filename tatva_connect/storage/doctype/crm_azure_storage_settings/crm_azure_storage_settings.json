@@ -1,0 +1,96 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-11 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "connection_string",
+  "containers_section",
+  "private_container",
+  "behaviour_section",
+  "sas_ttl_seconds",
+  "remove_local_after_upload",
+  "column_break_conn",
+  "check_connection"
+ ],
+ "fields": [
+  {
+   "description": "Master switch. Off = pure local Frappe, no Azure behaviour at all.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "Azure connection string (carries the account key): DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
+   "fieldname": "connection_string",
+   "fieldtype": "Password",
+   "label": "Connection String"
+  },
+  {
+   "fieldname": "containers_section",
+   "fieldtype": "Section Break",
+   "label": "Containers"
+  },
+  {
+   "description": "Name of the private Azure container you want files stored in (you set this). Created automatically if it doesn't exist.",
+   "fieldname": "private_container",
+   "fieldtype": "Data",
+   "label": "Private Container"
+  },
+  {
+   "fieldname": "behaviour_section",
+   "fieldtype": "Section Break",
+   "label": "Behaviour"
+  },
+  {
+   "description": "Lifetime of a download (SAS) link, in seconds. Leave blank to use 900 (15 min).",
+   "fieldname": "sas_ttl_seconds",
+   "fieldtype": "Int",
+   "label": "Download Link Validity (seconds)"
+  },
+  {
+   "description": "Delete the local copy after a successful upload (the point of offloading). You choose.",
+   "fieldname": "remove_local_after_upload",
+   "fieldtype": "Check",
+   "label": "Remove Local Copy After Upload"
+  },
+  {
+   "fieldname": "column_break_conn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:!doc.__islocal",
+   "fieldname": "check_connection",
+   "fieldtype": "Button",
+   "label": "Check Connection"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Storage",
+ "name": "CRM Azure Storage Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -4,43 +4,30 @@
 # Register modules.txt -> Module Def FIRST, before any doctype sync (migrate on an
 # existing site doesn't; add_module_defs runs only at install-app). Idempotent.
 tatva_connect.patches.register_modules
-# Doctype renames to the CRM * standard. pre_model_sync so the tables are renamed
-# BEFORE model-sync imports the new-named JSON. The whatsapp/telephony renames run
-# before rename_to_naming_standard (post) which renames ROWS in those tables.
-tatva_connect.patches.rename_doctypes_partner_api
-tatva_connect.patches.rename_doctypes_whatsapp
-tatva_connect.patches.rename_doctypes_telephony
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 tatva_connect.patches.add_whatsapp_message_id_unique_index
 tatva_connect.patches.add_acefone_telephony_medium
-tatva_connect.patches.seed_automation_task_types
-# Doc B Phase 1 (M-1): converge existing dev rows to the new entity-master keys
-# (Doctor/Hospital -> hash via rename_doc; City -> wipe+reseed composite). Runs
-# BEFORE the seeds so they re-insert idempotently against the new keying.
-tatva_connect.patches.converge_entity_masters
-tatva_connect.patches.seed_nivolumab_intake
 tatva_connect.patches.seed_india_cities
-tatva_connect.patches.normalize_lead_phones
-tatva_connect.patches.canonicalize_lead_routing
-# P9: move acquisition + drug-program data out of CRM Plan Profile into the new
-# children (copy -> verify -> drop), THEN re-point the catalog to the new sections.
-tatva_connect.patches.split_plan_profile
-tatva_connect.patches.seed_lead_api_fields
-# Force the content-changed P9 catalog seed (is_row_key + acq:*/drug:* + de-list) to
-# re-run on installs where the original seed already executed (patches run once by name).
-tatva_connect.patches.reseed_lead_api_fields_p9
-tatva_connect.patches.rename_to_naming_standard
-tatva_connect.patches.seed_lead_stages
-tatva_connect.patches.add_stage_to_side_panel
-tatva_connect.patches.fix_group_layout_slot
-# Rename the stale Custom Field record (custom_psp_group -> custom_group) BEFORE fixtures
-# sync, so the conventionally-named fixture doesn't create a duplicate group field on prod.
-tatva_connect.patches.fix_custom_group_field_name
 # B5: shared-number fix — replace the global message_id unique index with a composite
 # (message_id, reference_name) so one number can mirror onto multiple leads (same patient,
 # two programs) without DuplicateEntryError on refresh / inbound.
 tatva_connect.patches.recreate_whatsapp_message_id_index_composite
-# C1: ensure the CRM Task Quick Entry layout carries custom_task_type + custom_checklist.
-tatva_connect.patches.set_task_quick_entry_layout
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/
+# (gitignored, on disk for bookkeeping). Each "skips if old absent", so they no-op on a
+# clean install. Kept here commented for file-level history. To restore for an IN-PLACE
+# upgrade of an old-schema prod DB: move the file back into tatva_connect/patches/ and
+# uncomment the line (renames belong in [pre_model_sync], the rest in [post_model_sync]).
+# tatva_connect.patches.rename_doctypes_partner_api      # pre  — Lead API * -> CRM Lead API *
+# tatva_connect.patches.rename_doctypes_whatsapp         # pre  — WATI * -> CRM WATI *
+# tatva_connect.patches.rename_doctypes_telephony        # pre  — Acefone * -> CRM Acefone *
+# tatva_connect.patches.converge_entity_masters          # post — rekey Doctor/Hospital/City
+# tatva_connect.patches.normalize_lead_phones            # post — normalize existing lead phones
+# tatva_connect.patches.canonicalize_lead_routing        # post — canonicalize existing routing
+# tatva_connect.patches.split_plan_profile               # post — P9: Plan Profile -> child sections
+# tatva_connect.patches.rename_to_naming_standard        # post — hash rows -> composite :: keys
+# tatva_connect.patches.fix_group_layout_slot            # post — repoint group layout slot
+# tatva_connect.patches.fix_custom_group_field_name      # post — custom_psp_group -> custom_group

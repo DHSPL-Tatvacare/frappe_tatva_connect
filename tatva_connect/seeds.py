@@ -15,26 +15,14 @@ gap never aborts the migrate/deploy (the gap shows up in Error Log instead).
 """
 import frappe
 
-from tatva_connect.patches import (
-	seed_automation_task_types,
-	seed_india_cities,
-	seed_lead_api_fields,
-	seed_lead_stages,
-	seed_nivolumab_intake,
-	set_task_quick_entry_layout,
-)
+from tatva_connect.patches import seed_india_cities
 
-# Order: vocab/masters first, then the intake form (which Links to them), then the
-# capability-config layout. Fixtures (Vertical/Group/Program/Lead Source) are already
-# applied by the time after_migrate runs.
-_SEEDS = (
-	seed_automation_task_types,
-	seed_lead_stages,
-	seed_india_cities,
-	seed_lead_api_fields,
-	seed_nivolumab_intake,
-	set_task_quick_entry_layout,
-)
+# Pure config-implementation mode: business/master DATA is NOT auto-seeded. It ships as
+# manual SQL in db-seeds/ (operator runs post-migrate, then activates via a Settings form).
+# Only INTRINSIC reference data that is identical in every deployment stays here: the India
+# city+state list (ODbL) backing the State->City cascade. Everything else (taxonomy, partner-
+# API catalog, lead stages, task types, UI layouts) was moved to db-seeds/ on 2026-06-11.
+_SEEDS = (seed_india_cities,)
 
 
 def seed_master_data():

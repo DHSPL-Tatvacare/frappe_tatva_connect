@@ -30,15 +30,13 @@
    "label": "WhatsApp Template Send Caps (manual rep sends)"
   },
   {
-   "default": "5",
-   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling hour. 0 = no hourly cap. Automated notifications are never capped.",
+   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling hour. Blank = code default (5). 0 = no hourly cap. Automated notifications are never capped.",
    "fieldname": "template_cap_per_hour",
    "fieldtype": "Int",
    "label": "Template Cap / Hour / Number"
   },
   {
-   "default": "10",
-   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling day. 0 = no daily cap.",
+   "description": "Max template messages a rep may MANUALLY send to one patient number per rolling day. Blank = code default (10). 0 = no daily cap.",
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day / Number"

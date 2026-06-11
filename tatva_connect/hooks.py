@@ -13,6 +13,9 @@ override_doctype_class = {
 	"WhatsApp Message": "tatva_connect.whatsapp.message.WATIWhatsAppMessage",
 	"WhatsApp Notification": "tatva_connect.whatsapp.notification.WATINotification",
 	"WhatsApp Templates": "tatva_connect.whatsapp.templates.WATITemplates",
+	# Read offloaded file bytes from Azure Blob (see tatva_connect/storage). No-op for
+	# local files and when the storage kill-switch is off.
+	"File": "tatva_connect.storage.file_override.FileOverride",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI, not Meta.
@@ -73,6 +76,13 @@ doc_events = {
 	"ToDo": {
 		"after_insert": "tatva_connect.tasks.tasks.on_lead_assignment",
 	},
+	# Azure Blob offload: push bytes after the row + local file exist (core insert and
+	# thumbnailing untouched); delete the blob when the File is deleted. Gated by the
+	# CRM Azure Storage Settings kill-switch.
+	"File": {
+		"after_insert": "tatva_connect.storage.file_events.after_insert",
+		"on_trash": "tatva_connect.storage.file_events.on_trash",
+	},
 }
 
 # Safety-net: re-sync every WATI account's templates every 6 hours so the local
@@ -86,6 +96,10 @@ scheduler_events = {
 # Ship the CRM Form Scripts (WATI send-template + WhatsApp UI gate) from their .js
 # source files on every migrate — keeps them version-controlled and in sync.
 after_migrate = [
+	# Structural patches (indexes/Select options/custom fields). install-app baselines
+	# patches.txt WITHOUT running it, so these never land on a fresh DB — re-run them here
+	# (idempotent) so a clean install actually gets them. Schema before data.
+	"tatva_connect.schema_setup.apply_schema",
 	"tatva_connect.form_scripts_seed.seed",
 	# Master-data seeds: install-app baselines patches.txt without running it, so seed
 	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
@@ -103,25 +117,10 @@ fixtures = [
 		# clean server. Every Custom Field on these doctypes is ours (modules own native
 		# fields in JSON, not as Custom Fields); workflow_state is Frappe-managed (excluded).
 		"filters": [
-			["dt", "in", ["CRM Lead", "CRM Task", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account"]],
+			["dt", "in", ["CRM Lead", "CRM Task", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
-	# The public enrolment Web Form ships as a fixture (carries its fields).
-	{"dt": "Web Form", "filters": [["name", "=", "nivolumab-patient-enrolment"]]},
-	# CRM Lead layouts (side panel / quick entry / grid rows) are currently live-only
-	# DB records — capture them so they're reproducible. `bench export-fixtures` writes
-	# the live JSON here; the group-layout repoint patch (fix_group_layout_slot) runs on
-	# migrate BEFORE the export so the captured side-panel/quick-entry use custom_group,
-	# not the dead custom_psp_group. (Phase 3.)
-	{"dt": "CRM Fields Layout", "filters": [["name", "in", [
-		"CRM Lead-Side Panel",
-		"CRM Lead-Quick Entry",
-		# The Data tab (profile child-tables + clinical sections). Captured so the
-		# section structure ships with the app — incl. the P9 Acquisition + Drug
-		# Program sections the program gate (lead_data_tab_gate.js) shows/hides. (P10.)
-		"CRM Lead-Data Fields",
-	]]]},
 	# Field-property overrides on CRM data-model doctypes (profile Select fields with
 	# no options -> free-text, so form-written values both store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
@@ -171,14 +170,13 @@ fixtures = [
 		"CRM Plan Profile-payment_link-in_list_view",
 		"CRM Plan Profile-plan_name-in_list_view",
 	]]]},
-	# Master data (routing taxonomy): the Link targets for the CRM Lead routing fields
-	# (custom_vertical / custom_group / custom_current_program). Seeded so a fresh prod has
-	# the masters the leads reference — without these the Link fields point at empty doctypes.
-	# Simple field-named masters, no inter-deps. (CRM Lead Stage is seeded via seed_lead_stages;
-	# CRM City via seed_india_cities.)
-	{"dt": "CRM Vertical"},
-	{"dt": "CRM Group"},
-	{"dt": "CRM Program"},
+	# NOTE: only schema-as-code ships as fixtures (Custom Field = the columns; Property
+	# Setter = field-level overrides). Business/master DATA is NOT seeded — it ships as
+	# manual SQL in db-seeds/ (gitignored, date+commit named) that the operator runs
+	# post-migrate, then activates via the relevant Settings form. The app comes up
+	# DORMANT on a fresh DB. Moved out of fixtures: CRM Vertical / Group / Program (was
+	# taxonomy), CRM Fields Layout (was UI layouts). Reference data (CRM City) is still
+	# seeded via seed_india_cities (intrinsic, identical everywhere).
 ]
 
 # Apps

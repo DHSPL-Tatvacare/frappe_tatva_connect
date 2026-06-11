@@ -24,3 +24,12 @@ custom-user-work/
 
 # playwright mcp scratch (browser logs/snapshots)
 .playwright-mcp/
+
+# Manual DB seed bundles (alembic-style, date+commit named). Operator runs these
+# post-migrate; never auto-applied. Tracked by filename, not committed.
+db-seeds/
+
+# Archived legacy migration patches — kept for bookkeeping, out of active code.
+# Restore into tatva_connect/patches/ + patches.txt ONLY for an in-place upgrade of an
+# old-schema prod DB; a clean rebuild never needs them.
+archive/

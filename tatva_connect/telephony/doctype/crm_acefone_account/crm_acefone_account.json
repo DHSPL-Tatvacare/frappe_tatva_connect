@@ -28,8 +28,8 @@
    "unique": 1
   },
   {
-   "default": "1",
-   "description": "Enable this Acefone account for send/receive.",
+   "default": "0",
+   "description": "Enable this Acefone account for send/receive. Starts OFF — tick once the account is fully configured.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -59,8 +59,7 @@
    "label": "API"
   },
   {
-   "default": "https://api.acefone.in",
-   "description": "Acefone API base URL (no trailing slash).",
+   "description": "Acefone API base URL (no trailing slash). Blank = code default (https://api.acefone.in).",
    "fieldname": "base_url",
    "fieldtype": "Data",
    "label": "Base URL"

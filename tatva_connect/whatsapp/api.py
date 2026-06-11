@@ -46,9 +46,9 @@ def assert_wati(account):
 
 
 def is_enabled() -> bool:
-	"""WATI master kill-switch. Defaults to enabled if the single was never saved."""
-	val = frappe.db.get_single_value("CRM WATI Settings", "enabled")
-	return True if val is None else bool(val)
+	"""WATI master kill-switch. Dormant by default — OFF until explicitly enabled
+	(a blank/unsaved single reads as disabled)."""
+	return bool(frappe.db.get_single_value("CRM WATI Settings", "enabled"))
 
 
 def assert_enabled():

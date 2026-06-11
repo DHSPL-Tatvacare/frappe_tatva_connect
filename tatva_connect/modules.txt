@@ -6,3 +6,4 @@ Partner API
 Intake
 WhatsApp
 Telephony
+Storage

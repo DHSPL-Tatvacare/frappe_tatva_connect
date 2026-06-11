@@ -98,9 +98,12 @@ def process_submission(doc, method=None):
 	doc.db_set("processed", 1, update_modified=False)
 
 
-# Pick-only reference masters — NEVER auto-created from a form (governed reseed only).
-# Doctor/Hospital are growth entities (auto-add OK); City is curated/state-aware.
-_PICK_ONLY_MASTERS = {"CRM City"}
+# Pick-only reference masters — NEVER auto-created from a form. The form PICKS from the
+# curated, grain-scoped masters (loaded via runbook SQL); a typed/"not listed" value is
+# still recorded as text on the lead, but never births a master row. Doctor/Hospital are
+# now first-class grain-scoped masters (vertical::group::program key, Doctor->Hospital FK),
+# so free-form auto-add is gone — they'd need a grain the form can't safely infer per row.
+_PICK_ONLY_MASTERS = {"CRM City", "CRM Doctor", "CRM Hospital"}
 
 
 def _resolve_value(doc, m):
@@ -119,7 +122,21 @@ def _resolve_value(doc, m):
 			canonical = _ensure_master(m.master_doctype, display_field, manual)
 			return canonical or manual
 		return manual
-	return picked
+	# A picked value from a Link field is the row's PK — the composite key now
+	# (e.g. "GF Care::Anaya::Nivolumab::Apollo", or City's "Bengaluru::Karnataka").
+	# Store the HUMAN label (the link target's title_field), never the opaque key.
+	# Non-Link sources (Select / Data) pass straight through.
+	return _link_label(doc, m.source_field, picked) if picked else picked
+
+
+def _link_label(doc, source_field, value):
+	"""If source_field is a Link, resolve the picked PK to the linked row's title
+	(its title_field, else `name`). Any non-Link field returns the value unchanged."""
+	df = frappe.get_meta(doc.doctype).get_field(source_field)
+	if not df or df.fieldtype != "Link" or not df.options:
+		return value
+	title_field = frappe.get_meta(df.options).get("title_field") or "name"
+	return frappe.db.get_value(df.options, value, title_field) or value
 
 
 def _ensure_master(doctype, display_field, value):

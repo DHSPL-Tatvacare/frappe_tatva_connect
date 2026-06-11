@@ -42,7 +42,7 @@
   {"fieldname": "state_manual", "fieldtype": "Data", "label": "State (if Others) — specify", "depends_on": "eval:doc.state=='Others'", "mandatory_depends_on": "eval:doc.state=='Others'"},
 
   {"fieldname": "providers_section", "fieldtype": "Section Break", "label": "Doctor & Hospital"},
-  {"fieldname": "doctor", "fieldtype": "Link", "label": "Doctor", "options": "CRM Doctor", "depends_on": "eval:!doc.doctor_not_listed", "description": "Search & pick the doctor."},
+  {"fieldname": "doctor", "fieldtype": "Link", "label": "Doctor", "options": "CRM Doctor", "depends_on": "eval:!doc.doctor_not_listed", "read_only_depends_on": "eval:!doc.hospital", "description": "Pick a hospital first, then search the doctor."},
   {"fieldname": "doctor_not_listed", "fieldtype": "Check", "label": "Doctor isn't listed"},
   {"fieldname": "doctor_manual", "fieldtype": "Data", "label": "Doctor — type name", "depends_on": "eval:doc.doctor_not_listed", "mandatory_depends_on": "eval:doc.doctor_not_listed"},
   {"fieldname": "hospital", "fieldtype": "Link", "label": "Hospital", "options": "CRM Hospital", "depends_on": "eval:!doc.hospital_not_listed", "description": "Search & pick the hospital."},

@@ -28,14 +28,14 @@ DEFAULT_BASE_URL = "https://api.acefone.in"
 
 
 def is_enabled() -> bool:
-	"""Acefone master kill-switch (GLOBAL). Defaults to enabled if never saved.
+	"""Acefone master kill-switch (GLOBAL). Dormant by default — OFF until explicitly
+	enabled (a blank/unsaved single reads as disabled).
 
 	Fresh DB read (not get_cached_doc) so flipping the switch takes effect
 	immediately across all worker processes. Per-account `enabled` flags are
 	checked by the routing/handler layer, not here.
 	"""
-	val = frappe.db.get_single_value(SETTINGS, "enabled")
-	return True if val is None else bool(val)
+	return bool(frappe.db.get_single_value(SETTINGS, "enabled"))
 
 
 def assert_enabled():
