@@ -1,1 +1,8 @@
 Tatva Connect
+Taxonomy
+Lead
+Tasks
+Partner API
+Intake
+WhatsApp
+Telephony

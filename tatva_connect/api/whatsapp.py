@@ -30,7 +30,7 @@ def list_templates(reference_doctype=None, reference_name=None):
 
 		validate_access(reference_doctype, reference_name)
 		if reference_doctype == "CRM Lead":
-			from tatva_connect.wati import routing
+			from tatva_connect.whatsapp import routing
 
 			account = routing.resolve_account_for_lead(
 				frappe.get_cached_doc(reference_doctype, reference_name)
@@ -358,8 +358,8 @@ def refresh_messages_from_wati(reference_doctype, reference_name):
 	"""
 	from crm.api.whatsapp import validate_access
 
-	from tatva_connect.wati import api as wati
-	from tatva_connect.wati import routing
+	from tatva_connect.whatsapp import api as wati
+	from tatva_connect.whatsapp import routing
 
 	validate_access(reference_doctype, reference_name)
 	if reference_doctype != "CRM Lead":

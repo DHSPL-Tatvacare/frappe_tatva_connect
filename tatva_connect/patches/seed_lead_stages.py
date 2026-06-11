@@ -37,9 +37,17 @@ PROGRAMS = {
 
 
 def _get_or_create(program, stage, substage_of, selectable, position):
+	# Match the existing row by its real grain. A main stage stores substage_of as
+	# NULL/empty, so look it up with "is/not set" (NULL OR '') — a bare "" filter
+	# misses the NULL row, which made the re-run insert collide on the format: PK
+	# (DuplicateEntryError) on every migrate. Substages match their parent's name.
 	name = frappe.db.get_value(
 		"CRM Lead Stage",
-		{"program": program, "stage": stage, "substage_of": substage_of or ""},
+		{
+			"program": program,
+			"stage": stage,
+			"substage_of": substage_of if substage_of else ["is", "not set"],
+		},
 		"name",
 	)
 	if name:

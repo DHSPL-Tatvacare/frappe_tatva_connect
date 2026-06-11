@@ -73,7 +73,7 @@ def _rename_enrolment():
 
 
 def execute():
-	for dt in ("Acefone Account Routing", "WATI Account Routing"):
+	for dt in ("CRM Acefone Account Routing", "CRM WATI Account Routing"):
 		if frappe.db.exists("DocType", dt):
 			_rename_routing(dt)
 	if frappe.db.exists("DocType", "CRM Task Checklist Template"):

@@ -146,14 +146,14 @@ CATALOG_SEED = [
 def execute():
 	# De-list first: explicitly remove the keys P9 retired (the upsert never deletes).
 	for field_key in CATALOG_DELIST:
-		if frappe.db.exists("Lead API Field", field_key):
-			frappe.delete_doc("Lead API Field", field_key, ignore_permissions=True, force=True)
+		if frappe.db.exists("CRM Lead API Field", field_key):
+			frappe.delete_doc("CRM Lead API Field", field_key, ignore_permissions=True, force=True)
 
 	for field_key, section_key, target_doctype, child_table_field, label, is_row_key in CATALOG_SEED:
 		_, _, fieldname = field_key.partition(":")
-		if frappe.db.exists("Lead API Field", field_key):
+		if frappe.db.exists("CRM Lead API Field", field_key):
 			# backfill/repoint the routing columns + the is_row_key flag
-			frappe.db.set_value("Lead API Field", field_key, {
+			frappe.db.set_value("CRM Lead API Field", field_key, {
 				"section_key": section_key,
 				"target_doctype": target_doctype,
 				"child_table_field": child_table_field,
@@ -162,7 +162,7 @@ def execute():
 			})
 			continue
 		frappe.get_doc({
-			"doctype": "Lead API Field",
+			"doctype": "CRM Lead API Field",
 			"field_key": field_key,
 			"section_key": section_key,
 			"target_doctype": target_doctype,

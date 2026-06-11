@@ -22,11 +22,17 @@ MAPPINGS = [
 
 
 def execute():
+	# The Intake Form Links source -> CRM Lead Source "Nivolumab", a custom source not
+	# created by FCRM. Ensure it exists so a fresh-DB seed doesn't fail Link validation.
+	if not frappe.db.exists("CRM Lead Source", "Nivolumab"):
+		frappe.get_doc({"doctype": "CRM Lead Source", "source_name": "Nivolumab"}).insert(ignore_permissions=True)
+	# CRM Doctor / CRM Hospital are now hash-keyed (name is opaque); match on the
+	# display field, not on name, so the seed stays idempotent across the autoname change.
 	for dn, city in DOCTORS:
-		if not frappe.db.exists("CRM Doctor", dn):
+		if not frappe.db.exists("CRM Doctor", {"doctor_name": dn}):
 			frappe.get_doc({"doctype": "CRM Doctor", "doctor_name": dn, "city": city}).insert(ignore_permissions=True)
 	for hn, city in HOSPITALS:
-		if not frappe.db.exists("CRM Hospital", hn):
+		if not frappe.db.exists("CRM Hospital", {"hospital_name": hn}):
 			frappe.get_doc({"doctype": "CRM Hospital", "hospital_name": hn, "city": city}).insert(ignore_permissions=True)
 
 	if not frappe.db.exists("CRM Intake Form", "Nivolumab Enrolment"):

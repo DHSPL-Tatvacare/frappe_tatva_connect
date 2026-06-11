@@ -10,64 +10,68 @@ app_license = "mit"
 # Seam 2: WhatsApp Notification — automated/scheduled sends (own Meta call).
 # Templates: neutralise Meta create/edit/fetch (templates live on WATI).
 override_doctype_class = {
-	"WhatsApp Message": "tatva_connect.wati.message.WATIWhatsAppMessage",
-	"WhatsApp Notification": "tatva_connect.wati.notification.WATINotification",
-	"WhatsApp Templates": "tatva_connect.wati.templates.WATITemplates",
+	"WhatsApp Message": "tatva_connect.whatsapp.message.WATIWhatsAppMessage",
+	"WhatsApp Notification": "tatva_connect.whatsapp.notification.WATINotification",
+	"WhatsApp Templates": "tatva_connect.whatsapp.templates.WATITemplates",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI, not Meta.
 # The desk list-view button calls this method; routing it here means that button
 # (and any caller) syncs the read-only WATI mirror — never reaches Meta.
 override_whitelisted_methods = {
-	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.wati.templates_sync.sync_from_wati",
+	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_from_wati",
 	# Acefone rides crm's NATIVE call UI (no fork): the native phone icon's call
 	# method becomes an Acefone bridge call, and the call-log fetch gains a
-	# playable recording path for Acefone. See tatva_connect/acefone/bridge.py.
-	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.acefone.bridge.make_a_call",
-	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.acefone.bridge.get_call_log",
+	# playable recording path for Acefone. See tatva_connect/telephony/bridge.py.
+	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.telephony.bridge.make_a_call",
+	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 }
 
-# Event-driven automations (the single home — see tatva_connect/automation/).
+# Event-driven automations: each side-effect lives in its feature module
+# (lead/, tasks/, whatsapp/, intake/) — providers only persist their own records.
 # Providers only persist their own records; every side-effect hangs off here.
 doc_events = {
 	"CRM Lead": {
 		# canonicalise empty routing fields (''->None) BEFORE dedup, so the
 		# {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
 		"before_validate": [
-			"tatva_connect.automation.leads.canonicalize_routing_fields",
+			"tatva_connect.lead.leads.canonicalize_routing_fields",
 		],
 		# canonicalise phones (+E.164) first, then dedup on the canonical value
 		"validate": [
-			"tatva_connect.automation.leads.normalize_lead_phones",
-			"tatva_connect.automation.leads.dedup_guard",
-			"tatva_connect.automation.leads.validate_stage",
+			"tatva_connect.lead.leads.normalize_lead_phones",
+			"tatva_connect.lead.leads.dedup_guard",
+			"tatva_connect.lead.leads.validate_stage",
 			# mirror the latest lab row's headline metrics up to the core Lead fields
-			"tatva_connect.automation.leads.sync_headline_metrics",
+			"tatva_connect.lead.leads.sync_headline_metrics",
 		],
 	},
 	"CRM Task": {
 		# seed first (fills the checklist from the template), then enforce (gates Done)
 		"validate": [
-			"tatva_connect.automation.tasks.seed_checklist",
-			"tatva_connect.automation.tasks.enforce_checklist",
+			"tatva_connect.tasks.tasks.seed_checklist",
+			"tatva_connect.tasks.tasks.enforce_checklist",
 		],
 	},
 	"WhatsApp Message": {
-		"after_insert": "tatva_connect.automation.whatsapp.on_inbound_message",
+		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone.
+		# Runs after crm validate, before db_insert + crm on_update. Inbound-only (flag-gated).
+		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
+		"after_insert": "tatva_connect.whatsapp.inbound.on_inbound_message",
 	},
-	# the partner-API catalog is data-driven (read from Lead API Field, cached) —
+	# the partner-API catalog is data-driven (read from CRM Lead API Field, cached) —
 	# drop the cache whenever a catalog row changes so the API picks it up at once.
-	"Lead API Field": {
+	"CRM Lead API Field": {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
 	# Generic web-intake: a Web Form lands a submission row -> upsert a routed lead.
 	"CRM Enrolment Submission": {
-		"after_insert": "tatva_connect.automation.intake.process_submission",
+		"after_insert": "tatva_connect.intake.intake.process_submission",
 	},
 	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up).
 	"ToDo": {
-		"after_insert": "tatva_connect.automation.tasks.on_lead_assignment",
+		"after_insert": "tatva_connect.tasks.tasks.on_lead_assignment",
 	},
 }
 
@@ -75,13 +79,18 @@ doc_events = {
 # mirror is almost always current (manual "Sync from WATI" stays real-time).
 scheduler_events = {
 	"cron": {
-		"0 */6 * * *": ["tatva_connect.wati.templates_sync.scheduled_sync_all"],
+		"0 */6 * * *": ["tatva_connect.whatsapp.templates_sync.scheduled_sync_all"],
 	},
 }
 
 # Ship the CRM Form Scripts (WATI send-template + WhatsApp UI gate) from their .js
 # source files on every migrate — keeps them version-controlled and in sync.
-after_migrate = ["tatva_connect.wati.seed_form_scripts.seed"]
+after_migrate = [
+	"tatva_connect.form_scripts_seed.seed",
+	# Master-data seeds: install-app baselines patches.txt without running it, so seed
+	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
+	"tatva_connect.seeds.seed_master_data",
+]
 
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
@@ -175,7 +184,10 @@ fixtures = [
 # Apps
 # ------------------
 
-# required_apps = []
+# Hard deps: we override frappe_whatsapp doctypes and extend crm. Declaring them
+# enforces install order so the custom_field.json fixture (which has WhatsApp Account
+# fields) never aborts and silently drops the CRM Lead fields with it.
+required_apps = ["crm", "frappe_whatsapp"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -250,6 +262,8 @@ fixtures = [
 # ------------
 
 # before_install = "tatva_connect.install.before_install"
+# Fresh-install master-data seeding is handled on after_migrate (tatva_connect.seeds),
+# which runs after fixtures so the Linked masters exist. See seeds.py.
 # after_install = "tatva_connect.install.after_install"
 
 # Uninstallation

@@ -6,7 +6,7 @@ rows so they match. Idempotent (re-running is a no-op once canonical).
 """
 import frappe
 
-from tatva_connect.wati import phone
+from tatva_connect.whatsapp import phone
 
 FIELDS = ["mobile_no", "phone", "custom_alternate_number", "custom_caregiver_phone"]
 
