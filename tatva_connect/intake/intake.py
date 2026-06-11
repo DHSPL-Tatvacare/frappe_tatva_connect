@@ -139,9 +139,11 @@ def _ensure_master(doctype, display_field, value):
 	if not canonical:
 		return value
 
-	# Case-insensitive match on the normalized display value (not on opaque `name`).
+	# Exact match on the normalized display value (not on opaque `name`). Both stored
+	# and input values are normalize_display'd, so '=' is exact AND case-insensitive
+	# (DB collation) — and avoids a LIKE treating a literal % / _ in a name as a wildcard.
 	existing = frappe.get_all(
-		doctype, filters={display_field: ["like", canonical]}, fields=[display_field], limit=1
+		doctype, filters={display_field: canonical}, fields=[display_field], limit=1
 	)
 	if existing:
 		return existing[0].get(display_field)
