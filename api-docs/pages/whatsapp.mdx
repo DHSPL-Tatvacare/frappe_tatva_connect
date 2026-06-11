@@ -1,5 +1,5 @@
 ---
-title: "WhatsApp"
+title: WhatsApp
 ---
 
 The CRM has a WhatsApp panel on every lead — agents chat with patients, send approved templates, and watch delivery status, all without leaving the lead. WhatsApp is delivered through **WATI** (our provider); the CRM never talks to Meta directly. This page explains the model and the endpoints an integrator can call.
@@ -94,14 +94,14 @@ Register this URL on **each** WATI tenant. Inbound customer messages and deliver
 ```
 https://one.tatvacare.in/api/method/tatva_connect.wati.webhook.webhook?token=<secret>&account=<WhatsApp Account name>
 ```
-- `token` = the shared secret in **WATI Settings → Webhook Verify Token**.
+- `token` = the shared secret in **CRM WATI Settings → Webhook Verify Token**.
 - `account` = which tenant received the message (so inbound is filed correctly without relying on a provider payload field).
 - Non-CRM traffic is dropped; redeliveries are de-duplicated.
 
 ## Multi-account routing & kill-switch
 
-- **`WATI Account Routing`** — rules mapping a lead's **Product Line / Group / Program** to a `WhatsApp Account`. Most-specific wins (Program > Group > Product Line); no global default (an unmatched lead is blocked, not mis-sent); duplicate/ambiguous rules are rejected.
-- **`WATI Settings → Enabled`** — master kill-switch. When off, **both sending and receiving stop**.
+- **`CRM WATI Account Routing`** — rules mapping a lead's **Product Line / Group / Program** to a `WhatsApp Account`. Most-specific wins (Program > Group > Product Line); no global default (an unmatched lead is blocked, not mis-sent); duplicate/ambiguous rules are rejected.
+- **`CRM WATI Settings → Enabled`** — master kill-switch. When off, **both sending and receiving stop**.
 
 ## Configure accounts & routing over the API
 
@@ -127,21 +127,21 @@ curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
 ```bash
 curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
   -d '{ "whatsapp_account": "Group A WATI 360078", "vertical": "Product Line B" }' \
-  'https://one.tatvacare.in/api/resource/WATI Account Routing'
+  'https://one.tatvacare.in/api/resource/CRM WATI Account Routing'
 ```
 Fields: `vertical` (→ CRM Vertical), `psp_group` (→ CRM Group), `program` (→ CRM Program), `whatsapp_account` (→ WhatsApp Account). Fill only the axes you want — leave the rest blank; most-specific wins. The axis values are the **names of existing** CRM Vertical / CRM Group / CRM Program records — list them with `GET /api/resource/CRM Vertical` etc.
 
 **List / inspect:**
 ```
 GET /api/resource/WhatsApp Account?fields=["name","url","custom_wati_channel_number","is_default_outgoing"]
-GET /api/resource/WATI Account Routing?fields=["name","vertical","psp_group","program","whatsapp_account"]
+GET /api/resource/CRM WATI Account Routing?fields=["name","vertical","psp_group","program","whatsapp_account"]
 ```
 
 **Kill-switch + webhook secret** (single doctype — update with PUT):
 ```bash
 curl -X PUT -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
   -d '{ "enabled": 1, "webhook_verify_token": "<secret>" }' \
-  'https://one.tatvacare.in/api/resource/WATI Settings/WATI Settings'
+  'https://one.tatvacare.in/api/resource/CRM WATI Settings/CRM WATI Settings'
 ```
 
 > **Rollout note:** the WhatsApp surface ships with the WATI integration. If a call returns `404`, the integration app isn't deployed on that environment yet — confirm with CRM Ops.

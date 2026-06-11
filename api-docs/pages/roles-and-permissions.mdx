@@ -25,9 +25,9 @@ You can read the whole picture instead of guessing:
 
 - **Who am I?** [`get_logged_user`](/api/authentication#verify-api-key-handshake) returns the user your key acts as.
 - **What roles does that user hold?** [Read the User doc](/api/users#read-a-user-with-roles) — its `roles` child table lists them.
-- **What rows are they scoped to?** [List `User Permission`](/api/roles-and-permissions#list-record-level-scoping-user-permissions) filtered by `user`.
-- **Can they do one specific thing?** Ask [`has_permission`](/api/roles-and-permissions#check-a-permission) directly, before you attempt the write.
+- **What rows are they scoped to?** [List User Permissions](/api/access-control#list-user-permissions) filtered by `user`.
+- **Can they do one specific thing?** Ask [Check Permission](/api/access-control#check-permission) directly, before you attempt the write.
 
 To create accounts and mint their keys, see [User onboarding](/users).
 
-→ **API Reference:** [Roles & permissions endpoints](/api/roles-and-permissions).
+→ **API Reference:** [Access control endpoints](/api/access-control).

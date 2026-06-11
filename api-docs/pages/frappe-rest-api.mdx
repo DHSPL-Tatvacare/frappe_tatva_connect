@@ -18,7 +18,7 @@ Because every record is a DocType, Frappe exposes **every DocType over REST auto
 
 Responses are predictable: a single doc is `{ "data": {...} }`, a list is `{ "data": [...] }`, and a *native* method returns `{ "message": <result> }`.
 
-> **Exception — the partner methods.** The gated `tatva_connect.api.partner.lead_*` methods return a **top-level** body (`status` / `action` / `data`, or `status` / `error`) with **no `message` wrapper**. See [Reading the response (paths)](/operations#reading-the-response-paths). The `{ "message": … }` shape above applies to native `/api/resource/*` and other built-in methods.
+> **Exception — the partner methods.** The gated `tatva_connect.api.partner.lead_*` methods return a **top-level** body (`status` / `action` / `data`, or `status` / `error`) with **no `message` wrapper**. See [Reading responses](/reading-values). The `{ "message": … }` shape above applies to native `/api/resource/*` and other built-in methods.
 
 **Why it matters for you:** the resource API above is for **internal first-party keys**. **Partner keys use the method API** (`tatva_connect.api.partner.*`) — raw `/api/resource/CRM Lead` returns **403** for them. So for partners, the lead methods (`lead_create` to write, `lead_get` / `lead_list` to read) are the entire surface; the resource shapes are shown here so you understand the response envelope.
 

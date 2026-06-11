@@ -20,7 +20,7 @@ The built-in `Administrator` account is specially protected and returns `403` on
 One call creates the account and assigns its roles; `send_welcome_email: 1` triggers Frappe's set-your-password email.
 
 - Create the `User` with `email`, `first_name`, the role(s) they need, and `send_welcome_email: 1`.
-- To scope them to one group or program, add a [User Permission](/api/roles-and-permissions#create-a-record-level-restriction-scope-a-user) afterwards.
+- To scope them to one group or program, add a [User Permission](/api/access-control#create-user-permission) afterwards.
 
 ## Onboarding an integration
 
@@ -36,4 +36,4 @@ This is exactly how the `api_key:api_secret` pair in [Authentication](/api/authe
 
 Give each integration its own user + key — never share. That way a key can be revoked, rotated, or audited per integration without touching the others.
 
-→ **API Reference:** [Users endpoints](/api/users) · [Roles & permissions](/api/roles-and-permissions).
+→ **API Reference:** [Users endpoints](/api/users) · [Access control](/api/access-control).

@@ -1,5 +1,5 @@
 ---
-title: "Errors & status"
+title: Error logs
 ---
 
 When something fails anywhere in the CRM — a webhook, an outbound API call, a scheduled job, a server method — it's recorded in a doctype. You can read all of it over REST, so you can check what's failing and see status without shell access. Everything here needs an internal admin key.
@@ -27,7 +27,7 @@ curl -G -H 'Authorization: token KEY:SECRET' \
 GET /api/resource/Error Log/<name>
 ```
 
-**Filter to a specific integration** — our handlers log with recognisable titles:
+**Filter to a specific integration** — our handlers log with recognizable titles:
 ```bash
 # WATI-related errors
 --data-urlencode 'filters=[["method","like","%WATI%"]]'
@@ -65,6 +65,6 @@ curl -G -H 'Authorization: token KEY:SECRET' \
 1. **`Error Log`** filtered to the last hour → anything red?
 2. **`Integration Request`** with `status = Failed` → outbound calls that didn't land.
 3. **`Scheduled Job Log`** with `status = Failed` → background jobs that broke.
-4. The relevant **kill-switch** (`WATI Settings` / `Acefone Settings` → `Enabled`) is on.
+4. The relevant **kill-switch** (`CRM WATI Settings` / `CRM Acefone Settings` → `Enabled`) is on.
 
 > These are read-only over the API. To clear/seen-mark an `Error Log` or re-run a job, use the Desk UI (`/app/error-log`, `/app/integration-request`).

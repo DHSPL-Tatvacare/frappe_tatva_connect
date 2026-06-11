@@ -64,6 +64,6 @@ When you read a lead back (`lead_get` / `lead_get_bulk`), each child row always 
 ## In practice
 
 - You **cannot** create a child row on its own — there's no `/api/resource/...` you POST a profile to (direct child-table access returns 403, by design). You send child rows *embedded in the parent* lead, exactly as above.
-- A `Link` value must exist first. `custom_current_program: "Program B"` only works if `Program B` is a row in `CRM Program` — check via [Schema discovery](/frappe-discovery).
+- A `Link` value must exist first. `custom_current_program: "Program B"` only works if `Program B` is a row in `CRM Program` — check via [Runtime discovery](/frappe-discovery).
 
 → **Try it:** [Create a lead](/api/leads) — its examples show profile child rows embedded in the body.

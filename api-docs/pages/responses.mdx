@@ -71,18 +71,4 @@ Any failure returns this exact shape, with a matching HTTP status:
 
 Branch on `error.code` (stable), show `error.message` to a human. Full details and the per-code playbook are on **[Errors](/partner-errors)**.
 
-## Code ↔ HTTP status
-
-| `error.code` | HTTP | Meaning |
-|---|---|---|
-| `validation_error` | 400 | A field failed validation (often `error.fields` names it). |
-| `bad_request` | 400 | The request body was malformed (e.g. invalid JSON). |
-| `unauthorized` | 401 | Missing or invalid API key. |
-| `forbidden` | 403 | Your key isn't permitted to call this. |
-| `not_found` | 404 | The lead doesn't exist, or is outside your line (identical — anti-enumeration). |
-| `duplicate` | 409 | A unique constraint was violated. |
-| `cannot_delete` | 409 | The lead has linked activity and can't be deleted. |
-| `rate_limited` | 429 | Over your request budget; `error.retry_after` tells you how long to wait. |
-| `server_error` | 500 | Something went wrong our side — retry with backoff. |
-
-Successful calls are `200`. See [Reading responses](/reading-values) for how to pull any of these out by path.
+Successful calls are `200`; every failure carries one of a small set of stable `error.code` values. The full per-code table — HTTP status, meaning, and what to do — lives on **[Errors](/partner-errors)**. See [Reading responses](/reading-values) for pulling any value out by path.

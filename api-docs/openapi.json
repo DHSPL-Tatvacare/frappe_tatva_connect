@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare CRM API",
     "version": "1.0.0",
-    "description": "Reference for integrating with the TatvaCare CRM — the single source of truth for leads across every TatvaCare product line.\n\n## What this API does\n\nWrite leads (create / update / upsert / delete, singly or in bulk). Read leads. Discover at runtime exactly the fields you may send. Attach files. It's the systems door into the CRM — external systems put leads in and read state back, while internal teams work those leads in the CRM web app.\n\n## The shape\n\n```\n CRM Lead (one lead per patient × product line + group)\n   ├── Plan Profile           — what plan / PSP / insurance / drug program / subscription\n   ├── Lab Profile            — lab values, vitals, conditions, scores\n   └── Care & Providers       — coaches, RM, therapist, doctor, hospital\n```\n\nThe lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1–3 child rows populated. Multi-program is normal.\n\n**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone number on a *different* product line or group is a **separate** lead — one patient can own several leads, one per line they're enrolled in. Re-sending the same (phone + line + group) trio updates that one lead; it never duplicates.\n\n## Where to start\n\n- **New here?** Read [Welcome](/welcome), then [Authentication](/api/authentication), then the [Quickstart](/quickstart).\n- **New to Frappe?** Start with [What's a DocType?](/frappe-doctypes) — the concepts this API is built on, in plain English.\n- **Already have a key?** Jump to [Create a lead](/api/leads).\n- **Need to know what fields you may send?** Call `lead_schema` — it returns exactly the fields YOUR key may send/read (see [Schema](/api/schema)).\n\nEvery endpoint is tested live in the **API Reference** — open an endpoint, paste your key, and hit **Send**.",
+    "description": "Reference for integrating with the TatvaCare CRM — the single source of truth for leads across every TatvaCare product line.\n\n## What this API does\n\nWrite leads (create / update / upsert / delete, singly or in bulk). Read leads. Discover at runtime exactly the fields you may send. Attach files. It's the systems door into the CRM — external systems put leads in and read state back, while internal teams work those leads in the CRM web app.\n\n## The shape\n\n```\n CRM Lead (one lead per patient × product line + group)\n   ├── Plan Profile           — what plan / PSP / insurance / drug program / subscription\n   ├── Lab Profile            — lab values, vitals, conditions, scores\n   └── Care & Providers       — coaches, RM, therapist, doctor, hospital\n```\n\nThe lead carries identity, contact, and routing fields. The three children carry concern-specific data. A patient typically has 1–3 child rows populated. Multi-program is normal.\n\n**Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone number on a *different* product line or group is a **separate** lead — one patient can own several leads, one per line they're enrolled in. Re-sending the same (phone + line + group) trio updates that one lead; it never duplicates.\n\n## Where to start\n\n- **New here?** Start with [Authentication](/api/authentication), then the [Quickstart](/quickstart).\n- **New to Frappe?** Start with [What's a DocType?](/frappe-doctypes) — the concepts this API is built on, in plain English.\n- **Already have a key?** Jump to [Leads](/api/leads).\n- **Need to know what fields you may send?** See [Schema](/api/schema) for runtime discovery.\n- **Partner key?** Your surface is the [Partner API Reference](/partner-api) tab — the endpoints here require internal keys.\n\nEvery endpoint is tested live in the **API Reference** — open an endpoint, paste your key, and hit **Send**.",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -12,6 +12,10 @@
     {
       "url": "https://one.tatvacare.in",
       "description": "Production"
+    },
+    {
+      "url": "http://dev.localhost:8000",
+      "description": "Local dev bench"
     }
   ],
   "x-tagGroups": [
@@ -45,8 +49,9 @@
       "name": "Administration",
       "tags": [
         "Users",
-        "Roles and Permissions",
-        "Jobs"
+        "Access control",
+        "Jobs",
+        "System"
       ]
     },
     {
@@ -55,63 +60,67 @@
         "Reference Data",
         "Schema",
         "Tags",
-        "Errors & Logs"
+        "Logs"
       ]
     }
   ],
   "tags": [
     {
       "name": "Authentication",
-      "description": "## How to authenticate\n\nEvery request needs an `Authorization` header. Format:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe word `token` is **literal lowercase**, followed by a single space, then `api_key`, a colon `:`, then `api_secret`. No `Bearer`, no quotes, no JWT.\n\nExample (placeholder — not a real key):\n\n```\nAuthorization: token 000000000000000:000000000000000\n```\n\n### Getting a key\n\nYou'll receive an `api_key` and `api_secret` from **TatvaCare Ops**, scoped to what your integration needs. Store the pair as one environment variable and treat it like a database password. Use **one key per integration** so it can be rotated or revoked independently — request separate keys for staging and production.\n\n### Verify your key works\n\nReturns the account the key belongs to if it's valid:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' https://one.tatvacare.in/api/method/frappe.auth.get_logged_user\n```\n\nA `200` means you're authenticated. A `401` means the header is malformed.\n\n### Discover what you can do — call `lead_schema`\n\nDon't hardcode a field list. `GET /api/method/tatva_connect.api.partner.lead_schema` returns exactly the fields your key may send/read. That response is your contract.\n\n### Rotation & leakage\n\nIf a key is leaked or committed to source control, contact **TatvaCare Ops** to revoke and reissue it.",
+      "description": "Every request needs an `Authorization` header. Format:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nThe word `token` is **literal lowercase**, followed by a single space, then `api_key`, a colon `:`, then `api_secret`. No `Bearer`, no quotes, no JWT.\n\nExample (placeholder — not a real key):\n\n```\nAuthorization: token 000000000000000:000000000000000\n```\n\n### Getting a key\n\nYou'll receive an `api_key` and `api_secret` from **TatvaCare Ops**, scoped to what your integration needs. Store the pair as one environment variable and treat it like a database password. Use **one key per integration** so it can be rotated or revoked independently — request separate keys for staging and production.\n\n### Verify your key works\n\nReturns the account the key belongs to if it's valid:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' https://one.tatvacare.in/api/method/frappe.auth.get_logged_user\n```\n\nA `200` means you're authenticated. A `401` means the header is malformed.\n\n### Discover what you can do\n\nDon't hardcode a field list — discover your contract at runtime: [Schema](/api/schema). Partner keys have their own discovery method, documented in the [Partner API Reference](/partner-api).\n\n### Rotation & leakage\n\nIf a key is leaked or committed to source control, contact **TatvaCare Ops** to revoke and reissue it.",
       "x-zudoku-collapsed": false
     },
     {
       "name": "Leads",
-      "description": "## The partner lead API\n\nLeads are written and read through **one set of gated methods** under `/api/method/tatva_connect.api.partner.<fn>`. This is the entire surface for partners — raw `/api/resource/CRM Lead` is **not** available to partner keys (it returns 403). Internal System Manager keys may still use raw REST, but these methods are the supported, idempotent path for everyone.\n\n| Verb | Method | Does |\n|---|---|---|\n| GET | `lead_schema` | Discovery — exactly the fields YOUR key may send/read + your routing mode. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no` (scoped to your line). |\n| POST | `lead_create` | Create-or-upsert by phone. Returns the CRM `name`. |\n| PUT | `lead_update` | Update a lead by CRM `name` (the id `lead_create` returned). |\n| DELETE | `lead_delete` | Delete a lead by CRM `name` (your line only; a lead with linked activity can't be deleted). |\n| POST | `lead_create_bulk` | `{\"leads\":[{...}, …]}` (≤ 100). Partial success. |\n| PUT | `lead_update_bulk` | `{\"updates\":[{\"name\":…, …}, …]}` (≤ 100). Partial success. |\n| DELETE | `lead_delete_bulk` | `{\"names\":[…]}` (≤ 100). Partial success. |\n| POST | `lead_get_bulk` | `{\"names\":[…]}` **or** `{\"mobile_nos\":[…]}` (≤ 100). Out-of-scope ids omitted. |\n| GET | `lead_list` | Curated filters + pagination, always scoped to your line. |\n\n**`lead_create` is the default write path for ~99% of integrations.** It's idempotent on the lead grain (`mobile_no` + your line + group), safe to retry, and handles the lookup-or-create dance for you.\n\n### Lead grain & dedup\n\nA lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. `lead_create` finds the lead matching that trio and updates it, or creates a new one. The same phone on a *different* line/group is a separate lead. Partners never send routing — their line is forced from their mapping — so for them dedup is simply phone within their fixed line.\n\n### Profile child write semantics (important)\n\nProfile children (`custom_plan_profile`, `custom_lab_profile`) are sent as **embedded arrays** inside the body. There's at most ONE row per profile per lead today. Writes **merge field-by-field** into the existing row: fields you send are overlaid, fields you omit are left alone — a partial write never wipes the row. (This is true for all of `lead_create` / `lead_update` and their bulk forms.)\n\n### Routing is not yours to set (partners)\n\nThe routing fields `custom_vertical` + `custom_group` are `permlevel=1` (manager-only). `custom_current_program` is now **`permlevel=0`** (reps may self-handoff a program within their line). Partners never set any of these — routing (`source` / `vertical` / `group` / `program`) is **forced server-side** from your `Lead API Mapping` row, and any routing you send is silently ignored. Trusted internal (System Manager) keys send routing in the body.\n\n### Field validation summary\n\n- **Allowed fields are per-key.** Call `lead_schema` to see exactly what your key may send. Anything outside your Allowed Fields grid is dropped (partners) — `mobile_no` is always allowed (the anchor).\n- **Required to create**: `mobile_no` (the anchor). `first_name` and `status` are default-filled if missing (`(no name)` and `New`).\n- **Required IF status is Junk or Unqualified**: `lost_reason` (Frappe raises `ValidationError` otherwise).\n- **Link-validated** (values must exist in their master): `status`, `source`, `custom_vertical`, `custom_group`, `custom_current_program`, `substage` on Plan Profile (format `{program}-{substage_name}`).\n- **Never write**: `name` (autonamed), `lead_name` (computed), `creation`, `modified`. Routing + `lead_owner` are set by the platform, not partners.\n\n---\n\n## How to read leads from the CRM\n\nThree paths: `lead_get` (one, by `name` or `mobile_no`), `lead_get_bulk` (many, by `names` or `mobile_nos`), `lead_list` (filtered + paginated). All return only your allowed fields and only leads on your line.\n\n### `lead_list` filters & pagination\n\n`lead_list` honours a **curated, safe set of filters only** — never arbitrary fields:\n\n| Parameter | Meaning |\n|---|---|\n| `status` | exact lead status |\n| `created_after` / `created_before` | `creation` date range |\n| `updated_after` / `updated_before` | `modified` date range |\n| `mobile_no` | exact phone |\n| `limit` | page size (default 20, max 200) |\n| `offset` | rows to skip (paging) |\n\nResults are always auto-scoped to your line and return **curated parent fields, no children** — use `lead_get` for the full record. Response: `{ok, total, count, offset, limit, leads:[…]}`.\n\n```bash\ncurl -G -H 'Authorization: token <api_key>:<api_secret>' \\\n     --data-urlencode 'status=New' \\\n     --data-urlencode 'updated_after=2026-05-01' \\\n     --data-urlencode 'limit=50' \\\n     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_list\n```\n\n### Bulk partial-success shape\n\nEvery bulk method runs each record in its own savepoint — one bad row reports its error, the rest still commit. Response: `{ok, total, succeeded, failed, results:[{index, ok, action?, name?, error?}]}`.\n\n### Reading children\n\n`lead_get` / `lead_get_bulk` return the profile children (`custom_plan_profile`, `custom_lab_profile`) inline, filtered to your allowed fields. You can't read the child doctypes directly via `/api/resource/*` — they're child tables with no standalone permission scope; always read them through the parent lead."
+      "description": "This is the **internal** lead surface — standard Frappe REST on `CRM Lead`, for System Manager keys (admins, internal tools). Partner keys get `403` on every endpoint here; partners integrate through the [Partner API Reference](/partner-api) instead.\n\nHow it differs from the partner methods:\n\n| | Raw REST (here) | Partner methods |\n|---|---|---|\n| Who | internal System Manager keys | partner keys |\n| Dedup | none — `POST` always creates | idempotent upsert on phone + line + group |\n| Fields | every field your role can see | per-key allowed fields |\n| Child rows | sent arrays **replace** the row | merged field-by-field |\n\nTwo rules to stay out of trouble:\n\n- **A lead is unique per phone + product line + group** ([Lead identity](/concepts)). Raw `POST` does not enforce this — check before you create.\n- **Child tables replace, never merge,** on raw writes — read-modify-write, or you lose the row (see the PUT endpoint below).\n\nFilters, operators, and pagination follow the standard REST pattern — see [REST API](/frappe-rest-api)."
     },
     {
       "name": "Files",
-      "description": "## Files attached to leads\n\nFiles (lab reports PDFs, prescriptions, insurance docs, etc.) attach to leads via Frappe's core `File` doctype. The pattern is:\n\n1. **Upload** the binary using `POST /api/method/upload_file` with multipart/form-data. You tell it `doctype=CRM Lead` + `docname=<lead name>` so it attaches to the right lead. **Always set `is_private=1` for patient documents.**\n2. **List** a lead's files by querying `/api/resource/File` filtered by `attached_to_doctype` + `attached_to_name`.\n3. **Download** the file by GETting its `file_url`. Public files (`/files/...`) are open; private files (`/private/files/...`) require an authenticated session with read permission on the parent lead.\n4. **Delete** with `DELETE /api/resource/File/{name}`.\n\n### Privacy rule — patient docs must be private\n\nPublic files at `/files/...` are world-readable to anyone with the URL. Patient lab reports / prescriptions / claim documents must be uploaded with `is_private=1` so they land at `/private/files/...` and require auth to fetch.\n\nA file uploaded as private:\n- Returns `file_url: /private/files/<hash>.<ext>` in the response.\n- Can only be GETted by a session user who has read permission on the lead it's attached to. Your integration key (with System Manager role) can fetch it. An anonymous tab cannot.\n\n### Download requires the right context\n\nIf you fetch a private `file_url` from an integration script, send the same `Authorization: token KEY:SECRET` header. The 403 you'd otherwise get is intentional — the file is gated on lead permission."
+      "description": "Files (lab reports PDFs, prescriptions, insurance docs, etc.) attach to leads via Frappe's core `File` doctype. The pattern is:\n\n1. **Upload** the binary using `POST /api/method/upload_file` with multipart/form-data. You tell it `doctype=CRM Lead` + `docname=<lead name>` so it attaches to the right lead. **Always set `is_private=1` for patient documents.**\n2. **List** a lead's files by querying `/api/resource/File` filtered by `attached_to_doctype` + `attached_to_name`.\n3. **Download** the file by GETting its `file_url`. Public files (`/files/...`) are open; private files (`/private/files/...`) require an authenticated session with read permission on the parent lead.\n4. **Delete** with `DELETE /api/resource/File/{name}`.\n\n### Privacy rule — patient docs must be private\n\nPublic files at `/files/...` are world-readable to anyone with the URL. Patient lab reports / prescriptions / claim documents must be uploaded with `is_private=1` so they land at `/private/files/...` and require auth to fetch.\n\nA file uploaded as private:\n- Returns `file_url: /private/files/<hash>.<ext>` in the response.\n- Can only be GETted by a session user who has read permission on the lead it's attached to. Your integration key (with System Manager role) can fetch it. An anonymous tab cannot.\n\n### Download requires the right context\n\nIf you fetch a private `file_url` from an integration script, send the same `Authorization: token KEY:SECRET` header. The 403 you'd otherwise get is intentional — the file is gated on lead permission."
     },
     {
       "name": "Reference Data",
-      "description": "## Link-master tables — read these to validate your writes\n\nMany lead fields are **Link** fields, meaning the value MUST exist as a row in a lookup master doctype. Sending an unknown value returns HTTP 404 `LinkValidationError`.\n\nRead each master once at startup (or cache) so you know the valid values to send.\n\n| Field on CRM Lead | Lookup master | Example endpoint |\n|---|---|---|\n| `status` | `CRM Lead Status` | `GET /api/resource/CRM%20Lead%20Status` |\n| `source` | `CRM Lead Source` | `GET /api/resource/CRM%20Lead%20Source` |\n| `lost_reason` | `CRM Lost Reason` | `GET /api/resource/CRM%20Lost%20Reason` |\n| `custom_vertical` | `CRM Vertical` | `GET /api/resource/CRM%20Vertical` |\n| `custom_group` | `CRM Group` | `GET /api/resource/CRM%20Group` |\n| `custom_current_program` / `custom_previous_program` | `CRM Program` | `GET /api/resource/CRM%20Program` |\n| `custom_origin_vertical` | `CRM Vertical` | (same as above) |\n| `lead_owner` | `User` (Frappe core) | `GET /api/resource/User?filters=[[\"enabled\",\"=\",1]]&fields=[\"name\",\"full_name\"]` |\n| `substage` (on Plan Profile) | `CRM Lead Substage` | `GET /api/resource/CRM%20Lead%20Substage?filters=[[\"program\",\"=\",\"Program D\"]]` |\n\nResponses are the standard `{\"data\":[{\"name\":\"...\"},...]}` shape — the `name` field of each row is the value you'd send back in your write.\n\n### Substages are program-scoped\n\nUnlike the other lookups, `CRM Lead Substage` rows are scoped by a `program` field. **Always filter by `program=<the lead's current program>`** when enumerating valid substages for a specific lead:\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n     --data-urlencode 'filters=[[\"program\",\"=\",\"Program B\"]]' \\\n     --data-urlencode 'fields=[\"name\",\"substage_name\",\"main_stage\"]' \\\n     --data-urlencode 'limit_page_length=200' \\\n     https://one.tatvacare.in/api/resource/CRM%20Lead%20Substage\n```\n\nThe `name` of each row (format `{program}-{substage_name}`, e.g. `Program B-Patient Ready for Chemo`) is what you write back into `custom_plan_profile[].substage`."
+      "description": "Many lead fields are **Link** fields, meaning the value MUST exist as a row in a lookup master doctype. Sending an unknown value returns HTTP 404 `LinkValidationError`.\n\nRead each master once at startup (or cache) so you know the valid values to send.\n\n| Field on CRM Lead | Lookup master | Example endpoint |\n|---|---|---|\n| `status` | `CRM Lead Status` | `GET /api/resource/CRM%20Lead%20Status` |\n| `source` | `CRM Lead Source` | `GET /api/resource/CRM%20Lead%20Source` |\n| `lost_reason` | `CRM Lost Reason` | `GET /api/resource/CRM%20Lost%20Reason` |\n| `custom_vertical` | `CRM Vertical` | `GET /api/resource/CRM%20Vertical` |\n| `custom_group` | `CRM Group` | `GET /api/resource/CRM%20Group` |\n| `custom_current_program` / `custom_previous_program` | `CRM Program` | `GET /api/resource/CRM%20Program` |\n| `custom_origin_vertical` | `CRM Vertical` | (same as above) |\n| `lead_owner` | `User` (Frappe core) | `GET /api/resource/User?filters=[[\"enabled\",\"=\",1]]&fields=[\"name\",\"full_name\"]` |\n| `substage` (on Plan Profile) | `CRM Lead Substage` | `GET /api/resource/CRM%20Lead%20Substage?filters=[[\"program\",\"=\",\"Program D\"]]` |\n\nResponses are the standard `{\"data\":[{\"name\":\"...\"},...]}` shape — the `name` field of each row is the value you'd send back in your write.\n\n### Substages are program-scoped\n\nUnlike the other lookups, `CRM Lead Substage` rows are scoped by a `program` field. **Always filter by `program=<the lead's current program>`** when enumerating valid substages for a specific lead:\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n     --data-urlencode 'filters=[[\"program\",\"=\",\"Program B\"]]' \\\n     --data-urlencode 'fields=[\"name\",\"substage_name\",\"main_stage\"]' \\\n     --data-urlencode 'limit_page_length=200' \\\n     https://one.tatvacare.in/api/resource/CRM%20Lead%20Substage\n```\n\nThe `name` of each row (format `{program}-{substage_name}`, e.g. `Program B-Patient Ready for Chemo`) is what you write back into `custom_plan_profile[].substage`."
     },
     {
       "name": "Schema",
-      "description": "## Runtime schema discovery — don't hardcode field lists\n\nThe contract for what YOUR key may send/read is **`lead_schema`**, not a hardcoded field list. Call it in your integration code so you adapt automatically and never guess.\n\n### `lead_schema` — your fields, per key (primary)\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' \\\n     https://one.tatvacare.in/api/method/tatva_connect.api.partner.lead_schema\n```\n\nIt returns exactly the parent + child fields your key may send/read — each with `fieldname`, `label`, `type`, `required`, and `options` (for Link/Select) — plus your `routing` mode (`forced` for partners, `caller-supplied` for internal) and the bulk/list limits. Two partners get different lists, driven by their Allowed Fields grid. This is your source of truth; the field tables in these docs are illustrative.\n\n### Read a doctype's full definition (internal keys)\n\n> System Manager keys only — partner keys get 403 on `/api/resource/*`.\n\nEvery Frappe doctype is itself accessible via REST. Get the full schema (every field, type, options, validations) with:\n\n```bash\ncurl -H 'Authorization: token KEY:SECRET' \\\n     https://one.tatvacare.in/api/resource/DocType/CRM%20Lead\n```\n\nThe response includes a `data.fields[]` array — each entry is one field with attributes `fieldname`, `fieldtype` (`Data`/`Select`/`Link`/`Date`/`Datetime`/`Int`/`Float`/`Check`/`Currency`/`Small Text`/`Long Text`/`Table`/`Section Break`/`Column Break`/`Tab Break`/etc.), `label`, `reqd` (required), `options` (for Link: the target doctype name; for Select: newline-separated valid values), `permlevel` (0=anyone, 1=manager-only), and more.\n\nSame call works for the children — replace the name in the URL (URL-encode spaces):\n\n```\nGET /api/resource/DocType/CRM%20Plan%20Profile\nGET /api/resource/DocType/CRM%20Lab%20Profile\nGET /api/resource/DocType/CRM%20Care%20Providers%20Profile\nGET /api/resource/DocType/CRM%20Lead%20Substage\n```\n\n### List records of any doctype (internal keys)\n\nFor partner keys, list leads via `lead_list` (see [Read](/api/leads)). System Manager keys may also use the raw `/api/resource/<DocType>` pattern:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' \\\n     -G --data-urlencode 'filters=[[\"custom_group\",\"=\",\"Group A\"]]' \\\n        --data-urlencode 'fields=[\"name\",\"first_name\",\"mobile_no\",\"status\"]' \\\n        --data-urlencode 'limit_page_length=50' \\\n     https://one.tatvacare.in/api/resource/CRM%20Lead\n```\n\n### When schema changes happen\n\nWhen we add a field, you'll see it appear in the doctype definition. Your code keeps working — your existing writes succeed (new field is optional and nullable), your reads return the extra field which you can ignore until you're ready to consume it. We notify integrators via email before any **breaking** change (renames, deletes, validation tightening).\n\n### Beyond Lead\n\nThe entire Frappe REST pattern works for ANY doctype. If you discover a need (e.g. read `CRM Call Log` records linked to a lead), the same `/api/resource/<DocType>` pattern applies. The doctypes worth knowing about for an integrator:\n\n- `CRM Lead` (this spec's primary target)\n- `CRM Plan Profile`, `CRM Lab Profile`, `CRM Care Providers Profile` (children of Lead)\n- `CRM Lead Substage` (program-scoped substage master)\n- `CRM Vertical`, `CRM Group`, `CRM Program` (routing masters)\n- `CRM Lead Status`, `CRM Lead Source`, `CRM Lost Reason` (universal lookup masters)\n- `CRM Call Log`, `CRM Task`, `FCRM Note`, `Comment`, `Communication`, `ToDo` (activity-adjacent — read about them in Frappe's standard docs)\n- `File` (attachments — see [Attachments](/api/files))\n\nIf you find yourself reaching for a non-Lead doctype, email Ops first — we want to know what use case you're hitting so we can document it (or wrap it in a saner endpoint)."
+      "description": "Never hardcode field lists — read the schema at runtime and adapt automatically. Internal keys introspect the doctype definition directly (below). Partner keys discover their per-key contract through the schema method in the [Partner API Reference](/partner-api).\n\n### Read a doctype definition\n\nEvery Frappe doctype is itself accessible via REST. Get the full schema (every field, type, options, validations) with:\n\n```bash\ncurl -H 'Authorization: token KEY:SECRET' \\\n     https://one.tatvacare.in/api/resource/DocType/CRM%20Lead\n```\n\nThe response includes a `data.fields[]` array — each entry is one field with attributes `fieldname`, `fieldtype` (`Data`/`Select`/`Link`/`Date`/`Datetime`/`Int`/`Float`/`Check`/`Currency`/`Small Text`/`Long Text`/`Table`/`Section Break`/`Column Break`/`Tab Break`/etc.), `label`, `reqd` (required), `options` (for Link: the target doctype name; for Select: newline-separated valid values), `permlevel` (0=anyone, 1=manager-only), and more.\n\nSame call works for the children — replace the name in the URL (URL-encode spaces):\n\n```\nGET /api/resource/DocType/CRM%20Plan%20Profile\nGET /api/resource/DocType/CRM%20Lab%20Profile\nGET /api/resource/DocType/CRM%20Care%20Providers%20Profile\nGET /api/resource/DocType/CRM%20Lead%20Substage\n```\n\n### List records of any doctype\n\nPartner keys cannot use these — their read path is the [Partner API Reference](/partner-api). System Manager keys may also use the raw `/api/resource/<DocType>` pattern:\n\n```bash\ncurl -H 'Authorization: token <api_key>:<api_secret>' \\\n     -G --data-urlencode 'filters=[[\"custom_group\",\"=\",\"Group A\"]]' \\\n        --data-urlencode 'fields=[\"name\",\"first_name\",\"mobile_no\",\"status\"]' \\\n        --data-urlencode 'limit_page_length=50' \\\n     https://one.tatvacare.in/api/resource/CRM%20Lead\n```\n\n### When schema changes happen\n\nWhen we add a field, you'll see it appear in the doctype definition. Your code keeps working — your existing writes succeed (new field is optional and nullable), your reads return the extra field which you can ignore until you're ready to consume it. We notify integrators via email before any **breaking** change (renames, deletes, validation tightening).\n\n### Beyond Lead\n\nThe entire Frappe REST pattern works for ANY doctype. If you discover a need (e.g. read `CRM Call Log` records linked to a lead), the same `/api/resource/<DocType>` pattern applies. The doctypes worth knowing about for an integrator:\n\n- `CRM Lead` (this spec's primary target)\n- `CRM Plan Profile`, `CRM Lab Profile`, `CRM Care Providers Profile` (children of Lead)\n- `CRM Lead Substage` (program-scoped substage master)\n- `CRM Vertical`, `CRM Group`, `CRM Program` (routing masters)\n- `CRM Lead Status`, `CRM Lead Source`, `CRM Lost Reason` (universal lookup masters)\n- `CRM Call Log`, `CRM Task`, `FCRM Note`, `Comment`, `Communication`, `ToDo` (activity-adjacent — read about them in Frappe's standard docs)\n- `File` (attachments — see [Attachments](/api/files))\n\nIf you find yourself reaching for a non-Lead doctype, email Ops first — we want to know what use case you're hitting so we can document it (or wrap it in a saner endpoint)."
     },
     {
       "name": "WhatsApp",
-      "description": "## WhatsApp on a lead\n\n> **Rollout note.** Ships with the WATI integration; a `404` means the integration app isn't deployed on that environment yet.\n\nEvery WhatsApp message — inbound or outbound — is a row in the **`WhatsApp Message`** doctype, linked to its lead via `reference_doctype` + `reference_name`. So you read a conversation the same way you read anything else: a filtered `GET /api/resource/WhatsApp Message`.\n\nSending is doctype-driven too — inserting a `WhatsApp Message` row triggers the actual send behind the scenes, routed through **WATI** (our WhatsApp provider) so the team's existing templates and broadcasts keep working. Multi-sender is built in: one **`WhatsApp Account`** row per WhatsApp number, so different product lines can send from different numbers.\n\nSee [WhatsApp](/whatsapp) in the Documentation tab for the full picture."
+      "description": "Every WhatsApp message — inbound or outbound — is a row in the **`WhatsApp Message`** doctype, linked to its lead via `reference_doctype` + `reference_name`. So you read a conversation the same way you read anything else: a filtered `GET /api/resource/WhatsApp Message`.\n\n> **Rollout note.** Ships with the WATI integration; a `404` means the integration app isn't deployed on that environment yet.\n\nSending is doctype-driven too — inserting a `WhatsApp Message` row triggers the actual send behind the scenes, routed through **WATI** (our WhatsApp provider) so the team's existing templates and broadcasts keep working. Multi-sender is built in: one **`WhatsApp Account`** row per WhatsApp number, so different product lines can send from different numbers.\n\nSee [WhatsApp](/whatsapp) in the Documentation tab for the full picture."
     },
     {
       "name": "Telephony",
-      "description": "## Calls on a lead\n\nCalls are rows in **`CRM Call Log`**, linked to a lead via `reference_doctype` + `reference_docname`. **Reading call logs is live today.** A row carries `type` (Incoming/Outgoing), `status`, `from`/`to`, `duration`, and `recording_url` (private — patient PII).\n\nOutbound **click-to-call** and automatic inbound logging are provided by **Acefone**; that half is in build, so the click-to-call endpoint is badged planned and `telephony_medium` has no `Acefone` value until it deploys.\n\nSee [Telephony](/telephony) in the Documentation tab."
+      "description": "Calls are rows in **`CRM Call Log`**, linked to a lead via `reference_doctype` + `reference_docname`. **Reading call logs is live today.** A row carries `type` (Incoming/Outgoing), `status`, `from`/`to`, `duration`, and `recording_url` (private — patient PII).\n\nOutbound **click-to-call** and automatic inbound logging are provided by **Acefone**; that half is in build, so the click-to-call endpoint is badged planned and `telephony_medium` has no `Acefone` value until it deploys.\n\nSee [Telephony](/telephony) in the Documentation tab."
     },
     {
       "name": "Users",
-      "description": "## Users, onboarding & API keys\n\nEvery account — an agent or an integration — is a `User`, and its **roles** decide what it can do ([Roles & permissions](/api/roles-and-permissions)). Two admin jobs live here:\n\n- **Onboard** — create a user with the right roles (and, for people, a welcome email to set a password).\n- **Mint a key** — generate an `api_key`/`api_secret` for an integration account, exactly the pair [Authentication](/api/authentication) expects.\n\nThe end-to-end onboarding of an integration: `POST User` (with its role) → `generate_keys` (capture the secret) → hand the pair to the integration. See [Users & onboarding](/users) in the Documentation tab.\n\n> **⚠ Admin-only.** These need an admin-roled key, and `generate_keys` **rotates** — it invalidates the user's previous secret."
+      "description": "Every account — an agent or an integration — is a `User`, and its **roles** decide what it can do ([Access control](/api/access-control)). Two admin jobs live here:\n\n- **Onboard** — create a user with the right roles (and, for people, a welcome email to set a password).\n- **Mint a key** — generate an `api_key`/`api_secret` for an integration account, exactly the pair [Authentication](/api/authentication) expects.\n\nThe end-to-end onboarding of an integration: `POST User` (with its role) → `generate_keys` (capture the secret) → hand the pair to the integration. See [User onboarding](/users) in the Documentation tab.\n\n> **⚠ Admin-only.** These need an admin-roled key, and `generate_keys` **rotates** — it invalidates the user's previous secret."
     },
     {
-      "name": "Roles and Permissions",
-      "description": "## Inspect roles, scoping, and permissions\n\nA key acts **as a user** and runs that user's permission checks — it never bypasses them (see [Permissions in 60 seconds](/frappe-permissions)). What a key can do is decided by three layers:\n\n- **Roles** — what actions (Read / Write / Create / Delete) on what doctypes.\n- **User Permissions** — which rows a user may see (row-level scoping, e.g. only `Group A` leads).\n- **Field permlevels** — which fields a user may write (routing fields are level-1, manager-only).\n\nThese endpoints let you read all three so you know exactly what a key is allowed to do. See [Roles & permissions](/roles-and-permissions) in the Documentation tab."
+      "name": "Access control",
+      "description": "A key acts **as a user** and runs that user's permission checks — it never bypasses them (see [Access control](/frappe-permissions) in the Documentation tab). What a key can do is decided by three layers:\n\n- **Roles** — what actions (Read / Write / Create / Delete) on what doctypes.\n- **User Permissions** — which rows a user may see (row-level scoping, e.g. only `Group A` leads).\n- **Field permlevels** — which fields a user may write (routing fields are level-1, manager-only).\n\nThese endpoints let you read all three so you know exactly what a key is allowed to do. The role tiers we assign: [Role tiers](/roles-and-permissions)."
     },
     {
       "name": "Tags",
-      "description": "## Label leads and find them fast\n\nTags are free-form labels on a lead (`vip`, `reactivation`, …) — the quickest way to slice leads without adding a field. Frappe keeps them in two synced places: a denormalised `_user_tags` string on the lead (good for a quick `like` filter) and a **`Tag Link`** row per (tag, document) pair (the clean way to ask *which* leads carry a tag). The label vocabulary lives in the **`Tag`** doctype.\n\nAlways set/clear tags through the whitelisted `add_tag` / `remove_tag` methods so both stores stay consistent — never write `_user_tags` by hand. See [Tags](/tags) in the Documentation tab."
+      "description": "Tags are free-form labels on a lead (`vip`, `reactivation`, …) — the quickest way to slice leads without adding a field. Frappe keeps them in two synced places: a denormalized `_user_tags` string on the lead (good for a quick `like` filter) and a **`Tag Link`** row per (tag, document) pair (the clean way to ask *which* leads carry a tag). The label vocabulary lives in the **`Tag`** doctype.\n\nAlways set/clear tags through the whitelisted `add_tag` / `remove_tag` methods so both stores stay consistent — never write `_user_tags` by hand. See [Tags](/tags) in the Documentation tab."
     },
     {
       "name": "Jobs",
-      "description": "Scheduled and background jobs. `Scheduled Job Type` holds the definitions (method, cron, stopped, last run); `Scheduled Job Log` holds the execution history. Both are read-only over the API and require System Manager. There is no REST endpoint to trigger a job (Desk / bench only). See the Jobs guide for the inventory."
+      "description": "Scheduled and background jobs. `Scheduled Job Type` holds the definitions (method, cron, stopped, last run); `Scheduled Job Log` holds the execution history. Both are read-only over the API and require System Manager. There is no REST endpoint to trigger a job (Desk / bench only). The job inventory and what each one does: [Jobs](/jobs) in the Documentation tab."
     },
     {
-      "name": "Errors & Logs",
+      "name": "Logs",
       "description": "Operational visibility, read-only. Error Log = server exceptions/tracebacks; Integration Request = outbound provider calls + responses; plus Scheduled Job Log (see Jobs) and WhatsApp Notification Log. Requires System Manager. See the Errors & status guide for a health sweep."
     },
     {
       "name": "Automations",
-      "description": "Event-driven lead-lifecycle automations: dedup, auto-assignment, tasks, checklists, and the automation registry. See the Internal Automations guide."
+      "description": "Event-driven lead-lifecycle automation: auto-assignment, tasks with close-gate checklists, and a read-only registry of every live automation. The config layer (assignment rules, task types, checklist templates) is editable over REST; the code layer (server hooks, scheduled jobs) is inventory-only via `list_automations` — see [Server hooks](/frappe-hooks) for how it works."
+    },
+    {
+      "name": "System",
+      "description": "Read-only view of platform configuration — what's installed, what's scheduled, what's customized — without opening the admin Desk. System Manager keys. All endpoints here are safe to call repeatedly; none of them change anything."
     }
   ],
   "security": [
@@ -141,7 +150,7 @@
           },
           "first_name": {
             "type": "string",
-            "description": "First name. Set to `(no name)` if you genuinely don't have it (`lead_create` default-fills this if omitted)."
+            "description": "First name. Set to `(no name)` if you genuinely don't have it (the partner create method default-fills this; raw POST does not)."
           },
           "last_name": {
             "type": "string",
@@ -384,516 +393,34 @@
       },
       "PlanProfile": {
         "type": "object",
-        "description": "Child of `CRM Lead`. 79 fields. Holds everything plan-shaped: subscription / PSP enrollment, drug-program clinical (oncology), Rx workflow, payment + insurer fields, acquisition (UTM + signup), diagnostic-funnel timestamps, and the program-scoped substage Link. See [Concepts](/concepts) for why this is sliced by concern, not by program.",
+        "additionalProperties": true,
+        "description": "Plan profile child row. Fields vary by program and are key-specific — do not hardcode them. Discover the full set via DocType introspection: GET /api/resource/DocType/CRM Plan Profile (see the Schema section).",
         "properties": {
-          "signup_date": {
+          "name": {
             "type": "string",
-            "format": "date",
-            "description": "Date the patient signed up (any platform)."
-          },
-          "mobile_app_signup_date": {
-            "type": "string",
-            "format": "date",
-            "description": "Date specifically of mobile app sign-up."
-          },
-          "signed_up_on_app": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Boolean flag (0/1). Whether the patient signed up via mobile app."
-          },
-          "platform": {
-            "type": "string",
-            "description": "Mobile app platform — Android / iOS / Web."
-          },
-          "user_source": {
-            "type": "string",
-            "description": "Free-text source identifier (granular than `CRM Lead Source`)."
-          },
-          "utm_source": {
-            "type": "string",
-            "description": "UTM source (marketing attribution)."
-          },
-          "utm_medium": {
-            "type": "string",
-            "description": "UTM medium."
-          },
-          "utm_campaign": {
-            "type": "string",
-            "description": "UTM campaign."
-          },
-          "utm_term": {
-            "type": "string",
-            "description": "UTM term."
-          },
-          "utm_content": {
-            "type": "string",
-            "description": "UTM content."
-          },
-          "utm_disease": {
-            "type": "string",
-            "description": "UTM disease tag — used in disease-targeted campaigns."
-          },
-          "utm_therapy_area": {
-            "type": "string",
-            "description": "UTM therapy-area tag."
-          },
-          "source_campaign": {
-            "type": "string",
-            "description": "Source campaign (alternate naming used by some campaigns)."
-          },
-          "source_medium": {
-            "type": "string",
-            "description": "Source medium."
-          },
-          "source_content": {
-            "type": "string",
-            "description": "Source content."
-          },
-          "plan_name": {
-            "type": "string",
-            "description": "Name of the plan / PSP / subscription the patient is enrolled in."
-          },
-          "plan_duration": {
-            "type": "string",
-            "description": "Plan duration (e.g. `3 months`, `12 months`)."
-          },
-          "plan_includes_cgm": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Boolean. Whether the plan includes a Continuous Glucose Monitor."
-          },
-          "cgm_brand": {
-            "type": "string",
-            "description": "CGM device brand (e.g. Abbott, Dexcom)."
-          },
-          "sensor_count": {
-            "type": "integer",
-            "description": "Number of CGM sensors included."
-          },
-          "transmitter_count": {
-            "type": "integer",
-            "description": "Number of CGM transmitters included."
-          },
-          "bca_device": {
-            "type": "string",
-            "description": "Body Composition Analyzer device, if part of the plan."
-          },
-          "recurrence": {
-            "type": "string",
-            "description": "Plan recurrence pattern (monthly / quarterly / annual)."
-          },
-          "program_duration": {
-            "type": "string",
-            "description": "Program / treatment duration."
-          },
-          "program_start_date": {
-            "type": "string",
-            "format": "date",
-            "description": "Date the program / treatment starts."
-          },
-          "program_end_date": {
-            "type": "string",
-            "format": "date",
-            "description": "Date the program / treatment ends."
-          },
-          "program_price": {
-            "type": "number",
-            "description": "Program price in INR."
-          },
-          "dx_landing_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: patient landed on the lab-test booking page. Stamp current time when the LSQ flag fires."
-          },
-          "dx_intent_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: patient indicated intent to book."
-          },
-          "dx_details_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: patient submitted personal details."
-          },
-          "dx_address_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: patient submitted address."
-          },
-          "dx_slot_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: patient selected a slot."
-          },
-          "dx_confirmed_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Diagnostic funnel step: booking confirmed."
-          },
-          "labtest_booked_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Lab test booking completed (terminal funnel step)."
-          },
-          "invoice_uploaded": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Boolean. Whether the patient has uploaded an invoice."
-          },
-          "invoice_amount": {
-            "type": "number",
-            "description": "Invoice amount in INR."
-          },
-          "payment_link": {
-            "type": "string",
-            "format": "uri",
-            "description": "URL the patient can use to complete payment."
-          },
-          "paying_status": {
-            "type": "string",
-            "description": "Free-text payment status (e.g. Paid, Pending, Defaulted)."
-          },
-          "coins_balance": {
-            "type": "integer",
-            "description": "Patient's loyalty/wallet coin balance."
-          },
-          "policy_number": {
-            "type": "string",
-            "description": "Insurer policy number (e.g. Program D policy)."
-          },
-          "member_id": {
-            "type": "string",
-            "description": "Insurer member identifier within the policy."
-          },
-          "priority_text": {
-            "type": "string",
-            "description": "Admin-only priority note."
-          },
-          "patient_indication": {
-            "type": "string",
-            "description": "Clinical indication (e.g. `HER2+ MBC`)."
-          },
-          "cancer_stage": {
-            "type": "string",
-            "description": "Cancer stage (e.g. `Stage IV`)."
-          },
-          "brain_mets_category": {
-            "type": "string",
-            "description": "Brain metastases category."
-          },
-          "tucavo_brain_mets": {
-            "type": "string",
-            "description": "Program A brain-mets indicator."
-          },
-          "side_effects": {
-            "type": "string",
-            "description": "Side effects experienced."
-          },
-          "side_effects_detail": {
-            "type": "string",
-            "description": "Free-text side-effects detail."
-          },
-          "pcr_received": {
-            "type": "string",
-            "description": "PCR (Pathology) report received status."
-          },
-          "reason_for_no_indication": {
-            "type": "string",
-            "description": "Reason if `patient_indication` couldn't be set."
-          },
-          "physio_or_dietician": {
-            "type": "integer",
-            "enum": [
-              0,
-              1
-            ],
-            "description": "Boolean. Whether the plan includes physio / dietician."
-          },
-          "tucatinib_chemo_cycle": {
-            "type": "integer",
-            "description": "Tucatinib chemo cycle number."
-          },
-          "tucatinib_indication": {
-            "type": "string",
-            "description": "Tucatinib clinical indication."
-          },
-          "tucatinib_psp": {
-            "type": "string",
-            "description": "Tucatinib Patient Support Program identifier."
-          },
-          "tucatinib_dosage": {
-            "type": "string",
-            "description": "Tucatinib dosage."
-          },
-          "tukavo_psp": {
-            "type": "string",
-            "description": "Program A Patient Support Program identifier."
-          },
-          "sigrima_pap_category": {
-            "type": "string",
-            "description": "Program B Patient Assistance Program category."
-          },
-          "sigrima_psp_category": {
-            "type": "string",
-            "description": "Program B PSP category."
-          },
-          "sigrima_psp_enabled": {
-            "type": "string",
-            "description": "Program B PSP enabled flag."
-          },
-          "ujvira_chemo_cycle_number": {
-            "type": "integer",
-            "description": "Program C chemo cycle number."
-          },
-          "ujvira_indication": {
-            "type": "string",
-            "description": "Program C clinical indication."
-          },
-          "ujvira_pap_category": {
-            "type": "string",
-            "description": "Program C PAP category."
-          },
-          "ujvira_dosage": {
-            "type": "string",
-            "description": "Program C dosage."
-          },
-          "nivo_chemo_cycle": {
-            "type": "integer",
-            "description": "Program H chemo cycle number."
-          },
-          "nivo_indication": {
-            "type": "string",
-            "description": "Program H clinical indication."
-          },
-          "nivo_pap_category": {
-            "type": "string",
-            "description": "Program H PAP category."
-          },
-          "nivo_dosage": {
-            "type": "string",
-            "description": "Program H dosage."
-          },
-          "capecitabine_dosage": {
-            "type": "string",
-            "description": "Capecitabine dosage."
-          },
-          "vivitra_enabled": {
-            "type": "string",
-            "description": "Vivitra (Trastuzumab biosimilar) enabled flag."
-          },
-          "vivitra_free_required": {
-            "type": "string",
-            "description": "Whether free Vivitra is required."
-          },
-          "vivitra_order_cycle_number": {
-            "type": "integer",
-            "description": "Vivitra order cycle."
-          },
-          "vivitra_order_id": {
-            "type": "string",
-            "description": "Vivitra order identifier."
-          },
-          "transition_from_sigrima": {
-            "type": "string",
-            "description": "Transition marker if patient came from Program B."
-          },
-          "transition_from_ujvira": {
-            "type": "string",
-            "description": "Transition marker if patient came from Program C."
-          },
-          "transition_old_to_new_pap": {
-            "type": "string",
-            "description": "Transition from old PAP to new PAP."
-          },
-          "rx_status": {
-            "type": "string",
-            "description": "Prescription review status (e.g. Pending / Approved / Rejected)."
-          },
-          "rx_reviewed_by": {
-            "type": "string",
-            "format": "email",
-            "description": "Email of the user who reviewed the prescription. Link to `User`."
-          },
-          "rx_rejection_reason": {
-            "type": "string",
-            "description": "Reason the prescription was rejected (if applicable)."
-          },
-          "substage": {
-            "type": "string",
-            "description": "**Program-scoped operational stage.** Link to `CRM Lead Substage`. Value format is `{program}-{substage_name}` (e.g. `Program D-Payment Link Sent`, `Program B-Patient Ready for Chemo`). Enumerate valid values for a program via [Lookups › Lead Substage](/api/reference-data). The universal `status` field on `CRM Lead` is independent of substage — see [Concepts › substages](/concepts).",
-            "example": "Program D-Payment Link Sent"
+            "description": "Row id, auto-generated. Omit on create; required to target an existing row on update."
           }
         }
       },
       "LabProfile": {
         "type": "object",
-        "description": "Child of `CRM Lead`. 22 fields. Lab values, vitals (height/weight/BMI), conditions (primary + co-morbid), and metabolic score / assessment data.",
+        "additionalProperties": true,
+        "description": "Lab profile child row. Fields vary by program and are key-specific — do not hardcode them. Discover the full set via DocType introspection: GET /api/resource/DocType/CRM Lab Profile (see the Schema section).",
         "properties": {
-          "hba1c": {
-            "type": "number",
-            "description": "HbA1c — 3-month average blood sugar (%)."
-          },
-          "fbs": {
-            "type": "number",
-            "description": "Fasting Blood Sugar (mg/dL)."
-          },
-          "ldl": {
-            "type": "number",
-            "description": "LDL Cholesterol (mg/dL)."
-          },
-          "hdl": {
-            "type": "number",
-            "description": "HDL Cholesterol (mg/dL)."
-          },
-          "vldl": {
-            "type": "number",
-            "description": "VLDL Cholesterol (mg/dL)."
-          },
-          "total_cholesterol": {
-            "type": "number",
-            "description": "Total Cholesterol (mg/dL)."
-          },
-          "triglycerides": {
-            "type": "number",
-            "description": "Triglycerides (mg/dL)."
-          },
-          "tsh": {
-            "type": "number",
-            "description": "TSH — Thyroid Stimulating Hormone."
-          },
-          "creatinine": {
-            "type": "number",
-            "description": "Creatinine (mg/dL) — kidney function marker."
-          },
-          "egfr": {
-            "type": "number",
-            "description": "eGFR — Estimated Glomerular Filtration Rate (kidney)."
-          },
-          "alt_sgpt": {
-            "type": "number",
-            "description": "ALT / SGPT — liver enzyme."
-          },
-          "ggt": {
-            "type": "number",
-            "description": "GGT — liver enzyme."
-          },
-          "height_feet": {
-            "type": "number",
-            "description": "Patient height in feet."
-          },
-          "weight_kg": {
-            "type": "number",
-            "description": "Patient weight in kg."
-          },
-          "bmi": {
-            "type": "number",
-            "description": "Body Mass Index. Caller-computed today (no auto-calc hook yet). Formula: `weight_kg / (height_meters^2)`."
-          },
-          "primary_condition": {
+          "name": {
             "type": "string",
-            "description": "Patient's primary medical condition. Free text today; will become a Link master when the option list is locked."
-          },
-          "comorbid_conditions": {
-            "type": "string",
-            "description": "Comma-separated co-morbid conditions. Will move to a child Table doctype when multi-select pattern is needed."
-          },
-          "initial_metabolic_score": {
-            "type": "number",
-            "description": "Initial metabolic score from assessment."
-          },
-          "final_metabolic_score": {
-            "type": "number",
-            "description": "Final / latest metabolic score."
-          },
-          "metabolic_questionnaire_link": {
-            "type": "string",
-            "format": "uri",
-            "description": "URL to the metabolic questionnaire PDF / form."
-          },
-          "assessment_responses": {
-            "type": "string",
-            "description": "Raw assessment payload — typically a JSON-as-string blob with all questionnaire responses."
-          },
-          "report_date": {
-            "type": "string",
-            "format": "date",
-            "description": "Date the lab report was generated (`YYYY-MM-DD`)."
+            "description": "Row id, auto-generated. Omit on create; required to target an existing row on update."
           }
         }
       },
       "CareProvidersProfile": {
         "type": "object",
-        "description": "Child of `CRM Lead`. 15 fields. The patient's care team (internal coaches + RM + therapist) and medical providers (treating doctor + hospital). UI label: 'Care & Providers'. The internal doctype name has no `&` (Frappe restriction).",
+        "additionalProperties": true,
+        "description": "Care providers profile child row. Fields vary by program and are key-specific — do not hardcode them. Discover the full set via DocType introspection: GET /api/resource/DocType/CRM Care Providers Profile (see the Schema section).",
         "properties": {
-          "success_coach_name": {
+          "name": {
             "type": "string",
-            "description": "Success Coach name — primary internal contact for the patient."
-          },
-          "rm_name": {
-            "type": "string",
-            "description": "Relationship Manager name — handles calls and follow-ups."
-          },
-          "therapist_name": {
-            "type": "string",
-            "description": "Therapist / counsellor name."
-          },
-          "diet_coach_name": {
-            "type": "string",
-            "description": "Diet coach name."
-          },
-          "exercise_coach_name": {
-            "type": "string",
-            "description": "Exercise coach name."
-          },
-          "abm_name": {
-            "type": "string",
-            "description": "Area Business Manager — operational lead handler for PSP-style engagements."
-          },
-          "doctor_name": {
-            "type": "string",
-            "description": "Treating doctor's short name."
-          },
-          "doctor_full_name": {
-            "type": "string",
-            "description": "Treating doctor's full name."
-          },
-          "hospital_name": {
-            "type": "string",
-            "description": "Hospital short name."
-          },
-          "hospital_full_name": {
-            "type": "string",
-            "description": "Hospital full name."
-          },
-          "hospital_city": {
-            "type": "string",
-            "description": "Hospital city short code."
-          },
-          "hospital_city_name": {
-            "type": "string",
-            "description": "Hospital city full name."
-          },
-          "hospital_state": {
-            "type": "string",
-            "description": "Hospital state."
-          },
-          "hospital_type": {
-            "type": "string",
-            "description": "Hospital type (e.g. Private, Government, Trust)."
-          },
-          "coach_appointment_booked_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp when the patient's first coach appointment was booked."
+            "description": "Row id, auto-generated. Omit on create; required to target an existing row on update."
           }
         }
       },
@@ -943,69 +470,6 @@
             "description": "Coarse grouping for reporting."
           }
         }
-      },
-      "UpsertLeadRequest": {
-        "type": "object",
-        "description": "Request body for `POST /api/method/tatva_connect.api.partner.lead_create`. Only `mobile_no` is strictly required (the dedup anchor); `first_name` and `status` are default-filled if missing (`(no name)` and `New`). All other fields are optional and must be within the fields your key is allowed to send (call `lead_schema` to see them). Partners never send routing — it's forced server-side. Profile children embed as arrays and merge field-by-field.",
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CRMLeadUniversal"
-          },
-          {
-            "type": "object",
-            "required": [
-              "mobile_no"
-            ]
-          }
-        ]
-      },
-      "UpsertLeadResponse": {
-        "type": "object",
-        "description": "DEPRECATED — superseded by the top-level partner contract (PartnerWriteResponse / PartnerBulkResponse). Retained only so old links don't dangle; the live API does NOT wrap partner payloads in `message`.",
-        "properties": {
-          "message": {
-            "type": "object",
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "description": "True on success."
-              },
-              "action": {
-                "type": "string",
-                "enum": [
-                  "created",
-                  "updated"
-                ],
-                "description": "Whether the lead was created or upserted onto an existing one."
-              },
-              "name": {
-                "type": "string",
-                "description": "CRM Lead primary key (e.g. `CRM-LEAD-2026-00123`). PUT this back to `lead_update`."
-              },
-              "source": {
-                "type": "string",
-                "description": "The lead's source (forced from your mapping for partners)."
-              },
-              "vertical": {
-                "type": "string",
-                "description": "The lead's product line (`custom_vertical`)."
-              },
-              "group": {
-                "type": "string",
-                "description": "The lead's group (`custom_group`)."
-              },
-              "program": {
-                "type": "string",
-                "description": "The lead's current program (`custom_current_program`)."
-              }
-            },
-            "required": [
-              "ok",
-              "name"
-            ]
-          }
-        },
-        "deprecated": true
       },
       "FrappeListResponse": {
         "type": "object",
@@ -1078,7 +542,7 @@
       },
       "Error": {
         "type": "object",
-        "description": "Frappe error envelope. Returned for HTTP 4xx/5xx — including a `lead_create` / `lead_update` failure (validation, permission, unknown Link value), which raises a normal Frappe error rather than a 200.",
+        "description": "Frappe error envelope. Returned for HTTP 4xx/5xx — including validation and permission failures (e.g. an unknown Link value), which raises a normal Frappe error rather than a 200.",
         "properties": {
           "exc_type": {
             "type": "string",
@@ -1371,609 +835,33 @@
             "description": "Set once keys are generated; the secret is never returned on read."
           }
         }
-      },
-      "BulkResultEntry": {
-        "type": "object",
-        "description": "DEPRECATED — superseded by the top-level partner contract (PartnerWriteResponse / PartnerBulkResponse). Retained only so old links don't dangle; the live API does NOT wrap partner payloads in `message`.",
-        "properties": {
-          "index": {
-            "type": "integer",
-            "description": "0-based position of this record in the request array."
-          },
-          "ok": {
-            "type": "boolean",
-            "description": "True if this record succeeded (its own savepoint committed)."
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "created",
-              "updated",
-              "deleted"
-            ],
-            "description": "What happened to this record (present only on success)."
-          },
-          "name": {
-            "type": "string",
-            "description": "CRM Lead id (present only on success)."
-          },
-          "error": {
-            "type": "string",
-            "description": "Failure message for this record (present only on failure)."
-          }
-        },
-        "required": [
-          "index",
-          "ok"
-        ],
-        "deprecated": true
-      },
-      "BulkResponse": {
-        "type": "object",
-        "description": "DEPRECATED — superseded by the top-level partner contract (PartnerWriteResponse / PartnerBulkResponse). Retained only so old links don't dangle; the live API does NOT wrap partner payloads in `message`.",
-        "properties": {
-          "message": {
-            "type": "object",
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "description": "Always true — the batch ran (individual rows may have failed)."
-              },
-              "total": {
-                "type": "integer",
-                "description": "Records received."
-              },
-              "succeeded": {
-                "type": "integer",
-                "description": "Records that committed."
-              },
-              "failed": {
-                "type": "integer",
-                "description": "Records that were rolled back and reported."
-              },
-              "results": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/BulkResultEntry"
-                },
-                "description": "Per-record outcome, in request order."
-              }
-            },
-            "required": [
-              "ok",
-              "total",
-              "succeeded",
-              "failed",
-              "results"
-            ]
-          }
-        },
-        "deprecated": true
-      },
-      "CuratedLead": {
-        "type": "object",
-        "description": "A lead as the caller is allowed to see it: their allowed parent fields plus the read-only identity/routing block (`name`, `source`, `custom_vertical`, `custom_group`, `custom_current_program`). `lead_get` / `lead_get_bulk` additionally inline the profile children (filtered to allowed fields); `lead_list` returns no children.",
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CRMLeadUniversal"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "CRM Lead primary key.",
-                "example": "CRM-LEAD-2026-00123"
-              },
-              "source": {
-                "type": "string",
-                "description": "Lead source (read-only; forced for partners)."
-              },
-              "custom_vertical": {
-                "type": "string",
-                "description": "Product line (read-only)."
-              },
-              "custom_group": {
-                "type": "string",
-                "description": "Group (read-only)."
-              },
-              "custom_current_program": {
-                "type": "string",
-                "description": "Current program (read-only)."
-              }
-            }
-          }
-        ]
-      },
-      "LeadUpdateRequest": {
-        "type": "object",
-        "description": "Request body for `lead_update`. Carries the CRM `name` (the id `lead_create` returned) plus any allowed fields to change. Parent fields you SEND are updated, fields you OMIT are left alone; profile children merge field-by-field. Partners may not change routing (it's forced).",
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/CRMLeadUniversal"
-          },
-          {
-            "type": "object",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "CRM Lead id to update.",
-                "example": "CRM-LEAD-2026-00123"
-              }
-            }
-          }
-        ]
-      },
-      "PartnerError": {
-        "type": "object",
-        "description": "The unified partner error envelope. **Every** failure on a `partner.*` method returns this exact shape — including framework-layer errors (bad key, malformed body) which an `after_request` normaliser rewrites — so you never see a raw Frappe `exc_type`/traceback. Read `error.code` (stable, machine-readable) to branch; show `error.message` to a human. The HTTP status mirrors the code.\n\n| `error.code` | HTTP | Meaning |\n|---|---|---|\n| `validation_error` | 400 | A field failed validation (often `error.fields` names it). |\n| `bad_request` | 400 | Malformed request body (e.g. invalid JSON). |\n| `unauthorized` | 401 | Missing/invalid API key. |\n| `forbidden` | 403 | Caller isn't a mapped partner or System Manager. |\n| `not_found` | 404 | Lead doesn't exist **or** is outside your line (identical — anti-enumeration). |\n| `duplicate` | 409 | A unique constraint was violated. |\n| `cannot_delete` | 409 | Lead has linked activity (calls/tasks/notes); message is generic by design. |\n| `rate_limited` | 429 | Over 100 req/60s for your key; `error.retry_after` = seconds to wait. |\n| `server_error` | 500 | Unexpected — logged our side; retry with backoff. |",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "error"
-            ],
-            "description": "Always `error` on a failure."
-          },
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": [
-                  "validation_error",
-                  "bad_request",
-                  "unauthorized",
-                  "forbidden",
-                  "not_found",
-                  "duplicate",
-                  "cannot_delete",
-                  "rate_limited",
-                  "server_error"
-                ],
-                "description": "Stable machine-readable code. Branch on this, not on the message text."
-              },
-              "message": {
-                "type": "string",
-                "description": "Human-readable message (safe to surface)."
-              },
-              "fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Present on some `validation_error`s — the field name(s) that failed."
-              },
-              "retry_after": {
-                "type": "integer",
-                "description": "Present only on `rate_limited` (429): seconds until your key's budget resets."
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ]
-          }
-        },
-        "required": [
-          "status",
-          "error"
-        ]
-      },
-      "PartnerWriteResponse": {
-        "type": "object",
-        "description": "Success envelope from `lead_create` / `lead_update` / `lead_delete`. **Top-level — there is no `message` wrapper** (the gated partner methods emit the body directly). Read `status` first, then `action`, then `data`. A failure instead returns the [PartnerError](#partnererror) envelope with a non-2xx status.",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "success"
-            ],
-            "description": "`success` on a 2xx."
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "created",
-              "updated",
-              "deleted"
-            ],
-            "description": "What happened: a new lead, an upsert onto an existing one, or a delete."
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "CRM Lead id (e.g. `CRM-LEAD-2026-00123`). PUT this back to `lead_update`."
-              },
-              "source": {
-                "type": "string",
-                "description": "Lead source (forced from your mapping for partners)."
-              },
-              "vertical": {
-                "type": "string",
-                "description": "Product line (`custom_vertical`)."
-              },
-              "group": {
-                "type": "string",
-                "description": "Group (`custom_group`)."
-              },
-              "program": {
-                "type": "string",
-                "description": "Current program (`custom_current_program`)."
-              }
-            },
-            "description": "On `deleted`, only `name` is present."
-          }
-        },
-        "required": [
-          "status",
-          "action",
-          "data"
-        ]
-      },
-      "PartnerReadResponse": {
-        "type": "object",
-        "description": "Success envelope from `lead_get` / `lead_list`. Top-level (no `message` wrapper). `action` is `fetched`; `data` carries the curated lead (`lead_get`) or the page object (`lead_list`).",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "success"
-            ]
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "fetched"
-            ]
-          },
-          "data": {
-            "description": "A `CuratedLead` (lead_get) or `{total,count,offset,limit,leads[]}` (lead_list)."
-          }
-        },
-        "required": [
-          "status",
-          "action",
-          "data"
-        ]
-      },
-      "PartnerSchemaResponse": {
-        "type": "object",
-        "description": "Success envelope from `lead_schema`. Top-level (no `message` wrapper), no `action`. `data` holds the fields THIS key may send/read, the child-write rules, dedup grain, bulk limits, and routing mode.",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "success"
-            ]
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "lead": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                },
-                "description": "Allowed parent (CRM Lead) fields."
-              },
-              "children": {
-                "type": "object",
-                "description": "Per child table: `{multi_row, key_field, fields[]}`. `multi_row:true` ⇒ upsert-by-key on `key_field`."
-              },
-              "child_write": {
-                "type": "string",
-                "description": "How to send child arrays + the upsert-by-key rule."
-              },
-              "dedup": {
-                "type": "string",
-                "description": "The lead grain (mobile_no + product line + group)."
-              },
-              "bulk": {
-                "type": "object",
-                "description": "`max_per_call`, `list_page_max`, allowed `list_filters`."
-              },
-              "routing": {
-                "type": "object",
-                "description": "`mode:forced` (partner, line fixed) or `caller-supplied` (internal)."
-              }
-            }
-          }
-        },
-        "required": [
-          "status",
-          "data"
-        ]
-      },
-      "PartnerBulkResultEntry": {
-        "type": "object",
-        "description": "One record's outcome in a bulk response. `status` is `success` or `error` per row. On `success`: `action`+`name` (writes) or `data` (lead_get_bulk). On `error`: the same `error:{code,message}` block as the top-level [PartnerError](#partnererror).",
-        "properties": {
-          "index": {
-            "type": "integer",
-            "description": "0-based position in the request array (results are input-ordered)."
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "success",
-              "error"
-            ]
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "created",
-              "updated",
-              "deleted"
-            ],
-            "description": "Present on a successful write row."
-          },
-          "name": {
-            "type": "string",
-            "description": "CRM Lead id (present on a successful write row)."
-          },
-          "data": {
-            "type": "object",
-            "description": "Curated lead (present on a successful `lead_get_bulk` row)."
-          },
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Present on a failed row (its savepoint rolled back)."
-          }
-        },
-        "required": [
-          "index",
-          "status"
-        ]
-      },
-      "PartnerBulkResponse": {
-        "type": "object",
-        "description": "Partial-success envelope shared by every bulk method. Top-level (no `message` wrapper). Each record runs in its own savepoint — one bad row reports its error, the rest still commit. `summary` is `{total,succeeded,failed}` for writes and `{requested,found,not_found}` for `lead_get_bulk`. Inspect `results[].status` per row; the HTTP status is 200 even when some rows failed.",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "success"
-            ],
-            "description": "`success` — the batch ran (individual rows may have failed)."
-          },
-          "summary": {
-            "type": "object",
-            "description": "Counts: writes ⇒ `{total,succeeded,failed}`; get ⇒ `{requested,found,not_found}`."
-          },
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PartnerBulkResultEntry"
-            },
-            "description": "Per-record outcome, in request order."
-          }
-        },
-        "required": [
-          "status",
-          "summary",
-          "results"
-        ]
       }
     },
     "examples": {
-      "MinimalUpsert": {
-        "summary": "Minimum viable — just enough to create a lead",
-        "description": "Only the dedup key (`mobile_no`) plus mandatory `first_name`/`status` (or let them default-fill). No routing, no profiles. Useful for an absolute-minimum smoke test.",
-        "value": {
-          "mobile_no": "+919999000099",
-          "first_name": "Test Lead",
-          "status": "New"
-        }
-      },
-      "UpsertWithRouting": {
-        "summary": "Minimum + routing — locked to a program",
-        "description": "Adds the 4 routing fields. Lead is now tagged to a specific vertical / group / program, which drives sales-rep assignment and reporting.",
-        "value": {
-          "mobile_no": "+919999000099",
-          "first_name": "Asha",
-          "last_name": "K",
-          "status": "New",
-          "source": "Mobile App",
-          "custom_vertical": "Product Line A",
-          "custom_group": "Group A",
-          "custom_current_program": "Program B",
-          "custom_origin_vertical": "Product Line A"
-        }
-      },
-      "UpsertWithOneProfile": {
-        "summary": "Add one profile child — lab values for an insurer lead",
-        "description": "Now we attach a Lab Profile row. Typical of an insurer pushing a lab-screened lead.",
-        "value": {
-          "mobile_no": "+919999000099",
-          "first_name": "Ramesh",
-          "status": "New",
-          "source": "Program D",
-          "custom_vertical": "Product Line B",
-          "custom_group": "Group B",
-          "custom_current_program": "Program D",
-          "custom_origin_vertical": "Product Line B",
-          "custom_lab_profile": [
-            {
-              "hba1c": 7.2,
-              "fbs": 138,
-              "report_date": "2026-05-18"
-            }
-          ]
-        }
-      },
-      "InsurerLabIntakeLead": {
-        "summary": "Full — insurer-screening lead (labs + policy + alt phone)",
-        "description": "Realistic shape for an inbound insurer feed. Plan Profile for policy/payment, Lab Profile for the full panel.",
-        "value": {
-          "mobile_no": "+919999000123",
-          "first_name": "Ramesh",
-          "last_name": "Kumar",
-          "custom_dob": "1965-03-15",
-          "custom_gender": "Male",
-          "custom_city": "Bangalore",
-          "custom_alternate_number": "+919811112222",
-          "status": "New",
-          "source": "Program D",
-          "custom_vertical": "Product Line B",
-          "custom_group": "Group B",
-          "custom_current_program": "Program D",
-          "custom_origin_vertical": "Product Line B",
-          "custom_plan_profile": [
-            {
-              "policy_number": "NB-XXXXXX",
-              "member_id": "M-XXXXXX",
-              "payment_link": "https://niva.example/pay/abc"
-            }
-          ],
-          "custom_lab_profile": [
-            {
-              "hba1c": 7.2,
-              "fbs": 138,
-              "ldl": 142,
-              "hdl": 38,
-              "tsh": 3.4,
-              "creatinine": 1.1,
-              "egfr": 78,
-              "bmi": 26.5,
-              "primary_condition": "Type 2 Diabetes",
-              "comorbid_conditions": "Hypertension, Hyperlipidemia",
-              "report_date": "2026-05-18"
-            }
-          ]
-        }
-      },
       "OncologyPSPLead": {
-        "summary": "Full — oncology PSP lead (drug program + care team)",
-        "description": "Realistic shape for an Group A Program B clinical lead. Plan Profile has drug-specific fields + the program substage; Care & Providers has the assigned coach + doctor + hospital.",
+        "summary": "Lead with child profiles",
         "value": {
-          "mobile_no": "+919800000001",
-          "first_name": "Sunita Rao",
-          "custom_dob": "1980-01-01",
-          "custom_gender": "Female",
-          "custom_caregiver_name": "Arjun Rao",
-          "custom_caregiver_phone": "+919800000011",
-          "custom_caregiver_relation": "Spouse",
-          "status": "New",
-          "source": "Landing Page MR Form",
-          "custom_vertical": "Product Line A",
-          "custom_group": "Group A",
-          "custom_current_program": "Program B",
-          "custom_origin_vertical": "Product Line A",
-          "custom_plan_profile": [
-            {
-              "patient_indication": "HER2+ MBC",
-              "cancer_stage": "Stage IV",
-              "sigrima_psp_category": "PSP A",
-              "vivitra_enabled": "Yes",
-              "substage": "Program B-Patient Ready for Chemo"
-            }
-          ],
-          "custom_care_providers_profile": [
-            {
-              "abm_name": "Vikram Iyer",
-              "success_coach_name": "Neha Gupta",
-              "doctor_name": "Dr. A. Sharma",
-              "hospital_name": "City Oncology Centre",
-              "hospital_city": "Pune"
-            }
-          ]
-        }
-      },
-      "WellnessSubscriptionLead": {
-        "summary": "Full — wellness subscription lead (plan + score + care team)",
-        "description": "Realistic shape for a Product Line C-style subscription sign-up. Plan Profile carries subscription + UTM; Lab Profile carries metabolic score; Care & Providers carries the assigned coach stack.",
-        "value": {
-          "mobile_no": "+919800000002",
-          "first_name": "Kabir Shah",
-          "status": "New",
-          "source": "Mobile App",
-          "custom_vertical": "Product Line B",
-          "custom_origin_vertical": "Product Line B",
-          "custom_plan_profile": [
-            {
-              "signup_date": "2026-04-15",
-              "platform": "Android",
-              "utm_source": "instagram",
-              "plan_name": "Wellness Plus",
-              "program_start_date": "2026-04-15",
-              "program_end_date": "2026-07-15",
-              "program_price": 4999,
-              "plan_includes_cgm": 1,
-              "cgm_brand": "Abbott"
-            }
-          ],
-          "custom_lab_profile": [
-            {
-              "initial_metabolic_score": 58,
-              "final_metabolic_score": 72,
-              "metabolic_questionnaire_link": "https://..."
-            }
-          ],
-          "custom_care_providers_profile": [
-            {
-              "success_coach_name": "Neha Gupta",
-              "rm_name": "Sanjay Menon",
-              "diet_coach_name": "Divya Rao"
-            }
-          ]
-        }
-      },
-      "UpsertSuccessCreated": {
-        "summary": "lead_create response — created",
-        "value": {
-          "status": "success",
-          "action": "created",
           "data": {
             "name": "CRM-LEAD-2026-00123",
-            "source": "Program D",
-            "vertical": "Product Line B",
-            "group": "Group B",
-            "program": "Program D"
-          }
-        }
-      },
-      "UpsertSuccessUpdated": {
-        "summary": "lead_create response — updated (existing lead found on the same line)",
-        "value": {
-          "status": "success",
-          "action": "updated",
-          "data": {
-            "name": "CRM-LEAD-2026-00056",
-            "source": "Program D",
-            "vertical": "Product Line B",
-            "group": "Group B",
-            "program": "Program D"
-          }
-        }
-      },
-      "UpsertFailure": {
-        "summary": "Failure — a raised Frappe error (non-2xx)",
-        "value": {
-          "status": "error",
-          "error": {
-            "code": "validation_error",
-            "message": "Please specify a reason for losing the lead."
+            "first_name": "Asha",
+            "mobile_no": "+919800000001",
+            "status": "New",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
+            "custom_current_program": "Program A",
+            "custom_plan_profile": [
+              {
+                "name": "a1b2c3d4e5",
+                "program_status": "Active",
+                "enrollment_date": "2026-05-01"
+              }
+            ],
+            "custom_lab_profile": [
+              {
+                "name": "f6g7h8i9j0",
+                "last_test_date": "2026-05-20"
+              }
+            ]
           }
         }
       },
@@ -2047,419 +935,6 @@
             "file_size": 184231
           }
         }
-      },
-      "LeadSchemaResponse": {
-        "summary": "lead_schema — a partner with a labs+plan grid",
-        "value": {
-          "status": "success",
-          "data": {
-            "lead": [
-              {
-                "fieldname": "mobile_no",
-                "label": "Mobile No",
-                "type": "Data",
-                "required": false,
-                "options": null
-              },
-              {
-                "fieldname": "first_name",
-                "label": "First Name",
-                "type": "Data",
-                "required": false,
-                "options": null
-              },
-              {
-                "fieldname": "status",
-                "label": "Status",
-                "type": "Link",
-                "required": true,
-                "options": "CRM Lead Status"
-              }
-            ],
-            "children": {
-              "custom_lab_profile": [
-                {
-                  "fieldname": "hba1c",
-                  "label": "HbA1c",
-                  "type": "Float",
-                  "required": false,
-                  "options": null
-                },
-                {
-                  "fieldname": "report_date",
-                  "label": "Report Date",
-                  "type": "Date",
-                  "required": false,
-                  "options": null
-                }
-              ],
-              "custom_plan_profile": [
-                {
-                  "fieldname": "policy_number",
-                  "label": "Policy Number",
-                  "type": "Data",
-                  "required": false,
-                  "options": null
-                }
-              ]
-            },
-            "child_write": "Send each child as a JSON array under its key, e.g. custom_lab_profile=[{...}]. The existing row is merged field-by-field.",
-            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
-            "bulk": {
-              "max_per_call": 100,
-              "list_page_max": 200,
-              "list_filters": [
-                "status",
-                "created_after",
-                "created_before",
-                "updated_after",
-                "updated_before",
-                "mobile_no"
-              ]
-            },
-            "routing": {
-              "mode": "forced",
-              "source": "Program D",
-              "vertical": "Metabolic",
-              "group": "Program D",
-              "program": "Program D",
-              "note": "Your routing is fixed. Any routing fields you send are ignored."
-            }
-          }
-        }
-      },
-      "LeadSchemaResponseInternal": {
-        "summary": "lead_schema — a trusted internal (System Manager) key",
-        "value": {
-          "status": "success",
-          "data": {
-            "lead": [
-              {
-                "fieldname": "mobile_no",
-                "label": "Mobile No",
-                "type": "Data",
-                "required": false,
-                "options": null
-              },
-              {
-                "fieldname": "first_name",
-                "label": "First Name",
-                "type": "Data",
-                "required": false,
-                "options": null
-              }
-            ],
-            "children": {},
-            "child_write": "Send each child as a JSON array under its key, e.g. custom_lab_profile=[{...}]. The existing row is merged field-by-field.",
-            "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same trio updates that lead; a different line creates a new one.",
-            "bulk": {
-              "max_per_call": 100,
-              "list_page_max": 200,
-              "list_filters": [
-                "status",
-                "created_after",
-                "created_before",
-                "updated_after",
-                "updated_before",
-                "mobile_no"
-              ]
-            },
-            "routing": {
-              "mode": "caller-supplied",
-              "fields": [
-                "source",
-                "custom_vertical",
-                "custom_group",
-                "custom_current_program"
-              ],
-              "note": "Trusted caller: send these routing fields in the body."
-            }
-          }
-        }
-      },
-      "CuratedLeadGet": {
-        "summary": "lead_get — one curated lead with children",
-        "value": {
-          "status": "success",
-          "action": "fetched",
-          "data": {
-            "first_name": "Asha",
-            "mobile_no": "+919000000001",
-            "status": "New",
-            "name": "CRM-LEAD-2026-00123",
-            "source": "Program D",
-            "custom_vertical": "Metabolic",
-            "custom_group": "Program D",
-            "custom_current_program": "Program D",
-            "custom_lab_profile": [
-              {
-                "hba1c": 7.2,
-                "report_date": "2026-05-30",
-                "name": "a1b2c3"
-              }
-            ],
-            "custom_plan_profile": [
-              {
-                "policy_number": "NB-POL-0001",
-                "program_start_date": "2026-05-01",
-                "name": "d4e5f6"
-              }
-            ]
-          }
-        }
-      },
-      "LeadUpdateRequest": {
-        "summary": "lead_update — flip status on a known lead",
-        "value": {
-          "name": "CRM-LEAD-2026-00123",
-          "status": "Contacted",
-          "custom_lab_profile": [
-            {
-              "hba1c": 6.9
-            }
-          ]
-        }
-      },
-      "LeadUpdateResponse": {
-        "summary": "lead_update — updated",
-        "value": {
-          "status": "success",
-          "action": "updated",
-          "data": {
-            "name": "CRM-LEAD-2026-00123",
-            "source": "Program D",
-            "vertical": "Metabolic",
-            "group": "Program D",
-            "program": "Program D"
-          }
-        }
-      },
-      "LeadDeleteResponse": {
-        "summary": "lead_delete — deleted",
-        "value": {
-          "status": "success",
-          "action": "deleted",
-          "data": {
-            "name": "CRM-LEAD-2026-00123"
-          }
-        }
-      },
-      "LeadCreateBulkRequest": {
-        "summary": "lead_create_bulk — two leads",
-        "value": {
-          "leads": [
-            {
-              "mobile_no": "9000000001",
-              "first_name": "Asha",
-              "custom_lab_profile": [
-                {
-                  "hba1c": 7.2
-                }
-              ]
-            },
-            {
-              "mobile_no": "9000000002",
-              "first_name": "Ravi",
-              "status": "New"
-            }
-          ]
-        }
-      },
-      "LeadUpdateBulkRequest": {
-        "summary": "lead_update_bulk — two updates by name",
-        "value": {
-          "updates": [
-            {
-              "name": "CRM-LEAD-2026-00123",
-              "status": "Contacted"
-            },
-            {
-              "name": "CRM-LEAD-2026-00124",
-              "custom_lab_profile": [
-                {
-                  "hba1c": 6.5
-                }
-              ]
-            }
-          ]
-        }
-      },
-      "LeadDeleteBulkRequest": {
-        "summary": "lead_delete_bulk — delete by name",
-        "value": {
-          "names": [
-            "CRM-LEAD-2026-00123",
-            "CRM-LEAD-2026-00124"
-          ]
-        }
-      },
-      "BulkSuccessMixed": {
-        "summary": "Bulk — partial success (one row failed)",
-        "value": {
-          "status": "success",
-          "summary": {
-            "total": 2,
-            "succeeded": 1,
-            "failed": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "action": "created",
-              "name": "CRM-LEAD-2026-00125"
-            },
-            {
-              "index": 1,
-              "status": "error",
-              "error": {
-                "code": "validation_error",
-                "message": "mobile_no is required"
-              }
-            }
-          ]
-        }
-      },
-      "BulkDeleteSuccess": {
-        "summary": "lead_delete_bulk — both deleted",
-        "value": {
-          "status": "success",
-          "summary": {
-            "total": 2,
-            "succeeded": 2,
-            "failed": 0
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "action": "deleted",
-              "name": "CRM-LEAD-2026-00123"
-            },
-            {
-              "index": 1,
-              "status": "success",
-              "action": "deleted",
-              "name": "CRM-LEAD-2026-00124"
-            }
-          ]
-        }
-      },
-      "LeadGetBulkRequestNames": {
-        "summary": "lead_get_bulk — by names",
-        "value": {
-          "names": [
-            "CRM-LEAD-2026-00123",
-            "CRM-LEAD-2026-00124"
-          ]
-        }
-      },
-      "LeadGetBulkRequestMobiles": {
-        "summary": "lead_get_bulk — by mobile_nos",
-        "value": {
-          "mobile_nos": [
-            "9000000001",
-            "9000000002"
-          ]
-        }
-      },
-      "LeadGetBulkResponse": {
-        "summary": "lead_get_bulk — found 1 of 2 (out-of-scope omitted)",
-        "value": {
-          "status": "success",
-          "summary": {
-            "requested": 2,
-            "found": 1,
-            "not_found": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "data": {
-                "first_name": "Asha",
-                "mobile_no": "+919000000001",
-                "status": "New",
-                "name": "CRM-LEAD-2026-00123",
-                "source": "Program D",
-                "custom_vertical": "Metabolic",
-                "custom_group": "Program D",
-                "custom_current_program": "Program D",
-                "custom_lab_profile": [
-                  {
-                    "hba1c": 7.2,
-                    "report_date": "2026-05-30",
-                    "name": "a1b2c3"
-                  }
-                ]
-              }
-            },
-            {
-              "index": 1,
-              "status": "error",
-              "error": {
-                "code": "not_found",
-                "message": "Lead not found"
-              }
-            }
-          ]
-        }
-      },
-      "LeadListResponse": {
-        "summary": "lead_list — page of curated leads (no children)",
-        "value": {
-          "status": "success",
-          "action": "fetched",
-          "data": {
-            "total": 137,
-            "count": 2,
-            "offset": 0,
-            "limit": 20,
-            "leads": [
-              {
-                "first_name": "Asha",
-                "mobile_no": "+919000000001",
-                "status": "New",
-                "name": "CRM-LEAD-2026-00123",
-                "source": "Program D",
-                "custom_vertical": "Metabolic",
-                "custom_group": "Program D",
-                "custom_current_program": "Program D"
-              },
-              {
-                "first_name": "Ravi",
-                "mobile_no": "+919000000002",
-                "status": "Contacted",
-                "name": "CRM-LEAD-2026-00124",
-                "source": "Program D",
-                "custom_vertical": "Metabolic",
-                "custom_group": "Program D",
-                "custom_current_program": "Program D"
-              }
-            ]
-          }
-        }
-      },
-      "RateLimitedError": {
-        "summary": "429 — rate limited",
-        "value": {
-          "status": "error",
-          "error": {
-            "code": "rate_limited",
-            "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-            "retry_after": 42
-          }
-        }
-      },
-      "NotFoundError": {
-        "summary": "404 — not found / out of scope (identical)",
-        "value": {
-          "status": "error",
-          "error": {
-            "code": "not_found",
-            "message": "Lead not found"
-          }
-        }
       }
     }
   },
@@ -2504,8 +979,8 @@
         "tags": [
           "Leads"
         ],
-        "summary": "List leads",
-        "description": "Standard Frappe list endpoint. Returns the requested `fields` for leads matching `filters`, paginated.\n\nFilter operator vocabulary, pagination, and `--data-urlencode` curl pattern are explained in [Read](/api/leads).",
+        "summary": "List Leads",
+        "description": "Standard Frappe list endpoint. Returns the requested `fields` for leads matching `filters`, paginated.\n\nFilter operator vocabulary, pagination, and `--data-urlencode` curl pattern are explained in the [REST API](/frappe-rest-api) guide.",
         "parameters": [
           {
             "name": "filters",
@@ -2572,7 +1047,7 @@
                       "custom_vertical": "Oncology",
                       "custom_group": "Group A",
                       "custom_current_program": "Program H",
-                      "lead_owner": "riya.nair@tatvacare.in",
+                      "lead_owner": "agent@example.com",
                       "creation": "2026-06-01 10:32:14.000000"
                     }
                   ]
@@ -2586,8 +1061,8 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Create a lead",
-        "description": "Standard Frappe create. **Internal System Manager keys only** — partner keys get 403 here and must use `lead_create`. **Prefer `lead_create`** anyway unless you specifically need create-only semantics (e.g. you've verified the lead doesn't exist and want a hard error if it does).\n\nUnlike `lead_create`: not idempotent on the lead grain, will not merge with an existing lead, and does not enforce the partner allowed-fields/routing rules.",
+        "summary": "Create Lead",
+        "description": "Standard Frappe create. **Internal System Manager keys only** — partner keys get 403 here and must use the partner [Create Lead](/partner-api) method. **Prefer the partner Create Lead method** anyway unless you specifically need create-only semantics (e.g. you've verified the lead doesn't exist and want a hard error if it does).\n\nUnlike the partner create: not idempotent on the lead grain, will not merge with an existing lead, and does not enforce per-key allowed fields or routing rules.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2596,7 +1071,7 @@
                 "$ref": "#/components/schemas/CRMLeadUniversal"
               },
               "examples": {
-                "Oncology PSP": {
+                "Lead with profiles": {
                   "$ref": "#/components/examples/OncologyPSPLead"
                 }
               }
@@ -2621,7 +1096,7 @@
                     "custom_vertical": "Oncology",
                     "custom_group": "Group A",
                     "custom_current_program": "Program H",
-                    "lead_owner": "riya.nair@tatvacare.in",
+                    "lead_owner": "agent@example.com",
                     "creation": "2026-06-01 10:32:14.000000"
                   }
                 }
@@ -2654,7 +1129,7 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Read one lead",
+        "summary": "Get Lead",
         "description": "Returns the full lead doc, INCLUDING all child Table fields (`custom_plan_profile`, `custom_lab_profile`, `custom_care_providers_profile`) inline as arrays. Each array is `[]` if no row exists, otherwise `[{...}]` with all fields.",
         "responses": {
           "200": {
@@ -2674,7 +1149,7 @@
                     "custom_vertical": "Oncology",
                     "custom_group": "Group A",
                     "custom_current_program": "Program H",
-                    "lead_owner": "riya.nair@tatvacare.in",
+                    "lead_owner": "agent@example.com",
                     "creation": "2026-06-01 10:32:14.000000",
                     "custom_plan_profile": [
                       {
@@ -2703,8 +1178,8 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Update a lead",
-        "description": "Send only changed fields. **Internal System Manager keys only** — partner keys get 403 here and must use `lead_update`.\n\n### Profile child semantics\n\nA raw PUT with `custom_plan_profile: [{...}]` **REPLACES** the entire array. To update a single field on the existing row without losing the rest, use **read-modify-write**:\n\n```python\nlead = GET /api/resource/CRM Lead/{name}\nrow  = (lead.custom_plan_profile or [{}])[0]\nrow['dx_landing_at'] = '2026-06-02 10:15:00'\nPUT /api/resource/CRM Lead/{name}  body={'custom_plan_profile': [row]}\n```\n\n**Or just use [`lead_update`](/api/leads)** — it merges your fields into the existing child row automatically (no read-modify-write needed).",
+        "summary": "Update Lead",
+        "description": "Send only changed fields. **Internal System Manager keys only** — partner keys get 403 here and must use the partner [Update Lead](/partner-api) method.\n\n### Profile child semantics\n\nA raw PUT with `custom_plan_profile: [{...}]` **REPLACES** the entire array. To update a single field on the existing row without losing the rest, use **read-modify-write**:\n\n```python\nlead = GET /api/resource/CRM Lead/{name}\nrow  = (lead.custom_plan_profile or [{}])[0]\nrow['dx_landing_at'] = '2026-06-02 10:15:00'\nPUT /api/resource/CRM Lead/{name}  body={'custom_plan_profile': [row]}\n```\n\n**Or use the partner [Update Lead](/partner-api) method** — it merges your fields into the existing child row automatically (no read-modify-write needed).",
         "requestBody": {
           "required": true,
           "content": {
@@ -2733,7 +1208,7 @@
                     "custom_vertical": "Oncology",
                     "custom_group": "Group A",
                     "custom_current_program": "Program H",
-                    "lead_owner": "riya.nair@tatvacare.in",
+                    "lead_owner": "agent@example.com",
                     "creation": "2026-06-01 10:32:14.000000"
                   }
                 }
@@ -2746,7 +1221,7 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Delete a lead",
+        "summary": "Delete Lead",
         "description": "Hard delete. Use sparingly. **For lifecycle-end leads, prefer setting `status` to `Junk` or `Unqualified` instead** — preserves history for reporting.",
         "responses": {
           "200": {
@@ -2773,7 +1248,7 @@
             "type": "string"
           },
           "example": "CRM-LEAD-2026-00123",
-          "description": "CRM Lead primary key. Obtained from a prior write response (`message.name` from `lead_create`) or a list query."
+          "description": "CRM Lead primary key. Obtained from a prior write response (`data.name` from a create) or a list query."
         }
       ]
     },
@@ -2782,7 +1257,7 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Count records",
+        "summary": "Count Records",
         "description": "Returns the number of records matching the filters. Useful for pre-write checks (e.g. duplicate phone count before insert) and dashboard counts.",
         "parameters": [
           {
@@ -3307,7 +1782,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "List users",
+        "summary": "List Users",
         "description": "List agents and integration accounts. Filter to active users; this is also how you resolve a valid `lead_owner` before assigning a lead.\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'filters=[[\"enabled\",\"=\",1]]' \\\n  --data-urlencode 'fields=[\"name\",\"full_name\",\"enabled\"]' \\\n  https://one.tatvacare.in/api/resource/User\n```",
         "parameters": [
           {
@@ -3354,8 +1829,8 @@
                 "example": {
                   "data": [
                     {
-                      "name": "riya.nair@tatvacare.in",
-                      "email": "riya.nair@tatvacare.in",
+                      "name": "agent@example.com",
+                      "email": "agent@example.com",
                       "full_name": "Riya Nair",
                       "enabled": 1,
                       "roles": [
@@ -3375,7 +1850,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "Create a user",
+        "summary": "Create User",
         "description": "Create a `User`, assigning roles inline (roles are a child table, so set them here rather than via a separate call). Set `send_welcome_email: 1` to trigger Frappe's password-set email.\n\nFor an **integration** account, create it with the role(s) it needs, then mint its keys with `generate_keys` below.",
         "requestBody": {
           "required": true,
@@ -3391,7 +1866,7 @@
                   "email": {
                     "type": "string",
                     "format": "email",
-                    "example": "new-agent@tatvacare.in"
+                    "example": "new-agent@example.com"
                   },
                   "first_name": {
                     "type": "string",
@@ -3441,8 +1916,8 @@
                 },
                 "example": {
                   "data": {
-                    "name": "riya.nair@tatvacare.in",
-                    "email": "riya.nair@tatvacare.in",
+                    "name": "agent@example.com",
+                    "email": "agent@example.com",
                     "full_name": "Riya Nair",
                     "enabled": 1,
                     "roles": [
@@ -3463,8 +1938,8 @@
         "tags": [
           "Users"
         ],
-        "summary": "Read a user",
-        "description": "Fetch a user by email. The returned doc embeds the `roles` child table — the list of roles that decides the account's capabilities (see [Roles & permissions](/api/roles-and-permissions)).\n\nNote: the built-in `Administrator` account is specially protected and returns `403`; ordinary users read fine.",
+        "summary": "Get User",
+        "description": "Fetch a user by email. The returned doc embeds the `roles` child table — the list of roles that decides the account's capabilities (see [Access control](/api/access-control)).\n\nNote: the built-in `Administrator` account is specially protected and returns `403`; ordinary users read fine.",
         "parameters": [
           {
             "name": "email",
@@ -3492,8 +1967,8 @@
                 },
                 "example": {
                   "data": {
-                    "name": "riya.nair@tatvacare.in",
-                    "email": "riya.nair@tatvacare.in",
+                    "name": "agent@example.com",
+                    "email": "agent@example.com",
                     "full_name": "Riya Nair",
                     "enabled": 1,
                     "roles": [
@@ -3512,7 +1987,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "Update a user",
+        "summary": "Update User",
         "description": "Partial update. Common admin uses: disable an account (`{\"enabled\": 0}`) or change its roles. Roles are a child table — send the **full** desired `roles` array (it replaces the existing set).",
         "parameters": [
           {
@@ -3575,8 +2050,8 @@
                 },
                 "example": {
                   "data": {
-                    "name": "riya.nair@tatvacare.in",
-                    "email": "riya.nair@tatvacare.in",
+                    "name": "agent@example.com",
+                    "email": "agent@example.com",
                     "full_name": "Riya Nair",
                     "enabled": 1,
                     "roles": [
@@ -3597,12 +2072,12 @@
         "tags": [
           "Users"
         ],
-        "summary": "Generate API keys for a user",
-        "description": "Mint an `api_key` + `api_secret` for a user — this is how an integration account gets the credentials described in [Authentication](/api/authentication).\n\n> **⚠ This rotates the secret.** Calling it **invalidates the user's previous `api_secret`** immediately. The new secret is returned **once, in this response, and never again** — capture it now or you'll have to regenerate (breaking the old one). The `api_key` is set on the user doc; the secret is only ever shown here.",
+        "summary": "Generate API Keys",
+        "description": "Mint an `api_key` + `api_secret` for a user — how an integration account gets the credentials described in [Authentication](/api/authentication). Requires the System Manager role.\n\n> **⚠ This rotates the secret.** Calling it invalidates the user's previous `api_secret` immediately. The new secret is returned **once, in this response, and never again**. The `api_key` stays on the user record; the secret is shown only here.",
         "requestBody": {
           "required": true,
           "content": {
-            "application/x-www-form-urlencoded": {
+            "application/json": {
               "schema": {
                 "type": "object",
                 "required": [
@@ -3611,9 +2086,11 @@
                 "properties": {
                   "user": {
                     "type": "string",
-                    "format": "email",
-                    "example": "you@yourcompany.com"
+                    "description": "Email of the account to mint keys for, e.g. integration@example.com"
                   }
+                },
+                "example": {
+                  "user": "integration@example.com"
                 }
               }
             }
@@ -3651,9 +2128,9 @@
     "/api/resource/Role": {
       "get": {
         "tags": [
-          "Roles and Permissions"
+          "Access control"
         ],
-        "summary": "List roles",
+        "summary": "List Roles",
         "description": "Every role defined on the site. The `name` of a role is what you'd assign to a user.",
         "parameters": [
           {
@@ -3713,9 +2190,9 @@
     "/api/resource/Role Profile": {
       "get": {
         "tags": [
-          "Roles and Permissions"
+          "Access control"
         ],
-        "summary": "List role profiles",
+        "summary": "List Role Profiles",
         "description": "Role Profiles bundle several roles under one name, so you can grant a consistent set in one assignment instead of listing roles individually.",
         "parameters": [
           {
@@ -3764,10 +2241,10 @@
     "/api/method/frappe.client.has_permission": {
       "get": {
         "tags": [
-          "Roles and Permissions"
+          "Access control"
         ],
-        "summary": "Check a permission",
-        "description": "Ask whether the **current key's user** has a given permission on a doctype (optionally a specific record). Returns `{\"message\": {\"has_permission\": 1}}` or `0`. Use it to fail fast in your integration before attempting a write.",
+        "summary": "Check Permission",
+        "description": "Ask whether the **current key's user** has a given permission on a specific record (`doctype` + `docname` are both required; `perm_type` defaults to `read`). Returns `{\"message\": {\"has_permission\": 1}}` or `0`. Use it to fail fast in your integration before attempting a write.",
         "parameters": [
           {
             "name": "doctype",
@@ -3784,7 +2261,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "Optional — check on a specific record."
+            "description": "Optional — check on a specific record.",
+            "required": true
           },
           {
             "name": "perm_type",
@@ -3832,10 +2310,10 @@
     "/api/resource/User Permission": {
       "get": {
         "tags": [
-          "Roles and Permissions"
+          "Access control"
         ],
-        "summary": "List record-level scoping",
-        "description": "The row-level restrictions in force. Filter by `user` to see exactly which records a key's user is scoped to. No rows for a user = unrestricted (a manager who sees everything).\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'filters=[[\"user\",\"=\",\"agent-anaya@tatvacare.in\"]]' \\\n  https://one.tatvacare.in/api/resource/User%20Permission\n```",
+        "summary": "List User Permissions",
+        "description": "The row-level restrictions in force. Filter by `user` to see exactly which records a key's user is scoped to. No rows for a user = unrestricted (a manager who sees everything).\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'filters=[[\"user\",\"=\",\"agent@example.com\"]]' \\\n  https://one.tatvacare.in/api/resource/User%20Permission\n```",
         "parameters": [
           {
             "name": "filters",
@@ -3843,7 +2321,7 @@
             "schema": {
               "type": "string"
             },
-            "example": "[[\"user\",\"=\",\"agent-anaya@tatvacare.in\"]]"
+            "example": "[[\"user\",\"=\",\"agent@example.com\"]]"
           }
         ],
         "responses": {
@@ -3866,7 +2344,7 @@
                   "data": [
                     {
                       "name": "p1q2r3",
-                      "user": "riya.nair@tatvacare.in",
+                      "user": "agent@example.com",
                       "allow": "CRM Group",
                       "for_value": "Group A",
                       "applicable_for": "CRM Lead"
@@ -3880,9 +2358,9 @@
       },
       "post": {
         "tags": [
-          "Roles and Permissions"
+          "Access control"
         ],
-        "summary": "Create a record-level restriction",
+        "summary": "Create User Permission",
         "description": "Restrict a user to specific records. Example: scope an agent to only the `Group A` group — `{\"user\":\"agent@…\",\"allow\":\"CRM Group\",\"for_value\":\"Group A\"}`. After this, that user's lead lists silently exclude everything else. Managers (no User Permission rows) keep seeing all.",
         "requestBody": {
           "required": true,
@@ -3899,7 +2377,7 @@
                   "user": {
                     "type": "string",
                     "format": "email",
-                    "example": "agent-anaya@tatvacare.in"
+                    "example": "agent@example.com"
                   },
                   "allow": {
                     "type": "string",
@@ -3936,7 +2414,7 @@
                 "example": {
                   "data": {
                     "name": "p1q2r3",
-                    "user": "riya.nair@tatvacare.in",
+                    "user": "agent@example.com",
                     "allow": "CRM Group",
                     "for_value": "Group A",
                     "applicable_for": "CRM Lead"
@@ -4693,7 +3171,7 @@
         "tags": [
           "Jobs"
         ],
-        "summary": "List scheduled jobs",
+        "summary": "List Jobs",
         "description": "Every scheduled job and its schedule. `stopped=1` is disabled; `last_execution` is null if it has never run (e.g. scheduler paused). Filter `method like \"%tatva_connect%\"` for just the custom jobs.\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'fields=[\"name\",\"method\",\"frequency\",\"cron_format\",\"stopped\",\"last_execution\"]' \\\n  --data-urlencode 'limit_page_length=0' \\\n  'https://one.tatvacare.in/api/resource/Scheduled Job Type'\n```",
         "parameters": [
           {
@@ -4760,7 +3238,7 @@
         "tags": [
           "Jobs"
         ],
-        "summary": "Read one scheduled job",
+        "summary": "Get Job",
         "description": "Full definition of a single job, e.g. `templates_sync.scheduled_sync_all`.",
         "parameters": [
           {
@@ -4806,7 +3284,7 @@
         "tags": [
           "Jobs"
         ],
-        "summary": "Scheduled job execution history",
+        "summary": "Job History",
         "description": "Did a job run, and did it fail? `status` is `Complete` / `Failed` / `Scheduled`; a failed row's `details` holds the traceback.\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'filters=[[\"scheduled_job_type\",\"=\",\"templates_sync.scheduled_sync_all\"]]' \\\n  --data-urlencode 'order_by=creation desc' \\\n  --data-urlencode 'limit_page_length=20' \\\n  'https://one.tatvacare.in/api/resource/Scheduled Job Log'\n```",
         "parameters": [
           {
@@ -4953,7 +3431,7 @@
         }
       }
     },
-    "/api/resource/WATI Account Routing": {
+    "/api/resource/CRM WATI Account Routing": {
       "post": {
         "tags": [
           "WhatsApp"
@@ -5018,7 +3496,7 @@
         }
       }
     },
-    "/api/resource/Acefone Account": {
+    "/api/resource/CRM Acefone Account": {
       "post": {
         "tags": [
           "Telephony"
@@ -5094,7 +3572,7 @@
         }
       }
     },
-    "/api/resource/Acefone Account Routing": {
+    "/api/resource/CRM Acefone Account Routing": {
       "post": {
         "tags": [
           "Telephony"
@@ -5162,7 +3640,7 @@
     "/api/resource/Error Log": {
       "get": {
         "tags": [
-          "Errors & Logs"
+          "Logs"
         ],
         "summary": "List recent errors",
         "description": "Server-side exceptions/tracebacks (everything `frappe.log_error` writes). `method` is the error title — filter `method like \"%WATI%\"` or `%Acefone%` for an integration. Read one by name to get the full traceback in `error`.\n\n```bash\ncurl -G -H 'Authorization: token KEY:SECRET' \\\n  --data-urlencode 'fields=[\"name\",\"method\",\"creation\"]' \\\n  --data-urlencode 'order_by=creation desc' --data-urlencode 'limit_page_length=30' \\\n  'https://one.tatvacare.in/api/resource/Error Log'\n```",
@@ -5235,7 +3713,7 @@
     "/api/resource/Integration Request": {
       "get": {
         "tags": [
-          "Errors & Logs"
+          "Logs"
         ],
         "summary": "List outbound provider calls",
         "description": "Every outbound HTTP call we make to a provider (WATI, Acefone) with its response. `status` = Completed/Failed; `url` = the endpoint (filter `url like \"%wati.io%\"` or `%acefone%`); `data`/`output` = request sent / raw provider response; `error` = failure detail.",
@@ -5311,7 +3789,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Create a task on a lead",
+        "summary": "Create Task",
         "description": "Create a `CRM Task`. Setting `assigned_to` auto-creates the assignment ToDo and notifies the agent. If the linked lead's Product Line / Group / Program + `custom_task_type` matches a checklist template, the task is seeded with checklist rows and **cannot be set `Done`** until every required item is ticked.",
         "requestBody": {
           "required": true,
@@ -5348,7 +3826,7 @@
                   },
                   "assigned_to": {
                     "type": "string",
-                    "example": "agent@tatvacare.in",
+                    "example": "agent@example.com",
                     "description": "User email — auto-creates ToDo + notifies."
                   },
                   "reference_doctype": {
@@ -5380,7 +3858,7 @@
                     "custom_task_type": "Call Lead",
                     "reference_doctype": "CRM Lead",
                     "reference_docname": "CRM-LEAD-2026-00001",
-                    "assigned_to": "riya.nair@tatvacare.in",
+                    "assigned_to": "agent@example.com",
                     "due_date": "2026-06-05 18:00:00"
                   }
                 }
@@ -5393,7 +3871,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "List tasks",
+        "summary": "List Tasks",
         "description": "Standard REST list. Filter by `reference_docname` to get a lead's tasks.",
         "parameters": [
           {
@@ -5430,7 +3908,7 @@
                       "custom_task_type": "Call Lead",
                       "reference_doctype": "CRM Lead",
                       "reference_docname": "CRM-LEAD-2026-00001",
-                      "assigned_to": "riya.nair@tatvacare.in",
+                      "assigned_to": "agent@example.com",
                       "due_date": "2026-06-05 18:00:00"
                     }
                   ]
@@ -5446,7 +3924,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Create/ensure a follow-up task",
+        "summary": "Follow-up Task",
         "description": "Ensure ONE open task of `task_type` for a lead (throttle: one open task per lead per type). Returns the existing open task name if one exists, else creates it. This is the same method the inbound-WhatsApp event calls.",
         "requestBody": {
           "required": true,
@@ -5473,7 +3951,7 @@
                   },
                   "assigned_to": {
                     "type": "string",
-                    "example": "agent@tatvacare.in",
+                    "example": "agent@example.com",
                     "description": "Optional; defaults to unassigned."
                   },
                   "title": {
@@ -5502,12 +3980,12 @@
         }
       }
     },
-    "/api/method/tatva_connect.automation.registry.list_automations": {
+    "/api/method/tatva_connect.tatva_connect.registry.list_automations": {
       "get": {
         "tags": [
           "Automations"
         ],
-        "summary": "List all active automations",
+        "summary": "List Automations",
         "description": "Read-only inventory of every live automation — code layer (doc_events, scheduler_events, override_*) and config layer (Assignment Rule, Server Script, Notification). System Manager only.",
         "parameters": [
           {
@@ -5590,7 +4068,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Create an assignment rule",
+        "summary": "Create Assignment Rule",
         "description": "Auto-assign leads to agents. One rule per Group (or Program), most-specific via `assign_condition`. No global default — an unmatched lead stays unowned. Fires on lead insert/update; the assignee is written to `lead_owner`. `name` is prompt-named — set it. System Manager only.",
         "requestBody": {
           "required": true,
@@ -5636,10 +4114,10 @@
                     },
                     "example": [
                       {
-                        "user": "a@tatvacare.in"
+                        "user": "a@example.com"
                       },
                       {
-                        "user": "b@tatvacare.in"
+                        "user": "b@example.com"
                       }
                     ]
                   },
@@ -5688,7 +4166,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "List assignment rules",
+        "summary": "List Assignment Rules",
         "parameters": [
           {
             "name": "filters",
@@ -5721,7 +4199,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Standard REST list — the routing rules in force. Useful fields: `disabled`, `priority`, `assign_condition`, and the `users` pool. Filter `document_type = \"CRM Lead\"` for lead routing."
       }
     },
     "/api/resource/Assignment Rule/{name}": {
@@ -5729,7 +4208,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Update / toggle an assignment rule",
+        "summary": "Update Assignment Rule",
         "description": "Disable (`{\"disabled\":1}`), edit users, or change the condition.",
         "parameters": [
           {
@@ -5786,7 +4265,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Create a task type",
+        "summary": "Create Task Type",
         "description": "The type vocabulary referenced by `CRM Task.custom_task_type` and by checklist templates. `name = type_name`.",
         "requestBody": {
           "required": true,
@@ -5832,7 +4311,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "List task types",
+        "summary": "List Task Types",
         "responses": {
           "200": {
             "description": "List of task types.",
@@ -5851,7 +4330,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Standard REST list of the task-type vocabulary. The `name` is the value `CRM Task.custom_task_type` references."
       }
     },
     "/api/resource/CRM Task Checklist Template": {
@@ -5859,7 +4339,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "Create a checklist template",
+        "summary": "Create Checklist Template",
         "description": "Defines the close-gate checklist for a `task_type`, scoped by optional Product Line / Group / Program (most-specific wins, no global default). A task gets these rows seeded when its lead + type match; required rows must be ticked before `Done`.",
         "requestBody": {
           "required": true,
@@ -5954,7 +4434,7 @@
         "tags": [
           "Automations"
         ],
-        "summary": "List checklist templates",
+        "summary": "List Checklist Templates",
         "parameters": [
           {
             "name": "filters",
@@ -5989,6 +4469,250 @@
                           "required": 0
                         }
                       ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Standard REST list. Filter by `task_type` to see which template would seed a task of that type, and its Product Line / Group / Program scoping."
+      }
+    },
+    "/api/resource/System Settings/System Settings": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Get System Settings",
+        "description": "The site-wide settings document — locale, session expiry, password policy, backup count, and more. A singleton: the doctype and the record share the same name.\n\nThis is the API equivalent of Desk’s System Settings screen.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "name": "System Settings",
+                    "time_zone": "Asia/Kolkata",
+                    "session_expiry": "720:00",
+                    "backup_limit": 3
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/frappe.utils.change_log.get_versions": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "App Versions",
+        "description": "Every installed app with its version and branch. The fastest way to answer “what is running on this site?” — check it before reporting a bug or planning an upgrade.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": {
+                    "frappe": {
+                      "title": "Frappe Framework",
+                      "branch": "version-15",
+                      "version": "15.107.2"
+                    },
+                    "crm": {
+                      "title": "Frappe CRM",
+                      "branch": "main",
+                      "version": "1.71.0"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/frappe.utils.scheduler.get_scheduler_status": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Scheduler Status",
+        "description": "Is the background scheduler running? `active` means scheduled jobs fire on time; `inactive` means nothing scheduled runs — check this first when a sync looks stale. See [Jobs](/api/jobs) for the job inventory and run history.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": {
+                    "status": "active"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Webhook": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "List Webhooks",
+        "description": "Outbound webhooks configured on the site — which record type and event each one fires on, and where it posts. `enabled=0` rows are configured but dormant.",
+        "parameters": [
+          {
+            "name": "filters",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[[\"enabled\",\"=\",1]]"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[\"name\",\"webhook_doctype\",\"webhook_docevent\",\"enabled\",\"request_url\"]"
+          },
+          {
+            "name": "limit_page_length",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 0
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "name": "lead-sync-hook",
+                      "webhook_doctype": "CRM Lead",
+                      "webhook_docevent": "on_update",
+                      "enabled": 1
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Notification": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "List Notifications",
+        "description": "Configured alert rules — emails or system notifications that fire when a record matches a condition (e.g. days after a date field, or on a value change). The config-layer sibling of the code-layer hooks in [Automations](/api/automations).",
+        "parameters": [
+          {
+            "name": "filters",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[[\"enabled\",\"=\",1]]"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[\"name\",\"document_type\",\"event\",\"enabled\"]"
+          },
+          {
+            "name": "limit_page_length",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 0
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "name": "task-overdue-alert",
+                      "document_type": "CRM Task",
+                      "event": "Days After",
+                      "enabled": 1
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resource/Custom Field": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "List Custom Fields",
+        "description": "Every field added on top of stock doctypes, shipped as code and applied on migrate (see [Server hooks](/frappe-hooks) for the fixtures seam). Filter by `dt` to see what we added to one doctype — e.g. all `custom_*` fields on the lead.",
+        "parameters": [
+          {
+            "name": "filters",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[[\"dt\",\"=\",\"CRM Lead\"]]"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "[\"name\",\"dt\",\"fieldname\",\"fieldtype\",\"label\"]"
+          },
+          {
+            "name": "limit_page_length",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "example": 0
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "name": "CRM Lead-custom_vertical",
+                      "dt": "CRM Lead",
+                      "fieldname": "custom_vertical",
+                      "fieldtype": "Link"
                     }
                   ]
                 }

@@ -1,82 +1,19 @@
 ---
-title: Errors
+title: Error contracts
 ---
+
+This CRM has **two** API surfaces, and they speak **different** error envelopes. Know which one you're on before you write any error handling.
 
 ## Two contracts, by surface
 
-This CRM has **two** API surfaces, and they speak **different** envelopes. Know which one you're on:
-
 | You're calling… | Envelope | Auth role |
 |---|---|---|
-| **Gated partner methods** — `tatva_connect.api.partner.lead_*` (`lead_create`, `lead_get`, `lead_list`, the bulk variants) | **The unified partner contract** below — top-level `status` + `error.code`. **No `message` wrapper, no `exc_type`.** | Your partner key. |
-| **Native Frappe REST** — `/api/resource/*`, `/api/method/<other>` | Frappe's native shape: success under `message`/`data`, failure as `{exc_type, exception, _server_messages}`. | Internal first-party keys (partner keys get 403 here). |
+| **Gated partner methods** — `tatva_connect.api.partner.lead_*` (`lead_create`, `lead_get`, `lead_list`, the bulk variants) | **The partner contract** — top-level `status` + `error.code`, no `message` wrapper, no `exc_type`. Full per-code table and playbook: **[Errors](/partner-errors)**. | Your partner key. |
+| **Native Frappe REST** — `/api/resource/*`, `/api/method/<other>` | Frappe's native shape: success under `message`/`data`, failure as `{exc_type, exception, _server_messages}` (below). | Internal first-party keys (partner keys get 403 here). |
 
-If you're integrating leads, you're on the **partner methods** — read that section. The native shape only matters for direct `/api/resource/*` calls (admin/back-office).
+If you're integrating leads, you're on the **partner methods** — see [Errors](/partner-errors) for the envelope and the per-code playbook. The native shape below only matters for direct `/api/resource/*` calls (admin / back-office).
 
----
-
-## The partner error contract
-
-Every failure on a `partner.*` method returns this **exact** shape, with a matching HTTP status:
-
-```json
-{
-  "status": "error",
-  "error": {
-    "code": "validation_error",
-    "message": "Please specify a reason for losing the lead."
-  }
-}
-```
-
-- **`status`** is always `"error"` on a failure (and `"success"` on a 2xx).
-- **`error.code`** is a **stable, machine-readable** string — **branch on this**, never on `error.message` text (the message wording can change).
-- **`error.message`** is human-readable and safe to surface to an operator.
-- Some errors carry extras: `error.fields` (a list of offending field names on a `validation_error`) and `error.retry_after` (seconds, on `rate_limited`).
-
-This holds even for the earliest framework-layer failures — a bad API key or a malformed JSON body. An `after_request` normaliser rewrites those into the contract too, so a partner **never** sees a raw Frappe `exc_type` or a traceback.
-
-### Error-code → HTTP status
-
-| `error.code` | HTTP | What it means | What to do |
-|---|---|---|---|
-| `validation_error` | 400 | A field failed validation. | Read `error.message`; check `error.fields`. Most common: missing `lost_reason` for `Junk`/`Unqualified` status, or an unknown `Link` value (program/source). |
-| `bad_request` | 400 | The request body was malformed (e.g. invalid JSON). | Fix the JSON / `Content-Type`. |
-| `unauthorized` | 401 | Missing or invalid API key. | Header must be exactly `Authorization: token <api_key>:<api_secret>` (lowercase `token`, one space, colon-joined). |
-| `forbidden` | 403 | Your key isn't permitted for this call — **or** a partner key hit raw `/api/resource/*`. | Use the `partner.*` methods; ask Ops for a key with the right mapping. |
-| `not_found` | 404 | The lead doesn't exist **or** is outside your line. | **These two are deliberately identical** (anti-enumeration) — no id, no scope hint. Re-check the `name`; a partner only sees its own line. |
-| `duplicate` | 409 | A unique constraint was violated. | The value is taken or your write raced another. `lead_create` matches on the lead grain, so re-sends don't duplicate. |
-| `cannot_delete` | 409 | The lead has linked activity (calls/tasks/notes). | A worked lead can't be silently nuked. The message is **generic by design** — it never enumerates the linked records. |
-| `rate_limited` | 429 | Over **100 requests / 60s** for your key. | Back off `error.retry_after` seconds (the response tells you exactly). See [Rate limits](/operations#rate-limits). |
-| `server_error` | 500 | Unexpected — logged on our side. | Retry with exponential backoff; if it persists, email Ops with the request + response. |
-
-### Per-row errors in bulk
-
-A bulk call returns **HTTP 200** even when some rows fail. Each entry in `results[]` carries its own `status`; a failed row carries the **same** `error:{code,message}` block:
-
-```json
-{
-  "status": "success",
-  "summary": { "total": 2, "succeeded": 1, "failed": 1 },
-  "results": [
-    { "index": 0, "status": "success", "action": "created", "name": "CRM-LEAD-2026-00125" },
-    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
-  ]
-}
-```
-
-So: check the top-level `status`, then walk `results[].status` per row. Don't assume a 200 means every row landed. See [Reading the response (paths)](/operations#reading-the-response-paths).
-
-### Errors integrators hit most often
-
-- **`validation_error` — "Could not find CRM Program: …"** — you sent a program that doesn't exist. Introspect `CRM Program` (see [Schema discovery](/frappe-discovery)) to enumerate valid values, then resend.
-- **`validation_error` — "Please specify a reason for losing the lead."** — you set `status` to `Junk`/`Unqualified` without `lost_reason`. Add it.
-- **`unauthorized` + an HTML login page** — your key is wrong or the header is missing the `token` prefix. Frappe falls back to the website login when auth fails on `/api/resource/*`; the partner methods return the JSON contract instead.
-- **`forbidden` on a field you sent** — your key may only send the fields it's granted; call `lead_schema` to see yours.
-
----
-
-## Native Frappe errors (`/api/resource/*` only)
+## Native Frappe errors (`/api/resource/*`)
 
 Direct REST calls (internal first-party keys) return Frappe's native envelope:
 
@@ -89,3 +26,10 @@ Direct REST calls (internal first-party keys) return Frappe's native envelope:
 ```
 
 Check the HTTP status and read `exception`. This is **not** the partner contract — if you see `exc_type` while calling a `partner.*` method, file a bug.
+
+### The ones internal keys hit most
+
+- **`unauthorized` + an HTML login page** — Frappe falls back to the website login when auth fails on `/api/resource/*`. The header must be exactly `Authorization: token <api_key>:<api_secret>` — lowercase `token`, one space, colon-joined.
+- **`LinkValidationError`** — a `Link` value doesn't exist in its master (e.g. an unknown program or source). Introspect the master with [Runtime discovery](/frappe-discovery) to enumerate valid values, then resend.
+- **A value "didn't stick"** — a field above your key's permission level is silently dropped on write while the rest saves. It's a field-level lock, not a payload bug — see [Access control](/frappe-permissions).
+- **`cannot_delete` / linked-document errors** — a lead with linked activity (calls, tasks, notes) can't be deleted.

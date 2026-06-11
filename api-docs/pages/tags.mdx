@@ -1,5 +1,5 @@
 ---
-title: "Tags"
+title: Tags
 ---
 
 Tags are free-form labels on a lead — `vip`, `nps-detractor`, `reactivation`, whatever the team needs. They're the fastest way to slice leads without adding a field, and an integrator can both **set** tags and **find** leads by tag over the API.
@@ -8,7 +8,7 @@ Tags are free-form labels on a lead — `vip`, `nps-detractor`, `reactivation`, 
 
 Frappe keeps tags in two places and keeps them in sync:
 
-- A denormalised **`_user_tags`** string on the lead itself (comma-joined) — handy for a quick `like` filter.
+- A denormalized **`_user_tags`** string on the lead itself (comma-joined) — handy for a quick `like` filter.
 - A **`Tag Link`** row per (tag, document) pair — the clean way to ask "which leads carry this tag?"
 
 The tag vocabulary itself lives in the **`Tag`** doctype, one row per distinct label.

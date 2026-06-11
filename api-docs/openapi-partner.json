@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare Partner API",
     "version": "1.0.0",
-    "description": "Push leads into TatvaCare and read their state back. Your key decides exactly which fields you can read and write, and which product line your leads belong to — there is no fixed payload.\n\n## What this API does\n\nCreate or update leads by phone (idempotent), single or in bulk. Read one or list many. Delete by id. And **discover your schema** at runtime — call `lead_schema` to see exactly what your key may send and read.\n\n## The shape\n\n```\n Lead (one per phone, per product line + group)\n   ├── top-level fields        — first_name, mobile_no, status, …\n   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]\n```\n\nA lead is unique per phone + product line + group — re-sending the same patient updates that lead, it never duplicates, so every write is safe to retry. Product line and group are fixed to your key; the program is a mutable attribute (sent in *List* mode, stamped in *Forced* mode) and is never part of identity.\n\n## Where to start\n\n- **New here?** Read the [Overview](/partner-welcome) and [Quickstart](/partner-quickstart).\n- **Building a request?** Call [`lead_schema`](/discover-schema) first — it returns your fields, which are required, and how your child tables work.\n- **Reading a response?** See [Reading responses](/reading-values) and [Errors](/partner-errors).\n\nEvery endpoint has a live **try-it** console below — open it, paste your key, and hit **Send**.",
+    "description": "Push leads into TatvaCare and read their state back. Your key decides exactly which fields you can read and write, and which product line your leads belong to — there is no fixed payload.\n\n## What this API does\n\nCreate or update leads by phone (idempotent), single or in bulk. Read one or list many. Delete by id. And **discover your schema** at runtime — call `lead_schema` to see exactly what your key may send and read.\n\n## The shape\n\n```\n Lead (one per phone, per product line + group)\n   ├── top-level fields        — first_name, mobile_no, status, …\n   └── child tables (arrays)   — e.g. custom_lab_profile[], custom_plan_profile[]\n```\n\nA lead is unique per phone + product line + group — re-sending the same patient updates that lead, it never duplicates, so every write is safe to retry. Product line and group are fixed to your key; the program is a mutable attribute (sent in *List* mode, stamped in *Forced* mode) and is never part of identity.\n\n## Where to start\n\n- **New here?** Read the [Overview](/partner-welcome) and [Quickstart](/partner-quickstart).\n- **Building a request?** Call [`lead_schema`](/discover-schema) first — it returns your fields, which are required, and how your child tables work.\n- **Reading a response?** See [Reading responses](/reading-values) and [Errors](/partner-errors).\n\nEvery endpoint has a live **try-it** console below. [Save your API key](/partner-validate-key) once — the console reuses it on every request — then open an endpoint and hit **Send**.",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -12,6 +12,10 @@
     {
       "url": "https://one.tatvacare.in",
       "description": "Production"
+    },
+    {
+      "url": "http://dev.localhost:8000",
+      "description": "Local dev bench"
     }
   ],
   "x-tagGroups": [
@@ -31,12 +35,12 @@
   "tags": [
     {
       "name": "Authentication",
-      "description": "## How to authenticate\n\nEvery request needs an `Authorization` header:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nLiteral lowercase `token`, a single space, then your key and secret joined by a colon. Use **Verify your API key** below to confirm the header is right before any lead call.",
+      "description": "Every request needs an `Authorization` header:\n\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nLiteral lowercase `token`, a single space, then your key and secret joined by a colon.\n\n[Save your API key](/partner-validate-key) once and the try-it console reuses it everywhere — you never re-paste it. Then use **Verify your API key** below to confirm the header is right before any lead call.",
       "x-zudoku-collapsed": false
     },
     {
       "name": "Lead",
-      "description": "Your entire surface — the gated lead methods. Each one resolves what your key is allowed to do: your fixed product line, and the fields you may send and read. Start with `lead_schema` to discover your contract, then create, read, update, or delete. Bulk variants handle up to 100 records per call.",
+      "description": "Your entire surface — the gated lead methods. Each one resolves what your key is allowed to do: your fixed product line, and the fields you may send and read. Raw `/api/resource/CRM Lead` is **not** available to partner keys (it returns `403`); these methods are the supported path.\n\n| HTTP method | Method | Does |\n|---|---|---|\n| GET | `lead_schema` | Discovery — exactly the fields YOUR key may send/read, plus your routing mode. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| POST | `lead_create` | Create-or-upsert by phone. Returns the CRM `name`. |\n| PUT | `lead_update` | Update a lead by CRM `name` (the id `lead_create` returned). |\n| DELETE | `lead_delete` | Delete a lead by CRM `name` (a lead with linked activity can't be deleted). |\n| POST | `lead_create_bulk` | `{\"leads\":[{...}, …]}` (≤ 100). Partial success. |\n| PUT | `lead_update_bulk` | `{\"updates\":[{\"name\":…, …}, …]}` (≤ 100). Partial success. |\n| DELETE | `lead_delete_bulk` | `{\"names\":[…]}` (≤ 100). Partial success. |\n| POST | `lead_get_bulk` | `{\"names\":[…]}` **or** `{\"mobile_nos\":[…]}` (≤ 100). Out-of-scope ids omitted. |\n| GET | `lead_list` | Curated filters + pagination, always scoped to your line. |\n\n**`lead_create` is the default write path.** It's idempotent on the lead grain, safe to retry, and handles the lookup-or-create for you.\n\n### Lead grain and dedup\n\nA lead is unique per **phone + product line + group** ([Lead identity](/concepts)). You never send routing — your line is fixed by your mapping — so for you, dedup is simply **phone within your line**: `lead_create` finds the lead matching your line and that phone and updates it, or creates a new one. The same phone on a different line is a separate lead.\n\n### Child profile writes\n\nProfile children (`custom_plan_profile`, `custom_lab_profile`) are sent as **embedded arrays** inside the body — at most one row per profile per lead. Writes **merge field-by-field** into the existing row: fields you send are overlaid, fields you omit are left alone. A partial write never wipes the row. This holds for `lead_create`, `lead_update`, and their bulk forms.\n\n### Routing\n\nRouting (`source`, line, group, program) is **forced server-side** from your key's mapping. Any routing field you send is silently ignored.\n\n### Field validation\n\n- **Allowed fields are per-key.** Call `lead_schema` for exactly what your key may send; anything outside that list is dropped. `mobile_no` is always allowed (the anchor).\n- **Required to create:** `mobile_no`. `first_name` and `status` are default-filled if missing.\n- **Required if status is Junk or Unqualified:** `lost_reason`.\n- **Link-validated** (the value must exist in its master): `status`, `source`, program, and `substage` on the plan profile.\n- **Never write:** `name` (auto-generated), `lead_name` (computed), `creation`, `modified`.\n\n### Reading leads\n\nThree paths: `lead_get` (one, by `name` or `mobile_no`), `lead_get_bulk` (many), `lead_list` (filtered + paginated). All return only your allowed fields and only leads on your line.\n\n`lead_list` honors a **curated set of filters only** — never arbitrary fields:\n\n| Parameter | Meaning |\n|---|---|\n| `status` | exact lead status |\n| `created_after` / `created_before` | `creation` date range |\n| `updated_after` / `updated_before` | `modified` date range |\n| `mobile_no` | exact phone |\n| `limit` | page size (default 20, max 200) |\n| `offset` | rows to skip (paging) |\n\nList results return curated parent fields, **no children** — use `lead_get` for the full record. Response: `{ok, total, count, offset, limit, leads:[…]}`.\n\n### Bulk partial success\n\nEvery bulk method runs each record independently — one bad row reports its error, the rest still commit. Response: `{ok, total, succeeded, failed, results:[{index, ok, action?, name?, error?}]}`.\n\n### Reading children\n\n`lead_get` / `lead_get_bulk` return the profile children inline, filtered to your allowed fields. Child tables can't be read directly via REST — always read them through the parent lead.\n\n---\n\nTo try any method below, [save your API key](/partner-validate-key) first — the try-it console then injects it on every request.",
       "x-zudoku-collapsed": false
     }
   ],
@@ -685,7 +689,7 @@
           "status": "New",
           "custom_plan_profile": [
             {
-              "patient_indication": "HER2+ MBC",
+              "patient_indication": "Condition A",
               "cancer_stage": "Stage IV",
               "program_start_date": "2026-05-01",
               "substage": "Program B-Patient Ready for Chemo"
@@ -696,7 +700,7 @@
               "abm_name": "Vikram Iyer",
               "success_coach_name": "Neha Gupta",
               "doctor_name": "Dr. A. Sharma",
-              "hospital_name": "City Oncology Centre",
+              "hospital_name": "City General Hospital",
               "hospital_city": "Pune"
             }
           ]

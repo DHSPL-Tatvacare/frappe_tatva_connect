@@ -46,12 +46,12 @@ const config: ZudokuConfig = {
       label: "Documentation",
       icon: "book",
       items: [
-        { type: "category", label: "Start here", items: ["introduction", "welcome", "quickstart"] },
+        { type: "category", label: "Start here", items: ["introduction", "quickstart"] },
         { type: "category", label: "Frappe in plain English", items: ["frappe-doctypes", "frappe-child-tables", "frappe-forms", "frappe-hooks", "frappe-permissions", "frappe-rest-api", "frappe-discovery"] },
         { type: "category", label: "Architecture", items: ["concepts"] },
         { type: "category", label: "Channels", items: ["whatsapp", "telephony"] },
         { type: "category", label: "Administration", items: ["users", "roles-and-permissions"] },
-        { type: "category", label: "Reference", items: ["errors", "errors-and-status", "operations", "jobs", "tags"] },
+        { type: "category", label: "Reference", items: ["errors", "errors-and-status", "jobs", "tags"] },
         {
           type: "category",
           label: "Partner API",

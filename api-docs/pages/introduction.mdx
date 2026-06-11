@@ -2,7 +2,7 @@
 title: TatvaCare CRM API
 ---
 
-Reference for integrating with the TatvaCare CRM — the single source of truth for leads across every TatvaCare product line.
+Reference for integrating with the TatvaCare CRM — the single source of truth for leads across every TatvaCare product line. It's the systems door into the CRM: external systems push leads in and read state back, while internal teams work those leads in the CRM web app.
 
 ## What this API does
 
@@ -11,7 +11,11 @@ Reference for integrating with the TatvaCare CRM — the single source of truth 
 - **Discover the data model** — introspect any doctype's schema at runtime.
 - **Attach files** — upload documents against a lead.
 
-It's the systems door into the CRM: external systems put leads in and read state back, while internal teams work those leads in the CRM web app.
+## Who it's for
+
+- Engineers wiring an **inbound lead feed** into the CRM (e.g. an insurer sending lab-screened leads).
+- Engineers wiring a **parallel write** from a system that already creates leads elsewhere.
+- Anyone who needs to **read** leads, their profiles, or their substages from outside the CRM.
 
 ## The shape
 
@@ -26,11 +30,24 @@ The lead carries identity, contact, and routing fields. The three children carry
 
 **Lead grain:** a lead is unique per `mobile_no` + `custom_vertical` (product line) + `custom_group`. The same phone on a different line or group is a separate lead — one person can own several leads. Re-sending the same trio updates that one lead; it never duplicates.
 
+## How these docs are organized
+
+- **Documentation** (this tab) — getting started, Frappe concepts in plain English, the data model, the WhatsApp and telephony channels, and reference material (errors, roles, tags).
+- **API Reference** — every internal endpoint, grouped by resource, with a live try-it console.
+- **Partner API Reference** — the gated, per-partner lead surface for external integrators.
+
+## Scope today
+
+This API focuses on **Lead**, the record every integrator touches. The CRM has other doctypes too — Tasks, Notes, Call Logs, and more — all reachable through the same [REST pattern](/frappe-rest-api). We document the surface as integrations need it: if you need one that isn't covered, introspect it live with [Runtime discovery](/frappe-discovery) or ask CRM Ops.
+
 ## Where to start
 
-- **New here?** Read [Welcome](/welcome), then [Authentication](/api/authentication), then the [Quickstart](/quickstart).
 - **New to Frappe?** Start with [DocTypes](/frappe-doctypes) — the concepts this API is built on, in plain English.
+- **Ready to call it?** Read [Authentication](/api/authentication), then the [Quickstart](/quickstart).
 - **Already have a key?** Jump to [Create a lead](/api/leads).
-- **Need to know what fields you may send?** Call [`lead_schema`](/api/schema) — it returns exactly the fields your key may send/read.
+- **Need to know what fields you may send?** Call [`lead_schema`](/api/schema) — it returns exactly the fields your key may send and read.
+- **Partner key?** Your surface is the [Partner API Reference](/partner-api) tab.
 
-Every endpoint is tested live in the **API Reference** — open an endpoint, paste your key, and hit **Send**.
+## One rule
+
+If a field, value, or behavior isn't documented here, don't guess — use [Runtime discovery](/frappe-discovery) to introspect the live model, or email CRM Ops.
