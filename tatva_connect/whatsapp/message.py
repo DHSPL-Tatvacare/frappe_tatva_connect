@@ -223,52 +223,17 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			return []
 
 	def _wati_apply_response(self, resp):
-		"""Map a WATI send response onto the row. Success -> store the message id.
-
-		WATI is inconsistent across endpoints: template send returns
-		{"result": true}; session-file send returns {"result": "<id-string>"}
-		(no `ok` key); some session endpoints add {"ok": true}. Errors come back
-		as {"result": false, ...} / {"ok": false, ...} (HTTP 200) or as a body our
-		`api._post` normalised to {"result": false, "info": ...} on a 4xx/timeout.
-
-		Rule: an explicit false flag, a non-dict, or an empty/falsy `result` with
-		no truthy `ok` is a failure; anything else succeeded.
-		"""
-		if not isinstance(resp, dict):
-			self.status = "failed"
-			frappe.throw(_("WATI send failed: {0}").format(str(resp)[:400]), title=_("WATI Error"))
-
-		ok = resp.get("ok")
-		result = resp.get("result")
-		failed = (
-			ok is False
-			or result is False
-			or (ok is not True and result in (None, "", "false", "False", 0))
-		)
-		if failed:
-			# WATI carries the human reason in message.failedDetail; our _post normalises
-			# 4xx/timeout errors to resp["info"]. Use whichever is present, else a plain
-			# generic line — never dump the raw provider payload into the toast.
-			info = resp.get("info")
-			msg = resp.get("message")
-			if not info and isinstance(msg, dict):
-				info = msg.get("failedDetail")
-			if not info and isinstance(msg, str):
-				info = msg
+		"""Map a WATI send response onto the row. Manual-send side of the shared contract:
+		classify once (wati.classify_send_response — the single source of truth, also used by
+		the notification path), then apply this path's side-effect: throw on failure (which
+		rolls back the insert), else stamp the message id and mark sent."""
+		r = wati.classify_send_response(resp)
+		if r.failed:
 			self.status = "failed"
 			frappe.throw(
-				_("WATI send failed: {0}").format(info or _("message could not be sent")),
+				_("WATI send failed: {0}").format(r.reason or _("message could not be sent")),
 				title=_("WATI Error"),
 			)
-
-		msg = resp.get("message") if isinstance(resp.get("message"), dict) else {}
-		message_id = (
-			resp.get("local_message_id")
-			or msg.get("localMessageId")
-			or msg.get("whatsappMessageId")
-			# file sends return the id as the `result` string itself.
-			or (result if isinstance(result, str) and result not in ("true", "false") else None)
-		)
-		if message_id:
-			self.message_id = message_id
+		if r.message_id:
+			self.message_id = r.message_id
 		self.status = "sent"

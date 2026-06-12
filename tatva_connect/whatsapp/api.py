@@ -7,6 +7,7 @@ JWT in the `token` Password field. We detect WATI accounts by the host marker.
 """
 import json
 import re
+from typing import NamedTuple
 
 import frappe
 from frappe import _
@@ -91,6 +92,57 @@ def _post(url: str, token: str, body: dict) -> dict:
 			except Exception:
 				return {"result": False, "info": (getattr(resp, "text", "") or str(e))[:400]}
 		return {"result": False, "info": str(e)[:400]}
+
+
+class WatiSendResult(NamedTuple):
+	failed: bool
+	message_id: str | None
+	reason: str | None  # human-readable detail on failure (None on success)
+
+
+def classify_send_response(resp) -> WatiSendResult:
+	"""Single source of truth for 'did this WATI send succeed?' — used by BOTH the
+	manual-send path (message._wati_apply_response) and the automated-notification path
+	(notification.notify), so the contract is encoded once, never two ways.
+
+	WATI is inconsistent across endpoints: template send returns {"result": true};
+	session-file send returns {"result": "<id-string>"} (no `ok` key); some session
+	endpoints add {"ok": true}. Errors come back as {"result": false}/{"ok": false}
+	(HTTP 200) or as a body our _post normalised to {"result": false, "info": ...} on a
+	4xx/timeout. Rule: an explicit false flag, a non-dict, or an empty/falsy `result`
+	with no truthy `ok` is a failure; anything else succeeded.
+
+	Pure — no side effects. Callers apply their own (throw / raise / insert a row)."""
+	if not isinstance(resp, dict):
+		return WatiSendResult(True, None, str(resp)[:400])
+
+	ok = resp.get("ok")
+	result = resp.get("result")
+	failed = (
+		ok is False
+		or result is False
+		or (ok is not True and result in (None, "", "false", "False", 0))
+	)
+	if failed:
+		# WATI carries the human reason in message.failedDetail; our _post normalises
+		# 4xx/timeout errors to resp["info"]. Prefer whichever is present (never the raw payload).
+		msg = resp.get("message")
+		reason = (
+			resp.get("info")
+			or (msg.get("failedDetail") if isinstance(msg, dict) else None)
+			or (msg if isinstance(msg, str) else None)
+		)
+		return WatiSendResult(True, None, reason)
+
+	msg = resp.get("message") if isinstance(resp.get("message"), dict) else {}
+	message_id = (
+		resp.get("local_message_id")
+		or msg.get("localMessageId")
+		or msg.get("whatsappMessageId")
+		# file sends return the id as the `result` string itself.
+		or (result if isinstance(result, str) and result not in ("true", "false") else None)
+	)
+	return WatiSendResult(False, message_id, None)
 
 
 def send_template_message(account, to_number: str, template_name: str, broadcast_name: str, parameters=None):

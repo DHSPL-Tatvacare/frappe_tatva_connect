@@ -50,9 +50,12 @@ class WATINotification(WhatsAppNotification):
 				broadcast_name=f"crm_notif_{frappe.scrub(self.template or self.name)}",
 				parameters=params,
 			)
-			if not isinstance(resp, dict) or not resp.get("result"):
-				raise Exception((resp or {}).get("info") if isinstance(resp, dict) else "WATI send failed")
-			message_id = resp.get("local_message_id") or (resp.get("message") or {}).get("localMessageId")
+			# Same success contract as the manual-send path (one brain): classify once,
+			# then this path's side-effect is to raise (caught below -> Notification Log).
+			r = wati.classify_send_response(resp)
+			if r.failed:
+				raise Exception(r.reason or "WATI send failed")
+			message_id = r.message_id
 
 			if not self.get("content_type"):
 				self.content_type = "text"
