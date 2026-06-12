@@ -124,6 +124,21 @@ def get_send_context(reference_doctype, reference_name):
 	}
 
 
+@frappe.whitelist()
+def failed_reasons(reference_doctype, reference_name):
+	"""{message_name: failure_reason} for this record's failed WhatsApp messages.
+	Feeds the chat-tab hover tooltip (the message id is the bubble's DOM id)."""
+	from crm.api.whatsapp import validate_access
+
+	validate_access(reference_doctype, reference_name)
+	rows = frappe.get_all(
+		"WhatsApp Message",
+		filters={"reference_doctype": reference_doctype, "reference_name": reference_name, "status": "failed"},
+		fields=["name", "custom_failed_reason"],
+	)
+	return {r.name: r.custom_failed_reason for r in rows if r.custom_failed_reason}
+
+
 def _parse_hints(sample_values):
 	"""sample_values is a JSON object keyed by param name ({"1": "...", ...}).
 
@@ -336,6 +351,10 @@ def _row_from_wati_item(it, number, ref_doctype, ref_name):
 		"reference_doctype": ref_doctype,
 		"reference_name": ref_name,
 	}
+	# Capture WATI's delivery failure reason (e.g. Meta quality restriction / OAuthException)
+	# so the chat tab can surface it. Only meaningful when the send failed.
+	if status == "failed" and it.get("failedDetail"):
+		base["custom_failed_reason"] = it.get("failedDetail")
 
 	if event_type == "broadcastMessage":
 		# Outbound template (variables already resolved by WATI into finalText).

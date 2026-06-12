@@ -11,6 +11,7 @@ SCRIPTS = [
 	("WATI Send Template (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_template.js"),
 	("WATI WhatsApp Gate (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_gate.js"),
 	("WATI WhatsApp Window (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_window.js"),
+	("WATI Failed Reason (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_failed_reason.js"),
 	("Hide Status Pill (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/hide_status_pill.js"),
 	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/data_tab_gate.js"),
 	("Task Modal Fit (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_modal_fit.js"),

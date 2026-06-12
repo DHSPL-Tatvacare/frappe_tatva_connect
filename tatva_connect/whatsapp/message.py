@@ -134,7 +134,9 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			account,
 			to_number=wati.normalize_number(self.to),
 			template_name=template.actual_name or template.template_name,
-			broadcast_name=f"crm_{frappe.scrub(self.template)}",
+			# Campaign label from the clean template name (not the account-scoped record id),
+			# so WATI shows e.g. "crm_bcatechissue" and same-template sends group cleanly.
+			broadcast_name=f"crm_{frappe.scrub(template.actual_name or template.template_name)}",
 			parameters=params,
 		)
 		self._wati_apply_response(resp)

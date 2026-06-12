@@ -122,6 +122,9 @@ fixtures = [
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
+	# WhatsApp Message: ship ONLY our field by name — never vacuum crm/frappe_whatsapp's
+	# own custom fields on this shared doctype.
+	{"dt": "Custom Field", "filters": [["name", "in", ["WhatsApp Message-custom_failed_reason"]]]},
 	# Field-property overrides on CRM data-model doctypes (profile Select fields with
 	# no options -> free-text, so form-written values both store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
