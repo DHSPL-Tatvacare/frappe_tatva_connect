@@ -102,6 +102,7 @@ after_migrate = [
 	# (idempotent) so a clean install actually gets them. Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
 	"tatva_connect.form_scripts_seed.seed",
+	"tatva_connect.client_scripts_seed.seed",
 	# Master-data seeds: install-app baselines patches.txt without running it, so seed
 	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
 	"tatva_connect.seeds.seed_master_data",
@@ -177,6 +178,14 @@ fixtures = [
 		# form length cap (300 -> 1000) so an operator can paste a real token. Column is
 		# already TEXT, so this is form-validation only (no DB alter, no fork).
 		"WhatsApp Account-token-length",
+		# Declutter (WATI-only): frappe_whatsapp's WhatsApp Account ships Meta-handshake
+		# fields we never use (we're WATI, never Meta). Hide them so the form shows exactly
+		# one inbound secret — our custom_webhook_token — and no dead Meta inputs. Values are
+		# untouched (hidden, not dropped); no fork.
+		"WhatsApp Account-webhook_verify_token-hidden",
+		"WhatsApp Account-app_id-hidden",
+		"WhatsApp Account-business_id-hidden",
+		"WhatsApp Account-phone_id-hidden",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field = the columns; Property
 	# Setter = field-level overrides). Business/master DATA is NOT seeded — it ships as
