@@ -8,6 +8,10 @@ logic is untouched), gated by the master switch. Folders and already-remote file
 skipped. `offload()` is shared with the backfill command.
 """
 
+from urllib.parse import quote
+
+import frappe
+
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
@@ -40,6 +44,7 @@ def offload(doc) -> bool:
 	if doc.is_folder or not blob_store.is_local_url(doc.file_url):
 		return False
 
+	old_url = doc.file_url
 	store = BlobStore()
 	key = store.new_key(doc.file_name, doc.attached_to_doctype, doc.attached_to_name)
 	url = store.upload(key, doc.get_content(), doc.file_name)
@@ -48,7 +53,31 @@ def offload(doc) -> bool:
 	if store.settings.remove_local_after_upload:
 		doc.delete_file_data_content()
 	doc.db_set({"file_url": url, "custom_uploaded_to_azure": 1}, update_modified=False)
+	_repoint_attachment_comment(doc, old_url, url)
 	return True
+
+
+def _repoint_attachment_comment(doc, old_url, new_url):
+	"""Frappe snapshots the file URL into an 'Attachment' Comment on the parent doc at
+	attach time (the Activity-tab link reads it). After offload removes the local copy,
+	that snapshot still points at /files|/private/files and 404s — so swap its href to
+	our proxy URL, exactly once, matching the precise string Frappe wrote."""
+	if not (doc.attached_to_doctype and doc.attached_to_name):
+		return
+	old_href = quote(old_url, safe="/:")  # mirrors file.create_attachment_record()
+	for c in frappe.get_all(
+		"Comment",
+		filters={
+			"comment_type": "Attachment",
+			"reference_doctype": doc.attached_to_doctype,
+			"reference_name": doc.attached_to_name,
+		},
+		fields=["name", "content"],
+	):
+		if c.content and old_href in c.content:
+			frappe.db.set_value(
+				"Comment", c.name, "content", c.content.replace(old_href, new_url), update_modified=False
+			)
 
 
 def after_insert(doc, method=None):
