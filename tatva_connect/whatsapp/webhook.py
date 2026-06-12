@@ -239,6 +239,15 @@ def _ingest_inbound(event: dict, account_hint=None):
 		_insert_inbound_row(event, account, lead, wid, media=media, wid_media=wid_media)
 	frappe.db.commit()
 
+	# crm publishes the "whatsapp_message" realtime event in its on_update hook — which
+	# fires DURING insert, BEFORE this commit. A browser reloading on that event reads the
+	# row before it is committed, so the chat tab lags one message behind. Re-emit the same
+	# event AFTER the commit so the reload fetches committed data and the bubble shows now.
+	for lead in targets:
+		frappe.publish_realtime(
+			"whatsapp_message", {"reference_doctype": "CRM Lead", "reference_name": lead}
+		)
+
 
 def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=None):
 	"""Insert one inbound row for `lead`. Name is scoped per-lead ({lead}-{wid}) — the
