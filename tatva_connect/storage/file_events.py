@@ -86,8 +86,20 @@ def after_insert(doc, method=None):
 
 
 def on_trash(doc, method=None):
-	if not doc.custom_uploaded_to_azure or not blob_store.is_enabled():
+	"""Delete the Azure blob when its File row is deleted. Cleanup keys off whether THIS
+	file was offloaded (custom_uploaded_to_azure) — NOT the feature toggle: disabling the
+	integration must stop new offloads, never strand already-offloaded blobs. The blob
+	delete is idempotent (already-gone = success) and any remaining Azure error is logged,
+	never raised — orphan-and-log beats wedging the File (and any parent-cascade) delete."""
+	if not doc.custom_uploaded_to_azure:
 		return
 	key = blob_store.blob_key_from_url(doc.file_url)
-	if key:
+	if not key:
+		return
+	try:
 		BlobStore().delete(key)
+	except Exception:
+		frappe.log_error(
+			title="Azure blob delete on File trash failed (orphan left in container)",
+			message=f"file={doc.name} key={key}\n{frappe.get_traceback()}",
+		)

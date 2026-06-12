@@ -117,7 +117,14 @@ class BlobStore:
 		return self._blob(blob_key).download_blob().readall()
 
 	def delete(self, blob_key: str):
-		self._blob(blob_key).delete_blob(delete_snapshots="include")
+		"""Delete a blob (and its snapshots). Idempotent — an already-absent blob is
+		treated as success, so a re-delete never raises."""
+		from azure.core.exceptions import ResourceNotFoundError
+
+		try:
+			self._blob(blob_key).delete_blob(delete_snapshots="include")
+		except ResourceNotFoundError:
+			pass
 
 	def sas_url(self, blob_key: str) -> str:
 		"""A short-lived read link, cached until just before it expires."""
