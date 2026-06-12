@@ -526,5 +526,21 @@
   "property_type": "Check",
   "row_name": null,
   "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "WhatsApp Account",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "token",
+  "is_system_generated": 1,
+  "modified": "2026-06-12 17:46:22.555599",
+  "module": null,
+  "name": "WhatsApp Account-token-length",
+  "property": "length",
+  "property_type": "Int",
+  "row_name": null,
+  "value": "1000"
  }
 ]

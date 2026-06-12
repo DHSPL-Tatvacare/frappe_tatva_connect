@@ -170,6 +170,10 @@ fixtures = [
 		"CRM Plan Profile-member_id-in_list_view",
 		"CRM Plan Profile-payment_link-in_list_view",
 		"CRM Plan Profile-plan_name-in_list_view",
+		# WATI Bearer tokens are long JWTs (>300 chars); raise the native token field's
+		# form length cap (300 -> 1000) so an operator can paste a real token. Column is
+		# already TEXT, so this is form-validation only (no DB alter, no fork).
+		"WhatsApp Account-token-length",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field = the columns; Property
 	# Setter = field-level overrides). Business/master DATA is NOT seeded — it ships as
