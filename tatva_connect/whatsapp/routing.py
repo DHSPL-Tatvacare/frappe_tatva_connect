@@ -109,36 +109,20 @@ def resolve_for_message(msg):
 	return None
 
 
-def account_for_channel(channel_number, account_hint=None):
-	"""Inbound: resolve which WhatsApp Account received the message.
-
-	Precedence:
-	  1. account_hint — the account encoded in the per-tenant webhook URL
-	     (operator-controlled, doesn't depend on any WATI payload field);
-	  2. the WABA channel number the message arrived on;
-	  3. single-tenant safety net — only if EXACTLY ONE WATI account exists.
-
-	With 2+ WATI accounts and no hint/channel match we return None (the caller
-	logs + still stores the message) rather than guess and misattribute it to the
-	wrong tenant.
-	"""
-	from tatva_connect.whatsapp import api as wati
-
-	if account_hint and frappe.db.exists(
-		"WhatsApp Account", {"name": account_hint, "custom_is_wati": 1}
-	):
-		return account_hint
-
-	if channel_number:
-		digits = wati.normalize_number(channel_number)
-		account = frappe.db.get_value(
-			"WhatsApp Account", {"custom_wati_channel_number": digits}, "name"
-		)
-		if account:
-			return account
-
-	accounts = frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1}, pluck="name")
-	return accounts[0] if len(accounts) == 1 else None
+def account_by_token(token):
+	"""Inbound auth + identity in ONE lookup: the WATI WhatsApp Account whose webhook
+	token matches. Each tenant registers a URL carrying its own token
+	(/webhooks/whatsapp/wati/<token>), so the token both authenticates the caller and
+	names the receiving account — no dependence on a payload field (WATI inbound carries
+	no reliable tenant id; channelPhoneNumber is present on ~13% of message events,
+	tenantId on 0%). Returns the account name, or None if the token matches no WATI
+	account (caller rejects). A single equality lookup over WhatsApp Account — a handful
+	of rows (one per tenant), so it's cheap even on the inbound firehose."""
+	if not token:
+		return None
+	return frappe.db.get_value(
+		"WhatsApp Account", {"custom_webhook_token": token, "custom_is_wati": 1}, "name"
+	)
 
 
 @frappe.whitelist()

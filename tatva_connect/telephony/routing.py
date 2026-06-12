@@ -124,7 +124,7 @@ def account_for_did(did_number):
 	"""Inbound: resolve which Acefone Account owns the DID a call landed on.
 
 	Matches an Acefone Account whose `caller_id` digits equal the CDR's
-	`did_number` digits (last-10 LIKE, mirroring wati.account_for_channel). With
+	`did_number` digits (last-10 LIKE). With
 	2+ accounts and no DID match we return None rather than guess and misattribute
 	to the wrong tenant — there is deliberately no single-account fallback.
 	"""

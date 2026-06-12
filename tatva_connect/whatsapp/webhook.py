@@ -16,9 +16,12 @@ Everything else is dropped. Idempotent on whatsappMessageId (WATI redelivers).
 Inbound rows land in `WhatsApp Message` linked to the lead, so they render in the
 lead's WhatsApp tab automatically. No Meta anywhere.
 
-Register the URL on WATI as:
-    https://<host>/api/method/tatva_connect.whatsapp.webhook.webhook?token=<secret>
-where <secret> == WATI Settings.webhook_verify_token.
+Register on each WATI dashboard the pretty, provider-uniform URL:
+    https://<host>/webhooks/whatsapp/wati/<token>
+where <token> == that account's `custom_webhook_token`. nginx rewrites the trailing
+segment to `?token=` (see nginx/frappe.conf.template); the token both authenticates the
+caller and identifies the receiving account (routing.account_by_token) — inbound never
+depends on a WATI payload field. Setup: vault runbook 02-operations/runbooks/09.
 """
 import frappe
 
@@ -52,13 +55,6 @@ def _lead_for_number(wa_digits: str):
 	return frappe.db.get_value("CRM Lead", {"mobile_no": "+" + wa_digits}, "name") or frappe.db.get_value(
 		"CRM Lead", {"mobile_no": wa_digits}, "name"
 	)
-
-
-def _account_for_channel(channel_number, account_hint=None):
-	"""Map the inbound message -> its WhatsApp Account (hint > channel > single-tenant)."""
-	from tatva_connect.whatsapp import routing
-
-	return routing.account_for_channel(channel_number, account_hint)
 
 
 def _is_crm_relevant(event: dict) -> bool:
@@ -95,18 +91,19 @@ def webhook(**kwargs):
 	if not wati.is_enabled():
 		return "ok"
 
-	# Shared secret (query param on the registered URL). Reject impostors.
-	# For a JSON POST, Frappe's form_dict holds the JSON body, NOT the query
-	# string — so read the token from request.args (the URL query).
-	expected = frappe.db.get_single_value("CRM WATI Settings", "webhook_verify_token")
-	if expected:
-		token = frappe.request.args.get("token") if frappe.request else None
-		token = token or frappe.form_dict.get("token")
-		if token != expected:
-			raise frappe.PermissionError("Invalid WATI webhook token")
+	# Auth + identity in ONE step: the token in the URL IS the receiving account's
+	# secret. nginx maps /webhooks/whatsapp/wati/<token> -> ?token=<token>; resolving the
+	# account from it both rejects impostors and tells us which tenant received the message
+	# (WATI inbound carries no reliable tenant id — see routing.account_by_token). For a
+	# JSON POST, form_dict holds the body, so read the token from request.args (the query).
+	token = frappe.request.args.get("token") if frappe.request else None
+	token = token or frappe.form_dict.get("token")
+	account = routing.account_by_token(token)
+	if not account:
+		raise frappe.PermissionError("Invalid WATI webhook token")
 
 	# Flat JSON payload -> plain dict (drop Frappe/query keys).
-	event = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token", "account")}
+	event = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token")}
 
 	# Debug capture — operator toggle, default OFF (CRM WATI Settings.debug_log_payloads).
 	# Off = nothing stored (the webhook only ever translates payloads into WhatsApp
@@ -119,55 +116,55 @@ def webhook(**kwargs):
 	if not _is_crm_relevant(event):
 		return "ok"
 
-	# Which tenant received this? Read from the per-tenant webhook URL
-	# (?account=<WhatsApp Account name>), operator-controlled — so inbound
-	# attribution never depends on an unverified WATI payload field.
-	account_hint = frappe.request.args.get("account") if frappe.request else None
-
-	# Offload the survivor; return immediately.
+	# Offload the survivor; return immediately. The account is already resolved (from the
+	# token above) — pass it through so the worker never re-guesses the tenant.
 	# NB: 'payload' (not 'event') — 'event' is a reserved kwarg of frappe.enqueue
 	# and would be swallowed instead of forwarded to the job.
 	frappe.enqueue(
 		"tatva_connect.whatsapp.webhook.process_event",
 		queue="short",
 		payload=event,
-		account_hint=account_hint,
+		account=account,
 	)
 	return "ok"
 
 
 @frappe.whitelist()
 def webhook_urls():
-	"""Admin helper: the exact per-account webhook URL to register on each WATI
-	dashboard. Each URL carries ?account=<WhatsApp Account name> (precedence #1 in
-	account_for_channel) so inbound attribution never depends on a WATI payload field.
-	System Manager only (default @frappe.whitelist gating). Returns {account: url}."""
-	from urllib.parse import quote
-
+	"""Admin helper: the exact pretty webhook URL to register on each WATI dashboard —
+	provider-uniform style /webhooks/whatsapp/wati/<token>, where <token> is THAT account's
+	`custom_webhook_token`. nginx rewrites the trailing segment to ?token=; the handler
+	resolves the account from it (routing.account_by_token). System Manager only (default
+	@frappe.whitelist gating). Returns {account: url|None}; None = token not set yet."""
 	from frappe.utils import get_url
 
-	token = frappe.db.get_single_value("CRM WATI Settings", "webhook_verify_token") or ""
 	host = get_url().rstrip("/")
-	base = f"{host}/api/method/tatva_connect.whatsapp.webhook.webhook"
 	out = {}
-	for account in frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1}, pluck="name"):
-		out[account] = f"{base}?token={quote(token)}&account={quote(account)}"
+	for acc in frappe.get_all(
+		"WhatsApp Account", filters={"custom_is_wati": 1}, fields=["name", "custom_webhook_token"]
+	):
+		out[acc.name] = (
+			f"{host}/webhooks/whatsapp/wati/{acc.custom_webhook_token}"
+			if acc.custom_webhook_token
+			else None
+		)
 	return out
 
 
-def process_event(payload: dict, account_hint=None):
+def process_event(payload: dict, account=None):
 	"""Background worker: persist one CRM-relevant event.
 
-	Runs as a system user: the webhook is a guest endpoint, but persistence (and any
-	downstream automation like assigning a follow-up task) must run privileged —
-	otherwise native CRM Task assignment hits a Guest PermissionError. The token +
-	membership filter in webhook() already gate what reaches here.
+	`account` is the tenant resolved from the webhook token (authoritative). Runs as a
+	system user: the webhook is a guest endpoint, but persistence (and any downstream
+	automation like assigning a follow-up task) must run privileged — otherwise native
+	CRM Task assignment hits a Guest PermissionError. The token + membership filter in
+	webhook() already gate what reaches here.
 	"""
 	if frappe.session.user == "Guest":
 		frappe.set_user("Administrator")
 
 	if payload.get("eventType") == "message" and _falsy(payload.get("owner")):
-		_ingest_inbound(payload, account_hint)
+		_ingest_inbound(payload, account)
 	elif payload.get("localMessageId"):
 		_update_status(payload)
 
@@ -191,45 +188,36 @@ def _already_ingested(event: dict) -> bool:
 	)
 
 
-def _ingest_inbound(event: dict, account_hint=None):
+def _ingest_inbound(event: dict, account):
 	if _already_ingested(event):
 		return
 	sender = wati.normalize_number(event.get("waId"))  # digits, no '+'
-	if not sender:
+	if not sender or not account:
 		return
-	account = _account_for_channel(event.get("channelPhoneNumber"), account_hint)
 
 	# Account-aware: attach to every lead sharing this conversation (phone + account).
-	targets = []
-	if account:
-		targets = routing.leads_for_number_and_account("+" + sender, account)
+	targets = routing.leads_for_number_and_account("+" + sender, account)
 
-	# Fallbacks — never silently drop a real customer message:
-	#  - account unknown (2+ tenants, no hint/channel match), or
-	#  - account known but no lead on it (e.g. lead on a different account only).
+	# Fallback — the account is known (from the token), but no lead routes to it for this
+	# number (e.g. the number's lead lives on a different account only). Never silently drop
+	# a real customer message: attach to the first lead by phone and log the mismatch.
 	if not targets:
 		first = _lead_for_number(sender)
 		if not first:
 			return
 		targets = [first]
 		frappe.log_error(
-			title="WATI inbound: account-unmatched, fell back to first lead",
-			message=f"waId={event.get('waId')} channel={event.get('channelPhoneNumber')} "
-			f"hint={account_hint} resolved_account={account} attached_to={first}",
+			title="WATI inbound: no lead routes to the receiving account, fell back to first lead",
+			message=f"waId={event.get('waId')} account={account} attached_to={first}",
 		)
 
 	wid = event.get("whatsappMessageId")
 
-	# The token that downloads the media is the matched account's. If inbound
-	# attribution fell back (account is None: 2+ accounts, no channel/hint match),
-	# resolve the account from the lead so we still have a credential.
-	dl_account = account or (
-		routing.resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", targets[0])) if targets else None
-	)
+	# Media downloads use the receiving account's WATI token (always known here).
 	media = None
-	if dl_account and event.get("type") in media_module._MEDIA_TYPES and event.get("data"):
+	if event.get("type") in media_module._MEDIA_TYPES and event.get("data"):
 		try:
-			content, _ctype = wati.get_media(frappe.get_doc("WhatsApp Account", dl_account), event["data"])
+			content, _ctype = wati.get_media(frappe.get_doc("WhatsApp Account", account), event["data"])
 			media = (content, event["data"], event.get("type"), event.get("text"))
 		except Exception:
 			frappe.log_error(title="WATI inbound media download failed",

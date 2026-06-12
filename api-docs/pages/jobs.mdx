@@ -66,14 +66,14 @@ Prod runs with the scheduler enabled. (Internally it's the `pause_scheduler` fla
 - **Desk UI:** `/app/scheduled-job-type` → open the job → run it; `/app/scheduled-job-log` shows the history.
 - **bench:** runs the underlying method immediately, ignoring the schedule:
   ```bash
-  bench --site <site> execute tatva_connect.wati.templates_sync.scheduled_sync_all
+  bench --site <site> execute tatva_connect.whatsapp.templates_sync.scheduled_sync_all
   ```
 
 ## Current job inventory
 
 | Method | Frequency | What it does |
 |---|---|---|
-| `tatva_connect.wati.templates_sync.scheduled_sync_all` | every 6 h (`0 */6 * * *`) | Re-syncs every WATI account's approved templates into the local catalog, so the picker stays current. Respects the WATI kill-switch. |
+| `tatva_connect.whatsapp.templates_sync.scheduled_sync_all` | every 6 h (`0 */6 * * *`) | Re-syncs every WATI account's approved templates into the local catalog, so the picker stays current. Respects the WATI kill-switch. |
 
 Frappe also registers many **built-in** jobs (backups, email queue, search index, log cleanup, etc.) — they show up in the same `Scheduled Job Type` list. Filter by `method like "%tatva_connect%"` to see only ours.
 

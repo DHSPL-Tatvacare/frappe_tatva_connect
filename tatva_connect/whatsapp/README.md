@@ -140,8 +140,10 @@ Desk → **WhatsApp Account** → New:
 - **Token**: the tenant's WATI JWT
 - **Is WATI Account** (`custom_is_wati`): ✅ tick it
 - **WATI Channel Number** (`custom_wati_channel_number`): that tenant's WhatsApp
-  number (digits). This must be **unique** across accounts (enforced) — it's an
-  inbound routing key.
+  number (digits), shown as the outbound **From** number. Unique across accounts
+  (enforced). *(Inbound is attributed by the per-account webhook token, not this field.)*
+- **Webhook Token (WATI)** (`custom_webhook_token`): the per-tenant inbound secret —
+  set a unique random value; it appears in this account's webhook URL (Step 4).
 
 ### Step 2 — Sync that account's templates
 Desk → **WhatsApp Templates** list → **Sync from WATI** (or run
@@ -187,20 +189,24 @@ both pointing at that account. They can't conflict.
   the message will go out from. (No route → the picker says so and lists nothing.)
 
 ### Step 4 — Inbound: register the webhook per tenant
-On **each** WATI tenant, register the inbound webhook URL and tell us which account
-it belongs to by adding `&account=<WhatsApp Account name>`:
+On **each** WATI tenant, register the pretty, provider-uniform webhook URL. The trailing
+segment is **that account's own token** (`WhatsApp Account → Webhook Token (WATI)`):
 
 ```
-https://<host>/api/method/tatva_connect.whatsapp.webhook.webhook?token=<secret>&account=<WhatsApp Account name>
+https://<host>/webhooks/whatsapp/wati/<token>
 ```
-- `<secret>` = **WATI Settings → Webhook Verify Token** (shared).
-- `&account=...` tells us which tenant received the message, so inbound is filed
-  under the right account **without** depending on any WATI payload field.
+- nginx rewrites `/webhooks/whatsapp/wati/<token>` → `?token=<token>` (see
+  `nginx/frappe.conf.template`); the handler resolves the account from the token.
+- The token does **double duty**: it authenticates the caller **and** identifies the
+  receiving tenant — one secret per account, no `&account=` hint, no shared token, and
+  no dependence on any WATI payload field (WATI inbound carries no reliable tenant id).
+- Get the exact URL per account from the admin helper
+  `tatva_connect.whatsapp.webhook.webhook_urls`.
 
-Inbound attribution order: the `account` in the URL first; then the WATI channel
-number; then — only if exactly one WATI account exists — that one. With two+
-accounts and no match, the message is still stored on the lead and the unresolved
-tenant is logged for you to fix (never mis-filed to the wrong account).
+If the account is known (from the token) but no lead routes to it for that number, the
+message is still stored on the first lead by phone and the mismatch is logged for you to
+fix (never mis-filed to the wrong account). Full setup: vault runbook
+`02-operations/runbooks/09`.
 
 ---
 

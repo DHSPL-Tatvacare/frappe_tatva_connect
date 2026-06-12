@@ -56,6 +56,21 @@ server {
 		proxy_pass http://socketio-server;
 	}
 
+	# --- WhatsApp/WATI inbound webhook — pretty, provider-uniform path (TatvaCare, added 2026-06-12) ---
+	# Public URL registered on each WATI dashboard:  /webhooks/whatsapp/wati/<token>
+	# <token> = that WhatsApp Account's "Webhook Token (WATI)". We ONLY rewrite the pretty
+	# path to the native endpoint with ?token=<token>, then `last` re-runs location matching
+	# so the request falls through to `location /` -> @webserver — the exact same proxy path
+	# every other /api/method call already uses. No duplicated proxy_set_header/timeout lines
+	# here, so nothing can drift out of sync with the canonical config. The handler resolves
+	# the receiving account from the token (tatva_connect.whatsapp.routing.account_by_token) —
+	# auth + identity in one. The mapping is identical in every deployment; the secret is a
+	# runtime path segment, never stored here. Future providers follow the same shape:
+	# /webhooks/<channel>/<provider>/<token>. Setup + token generation: vault runbook 09.
+	location ~ ^/webhooks/whatsapp/wati/(?<wati_token>[^/]+)/?$ {
+		rewrite ^ /api/method/tatva_connect.whatsapp.webhook.webhook?token=$wati_token last;
+	}
+
 	location / {
 		rewrite ^(.+)/$ $1 permanent;
 		rewrite ^(.+)/index\.html$ $1 permanent;

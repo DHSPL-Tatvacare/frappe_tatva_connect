@@ -74,7 +74,7 @@ Returns `{ "count": <messages rebuilt>, "account": "<WATI account>" }`.
 Templates are **managed on WATI**, not in Frappe — we mirror the approved ones read-only into the **`WhatsApp Templates`** doctype so the picker has a list. A scheduled job re-syncs every 6 hours; you can also sync on demand:
 
 ```
-POST /api/method/tatva_connect.wati.templates_sync.sync_from_wati
+POST /api/method/tatva_connect.whatsapp.templates_sync.sync_from_wati
 ```
 - No body → syncs **every** WATI account. Pass `{"account_name": "Group A WATI 360078"}` to sync just one.
 - Records are keyed per account (`name::Account`), so two tenants can share a template name without colliding; `actual_name` holds the real WATI send-name.
@@ -92,10 +92,10 @@ curl -G -H 'Authorization: token KEY:SECRET' \
 Register this URL on **each** WATI tenant. Inbound customer messages and delivery/read statuses land on the matching lead automatically.
 
 ```
-https://one.tatvacare.in/api/method/tatva_connect.wati.webhook.webhook?token=<secret>&account=<WhatsApp Account name>
+https://one.tatvacare.in/webhooks/whatsapp/wati/<token>
 ```
-- `token` = the shared secret in **CRM WATI Settings → Webhook Verify Token**.
-- `account` = which tenant received the message (so inbound is filed correctly without relying on a provider payload field).
+- `<token>` = that account's **WhatsApp Account → Webhook Token (WATI)** — a unique secret per tenant.
+- The token does double duty: it **authenticates** the call **and identifies** the receiving account (WATI inbound carries no reliable tenant id), so inbound is filed correctly without relying on a provider payload field. No shared token, no `?account=` hint.
 - Non-CRM traffic is dropped; redeliveries are de-duplicated.
 
 ## Multi-account routing & kill-switch
@@ -116,12 +116,13 @@ curl -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
     "token": "<WATI JWT>",
     "custom_is_wati": 1,
     "custom_wati_channel_number": "919876500000",
+    "custom_webhook_token": "<unique-inbound-secret>",
     "status": "Active",
     "is_default_outgoing": 1
   }' \
   'https://one.tatvacare.in/api/resource/WhatsApp Account'
 ```
-`token` is a Password field — stored encrypted, never read back. `custom_wati_channel_number` is the WABA number (digits) used to attribute inbound messages.
+`token` (the WATI JWT) is a Password field — stored encrypted, never read back. `custom_webhook_token` is the inbound webhook secret that appears in this account's webhook URL (above) and resolves inbound to this tenant. `custom_wati_channel_number` is the WABA number (digits), shown as the "From" number.
 
 **Add a routing rule** (taxonomy → account):
 ```bash
@@ -137,11 +138,12 @@ GET /api/resource/WhatsApp Account?fields=["name","url","custom_wati_channel_num
 GET /api/resource/CRM WATI Account Routing?fields=["name","vertical","psp_group","program","whatsapp_account"]
 ```
 
-**Kill-switch + webhook secret** (single doctype — update with PUT):
+**Kill-switch** (single doctype — update with PUT):
 ```bash
 curl -X PUT -H 'Authorization: token KEY:SECRET' -H 'Content-Type: application/json' \
-  -d '{ "enabled": 1, "webhook_verify_token": "<secret>" }' \
+  -d '{ "enabled": 1 }' \
   'https://one.tatvacare.in/api/resource/CRM WATI Settings/CRM WATI Settings'
 ```
+The inbound webhook secret is **per account** (`custom_webhook_token` on each WhatsApp Account), not a shared setting — see the account-creation example above.
 
 > **Rollout note:** the WhatsApp surface ships with the WATI integration. If a call returns `404`, the integration app isn't deployed on that environment yet — confirm with CRM Ops.

@@ -3113,7 +3113,7 @@
         }
       }
     },
-    "/api/method/tatva_connect.wati.templates_sync.sync_from_wati": {
+    "/api/method/tatva_connect.whatsapp.templates_sync.sync_from_wati": {
       "post": {
         "tags": [
           "WhatsApp"
@@ -3219,8 +3219,8 @@
                 "example": {
                   "data": [
                     {
-                      "name": "tatva_connect.wati.templates_sync.scheduled_sync_all",
-                      "method": "tatva_connect.wati.templates_sync.scheduled_sync_all",
+                      "name": "tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
+                      "method": "tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
                       "frequency": "Cron",
                       "cron_format": "0 */6 * * *",
                       "stopped": 0
@@ -3266,8 +3266,8 @@
                 },
                 "example": {
                   "data": {
-                    "name": "tatva_connect.wati.templates_sync.scheduled_sync_all",
-                    "method": "tatva_connect.wati.templates_sync.scheduled_sync_all",
+                    "name": "tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
+                    "method": "tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
                     "frequency": "Cron",
                     "cron_format": "0 */6 * * *",
                     "stopped": 0
@@ -3698,7 +3698,7 @@
                   "data": [
                     {
                       "name": "e1f2g3",
-                      "method": "tatva_connect.wati.webhook.handle",
+                      "method": "tatva_connect.whatsapp.webhook.webhook",
                       "error": "Traceback (most recent call last): ...",
                       "creation": "2026-06-03 11:14:55.000000"
                     }
@@ -4035,14 +4035,14 @@
                     "scheduler_events": [
                       {
                         "frequency": "cron:0 */6 * * *",
-                        "handler": "tatva_connect.wati.templates_sync.scheduled_sync_all",
+                        "handler": "tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
                         "app": "tatva_connect"
                       }
                     ],
                     "overrides": [
                       {
                         "target": "WhatsApp Message",
-                        "handler": "tatva_connect.wati.message.WATIWhatsAppMessage",
+                        "handler": "tatva_connect.whatsapp.message.WATIWhatsAppMessage",
                         "app": "tatva_connect"
                       }
                     ],

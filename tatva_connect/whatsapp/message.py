@@ -246,12 +246,18 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			or (ok is not True and result in (None, "", "false", "False", 0))
 		)
 		if failed:
+			# WATI carries the human reason in message.failedDetail; our _post normalises
+			# 4xx/timeout errors to resp["info"]. Use whichever is present, else a plain
+			# generic line — never dump the raw provider payload into the toast.
 			info = resp.get("info")
-			if not info and isinstance(resp.get("message"), str):
-				info = resp.get("message")
+			msg = resp.get("message")
+			if not info and isinstance(msg, dict):
+				info = msg.get("failedDetail")
+			if not info and isinstance(msg, str):
+				info = msg
 			self.status = "failed"
 			frappe.throw(
-				_("WATI send failed: {0}").format(info or json.dumps(resp)),
+				_("WATI send failed: {0}").format(info or _("message could not be sent")),
 				title=_("WATI Error"),
 			)
 

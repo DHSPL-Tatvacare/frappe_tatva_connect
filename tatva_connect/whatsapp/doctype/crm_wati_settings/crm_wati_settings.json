@@ -7,7 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
-  "webhook_verify_token",
   "section_break_debug",
   "debug_log_payloads"
  ],
@@ -18,12 +17,6 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
-  },
-  {
-   "description": "Shared secret WATI must include on the inbound webhook.",
-   "fieldname": "webhook_verify_token",
-   "fieldtype": "Data",
-   "label": "Webhook Verify Token"
   },
   {
    "fieldname": "section_break_debug",
