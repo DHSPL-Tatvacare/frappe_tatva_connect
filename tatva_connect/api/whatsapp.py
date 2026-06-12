@@ -71,9 +71,57 @@ def get_template_variables(template):
 	doc = frappe.get_cached_doc("WhatsApp Templates", template)
 	body = doc.template or ""
 	indexes = sorted({int(m) for m in re.findall(r"\{\{\s*(\d+)\s*\}\}", body)})
-	hints = _parse_hints(doc.sample_values)
-	variables = [{"index": i, "hint": hints.get(str(i), "")} for i in indexes]
+	names = _param_names(doc.sample_values)  # WATI paramNames in body order
+	hints = _parse_hints(doc.sample_values)  # keyed by paramName
+	variables = []
+	for i in indexes:
+		name = names[i - 1] if 0 < i <= len(names) else str(i)
+		variables.append({"index": i, "name": name, "hint": hints.get(name, "")})
 	return {"template": template, "body": body, "variables": variables}
+
+
+def _param_names(sample_values):
+	"""Ordered WATI parameter names ({{1}},{{2}},… → real names), the keys of
+	sample_values in body order. Empty when none (static template)."""
+	if not sample_values:
+		return []
+	try:
+		parsed = json.loads(sample_values)
+	except Exception:
+		return [str(i + 1) for i in range(len(sample_values.split(",")))]
+	if isinstance(parsed, dict):
+		return [str(k) for k in parsed.keys()]
+	if isinstance(parsed, list):
+		return [str(i + 1) for i in range(len(parsed))]
+	return []
+
+
+@frappe.whitelist()
+def get_send_context(reference_doctype, reference_name):
+	"""One call for the Send-Template dialog: the resolved WATI account (name +
+	channel number), the recipient number, and the account-scoped approved
+	templates. Account is None when the lead has no WATI route."""
+	from crm.api.whatsapp import validate_access
+
+	validate_access(reference_doctype, reference_name)
+	account = None
+	mobile_no = None
+	if reference_doctype == "CRM Lead":
+		from tatva_connect.whatsapp import routing
+
+		lead = frappe.get_cached_doc(reference_doctype, reference_name)
+		mobile_no = lead.mobile_no
+		name = routing.resolve_account_for_lead(lead)
+		if name:
+			account = {
+				"name": name,
+				"number": frappe.db.get_value("WhatsApp Account", name, "custom_wati_channel_number"),
+			}
+	return {
+		"account": account,
+		"mobile_no": mobile_no,
+		"templates": list_templates(reference_doctype, reference_name),
+	}
 
 
 def _parse_hints(sample_values):

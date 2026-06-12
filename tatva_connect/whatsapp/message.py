@@ -169,27 +169,30 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 	def _wati_body_parameters(self, template):
 		"""Resolve template body placeholders into WATI's [{name, value}] shape.
 
-		Mirrors upstream value-resolution (body_param JSON, flags.custom_ref_doc,
-		or the reference doc), named positionally ("1","2",...). Empty for a
-		static-body template.
+		WATI matches params by NAME (the template's paramName), NOT by the {{N}}
+		position shown in the body — sending positional "1","2" makes WATI fill the
+		slots blank ("...cannot have typos or blank text"). The real names live in
+		sample_values keys, in body order (built from WATI customParams by
+		templates_sync). Empty for a static-body template.
 		"""
-		# Primary path: explicit body_param keyed by the real {{N}} index.
-		# Preserve the original key as the WATI param name — do NOT renumber to
-		# 1..N, or a template with non-contiguous slots ({{1}},{{3}}) sends the
-		# wrong value. Send "" for an empty slot rather than dropping it (dropping
-		# would shift every later slot).
+		names = self._wati_param_names(template)
+
+		def _name(idx):  # idx = the 1-based {{N}} slot
+			return names[idx - 1] if 0 < idx <= len(names) else str(idx)
+
+		# Primary path: explicit body_param keyed by the real {{N}} index. Send ""
+		# for an empty slot rather than dropping it (dropping would shift later slots).
 		if self.body_param:
 			try:
 				bp = json.loads(self.body_param)
 			except Exception:
 				return []
 			return [
-				{"name": str(k), "value": "" if bp[k] is None else str(bp[k])}
+				{"name": _name(int(k)), "value": "" if bp[k] is None else str(bp[k])}
 				for k in sorted(bp, key=lambda x: int(x))
 			]
 		# Fallback: positional values resolved from field_names (notification /
-		# automated path). field_names is ordered to match {{1}},{{2}},… by the
-		# operator, so positional naming is correct here.
+		# automated path). field_names is ordered to match {{1}},{{2}},… by the operator.
 		field_names = (template.field_names or "").split(",") if template.field_names else []
 		if not field_names:
 			return []
@@ -202,9 +205,20 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		else:
 			return []
 		return [
-			{"name": str(i + 1), "value": "" if v is None else str(v)}
+			{"name": _name(i + 1), "value": "" if v is None else str(v)}
 			for i, v in enumerate(values)
 		]
+
+	def _wati_param_names(self, template):
+		"""Ordered WATI parameter names for {{1}},{{2}},… — the keys of sample_values
+		(WATI customParams in body order; see templates_sync). Empty if none; callers
+		fall back to the positional index, which also matches sample_values when a
+		template's params were unnamed (sync keys them "1","2",… in that case)."""
+		try:
+			sv = json.loads(template.sample_values) if template.sample_values else {}
+			return list(sv.keys())
+		except Exception:
+			return []
 
 	def _wati_apply_response(self, resp):
 		"""Map a WATI send response onto the row. Success -> store the message id.
