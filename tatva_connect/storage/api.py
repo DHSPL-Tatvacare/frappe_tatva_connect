@@ -25,7 +25,7 @@ def download_file(file_name: str):
 	doc = frappe.get_doc("File", name)
 	if blob_store.is_local_url(doc.file_url):
 		return download_private_file(doc.file_url)
-	if not doc.is_downloadable():
+	if doc.is_private and not doc.is_downloadable():
 		raise frappe.PermissionError
 
 	frappe.local.response["type"] = "redirect"
@@ -46,14 +46,12 @@ def migrate_local_files(limit: int = 50) -> str:
 	if not blob_store.is_enabled():
 		frappe.throw(_("Enable Azure Storage first."))
 
-	# Only PRIVATE local files are candidates — public files stay on local disk.
 	names = frappe.get_all(
 		"File",
 		filters={
 			"custom_uploaded_to_azure": 0,
 			"is_folder": 0,
-			"is_private": 1,
-			"file_url": ["like", "/private/files/%"],
+			"file_url": ["like", "/%files/%"],   # both /files/ and /private/files/
 		},
 		pluck="name",
 		order_by="creation asc",

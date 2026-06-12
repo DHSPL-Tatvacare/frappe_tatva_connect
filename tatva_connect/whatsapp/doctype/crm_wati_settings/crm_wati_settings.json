@@ -7,7 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
-  "webhook_verify_token"
+  "webhook_verify_token",
+  "section_break_debug",
+  "debug_log_payloads"
  ],
  "fields": [
   {
@@ -22,6 +24,19 @@
    "fieldname": "webhook_verify_token",
    "fieldtype": "Data",
    "label": "Webhook Verify Token"
+  },
+  {
+   "fieldname": "section_break_debug",
+   "fieldtype": "Section Break",
+   "hide_border": 1,
+   "label": "Debug"
+  },
+  {
+   "default": "0",
+   "description": "DEBUG ONLY — when ON, every authenticated inbound WATI payload is stored to Integration Request (service 'WATI', auto-clears in 90 days) to troubleshoot delivery. Payloads contain PHI; keep OFF in normal operation. Off = nothing stored.",
+   "fieldname": "debug_log_payloads",
+   "fieldtype": "Check",
+   "label": "Debug: Log Inbound Payloads"
   }
  ],
  "grid_page_length": 50,

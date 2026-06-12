@@ -14,6 +14,7 @@ single. Managed identity is a later swap behind this same `BlobStore` seam.
 """
 
 import mimetypes
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
@@ -49,6 +50,12 @@ def blob_key_from_url(file_url: str | None) -> str | None:
 	return parse_qs(urlparse(file_url).query).get("file_name", [None])[0]
 
 
+def _slug(value: str) -> str:
+	"""Make a record name safe for one blob path segment (keep it legible, no nested
+	folders): keep alnum/dot/dash/underscore, collapse the rest to '-'."""
+	return re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-") or "rec"
+
+
 class BlobStore:
 	"""Thin wrapper over the Azure SDK, configured entirely from the settings single.
 
@@ -81,11 +88,19 @@ class BlobStore:
 			frappe.throw(_("Set the Private Container in {0}.").format(SETTINGS))
 		return name
 
-	def new_key(self, file_name: str, attached_to_doctype: str | None) -> str:
-		"""Collision-proof blob key `[<doctype>/]<random>/<scrubbed-name>` — grouped by
-		parent doctype when known so the container browses sensibly."""
+	def new_key(
+		self, file_name: str, attached_to_doctype: str | None, attached_to_name: str | None = None
+	) -> str:
+		"""Collision-proof blob key, grouped so the container browses sensibly:
+		`<doctype>/<record>/<hash>_<name>` when the file is attached to a record (one
+		folder per lead etc.), else `<doctype>/<hash>/<name>` or `<hash>/<name>`. The
+		short hash keeps same-named files in one record from clashing."""
+		name = frappe.scrub(file_name) or "file"
+		tag = frappe.generate_hash(length=10)
+		if attached_to_doctype and attached_to_name:
+			return "/".join([frappe.scrub(attached_to_doctype), _slug(attached_to_name), f"{tag}_{name}"])
 		parts = [frappe.scrub(attached_to_doctype)] if attached_to_doctype else []
-		parts += [frappe.generate_hash(length=10), frappe.scrub(file_name) or "file"]
+		parts += [tag, name]
 		return "/".join(parts)
 
 	# --- operations (only PRIVATE files are ever offloaded; one private container) ---

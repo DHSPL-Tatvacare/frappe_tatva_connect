@@ -11,16 +11,37 @@ skipped. `offload()` is shared with the backfill command.
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
+_DOMAIN_PRIVATE = {"CRM Lead", "WhatsApp Message", "CRM Enrolment Submission"}
+
+
+def _is_settings_doctype(dt):
+	return bool(dt) and dt.endswith("Settings")
+
+
+def apply_privacy_policy(doc, method=None):
+	"""Force file privacy by what it's attached to (runs on File.validate):
+	  *Settings doctype  -> public  (logos/banners must render with no auth)
+	  domain doctype     -> private (patient data is always gated)
+	  anything else      -> leave the uploader's choice untouched.
+	Storage is identical either way (one private Azure container); is_private only
+	decides whether download_file gates the request (see storage/api.py)."""
+	dt = doc.attached_to_doctype
+	if _is_settings_doctype(dt):
+		doc.is_private = 0
+	elif dt in _DOMAIN_PRIVATE:
+		doc.is_private = 1
+
 
 def offload(doc) -> bool:
-	"""Upload a local PRIVATE File's bytes to Azure and repoint the row at the proxy URL.
-	Returns True if it offloaded, False otherwise. PUBLIC files are left on local disk
-	untouched — so form logos/banners are served exactly as before and cannot break."""
-	if doc.is_folder or not doc.is_private or not blob_store.is_local_url(doc.file_url):
+	"""Upload a local File's bytes to Azure and repoint the row at the proxy URL.
+	ALL files offload (public + private) — one private container; is_private only
+	gates serving (see storage/api.download_file). Folders and already-remote files
+	are skipped."""
+	if doc.is_folder or not blob_store.is_local_url(doc.file_url):
 		return False
 
 	store = BlobStore()
-	key = store.new_key(doc.file_name, doc.attached_to_doctype)
+	key = store.new_key(doc.file_name, doc.attached_to_doctype, doc.attached_to_name)
 	url = store.upload(key, doc.get_content(), doc.file_name)
 
 	# Remove the local copy while file_url still points at it, then repoint the row.

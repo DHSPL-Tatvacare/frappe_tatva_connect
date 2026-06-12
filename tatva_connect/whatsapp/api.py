@@ -184,3 +184,17 @@ def get_message_templates(account, page_size: int = 500, page_number: int = 1):
 	token = account.get_password("token")
 	url = f"{account.url}/api/v1/getMessageTemplates?pageSize={page_size}&pageNumber={page_number}"
 	return make_get_request(url, headers=_headers(token))
+
+
+def get_media(account, data: str) -> tuple[bytes, str]:
+	"""Download a WATI inbound media file. `data` is either a full showFile URL
+	(live webhook) or a relative path like 'data/images/<uuid>.jpg' (getMessages
+	history). Returns (content_bytes, content_type). Requires the account Bearer
+	token — an unauthenticated GET returns 401 (verified)."""
+	import requests
+
+	url = data if data.startswith("http") else f"{account.url}/api/file/showFile?fileName={data}"
+	token = account.get_password("token")
+	resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+	resp.raise_for_status()
+	return resp.content, resp.headers.get("content-type") or "application/octet-stream"

@@ -80,6 +80,7 @@ doc_events = {
 	# thumbnailing untouched); delete the blob when the File is deleted. Gated by the
 	# CRM Azure Storage Settings kill-switch.
 	"File": {
+		"validate": "tatva_connect.storage.file_events.apply_privacy_policy",
 		"after_insert": "tatva_connect.storage.file_events.after_insert",
 		"on_trash": "tatva_connect.storage.file_events.on_trash",
 	},

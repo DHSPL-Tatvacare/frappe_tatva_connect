@@ -94,19 +94,29 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		else:
 			resp = wati.send_session_message(account, number, self.message or "")
 		self._wati_apply_response(resp)
+		if self.attach and self.content_type in ("document", "image", "video", "audio") \
+		   and self.reference_doctype == "CRM Lead" and self.reference_name:
+			from tatva_connect.whatsapp import media as media_module
+			self.attach = media_module.adopt_outbound_media(self.attach, self.reference_name, self.message_id)
 
 	def _wati_send_attachment(self, account, number):
-		"""Send the row's attachment through WATI (the file itself, not its name)."""
+		"""Send the row's attachment through WATI (the file itself, not its name).
+
+		Our own File rows (incl. Azure-backed proxy URLs) always send as BYTES — WATI
+		cannot authenticate to our proxy URL, so a URL send would fail. Only a genuine
+		external link (not one of our File rows) uses the URL path.
+		"""
 		import mimetypes
 
 		caption = self.message or ""
-		if self.attach.startswith("http"):
-			return wati.send_session_file_via_url(account, number, self.attach, caption)
-		# Local Frappe file -> read bytes and upload multipart (works for private files too).
-		file_doc = frappe.get_doc("File", {"file_url": self.attach})
-		filename = file_doc.file_name or self.attach.split("/")[-1]
-		mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-		return wati.send_session_file(account, number, filename, file_doc.get_content(), mimetype, caption)
+		filedoc = frappe.db.exists("File", {"file_url": self.attach})
+		if filedoc:
+			fd = frappe.get_doc("File", filedoc)
+			filename = fd.file_name or self.attach.split("/")[-1]
+			mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+			return wati.send_session_file(account, number, filename, fd.get_content(), mimetype, caption)
+		# Not one of our File rows -> a true external URL.
+		return wati.send_session_file_via_url(account, number, self.attach, caption)
 
 	def send_template(self):
 		account = self._wati_account()

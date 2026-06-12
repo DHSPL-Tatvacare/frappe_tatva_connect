@@ -309,6 +309,8 @@ def _row_from_wati_item(it, number, ref_doctype, ref_name):
 		if not body and ctype == "text":
 			return None
 		base.update({"message": body, "content_type": ctype})
+		if ctype in _MEDIA_TYPES - {"text"} and it.get("data"):
+			base["_media"] = {"wati_id": it.get("id"), "data": it.get("data"), "text": it.get("text"), "type": ctype}
 		if it.get("owner") in _FALSY:  # owner falsy = inbound (customer)
 			base.update({"type": "Incoming", "from": "+" + number})
 		else:
@@ -390,6 +392,22 @@ def refresh_messages_from_wati(reference_doctype, reference_name):
 		{"reference_doctype": reference_doctype, "reference_name": reference_name},
 	)
 	for row in rows:
+		media = row.pop("_media", None)
+		if media:
+			from tatva_connect.whatsapp import media as media_module
+
+			filedoc = media_module.find_lead_media(reference_name, media["wati_id"])
+			if not filedoc:
+				try:
+					content, _ctype = wati.get_media(account, media["data"])
+					fname = media_module.media_filename(media["type"], media["text"], media["data"])
+					filedoc = media_module.ensure_lead_media(reference_name, media["wati_id"], fname, content)
+				except Exception:
+					filedoc = None
+					frappe.log_error(title="WATI refresh media fetch failed",
+					                 message=f"wati_id={media['wati_id']} lead={reference_name}")
+			if filedoc:
+				row["attach"] = filedoc.file_url
 		_insert_history_row(row)
 	frappe.db.commit()
 	# The reconcile uses direct DB writes (no controller events), so crm's

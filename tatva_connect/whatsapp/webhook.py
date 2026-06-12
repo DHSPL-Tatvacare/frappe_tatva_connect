@@ -23,6 +23,8 @@ where <secret> == WATI Settings.webhook_verify_token.
 import frappe
 
 from tatva_connect.whatsapp import api as wati
+from tatva_connect.whatsapp import media as media_module
+from tatva_connect.whatsapp import routing
 
 # WATI status event -> the status vocab the CRM WhatsApp tab renders
 # (sent/Success -> single tick; delivered/read -> double tick, read = blue;
@@ -68,6 +70,22 @@ def _is_crm_relevant(event: dict) -> bool:
 	return False
 
 
+def _debug_log_payload(event: dict):
+	import json
+
+	try:
+		frappe.get_doc({
+			"doctype": "Integration Request",
+			"integration_request_service": "WATI",
+			"request_description": "WATI inbound webhook",
+			"status": "Completed",
+			"data": json.dumps(event, default=str),
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		pass  # debug logging must never break the webhook
+
+
 @frappe.whitelist(allow_guest=True)
 def webhook(**kwargs):
 	"""Fast-ack endpoint. Always returns quickly; never blocks on heavy work."""
@@ -89,6 +107,13 @@ def webhook(**kwargs):
 
 	# Flat JSON payload -> plain dict (drop Frappe/query keys).
 	event = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token", "account")}
+
+	# Debug capture — operator toggle, default OFF (CRM WATI Settings.debug_log_payloads).
+	# Off = nothing stored (the webhook only ever translates payloads into WhatsApp
+	# Message rows). On = raw payload -> core Integration Request (service "WATI",
+	# 90-day auto-clear). Token already verified above; never raises.
+	if frappe.db.get_single_value("CRM WATI Settings", "debug_log_payloads"):
+		_debug_log_payload(event)
 
 	# Membership filter: drop non-CRM traffic with a 200 (zero rows written).
 	if not _is_crm_relevant(event):
@@ -177,8 +202,6 @@ def _ingest_inbound(event: dict, account_hint=None):
 	# Account-aware: attach to every lead sharing this conversation (phone + account).
 	targets = []
 	if account:
-		from tatva_connect.whatsapp import routing
-
 		targets = routing.leads_for_number_and_account("+" + sender, account)
 
 	# Fallbacks — never silently drop a real customer message:
@@ -196,12 +219,28 @@ def _ingest_inbound(event: dict, account_hint=None):
 		)
 
 	wid = event.get("whatsappMessageId")
+
+	# The token that downloads the media is the matched account's. If inbound
+	# attribution fell back (account is None: 2+ accounts, no channel/hint match),
+	# resolve the account from the lead so we still have a credential.
+	dl_account = account or (
+		routing.resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", targets[0])) if targets else None
+	)
+	media = None
+	if dl_account and event.get("type") in media_module._MEDIA_TYPES and event.get("data"):
+		try:
+			content, _ctype = wati.get_media(frappe.get_doc("WhatsApp Account", dl_account), event["data"])
+			media = (content, event["data"], event.get("type"), event.get("text"))
+		except Exception:
+			frappe.log_error(title="WATI inbound media download failed",
+			                 message=f"id={event.get('id')} type={event.get('type')}")
+	wid_media = event.get("id")  # WATI internal id — the File↔history join key
 	for lead in targets:
-		_insert_inbound_row(event, account, lead, wid)
+		_insert_inbound_row(event, account, lead, wid, media=media, wid_media=wid_media)
 	frappe.db.commit()
 
 
-def _insert_inbound_row(event: dict, account, lead, wid):
+def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=None):
 	"""Insert one inbound row for `lead`. Name is scoped per-lead ({lead}-{wid}) — the
 	SAME scheme reconcile uses — so the same message mirrors onto >1 same-account lead
 	without colliding on the PK / composite index. Per-lead idempotent."""
@@ -223,6 +262,13 @@ def _insert_inbound_row(event: dict, account, lead, wid):
 			"reference_name": lead,
 		}
 	)
+	if media:
+		content, data, mtype, text = media
+		fname = media_module.media_filename(mtype, text, data)
+		filedoc = media_module.ensure_lead_media(lead, wid_media, fname, content)
+		doc.content_type = mtype
+		doc.attach = filedoc.file_url          # proxy URL → bubble renders; linker skips it (contract C)
+		doc.message = text if mtype == "image" else (doc.message or "")
 	if name:
 		doc.name = name
 		doc.flags.name_set = True
