@@ -195,21 +195,13 @@ def _ingest_inbound(event: dict, account):
 	if not sender or not account:
 		return
 
-	# Account-aware: attach to every lead sharing this conversation (phone + account).
+	# Strict: attach only to leads on this number whose taxonomy routes to the receiving
+	# account. No hit -> DROP (1-line log); never best-guess to a lead on another account.
 	targets = routing.leads_for_number_and_account("+" + sender, account)
-
-	# Fallback — the account is known (from the token), but no lead routes to it for this
-	# number (e.g. the number's lead lives on a different account only). Never silently drop
-	# a real customer message: attach to the first lead by phone and log the mismatch.
 	if not targets:
-		first = _lead_for_number(sender)
-		if not first:
-			return
-		targets = [first]
-		frappe.log_error(
-			title="WATI inbound: no lead routes to the receiving account, fell back to first lead",
-			message=f"waId={event.get('waId')} account={account} attached_to={first}",
-		)
+		frappe.log_error(title="WATI inbound dropped: no lead routes to the receiving account",
+		                 message=f"waId={event.get('waId')} account={account}")
+		return
 
 	wid = event.get("whatsappMessageId")
 

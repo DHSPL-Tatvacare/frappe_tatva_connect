@@ -1714,7 +1714,7 @@
         }
       }
     },
-    "/api/method/tatva_connect.acefone.handler.make_acefone_call": {
+    "/api/method/tatva_connect.telephony.handler.make_acefone_call": {
       "post": {
         "tags": [
           "Telephony"
@@ -3919,7 +3919,7 @@
         }
       }
     },
-    "/api/method/tatva_connect.automation.tasks.create_followup_task": {
+    "/api/method/tatva_connect.tasks.tasks.create_followup_task": {
       "post": {
         "tags": [
           "Automations"
@@ -4028,7 +4028,7 @@
                       {
                         "doctype": "CRM Lead",
                         "event": "validate",
-                        "handler": "tatva_connect.automation.leads.dedup_guard",
+                        "handler": "tatva_connect.lead.leads.dedup_guard",
                         "app": "tatva_connect"
                       }
                     ],

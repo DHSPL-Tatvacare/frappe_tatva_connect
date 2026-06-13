@@ -13,6 +13,7 @@
   "behaviour_section",
   "sas_ttl_seconds",
   "remove_local_after_upload",
+  "public_attachment_doctypes",
   "column_break_conn",
   "check_connection"
  ],
@@ -56,6 +57,12 @@
    "fieldname": "remove_local_after_upload",
    "fieldtype": "Check",
    "label": "Remove Local Copy After Upload"
+  },
+  {
+   "description": "Doctypes whose attachments may be PUBLIC (one per line). Everything else is private by default (fail-closed). *Settings doctypes (logos) are always public. Leave blank unless a doctype's files must render without login.",
+   "fieldname": "public_attachment_doctypes",
+   "fieldtype": "Small Text",
+   "label": "Public Attachment Doctypes"
   },
   {
    "fieldname": "column_break_conn",

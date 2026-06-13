@@ -145,6 +145,17 @@ def classify_send_response(resp) -> WatiSendResult:
 	return WatiSendResult(False, message_id, None)
 
 
+def template_param_names(template) -> list:
+	"""Ordered WATI param names for {{1}},{{2}},… — the keys of the template's sample_values
+	(WATI customParams in body order). One source of truth for BOTH the manual and the
+	automated-notification send paths. [] if none; callers fall back to the positional index."""
+	try:
+		sv = json.loads(template.sample_values) if template.sample_values else {}
+		return list(sv.keys())
+	except Exception:
+		return []
+
+
 def send_template_message(account, to_number: str, template_name: str, broadcast_name: str, parameters=None):
 	"""POST /api/v1/sendTemplateMessage (singular — returns local_message_id).
 

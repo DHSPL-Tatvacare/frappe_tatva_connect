@@ -8,6 +8,7 @@ logic is untouched), gated by the master switch. Folders and already-remote file
 skipped. `offload()` is shared with the backfill command.
 """
 
+import os
 from urllib.parse import quote
 
 import frappe
@@ -15,25 +16,25 @@ import frappe
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
-_DOMAIN_PRIVATE = {"CRM Lead", "WhatsApp Message", "CRM Enrolment Submission"}
-
-
 def _is_settings_doctype(dt):
 	return bool(dt) and dt.endswith("Settings")
 
 
+def _public_attachment_doctypes() -> set:
+	"""Operator-listed doctypes whose attachments may be public (config, empty by default)."""
+	raw = frappe.db.get_single_value("CRM Azure Storage Settings", "public_attachment_doctypes") or ""
+	return {line.strip() for line in raw.replace(",", "\n").splitlines() if line.strip()}
+
+
 def apply_privacy_policy(doc, method=None):
-	"""Force file privacy by what it's attached to (runs on File.validate):
-	  *Settings doctype  -> public  (logos/banners must render with no auth)
-	  domain doctype     -> private (patient data is always gated)
-	  anything else      -> leave the uploader's choice untouched.
-	Storage is identical either way (one private Azure container); is_private only
-	decides whether download_file gates the request (see storage/api.py)."""
+	"""Fail-closed file privacy (runs on File.validate): an attachment is PRIVATE unless its
+	doctype is a *Settings doctype (logos/banners) or operator-listed public in CRM Azure
+	Storage Settings. Unattached files keep the uploader's choice. is_private only gates
+	serving (see storage/api.download_file); storage is one private container either way."""
 	dt = doc.attached_to_doctype
-	if _is_settings_doctype(dt):
-		doc.is_private = 0
-	elif dt in _DOMAIN_PRIVATE:
-		doc.is_private = 1
+	if not dt:
+		return
+	doc.is_private = 0 if (_is_settings_doctype(dt) or dt in _public_attachment_doctypes()) else 1
 
 
 def offload(doc) -> bool:
@@ -47,13 +48,16 @@ def offload(doc) -> bool:
 	old_url = doc.file_url
 	store = BlobStore()
 	key = store.new_key(doc.file_name, doc.attached_to_doctype, doc.attached_to_name)
+	local_path = doc.get_full_path()  # capture before repoint so we can drop the local copy after
 	url = store.upload(key, doc.get_content(), doc.file_name)
 
-	# Remove the local copy while file_url still points at it, then repoint the row.
-	if store.settings.remove_local_after_upload:
-		doc.delete_file_data_content()
+	# Repoint the row to the Azure proxy and COMMIT before removing the local copy, so a crash
+	# never leaves a row pointing at a deleted file (always readable: proxy if committed, else local).
 	doc.db_set({"file_url": url, "custom_uploaded_to_azure": 1}, update_modified=False)
+	frappe.db.commit()
 	_repoint_attachment_comment(doc, old_url, url)
+	if store.settings.remove_local_after_upload and local_path and os.path.exists(local_path):
+		os.remove(local_path)
 	return True
 
 
@@ -81,8 +85,19 @@ def _repoint_attachment_comment(doc, old_url, new_url):
 
 
 def after_insert(doc, method=None):
-	if blob_store.is_enabled():
-		offload(doc)
+	# Offload in the background after commit: the File lands locally instantly (no UX delay,
+	# survives an Azure outage), then a worker moves the bytes off and drops the local copy.
+	if blob_store.is_enabled() and not doc.is_folder and blob_store.is_local_url(doc.file_url):
+		frappe.enqueue(offload_file, queue="short", enqueue_after_commit=True, file_name=doc.name)
+
+
+def offload_file(file_name):
+	"""Background offload entry — never raises into the worker; on failure the File stays local."""
+	try:
+		offload(frappe.get_doc("File", file_name))
+	except Exception:
+		frappe.log_error(title="Azure offload failed (file left local)",
+		                 message=f"file={file_name}\n{frappe.get_traceback()}")
 
 
 def on_trash(doc, method=None):

@@ -33,7 +33,7 @@ curl -G -H 'Authorization: token KEY:SECRET' \
 - **Outbound click-to-call** rings the agent first, then bridges to the patient, and writes a matching log row that walks to a terminal status. Trigger it with:
 
 ```
-POST /api/method/tatva_connect.acefone.handler.make_acefone_call
+POST /api/method/tatva_connect.telephony.handler.make_acefone_call
 ```
 ```json
 { "reference_doctype": "CRM Lead", "reference_name": "CRM-LEAD-2026-00123" }

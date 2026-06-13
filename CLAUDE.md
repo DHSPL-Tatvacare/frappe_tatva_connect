@@ -68,6 +68,8 @@ Packaging: scaffold with `bench new-app`; `pyproject.toml`, not `setup.py`; `.gi
 12. **Clean, low-complexity code.** Small functions, low cyclomatic/cognitive complexity, correct abstractions, no speculative indirection. Match the surrounding style; **keep comments minimal**.
 13. **Never guess an API or a fact.** Read the source, Context7, `--help`, or the live DB before using unfamiliar syntax. Never fabricate config, data, or access.
 14. **Dead/legacy code is archived, not stranded.** Move it to gitignored `archive/`, remove it from the active code, and leave a commented trace in the relevant index file (e.g. `patches.txt`). Never silently delete.
+15. **File privacy is fail-closed.** Every attachment is **private** unless its doctype is a `*Settings` doctype (logos) or operator-listed public in **CRM Azure Storage Settings → Public Attachment Doctypes**. Never hardcode a privacy doctype list — a forgotten patient doctype must default private, never leak.
+16. **No best guesses on inbound attribution.** Inbound messages/calls attach ONLY to a lead matched on **phone + the receiving account's grouping** (WhatsApp token / Acefone DID). No hit ⇒ **drop** (and log) — never fall back to first/most-recent/any-lead-by-phone.
 
 ### B. How to work with me
 

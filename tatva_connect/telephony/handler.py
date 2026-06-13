@@ -95,10 +95,7 @@ def _entry(direction: str, completed: bool):
 def _valid_key() -> bool:
 	expected = frappe.db.get_single_value(SETTINGS, "webhook_verify_token")
 	if not expected:
-		# No token configured -> accept (mirrors crm Exotel's "key and key==token"
-		# being false; but here we let an un-configured install pass so a first
-		# capture can be inspected). Operators SHOULD set a token in prod.
-		return True
+		return False  # fail-closed: no token configured -> reject (set a token to receive)
 	key = frappe.request.args.get("key") if frappe.request else None
 	key = key or frappe.form_dict.get("key")
 	return key == expected
@@ -226,23 +223,8 @@ def _apply(doc, payload: dict, status: str, call_type: str, customer_number, acc
 
 
 def _link_lead(doc, customer_number, account_name=None):
-	"""Resolve customer number -> CRM Lead and link the call log (M-4).
-
-	Anchored, account-disambiguated match instead of CRM `get_contact`'s loose
-	substring `LIKE` + most-recently-modified pick:
-
-	  1. Anchor on the phone (last-10 / E.164), never a free substring.
-	  2. On a SHARED phone with several leads, pick the one whose taxonomy routes
-	     to the RECEIVING Acefone account (`account_name`) — mirroring the WhatsApp
-	     phone+account scoping — so an inbound call lands on the right product-line
-	     lead, not "first" / "most recent".
-	  3. If we can't disambiguate (no account, or no lead routes to it), fall back
-	     to the single anchored lead if there's exactly one; otherwise leave the
-	     call unlinked rather than guess and misattribute.
-
-	Sets the reference_* pair (for the Calls-tab feed) AND link_with_reference_doc
-	(parity with how crm stores call links).
-	"""
+	"""Link the call to its lead by strict phone+receiving-account match; unlinked if no hit.
+	Sets reference_* (for the Calls-tab feed) AND link_with_reference_doc (crm parity)."""
 	if not customer_number:
 		return
 
@@ -256,32 +238,17 @@ def _link_lead(doc, customer_number, account_name=None):
 
 
 def _resolve_lead_for_call(customer_number, account_name):
-	"""Anchored phone match + receiving-account disambiguation. Returns a lead name
-	or None (None = leave unlinked rather than attach to the wrong lead)."""
+	"""Strict match: a lead whose phone ends in the same last-10 AND whose taxonomy routes to
+	the receiving Acefone account. No account, or not exactly one routed lead -> None (leave
+	unlinked; never best-guess to first/most-recent)."""
 	digits = acefone.normalize_number(customer_number)
-	if not digits:
+	if not digits or not account_name:
 		return None
-	last10 = digits[-10:]
-
-	# Anchor: leads whose stored mobile_no ends in the same last-10 (stored E.164).
 	candidates = frappe.get_all(
-		"CRM Lead", filters={"mobile_no": ["like", f"%{last10}"]}, pluck="name"
+		"CRM Lead", filters={"mobile_no": ["like", f"%{digits[-10:]}"]}, pluck="name"
 	)
-	if not candidates:
-		return None
-	if len(candidates) == 1:
-		return candidates[0]
-
-	# Shared phone: disambiguate by the receiving account's routing (same as WhatsApp).
-	if account_name:
-		scoped = routing.leads_for_number_and_account(candidates, account_name)
-		if len(scoped) == 1:
-			return scoped[0]
-		# 0 or >1 routed to this account — ambiguous; do not guess.
-		return None
-
-	# No receiving account known and 2+ leads share the phone — don't guess.
-	return None
+	scoped = routing.leads_for_number_and_account(candidates, account_name) if candidates else []
+	return scoped[0] if len(scoped) == 1 else None
 
 
 def _find_existing(call_id, direction, customer_number, payload):
@@ -320,7 +287,7 @@ def _recent_initiated_outbound(customer_number):
 			"telephony_medium": TELEPHONY_MEDIUM,
 			"type": "Outgoing",
 			"status": "Initiated",
-			"to": ["like", f"%{digits[-10:]}%"],
+			"to": ["like", f"%{digits[-10:]}"],
 			"creation": [">=", cutoff],
 		},
 		order_by="creation desc",
@@ -336,7 +303,7 @@ def _user_for_agent_number(agent_number):
 	if not digits:
 		return None
 	return frappe.db.get_value(
-		"CRM Telephony Agent", {"acefone_number": ["like", f"%{digits[-10:]}%"]}, "user"
+		"CRM Telephony Agent", {"acefone_number": ["like", f"%{digits[-10:]}"]}, "user"
 	)
 
 

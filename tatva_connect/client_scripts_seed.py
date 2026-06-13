@@ -11,6 +11,7 @@ import frappe
 # (Client Script name, dt, view, app-relative js path)
 SCRIPTS = [
 	("WhatsApp Account WATI Helpers", "WhatsApp Account", "Form", "whatsapp/client_scripts/whatsapp_account.js"),
+	("WhatsApp Notification WATI Helpers", "WhatsApp Notification", "Form", "whatsapp/client_scripts/whatsapp_notification.js"),
 ]
 
 

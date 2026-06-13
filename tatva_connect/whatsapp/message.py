@@ -212,15 +212,8 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		]
 
 	def _wati_param_names(self, template):
-		"""Ordered WATI parameter names for {{1}},{{2}},… — the keys of sample_values
-		(WATI customParams in body order; see templates_sync). Empty if none; callers
-		fall back to the positional index, which also matches sample_values when a
-		template's params were unnamed (sync keys them "1","2",… in that case)."""
-		try:
-			sv = json.loads(template.sample_values) if template.sample_values else {}
-			return list(sv.keys())
-		except Exception:
-			return []
+		"""Ordered WATI parameter names — single source of truth in wati.template_param_names."""
+		return wati.template_param_names(template)
 
 	def _wati_apply_response(self, resp):
 		"""Map a WATI send response onto the row. Manual-send side of the shared contract:

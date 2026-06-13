@@ -102,9 +102,15 @@ class WATINotification(WhatsAppNotification):
 			).insert(ignore_permissions=True)
 
 	def _wati_params_from_meta(self, tpl):
-		"""Pull the body component's positional params out of the Meta payload."""
+		"""Body params as WATI [{name, value}] — names by the template's real paramNames (one
+		brain with the manual path: wati.template_param_names), values from the operator's field
+		mapping (the native `fields` table). Positional fallback when the template has no names."""
+		names = wati.template_param_names(frappe.get_doc("WhatsApp Templates", self.template)) if self.template else []
 		for component in tpl.get("components") or []:
 			if component.get("type") == "body":
 				params = component.get("parameters") or []
-				return [{"name": str(i + 1), "value": p.get("text")} for i, p in enumerate(params)]
+				return [
+					{"name": names[i] if i < len(names) else str(i + 1), "value": p.get("text")}
+					for i, p in enumerate(params)
+				]
 		return []

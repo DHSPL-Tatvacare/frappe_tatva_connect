@@ -186,6 +186,16 @@ fixtures = [
 		"WhatsApp Account-app_id-hidden",
 		"WhatsApp Account-business_id-hidden",
 		"WhatsApp Account-phone_id-hidden",
+		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our WATI
+		# text-template path doesn't use, so the form shows just template + variable mapping + account.
+		"WhatsApp Notification-code-hidden",
+		"WhatsApp Notification-attach_document_print-hidden",
+		"WhatsApp Notification-custom_attachment-hidden",
+		"WhatsApp Notification-attach-hidden",
+		"WhatsApp Notification-file_name-hidden",
+		"WhatsApp Notification-header_type-hidden",
+		"WhatsApp Notification-attach_from_field-hidden",
+		"WhatsApp Notification-button_fields-hidden",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field = the columns; Property
 	# Setter = field-level overrides). Business/master DATA is NOT seeded — it ships as
