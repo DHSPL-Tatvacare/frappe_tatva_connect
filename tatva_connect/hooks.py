@@ -91,6 +91,8 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		"0 */6 * * *": ["tatva_connect.whatsapp.templates_sync.scheduled_sync_all"],
+		# Daily: sweep abandoned email-draft staging files.
+		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 	},
 }
 
@@ -103,6 +105,7 @@ after_migrate = [
 	"tatva_connect.schema_setup.apply_schema",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
+	"tatva_connect.api.email.ensure_draft_folder",
 	# Master-data seeds: install-app baselines patches.txt without running it, so seed
 	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
 	"tatva_connect.seeds.seed_master_data",

@@ -14,6 +14,8 @@ SCRIPTS = [
 	("WATI Failed Reason (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_failed_reason.js"),
 	("Hide Status Pill (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/hide_status_pill.js"),
 	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/data_tab_gate.js"),
+	("Email Attach (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/email_attach.js"),
+	("Delete Modal Fit (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/delete_modal_fit.js"),
 	("Task Modal Fit (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_modal_fit.js"),
 ]
 

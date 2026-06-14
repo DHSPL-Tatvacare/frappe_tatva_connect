@@ -84,10 +84,25 @@ def _repoint_attachment_comment(doc, old_url, new_url):
 			)
 
 
+def _is_compose_draft(doc) -> bool:
+	"""Files staged by the composer before the mail is sent — defer their offload until
+	send (add_attachments then makes a Home/Attachments / Communication-scoped File we DO
+	offload). Two cases: device uploads we stage UNATTACHED in "Home/Email Drafts", and any
+	legacy composer upload that landed attached in folder "Home" (frappe-ui's default)."""
+	if doc.folder == "Home/Email Drafts":
+		return True
+	return bool(doc.attached_to_doctype) and doc.folder == "Home"
+
+
 def after_insert(doc, method=None):
 	# Offload in the background after commit: the File lands locally instantly (no UX delay,
 	# survives an Azure outage), then a worker moves the bytes off and drops the local copy.
-	if blob_store.is_enabled() and not doc.is_folder and blob_store.is_local_url(doc.file_url):
+	if (
+		blob_store.is_enabled()
+		and not doc.is_folder
+		and blob_store.is_local_url(doc.file_url)
+		and not _is_compose_draft(doc)
+	):
 		frappe.enqueue(offload_file, queue="short", enqueue_after_commit=True, file_name=doc.name)
 
 
@@ -110,6 +125,11 @@ def on_trash(doc, method=None):
 		return
 	key = blob_store.blob_key_from_url(doc.file_url)
 	if not key:
+		return
+	# Email/comment attachments copy a file's URL onto a Communication/Comment-scoped File,
+	# so several rows share ONE blob. Drop the blob only on the LAST reference — else deleting
+	# a sent-mail copy would orphan the original's bytes.
+	if frappe.db.count("File", {"file_url": doc.file_url, "name": ["!=", doc.name]}):
 		return
 	try:
 		BlobStore().delete(key)
