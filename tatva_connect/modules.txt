@@ -7,3 +7,5 @@ Intake
 WhatsApp
 Telephony
 Storage
+Location
+Activity

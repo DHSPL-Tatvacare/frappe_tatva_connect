@@ -12,6 +12,8 @@ import frappe
 SCRIPTS = [
 	("WhatsApp Account WATI Helpers", "WhatsApp Account", "Form", "whatsapp/client_scripts/whatsapp_account.js"),
 	("WhatsApp Notification WATI Helpers", "WhatsApp Notification", "Form", "whatsapp/client_scripts/whatsapp_notification.js"),
+	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
+	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
 ]
 
 

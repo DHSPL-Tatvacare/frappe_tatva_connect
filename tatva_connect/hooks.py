@@ -28,6 +28,18 @@ override_whitelisted_methods = {
 	# playable recording path for Acefone. See tatva_connect/telephony/bridge.py.
 	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.telephony.bridge.make_a_call",
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
+	# Mirror LSQ: surface Task created/closed inside the Lead/Deal activity timeline
+	# (native timeline omits task lifecycle). Derived on read, nothing stored.
+	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
+}
+
+# CRM Task has no native list scoping (crm scopes only Lead/Deal) -> every agent sees every
+# task. Mirror each task's parent Lead/Deal visibility onto Task lists + single-doc reads.
+permission_query_conditions = {
+	"CRM Task": "tatva_connect.tasks.permissions.get_task_permission_query_conditions",
+}
+has_permission = {
+	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
 }
 
 # Event-driven automations: each side-effect lives in its feature module
@@ -50,10 +62,14 @@ doc_events = {
 		],
 	},
 	"CRM Task": {
-		# seed first (fills the checklist from the template), then enforce (gates Done)
+		# seed first (fills the checklist from the template), then enforce (gates Done).
+		# enforce_location is the fail-closed backstop for location-required task types:
+		# the client form script captures + writes coords; this guarantees they're present
+		# on every save path (incl. API/import), or the save is blocked.
 		"validate": [
 			"tatva_connect.tasks.tasks.seed_checklist",
 			"tatva_connect.tasks.tasks.enforce_checklist",
+			"tatva_connect.tasks.tasks.enforce_location",
 		],
 	},
 	"WhatsApp Message": {
@@ -324,15 +340,7 @@ required_apps = ["crm", "frappe_whatsapp"]
 
 # Permissions
 # -----------
-# Permissions evaluated in scripted ways
-
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+# Permissions evaluated in scripted ways (the active hooks live up top, near the other overrides).
 
 # DocType Class
 # ---------------

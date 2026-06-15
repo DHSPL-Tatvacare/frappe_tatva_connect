@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-16 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "vertical",
+  "group",
+  "program",
+  "radius_m"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "Blank = wildcard (any vertical).",
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Vertical",
+   "options": "CRM Vertical"
+  },
+  {
+   "columns": 3,
+   "description": "Blank = wildcard (any group).",
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Group",
+   "options": "CRM Group"
+  },
+  {
+   "columns": 3,
+   "description": "Blank = wildcard (any program).",
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Program",
+   "options": "CRM Program"
+  },
+  {
+   "columns": 1,
+   "description": "Allowed distance from the clinic anchor, in metres. Blank = 150.",
+   "fieldname": "radius_m",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Radius (m)",
+   "non_negative": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-16 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Location",
+ "name": "CRM Maps Tracked Grain",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

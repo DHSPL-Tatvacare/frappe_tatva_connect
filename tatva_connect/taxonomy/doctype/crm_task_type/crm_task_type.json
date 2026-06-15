@@ -8,7 +8,14 @@
  "engine": "InnoDB",
  "field_order": [
   "type_name",
-  "description"
+  "description",
+  "activity_section",
+  "visit_mode",
+  "is_logged_complete",
+  "schema_section",
+  "schema",
+  "scope_section",
+  "scope"
  ],
  "fields": [
   {
@@ -23,6 +30,49 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "activity_section",
+   "fieldtype": "Section Break",
+   "label": "Activity Engine"
+  },
+  {
+   "description": "In-Person makes the type location-eligible (Phase B). Blank = not an in-person visit.",
+   "fieldname": "visit_mode",
+   "fieldtype": "Select",
+   "label": "Visit Mode",
+   "options": "\nIn-Person\nPhone\nNone"
+  },
+  {
+   "default": "1",
+   "description": "On: this type is logged complete on save (an activity). Off: a plain open to-do.",
+   "fieldname": "is_logged_complete",
+   "fieldtype": "Check",
+   "label": "Logged Complete"
+  },
+  {
+   "fieldname": "schema_section",
+   "fieldtype": "Section Break",
+   "label": "Activity Form Schema"
+  },
+  {
+   "description": "Per-type form fields, rendered in order. Empty = the type is a plain task (no activity form).",
+   "fieldname": "schema",
+   "fieldtype": "Table",
+   "label": "Schema",
+   "options": "CRM Task Type Field"
+  },
+  {
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Availability (Lead Grain)"
+  },
+  {
+   "description": "Which leads can log this activity, by grain. Blank axis = wildcard. No rows = the type never appears as an activity (dormant).",
+   "fieldname": "scope",
+   "fieldtype": "Table",
+   "label": "Scope",
+   "options": "CRM Task Type Scope"
   }
  ],
  "grid_page_length": 50,

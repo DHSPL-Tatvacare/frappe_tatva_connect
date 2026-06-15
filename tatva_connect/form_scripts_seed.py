@@ -16,7 +16,11 @@ SCRIPTS = [
 	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/data_tab_gate.js"),
 	("Email Attach (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/email_attach.js"),
 	("Delete Modal Fit (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/delete_modal_fit.js"),
+	("Log Activity (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/activity_log.js"),
 	("Task Modal Fit (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_modal_fit.js"),
+	# v1 "Task Location Capture (CRM Task)" (task_location.js) RETIRED in Phase B — location folded
+	# into the activity flow (save_activity + enforce_location). Archived to archive/phase-b-retired-v1-location/.
+	("Activity Complete (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_activity.js"),
 ]
 
 

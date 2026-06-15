@@ -61,6 +61,26 @@ def enforce_checklist(doc, method=None):
 		)
 
 
+def enforce_location(doc, method=None):
+	"""Fail-closed backstop for the location guard: an in-person activity on a location-tracked
+	lead grain must carry coordinates. The activity flow (save_activity) captures + writes them
+	via the client; this guarantees the rule holds even on an API / import / scripted save where
+	no browser ran. The gate lives once in location.api.location_guard_applies (one brain)."""
+	from tatva_connect.location.api import location_guard_applies
+
+	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
+		return
+	if location_guard_applies(doc.custom_task_type, doc.reference_docname) is None:
+		return
+	if not (doc.custom_location_latitude and doc.custom_location_longitude):
+		frappe.throw(
+			_("This in-person activity requires a captured location. Open it in the CRM and save to capture."),
+			title=_("Location required"),
+		)
+	if not doc.custom_location_captured_at:
+		doc.custom_location_captured_at = now_datetime()
+
+
 @frappe.whitelist()
 def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None):
 	"""Idempotent follow-up task. Throttle: ONE open task per lead per type — if one
@@ -120,39 +140,18 @@ def _lead_axes(doc):
 
 
 def resolve_template(task_type, vertical, group, program):
-	"""Most-specific-wins, no global default. A template axis that is SET must match
-	the lead; a blank axis is a wildcard. Score: program=4, group=2, PL=1. Highest
-	score wins; an exact tie is ambiguous -> raise. No match -> None."""
-	scored = []
-	for c in frappe.get_all(
-		"CRM Task Checklist Template",
-		filters={"task_type": task_type, "enabled": 1},
-		fields=["name", "vertical", "psp_group", "program"],
-	):
-		score, ok = 0, True
-		for tmpl_val, lead_val, weight in (
-			(c.program, program, 4),
-			(c.psp_group, group, 2),
-			(c.vertical, vertical, 1),
-		):
-			if tmpl_val:
-				if tmpl_val != lead_val:
-					ok = False
-					break
-				score += weight
-		if ok:
-			scored.append((score, c.name))
+	"""Most-specific-wins checklist template for the lead's grain — a thin caller of
+	the shared grain brain (taxonomy.grain.resolve_scoped). No global default; a set
+	axis must match, a blank axis is a wildcard; an exact tie -> raise; no match -> None."""
+	from tatva_connect.taxonomy.grain import resolve_scoped
 
-	if not scored:
-		return None
-	scored.sort(reverse=True)
-	top = scored[0][0]
-	winners = [n for s, n in scored if s == top]
-	if len(winners) > 1:
-		frappe.throw(
-			_("Ambiguous checklist templates for task type {0} (equally specific: {1}). Fix the scope.").format(
-				task_type, ", ".join(winners)
-			),
-			title=_("Ambiguous checklist template"),
+	candidates = [
+		{"name": c.name, "vertical": c.vertical, "group": c.psp_group, "program": c.program}
+		for c in frappe.get_all(
+			"CRM Task Checklist Template",
+			filters={"task_type": task_type, "enabled": 1},
+			fields=["name", "vertical", "psp_group", "program"],
 		)
-	return frappe.get_doc("CRM Task Checklist Template", winners[0])
+	]
+	winner = resolve_scoped(candidates, vertical, group, program)
+	return frappe.get_doc("CRM Task Checklist Template", winner["name"]) if winner else None

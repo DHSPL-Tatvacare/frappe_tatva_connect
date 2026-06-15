@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_break_maps",
+  "google_maps_api_key",
+  "static_map_zoom",
+  "check_connection",
+  "section_break_triggers",
+  "location_tracked_grains",
+  "manager_override_role"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Master kill-switch for location capture. Ships OFF (dormant) — enable per deployment. Off = nothing fires, every task saves through the normal CRM flow.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "section_break_maps",
+   "fieldtype": "Section Break",
+   "label": "Google Maps Platform"
+  },
+  {
+   "description": "Google Maps Platform API key, restricted to the Geocoding API + Maps Static API (and ideally to the server IP). Used server-side only — never sent to the browser. Blank = reverse-geocode + map are skipped (raw coordinates are still captured).",
+   "fieldname": "google_maps_api_key",
+   "fieldtype": "Password",
+   "label": "Google Maps API Key"
+  },
+  {
+   "description": "Static map zoom level for the confirmation image (blank = 16).",
+   "fieldname": "static_map_zoom",
+   "fieldtype": "Int",
+   "label": "Static Map Zoom",
+   "non_negative": 1
+  },
+  {
+   "description": "Reverse-geocodes a fixed sample coordinate and shows the resolved address — confirms the key, billing, and Geocoding API are live. Save the key first.",
+   "fieldname": "check_connection",
+   "fieldtype": "Button",
+   "label": "Check Connection"
+  },
+  {
+   "fieldname": "section_break_triggers",
+   "fieldtype": "Section Break",
+   "label": "Location-Tracked Grains"
+  },
+  {
+   "description": "Lead grains (vertical/group/program) whose IN-PERSON activities enforce the doctor-clinic anchor + radius. Blank axis = wildcard. Empty = the guard never triggers (dormant) and activities behave exactly like Phase A.",
+   "fieldname": "location_tracked_grains",
+   "fieldtype": "Table",
+   "label": "Location-Tracked Grains",
+   "options": "CRM Maps Tracked Grain"
+  },
+  {
+   "description": "Role allowed to re-anchor a clinic location (System Manager can always re-anchor). Blank = only System Manager.",
+   "fieldname": "manager_override_role",
+   "fieldtype": "Link",
+   "label": "Manager Override Role",
+   "options": "Role"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Location",
+ "name": "CRM Maps Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
