@@ -138,7 +138,7 @@ fixtures = [
 		# clean server. Every Custom Field on these doctypes is ours (modules own native
 		# fields in JSON, not as Custom Fields); workflow_state is Frappe-managed (excluded).
 		"filters": [
-			["dt", "in", ["CRM Lead", "CRM Task", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File"]],
+			["dt", "in", ["CRM Lead", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},

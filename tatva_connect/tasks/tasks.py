@@ -17,7 +17,10 @@ def on_lead_assignment(doc, method=None):
 		return
 	if not frappe.db.get_single_value(*_SWITCH):
 		return
-	lead_name = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_name") or doc.reference_name
+	lead = frappe.db.get_value(
+		"CRM Lead", doc.reference_name, ["lead_name", "custom_current_program"], as_dict=True
+	) or frappe._dict()
+	lead_name = lead.lead_name or doc.reference_name
 	create_followup_task(
 		lead=doc.reference_name,
 		task_type=CALL_LEAD_TYPE,
@@ -25,6 +28,19 @@ def on_lead_assignment(doc, method=None):
 		assigned_to=doc.allocated_to,
 		title=_("Call lead — {0}").format(lead_name),
 	)
+	# Field-sales: if the lead's program names a first activity type (config), raise ONE open
+	# activity-task of it (reuses the same idempotent throttle). Dormant when the mapping is unset.
+	first_type = lead.custom_current_program and frappe.db.get_value(
+		"CRM Program", lead.custom_current_program, "custom_first_activity_type"
+	)
+	if first_type:
+		create_followup_task(
+			lead=doc.reference_name,
+			task_type=first_type,
+			due_in_hours=48,
+			assigned_to=doc.allocated_to,
+			title=_("{0} — {1}").format(first_type, lead_name),
+		)
 
 
 def seed_checklist(doc, method=None):
