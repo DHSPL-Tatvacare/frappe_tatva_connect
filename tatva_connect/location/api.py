@@ -315,6 +315,91 @@ def reverse_geocode(lat, lng):
 
 
 @frappe.whitelist()
+def geocode_search(query):
+	"""Search an address -> up to 5 candidate {address, lat, lng} via the Geocoding API (key stays
+	server-side). Powers the Desk 'Set Clinic Location' picker — the operator types, picks a match,
+	and we anchor on its resolved coordinates."""
+	key = _api_key()
+	if not (key and query):
+		return []
+	try:
+		r = requests.get(GEOCODE_URL, params={"address": query, "key": key, "components": "country:in"},
+						 timeout=_TIMEOUT)
+		out = []
+		for res in (r.json() or {}).get("results", [])[:5]:
+			loc = res["geometry"]["location"]
+			out.append({"address": res["formatted_address"], "lat": flt(loc["lat"]), "lng": flt(loc["lng"])})
+		return out
+	except Exception:
+		frappe.log_error("location: geocode_search failed")
+		return []
+
+
+PLACES_AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete"
+PLACES_DETAILS_URL = "https://places.googleapis.com/v1/places/"
+
+
+@frappe.whitelist()
+def place_autocomplete(query):
+	"""Places API (New) autocomplete proxy (key server-side). Returns [{place_id, description}] for the
+	Desk 'Set Clinic Location' type-ahead. India-biased."""
+	key = _api_key()
+	if not (key and query):
+		return []
+	try:
+		r = requests.post(
+			PLACES_AUTOCOMPLETE_URL,
+			headers={"Content-Type": "application/json", "X-Goog-Api-Key": key},
+			json={"input": query, "includedRegionCodes": ["in"]},
+			timeout=_TIMEOUT,
+		)
+		out = []
+		for s in (r.json() or {}).get("suggestions", []):
+			pp = s.get("placePrediction") or {}
+			if pp.get("placeId"):
+				out.append({"place_id": pp["placeId"], "description": (pp.get("text") or {}).get("text", "")})
+		return out
+	except Exception:
+		frappe.log_error("location: place_autocomplete failed")
+		return []
+
+
+@frappe.whitelist()
+def place_details(place_id):
+	"""Places API (New) details proxy: a placeId -> {lat, lng, address}. Key server-side."""
+	key = _api_key()
+	if not (key and place_id):
+		return None
+	try:
+		r = requests.get(
+			PLACES_DETAILS_URL + place_id,
+			headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "location,formattedAddress"},
+			timeout=_TIMEOUT,
+		)
+		j = r.json() or {}
+		loc = j.get("location") or {}
+		if not loc:
+			return None
+		return {"lat": flt(loc.get("latitude")), "lng": flt(loc.get("longitude")),
+				"address": j.get("formattedAddress", "")}
+	except Exception:
+		frappe.log_error("location: place_details failed")
+		return None
+
+
+@frappe.whitelist()
+def set_clinic_location(lead, lat, lng, address=None):
+	"""Set/MOVE a lead's clinic anchor from a searched+resolved address (source = Doctor Address).
+	Overwrites any existing anchor — this is how ops corrects or relocates the geofence; the guard
+	then measures every visit against this point. Requires write permission on the lead."""
+	if not frappe.has_permission("CRM Lead", "write", doc=lead):
+		frappe.throw(_("Not permitted to set this lead's clinic location."), frappe.PermissionError)
+	ld = frappe.get_doc("CRM Lead", lead)
+	_write_anchor(ld, flt(lat), flt(lng), ANCHOR_ADDRESS, address=address)
+	return {"lat": flt(lat), "lng": flt(lng), "address": address or "", "source": ANCHOR_ADDRESS}
+
+
+@frappe.whitelist()
 def precheck(lead, task_type, lat, lng, accuracy=None):
 	"""LOCATION-FIRST gate. Called by the client the moment a rep starts an in-person activity,
 	BEFORE the data form opens — so an out-of-range rep is stopped at the door (never fills a form

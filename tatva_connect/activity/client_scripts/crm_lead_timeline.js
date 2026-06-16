@@ -9,6 +9,8 @@
 frappe.ui.form.on("CRM Lead", {
   refresh(frm) {
     if (frm.is_new()) return;
+    // Search a place -> resolve lat/long -> set/move the geofence anchor (the right way to edit it).
+    frm.add_custom_button(__("Set Clinic Location"), () => tcOpenClinicSearch(frm));
     const fld = frm.get_field("custom_activity_timeline_html");
     if (!fld) return;
 
@@ -82,3 +84,86 @@ frappe.ui.form.on("CRM Lead", {
     });
   },
 });
+
+// "Set Clinic Location" — Places API (New) type-ahead → resolve lat/long → move the geofence anchor.
+// Server-proxied (key never client-side): place_autocomplete (suggestions) → place_details (coords) →
+// set_clinic_location (writes the anchor, source = Doctor Address).
+function tcOpenClinicSearch(frm) {
+  let picked = null;
+  let timer = null;
+  const esc = frappe.utils.escape_html;
+  const d = new frappe.ui.Dialog({
+    title: __("Set Clinic Location"),
+    fields: [
+      { fieldtype: "Data", fieldname: "q", label: __("Search clinic / address"), reqd: 1 },
+      { fieldtype: "HTML", fieldname: "out" },
+    ],
+    primary_action_label: __("Set as clinic"),
+    primary_action() {
+      if (!picked) {
+        frappe.show_alert({ message: __("Search and pick a place first"), indicator: "orange" });
+        return;
+      }
+      frappe.call({
+        method: "tatva_connect.location.api.set_clinic_location",
+        args: { lead: frm.doc.name, lat: picked.lat, lng: picked.lng, address: picked.address },
+        freeze: true,
+        callback: () => {
+          d.hide();
+          frappe.show_alert({ message: __("Clinic location set"), indicator: "green" });
+          frm.reload_doc();
+        },
+      });
+    },
+  });
+  const $out = () => d.fields_dict.out.$wrapper;
+  const preview = () => {
+    if (!picked) return "";
+    const url = "/api/method/tatva_connect.location.api.static_map?lat=" +
+      encodeURIComponent(picked.lat) + "&lng=" + encodeURIComponent(picked.lng);
+    return '<div style="margin-top:8px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">📍 ' +
+      esc(picked.address) + '</div><img src="' + url +
+      '" style="width:100%;height:160px;object-fit:cover;border-radius:6px"></div>';
+  };
+  const search = (q) => {
+    frappe.call({
+      method: "tatva_connect.location.api.place_autocomplete",
+      args: { query: q },
+      callback: (r) => {
+        const rows = r.message || [];
+        if (!rows.length) {
+          $out().html('<div style="padding:8px;color:var(--text-muted)">No matches.</div>');
+          return;
+        }
+        const list = rows.map((m, i) =>
+          '<div class="tc-pl-row" data-i="' + i + '" style="padding:8px;border-bottom:1px solid var(--border-color);cursor:pointer">' +
+          esc(m.description) + "</div>").join("");
+        $out().html('<div style="max-height:220px;overflow:auto;border:1px solid var(--border-color);border-radius:6px">' +
+          list + '</div><div class="tc-pl-prev"></div>');
+        $out().find(".tc-pl-row").on("click", function () {
+          const m = rows[parseInt(this.getAttribute("data-i"))];
+          frappe.call({
+            method: "tatva_connect.location.api.place_details",
+            args: { place_id: m.place_id },
+            callback: (r2) => {
+              if (!r2.message) {
+                frappe.show_alert({ message: __("Couldn't resolve that place"), indicator: "red" });
+                return;
+              }
+              picked = r2.message;
+              $out().find(".tc-pl-prev").html(preview());
+            },
+          });
+        });
+      },
+    });
+  };
+  d.fields_dict.q.$input.on("input", function () {
+    const q = this.value.trim();
+    picked = null;
+    clearTimeout(timer);
+    if (q.length < 3) { $out().html(""); return; }
+    timer = setTimeout(() => search(q), 300);
+  });
+  d.show();
+}
