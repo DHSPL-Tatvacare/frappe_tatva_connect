@@ -88,6 +88,10 @@ def enforce_location(doc, method=None):
 	no browser ran. The gate lives once in location.api.location_guard_applies (one brain)."""
 	from tatva_connect.location.api import location_guard_applies
 
+	# Location is captured when the visit is LOGGED (Done), not while the task is an open to-do.
+	# An open/assigned in-person task legitimately has no coordinates yet — only block on completion.
+	if doc.status != DONE_STATUS:
+		return
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
 		return
 	if location_guard_applies(doc.custom_task_type, doc.reference_docname) is None:

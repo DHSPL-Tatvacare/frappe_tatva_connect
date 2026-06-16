@@ -150,11 +150,31 @@ class CRMTask {
               return;
             }
             close();
-            toast.success("Activity logged · " + (loc.address || type));
+            if (loc.lat) this.showLocationFetched(loc); // static-map receipt for in-person captures
+            else toast.success("Activity logged · " + type);
           },
         },
         { label: "Cancel", onClick: (close) => close() },
       ],
+    });
+  }
+
+  // Receipt after a successful save: captured spot on a Google static map (key-safe proxy) +
+  // address + accuracy. Event-driven (Done button) — nothing awaited, can't hang.
+  showLocationFetched(fix) {
+    const mapUrl = "/api/method/tatva_connect.location.api.static_map?lat=" +
+      encodeURIComponent(fix.lat) + "&lng=" + encodeURIComponent(fix.lng);
+    const acc = fix.accuracy ? "±" + Math.round(fix.accuracy) + " m" : "";
+    const addr = fix.address || "Address unavailable";
+    this.createDialog({
+      title: "Location Captured",
+      html:
+        '<img src="' + mapUrl + '" alt="map" style="width:100%;height:180px;object-fit:cover;' +
+        "border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
+        '<div style="display:flex;gap:8px;align-items:flex-start"><span style="flex:0 0 auto;margin-top:1px">📍</span>' +
+        '<div><div style="font-size:14px;line-height:1.5;color:var(--ink-gray-8)">' + ESC(addr) + "</div>" +
+        '<div style="color:var(--ink-gray-5);font-size:12px;margin-top:4px">' + ESC(acc) + "</div></div></div>",
+      actions: [{ label: "Done", variant: "solid", onClick: (c) => c() }],
     });
   }
 }

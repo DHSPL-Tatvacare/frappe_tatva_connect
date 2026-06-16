@@ -92,6 +92,37 @@ Packaging: scaffold with `bench new-app`; `pyproject.toml`, not `setup.py`; `.gi
 
 ---
 
+## Local dev flow — update `tatva_connect` on the devbench (git-based, NO rsync/copy)
+
+The devbench `apps/tatva_connect` is a **real git clone** of this repo (`origin` = `github.com/devops-tatvacare/tatva_frappe_custom`, branch `main`). The **GitHub repo is the source of truth** — never rsync/copy the working tree into the bench. Loop: **edit → commit → push to `main` → pull on the devbench.**
+
+**Environment:** container `frappedev-frappe-1` · bench `/workspace/development/frappe-bench` · site `dev.localhost`.
+
+**One-shot update (run from the Mac):**
+```bash
+docker exec frappedev-frappe-1 bash -lc '
+  cd /workspace/development/frappe-bench/apps/tatva_connect &&
+  git fetch origin main && git reset --hard origin/main &&
+  cd /workspace/development/frappe-bench &&
+  bench --site dev.localhost migrate &&     # runs after_migrate: schema_setup + seeds + form/client-script re-seed
+  bench build --app tatva_connect           # only if public/ JS|CSS changed
+'
+docker exec frappedev-redis-cache-1 redis-cli FLUSHALL                 # drop stale boot / module-map cache
+docker exec -d frappedev-frappe-1 bash -lc 'cd /workspace/development/frappe-bench && bench start'  # if dev server is down
+```
+
+**When to run what:**
+- Python / hooks / doctype JSON / fixtures / seeds changed → **`migrate`** (re-runs `after_migrate`).
+- `public/` JS or CSS changed → **`bench build --app tatva_connect`**.
+- CRM Form Scripts (`*/form_scripts/*.js`) changed → they **re-seed on `migrate`** (no build).
+- Change didn't take → **flush redis-cache + restart `bench start`** (the dev server caches boot + module map in memory; a console `clear_cache` doesn't clear the running worker).
+
+**Rules:** `git reset --hard origin/main` is safe (the bench clone is disposable; repo is the only truth — per the "dev litter never moves" invariant). Never hand-edit files inside the bench clone — edit in the repo, commit, push, pull. `bench start` is the dev web server; if it stops the whole site is down.
+
+> Prod is the *other* lane (image rebuild via `apps.json`) — see the v16 runbooks. This section is **local dev only**.
+
+---
+
 ## Where to look
 
 | Need | Go to |

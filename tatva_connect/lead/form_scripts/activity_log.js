@@ -83,6 +83,24 @@ function setupForm({ doc, $dialog, call, createToast }) {
     } catch (e) {}
     return { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy, address: address };
   }
+  // Receipt shown AFTER a successful save: the captured spot on a Google static map (key-safe
+  // proxy) + resolved address + accuracy. Event-driven (a Done button) — nothing awaited, can't hang.
+  function showLocationFetched(fix) {
+    const mapUrl = "/api/method/tatva_connect.location.api.static_map?lat=" +
+      encodeURIComponent(fix.lat) + "&lng=" + encodeURIComponent(fix.lng);
+    const acc = fix.accuracy ? "±" + Math.round(fix.accuracy) + " m" : "";
+    const addr = fix.address || "Address unavailable";
+    $dialog({
+      title: "Location Captured",
+      html:
+        '<img src="' + mapUrl + '" alt="map" style="width:100%;height:180px;object-fit:cover;' +
+        "border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
+        '<div style="display:flex;gap:8px;align-items:flex-start"><span style="flex:0 0 auto;margin-top:1px">📍</span>' +
+        '<div><div style="font-size:14px;line-height:1.5;color:var(--ink-gray-8)">' + esc(addr) + "</div>" +
+        '<div style="color:var(--ink-gray-5);font-size:12px;margin-top:4px">' + esc(acc) + "</div></div></div>",
+      actions: [{ label: "Done", variant: "solid", onClick: (c) => c() }],
+    });
+  }
 
   // ---- dynamic form (one renderer for both logging a new activity and completing one) -----
   const dt2local = (v) => (v && v.length === 16 ? v.replace("T", " ") + ":00" : v);
@@ -140,7 +158,8 @@ function setupForm({ doc, $dialog, call, createToast }) {
               return;
             }
             close();
-            notify("Activity logged · " + (loc.address || type), true);
+            if (loc.lat) showLocationFetched(loc); // static-map receipt for in-person captures
+            else notify("Activity logged · " + type, true);
             refreshOpenTasks();
           },
         },
