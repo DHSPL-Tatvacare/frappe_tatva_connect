@@ -38,3 +38,17 @@ def apply_schema():
 		except Exception:
 			frappe.db.rollback()
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
+	_ensure_fixed_settings()
+
+
+def _ensure_fixed_settings():
+	"""Backfill display-only fixed values on single settings (a field default never reaches an existing
+	single doc). geocoding_provider is always Google — shown grayed in CRM Maps Settings for reference.
+	Idempotent; isolates its own failure so it never aborts the migrate."""
+	try:
+		if frappe.db.exists("DocType", "CRM Maps Settings"):
+			frappe.db.set_single_value("CRM Maps Settings", "geocoding_provider", "Google")
+			frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_fixed_settings")

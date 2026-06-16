@@ -11,6 +11,10 @@
   "google_maps_api_key",
   "static_map_zoom",
   "check_connection",
+  "section_break_display",
+  "thumbnail_map_provider",
+  "dialog_map_provider",
+  "geocoding_provider",
   "section_break_triggers",
   "location_tracked_grains",
   "manager_override_role"
@@ -46,6 +50,34 @@
    "fieldname": "check_connection",
    "fieldtype": "Button",
    "label": "Check Connection"
+  },
+  {
+   "fieldname": "section_break_display",
+   "fieldtype": "Section Break",
+   "label": "Map Display",
+   "description": "Which provider renders the in-app maps. Switch freely — no code change. Geocoding (address ↔ coordinates) is always Google. Desk history maps are always Google."
+  },
+  {
+   "description": "Provider for the card + detail-modal map thumbnails (the small visit maps). Blank = OpenStreetMap (free, no key). Google falls back to OpenStreetMap automatically when Maps is disabled or no key is set.",
+   "fieldname": "thumbnail_map_provider",
+   "fieldtype": "Select",
+   "label": "Thumbnail Map Provider",
+   "options": "\nOpenStreetMap\nGoogle"
+  },
+  {
+   "description": "Provider for the out-of-range block + capture-receipt dialog maps. Blank = Google (Static Maps). Falls back to OpenStreetMap automatically when Maps is disabled or no key is set.",
+   "fieldname": "dialog_map_provider",
+   "fieldtype": "Select",
+   "label": "Dialog Map Provider",
+   "options": "\nOpenStreetMap\nGoogle"
+  },
+  {
+   "default": "Google",
+   "description": "Address ↔ coordinate lookups always use Google (best India accuracy). Not switchable — shown for reference.",
+   "fieldname": "geocoding_provider",
+   "fieldtype": "Data",
+   "label": "Geocoding Provider",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_triggers",

@@ -584,6 +584,30 @@ def lead_location_view(lead):
 	return {"anchor": anchor_out, "activities": activities, "rejections": rejections}
 
 
+def _resolve_provider(pref, default, google_ok):
+	"""Effective display provider for one map surface: the operator's choice (or the code default when
+	the field is blank — no baked config value), downgraded to OSM whenever Google isn't usable (Maps
+	disabled / no key) so a Google choice can never render a broken image. Returns 'osm' or 'google'."""
+	p = (pref or default or "").strip().lower()
+	p = "google" if p.startswith("google") else "osm"
+	return "google" if (p == "google" and google_ok) else "osm"
+
+
+@frappe.whitelist()
+def map_config():
+	"""The in-app map display config for the SPA: which provider renders each surface, already resolved
+	for availability. ONE source so the card thumbnail, the detail-modal map, and the block/receipt
+	dialog maps all obey the same operator switches (CRM Maps Settings → Map Display). Blank field =
+	code default (thumbnails OSM, dialogs Google). Geocoding + Desk history stay Google regardless."""
+	s = _settings()
+	google_ok = bool(s.enabled and _api_key())
+	return {
+		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
+		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),
+		"google_available": google_ok,
+	}
+
+
 @frappe.whitelist()
 def static_map(lat, lng, here_lat=None, here_lng=None):
 	"""Key-safe proxy: stream the Google Static Maps PNG so the API key never reaches the browser.
