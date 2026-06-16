@@ -130,6 +130,17 @@ def _write_anchor(ld, lat, lng, source, address=None):
 	ld.save(ignore_permissions=True)
 
 
+def _resolve_anchor_address(ld, anchor):
+	"""The anchor's human address: the stored one, else reverse-geocode ONCE and cache it back onto
+	custom_clinic_address (db_set, no modified bump) so later prechecks / Desk views don't re-hit Google."""
+	if anchor.get("address"):
+		return anchor["address"]
+	addr = _reverse_geocode(anchor["lat"], anchor["lng"])
+	if addr and ld.meta.has_field("custom_clinic_address"):
+		ld.db_set("custom_clinic_address", addr, update_modified=False)
+	return addr or ""
+
+
 def ensure_anchor(ld, here_lat, here_lng):
 	"""Resolve the lead's clinic anchor (hybrid). Priority: existing anchor → the doctor's precise
 	registered address (geocoded) → the rep's first in-person GPS fix. Returns (anchor, created):
@@ -304,7 +315,7 @@ def precheck(lead, task_type, lat, lng, accuracy=None):
 		"allowed_m": int(round(allowed)),
 		"anchor_lat": anchor["lat"],
 		"anchor_lng": anchor["lng"],
-		"anchor_address": anchor["address"] or _reverse_geocode(anchor["lat"], anchor["lng"]) or "",
+		"anchor_address": _resolve_anchor_address(ld, anchor),
 	}
 
 
@@ -320,7 +331,7 @@ def lead_location_view(lead):
 		anchor_out = {
 			"lat": anchor["lat"],
 			"lng": anchor["lng"],
-			"address": anchor["address"] or _reverse_geocode(anchor["lat"], anchor["lng"]) or "",
+			"address": _resolve_anchor_address(ld, anchor),
 			"source": anchor["source"] or ANCHOR_GPS,
 		}
 	rows = frappe.get_all(

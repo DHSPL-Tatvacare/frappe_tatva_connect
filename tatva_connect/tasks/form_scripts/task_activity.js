@@ -121,12 +121,14 @@ async function tcRunPopupActivity(ctl) {
   try {
     schema = (await ctl.call("tatva_connect.activity.api.get_schema", { task_type: type })) || [];
   } catch (e) {
-    return false; // can't resolve a schema → plain task, let native proceed (server backstop guards)
+    return false; // can't resolve → plain task, let native proceed (server backstop guards)
   }
-  if (!schema.length) return false; // not a form-activity
 
+  // Location-FIRST, before deciding whether to open a form: an In-Person tracked type with NO schema
+  // fields still needs its GPS captured (else the backstop blocks completion). Mirrors the list path.
   const loc = await tcLocationFirst(ctl, lead, type);
   if (loc === "denied" || loc === "blocked") throw new Error(TC_ABORT); // toast already shown
+  if (!schema.length && loc === null) return false; // plain task, nothing to capture → native save
   const fix = loc && loc.fix;
 
   const data = await ctl.formDialog({

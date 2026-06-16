@@ -14,6 +14,9 @@ tatva_connect.patches.seed_india_cities
 # (message_id, reference_name) so one number can mirror onto multiple leads (same patient,
 # two programs) without DuplicateEntryError on refresh / inbound.
 tatva_connect.patches.recreate_whatsapp_message_id_index_composite
+# Activity/location rebuild: drop the superseded CRM Lead "Location Captures" section + HTML field
+# (collapsed into the unified "Activity & Location" view). Idempotent; also runs on after_migrate.
+tatva_connect.patches.retire_location_captures_fields
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/
