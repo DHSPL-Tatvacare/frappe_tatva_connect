@@ -331,6 +331,46 @@ def _type_config(task_type):
 
 
 @frappe.whitelist()
+def task_detail(task):
+	"""Render-ready detail for ONE task by name — the global Tasks list / sidebar opens TatvaTaskModal
+	from this (same shape as a lead_task_board task + its type config). `config` is null for a plain
+	(non-activity) task, so the client falls back to the native doctype modal. One brain reused
+	(_type_config / _task_values / _task_location)."""
+	r = frappe.db.get_value(
+		"CRM Task", task,
+		["name", "title", "custom_task_type", "status", "priority", "due_date",
+		 "assigned_to", "owner", "creation", "description", "custom_activity_payload",
+		 *FIRST_CLASS,
+		 "custom_location_latitude", "custom_location_longitude",
+		 "custom_location_address", "custom_location_captured_at",
+		 "reference_doctype", "reference_docname"],
+		as_dict=True,
+	)
+	if not r:
+		frappe.throw(_("Task {0} not found").format(task))
+	cfg = _type_config(r.custom_task_type) if r.custom_task_type else None
+	who = r.assigned_to or r.owner
+	return {
+		"lead": r.reference_docname if r.reference_doctype == "CRM Lead" else None,
+		"config": cfg,
+		"task": {
+			"name": r.name,
+			"title": r.title,
+			"task_type": r.custom_task_type or "",
+			"status": r.status,
+			"priority": r.priority,
+			"due_date": str(r.due_date) if r.due_date else None,
+			"rep": who,
+			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
+			"creation": str(r.creation),
+			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
+			"values": _task_values(r, cfg),
+			"location": _task_location(r),
+		},
+	}
+
+
+@frappe.whitelist()
 def type_config(task_type):
 	"""Render config (fields + is_logged_complete + captures_location) for ONE task type — the
 	create-mode modal's source when the chosen type has no existing task seeding it into
