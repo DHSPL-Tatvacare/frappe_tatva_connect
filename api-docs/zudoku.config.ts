@@ -38,12 +38,13 @@ const config: ZudokuConfig = {
       primary: "172 66% 50%",
       primaryForeground: "180 60% 8%",
     },
-    // Match the wiki's compact 14px scale. Zudoku sizes prose in rem off the
-    // root, so dropping the root font-size from 16px to 14px shrinks everything
-    // proportionally (body, headings, content) to the wiki's feel.
+    // Shrink only the CONTENT text to the wiki's 14px feel — NOT the whole
+    // layout. The doc body is Tailwind `.prose`, whose children size in em off
+    // the prose base, so setting the base to 0.875rem (14px) scales the reading
+    // text down while the page width, sidebar, and spacing stay at full size.
     customCss: {
-      "html": {
-        "font-size": "14px",
+      ".prose": {
+        "font-size": "0.875rem",
       },
       "table": {
         "font-size": "0.9rem",
