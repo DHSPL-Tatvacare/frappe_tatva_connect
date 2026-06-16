@@ -56,6 +56,48 @@ def _activity_type_names():
 	)}
 
 
+def _type_has_schema(task_type):
+	"""True if the type carries a form schema (≥1 field) — i.e. completing it must log details."""
+	return bool(task_type and frappe.db.exists(
+		"CRM Task Type Field", {"parent": task_type, "parenttype": "CRM Task Type"}
+	))
+
+
+def activity_is_unlogged(doc):
+	"""True if this is a form-activity task being marked Done with NO details captured. The single
+	definition of 'an activity completed empty' — used by the validate backstop (one brain) so the
+	rule holds on every save path, not just the Form-view controller."""
+	if (doc.status or "") != "Done":
+		return False
+	if not _type_has_schema(doc.custom_task_type):
+		return False
+	# save_activity always writes a payload string (even "{}") + the first-class cols; a raw
+	# set_value(status=Done) leaves the payload untouched (None/blank). So a present payload OR
+	# any first-class value means the form was submitted -> logged.
+	if (doc.custom_activity_payload or "").strip():
+		return False
+	return not any(doc.get(f) for f in FIRST_CLASS)
+
+
+@frappe.whitelist()
+def open_activity_tasks(lead):
+	"""Open (not Done/Canceled) activity tasks on a lead — lets the client map a Tasks-tab row to
+	the activity type/name so completing it opens the activity form instead of an empty status flip."""
+	types = _activity_type_names()
+	if not types:
+		return []
+	return frappe.get_all(
+		"CRM Task",
+		filters={
+			"reference_docname": lead,
+			"status": ["not in", ["Done", "Canceled"]],
+			"custom_task_type": ["in", list(types)],
+		},
+		fields=["name", "title", "custom_task_type"],
+		order_by="creation desc",
+	)
+
+
 @frappe.whitelist()
 def list_types_for_lead(lead):
 	"""Activity types available to this lead's grain — the searchable picker source."""

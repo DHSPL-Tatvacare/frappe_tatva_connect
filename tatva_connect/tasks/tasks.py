@@ -33,14 +33,18 @@ def on_lead_assignment(doc, method=None):
 	first_type = lead.custom_current_program and frappe.db.get_value(
 		"CRM Program", lead.custom_current_program, "custom_first_activity_type"
 	)
-	if first_type:
-		create_followup_task(
-			lead=doc.reference_name,
-			task_type=first_type,
-			due_in_hours=48,
-			assigned_to=doc.allocated_to,
-			title=_("{0} — {1}").format(first_type, lead_name),
-		)
+	# Guard: a stale/renamed mapping must never abort the assignment ToDo insert.
+	if first_type and frappe.db.exists("CRM Task Type", first_type):
+		try:
+			create_followup_task(
+				lead=doc.reference_name,
+				task_type=first_type,
+				due_in_hours=48,
+				assigned_to=doc.allocated_to,
+				title=_("{0} — {1}").format(first_type, lead_name),
+			)
+		except Exception:
+			frappe.log_error("on_lead_assignment: first activity-task creation failed")
 
 
 def seed_checklist(doc, method=None):
@@ -95,6 +99,21 @@ def enforce_location(doc, method=None):
 		)
 	if not doc.custom_location_captured_at:
 		doc.custom_location_captured_at = now_datetime()
+
+
+def enforce_activity_logged(doc, method=None):
+	"""Fail-closed guarantee: a form-activity task cannot be completed (Done) without its details
+	logged. Holds on EVERY save path — the quick status dropdown / API / import all run validate,
+	not just the Form-view controller. The clean UX (the client opens the activity form on
+	completion) sits on top of this; if that UX ever breaks, completion degrades to a clear block,
+	never a silent empty activity. One brain: activity.api.activity_is_unlogged owns the rule."""
+	from tatva_connect.activity.api import activity_is_unlogged
+
+	if activity_is_unlogged(doc):
+		frappe.throw(
+			_("Log this activity's details before marking it Done — open the task and fill its form."),
+			title=_("Activity not logged"),
+		)
 
 
 @frappe.whitelist()

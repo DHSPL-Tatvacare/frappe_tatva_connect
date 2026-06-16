@@ -1,24 +1,24 @@
 // CRM Form Script (CRM Task, Form view) — complete an assigned activity via its form.
 //
-// When a rep marks an assigned ACTIVITY task Done (its type is an activity type that has
-// a form schema), the SAME dynamic form the "Log Activity" entry uses opens to capture the
-// activity's fields, then activity.api.save_activity (the ONE server writer) splits them
-// into first-class columns + JSON payload and stamps the task Done. We then abort the
-// native save with a plain throw — crm's submit wrapper swallows it silently (see
-// data/document.js), so save_activity's write stands and there is no double write.
+// When a rep marks an assigned ACTIVITY task Done from the task modal (its type has a form
+// schema), we open the SAME activity form to capture its fields, then save_activity (the one
+// server writer) stamps it Done with the details. The quick status dropdown is handled in the
+// Lead form script (activity_log.js); this covers the modal-save path.
 //
-// In-person activities on a location-tracked grain also capture GPS here (Phase B): the same
-// fix flows through save_activity, which runs the clinic-anchor + radius guard (location.api).
-// Composes with crm's native crm_task/form.js CRMTask (crm runs every CRMTask controller).
-// Native this.createDialog / this.call / this.toast / this.throwError + theme tokens only. Plain
-// tasks and activity types without a schema are untouched (normal completion).
+// EVENT-DRIVEN like whatsapp_template.js: onValidate opens the dialog and ABORTS the empty save
+// with a plain throw (crm's submit wrapper swallows it silently — no toast). The dialog's own
+// Save action does the real write; dismissing it via X/Esc/Cancel simply leaves the task open —
+// nothing is awaited, so nothing can hang. The server enforce_activity_logged backstop guarantees
+// an activity can never be completed empty even if this controller never ran.
+//
+// Composes with crm's native crm_task/form.js CRMTask. Native this.createDialog/this.call/
+// this.toast + theme tokens only.
 
 const ESC = (s) =>
   String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const DT2LOCAL = (v) => (v && v.length === 16 ? v.replace("T", " ") + ":00" : v);
 
-// Device GPS read (browser-only API). Server owns the rule + radius guard (location.api).
 function getFix() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error("no geolocation"));
@@ -28,18 +28,6 @@ function getFix() {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   });
-}
-
-function activityControlHtml(f) {
-  const opts = (f.options || "").split("\n").map((o) => o.trim()).filter(Boolean);
-  const a = 'class="tc-af-ctrl" data-fieldname="' + ESC(f.fieldname) + '" data-fieldtype="' + ESC(f.fieldtype) + '"';
-  if (f.fieldtype === "Small Text") return "<textarea " + a + "></textarea>";
-  if (f.fieldtype === "Select")
-    return "<select " + a + '><option value=""></option>' +
-      opts.map((o) => "<option>" + ESC(o) + "</option>").join("") + "</select>";
-  if (f.fieldtype === "Datetime") return '<input type="datetime-local" ' + a + " />";
-  if (f.fieldtype === "Check") return '<input type="checkbox" ' + a + ' style="width:auto" />';
-  return '<input type="text" ' + a + " />"; // Data, Link
 }
 
 function ensureActivityStyle() {
@@ -55,100 +43,84 @@ function ensureActivityStyle() {
   document.head.appendChild(st);
 }
 
+function activityControlHtml(f) {
+  const opts = (f.options || "").split("\n").map((o) => o.trim()).filter(Boolean);
+  const a = 'class="tc-af-ctrl" data-fieldname="' + ESC(f.fieldname) + '" data-fieldtype="' + ESC(f.fieldtype) + '"';
+  if (f.fieldtype === "Small Text") return "<textarea " + a + "></textarea>";
+  if (f.fieldtype === "Select")
+    return "<select " + a + '><option value=""></option>' +
+      opts.map((o) => "<option>" + ESC(o) + "</option>").join("") + "</select>";
+  if (f.fieldtype === "Datetime") return '<input type="datetime-local" ' + a + " />";
+  if (f.fieldtype === "Check") return '<input type="checkbox" ' + a + ' style="width:auto" />';
+  return '<input type="text" ' + a + " />"; // Data, Link
+}
+
+function collectValues(schema, toast) {
+  const values = {};
+  for (const f of schema) {
+    const el = document.querySelector('#tc-act-form [data-fieldname="' + CSS.escape(f.fieldname) + '"]');
+    let v = !el ? "" : f.fieldtype === "Check" ? (el.checked ? 1 : 0) : el.value;
+    if (f.fieldtype === "Datetime") v = DT2LOCAL(v);
+    if (f.reqd && (v === "" || v == null)) {
+      toast.error(f.label + " is required");
+      return null;
+    }
+    values[f.fieldname] = v;
+  }
+  return values;
+}
+
+// {} (not needed) | {lat,lng,accuracy,address} | null (denied)
+async function captureIfNeeded(call, lead, type, toast) {
+  let needed = false;
+  try {
+    needed = await call("tatva_connect.location.api.location_needed", { lead: lead, task_type: type });
+  } catch (e) {
+    return {};
+  }
+  if (!needed) return {};
+  let fix;
+  try {
+    fix = await getFix();
+  } catch (e) {
+    toast.error("Location permission is required for this in-person activity.");
+    return null;
+  }
+  let address = null;
+  try {
+    const r = await call("tatva_connect.location.api.reverse_geocode", { lat: fix.lat, lng: fix.lng });
+    address = r && r.address;
+  } catch (e) {}
+  return { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy, address: address };
+}
+
 class CRMTask {
   async onValidate() {
-    await this.captureActivityOnComplete();
-  }
-
-  async captureActivityOnComplete() {
     const doc = this.doc;
     if (!doc || doc.reference_doctype !== "CRM Lead" || !doc.custom_task_type) return;
     if ((doc.status || "") !== "Done") return; // only when completing
-    if (doc.custom_activity_payload) return; // already captured
+    if (doc.custom_activity_payload) return; // already logged
 
     let schema = [];
     try {
       schema = (await this.call("tatva_connect.activity.api.get_schema", { task_type: doc.custom_task_type })) || [];
     } catch (e) {
-      return; // not resolvable -> let the native completion proceed
+      return; // can't resolve -> let the native completion + server backstop decide
     }
     if (!schema.length) return; // no activity form -> plain completion
 
-    const values = await this.collectActivity(doc.custom_task_type, schema);
-    if (values === null) {
-      this.throwError("Activity details are required to complete this task.");
-    }
-
-    const loc = await this.captureIfNeeded(doc.custom_task_type, doc.reference_docname);
-    if (loc === null) {
-      this.throwError("Location capture is required to complete this in-person activity.");
-    }
-
-    try {
-      await this.call("tatva_connect.activity.api.save_activity", {
-        lead: doc.reference_docname, task_type: doc.custom_task_type,
-        values: JSON.stringify({ ...values, ...loc }), task: doc.name,
-      });
-    } catch (e) {
-      this.throwError((e && e.message) || "Could not save activity."); // incl. out-of-range block
-    }
-    this.toast.success("Activity logged · " + doc.custom_task_type);
-    // save_activity already persisted the split + Done; abort the native save (silent —
-    // crm's submit wrapper swallows a plain throw) so we never double-write.
-    throw new Error("__tc_activity_saved__");
+    // Open the form (event-driven) and abort THIS empty save. A plain throw is swallowed by crm's
+    // submit wrapper (silent — no toast); the dialog's Save action does the real write.
+    this.openActivityDialog(doc, schema);
+    throw new Error("__tc_activity_pending__");
   }
 
-  // Capture+confirm a fix for an in-person tracked type; returns {lat,lng,accuracy} | {} (not
-  // needed) | null (denied/cancelled -> caller blocks completion).
-  async captureIfNeeded(type, lead) {
-    let needed = false;
-    try {
-      needed = await this.call("tatva_connect.location.api.location_needed", { lead, task_type: type });
-    } catch (e) {
-      return {}; // probe failed -> server backstop enforces; send no fix
-    }
-    if (!needed) return {};
-    let fix;
-    try {
-      fix = await getFix();
-    } catch (e) {
-      return null;
-    }
-    let address = null;
-    try {
-      const r = await this.call("tatva_connect.location.api.reverse_geocode", { lat: fix.lat, lng: fix.lng });
-      address = r && r.address;
-    } catch (e) {}
-    const okay = await this.confirmLocation(fix, address);
-    if (!okay) return null;
-    return { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy };
-  }
-
-  confirmLocation(fix, address) {
-    const mapUrl =
-      "/api/method/tatva_connect.location.api.static_map?lat=" +
-      encodeURIComponent(fix.lat) + "&lng=" + encodeURIComponent(fix.lng);
-    const accTxt = fix.accuracy ? "Accuracy to " + fix.accuracy.toFixed(2) + " m" : "";
-    const addrTxt = address || "Address unavailable";
-    return new Promise((resolve) => {
-      this.createDialog({
-        title: "Location Fetched",
-        html:
-          '<img src="' + mapUrl + '" alt="map" style="width:100%;height:180px;object-fit:cover;' +
-          "border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
-          '<div style="display:flex;gap:8px;align-items:flex-start"><span style="flex:0 0 auto;margin-top:1px">📍</span>' +
-          '<div><div style="font-size:14px;line-height:1.5;color:var(--ink-gray-8)">' + ESC(addrTxt) + "</div>" +
-          '<div style="color:var(--ink-gray-5);font-size:12px;margin-top:4px">' + ESC(accTxt) + "</div></div></div>",
-        actions: [
-          { label: "Confirm & Save", variant: "solid", onClick: (close) => { close(); resolve(true); } },
-          { label: "Cancel", onClick: (close) => { close(); resolve(false); } },
-        ],
-      });
-    });
-  }
-
-  collectActivity(type, schema) {
+  openActivityDialog(doc, schema) {
     ensureActivityStyle();
+    const call = this.call;
+    const toast = this.toast;
+    const lead = doc.reference_docname;
+    const type = doc.custom_task_type;
     const fields = schema
       .map(
         (f) =>
@@ -156,34 +128,33 @@ class CRMTask {
           (f.reqd ? ' <span class="tc-req">*</span>' : "") + "</label>" + activityControlHtml(f) + "</div>"
       )
       .join("");
-    const toast = this.toast;
-    return new Promise((resolve) => {
-      this.createDialog({
-        title: type,
-        html: '<div id="tc-act-form">' + fields + "</div>",
-        actions: [
-          {
-            label: "Save",
-            variant: "solid",
-            onClick: (close) => {
-              const values = {};
-              for (const f of schema) {
-                const el = document.querySelector('#tc-act-form [data-fieldname="' + CSS.escape(f.fieldname) + '"]');
-                let v = !el ? "" : f.fieldtype === "Check" ? (el.checked ? 1 : 0) : el.value;
-                if (f.fieldtype === "Datetime") v = DT2LOCAL(v);
-                if (f.reqd && (v === "" || v == null)) {
-                  toast.error(f.label + " is required");
-                  return;
-                }
-                values[f.fieldname] = v;
-              }
-              close();
-              resolve(values);
-            },
+    this.createDialog({
+      title: type,
+      html: '<div id="tc-act-form">' + fields + "</div>",
+      actions: [
+        {
+          label: "Save",
+          variant: "solid",
+          onClick: async (close) => {
+            const values = collectValues(schema, toast);
+            if (values === null) return;
+            const loc = await captureIfNeeded(call, lead, type, toast);
+            if (loc === null) return;
+            const payload = { ...values, lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy };
+            try {
+              await call("tatva_connect.activity.api.save_activity", {
+                lead: lead, task_type: type, values: JSON.stringify(payload), task: doc.name,
+              });
+            } catch (e) {
+              toast.error((e && e.message) || "Could not save activity"); // incl. out-of-range block
+              return;
+            }
+            close();
+            toast.success("Activity logged · " + (loc.address || type));
           },
-          { label: "Cancel", onClick: (close) => { close(); resolve(null); } },
-        ],
-      });
+        },
+        { label: "Cancel", onClick: (close) => close() },
+      ],
     });
   }
 }

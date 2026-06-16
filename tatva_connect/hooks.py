@@ -70,6 +70,8 @@ doc_events = {
 			"tatva_connect.tasks.tasks.seed_checklist",
 			"tatva_connect.tasks.tasks.enforce_checklist",
 			"tatva_connect.tasks.tasks.enforce_location",
+			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
+			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
 	},
 	"WhatsApp Message": {

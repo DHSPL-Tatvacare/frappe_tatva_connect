@@ -1,15 +1,18 @@
-// CRM Form Script (CRM Lead, Form view) — "Log Activity" entry point.
+// CRM Form Script (CRM Lead, Form view) — the activity UX on the Tasks tab.
 //
-// Splits the Tasks-tab action into [New Task | Log Activity]: the native "New Task"
-// button is left untouched (plain to-do), and a sibling "Log Activity" button is
-// injected beside it (capture-resilient via a MutationObserver, same pattern as
-// hide_status_pill.js / email_attach.js). Log Activity -> a searchable Activity Type
-// picker (scoped to this lead's grain by list_types_for_lead) -> the chosen type's
-// form rendered dynamically from get_schema -> save_activity (the one server writer).
+// Owns the whole client-side activity flow in ONE place:
+//   1. A true split button [ + New Task | Log Activity ] (native New Task hidden + delegated).
+//      Log Activity -> searchable type picker (grain-scoped) -> dynamic form -> save_activity.
+//   2. COMPLETION: the native quick status dropdown completes a task via set_value, which never
+//      runs a form-script controller — so for an ACTIVITY task we capture-phase intercept its
+//      "Done" and open the activity form instead of flipping it Done empty. (Mirrors the
+//      capture-phase button hijack in whatsapp_template.js.) The server `enforce_activity_logged`
+//      backstop is the guarantee underneath: if this intercept ever misses, completion degrades
+//      to a clear block, never a silent empty activity.
 //
-// Native frappe-ui dialog ($dialog) + theme tokens, light/dark safe. No window globals
-// for state, no hand-rolled overlay (the dialog IS native). DOM-based button injection;
-// if a crm upgrade renames the markup the button just stops appearing (fail-safe).
+// Dialogs are EVENT-DRIVEN (the action button does the work, then close()) — never an awaited
+// promise, so dismissing via X/Esc can't hang anything (the whatsapp_template.js pattern).
+// Native $dialog + theme tokens (light/dark). DOM-based hijacks degrade safely on a crm reskin.
 function setupForm({ doc, $dialog, call, createToast }) {
   const WRAP_ID = "tc-activity-split";
   const notify = (m, ok) => createToast({ message: m, type: ok ? "success" : "error" });
@@ -21,7 +24,6 @@ function setupForm({ doc, $dialog, call, createToast }) {
     const st = document.createElement("style");
     st.id = "tc-activity-style";
     st.textContent =
-      // a TRUE split button: [ + New Task | Log Activity ] — one joined, segmented control
       "#" + WRAP_ID + "{display:inline-flex;align-items:stretch;height:28px;border-radius:8px;" +
       "overflow:hidden;border:1px solid var(--outline-gray-2)}" +
       ".tc-split-seg{display:inline-flex;align-items:center;gap:6px;height:100%;padding:0 12px;border:none;" +
@@ -45,9 +47,9 @@ function setupForm({ doc, $dialog, call, createToast }) {
   }
 
   // ---- location capture (in-person + tracked activities, Phase B) ---------
-  // Server owns the rule (location.api.location_guard_applies / set_or_check_anchor); the client
-  // only reads device GPS (a browser-only API) and confirms via the native dialog. Reused by the
-  // task-completion controller too — same shape, separate script context (no shared globals).
+  // Server owns the rule + radius guard (location.api). The client only reads device GPS (a
+  // browser-only API). Capture happens INSIDE the Save action (event-driven), not as a separate
+  // awaited dialog — the captured address is surfaced in the success toast.
   function getFix() {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error("no geolocation"));
@@ -58,35 +60,13 @@ function setupForm({ doc, $dialog, call, createToast }) {
       );
     });
   }
-  function confirmLocation(fix, address) {
-    const mapUrl =
-      "/api/method/tatva_connect.location.api.static_map?lat=" +
-      encodeURIComponent(fix.lat) + "&lng=" + encodeURIComponent(fix.lng);
-    const accTxt = fix.accuracy ? "Accuracy to " + fix.accuracy.toFixed(2) + " m" : "";
-    const addrTxt = address || "Address unavailable";
-    return new Promise((resolve) => {
-      $dialog({
-        title: "Location Fetched",
-        html:
-          '<img src="' + mapUrl + '" alt="map" style="width:100%;height:180px;object-fit:cover;' +
-          "border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
-          '<div style="display:flex;gap:8px;align-items:flex-start"><span style="flex:0 0 auto;margin-top:1px">📍</span>' +
-          '<div><div style="font-size:14px;line-height:1.5;color:var(--ink-gray-8)">' + esc(addrTxt) + "</div>" +
-          '<div style="color:var(--ink-gray-5);font-size:12px;margin-top:4px">' + esc(accTxt) + "</div></div></div>",
-        actions: [
-          { label: "Confirm & Save", variant: "solid", onClick: (close) => { close(); resolve(true); } },
-          { label: "Cancel", onClick: (close) => { close(); resolve(false); } },
-        ],
-      });
-    });
-  }
-  // Capture+confirm a fix for an in-person tracked type; returns {lat,lng,accuracy} | null (abort).
+  // Returns {} (not needed) | {lat,lng,accuracy,address} | null (denied — caller keeps form open).
   async function captureIfNeeded(type) {
     let needed = false;
     try {
       needed = await call("tatva_connect.location.api.location_needed", { lead: doc.name, task_type: type });
     } catch (e) {
-      return {}; // probe failed -> let the server backstop decide; send no fix
+      return {}; // probe failed -> server backstop decides; send no fix
     }
     if (!needed) return {};
     let fix;
@@ -101,12 +81,10 @@ function setupForm({ doc, $dialog, call, createToast }) {
       const r = await call("tatva_connect.location.api.reverse_geocode", { lat: fix.lat, lng: fix.lng });
       address = r && r.address;
     } catch (e) {}
-    const okay = await confirmLocation(fix, address);
-    if (!okay) return null;
-    return { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy };
+    return { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy, address: address };
   }
 
-  // ---- dynamic form (shared by every picked type) -------------------------
+  // ---- dynamic form (one renderer for both logging a new activity and completing one) -----
   const dt2local = (v) => (v && v.length === 16 ? v.replace("T", " ") + ":00" : v);
 
   function controlHtml(f) {
@@ -121,7 +99,8 @@ function setupForm({ doc, $dialog, call, createToast }) {
     return '<input type="text" ' + a + " />"; // Data, Link
   }
 
-  function openForm(type, schema) {
+  // taskName set => complete that existing task; null => log a new ad-hoc activity.
+  function openForm(type, schema, taskName) {
     const fields = schema
       .map(
         (f) =>
@@ -149,23 +128,27 @@ function setupForm({ doc, $dialog, call, createToast }) {
               values[f.fieldname] = v;
             }
             const loc = await captureIfNeeded(type);
-            if (loc === null) return; // capture denied / cancelled — keep the form open
+            if (loc === null) return; // capture denied — keep the form open
+            const payload = { ...values, lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy };
             try {
               await call("tatva_connect.activity.api.save_activity", {
-                lead: doc.name, task_type: type, values: JSON.stringify({ ...values, ...loc }),
+                lead: doc.name, task_type: type, values: JSON.stringify(payload),
+                task: taskName || undefined,
               });
-              close();
-              notify("Activity logged · " + type, true);
             } catch (e) {
               notify((e && e.message) || "Could not save activity", false); // incl. out-of-range block
+              return;
             }
+            close();
+            notify("Activity logged · " + (loc.address || type), true);
+            refreshOpenTasks();
           },
         },
       ],
     });
   }
 
-  async function openForType(type) {
+  async function openForType(type, taskName) {
     let schema = [];
     try {
       schema = (await call("tatva_connect.activity.api.get_schema", { task_type: type })) || [];
@@ -173,10 +156,10 @@ function setupForm({ doc, $dialog, call, createToast }) {
       notify("Could not load form", false);
       return;
     }
-    openForm(type, schema);
+    openForm(type, schema, taskName);
   }
 
-  // ---- type picker --------------------------------------------------------
+  // ---- type picker (Log Activity) -----------------------------------------
   async function openPicker() {
     let types = [];
     try {
@@ -215,20 +198,64 @@ function setupForm({ doc, $dialog, call, createToast }) {
       document.querySelectorAll(".tc-af-row").forEach((el) => {
         el.addEventListener("click", () => {
           const type = el.getAttribute("data-type");
-          // close the picker dialog, then open the form
           const closeBtn = [...document.querySelectorAll('[role="dialog"] button')].find(
             (b) => (b.textContent || "").trim() === "Close"
           );
           if (closeBtn) closeBtn.click();
-          openForType(type);
+          openForType(type, null);
         });
       });
     }, 60);
   }
 
+  // ---- complete an activity from the Tasks-tab status dropdown -------------
+  // crm's quick status dropdown completes via set_value (no form-script controller). For an
+  // ACTIVITY task we intercept its "Done" (capture-phase) and open the activity form instead.
+  // The dropdown menu is portaled to <body> with no task identity, so we map by the row's title:
+  // a click anywhere in a task row records its title; activity-task titles are unique while open
+  // (one open task per type, per create_followup_task's throttle). If we can't map it, we let the
+  // native flow run — the server backstop then blocks an empty completion with a clear message.
+  let openTasks = [];
+  function refreshOpenTasks() {
+    call("tatva_connect.activity.api.open_activity_tasks", { lead: doc.name })
+      .then((r) => { openTasks = r || []; })
+      .catch(() => { openTasks = []; });
+  }
+  let lastRowTitle = null;
+  const DONE_LABELS = ["Done", "Completed"];
+
+  // Record the task row's title on any press/click inside it (covers click-open and
+  // press-drag-release selection). reka-ui drives selection via a click event, so a
+  // capture-phase click on the "Done" item lands BEFORE reka-ui's handler — we swallow it.
+  function recordRow(e) {
+    const row = e.target && e.target.closest ? e.target.closest(".activity") : null;
+    if (!row) return;
+    const titleEl = row.querySelector(".font-medium");
+    lastRowTitle = titleEl ? (titleEl.textContent || "").trim() : null;
+  }
+  function onCaptureClick(e) {
+    recordRow(e);
+    const t = e.target;
+    const item = t && t.closest ? t.closest('[role="menuitem"]') : null;
+    if (!item || !lastRowTitle) return;
+    if (!DONE_LABELS.includes((item.textContent || "").trim())) return;
+    const task = openTasks.find((x) => x.title === lastRowTitle);
+    if (!task) return; // not a known activity task -> let native run (server backstop guards)
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openForType(task.custom_task_type, task.name);
+  }
+  if (window.__tcActivityCompleteHandler) {
+    document.removeEventListener("click", window.__tcActivityCompleteHandler, true);
+    document.removeEventListener("pointerdown", window.__tcActivityRowHandler, true);
+  }
+  window.__tcActivityCompleteHandler = onCaptureClick;
+  window.__tcActivityRowHandler = recordRow;
+  document.addEventListener("pointerdown", recordRow, true);
+  document.addEventListener("click", onCaptureClick, true);
+  refreshOpenTasks();
+
   // ---- inject the SPLIT button: [ + New Task | Log Activity ] -------------
-  // The native "New Task" button keeps its action: we hide it (don't destroy it) and the
-  // "New Task" segment delegates to its click. "Log Activity" runs our flow. One joined control.
   function findNativeNewTask() {
     return [...document.querySelectorAll("button")].find(
       (b) => (b.textContent || "").trim() === "New Task" &&
@@ -252,13 +279,12 @@ function setupForm({ doc, $dialog, call, createToast }) {
     return b;
   }
   function injectSplit() {
-    // keep the native button alive but hidden so the New Task segment can delegate to it
     const native = findNativeNewTask();
     if (native) {
       native.setAttribute("data-tc-native-newtask", "1");
       native.style.display = "none";
     }
-    if (document.getElementById(WRAP_ID)) return; // control already placed
+    if (document.getElementById(WRAP_ID)) return;
     const anchor = native || document.querySelector("[data-tc-native-newtask]");
     if (!anchor || !anchor.parentElement) return;
     const wrap = document.createElement("div");
