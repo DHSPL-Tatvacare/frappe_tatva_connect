@@ -157,6 +157,22 @@ def _validate_asm(asm):
 		)
 
 
+def _field_visible(depends_on, values):
+	"""Mirror the client's evaluateDependsOnValue: a field whose depends_on doesn't pass is hidden, so
+	it is never submitted and must NOT be enforced as required. Supports 'eval:<expr>' (doc.<field>
+	against the submitted values) and a bare fieldname (truthy). Blank/unparseable => visible (same as
+	the client, which treats an eval error as shown). One brain for the required-when rule."""
+	cond = (depends_on or "").strip()
+	if not cond:
+		return True
+	if cond.startswith("eval:"):
+		try:
+			return bool(frappe.utils.safe_eval(cond[5:], None, {"doc": frappe._dict(values or {})}))
+		except Exception:
+			return True
+	return bool((values or {}).get(cond))
+
+
 def compute_activity(lead, task_type, values, task=None):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
 	grain + required, splits first-class columns vs the JSON payload, and runs the location guard
@@ -177,7 +193,9 @@ def compute_activity(lead, task_type, values, task=None):
 	first_class, payload = {}, {}
 	for f in tt.schema:
 		val = values.get(f.fieldname)
-		if f.reqd and (val is None or val == ""):
+		# Only enforce required on fields the depends_on actually shows — a hidden field is never
+		# submitted, so requiring it would brick the save (one rule, same as the client).
+		if f.reqd and _field_visible(f.get("depends_on"), values) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
 		target = f.first_class_target or ""
 		(first_class if target in FIRST_CLASS else payload)[target or f.fieldname] = val
@@ -389,7 +407,7 @@ def _task_values(r, cfg):
 		try:
 			vals.update(frappe.parse_json(r.custom_activity_payload) or {})
 		except Exception:
-			pass
+			frappe.log_error(f"activity: bad payload on task {r.name}")
 	if cfg:
 		for f in cfg["fields"]:
 			fct = f.get("first_class_target")

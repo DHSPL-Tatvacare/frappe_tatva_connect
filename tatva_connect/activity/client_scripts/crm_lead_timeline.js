@@ -29,7 +29,7 @@ frappe.ui.form.on("CRM Lead", {
 
     // Resolve the thumbnail provider + zoom (operator toggle), then render the projection with it.
     frappe.call({ method: "tatva_connect.location.api.map_config" }).then((cfgR) => {
-      const cfg = (cfgR && cfgR.message) || { thumbnail: "google", zoom: 16 };
+      const cfg = (cfgR && cfgR.message) || { thumbnail: "osm", zoom: 16 };
       const useOsm = cfg.thumbnail === "osm";
       const zoom = cfg.zoom || 16;
       const tileUrl = cfg.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
