@@ -255,6 +255,8 @@ def save_activity(lead, task_type, values, task=None):
 
 	The shell insert is in the same request transaction as the guard: an out-of-range throw rolls the
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
+	if isinstance(values, str):
+		values = frappe.parse_json(values) or {}
 	if not task:
 		shell = frappe.get_doc({
 			"doctype": "CRM Task",
@@ -270,7 +272,32 @@ def save_activity(lead, task_type, values, task=None):
 	doc = frappe.get_doc("CRM Task", task)
 	doc.update(fields)
 	doc.save()
+	_link_attachments(doc, task_type, values)
 	return doc.name
+
+
+def _link_attachments(doc, task_type, values):
+	"""Link any file uploaded through an Attach field to this task, so it lands in the task's
+	attachments AND the fail-closed File privacy policy runs (CRM Task -> private). Idempotent: a file
+	already attached here is skipped. Completing an existing task attaches at upload time (docname
+	known); this covers the new-punch path, where the file was uploaded before the task existed."""
+	attach_fields = [
+		f.fieldname for f in frappe.get_doc("CRM Task Type", task_type).schema
+		if f.fieldtype in ("Attach", "Attach Image")
+	]
+	for fn in attach_fields:
+		url = values.get(fn)
+		if not url:
+			continue
+		name = frappe.db.get_value("File", {"file_url": url}, "name")
+		if not name:
+			continue
+		f = frappe.get_doc("File", name)
+		if f.attached_to_doctype == "CRM Task" and f.attached_to_name == doc.name:
+			continue
+		f.attached_to_doctype = "CRM Task"
+		f.attached_to_name = doc.name
+		f.save(ignore_permissions=True)  # validate -> apply_privacy_policy -> private (fail-closed)
 
 
 @frappe.whitelist()

@@ -38,7 +38,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Field Type",
-   "options": "Data\nSmall Text\nSelect\nDatetime\nCheck\nLink",
+   "options": "Data\nSmall Text\nSelect\nDatetime\nCheck\nLink\nAttach\nAttach Image",
    "reqd": 1
   },
   {
