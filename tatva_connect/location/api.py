@@ -400,6 +400,42 @@ def set_clinic_location(lead, lat, lng, address=None):
 
 
 @frappe.whitelist()
+def leads_near(lat, lng, radius_km=15):
+	"""Doctor leads whose clinic anchor is within radius_km of (lat,lng), nearest first. The Near Me
+	map source. Permission-scoped — frappe.get_list applies the user's read scope, so a rep sees only
+	their own leads. A bounding-box SQL prefilter (indexed on the clinic lat/lng) narrows the set, then
+	haversine refines to a true circle. No grain hardcoded; works for every product's leads."""
+	lat, lng, radius_km = flt(lat), flt(lng), flt(radius_km) or 15.0
+	dlat = radius_km / 111.0
+	dlng = radius_km / (111.0 * max(0.15, math.cos(math.radians(lat))))
+	rows = frappe.get_list(
+		"CRM Lead",
+		filters={
+			"custom_clinic_latitude": ["between", [lat - dlat, lat + dlat]],
+			"custom_clinic_longitude": ["between", [lng - dlng, lng + dlng]],
+		},
+		fields=["name", "lead_name", "custom_clinic_latitude", "custom_clinic_longitude",
+				"custom_clinic_address", "custom_stage", "status"],
+		limit_page_length=0,
+	)
+	out = []
+	for r in rows:
+		d = haversine(lat, lng, r.custom_clinic_latitude, r.custom_clinic_longitude)
+		if d <= radius_km * 1000:
+			out.append({
+				"name": r.name,
+				"title": r.lead_name or r.name,
+				"lat": r.custom_clinic_latitude,
+				"lng": r.custom_clinic_longitude,
+				"address": r.custom_clinic_address or "",
+				"stage": r.custom_stage or r.status or "",
+				"distance_m": int(round(d)),
+			})
+	out.sort(key=lambda x: x["distance_m"])
+	return out
+
+
+@frappe.whitelist()
 def precheck(lead, task_type, lat, lng, accuracy=None):
 	"""LOCATION-FIRST gate. Called by the client the moment a rep starts an in-person activity,
 	BEFORE the data form opens — so an out-of-range rep is stopped at the door (never fills a form
@@ -441,9 +477,13 @@ def precheck(lead, task_type, lat, lng, accuracy=None):
 
 @frappe.whitelist()
 def lead_location_view(lead):
-	"""The SINGLE unified projection for the Desk 'Activity & Location' section: the clinic anchor
-	(source-of-truth) + every in-person visit (newest first) with its distance from the anchor. One
-	brain; all map images stream through the key-safe static_map proxy."""
+	"""The unified Desk 'Activity & Location' projection: the clinic anchor (source of truth) + EVERY
+	completed activity on the lead (newest first). In-person captures carry a map + distance from the
+	anchor; phone/office activities show as plain log lines (NOT fake (0,0) coordinates — `located` is
+	keyed off custom_location_captured_at, which is set only on a real capture). One brain; map images
+	stream through the key-safe static_map proxy."""
+	from tatva_connect.activity.api import _activity_type_names
+
 	ld = frappe.get_doc("CRM Lead", lead)
 	anchor = _read_anchor(ld)
 	anchor_out = None
@@ -454,38 +494,38 @@ def lead_location_view(lead):
 			"address": _resolve_anchor_address(ld, anchor),
 			"source": anchor["source"] or ANCHOR_GPS,
 		}
-	rows = frappe.get_all(
-		"CRM Task",
-		filters={
-			"reference_doctype": "CRM Lead",
-			"reference_docname": lead,
-			"custom_location_latitude": ["is", "set"],
-		},
-		fields=["name", "custom_task_type", "custom_visit_status", "status",
-				"custom_location_captured_at", "creation", "assigned_to", "owner",
-				"custom_location_address", "custom_location_latitude", "custom_location_longitude"],
-		order_by="custom_location_captured_at desc",
-	)
-	visits = []
-	for t in rows:
-		who = t.assigned_to or t.owner
-		when = t.custom_location_captured_at or t.creation
-		dist = None
-		if anchor:
-			dist = int(round(haversine(
-				anchor["lat"], anchor["lng"], t.custom_location_latitude, t.custom_location_longitude)))
-		visits.append({
-			"task": t.name,
-			"type": t.custom_task_type or "",
-			"status": t.custom_visit_status or t.status or "",
-			"rep": (who and frappe.db.get_value("User", who, "full_name")) or who or "",
-			"date": format_datetime(when, "d MMM, h:mm a"),
-			"address": t.custom_location_address or "",
-			"lat": t.custom_location_latitude,
-			"lng": t.custom_location_longitude,
-			"distance_m": dist,
-		})
-	return {"anchor": anchor_out, "visits": visits}
+	activities = []
+	types = _activity_type_names()
+	if types:
+		rows = frappe.get_all(
+			"CRM Task",
+			filters={"reference_docname": lead, "custom_task_type": ["in", list(types)], "status": "Done"},
+			fields=["name", "custom_task_type", "custom_visit_status", "status", "modified", "creation",
+					"assigned_to", "owner", "custom_location_address", "custom_location_latitude",
+					"custom_location_longitude", "custom_location_captured_at"],
+			order_by="modified desc",
+		)
+		for t in rows:
+			who = t.assigned_to or t.owner
+			located = bool(t.custom_location_captured_at)  # the reliable marker — phone activities have none
+			when = t.custom_location_captured_at or t.modified or t.creation
+			dist = None
+			if located and anchor:
+				dist = int(round(haversine(
+					anchor["lat"], anchor["lng"], t.custom_location_latitude, t.custom_location_longitude)))
+			activities.append({
+				"task": t.name,
+				"type": t.custom_task_type or "",
+				"status": t.custom_visit_status or t.status or "",
+				"rep": (who and frappe.db.get_value("User", who, "full_name")) or who or "",
+				"date": format_datetime(when, "d MMM, h:mm a"),
+				"located": located,
+				"address": (t.custom_location_address or "") if located else "",
+				"lat": t.custom_location_latitude if located else None,
+				"lng": t.custom_location_longitude if located else None,
+				"distance_m": dist,
+			})
+	return {"anchor": anchor_out, "activities": activities}
 
 
 @frappe.whitelist()

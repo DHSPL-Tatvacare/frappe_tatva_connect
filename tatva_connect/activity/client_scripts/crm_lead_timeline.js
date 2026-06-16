@@ -11,6 +11,12 @@ frappe.ui.form.on("CRM Lead", {
     if (frm.is_new()) return;
     // Search a place -> resolve lat/long -> set/move the geofence anchor (the right way to edit it).
     frm.add_custom_button(__("Set Clinic Location"), () => tcOpenClinicSearch(frm));
+    // Near Me — the map of doctor leads around the rep (LSQ-style), opens centred on this clinic if set.
+    frm.add_custom_button(__("Near Me"), () => {
+      const lat = frm.doc.custom_clinic_latitude, lng = frm.doc.custom_clinic_longitude;
+      frappe.set_route("near-me");
+      if (lat && lng) frappe.route_options = { lat, lng };
+    });
     const fld = frm.get_field("custom_activity_timeline_html");
     if (!fld) return;
 
@@ -26,9 +32,9 @@ frappe.ui.form.on("CRM Lead", {
       callback: (r) => {
         const data = (r && r.message) || {};
         const anchor = data.anchor;
-        const visits = data.visits || [];
-        if (!anchor && !visits.length) {
-          fld.$wrapper.html(muted("No activity or location captures yet."));
+        const acts = data.activities || [];
+        if (!anchor && !acts.length) {
+          fld.$wrapper.html(muted("No activities logged yet."));
           return;
         }
 
@@ -49,31 +55,36 @@ frappe.ui.form.on("CRM Lead", {
             "</div></div>";
         }
 
-        // --- Visit log ---
-        if (visits.length) {
+        // --- Activity log (ALL completed activities; in-person rows carry a map + distance) ---
+        if (acts.length) {
           html += '<div style="display:flex;flex-direction:column">';
           html +=
             '<div style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);padding:2px 0 6px">' +
-            "Visits (" + visits.length + ")</div>";
-          for (const v of visits) {
-            const inRange = v.distance_m == null ? "" :
-              v.distance_m <= 0
-                ? '<span style="color:var(--green-600)">at anchor</span>'
-                : '<span style="color:var(--text-muted)">' + v.distance_m + " m away</span>";
+            "Activities (" + acts.length + ")</div>";
+          for (const a of acts) {
+            const meta =
+              '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' +
+              '<div style="font-size:13px;font-weight:600">' + esc(a.type) +
+              (a.status ? ' <span style="font-weight:400;color:var(--text-muted)">· ' + esc(a.status) + "</span>" : "") + "</div>" +
+              '<div style="font-size:12px;color:var(--text-muted)">' + esc(a.rep) + " · " + esc(a.date) +
+              (a.located && a.distance_m != null
+                ? " · " + (a.distance_m <= 0
+                    ? '<span style="color:var(--green-600)">at clinic</span>'
+                    : '<span style="color:var(--text-muted)">' + a.distance_m + " m from clinic</span>")
+                : "") + "</div>" +
+              (a.address ? '<div style="font-size:12px;color:var(--text-muted)">' + esc(a.address) + "</div>" : "") +
+              "</div>";
             html +=
-              '<a href="/app/crm-task/' + encodeURIComponent(v.task) + '" ' +
+              '<a href="/app/crm-task/' + encodeURIComponent(a.task) + '" ' +
               'style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border-color);' +
               'text-decoration:none;color:var(--text-color)">' +
-              '<img src="' + map1(v.lat, v.lng) + '" alt="map" ' +
-              'style="width:96px;height:58px;object-fit:cover;border-radius:6px;flex-shrink:0" ' +
-              "onerror=\"this.style.display='none'\">" +
-              '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' +
-              '<div style="font-size:13px;font-weight:600">' + esc(v.type) +
-              (v.status ? ' <span style="font-weight:400;color:var(--text-muted)">· ' + esc(v.status) + "</span>" : "") + "</div>" +
-              '<div style="font-size:12px;color:var(--text-muted)">' + esc(v.rep) + " · " + esc(v.date) +
-              (inRange ? " · " + inRange : "") + "</div>" +
-              (v.address ? '<div style="font-size:12px;color:var(--text-muted)">' + esc(v.address) + "</div>" : "") +
-              "</div></a>";
+              (a.located
+                ? '<img src="' + map1(a.lat, a.lng) + '" alt="map" ' +
+                  'style="width:96px;height:58px;object-fit:cover;border-radius:6px;flex-shrink:0" ' +
+                  "onerror=\"this.style.display='none'\">"
+                : '<div style="width:96px;height:58px;border-radius:6px;flex-shrink:0;background:var(--subtle-fg);' +
+                  'display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">no visit</div>') +
+              meta + "</a>";
           }
           html += "</div>";
         }
