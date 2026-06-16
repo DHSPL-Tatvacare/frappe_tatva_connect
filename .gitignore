@@ -15,6 +15,10 @@ __pycache__/
 .env
 .secrets
 
+# LSQ -> Frappe migration working tree: creds + PHI exports + scratch scripts.
+# Whole tree is local-only; never committed (public repo).
+scripts/lsq_migration/
+
 # local dev bench (frappe_docker) — never commit
 .devbench/
 

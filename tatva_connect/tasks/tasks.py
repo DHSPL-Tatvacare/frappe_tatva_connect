@@ -98,7 +98,8 @@ def enforce_location(doc, method=None):
 		return
 	if not (doc.custom_location_latitude and doc.custom_location_longitude):
 		frappe.throw(
-			_("This in-person activity requires a captured location. Open it in the CRM and save to capture."),
+			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
+			  "Tasks list or open the task."),
 			title=_("Location required"),
 		)
 	if not doc.custom_location_captured_at:

@@ -38,7 +38,12 @@ def _api_key():
 	return _settings().get_password("google_maps_api_key", raise_exception=False)
 
 
-DEFAULT_RADIUS_M = 150
+DEFAULT_RADIUS_M = 100
+
+# How the clinic anchor was established (custom_clinic_source on CRM Lead).
+ANCHOR_ADDRESS = "Doctor Address"
+ANCHOR_GPS = "First GPS Capture"
+ANCHOR_MANAGER = "Manager Re-anchor"
 
 
 def _lead_axes(lead):
@@ -102,21 +107,62 @@ def _geojson_point(lat, lng):
 	})
 
 
+def _read_anchor(ld):
+	"""The lead's current clinic anchor as a dict, or None if unset."""
+	if ld.custom_clinic_latitude and ld.custom_clinic_longitude:
+		return {
+			"lat": flt(ld.custom_clinic_latitude),
+			"lng": flt(ld.custom_clinic_longitude),
+			"source": ld.get("custom_clinic_source") or "",
+			"address": ld.get("custom_clinic_address") or "",
+		}
+	return None
+
+
+def _write_anchor(ld, lat, lng, source, address=None):
+	ld.custom_clinic_latitude = flt(lat)
+	ld.custom_clinic_longitude = flt(lng)
+	ld.custom_clinic_geo = _geojson_point(lat, lng)
+	if ld.meta.has_field("custom_clinic_source"):
+		ld.custom_clinic_source = source
+	if address and ld.meta.has_field("custom_clinic_address"):
+		ld.custom_clinic_address = address
+	ld.save(ignore_permissions=True)
+
+
+def ensure_anchor(ld, here_lat, here_lng):
+	"""Resolve the lead's clinic anchor (hybrid). Priority: existing anchor → the doctor's precise
+	registered address (geocoded) → the rep's first in-person GPS fix. Returns (anchor, created):
+	`created` is True only when THIS call set the anchor from the rep's position (the first-capture
+	case that always passes the radius check). Address/manager anchors are authoritative locations,
+	never derived from where the rep currently stands."""
+	existing = _read_anchor(ld)
+	if existing:
+		return existing, False
+	addr = ld.get("custom_clinic_address") if ld.meta.has_field("custom_clinic_address") else None
+	if addr:
+		geo = geocode(addr)
+		if geo:
+			_write_anchor(ld, geo[0], geo[1], ANCHOR_ADDRESS, address=addr)
+			return _read_anchor(ld), False  # address anchor: rep must still be within radius of it
+	# First in-person capture establishes the anchor at the rep's position.
+	_write_anchor(ld, here_lat, here_lng, ANCHOR_GPS)
+	return _read_anchor(ld), True
+
+
 def set_or_check_anchor(lead, lat, lng, accuracy, radius):
-	"""First in-person fix for a doctor sets the clinic anchor on the Lead; every later fix must
-	land within radius + the reading's accuracy, else the save is BLOCKED with the distance."""
+	"""Authoritative guard (called by the one writer, save_activity). Resolves the anchor (hybrid),
+	then — unless this call just set it from the rep's first fix — BLOCKS the save when the rep is
+	beyond radius + the reading's accuracy."""
 	ld = frappe.get_doc("CRM Lead", lead)
-	if not (ld.custom_clinic_latitude and ld.custom_clinic_longitude):
-		ld.custom_clinic_latitude = flt(lat)
-		ld.custom_clinic_longitude = flt(lng)
-		ld.custom_clinic_geo = _geojson_point(lat, lng)
-		ld.save(ignore_permissions=True)
+	anchor, created = ensure_anchor(ld, lat, lng)
+	if created:
 		return
-	dist = haversine(ld.custom_clinic_latitude, ld.custom_clinic_longitude, lat, lng)
+	dist = haversine(anchor["lat"], anchor["lng"], lat, lng)
 	allowed = radius + flt(accuracy)
 	if dist > allowed:
 		frappe.throw(
-			_("Visit blocked — you are {0} m from the clinic (allowed {1} m).").format(
+			_("Visit blocked — you are {0} m from the doctor's location (allowed {1} m).").format(
 				int(round(dist)), int(round(allowed))
 			),
 			title=_("Out of range"),
@@ -197,6 +243,24 @@ def _reverse_geocode(lat, lng):
 		return None
 
 
+def geocode(address):
+	"""address -> (lat, lng), or None on any failure / no key. Never raises. Used to anchor a
+	clinic on the doctor's precise registered address (the hybrid anchor's first choice)."""
+	key = _api_key()
+	if not (key and address):
+		return None
+	try:
+		r = requests.get(GEOCODE_URL, params={"address": address, "key": key}, timeout=_TIMEOUT)
+		results = (r.json() or {}).get("results") or []
+		if not results:
+			return None
+		loc = results[0]["geometry"]["location"]
+		return flt(loc["lat"]), flt(loc["lng"])
+	except Exception:
+		frappe.log_error("location: forward-geocode failed")
+		return None
+
+
 @frappe.whitelist()
 def reverse_geocode(lat, lng):
 	"""Address for a coordinate — used by the capture confirmation modal before the record is
@@ -205,26 +269,114 @@ def reverse_geocode(lat, lng):
 
 
 @frappe.whitelist()
-def static_map(lat, lng):
-	"""Key-safe proxy: stream the Google Static Maps PNG for a coordinate so the API key never
-	reaches the browser. Auth-gated (whitelist requires a logged-in user)."""
+def precheck(lead, task_type, lat, lng, accuracy=None):
+	"""LOCATION-FIRST gate. Called by the client the moment a rep starts an in-person activity,
+	BEFORE the data form opens — so an out-of-range rep is stopped at the door (never fills a form
+	they can't submit). Read-mostly: it resolves the anchor (and may lazily set an ADDRESS anchor,
+	which is authoritative), but it never sets a first-GPS anchor (that commits only on a real save).
+
+	Returns one of:
+	  {"needed": False}                                          # phone / non-tracked grain
+	  {"needed": True, "ok": True,  "first": True}               # first capture — nothing to compare
+	  {"needed": True, "ok": True/False, "distance_m", "allowed_m",
+	   "anchor_lat", "anchor_lng", "anchor_address"}             # compared against the anchor
+	save_activity re-checks authoritatively — this is UX, not the security boundary."""
+	radius = location_guard_applies(task_type, lead)
+	if radius is None:
+		return {"needed": False}
+	lat, lng, accuracy = flt(lat), flt(lng), flt(accuracy)
+	ld = frappe.get_doc("CRM Lead", lead)
+	anchor = _read_anchor(ld)
+	if not anchor:
+		addr = ld.get("custom_clinic_address") if ld.meta.has_field("custom_clinic_address") else None
+		geo = geocode(addr) if addr else None
+		if geo:
+			_write_anchor(ld, geo[0], geo[1], ANCHOR_ADDRESS, address=addr)
+			anchor = _read_anchor(ld)
+		else:
+			return {"needed": True, "ok": True, "first": True, "allowed_m": radius}
+	dist = haversine(anchor["lat"], anchor["lng"], lat, lng)
+	allowed = radius + accuracy
+	return {
+		"needed": True,
+		"ok": dist <= allowed,
+		"distance_m": int(round(dist)),
+		"allowed_m": int(round(allowed)),
+		"anchor_lat": anchor["lat"],
+		"anchor_lng": anchor["lng"],
+		"anchor_address": anchor["address"] or _reverse_geocode(anchor["lat"], anchor["lng"]) or "",
+	}
+
+
+@frappe.whitelist()
+def lead_location_view(lead):
+	"""The SINGLE unified projection for the Desk 'Activity & Location' section: the clinic anchor
+	(source-of-truth) + every in-person visit (newest first) with its distance from the anchor. One
+	brain; all map images stream through the key-safe static_map proxy."""
+	ld = frappe.get_doc("CRM Lead", lead)
+	anchor = _read_anchor(ld)
+	anchor_out = None
+	if anchor:
+		anchor_out = {
+			"lat": anchor["lat"],
+			"lng": anchor["lng"],
+			"address": anchor["address"] or _reverse_geocode(anchor["lat"], anchor["lng"]) or "",
+			"source": anchor["source"] or ANCHOR_GPS,
+		}
+	rows = frappe.get_all(
+		"CRM Task",
+		filters={
+			"reference_doctype": "CRM Lead",
+			"reference_docname": lead,
+			"custom_location_latitude": ["is", "set"],
+		},
+		fields=["name", "custom_task_type", "custom_visit_status", "status",
+				"custom_location_captured_at", "creation", "assigned_to", "owner",
+				"custom_location_address", "custom_location_latitude", "custom_location_longitude"],
+		order_by="custom_location_captured_at desc",
+	)
+	visits = []
+	for t in rows:
+		who = t.assigned_to or t.owner
+		when = t.custom_location_captured_at or t.creation
+		dist = None
+		if anchor:
+			dist = int(round(haversine(
+				anchor["lat"], anchor["lng"], t.custom_location_latitude, t.custom_location_longitude)))
+		visits.append({
+			"task": t.name,
+			"type": t.custom_task_type or "",
+			"status": t.custom_visit_status or t.status or "",
+			"rep": (who and frappe.db.get_value("User", who, "full_name")) or who or "",
+			"date": format_datetime(when, "d MMM, h:mm a"),
+			"address": t.custom_location_address or "",
+			"lat": t.custom_location_latitude,
+			"lng": t.custom_location_longitude,
+			"distance_m": dist,
+		})
+	return {"anchor": anchor_out, "visits": visits}
+
+
+@frappe.whitelist()
+def static_map(lat, lng, here_lat=None, here_lng=None):
+	"""Key-safe proxy: stream the Google Static Maps PNG so the API key never reaches the browser.
+	One marker (a single captured spot) by default. If `here_lat/here_lng` are given, render TWO
+	markers — the clinic (red) and 'You' (blue) — auto-fitted, for the out-of-range block dialog."""
 	key = _api_key()
 	lat, lng = flt(lat), flt(lng)
 	if not (key and lat and lng):
 		frappe.throw(_("No map available."))
-	zoom = _settings().static_map_zoom or 16
-	resp = requests.get(
-		STATICMAP_URL,
-		params={
-			"center": f"{lat},{lng}",
-			"zoom": zoom,
-			"size": "600x300",
-			"scale": 2,
-			"markers": f"color:red|{lat},{lng}",
-			"key": key,
-		},
-		timeout=_TIMEOUT,
-	)
+	params = {"size": "600x300", "scale": 2, "key": key}
+	if here_lat and here_lng:
+		params["markers"] = [
+			f"color:red|label:C|{lat},{lng}",
+			f"color:blue|label:U|{flt(here_lat)},{flt(here_lng)}",
+		]  # two points, no center/zoom -> Google auto-fits both
+	else:
+		params["center"] = f"{lat},{lng}"
+		params["zoom"] = _settings().static_map_zoom or 16
+		params["markers"] = f"color:red|{lat},{lng}"
+	resp = requests.get(STATICMAP_URL, params=params, timeout=_TIMEOUT)
 	frappe.response["type"] = "binary"
 	frappe.response["filecontent"] = resp.content
 	frappe.response["filename"] = "map.png"
@@ -246,14 +398,23 @@ def test_connection():
 	return _("Connected. Sample lookup resolved to: {0}").format(addr)
 
 
+def location_fields(lat, lng, address=None, accuracy=None):
+	"""The SINGLE mapping of a captured fix -> CRM Task custom_location_* field values (as a dict),
+	incl. the GeoJSON Point for the native Geolocation field. Used by compute_activity (stamped onto
+	the doc by either save path)."""
+	return {
+		"custom_location_latitude": flt(lat),
+		"custom_location_longitude": flt(lng),
+		"custom_location_address": address or None,
+		"custom_location_accuracy_m": flt(accuracy) if accuracy else None,
+		"custom_location_captured_at": frappe.utils.now_datetime(),
+		"custom_location_geo": _geojson_point(lat, lng),
+	}
+
+
 def write_location(doc, lat, lng, address=None, accuracy=None):
-	"""The SINGLE place coordinates are mapped onto a record's fields. Any doctype carrying the
-	custom_location_* fields can be passed. Also mirrors a GeoJSON Point into custom_location_geo
-	so Frappe's native Geolocation field renders a read-only Leaflet map in Desk (no key, no proxy)."""
-	doc.custom_location_latitude = flt(lat)
-	doc.custom_location_longitude = flt(lng)
-	doc.custom_location_address = address or None
-	doc.custom_location_accuracy_m = flt(accuracy) if accuracy else None
-	doc.custom_location_captured_at = frappe.utils.now_datetime()
-	if doc.meta.has_field("custom_location_geo"):
-		doc.custom_location_geo = _geojson_point(lat, lng)
+	"""Map a captured fix onto a record's custom_location_* fields (the dict from location_fields).
+	Kept for any caller holding a doc; compute_activity uses location_fields directly."""
+	for k, v in location_fields(lat, lng, address=address, accuracy=accuracy).items():
+		if k != "custom_location_geo" or doc.meta.has_field("custom_location_geo"):
+			doc.set(k, v)

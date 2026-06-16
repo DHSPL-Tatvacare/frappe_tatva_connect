@@ -127,16 +127,19 @@ def get_schema(task_type):
 			"options": f.options or "",
 			"reqd": int(f.reqd or 0),
 			"first_class_target": f.first_class_target or "",
+			"depends_on": (f.get("depends_on") or ""),
 		}
 		for f in doc.schema
 	]
 
 
-@frappe.whitelist()
-def save_activity(lead, task_type, values, task=None):
-	"""THE one writer. Validate required + grain, split values into first-class columns
-	vs the JSON payload, then create (ad-hoc log) or complete (assigned task) the CRM Task.
-	Returns the task name."""
+def compute_activity(lead, task_type, values):
+	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
+	grain + required, splits first-class columns vs the JSON payload, and runs the location guard
+	(set/check the clinic anchor, resolve the address). Returns a flat dict of CRM Task fieldname ->
+	value (status, payload, first-class cols, location cols). Raises on out-of-scope / missing / out
+	of range. Used by BOTH save paths: save_activity (complete/update existing) and the native
+	new-task create (the form script stamps these onto the doc before insert). No second writer."""
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	vertical, group, program = _lead_axes(lead)
@@ -150,35 +153,50 @@ def save_activity(lead, task_type, values, task=None):
 		if f.reqd and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
 		target = f.first_class_target or ""
-		if target in FIRST_CLASS:
-			first_class[target] = val
-		else:
-			payload[f.fieldname] = val
+		(first_class if target in FIRST_CLASS else payload)[target or f.fieldname] = val
 
-	# Location guard (Phase B): in-person activity on a tracked grain must capture + pass a fix.
-	# One brain — the gate + anchor/radius rule live in location.api; this just feeds them.
-	from tatva_connect.location.api import location_guard_applies, set_or_check_anchor, write_location, _reverse_geocode
+	fields = {
+		"custom_activity_payload": json.dumps(payload, default=str),
+		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
+		**first_class,
+	}
+	notes = values.get("notes")
+	if notes and frappe.get_meta("CRM Task").has_field("description"):
+		fields["description"] = notes
+
+	# Location guard: in-person activity on a tracked grain must carry an in-range fix. The gate +
+	# anchor/radius rule live once in location.api (one brain); this just feeds them.
+	from tatva_connect.location.api import (
+		location_guard_applies, set_or_check_anchor, location_fields, _reverse_geocode)
 
 	radius = location_guard_applies(task_type, lead)
-	fix = None
 	if radius is not None:
 		lat, lng, accuracy = values.get("lat"), values.get("lng"), values.get("accuracy")
 		if not (lat and lng):
 			frappe.throw(_("A captured location is required for this in-person activity."),
 						 title=_("Location required"))
-		set_or_check_anchor(lead, lat, lng, accuracy, radius)
-		fix = (lat, lng, accuracy, _reverse_geocode(lat, lng))
+		set_or_check_anchor(lead, lat, lng, accuracy, radius)  # throws if out of range
+		fields.update(location_fields(lat, lng, address=_reverse_geocode(lat, lng), accuracy=accuracy))
+	return fields
 
-	is_done = int(tt.is_logged_complete or 0)
-	fields = {
-		"custom_activity_payload": json.dumps(payload, default=str),
-		"status": "Done" if is_done else "Todo",
-		**first_class,
-	}
 
+@frappe.whitelist()
+def compute_activity_fields(lead, task_type, values):
+	"""Whitelisted compute for the native new-task path: the CRM Task form script stamps the result
+	onto the doc, then lets the native create save it ONCE (no double insert, no lingering popup)."""
+	return compute_activity(lead, task_type, values)
+
+
+@frappe.whitelist()
+def save_activity(lead, task_type, values, task=None):
+	"""THE one writer for completing/updating an activity (assigned-task completion, list/modal
+	paths). Computes the field values (compute_activity) then writes them onto an existing task, or
+	inserts a fresh one. Returns the task name."""
+	fields = compute_activity(lead, task_type, values)
 	if task:
 		doc = frappe.get_doc("CRM Task", task)
 		doc.update(fields)
+		doc.save()
 	else:
 		doc = frappe.get_doc({
 			"doctype": "CRM Task",
@@ -189,9 +207,7 @@ def save_activity(lead, task_type, values, task=None):
 			"reference_docname": lead,
 			**fields,
 		})
-	if fix:
-		write_location(doc, fix[0], fix[1], address=fix[3], accuracy=fix[2])
-	doc.save() if task else doc.insert()
+		doc.insert()
 	return doc.name
 
 
