@@ -1,25 +1,16 @@
-// CRM Form Script (CRM Lead, Form view) — the activity UX on the Tasks tab. Two entry points:
+// CRM Form Script (CRM Lead, Form view) — the ad-hoc "Log Activity" flow.
 //
-//   1. LOG ACTIVITY (picker): a split button [ + New Task | Log Activity ] injected next to the native
-//      "New Task". "Log Activity" opens a grain-scoped, searchable type picker → the chosen type runs
-//      the activity flow (_tcRunActivity) as an ad-hoc new task.
-//   2. COMPLETE (list "Done"): the CRM list status dropdown has no native hook, so we capture-phase
-//      intercept the "Done" tick for an activity task and just OPEN the task popup (native showTask) —
-//      instant, can't stack, can't leave a bad status. The popup's onValidate (tasks/form_scripts/
-//      task_activity.js) runs the real completion there. Plain (non-activity) tasks complete in the list.
+// The native CRM Tasks header (fork: ActivityHeader.vue) renders a split button [ New Task | ▾ Log
+// Activity ]. Its "Log Activity" item calls window.__tcLogActivity(), which this script sets to open a
+// grain-scoped, searchable activity-type picker. Picking a type runs the flow: fill the type's fields
+// in a native formDialog → resolve location from the chosen values (Phone Call → none; Field Visit →
+// check the doctor anchor, block if too far) → save_activity → receipt + toast → refresh the native
+// board (window.__tcReloadTasks, exposed by TatvaTasks).
 //
-// The activity flow: fill the type's fields in a native formDialog → resolve location from the chosen
-// values (Phone Call → none; Field Visit → check the doctor anchor) → save → receipt + toast.
-//
-// FAIL-SAFE: the server validate backstop (tasks.enforce_location / enforce_activity_logged) blocks
-// any unlogged or out-of-range in-person completion on EVERY path. So the DOM-coupled pieces (the
-// "Done" intercept and the best-effort split-button injection) degrade safely — if a CRM upgrade ever
-// changes the markup, the worst case is the rep falls back to native New Task / a clear block toast,
-// never a wrong or empty completion.
-//
-// class CRMLead runs via the CRM's native form-script lifecycle (onRender) with createDialog /
-// formDialog / call / toast injected — same primitives as the task controller. Helpers are duplicated
-// (each form script is evaluated in its own scope; there is no shared module to import).
+// NO DOM hacks: the task list, cards, completion and detail are owned by the native TatvaTasks board in
+// the fork. This script is only the ad-hoc punch entry point, bridged to the native button via window.
+// FAIL-SAFE: the server validate backstop (tasks.enforce_location / enforce_activity_logged) still
+// guards every completion on every path — this UX sits on top.
 
 const TCL_DONE = "Done";
 const tclEsc = (s) =>
@@ -118,77 +109,20 @@ function tclShowReceipt(ctl, fix, type) {
   });
 }
 
-const TCL_WRAP_ID = "tc-activity-split";
-
 class CRMLead {
+  // Expose the ad-hoc picker for the native split button (ActivityHeader → window.__tcLogActivity).
   onRender() {
     this._tcLead = this.doc && this.doc.name;
     if (!this._tcLead) return;
-    this._tcSetupCompletionIntercept();
-    this._tcInjectStyle();
-    this._tcSetupSplitButton();
-  }
-
-  // Refreshable cache of this lead's OPEN activity tasks, so the capture-phase handler can decide
-  // synchronously (before the native set_value) whether a "Done" click belongs to an activity.
-  _tcRefreshOpenTasks() {
-    this.call("tatva_connect.activity.api.open_activity_tasks", { lead: this._tcLead })
-      .then((r) => { this._tcOpen = r || []; })
-      .catch(() => { this._tcOpen = []; });
-  }
-
-  _tcSetupCompletionIntercept() {
-    this._tcOpen = this._tcOpen || [];
-    this._tcRefreshOpenTasks();
     const ctl = this;
-
-    // Remember which task ROW the pointer is in (the status menu is portaled out of the row, so we map
-    // the later "Done" click back to its row by element + title — title is unique among a lead's open
-    // activity tasks, one open per type).
-    const recordRow = (e) => {
-      const row = e.target && e.target.closest ? e.target.closest(".activity") : null;
-      if (!row) return;
-      ctl._tcRowEl = row;
-      const t = row.querySelector(".font-medium");
-      ctl._tcRow = t ? (t.textContent || "").trim() : null;
-    };
-    // An OPEN activity task — whether the rep OPENS it (row click) or ticks "Done" — routes straight to
-    // the activity form (formDialog, the robust native frappe-ui dialog), NEVER the generic Edit Task
-    // popup. Completing in the form does the location check + save. Plain (non-activity) tasks, and
-    // already-completed ones (not in the open set), keep the native popup untouched. Fail-safe: if the
-    // CRM markup ever changes, the native popup opens and the popup's onValidate flow still guards it.
-    const onClick = (e) => {
-      const el = e.target;
-      if (!el || !el.closest) return;
-      const isDone = !!el.closest('[role="menuitem"]') &&
-        (el.closest('[role="menuitem"]').textContent || "").trim() === TCL_DONE;
-      const row = el.closest(".activity");
-      // a click on the row body opens the task — but ignore the status pill / delete / any button
-      const isRowOpen = !!row && !el.closest('button,[role="button"],[role="menu"],.dropdown');
-      if (!isDone && !isRowOpen) return;
-      const title = isDone ? ctl._tcRow : ((row.querySelector(".font-medium") || {}).textContent || "").trim();
-      const task = (ctl._tcOpen || []).find((x) => x.title === title);
-      if (!task) return; // plain or already-done task → native popup
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      ctl._tcRunActivity({ type: task.custom_task_type, taskName: task.name });
-    };
-
-    if (window.__tclRowHandler) document.removeEventListener("pointerdown", window.__tclRowHandler, true);
-    if (window.__tclClickHandler) document.removeEventListener("click", window.__tclClickHandler, true);
-    window.__tclRowHandler = recordRow;
-    window.__tclClickHandler = onClick;
-    document.addEventListener("pointerdown", recordRow, true);
-    document.addEventListener("click", onClick, true);
+    window.__tcLogActivity = () => ctl.openPicker();
   }
 
-  // THE one activity flow, for both entry points: the "Log Activity" picker (taskName null ⇒ log a new
-  // ad-hoc activity) and completing an assigned task from the list (taskName set ⇒ complete it). Order:
-  // fill the type's fields in a formDialog → resolve location from the chosen values (Phone → none;
-  // Field Visit → check the doctor anchor) → save_activity → receipt + toast. GUARDED: one flow at a
-  // time (window.__tcFlowBusy) so a slow GPS + repeat taps can NEVER stack forms.
+  // THE ad-hoc activity flow: fill the type's fields in a formDialog → resolve location from the chosen
+  // values (Phone → none; Field Visit → check the doctor anchor) → save_activity → receipt + toast.
+  // GUARDED: one flow at a time (window.__tcFlowBusy) so slow GPS + repeat taps can NEVER stack forms.
   async _tcRunActivity({ type, taskName }) {
-    if (window.__tcFlowBusy) return; // a flow is already running — ignore the re-tap (no modal stacking)
+    if (window.__tcFlowBusy) return;
     window.__tcFlowBusy = true;
     try {
       const lead = this._tcLead;
@@ -224,14 +158,13 @@ class CRMLead {
       }
       this.toast.success(taskName ? type + " completed." : type + " logged.");
       if (fix) tclShowReceipt(this, fix, type);
-      this._tcRefreshOpenTasks();
-      if (window.__tclReload) window.__tclReload();
+      if (window.__tcReloadTasks) window.__tcReloadTasks(); // refresh the native board
     } finally {
       window.__tcFlowBusy = false;
     }
   }
 
-  // ---- Log Activity: grain-scoped, searchable type picker ----------------
+  // Grain-scoped, searchable activity-type picker (the ad-hoc entry point).
   async openPicker() {
     let types;
     try {
@@ -254,7 +187,16 @@ class CRMLead {
       title: "Log Activity",
       html:
         (types.length ? '<input class="tc-af-search" type="text" placeholder="Search activity types…">' : "") +
-        '<div class="tc-af-list">' + rows + "</div>",
+        '<div class="tc-af-list">' + rows + "</div>" +
+        "<style>" +
+        ".tc-af-list{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}" +
+        ".tc-af-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;" +
+        "font-size:13px;color:var(--ink-gray-8)}.tc-af-row:hover{background:var(--surface-gray-2)}" +
+        ".tc-af-empty{padding:18px;text-align:center;color:var(--ink-gray-5);font-size:13px}" +
+        ".tc-af-search{width:100%;box-sizing:border-box;border:1px solid var(--outline-gray-2);border-radius:8px;" +
+        "padding:7px 10px;font-size:13px;background:var(--surface-white);color:var(--ink-gray-8);outline:none;" +
+        "margin-bottom:8px}.tc-af-search:focus{border-color:var(--outline-gray-3)}" +
+        "</style>",
       actions: [{ label: "Close", onClick: (close) => close() }],
     });
     // Wire the filter + row clicks once the dialog DOM is mounted.
@@ -280,98 +222,5 @@ class CRMLead {
         });
       });
     }, 60);
-  }
-
-  // ---- split button: [ + New Task | Log Activity ] -----------------------
-  // The native "New Task" button has no stable hook, so this is a contained, best-effort DOM
-  // injection: find it by visible text, hide it, insert the split wrapper before it. Idempotent
-  // (guarded by the wrapper id). If it ever fails to render, the rep falls back to native New Task —
-  // correctness is server-enforced, so this UI is convenience only.
-  _tcInjectStyle() {
-    if (document.getElementById("tc-activity-style")) return;
-    const st = document.createElement("style");
-    st.id = "tc-activity-style";
-    st.textContent =
-      "#" + TCL_WRAP_ID + "{display:inline-flex;align-items:stretch;height:28px;border-radius:8px;" +
-      "overflow:hidden;border:1px solid var(--outline-gray-2)}" +
-      ".tc-split-seg{display:inline-flex;align-items:center;gap:6px;height:100%;padding:0 12px;border:none;" +
-      "background:var(--surface-white);color:var(--ink-gray-8);font-size:13px;font-weight:500;" +
-      "cursor:pointer;white-space:nowrap}" +
-      ".tc-split-seg:hover{background:var(--surface-gray-2)}" +
-      ".tc-split-alt{border-left:1px solid var(--outline-gray-2)}" +
-      ".tc-split-plus{font-size:15px;line-height:1}" +
-      ".tc-af-list{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}" +
-      ".tc-af-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;" +
-      "font-size:13px;color:var(--ink-gray-8)}.tc-af-row:hover{background:var(--surface-gray-2)}" +
-      ".tc-af-empty{padding:18px;text-align:center;color:var(--ink-gray-5);font-size:13px}" +
-      ".tc-af-search{width:100%;box-sizing:border-box;border:1px solid var(--outline-gray-2);border-radius:8px;" +
-      "padding:7px 10px;font-size:13px;background:var(--surface-white);color:var(--ink-gray-8);outline:none;" +
-      "margin-bottom:8px}.tc-af-search:focus{border-color:var(--outline-gray-3)}";
-    document.head.appendChild(st);
-  }
-
-  _tcFindNativeNewTask() {
-    return [...document.querySelectorAll("button")].find(
-      (b) => (b.textContent || "").trim() === "New Task" &&
-        !b.closest("#" + TCL_WRAP_ID) && !b.querySelector("input")
-    );
-  }
-
-  _tcInjectSplit() {
-    const native = this._tcFindNativeNewTask();
-    if (native) {
-      native.setAttribute("data-tc-native-newtask", "1");
-      native.style.display = "none";
-    }
-    if (document.getElementById(TCL_WRAP_ID)) return; // already injected — idempotent
-    const anchor = native || document.querySelector("[data-tc-native-newtask]");
-    if (!anchor || !anchor.parentElement) return;
-    const ctl = this;
-    const seg = (label, cls, onClick) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "tc-split-seg " + cls;
-      b.innerHTML = label;
-      b.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onClick();
-      });
-      return b;
-    };
-    const wrap = document.createElement("div");
-    wrap.id = TCL_WRAP_ID;
-    wrap.appendChild(
-      seg('<span class="tc-split-plus">+</span><span>New Task</span>', "tc-split-main", () => {
-        const n = document.querySelector("[data-tc-native-newtask]") || ctl._tcFindNativeNewTask();
-        if (n) n.click();
-      })
-    );
-    wrap.appendChild(seg("Log Activity", "tc-split-alt", () => ctl.openPicker()));
-    anchor.parentElement.insertBefore(wrap, anchor);
-  }
-
-  // The Tasks tab mounts after onRender and re-renders on tab switches, so a single inject can miss.
-  // A minimal MutationObserver (rAF-coalesced, single handler parked on window, idempotent via the
-  // wrapper id) reapplies the injection. Plus a few timed retries for the first mount.
-  _tcSetupSplitButton() {
-    const ctl = this;
-    let scheduled = false;
-    const reapply = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        ctl._tcInjectSplit();
-      });
-    };
-    if (window.__tclSplitObserver) {
-      try { window.__tclSplitObserver.disconnect(); } catch (e) {}
-    }
-    const obs = new MutationObserver(reapply);
-    window.__tclSplitObserver = obs;
-    obs.observe(document.body, { childList: true, subtree: true });
-    this._tcInjectSplit();
-    [150, 500, 1200].forEach((t) => setTimeout(() => ctl._tcInjectSplit(), t));
   }
 }
