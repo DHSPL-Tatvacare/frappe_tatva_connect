@@ -25,6 +25,11 @@ const config: ZudokuConfig = {
   },
   // A lively, branded palette. Teal primary reads well in both light and dark.
   theme: {
+    // Match the Frappe wiki: Inter as the UI/body font (the wiki uses
+    // InterVariable). Zudoku loads Inter from its built-in font set.
+    fonts: {
+      sans: "Inter",
+    },
     light: {
       primary: "174 72% 36%",
       primaryForeground: "0 0% 100%",
@@ -33,8 +38,13 @@ const config: ZudokuConfig = {
       primary: "172 66% 50%",
       primaryForeground: "180 60% 8%",
     },
-    // Keep reference tables compact and neat.
+    // Match the wiki's compact 14px scale. Zudoku sizes prose in rem off the
+    // root, so dropping the root font-size from 16px to 14px shrinks everything
+    // proportionally (body, headings, content) to the wiki's feel.
     customCss: {
+      "html": {
+        "font-size": "14px",
+      },
       "table": {
         "font-size": "0.9rem",
       },
