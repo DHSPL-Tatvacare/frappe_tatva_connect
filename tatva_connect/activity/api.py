@@ -133,6 +133,15 @@ def get_schema(task_type):
 	]
 
 
+@frappe.whitelist()
+def get_type_meta(task_type):
+	"""The type's location config (visit_mode + location_when) — lets the client decide whether a
+	conditional activity needs a location capture once the rep picks the branch field. Sibling of
+	get_schema so get_schema's shape stays stable for existing callers."""
+	tt = frappe.db.get_value("CRM Task Type", task_type, ["visit_mode", "location_when"], as_dict=True) or {}
+	return {"visit_mode": tt.get("visit_mode") or "", "location_when": tt.get("location_when") or ""}
+
+
 def compute_activity(lead, task_type, values):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
 	grain + required, splits first-class columns vs the JSON payload, and runs the location guard
@@ -167,9 +176,9 @@ def compute_activity(lead, task_type, values):
 	# Location guard: in-person activity on a tracked grain must carry an in-range fix. The gate +
 	# anchor/radius rule live once in location.api (one brain); this just feeds them.
 	from tatva_connect.location.api import (
-		location_guard_applies, set_or_check_anchor, location_fields, _reverse_geocode)
+		location_required, set_or_check_anchor, location_fields, _reverse_geocode)
 
-	radius = location_guard_applies(task_type, lead)
+	radius = location_required(task_type, lead, values)
 	if radius is not None:
 		lat, lng, accuracy = values.get("lat"), values.get("lng"), values.get("accuracy")
 		if not (lat and lng):

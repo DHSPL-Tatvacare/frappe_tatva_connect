@@ -73,6 +73,11 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
+		# After a logged activity becomes Done, run its config-driven journey (next task + stage).
+		# on_update (not validate): the doc is committed before we raise follow-ups / move the stage.
+		"on_update": [
+			"tatva_connect.activity.automation.apply_transitions",
+		],
 	},
 	"WhatsApp Message": {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone.

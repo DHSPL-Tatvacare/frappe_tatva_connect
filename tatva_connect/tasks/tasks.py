@@ -82,11 +82,14 @@ def enforce_checklist(doc, method=None):
 
 
 def enforce_location(doc, method=None):
-	"""Fail-closed backstop for the location guard: an in-person activity on a location-tracked
-	lead grain must carry coordinates. The activity flow (save_activity) captures + writes them
-	via the client; this guarantees the rule holds even on an API / import / scripted save where
-	no browser ran. The gate lives once in location.api.location_guard_applies (one brain)."""
-	from tatva_connect.location.api import location_guard_applies
+	"""Fail-closed backstop for the location guard: an activity that requires a location (always
+	in-person OR a matched conditional location_when) on a location-tracked lead grain must carry
+	coordinates. The activity flow (save_activity) captures + writes them via the client; this
+	guarantees the rule holds even on an API / import / scripted save where no browser ran. The
+	gate lives once in location.api.location_required, fed by the reconstructed submitted values
+	(one brain — same reconstruction the automation engine uses)."""
+	from tatva_connect.activity.automation import reconstruct_values
+	from tatva_connect.location.api import location_required
 
 	# Location is captured when the visit is LOGGED (Done), not while the task is an open to-do.
 	# An open/assigned in-person task legitimately has no coordinates yet — only block on completion.
@@ -94,7 +97,8 @@ def enforce_location(doc, method=None):
 		return
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
 		return
-	if location_guard_applies(doc.custom_task_type, doc.reference_docname) is None:
+	values = reconstruct_values(doc)
+	if location_required(doc.custom_task_type, doc.reference_docname, values) is None:
 		return
 	if not (doc.custom_location_latitude and doc.custom_location_longitude):
 		frappe.throw(
@@ -122,10 +126,11 @@ def enforce_activity_logged(doc, method=None):
 
 
 @frappe.whitelist()
-def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None):
+def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None):
 	"""Idempotent follow-up task. Throttle: ONE open task per lead per type — if one
-	is already open, return it untouched. Otherwise create it (assigned + due in
-	`due_in_hours`). Also the method the WhatsApp inbound event calls.
+	is already open, return it untouched. Otherwise create it (assigned + due at
+	`due_at` if given, else `due_in_hours` from now). Also the method the WhatsApp
+	inbound event calls.
 
 	Best-effort throttle: the check-then-insert isn't locked, so two near-simultaneous
 	inbound messages for the same lead could rarely create two tasks. Acceptable — a
@@ -146,13 +151,14 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	if existing:
 		return existing
 
+	due_date = due_at or add_to_date(now_datetime(), hours=cint(due_in_hours))
 	task = frappe.get_doc(
 		{
 			"doctype": "CRM Task",
 			"title": title or task_type,
 			"custom_task_type": task_type,
 			"status": "Todo",
-			"due_date": add_to_date(now_datetime(), hours=cint(due_in_hours)),
+			"due_date": due_date,
 			"assigned_to": assigned_to,
 			"reference_doctype": "CRM Lead",
 			"reference_docname": lead,

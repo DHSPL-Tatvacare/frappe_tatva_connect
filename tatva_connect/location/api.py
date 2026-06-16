@@ -3,10 +3,11 @@
 Two layers, one brain:
   • Doctype-agnostic helpers — reverse_geocode a coordinate, static_map (key-safe image proxy),
     write_location (map coords onto a record incl. the native Geolocation GeoJSON Point).
-  • The activity location guard — `location_guard_applies` is the SINGLE gate (visit_mode ==
-    In-Person AND the lead grain is location-tracked, grain-scoped via taxonomy.grain). Both the
-    activity writer (activity.api.save_activity) and the validate backstop (tasks.enforce_location)
-    key off it; `set_or_check_anchor` owns the clinic-anchor + radius rule. (Phase B consolidated
+  • The activity location guard — `location_guard_applies` is the door-first probe (pure visit_mode
+    == In-Person AND the lead grain is location-tracked, grain-scoped via taxonomy.grain), while
+    `location_required` adds the conditional `location_when` branch enforced at save. The activity
+    writer (compute_activity) and the validate backstop (tasks.enforce_location) key off
+    `location_required`; `set_or_check_anchor` owns the clinic-anchor + radius rule. (Phase B consolidated
     the v1 task-type trigger — `location_required` + task_location.js — into this; see archive/.)
 
 Ships dormant (CLAUDE.md #6): kill-switch OFF, blank key, or no tracked grains => nothing fires
@@ -74,12 +75,46 @@ def is_location_tracked(lead):
 
 
 def location_guard_applies(task_type, lead):
-	"""The ONE gate, called by save_activity AND the validate backstop: returns the allowed radius
-	(metres) when the activity must capture+guard location (type visit_mode == In-Person AND the
-	lead grain is tracked), else None. No fork: both paths key off this single predicate."""
+	"""Pure visit_mode gate for the door-first client probe: returns the allowed radius (metres)
+	when the type is ALWAYS an in-person visit (visit_mode == In-Person) AND the lead grain is
+	tracked, else None. Upfront-certain types only — the conditional branch lives in
+	location_required (enforced at save, since the visit/phone choice isn't known at the door)."""
 	if not (task_type and lead):
 		return None
 	if frappe.db.get_value("CRM Task Type", task_type, "visit_mode") != "In-Person":
+		return None
+	return is_location_tracked(lead)
+
+
+def _match_condition(when, values):
+	"""Parse a location_when condition against the submitted values; True if it matches.
+	Supports '<field>==<value>' and '<field> in v1|v2|v3'. Empty/None condition => False.
+	No business field or value is hardcoded — both come from config + the submitted form."""
+	if not when:
+		return False
+	when = when.strip()
+	if "==" in when:
+		field, _, value = when.partition("==")
+		return str(values.get(field.strip()) or "") == value.strip()
+	if " in " in when:
+		field, _, opts = when.partition(" in ")
+		choices = [o.strip() for o in opts.split("|")]
+		return str(values.get(field.strip()) or "") in choices
+	return False
+
+
+def location_required(task_type, lead, values):
+	"""The conditional gate, called by the activity writer AND the validate backstop: returns the
+	allowed radius (metres) when this activity must capture+guard location for THESE submitted
+	values (type visit_mode == In-Person OR its location_when condition matches), else None.
+	Reuses is_location_tracked for the radius — one brain for both the always-visit and the
+	conditional-visit branches."""
+	if not (task_type and lead):
+		return None
+	tt = frappe.db.get_value("CRM Task Type", task_type, ["visit_mode", "location_when"], as_dict=True)
+	if not tt:
+		return None
+	if tt.visit_mode != "In-Person" and not _match_condition(tt.location_when, values or {}):
 		return None
 	return is_location_tracked(lead)
 

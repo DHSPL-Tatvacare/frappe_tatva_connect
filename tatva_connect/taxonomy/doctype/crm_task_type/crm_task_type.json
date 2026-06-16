@@ -11,11 +11,13 @@
   "description",
   "activity_section",
   "visit_mode",
+  "location_when",
   "is_logged_complete",
   "schema_section",
   "schema",
   "scope_section",
-  "scope"
+  "scope",
+  "transitions"
  ],
  "fields": [
   {
@@ -42,6 +44,12 @@
    "fieldtype": "Select",
    "label": "Visit Mode",
    "options": "\nIn-Person\nPhone\nNone"
+  },
+  {
+   "description": "Optional condition that makes this type location-required conditionally, e.g. meeting_type==Physical Visit. Format <field>==<value> or <field> in v1|v2.",
+   "fieldname": "location_when",
+   "fieldtype": "Data",
+   "label": "Location When"
   },
   {
    "default": "1",
@@ -73,6 +81,13 @@
    "fieldtype": "Table",
    "label": "Scope",
    "options": "CRM Task Type Scope"
+  },
+  {
+   "description": "Journey rules: on outcome, create the next task and/or set the lead stage.",
+   "fieldname": "transitions",
+   "fieldtype": "Table",
+   "label": "Transitions",
+   "options": "CRM Task Type Transition"
   }
  ],
  "grid_page_length": 50,

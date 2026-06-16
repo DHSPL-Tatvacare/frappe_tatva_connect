@@ -1,13 +1,23 @@
-// CRM Form Script (CRM Lead, Form view) — the activity flow when a rep COMPLETES a task from the
-// Tasks-tab list (moves it to "Done"). This is the ONE place the CRM gives no native hook: the list
-// status dropdown calls frappe.client.set_value directly. So we capture-phase intercept just that
-// "Done" click for an activity task and run the SAME flow used in the task popup: location-FIRST →
-// the type's fields in a native formDialog → activity.api.save_activity (one server brain).
+// CRM Form Script (CRM Lead, Form view) — the activity UX on the Tasks tab. TWO entry points, ONE flow:
 //
-// This single interception is the only DOM-coupled piece left (no split button, no observers). It is
+//   1. LOG ACTIVITY (picker): a split button [ + New Task | Log Activity ] is injected next to the
+//      native "New Task". "New Task" delegates to native; "Log Activity" opens a grain-scoped,
+//      searchable type picker → the chosen type runs the activity flow as an ad-hoc new task.
+//   2. COMPLETE (list "Done"): the CRM list status dropdown calls frappe.client.set_value directly —
+//      no native hook — so we capture-phase intercept the "Done" click for an activity task and run
+//      the SAME flow against the existing task instead of an empty status flip.
+//
+// Both paths funnel through ONE method, `_tcRunActivity({type, taskName})` — taskName set ⇒ complete
+// that task, null ⇒ log a new ad-hoc activity. The flow is: location-FIRST (door block for pure
+// in-person) → the type's fields in a native formDialog → conditional at-form location check (for
+// `location_when` types that only become a visit once a branch field is picked) → save_activity (one
+// server brain) → receipt + toast.
+//
 // FAIL-SAFE: the server validate backstop (tasks.enforce_location / enforce_activity_logged) blocks
-// any unlogged in-person completion on every path, so if a CRM upgrade ever changes this markup the
-// worst case is a clear "capture location to complete" toast — never a wrong or empty completion.
+// any unlogged or out-of-range in-person completion on EVERY path. So the DOM-coupled pieces (the
+// "Done" intercept and the best-effort split-button injection) degrade safely — if a CRM upgrade ever
+// changes the markup, the worst case is the rep falls back to native New Task / a clear block toast,
+// never a wrong or empty completion.
 //
 // class CRMLead runs via the CRM's native form-script lifecycle (onRender) with createDialog /
 // formDialog / call / toast injected — same primitives as the task controller. Helpers are duplicated
@@ -17,6 +27,23 @@ const TCL_DONE = "Done";
 const tclEsc = (s) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const tclMsg = (e) => (e && (e.messages?.[0] || e.message)) || "";
+
+// Mirror of the server `location_when` parser (location.api `_match_condition`): a type becomes a
+// conditional visit when its `location_when` matches the submitted values. Two forms only —
+// `<field>==<value>` and `<field> in v1|v2|v3`. Kept tiny and value-agnostic (no field/value baked in);
+// the server re-evaluates the same rule at save, so this only decides whether to capture GPS up front.
+function tclWhenMatches(when, values) {
+  const w = (when || "").trim();
+  if (!w) return false;
+  const mIn = w.match(/^(\S+)\s+in\s+(.+)$/i);
+  if (mIn) {
+    const opts = mIn[2].split("|").map((s) => s.trim());
+    return opts.includes(String(values[mIn[1].trim()] ?? ""));
+  }
+  const i = w.indexOf("==");
+  if (i === -1) return false;
+  return String(values[w.slice(0, i).trim()] ?? "") === w.slice(i + 2).trim();
+}
 
 function tclGetGPS() {
   return new Promise((resolve) => {
@@ -105,11 +132,15 @@ function tclShowReceipt(ctl, fix, type) {
   });
 }
 
+const TCL_WRAP_ID = "tc-activity-split";
+
 class CRMLead {
   onRender() {
     this._tcLead = this.doc && this.doc.name;
     if (!this._tcLead) return;
     this._tcSetupCompletionIntercept();
+    this._tcInjectStyle();
+    this._tcSetupSplitButton();
   }
 
   // Refreshable cache of this lead's OPEN activity tasks, so the capture-phase handler can decide
@@ -155,9 +186,18 @@ class CRMLead {
     document.addEventListener("click", onClick, true);
   }
 
-  async _tcCompleteFromList(task) {
+  // List-"Done" path: complete the existing task. Thin wrapper over the one shared flow.
+  _tcCompleteFromList(task) {
+    return this._tcRunActivity({ type: task.custom_task_type, taskName: task.name });
+  }
+
+  // THE one client flow both entry points call (list-Done and the Log-Activity picker). taskName set
+  // ⇒ complete that task; null ⇒ log a new ad-hoc activity. Order: load schema → location-FIRST (door
+  // block for pure in-person) → formDialog → conditional at-form location (location_when types) →
+  // save_activity → receipt + toast. Every outcome clears with a toast (denied / out-of-range /
+  // save-fail / success).
+  async _tcRunActivity({ type, taskName }) {
     const lead = this._tcLead;
-    const type = task.custom_task_type;
     let schema;
     try {
       schema = (await this.call("tatva_connect.activity.api.get_schema", { task_type: type })) || [];
@@ -165,10 +205,12 @@ class CRMLead {
       this.toast.error("Couldn't load this activity — please try again.");
       return;
     }
+
+    // Pure in-person types (visit_mode == In-Person) block at the door, before the form.
     const loc = await tclLocationFirst(this, lead, type);
     if (loc === "denied" || loc === "blocked") return; // toast/dialog already shown
+    let fix = loc && loc.fix;
 
-    const fix = loc && loc.fix;
     const data = await this.formDialog({
       title: "Add " + type,
       fields: tclBuildFields(schema),
@@ -177,20 +219,223 @@ class CRMLead {
     });
     if (data === null || data === undefined) return; // cancelled
 
+    // Conditional location: a `location_when` type only becomes a visit once the rep picks the
+    // branching field (e.g. meeting_type==Physical Visit). We can't door-block it, so if the submitted
+    // values match and no door-fix was captured, capture + precheck NOW (block dialog if far, keep the
+    // entered data). If we couldn't read the type's location_when, the server re-check is the backstop.
+    if (!fix) {
+      const condFix = await this._tcConditionalLocation(lead, type, data);
+      if (condFix === "denied" || condFix === "blocked") return; // toast/dialog already shown
+      fix = condFix ? condFix.fix : null;
+    }
+
     const values = Object.assign({}, data);
     if (fix) Object.assign(values, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
     try {
       await this.call("tatva_connect.activity.api.save_activity", {
-        lead, task_type: type, values: JSON.stringify(values), task: task.name,
+        lead, task_type: type, values: JSON.stringify(values), task: taskName || undefined,
       });
     } catch (e) {
       this.toast.error(tclMsg(e) || "Couldn't save this activity — please try again.");
       return;
     }
-    this.toast.success(type + " completed.");
+    this.toast.success(taskName ? type + " completed." : type + " logged.");
     if (fix) tclShowReceipt(this, fix, type);
     this._tcRefreshOpenTasks();
     // Nudge the Tasks list to re-fetch (the native reload path was intercepted). Verified live.
     if (window.__tclReload) window.__tclReload();
+  }
+
+  // Returns null (not a conditional visit) | {fix} | "denied" | "blocked".
+  async _tcConditionalLocation(lead, type, values) {
+    const when = await this._tcTypeLocationWhen(type);
+    if (!when || !tclWhenMatches(when, values)) return null;
+    const pos = await tclGetGPS();
+    if (!pos) {
+      this.toast.error("Allow location access to log this in-person visit.");
+      return "denied";
+    }
+    let pre;
+    try {
+      pre = await this.call("tatva_connect.location.api.precheck", {
+        lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy,
+      });
+    } catch (e) {
+      this.toast.error("Couldn't verify your location — please try again.");
+      return "denied";
+    }
+    if (pre.needed && pre.ok === false) {
+      this.createDialog({
+        title: "Too far from the doctor",
+        html:
+          '<img src="' + tclStaticMap(pre.anchor_lat, pre.anchor_lng, pos) + '" alt="map" ' +
+          "style=\"width:100%;height:180px;object-fit:cover;border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
+          '<div style="font-size:14px;color:var(--ink-gray-8)">Reach within <b>' + pre.allowed_m +
+          " m</b> of the doctor's location to log this visit. You're <b>" + pre.distance_m + ' m</b> away.</div>',
+        actions: [{ label: "Okay", variant: "solid", onClick: (c) => c() }],
+      });
+      this.toast.error("You're " + pre.distance_m + " m away — too far to log this visit.");
+      return "blocked";
+    }
+    return { fix: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy } };
+  }
+
+  // The type's `location_when` condition string (for the conditional-visit at-form check), cached
+  // per type. Server `get_type_meta` is the source; the server location guard re-checks at save
+  // regardless, so a fetch failure just falls back to that backstop (returns "").
+  async _tcTypeLocationWhen(type) {
+    if (!this._tcWhenCache) this._tcWhenCache = {};
+    if (this._tcWhenCache[type] !== undefined) return this._tcWhenCache[type];
+    let when = "";
+    try {
+      const meta = await this.call("tatva_connect.activity.api.get_type_meta", { task_type: type });
+      when = (meta && meta.location_when) || "";
+    } catch (e) {}
+    this._tcWhenCache[type] = when;
+    return when;
+  }
+
+  // ---- Log Activity: grain-scoped, searchable type picker ----------------
+  async openPicker() {
+    let types;
+    try {
+      types = (await this.call("tatva_connect.activity.api.list_types_for_lead", { lead: this._tcLead })) || [];
+    } catch (e) {
+      this.toast.error("Couldn't load activity types — please try again.");
+      return;
+    }
+    const ctl = this;
+    const rows = types.length
+      ? types
+          .map(
+            (t) =>
+              '<div class="tc-af-row" data-type="' + tclEsc(t.name) + '" data-search="' +
+              tclEsc(String(t.label || t.name).toLowerCase()) + '">' + tclEsc(t.label || t.name) + "</div>"
+          )
+          .join("")
+      : '<div class="tc-af-empty">No activity types are configured for this lead.</div>';
+    this.createDialog({
+      title: "Log Activity",
+      html:
+        (types.length ? '<input class="tc-af-search" type="text" placeholder="Search activity types…">' : "") +
+        '<div class="tc-af-list">' + rows + "</div>",
+      actions: [{ label: "Close", onClick: (close) => close() }],
+    });
+    // Wire the filter + row clicks once the dialog DOM is mounted.
+    setTimeout(() => {
+      const box = document.querySelector(".tc-af-search");
+      if (box) {
+        box.focus();
+        box.addEventListener("input", () => {
+          const q = box.value.trim().toLowerCase();
+          document.querySelectorAll(".tc-af-row").forEach((el) => {
+            el.style.display = !q || (el.getAttribute("data-search") || "").indexOf(q) !== -1 ? "" : "none";
+          });
+        });
+      }
+      document.querySelectorAll(".tc-af-row").forEach((el) => {
+        el.addEventListener("click", () => {
+          const type = el.getAttribute("data-type");
+          const closeBtn = [...document.querySelectorAll('[role="dialog"] button')].find(
+            (b) => (b.textContent || "").trim() === "Close"
+          );
+          if (closeBtn) closeBtn.click();
+          ctl._tcRunActivity({ type, taskName: null });
+        });
+      });
+    }, 60);
+  }
+
+  // ---- split button: [ + New Task | Log Activity ] -----------------------
+  // The native "New Task" button has no stable hook, so this is a contained, best-effort DOM
+  // injection: find it by visible text, hide it, insert the split wrapper before it. Idempotent
+  // (guarded by the wrapper id). If it ever fails to render, the rep falls back to native New Task —
+  // correctness is server-enforced, so this UI is convenience only.
+  _tcInjectStyle() {
+    if (document.getElementById("tc-activity-style")) return;
+    const st = document.createElement("style");
+    st.id = "tc-activity-style";
+    st.textContent =
+      "#" + TCL_WRAP_ID + "{display:inline-flex;align-items:stretch;height:28px;border-radius:8px;" +
+      "overflow:hidden;border:1px solid var(--outline-gray-2)}" +
+      ".tc-split-seg{display:inline-flex;align-items:center;gap:6px;height:100%;padding:0 12px;border:none;" +
+      "background:var(--surface-white);color:var(--ink-gray-8);font-size:13px;font-weight:500;" +
+      "cursor:pointer;white-space:nowrap}" +
+      ".tc-split-seg:hover{background:var(--surface-gray-2)}" +
+      ".tc-split-alt{border-left:1px solid var(--outline-gray-2)}" +
+      ".tc-split-plus{font-size:15px;line-height:1}" +
+      ".tc-af-list{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}" +
+      ".tc-af-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;" +
+      "font-size:13px;color:var(--ink-gray-8)}.tc-af-row:hover{background:var(--surface-gray-2)}" +
+      ".tc-af-empty{padding:18px;text-align:center;color:var(--ink-gray-5);font-size:13px}" +
+      ".tc-af-search{width:100%;box-sizing:border-box;border:1px solid var(--outline-gray-2);border-radius:8px;" +
+      "padding:7px 10px;font-size:13px;background:var(--surface-white);color:var(--ink-gray-8);outline:none;" +
+      "margin-bottom:8px}.tc-af-search:focus{border-color:var(--outline-gray-3)}";
+    document.head.appendChild(st);
+  }
+
+  _tcFindNativeNewTask() {
+    return [...document.querySelectorAll("button")].find(
+      (b) => (b.textContent || "").trim() === "New Task" &&
+        !b.closest("#" + TCL_WRAP_ID) && !b.querySelector("input")
+    );
+  }
+
+  _tcInjectSplit() {
+    const native = this._tcFindNativeNewTask();
+    if (native) {
+      native.setAttribute("data-tc-native-newtask", "1");
+      native.style.display = "none";
+    }
+    if (document.getElementById(TCL_WRAP_ID)) return; // already injected — idempotent
+    const anchor = native || document.querySelector("[data-tc-native-newtask]");
+    if (!anchor || !anchor.parentElement) return;
+    const ctl = this;
+    const seg = (label, cls, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tc-split-seg " + cls;
+      b.innerHTML = label;
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      });
+      return b;
+    };
+    const wrap = document.createElement("div");
+    wrap.id = TCL_WRAP_ID;
+    wrap.appendChild(
+      seg('<span class="tc-split-plus">+</span><span>New Task</span>', "tc-split-main", () => {
+        const n = document.querySelector("[data-tc-native-newtask]") || ctl._tcFindNativeNewTask();
+        if (n) n.click();
+      })
+    );
+    wrap.appendChild(seg("Log Activity", "tc-split-alt", () => ctl.openPicker()));
+    anchor.parentElement.insertBefore(wrap, anchor);
+  }
+
+  // The Tasks tab mounts after onRender and re-renders on tab switches, so a single inject can miss.
+  // A minimal MutationObserver (rAF-coalesced, single handler parked on window, idempotent via the
+  // wrapper id) reapplies the injection. Plus a few timed retries for the first mount.
+  _tcSetupSplitButton() {
+    const ctl = this;
+    let scheduled = false;
+    const reapply = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        ctl._tcInjectSplit();
+      });
+    };
+    if (window.__tclSplitObserver) {
+      try { window.__tclSplitObserver.disconnect(); } catch (e) {}
+    }
+    const obs = new MutationObserver(reapply);
+    window.__tclSplitObserver = obs;
+    obs.observe(document.body, { childList: true, subtree: true });
+    this._tcInjectSplit();
+    [150, 500, 1200].forEach((t) => setTimeout(() => ctl._tcInjectSplit(), t));
   }
 }
