@@ -11,7 +11,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import format_datetime, formatdate
+from frappe.utils import flt, format_datetime, formatdate
 
 from tatva_connect.taxonomy.grain import resolve_scoped
 
@@ -247,6 +247,112 @@ def save_activity(lead, task_type, values, task=None):
 		})
 		doc.insert()
 	return doc.name
+
+
+@frappe.whitelist()
+def lead_task_board(lead):
+	"""ONE render-ready payload for the native Tasks board (<TatvaTasks> in the CRM fork): the lead's
+	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
+	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
+	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config."""
+	if not frappe.db.exists("CRM Lead", lead):
+		frappe.throw(_("Lead {0} not found").format(lead))
+
+	rows = frappe.get_all(
+		"CRM Task",
+		filters={"reference_doctype": "CRM Lead", "reference_docname": lead},
+		fields=[
+			"name", "title", "custom_task_type", "status", "priority", "due_date",
+			"assigned_to", "owner", "creation", "description", "custom_activity_payload",
+			*FIRST_CLASS,
+			"custom_location_latitude", "custom_location_longitude",
+			"custom_location_address", "custom_location_captured_at",
+		],
+		order_by="modified desc",
+	)
+
+	types = {}
+	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
+		cfg = _type_config(tn)
+		if cfg:
+			types[tn] = cfg
+
+	tasks = []
+	for r in rows:
+		who = r.assigned_to or r.owner
+		tasks.append({
+			"name": r.name,
+			"title": r.title,
+			"task_type": r.custom_task_type or "",
+			"status": r.status,
+			"priority": r.priority,
+			"due_date": str(r.due_date) if r.due_date else None,
+			"rep": who,
+			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
+			"creation": str(r.creation),
+			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
+			"values": _task_values(r, types.get(r.custom_task_type)),
+			"location": _task_location(r),
+		})
+
+	from tatva_connect.location.api import _read_anchor
+	return {"anchor": _read_anchor(frappe.get_doc("CRM Lead", lead)), "types": types, "tasks": tasks}
+
+
+def _type_config(task_type):
+	"""Render config for a task type: the ordered field schema, whether completing it logs Done, and
+	whether it can capture location (visit_mode In-Person, or a conditional location_when). None for a
+	type with no config row (a plain task)."""
+	if not frappe.db.exists("CRM Task Type", task_type):
+		return None
+	doc = frappe.get_doc("CRM Task Type", task_type)
+	return {
+		"fields": [
+			{
+				"label": f.label,
+				"fieldname": f.fieldname,
+				"fieldtype": f.fieldtype,
+				"options": f.options or "",
+				"reqd": int(f.reqd or 0),
+				"depends_on": (f.get("depends_on") or ""),
+				"first_class_target": f.first_class_target or "",
+			}
+			for f in doc.schema
+		],
+		"is_logged_complete": int(doc.is_logged_complete or 0),
+		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
+	}
+
+
+def _task_values(r, cfg):
+	"""Saved values keyed by SCHEMA fieldname: the JSON payload (non-first-class fields) merged with the
+	first-class columns mapped back to their schema fieldname. So the renderer just reads values[fieldname]."""
+	vals = {}
+	if (r.custom_activity_payload or "").strip():
+		try:
+			vals.update(frappe.parse_json(r.custom_activity_payload) or {})
+		except Exception:
+			pass
+	if cfg:
+		for f in cfg["fields"]:
+			fct = f.get("first_class_target")
+			if fct and r.get(fct) not in (None, ""):
+				vals[f["fieldname"]] = str(r.get(fct))
+	if r.description:
+		vals.setdefault("notes", r.description)
+	return vals
+
+
+def _task_location(r):
+	"""Captured-location state for a task card — None if no fix was recorded."""
+	if not (r.custom_location_latitude and r.custom_location_longitude):
+		return None
+	return {
+		"lat": flt(r.custom_location_latitude),
+		"lng": flt(r.custom_location_longitude),
+		"address": r.custom_location_address or "",
+		"captured_at": str(r.custom_location_captured_at) if r.custom_location_captured_at else None,
+	}
 
 
 @frappe.whitelist()
