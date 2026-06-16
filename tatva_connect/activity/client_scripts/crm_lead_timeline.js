@@ -33,7 +33,8 @@ frappe.ui.form.on("CRM Lead", {
         const data = (r && r.message) || {};
         const anchor = data.anchor;
         const acts = data.activities || [];
-        if (!anchor && !acts.length) {
+        const rejections = data.rejections || [];
+        if (!anchor && !acts.length && !rejections.length) {
           fld.$wrapper.html(muted("No activities logged yet."));
           return;
         }
@@ -85,6 +86,37 @@ frappe.ui.form.on("CRM Lead", {
                 : '<div style="width:96px;height:58px;border-radius:6px;flex-shrink:0;background:var(--subtle-fg);' +
                   'display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">no visit</div>') +
               meta + "</a>";
+          }
+          html += "</div>";
+        }
+
+        // --- Blocked attempts (Rejected CRM Visit Audit rows — no task exists; the fraud/quality trail) ---
+        if (rejections.length) {
+          html += '<div style="display:flex;flex-direction:column">';
+          html +=
+            '<div style="font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);padding:2px 0 6px">' +
+            "Blocked attempts (" + rejections.length + ")</div>";
+          for (const x of rejections) {
+            const dist =
+              x.distance_m != null
+                ? '<span style="color:var(--text-muted)">' + x.distance_m + " m from clinic" +
+                  (x.allowed_m != null ? " · allowed " + x.allowed_m + " m" : "") + "</span>"
+                : "";
+            const thumb = x.lat && x.lng
+              ? '<img src="' + map1(x.lat, x.lng) + '" alt="map" ' +
+                'style="width:96px;height:58px;object-fit:cover;border-radius:6px;flex-shrink:0;opacity:.85" ' +
+                "onerror=\"this.style.display='none'\">"
+              : '<div style="width:96px;height:58px;border-radius:6px;flex-shrink:0;background:var(--subtle-fg);' +
+                'display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">no fix</div>';
+            html +=
+              '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border-color)">' +
+              thumb +
+              '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' +
+              '<div style="font-size:13px;font-weight:600">' + esc(x.rep) +
+              ' <span style="font-weight:400;color:var(--red-600)">· Rejected</span></div>' +
+              '<div style="font-size:12px;color:var(--text-muted)">' + esc(x.date) +
+              (dist ? " · " + dist : "") + "</div>" +
+              "</div></div>";
           }
           html += "</div>";
         }

@@ -199,11 +199,16 @@ def ensure_anchor(ld, here_lat, here_lng):
 def set_or_check_anchor(lead, lat, lng, accuracy, radius):
 	"""Authoritative guard (called by the one writer, save_activity). Resolves the anchor (hybrid),
 	then — unless this call just set it from the rep's first fix — BLOCKS the save when the rep is
-	beyond radius + the reading's accuracy."""
+	beyond radius + the reading's accuracy.
+
+	Returns a dict the caller logs to the audit trail (one source of the haversine — no recompute):
+	  {"distance_m", "allowed_m", "anchor_lat", "anchor_lng", "first"}
+	`first` is True on the first-capture case (anchor just set from the rep's fix — nothing to compare)."""
 	ld = frappe.get_doc("CRM Lead", lead)
 	anchor, created = ensure_anchor(ld, lat, lng)
 	if created:
-		return
+		return {"distance_m": None, "allowed_m": None,
+				"anchor_lat": flt(lat), "anchor_lng": flt(lng), "first": True}
 	dist = haversine(anchor["lat"], anchor["lng"], lat, lng)
 	allowed = radius + flt(accuracy)
 	if dist > allowed:
@@ -213,6 +218,31 @@ def set_or_check_anchor(lead, lat, lng, accuracy, radius):
 			),
 			title=_("Out of range"),
 		)
+	return {"distance_m": int(round(dist)), "allowed_m": int(round(allowed)),
+			"anchor_lat": anchor["lat"], "anchor_lng": anchor["lng"], "first": False}
+
+
+def log_visit_audit(lead, task_type, verdict, lat=None, lng=None, distance_m=None, allowed_m=None,
+					anchor_lat=None, anchor_lng=None, task=None):
+	"""Insert ONE CRM Visit Audit row — the fraud/quality trail. Every completion attempt records its
+	location verdict: Accepted (in-person, in range), Rejected (in-person, out of range / blocked), or
+	Not Required (phone/office). Rejected rows persist even though no CRM Task is saved (the block is the
+	point). System-written: ignore_permissions, rep = the acting user, captured at now."""
+	frappe.get_doc({
+		"doctype": "CRM Visit Audit",
+		"lead": lead,
+		"task_type": task_type,
+		"task": task,
+		"rep": frappe.session.user,
+		"captured_at": frappe.utils.now_datetime(),
+		"verdict": verdict,
+		"latitude": flt(lat) if lat is not None else None,
+		"longitude": flt(lng) if lng is not None else None,
+		"distance_m": cint(distance_m) if distance_m is not None else None,
+		"allowed_m": cint(allowed_m) if allowed_m is not None else None,
+		"anchor_latitude": flt(anchor_lat) if anchor_lat is not None else None,
+		"anchor_longitude": flt(anchor_lng) if anchor_lng is not None else None,
+	}).insert(ignore_permissions=True)
 
 
 def _require_manager():
@@ -237,9 +267,12 @@ def reanchor(lead, lat, lng, accuracy=None):
 
 
 @frappe.whitelist()
-def location_needed(lead, task_type):
-	"""Client probe: does this activity require a location capture? (In-Person + tracked grain.)"""
-	return location_guard_applies(task_type, lead) is not None
+def location_needed(lead, task_type, values=None):
+	"""Does this activity need a location for THESE submitted values? (In-Person OR a location_when
+	branch that matches, on a tracked grain.) The client's one probe before capturing GPS."""
+	if isinstance(values, str):
+		values = frappe.parse_json(values) or {}
+	return location_required(task_type, lead, values or {}) is not None
 
 
 @frappe.whitelist()
@@ -414,7 +447,7 @@ def leads_near(lat, lng, radius_km=15):
 			"custom_clinic_latitude": ["between", [lat - dlat, lat + dlat]],
 			"custom_clinic_longitude": ["between", [lng - dlng, lng + dlng]],
 		},
-		fields=["name", "lead_name", "custom_clinic_latitude", "custom_clinic_longitude",
+		fields=["name", "lead_name", "mobile_no", "custom_clinic_latitude", "custom_clinic_longitude",
 				"custom_clinic_address", "custom_stage", "status"],
 		limit_page_length=0,
 	)
@@ -425,6 +458,7 @@ def leads_near(lat, lng, radius_km=15):
 			out.append({
 				"name": r.name,
 				"title": r.lead_name or r.name,
+				"mobile_no": r.mobile_no or "",
 				"lat": r.custom_clinic_latitude,
 				"lng": r.custom_clinic_longitude,
 				"address": r.custom_clinic_address or "",
@@ -436,19 +470,21 @@ def leads_near(lat, lng, radius_km=15):
 
 
 @frappe.whitelist()
-def precheck(lead, task_type, lat, lng, accuracy=None):
-	"""LOCATION-FIRST gate. Called by the client the moment a rep starts an in-person activity,
-	BEFORE the data form opens — so an out-of-range rep is stopped at the door (never fills a form
-	they can't submit). Read-mostly: it resolves the anchor (and may lazily set an ADDRESS anchor,
-	which is authoritative), but it never sets a first-GPS anchor (that commits only on a real save).
+def precheck(lead, task_type, lat, lng, accuracy=None, values=None):
+	"""The ONE location check the client calls on submit: for THESE values, does this activity need a
+	location, and is the rep in range of the doctor's clinic anchor? An out-of-range result is AUDITED
+	here (one place) as a Rejected attempt — the only way a blocked try (no task saved) reaches the
+	trail. Resolves/lazily sets an ADDRESS anchor (authoritative) but never a first-GPS anchor (that
+	commits on a real save). compute_activity re-checks on save — this is UX + audit, not the boundary.
 
-	Returns one of:
-	  {"needed": False}                                          # phone / non-tracked grain
+	Returns:
+	  {"needed": False}                                          # no location for this submission
 	  {"needed": True, "ok": True,  "first": True}               # first capture — nothing to compare
-	  {"needed": True, "ok": True/False, "distance_m", "allowed_m",
-	   "anchor_lat", "anchor_lng", "anchor_address"}             # compared against the anchor
-	save_activity re-checks authoritatively — this is UX, not the security boundary."""
-	radius = location_guard_applies(task_type, lead)
+	  {"needed": True, "ok": True/False, "distance_m", "allowed_m", "anchor_lat/lng", "anchor_address"}
+	"""
+	if isinstance(values, str):
+		values = frappe.parse_json(values) or {}
+	radius = location_required(task_type, lead, values or {})
 	if radius is None:
 		return {"needed": False}
 	lat, lng, accuracy = flt(lat), flt(lng), flt(accuracy)
@@ -462,15 +498,15 @@ def precheck(lead, task_type, lat, lng, accuracy=None):
 			anchor = _read_anchor(ld)
 		else:
 			return {"needed": True, "ok": True, "first": True, "allowed_m": radius}
-	dist = haversine(anchor["lat"], anchor["lng"], lat, lng)
-	allowed = radius + accuracy
+	dist = int(round(haversine(anchor["lat"], anchor["lng"], lat, lng)))
+	allowed = int(round(radius + accuracy))
+	ok = dist <= allowed
+	if not ok:
+		log_visit_audit(lead, task_type, "Rejected", lat=lat, lng=lng, distance_m=dist,
+						allowed_m=allowed, anchor_lat=anchor["lat"], anchor_lng=anchor["lng"])
 	return {
-		"needed": True,
-		"ok": dist <= allowed,
-		"distance_m": int(round(dist)),
-		"allowed_m": int(round(allowed)),
-		"anchor_lat": anchor["lat"],
-		"anchor_lng": anchor["lng"],
+		"needed": True, "ok": ok, "distance_m": dist, "allowed_m": allowed,
+		"anchor_lat": anchor["lat"], "anchor_lng": anchor["lng"],
 		"anchor_address": _resolve_anchor_address(ld, anchor),
 	}
 
@@ -525,7 +561,25 @@ def lead_location_view(lead):
 				"lng": t.custom_location_longitude if located else None,
 				"distance_m": dist,
 			})
-	return {"anchor": anchor_out, "activities": activities}
+	# Blocked attempts — Rejected CRM Visit Audit rows (no CRM Task exists for these). The Desk view
+	# surfaces them as the fraud/quality trail below the activities.
+	rejections = []
+	for a in frappe.get_all(
+		"CRM Visit Audit",
+		filters={"lead": lead, "verdict": "Rejected"},
+		fields=["rep", "captured_at", "distance_m", "allowed_m", "latitude", "longitude"],
+		order_by="captured_at desc",
+		limit_page_length=20,
+	):
+		rejections.append({
+			"rep": (a.rep and frappe.db.get_value("User", a.rep, "full_name")) or a.rep or "",
+			"date": format_datetime(a.captured_at, "d MMM, h:mm a"),
+			"distance_m": a.distance_m,
+			"allowed_m": a.allowed_m,
+			"lat": a.latitude,
+			"lng": a.longitude,
+		})
+	return {"anchor": anchor_out, "activities": activities, "rejections": rejections}
 
 
 @frappe.whitelist()

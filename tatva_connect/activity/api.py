@@ -144,13 +144,17 @@ def get_schema(task_type):
 	]
 
 
-@frappe.whitelist()
-def get_type_meta(task_type):
-	"""The type's location config (visit_mode + location_when) — lets the client decide whether a
-	conditional activity needs a location capture once the rep picks the branch field. Sibling of
-	get_schema so get_schema's shape stays stable for existing callers."""
-	tt = frappe.db.get_value("CRM Task Type", task_type, ["visit_mode", "location_when"], as_dict=True) or {}
-	return {"visit_mode": tt.get("visit_mode") or "", "location_when": tt.get("location_when") or ""}
+def _validate_asm(asm):
+	"""An ASM stamped onto an activity must hold the 'Sales Manager' role — keeps the audited ASM data
+	clean to actual Sales Managers. No-op when no ASM is set."""
+	if not asm:
+		return
+	if "Sales Manager" not in frappe.get_roles(asm):
+		frappe.throw(
+			_("{0} is not a Sales Manager and cannot be set as ASM.").format(
+				frappe.db.get_value("User", asm, "full_name") or asm),
+			title=_("Invalid ASM"),
+		)
 
 
 def compute_activity(lead, task_type, values):
@@ -175,6 +179,9 @@ def compute_activity(lead, task_type, values):
 		target = f.first_class_target or ""
 		(first_class if target in FIRST_CLASS else payload)[target or f.fieldname] = val
 
+	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
+	_validate_asm(first_class.get("custom_asm"))
+
 	fields = {
 		"custom_activity_payload": json.dumps(payload, default=str),
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
@@ -187,16 +194,27 @@ def compute_activity(lead, task_type, values):
 	# Location guard: in-person activity on a tracked grain must carry an in-range fix. The gate +
 	# anchor/radius rule live once in location.api (one brain); this just feeds them.
 	from tatva_connect.location.api import (
-		location_required, set_or_check_anchor, location_fields, _reverse_geocode)
+		location_required, set_or_check_anchor, location_fields, _reverse_geocode, log_visit_audit)
 
 	radius = location_required(task_type, lead, values)
-	if radius is not None:
-		lat, lng, accuracy = values.get("lat"), values.get("lng"), values.get("accuracy")
-		if not (lat and lng):
-			frappe.throw(_("A captured location is required for this in-person activity."),
-						 title=_("Location required"))
-		set_or_check_anchor(lead, lat, lng, accuracy, radius)  # throws if out of range
-		fields.update(location_fields(lat, lng, address=_reverse_geocode(lat, lng), accuracy=accuracy))
+	if radius is None:
+		# Phone / office activity — location was not required for this submission.
+		log_visit_audit(lead, task_type, "Not Required")
+		return fields
+
+	lat, lng, accuracy = values.get("lat"), values.get("lng"), values.get("accuracy")
+	if not (lat and lng):
+		frappe.throw(_("A captured location is required for this in-person activity."),
+					 title=_("Location required"))
+	guard = set_or_check_anchor(lead, lat, lng, accuracy, radius)  # throws if out of range
+	fields.update(location_fields(lat, lng, address=_reverse_geocode(lat, lng), accuracy=accuracy))
+	# Accepted (in range, or the first capture that establishes the anchor). Distance is logged from
+	# the guard's single haversine — no recompute. Commits with the task save (same txn — task succeeds).
+	log_visit_audit(
+		lead, task_type, "Accepted", lat=lat, lng=lng,
+		distance_m=guard.get("distance_m"), allowed_m=guard.get("allowed_m"),
+		anchor_lat=guard.get("anchor_lat"), anchor_lng=guard.get("anchor_lng"),
+	)
 	return fields
 
 

@@ -28,23 +28,6 @@ const tclEsc = (s) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const tclMsg = (e) => (e && (e.messages?.[0] || e.message)) || "";
 
-// Mirror of the server `location_when` parser (location.api `_match_condition`): a type becomes a
-// conditional visit when its `location_when` matches the submitted values. Two forms only —
-// `<field>==<value>` and `<field> in v1|v2|v3`. Kept tiny and value-agnostic (no field/value baked in);
-// the server re-evaluates the same rule at save, so this only decides whether to capture GPS up front.
-function tclWhenMatches(when, values) {
-  const w = (when || "").trim();
-  if (!w) return false;
-  const mIn = w.match(/^(\S+)\s+in\s+(.+)$/i);
-  if (mIn) {
-    const opts = mIn[2].split("|").map((s) => s.trim());
-    return opts.includes(String(values[mIn[1].trim()] ?? ""));
-  }
-  const i = w.indexOf("==");
-  if (i === -1) return false;
-  return String(values[w.slice(0, i).trim()] ?? "") === w.slice(i + 2).trim();
-}
-
 function tclGetGPS() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -77,10 +60,15 @@ function tclStaticMap(lat, lng, here) {
   return u;
 }
 
-async function tclLocationFirst(ctl, lead, type) {
+// THE one location step (post-form): does THIS submission need a location? If so capture GPS + check
+// the doctor anchor. Returns null (not needed) | {fix} | "denied" | "blocked". precheck logs any
+// rejection itself; this just surfaces the dialog/toast.
+async function tclResolveLocation(ctl, lead, type, values) {
   let needed = false;
   try {
-    needed = await ctl.call("tatva_connect.location.api.location_needed", { lead, task_type: type });
+    needed = await ctl.call("tatva_connect.location.api.location_needed", {
+      lead, task_type: type, values: JSON.stringify(values),
+    });
   } catch (e) {
     return null;
   }
@@ -93,13 +81,13 @@ async function tclLocationFirst(ctl, lead, type) {
   let pre;
   try {
     pre = await ctl.call("tatva_connect.location.api.precheck", {
-      lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy,
+      lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy, values: JSON.stringify(values),
     });
   } catch (e) {
     ctl.toast.error("Couldn't verify your location — please try again.");
     return "denied";
   }
-  if (pre.needed && pre.ok === false) {
+  if (pre.ok === false) {
     ctl.createDialog({
       title: "Too far from the doctor",
       html:
@@ -206,11 +194,7 @@ class CRMLead {
       return;
     }
 
-    // Pure in-person types (visit_mode == In-Person) block at the door, before the form.
-    const loc = await tclLocationFirst(this, lead, type);
-    if (loc === "denied" || loc === "blocked") return; // toast/dialog already shown
-    let fix = loc && loc.fix;
-
+    // Fill the form, THEN resolve location from the chosen values (Phone Call → none; Field Visit → check).
     const data = await this.formDialog({
       title: "Add " + type,
       fields: tclBuildFields(schema),
@@ -219,18 +203,12 @@ class CRMLead {
     });
     if (data === null || data === undefined) return; // cancelled
 
-    // Conditional location: a `location_when` type only becomes a visit once the rep picks the
-    // branching field (e.g. meeting_type==Physical Visit). We can't door-block it, so if the submitted
-    // values match and no door-fix was captured, capture + precheck NOW (block dialog if far, keep the
-    // entered data). If we couldn't read the type's location_when, the server re-check is the backstop.
-    if (!fix) {
-      const condFix = await this._tcConditionalLocation(lead, type, data);
-      if (condFix === "denied" || condFix === "blocked") return; // toast/dialog already shown
-      fix = condFix ? condFix.fix : null;
-    }
-
     const values = Object.assign({}, data);
+    const loc = await tclResolveLocation(this, lead, type, values);
+    if (loc === "denied" || loc === "blocked") return; // toast/dialog already shown
+    const fix = loc && loc.fix;
     if (fix) Object.assign(values, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
+
     try {
       await this.call("tatva_connect.activity.api.save_activity", {
         lead, task_type: type, values: JSON.stringify(values), task: taskName || undefined,
@@ -244,55 +222,6 @@ class CRMLead {
     this._tcRefreshOpenTasks();
     // Nudge the Tasks list to re-fetch (the native reload path was intercepted). Verified live.
     if (window.__tclReload) window.__tclReload();
-  }
-
-  // Returns null (not a conditional visit) | {fix} | "denied" | "blocked".
-  async _tcConditionalLocation(lead, type, values) {
-    const when = await this._tcTypeLocationWhen(type);
-    if (!when || !tclWhenMatches(when, values)) return null;
-    const pos = await tclGetGPS();
-    if (!pos) {
-      this.toast.error("Allow location access to log this in-person visit.");
-      return "denied";
-    }
-    let pre;
-    try {
-      pre = await this.call("tatva_connect.location.api.precheck", {
-        lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy,
-      });
-    } catch (e) {
-      this.toast.error("Couldn't verify your location — please try again.");
-      return "denied";
-    }
-    if (pre.needed && pre.ok === false) {
-      this.createDialog({
-        title: "Too far from the doctor",
-        html:
-          '<img src="' + tclStaticMap(pre.anchor_lat, pre.anchor_lng, pos) + '" alt="map" ' +
-          "style=\"width:100%;height:180px;object-fit:cover;border-radius:8px;margin-bottom:12px\" onerror=\"this.style.display='none'\"/>" +
-          '<div style="font-size:14px;color:var(--ink-gray-8)">Reach within <b>' + pre.allowed_m +
-          " m</b> of the doctor's location to log this visit. You're <b>" + pre.distance_m + ' m</b> away.</div>',
-        actions: [{ label: "Okay", variant: "solid", onClick: (c) => c() }],
-      });
-      this.toast.error("You're " + pre.distance_m + " m away — too far to log this visit.");
-      return "blocked";
-    }
-    return { fix: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy } };
-  }
-
-  // The type's `location_when` condition string (for the conditional-visit at-form check), cached
-  // per type. Server `get_type_meta` is the source; the server location guard re-checks at save
-  // regardless, so a fetch failure just falls back to that backstop (returns "").
-  async _tcTypeLocationWhen(type) {
-    if (!this._tcWhenCache) this._tcWhenCache = {};
-    if (this._tcWhenCache[type] !== undefined) return this._tcWhenCache[type];
-    let when = "";
-    try {
-      const meta = await this.call("tatva_connect.activity.api.get_type_meta", { task_type: type });
-      when = (meta && meta.location_when) || "";
-    } catch (e) {}
-    this._tcWhenCache[type] = when;
-    return when;
   }
 
   // ---- Log Activity: grain-scoped, searchable type picker ----------------

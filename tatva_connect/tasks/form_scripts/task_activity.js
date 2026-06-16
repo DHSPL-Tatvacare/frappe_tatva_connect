@@ -48,14 +48,17 @@ function tcStaticMap(lat, lng, here) {
   return u;
 }
 
-// LOCATION-FIRST gate. Returns: null (not needed) | {fix} (ok) | "denied" | "blocked".
-// Shows the right toast/dialog itself; the caller only decides whether to proceed.
-async function tcLocationFirst(ctl, lead, type) {
+// THE one location step (post-form): does THIS submission need a location? If so, capture GPS and
+// check the doctor anchor. Returns null (not needed) | {fix} | "denied" | "blocked". precheck logs
+// any rejection itself; this just surfaces the dialog/toast.
+async function tcResolveLocation(ctl, lead, type, values) {
   let needed = false;
   try {
-    needed = await ctl.call("tatva_connect.location.api.location_needed", { lead, task_type: type });
+    needed = await ctl.call("tatva_connect.location.api.location_needed", {
+      lead, task_type: type, values: JSON.stringify(values),
+    });
   } catch (e) {
-    return null; // probe failed → compute re-checks server-side; don't ask GPS here
+    return null; // probe failed → the server backstop still guards on save
   }
   if (!needed) return null;
   const pos = await tcGetGPS();
@@ -66,13 +69,13 @@ async function tcLocationFirst(ctl, lead, type) {
   let pre;
   try {
     pre = await ctl.call("tatva_connect.location.api.precheck", {
-      lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy,
+      lead, task_type: type, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy, values: JSON.stringify(values),
     });
   } catch (e) {
     ctl.toast.error("Couldn't verify your location — please try again.");
     return "denied";
   }
-  if (pre.needed && pre.ok === false) {
+  if (pre.ok === false) {
     tcShowBlock(ctl, pre, pos);
     ctl.toast.error("You're " + pre.distance_m + " m away — too far to log this visit.");
     return "blocked";
@@ -123,14 +126,9 @@ async function tcRunPopupActivity(ctl) {
   } catch (e) {
     return false; // can't resolve → plain task, let native proceed (server backstop guards)
   }
+  if (!schema.length) return false; // no activity form → plain task, native save
 
-  // Location-FIRST, before deciding whether to open a form: an In-Person tracked type with NO schema
-  // fields still needs its GPS captured (else the backstop blocks completion). Mirrors the list path.
-  const loc = await tcLocationFirst(ctl, lead, type);
-  if (loc === "denied" || loc === "blocked") throw new Error(TC_ABORT); // toast already shown
-  if (!schema.length && loc === null) return false; // plain task, nothing to capture → native save
-  const fix = loc && loc.fix;
-
+  // Fill the form, THEN resolve location from the chosen values (Phone Call → none; Field Visit → check).
   const data = await ctl.formDialog({
     title: "Add " + type,
     fields: tcBuildFields(schema),
@@ -140,6 +138,9 @@ async function tcRunPopupActivity(ctl) {
   if (data === null || data === undefined) throw new Error(TC_ABORT); // cancelled — don't complete
 
   const values = Object.assign({}, data);
+  const loc = await tcResolveLocation(ctl, lead, type, values);
+  if (loc === "denied" || loc === "blocked") throw new Error(TC_ABORT); // toast/dialog already shown
+  const fix = loc && loc.fix;
   if (fix) Object.assign(values, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
 
   let fields;
