@@ -152,18 +152,26 @@ class CRMLead {
       const t = row.querySelector(".font-medium");
       ctl._tcRow = t ? (t.textContent || "").trim() : null;
     };
-    // Ticking "Done" on an ACTIVITY task in the list can't complete it in place (it needs the form +
-    // location). Intercept that one tick and OPEN THE TASK instead — instant, can't stack, can't leave a
-    // bad status. The popup's onValidate then runs the real flow. Plain (non-activity) tasks are untouched.
+    // An OPEN activity task — whether the rep OPENS it (row click) or ticks "Done" — routes straight to
+    // the activity form (formDialog, the robust native frappe-ui dialog), NEVER the generic Edit Task
+    // popup. Completing in the form does the location check + save. Plain (non-activity) tasks, and
+    // already-completed ones (not in the open set), keep the native popup untouched. Fail-safe: if the
+    // CRM markup ever changes, the native popup opens and the popup's onValidate flow still guards it.
     const onClick = (e) => {
       const el = e.target;
-      const item = el && el.closest ? el.closest('[role="menuitem"],button,a,li') : null;
-      if (!item || (item.textContent || "").trim() !== TCL_DONE) return;
-      const task = (ctl._tcOpen || []).find((x) => x.title === ctl._tcRow);
-      if (!task || !ctl._tcRowEl) return; // not a known activity task → let native completion run
+      if (!el || !el.closest) return;
+      const isDone = !!el.closest('[role="menuitem"]') &&
+        (el.closest('[role="menuitem"]').textContent || "").trim() === TCL_DONE;
+      const row = el.closest(".activity");
+      // a click on the row body opens the task — but ignore the status pill / delete / any button
+      const isRowOpen = !!row && !el.closest('button,[role="button"],[role="menu"],.dropdown');
+      if (!isDone && !isRowOpen) return;
+      const title = isDone ? ctl._tcRow : ((row.querySelector(".font-medium") || {}).textContent || "").trim();
+      const task = (ctl._tcOpen || []).find((x) => x.title === title);
+      if (!task) return; // plain or already-done task → native popup
       e.preventDefault();
       e.stopImmediatePropagation();
-      ctl._tcRowEl.click(); // native @click=showTask → opens the task popup; completion happens there
+      ctl._tcRunActivity({ type: task.custom_task_type, taskName: task.name });
     };
 
     if (window.__tclRowHandler) document.removeEventListener("pointerdown", window.__tclRowHandler, true);
@@ -174,11 +182,11 @@ class CRMLead {
     document.addEventListener("click", onClick, true);
   }
 
-  // The activity flow for the "Log Activity" picker (log a new ad-hoc activity; taskName null). Order:
-  // fill the form → resolve location from the chosen values (Phone → none; Field Visit → check) →
-  // save_activity → receipt + toast. (Completing an assigned task happens in the task popup's onValidate,
-  // not here — the list-Done tick just opens that popup.) GUARDED: one flow at a time (window.__tcFlowBusy)
-  // so a slow GPS + repeat taps can NEVER stack forms.
+  // THE one activity flow, for both entry points: the "Log Activity" picker (taskName null ⇒ log a new
+  // ad-hoc activity) and completing an assigned task from the list (taskName set ⇒ complete it). Order:
+  // fill the type's fields in a formDialog → resolve location from the chosen values (Phone → none;
+  // Field Visit → check the doctor anchor) → save_activity → receipt + toast. GUARDED: one flow at a
+  // time (window.__tcFlowBusy) so a slow GPS + repeat taps can NEVER stack forms.
   async _tcRunActivity({ type, taskName }) {
     if (window.__tcFlowBusy) return; // a flow is already running — ignore the re-tap (no modal stacking)
     window.__tcFlowBusy = true;
