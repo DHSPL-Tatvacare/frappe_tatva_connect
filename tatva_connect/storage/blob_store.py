@@ -116,6 +116,11 @@ class BlobStore:
 	def download(self, blob_key: str) -> bytes:
 		return self._blob(blob_key).download_blob().readall()
 
+	def exists(self, blob_key: str) -> bool:
+		"""True if the blob is present. Used to CONFIRM an upload before any local copy is
+		ever removed — no local bytes are dropped until Azure says the blob is really there."""
+		return bool(self._blob(blob_key).exists())
+
 	def delete(self, blob_key: str):
 		"""Delete a blob (and its snapshots). Idempotent — an already-absent blob is
 		treated as success, so a re-delete never raises."""

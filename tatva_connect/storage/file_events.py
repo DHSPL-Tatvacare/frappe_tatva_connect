@@ -3,9 +3,16 @@
 
 """File doc_events: offload bytes to Azure after insert, remove them on delete.
 
-Runs on `after_insert` (the row + local file already exist, so core insert + thumbnail
-logic is untouched), gated by the master switch. Folders and already-remote files are
-skipped. `offload()` is shared with the backfill command.
+Offload runs SYNCHRONOUSLY on `after_insert` (not before_insert — core's validate() runs
+after before_insert and calls validate_file_on_disk(), so the local file must still exist
+then). Doing it synchronously here means `file_url` becomes the Azure proxy URL inside the
+SAME transaction as the insert, so every consumer that reads the File afterwards (attach
+fields, the Attachment comment, WhatsApp `attach`, email, intake) captures the proxy URL and
+never a local `/files`|`/private/files` URL that would 404 once the local copy is removed.
+
+No data loss, ever: the local copy is dropped only AFTER the transaction commits AND only
+after the blob is re-confirmed in Azure (see `_drop_local_copy`). A rollback or an Azure
+hiccup leaves the bytes safely local. `offload()` is shared with the backfill command.
 """
 
 import os
@@ -51,14 +58,35 @@ def offload(doc) -> bool:
 	local_path = doc.get_full_path()  # capture before repoint so we can drop the local copy after
 	url = store.upload(key, doc.get_content(), doc.file_name)
 
-	# Repoint the row to the Azure proxy and COMMIT before removing the local copy, so a crash
-	# never leaves a row pointing at a deleted file (always readable: proxy if committed, else local).
+	# Repoint the row + the Attachment-comment snapshot to the proxy IN THE CALLER'S transaction
+	# (no commit of our own — a larger transaction that creates this File stays atomic). On commit,
+	# file_url is the proxy for everyone; on rollback it reverts and the blob is a harmless orphan.
 	doc.db_set({"file_url": url, "custom_uploaded_to_azure": 1}, update_modified=False)
-	frappe.db.commit()
 	_repoint_attachment_comment(doc, old_url, url)
-	if store.settings.remove_local_after_upload and local_path and os.path.exists(local_path):
-		os.remove(local_path)
+
+	# Drop the local copy only AFTER commit (enqueue_after_commit) and only once the blob is
+	# re-confirmed (see _drop_local_copy) — bytes are never removed on an uncommitted/failed offload.
+	if store.settings.remove_local_after_upload and local_path:
+		frappe.enqueue(
+			_drop_local_copy,
+			queue="short",
+			enqueue_after_commit=True,
+			file_name=doc.name,
+			local_path=local_path,
+			blob_key=key,
+		)
 	return True
+
+
+def _drop_local_copy(file_name, local_path, blob_key):
+	"""Post-commit cleanup. Remove the local copy ONLY if the File is still marked offloaded
+	AND the blob really exists in Azure. Any doubt → keep the local bytes (no data loss)."""
+	if not frappe.db.get_value("File", file_name, "custom_uploaded_to_azure"):
+		return
+	if not BlobStore().exists(blob_key):
+		return
+	if local_path and os.path.exists(local_path):
+		os.remove(local_path)
 
 
 def _repoint_attachment_comment(doc, old_url, new_url):
@@ -95,24 +123,24 @@ def _is_compose_draft(doc) -> bool:
 
 
 def after_insert(doc, method=None):
-	# Offload in the background after commit: the File lands locally instantly (no UX delay,
-	# survives an Azure outage), then a worker moves the bytes off and drops the local copy.
+	# Offload SYNCHRONOUSLY on the in-memory doc so file_url flips to the proxy before the insert
+	# returns — every consumer then captures the proxy URL, never a local one (root-cause fix). The
+	# row + the core Attachment comment already exist here (File.after_insert runs before this hook).
 	if (
 		blob_store.is_enabled()
 		and not doc.is_folder
 		and blob_store.is_local_url(doc.file_url)
 		and not _is_compose_draft(doc)
 	):
-		frappe.enqueue(offload_file, queue="short", enqueue_after_commit=True, file_name=doc.name)
-
-
-def offload_file(file_name):
-	"""Background offload entry — never raises into the worker; on failure the File stays local."""
-	try:
-		offload(frappe.get_doc("File", file_name))
-	except Exception:
-		frappe.log_error(title="Azure offload failed (file left local)",
-		                 message=f"file={file_name}\n{frappe.get_traceback()}")
+		try:
+			offload(doc)
+		except Exception:
+			# Azure unreachable / transient: leave the file LOCAL and fully working — never break
+			# the upload, never drop bytes. migrate_local_files() backfills it later.
+			frappe.log_error(
+				title="Azure offload failed (file left local)",
+				message=f"file={doc.name}\n{frappe.get_traceback()}",
+			)
 
 
 def on_trash(doc, method=None):
