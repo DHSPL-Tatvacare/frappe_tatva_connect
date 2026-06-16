@@ -604,6 +604,7 @@ def map_config():
 	return {
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
 		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),
+		"zoom": cint(s.static_map_zoom) or 16,
 		"google_available": google_ok,
 	}
 

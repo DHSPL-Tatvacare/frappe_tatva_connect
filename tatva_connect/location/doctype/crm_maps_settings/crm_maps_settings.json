@@ -22,7 +22,7 @@
  "fields": [
   {
    "default": "0",
-   "description": "Master kill-switch for location capture. Ships OFF (dormant) — enable per deployment. Off = nothing fires, every task saves through the normal CRM flow.",
+   "description": "Turn location capture on or off. Off = visits save normally, no location.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
@@ -33,20 +33,20 @@
    "label": "Google Maps Platform"
   },
   {
-   "description": "Google Maps Platform API key, restricted to the Geocoding API + Maps Static API (and ideally to the server IP). Used server-side only — never sent to the browser. Blank = reverse-geocode + map are skipped (raw coordinates are still captured).",
+   "description": "Google Maps key (used on the server only). Blank = addresses and maps are skipped.",
    "fieldname": "google_maps_api_key",
    "fieldtype": "Password",
    "label": "Google Maps API Key"
   },
   {
-   "description": "Static map zoom level for the confirmation image (blank = 16).",
+   "description": "Map thumbnail zoom (blank = 16; higher = closer to the pin).",
    "fieldname": "static_map_zoom",
    "fieldtype": "Int",
-   "label": "Static Map Zoom",
+   "label": "Map Thumbnail Zoom",
    "non_negative": 1
   },
   {
-   "description": "Reverse-geocodes a fixed sample coordinate and shows the resolved address — confirms the key, billing, and Geocoding API are live. Save the key first.",
+   "description": "Test the Google key. Save first.",
    "fieldname": "check_connection",
    "fieldtype": "Button",
    "label": "Check Connection"
@@ -55,17 +55,17 @@
    "fieldname": "section_break_display",
    "fieldtype": "Section Break",
    "label": "Map Display",
-   "description": "Which provider renders the in-app maps. Switch freely — no code change. Geocoding (address ↔ coordinates) is always Google. Desk history maps are always Google."
+   "description": "Choose who draws the in-app maps. Address lookups always use Google."
   },
   {
-   "description": "Provider for the card + detail-modal map thumbnails (the small visit maps). Blank = OpenStreetMap (free, no key). Google falls back to OpenStreetMap automatically when Maps is disabled or no key is set.",
+   "description": "Maps on task cards, the task popup, and the Desk activity list. Blank = OpenStreetMap (free).",
    "fieldname": "thumbnail_map_provider",
    "fieldtype": "Select",
    "label": "Thumbnail Map Provider",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "Provider for the out-of-range block + capture-receipt dialog maps. Blank = Google (Static Maps). Falls back to OpenStreetMap automatically when Maps is disabled or no key is set.",
+   "description": "Maps in the location pop-ups (out-of-range / capture confirmation). Blank = Google.",
    "fieldname": "dialog_map_provider",
    "fieldtype": "Select",
    "label": "Dialog Map Provider",
@@ -73,7 +73,7 @@
   },
   {
    "default": "Google",
-   "description": "Address ↔ coordinate lookups always use Google (best India accuracy). Not switchable — shown for reference.",
+   "description": "Address lookups always use Google. Not changeable.",
    "fieldname": "geocoding_provider",
    "fieldtype": "Data",
    "label": "Geocoding Provider",
@@ -85,14 +85,14 @@
    "label": "Location-Tracked Grains"
   },
   {
-   "description": "Lead grains (vertical/group/program) whose IN-PERSON activities enforce the doctor-clinic anchor + radius. Blank axis = wildcard. Empty = the guard never triggers (dormant) and activities behave exactly like Phase A.",
+   "description": "Lead groups whose in-person visits must be at the doctor's clinic. Empty = off.",
    "fieldname": "location_tracked_grains",
    "fieldtype": "Table",
    "label": "Location-Tracked Grains",
    "options": "CRM Maps Tracked Grain"
   },
   {
-   "description": "Role allowed to re-anchor a clinic location (System Manager can always re-anchor). Blank = only System Manager.",
+   "description": "Role allowed to move a clinic's pin. Blank = System Manager only.",
    "fieldname": "manager_override_role",
    "fieldtype": "Link",
    "label": "Manager Override Role",
