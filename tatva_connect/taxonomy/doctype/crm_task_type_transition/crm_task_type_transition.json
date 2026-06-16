@@ -50,12 +50,12 @@
   },
   {
    "columns": 2,
-   "description": "Lead stage (CRM Lead Status) to set when this rule fires. Blank = leave the stage unchanged.",
+   "description": "Lead stage (CRM Lead Stage — the program-scoped '<program>::<stage>' master, written to custom_stage) to set when this rule fires. Blank = leave the stage unchanged.",
    "fieldname": "set_stage",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Set Lead Stage",
-   "options": "CRM Lead Status"
+   "options": "CRM Lead Stage"
   },
   {
    "fieldname": "description",

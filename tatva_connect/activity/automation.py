@@ -72,7 +72,10 @@ def _apply_one(tr, lead, values, doc):
 	from tatva_connect.tasks.tasks import create_followup_task
 
 	if tr.set_stage:
-		frappe.db.set_value("CRM Lead", lead, "status", tr.set_stage)
+		# Multi-grain stage lives in custom_stage (Link -> CRM Lead Stage, a program-scoped composite
+		# master), NOT the shared frappe-default `status`. The transition row carries the full
+		# '<program>::<stage>' value (the type is grain-scoped, so it's unambiguous).
+		frappe.db.set_value("CRM Lead", lead, "custom_stage", tr.set_stage)
 	if tr.then_create:
 		create_followup_task(
 			lead=lead,

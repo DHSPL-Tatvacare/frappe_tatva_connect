@@ -100,19 +100,30 @@ def open_activity_tasks(lead):
 
 @frappe.whitelist()
 def list_types_for_lead(lead):
-	"""Activity types available to this lead's grain — the searchable picker source."""
+	"""Activity types available to this lead's grain — the searchable picker source. ONE indexed
+	query (no per-type N+1): a type is available if ANY of its scope rows matches the grain, where a
+	blank axis is a wildcard. (resolve_scoped's most-specific tie-break is only for radius/checklist;
+	availability just needs a match.) Flat regardless of catalog size."""
 	vertical, group, program = _lead_axes(lead)
-	out = []
-	for tt in frappe.get_all("CRM Task Type", fields=["name", "is_logged_complete", "visit_mode"]):
-		if _scope_applies(tt.name, vertical, group, program):
-			out.append({
-				"name": tt.name,
-				"label": tt.name,
-				"is_logged_complete": int(tt.is_logged_complete or 0),
-				"visit_mode": tt.visit_mode or "",
-			})
-	out.sort(key=lambda t: t["label"].lower())
-	return out
+	rows = frappe.db.sql(
+		"""
+		SELECT DISTINCT tt.name, tt.is_logged_complete, tt.visit_mode
+		FROM `tabCRM Task Type` tt
+		JOIN `tabCRM Task Type Scope` sc
+		  ON sc.parent = tt.name AND sc.parenttype = 'CRM Task Type'
+		WHERE (sc.vertical = '' OR sc.vertical IS NULL OR sc.vertical = %(v)s)
+		  AND (sc.`group`  = '' OR sc.`group`  IS NULL OR sc.`group`  = %(g)s)
+		  AND (sc.program  = '' OR sc.program  IS NULL OR sc.program  = %(p)s)
+		ORDER BY tt.name
+		""",
+		{"v": vertical, "g": group, "p": program},
+		as_dict=True,
+	)
+	return [
+		{"name": r.name, "label": r.name,
+		 "is_logged_complete": int(r.is_logged_complete or 0), "visit_mode": r.visit_mode or ""}
+		for r in rows
+	]
 
 
 @frappe.whitelist()
