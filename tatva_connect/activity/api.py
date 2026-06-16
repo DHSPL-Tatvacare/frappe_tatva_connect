@@ -157,13 +157,16 @@ def _validate_asm(asm):
 		)
 
 
-def compute_activity(lead, task_type, values):
+def compute_activity(lead, task_type, values, task=None):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
 	grain + required, splits first-class columns vs the JSON payload, and runs the location guard
 	(set/check the clinic anchor, resolve the address). Returns a flat dict of CRM Task fieldname ->
 	value (status, payload, first-class cols, location cols). Raises on out-of-scope / missing / out
 	of range. Used by BOTH save paths: save_activity (complete/update existing) and the native
-	new-task create (the form script stamps these onto the doc before insert). No second writer."""
+	new-task create (the form script stamps these onto the doc before insert). No second writer.
+
+	`task` is the CRM Task name being completed (or the freshly-inserted shell for a new punch) — it
+	is stamped onto the location audit so every Accepted/Not Required row carries its exact task id."""
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	vertical, group, program = _lead_axes(lead)
@@ -199,7 +202,7 @@ def compute_activity(lead, task_type, values):
 	radius = location_required(task_type, lead, values)
 	if radius is None:
 		# Phone / office activity — location was not required for this submission.
-		log_visit_audit(lead, task_type, "Not Required")
+		log_visit_audit(lead, task_type, "Not Required", task=task)
 		return fields
 
 	lat, lng, accuracy = values.get("lat"), values.get("lng"), values.get("accuracy")
@@ -213,7 +216,7 @@ def compute_activity(lead, task_type, values):
 	log_visit_audit(
 		lead, task_type, "Accepted", lat=lat, lng=lng,
 		distance_m=guard.get("distance_m"), allowed_m=guard.get("allowed_m"),
-		anchor_lat=guard.get("anchor_lat"), anchor_lng=guard.get("anchor_lng"),
+		anchor_lat=guard.get("anchor_lat"), anchor_lng=guard.get("anchor_lng"), task=task,
 	)
 	return fields
 
@@ -227,25 +230,28 @@ def compute_activity_fields(lead, task_type, values):
 
 @frappe.whitelist()
 def save_activity(lead, task_type, values, task=None):
-	"""THE one writer for completing/updating an activity (assigned-task completion, list/modal
-	paths). Computes the field values (compute_activity) then writes them onto an existing task, or
-	inserts a fresh one. Returns the task name."""
-	fields = compute_activity(lead, task_type, values)
-	if task:
-		doc = frappe.get_doc("CRM Task", task)
-		doc.update(fields)
-		doc.save()
-	else:
-		doc = frappe.get_doc({
+	"""THE one writer for completing/updating an activity (board completion + ad-hoc punch). For a new
+	punch (no `task`) it inserts the task SHELL first, so the location audit logged inside
+	compute_activity carries the new task's exact id — then both paths share one compute → update →
+	save. Exact identity on every path, one audit brain. Returns the task name.
+
+	The shell insert is in the same request transaction as the guard: an out-of-range throw rolls the
+	shell back with everything else, so a blocked visit never leaves an orphan task."""
+	if not task:
+		shell = frappe.get_doc({
 			"doctype": "CRM Task",
 			"title": task_type,
 			"custom_task_type": task_type,
 			"assigned_to": frappe.session.user,
 			"reference_doctype": "CRM Lead",
 			"reference_docname": lead,
-			**fields,
 		})
-		doc.insert()
+		shell.insert()
+		task = shell.name
+	fields = compute_activity(lead, task_type, values, task=task)
+	doc = frappe.get_doc("CRM Task", task)
+	doc.update(fields)
+	doc.save()
 	return doc.name
 
 
@@ -322,6 +328,17 @@ def _type_config(task_type):
 		"is_logged_complete": int(doc.is_logged_complete or 0),
 		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
 	}
+
+
+@frappe.whitelist()
+def type_config(task_type):
+	"""Render config (fields + is_logged_complete + captures_location) for ONE task type — the
+	create-mode modal's source when the chosen type has no existing task seeding it into
+	lead_task_board. Same brain (_type_config) the board uses, so card/modal/create stay consistent."""
+	cfg = _type_config(task_type)
+	if cfg is None:
+		frappe.throw(_("Task type {0} not found").format(task_type))
+	return cfg
 
 
 def _task_values(r, cfg):

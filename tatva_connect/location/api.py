@@ -470,12 +470,14 @@ def leads_near(lat, lng, radius_km=15):
 
 
 @frappe.whitelist()
-def precheck(lead, task_type, lat, lng, accuracy=None, values=None):
+def precheck(lead, task_type, lat, lng, accuracy=None, values=None, task=None):
 	"""The ONE location check the client calls on submit: for THESE values, does this activity need a
 	location, and is the rep in range of the doctor's clinic anchor? An out-of-range result is AUDITED
 	here (one place) as a Rejected attempt — the only way a blocked try (no task saved) reaches the
-	trail. Resolves/lazily sets an ADDRESS anchor (authoritative) but never a first-GPS anchor (that
-	commits on a real save). compute_activity re-checks on save — this is UX + audit, not the boundary.
+	trail. `task` (when completing an existing assigned task) is stamped onto that Rejected row so the
+	block is tied to the exact task. Resolves/lazily sets an ADDRESS anchor (authoritative) but never a
+	first-GPS anchor (that commits on a real save). compute_activity re-checks on save — UX + audit,
+	not the boundary.
 
 	Returns:
 	  {"needed": False}                                          # no location for this submission
@@ -503,7 +505,7 @@ def precheck(lead, task_type, lat, lng, accuracy=None, values=None):
 	ok = dist <= allowed
 	if not ok:
 		log_visit_audit(lead, task_type, "Rejected", lat=lat, lng=lng, distance_m=dist,
-						allowed_m=allowed, anchor_lat=anchor["lat"], anchor_lng=anchor["lng"])
+						allowed_m=allowed, anchor_lat=anchor["lat"], anchor_lng=anchor["lng"], task=task)
 	return {
 		"needed": True, "ok": ok, "distance_m": dist, "allowed_m": allowed,
 		"anchor_lat": anchor["lat"], "anchor_lng": anchor["lng"],
