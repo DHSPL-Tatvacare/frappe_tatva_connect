@@ -43,8 +43,22 @@ const config: ZudokuConfig = {
     // the prose base, so setting the base to 0.875rem (14px) scales the reading
     // text down while the page width, sidebar, and spacing stay at full size.
     customCss: {
+      // Doc/markdown body text -> 14px (children scale via em).
       ".prose": {
         "font-size": "0.875rem",
+      },
+      // API-reference headings (operation titles + section labels) live OUTSIDE
+      // .prose and use Tailwind text-* utilities. Scope the scale-down to `main`
+      // so the content type tightens to the wiki feel without touching the nav,
+      // sidebar, or logo.
+      "main .text-2xl": {
+        "font-size": "1.25rem",
+      },
+      "main .text-xl": {
+        "font-size": "1.0625rem",
+      },
+      "main .text-lg": {
+        "font-size": "0.95rem",
       },
       "table": {
         "font-size": "0.9rem",
