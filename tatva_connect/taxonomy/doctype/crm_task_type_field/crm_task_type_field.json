@@ -57,10 +57,11 @@
    "label": "Required"
   },
   {
-   "description": "Optional JS condition to show this field only when relevant, e.g. eval:doc.asm_along=='Yes' (native frappe-ui depends_on).",
+   "description": "Optional JS condition to show this field only when relevant, e.g. eval:doc.asm_along=='Yes' (native frappe-ui depends_on). Multi-branch eval expressions can be long.",
    "fieldname": "depends_on",
    "fieldtype": "Data",
-   "label": "Depends On"
+   "label": "Depends On",
+   "length": 1000
   },
   {
    "columns": 2,
