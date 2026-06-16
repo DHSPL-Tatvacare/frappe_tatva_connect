@@ -584,6 +584,9 @@ def lead_location_view(lead):
 	return {"anchor": anchor_out, "activities": activities, "rejections": rejections}
 
 
+DEFAULT_OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+
 def _resolve_provider(pref, default, google_ok):
 	"""Effective display provider for one map surface: the operator's choice (or the code default when
 	the field is blank — no baked config value), downgraded to OSM whenever Google isn't usable (Maps
@@ -605,6 +608,7 @@ def map_config():
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
 		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),
 		"zoom": cint(s.static_map_zoom) or 16,
+		"tile_url": (s.get("osm_tile_url") or "").strip() or DEFAULT_OSM_TILES,
 		"google_available": google_ok,
 	}
 

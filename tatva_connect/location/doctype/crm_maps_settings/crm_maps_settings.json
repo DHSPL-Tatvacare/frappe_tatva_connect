@@ -14,6 +14,7 @@
   "section_break_display",
   "thumbnail_map_provider",
   "dialog_map_provider",
+  "osm_tile_url",
   "geocoding_provider",
   "section_break_triggers",
   "location_tracked_grains",
@@ -70,6 +71,12 @@
    "fieldtype": "Select",
    "label": "Dialog Map Provider",
    "options": "\nOpenStreetMap\nGoogle"
+  },
+  {
+   "description": "OpenStreetMap tile URL. Blank = default. Point at your own/proxied tiles for high traffic.",
+   "fieldname": "osm_tile_url",
+   "fieldtype": "Data",
+   "label": "OpenStreetMap Tile URL"
   },
   {
    "default": "Google",

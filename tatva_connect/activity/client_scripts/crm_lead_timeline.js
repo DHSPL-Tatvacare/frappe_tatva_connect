@@ -32,6 +32,7 @@ frappe.ui.form.on("CRM Lead", {
       const cfg = (cfgR && cfgR.message) || { thumbnail: "google", zoom: 16 };
       const useOsm = cfg.thumbnail === "osm";
       const zoom = cfg.zoom || 16;
+      const tileUrl = cfg.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
       // ONE thumbnail helper for every map in this view: a Google static image, or an OSM placeholder
       // (a div initialised into a Leaflet map after insert by tcInitOsmMaps). w/h in px; extra = styles.
       const thumb = (lat, lng, w, h, extra) => {
@@ -135,7 +136,7 @@ frappe.ui.form.on("CRM Lead", {
 
           html += "</div>";
           fld.$wrapper.html(html);
-          if (useOsm) tcInitOsmMaps(fld.$wrapper.get(0), zoom);
+          if (useOsm) tcInitOsmMaps(fld.$wrapper.get(0), zoom, tileUrl);
         },
       });
     });
@@ -144,7 +145,7 @@ frappe.ui.form.on("CRM Lead", {
 
 // Initialise every OSM placeholder (.tc-osm-map) into a small non-interactive Leaflet map. Loads
 // Leaflet from Frappe's bundled assets on demand (global L); circleMarker avoids broken icon paths.
-function tcInitOsmMaps(root, zoom) {
+function tcInitOsmMaps(root, zoom, tileUrl) {
   const nodes = root.querySelectorAll(".tc-osm-map");
   if (!nodes.length) return;
   frappe.require(
@@ -160,7 +161,7 @@ function tcInitOsmMaps(root, zoom) {
           zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
           doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false,
         });
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+        L.tileLayer(tileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
         map.setView([lat, lng], zoom || 16);
         L.circleMarker([lat, lng], { radius: 6, color: "#ffffff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map);
         setTimeout(() => map.invalidateSize(), 80);
