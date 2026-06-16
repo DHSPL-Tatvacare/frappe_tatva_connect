@@ -180,48 +180,51 @@ class CRMLead {
   }
 
   // THE one client flow both entry points call (list-Done and the Log-Activity picker). taskName set
-  // ⇒ complete that task; null ⇒ log a new ad-hoc activity. Order: load schema → location-FIRST (door
-  // block for pure in-person) → formDialog → conditional at-form location (location_when types) →
-  // save_activity → receipt + toast. Every outcome clears with a toast (denied / out-of-range /
-  // save-fail / success).
+  // ⇒ complete that task; null ⇒ log a new ad-hoc activity. Order: fill the form → resolve location
+  // from the chosen values (Phone → none; Field Visit → check) → save_activity → receipt + toast.
+  // GUARDED: one flow at a time (window.__tcFlowBusy) so a slow GPS + repeat taps can NEVER stack forms.
   async _tcRunActivity({ type, taskName }) {
-    const lead = this._tcLead;
-    let schema;
+    if (window.__tcFlowBusy) return; // a flow is already running — ignore the re-tap (no modal stacking)
+    window.__tcFlowBusy = true;
     try {
-      schema = (await this.call("tatva_connect.activity.api.get_schema", { task_type: type })) || [];
-    } catch (e) {
-      this.toast.error("Couldn't load this activity — please try again.");
-      return;
-    }
+      const lead = this._tcLead;
+      let schema;
+      try {
+        schema = (await this.call("tatva_connect.activity.api.get_schema", { task_type: type })) || [];
+      } catch (e) {
+        this.toast.error("Couldn't load this activity — please try again.");
+        return;
+      }
 
-    // Fill the form, THEN resolve location from the chosen values (Phone Call → none; Field Visit → check).
-    const data = await this.formDialog({
-      title: "Add " + type,
-      fields: tclBuildFields(schema),
-      submitLabel: "Submit Activity",
-      cancelLabel: "Cancel",
-    });
-    if (data === null || data === undefined) return; // cancelled
-
-    const values = Object.assign({}, data);
-    const loc = await tclResolveLocation(this, lead, type, values);
-    if (loc === "denied" || loc === "blocked") return; // toast/dialog already shown
-    const fix = loc && loc.fix;
-    if (fix) Object.assign(values, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
-
-    try {
-      await this.call("tatva_connect.activity.api.save_activity", {
-        lead, task_type: type, values: JSON.stringify(values), task: taskName || undefined,
+      const data = await this.formDialog({
+        title: "Add " + type,
+        fields: tclBuildFields(schema),
+        submitLabel: "Submit Activity",
+        cancelLabel: "Cancel",
       });
-    } catch (e) {
-      this.toast.error(tclMsg(e) || "Couldn't save this activity — please try again.");
-      return;
+      if (data === null || data === undefined) return; // cancelled
+
+      const values = Object.assign({}, data);
+      const loc = await tclResolveLocation(this, lead, type, values);
+      if (loc === "denied" || loc === "blocked") return; // toast/dialog already shown
+      const fix = loc && loc.fix;
+      if (fix) Object.assign(values, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
+
+      try {
+        await this.call("tatva_connect.activity.api.save_activity", {
+          lead, task_type: type, values: JSON.stringify(values), task: taskName || undefined,
+        });
+      } catch (e) {
+        this.toast.error(tclMsg(e) || "Couldn't save this activity — please try again.");
+        return;
+      }
+      this.toast.success(taskName ? type + " completed." : type + " logged.");
+      if (fix) tclShowReceipt(this, fix, type);
+      this._tcRefreshOpenTasks();
+      if (window.__tclReload) window.__tclReload();
+    } finally {
+      window.__tcFlowBusy = false;
     }
-    this.toast.success(taskName ? type + " completed." : type + " logged.");
-    if (fix) tclShowReceipt(this, fix, type);
-    this._tcRefreshOpenTasks();
-    // Nudge the Tasks list to re-fetch (the native reload path was intercepted). Verified live.
-    if (window.__tclReload) window.__tclReload();
   }
 
   // ---- Log Activity: grain-scoped, searchable type picker ----------------
