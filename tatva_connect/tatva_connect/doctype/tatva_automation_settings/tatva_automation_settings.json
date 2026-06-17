@@ -6,7 +6,6 @@
  "engine": "InnoDB",
  "field_order": [
   "intro",
-  "enable_followup_task_automation",
   "section_whatsapp_caps",
   "template_cap_per_hour",
   "template_cap_per_day"
@@ -16,13 +15,6 @@
    "fieldname": "intro",
    "fieldtype": "HTML",
    "options": "<p>Master switches for tatva_connect event automations. <b>Keep OFF in production until the historical-lead migration is complete</b>, so automations don't fire on backfilled data. Turn ON afterwards.</p>"
-  },
-  {
-   "default": "0",
-   "description": "When ON, an inbound WhatsApp message (linked to a lead) auto-creates one open follow-up task for the lead's owner. Default OFF.",
-   "fieldname": "enable_followup_task_automation",
-   "fieldtype": "Check",
-   "label": "Enable Follow-up Task Automation (WhatsApp → task)"
   },
   {
    "fieldname": "section_whatsapp_caps",

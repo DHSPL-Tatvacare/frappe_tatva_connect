@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
   "section_break_maps",
   "google_maps_api_key",
   "static_map_zoom",
@@ -21,13 +20,6 @@
   "manager_override_role"
  ],
  "fields": [
-  {
-   "default": "0",
-   "description": "Turn location capture on or off. Off = visits save normally, no location.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
   {
    "fieldname": "section_break_maps",
    "fieldtype": "Section Break",

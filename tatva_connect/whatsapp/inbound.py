@@ -7,14 +7,16 @@ provider) just writes the message row; this event does the rest.
 import frappe
 from frappe import _
 
+from tatva_connect import automation
+
 WHATSAPP_FOLLOWUP_TYPE = "WhatsApp Follow-up"
 FOLLOWUP_DUE_HOURS = 4
 
 
 def on_inbound_message(doc, method=None):
 	# Master switch — OFF by default (esp. in prod so it never fires on a historical
-	# backfill). Flip Tatva Automation Settings → Enable Follow-up Task Automation ON.
-	if not frappe.db.get_single_value("Tatva Automation Settings", "enable_followup_task_automation"):
+	# backfill). Flip the `followup` automation ON to enable.
+	if not automation.is_enabled("followup"):
 		return
 	if (doc.type or "") != "Incoming":
 		return

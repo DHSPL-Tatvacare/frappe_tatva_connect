@@ -3,10 +3,11 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
+from tatva_connect import automation
+
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
 CALL_LEAD_TYPE = "Call Lead"
-_SWITCH = ("Tatva Automation Settings", "enable_followup_task_automation")
 
 
 def on_lead_assignment(doc, method=None):
@@ -15,7 +16,7 @@ def on_lead_assignment(doc, method=None):
 	Assignment Rule sets the owner; gated by the master switch (OFF by default)."""
 	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 		return
-	if not frappe.db.get_single_value(*_SWITCH):
+	if not automation.is_enabled("followup"):
 		return
 	lead = frappe.db.get_value(
 		"CRM Lead", doc.reference_name, ["lead_name", "custom_current_program"], as_dict=True

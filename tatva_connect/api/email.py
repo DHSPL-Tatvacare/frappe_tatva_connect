@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, now_datetime
 
+from tatva_connect import automation
+
 # Both attach paths stage an UNATTACHED file here until the mail is sent: it shows as a
 # composer chip, attaches to the mail on send, is deleted on discard — and because it's
 # unattached it never appears on the lead (no Attachments-tab / activity noise) and never
@@ -72,6 +74,8 @@ def stage_crm_file(reference_doctype, reference_name, source_file):
 def purge_draft_attachments():
 	"""Daily: drop staged draft files left after a send or an abandoned compose. Folder-scoped
 	and the on_trash ref-count keeps any shared blob alive for the sent copy / original."""
+	if not automation.is_enabled("draft_cleanup"):
+		return
 	cutoff = add_to_date(now_datetime(), hours=-DRAFT_TTL_HOURS)
 	stale = frappe.get_all(
 		"File",

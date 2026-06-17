@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, urlparse
 import frappe
 from frappe import _
 
+from tatva_connect import automation
+
 SETTINGS = "CRM Azure Storage Settings"
 DOWNLOAD_METHOD = "tatva_connect.storage.api.download_file"
 LOCAL_PREFIXES = ("/files/", "/private/files/")
@@ -30,7 +32,7 @@ _SAS_CACHE_SKEW = 30  # refresh the cached link this many seconds before it expi
 
 def is_enabled() -> bool:
 	"""Master switch — read fresh so a flip takes effect across workers at once."""
-	return bool(frappe.db.get_single_value(SETTINGS, "enabled"))
+	return automation.is_enabled("azure")
 
 
 def is_local_url(file_url: str | None) -> bool:

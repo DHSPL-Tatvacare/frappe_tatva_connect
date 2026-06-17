@@ -6,18 +6,10 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
   "section_break_debug",
   "debug_log_payloads"
  ],
  "fields": [
-  {
-   "default": "0",
-   "description": "Master kill-switch for all WATI send/receive. Ships OFF (dormant) — enable per deployment.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
   {
    "fieldname": "section_break_debug",
    "fieldtype": "Section Break",

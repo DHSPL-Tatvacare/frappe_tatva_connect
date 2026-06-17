@@ -22,6 +22,8 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import make_get_request, make_post_request
 
+from tatva_connect import automation
+
 API_VERSION = "v1"
 SETTINGS = "CRM Acefone Settings"
 DEFAULT_BASE_URL = "https://api.acefone.in"
@@ -35,7 +37,7 @@ def is_enabled() -> bool:
 	immediately across all worker processes. Per-account `enabled` flags are
 	checked by the routing/handler layer, not here.
 	"""
-	return bool(frappe.db.get_single_value(SETTINGS, "enabled"))
+	return automation.is_enabled("acefone")
 
 
 def assert_enabled():

@@ -10,6 +10,7 @@ import json
 
 import frappe
 
+from tatva_connect import automation
 from tatva_connect.whatsapp import api as wati
 
 
@@ -41,6 +42,8 @@ def scheduled_sync_all():
 	A good-have backstop on top of the real-time manual sync. Respects the
 	kill-switch and never lets a sync failure raise out of the scheduler.
 	"""
+	if not automation.is_enabled("template_sync"):
+		return
 	if not wati.is_enabled():
 		return
 	try:

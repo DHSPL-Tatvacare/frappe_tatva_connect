@@ -6,20 +6,12 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
   "column_break_top",
   "record_call",
   "section_break_webhook",
   "webhook_verify_token"
  ],
  "fields": [
-  {
-   "default": "0",
-   "description": "Master kill-switch for all Acefone send/receive (across every account). Ships OFF (dormant) — enable per deployment.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
   {
    "fieldname": "column_break_top",
    "fieldtype": "Column Break"

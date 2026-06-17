@@ -126,6 +126,10 @@ after_migrate = [
 	# patches.txt WITHOUT running it, so these never land on a fresh DB — re-run them here
 	# (idempotent) so a clean install actually gets them. Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
+	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler
+	# path drifts out of the registry. Catalog after schema, drift after the rows exist.
+	"tatva_connect.automation.seed.sync_catalog",
+	"tatva_connect.automation.drift.assert_registered",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",

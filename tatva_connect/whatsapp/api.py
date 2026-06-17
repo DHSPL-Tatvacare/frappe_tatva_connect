@@ -13,6 +13,8 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import make_post_request, make_get_request
 
+from tatva_connect import automation
+
 # WATI multi-tenant server host; present in every tenant's base URL.
 WATI_HOST_MARKER = "wati.io"
 
@@ -49,7 +51,7 @@ def assert_wati(account):
 def is_enabled() -> bool:
 	"""WATI master kill-switch. Dormant by default — OFF until explicitly enabled
 	(a blank/unsaved single reads as disabled)."""
-	return bool(frappe.db.get_single_value("CRM WATI Settings", "enabled"))
+	return automation.is_enabled("wati")
 
 
 def assert_enabled():

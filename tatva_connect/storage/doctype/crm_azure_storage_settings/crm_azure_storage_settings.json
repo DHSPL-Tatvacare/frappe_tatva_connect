@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
   "connection_string",
   "containers_section",
   "private_container",
@@ -18,12 +17,6 @@
   "check_connection"
  ],
  "fields": [
-  {
-   "description": "Master switch. Off = pure local Frappe, no Azure behaviour at all.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
   {
    "description": "Azure connection string (carries the account key): DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
    "fieldname": "connection_string",
