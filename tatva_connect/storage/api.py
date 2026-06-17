@@ -6,7 +6,7 @@
 import frappe
 from frappe import _
 
-from tatva_connect.storage import blob_store
+from tatva_connect.storage import blob_store, file_manager
 from tatva_connect.storage.blob_store import BlobStore
 from tatva_connect.storage.file_events import offload
 
@@ -18,7 +18,7 @@ def download_file(file_name: str):
 	`File.is_downloadable()` exactly as core Frappe gates `/private/files`."""
 	from frappe.utils.response import download_private_file
 
-	name = frappe.db.exists("File", {"file_url": blob_store.download_url(file_name)})
+	name = file_manager.by_blob_key(file_name)
 	if not name:
 		raise frappe.DoesNotExistError
 

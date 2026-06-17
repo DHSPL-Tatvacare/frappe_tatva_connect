@@ -199,12 +199,6 @@ def _attach_prescription(doc, lead_name):
 	url = doc.get("prescription")
 	if not url:
 		return
-	frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_url": url,
-			"attached_to_doctype": "CRM Lead",
-			"attached_to_name": lead_name,
-			"is_private": 1,
-		}
-	).insert(ignore_permissions=True)
+	from tatva_connect.storage import file_manager
+
+	file_manager.link(url, attached_to_doctype="CRM Lead", attached_to_name=lead_name)

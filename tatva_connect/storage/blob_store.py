@@ -39,8 +39,11 @@ def is_local_url(file_url: str | None) -> bool:
 
 
 def download_url(blob_key: str) -> str:
-	"""The permission-gated proxy URL stored on offloaded File rows."""
-	return f"{frappe.utils.get_url()}/api/method/{DOWNLOAD_METHOD}?file_name={blob_key}"
+	"""The permission-gated proxy URL stored on offloaded File rows. ROOT-RELATIVE (like Frappe's
+	native /private/files URLs) so it always resolves to the host the user is browsing on. An absolute
+	URL froze the upload-time host, so a private file uploaded under one host (e.g. localhost) 403'd
+	as Guest when viewed under another (the site domain) — the session cookie is per-host."""
+	return f"/api/method/{DOWNLOAD_METHOD}?file_name={blob_key}"
 
 
 def blob_key_from_url(file_url: str | None) -> str | None:
