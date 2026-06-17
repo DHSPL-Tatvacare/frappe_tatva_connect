@@ -2,6 +2,7 @@
  {
   "doctype": "Workspace",
   "name": "Tatva Connect",
+  "type": "Workspace",
   "label": "Tatva Connect",
   "title": "Tatva Connect",
   "module": "Tatva Connect",
