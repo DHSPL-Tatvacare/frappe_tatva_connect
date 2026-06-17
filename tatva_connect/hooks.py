@@ -5,6 +5,18 @@ app_description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony
 app_email = "pareekshith.bompally@tatvacare.in"
 app_license = "mit"
 
+# App-launcher tile (/apps): a "Tatva Connect" card that opens the Desk workspace.
+# Gated by has_permission to the same roles that can see the workspace (System Manager,
+# Sales Manager) — the tile never shows to ineligible users.
+add_to_apps_screen = [
+	{
+		"name": "tatva_connect",
+		"title": "Tatva Connect",
+		"route": "/app/tatva-connect",
+		"has_permission": "tatva_connect.api.apps.check_app_permission",
+	}
+]
+
 # WATI WhatsApp — route frappe_whatsapp through WATI; never reach Meta.
 # Seam 1: WhatsApp Message      — agent sends + CRM template picker.
 # Seam 2: WhatsApp Notification — automated/scheduled sends (own Meta call).
