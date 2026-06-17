@@ -8,6 +8,7 @@ the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a ty
 Ships dormant: a CRM Task Type with no scope row never surfaces as an activity.
 """
 import json
+from urllib.parse import parse_qs, urlparse
 
 import frappe
 from frappe import _
@@ -430,32 +431,87 @@ def _task_location(r):
 	}
 
 
+def _blob_key(url):
+	"""The host-independent storage key inside a proxy URL (?file_name=<key>) — stable across the
+	root-relative and absolute URL forms. Lets us match a payload Attach value to its lead File."""
+	if not url:
+		return ""
+	try:
+		return (parse_qs(urlparse(url).query).get("file_name") or [""])[0]
+	except Exception:
+		return ""
+
+
+def _lead_files(lead):
+	"""blob_key -> {file_url, file_name} for every File on the lead (one query). The File holds the
+	real display name; the key links it back to the activity that captured it."""
+	files = {}
+	for f in frappe.get_all(
+		"File", filters={"attached_to_doctype": "CRM Lead", "attached_to_name": lead},
+		fields=["file_name", "file_url"],
+	):
+		key = _blob_key(f.file_url)
+		if key:
+			files[key] = {"file_url": f.file_url, "file_name": f.file_name}
+	return files
+
+
+def _activity_documents(values, cfg, files_by_key):
+	"""Documents an activity captured: each Attach/Attach Image schema field's value resolved to its
+	lead File (real name + url) via the blob key. Same schema-driven rule as the board's card media."""
+	if not cfg:
+		return []
+	docs = []
+	for f in cfg["fields"]:
+		if f.get("fieldtype") not in ("Attach", "Attach Image"):
+			continue
+		url = values.get(f["fieldname"])
+		if not url:
+			continue
+		key = _blob_key(url)
+		docs.append(files_by_key.get(key) or {"file_url": url, "file_name": key.rsplit("/", 1)[-1] or url})
+	return docs
+
+
 @frappe.whitelist()
 def lead_timeline(lead):
-	"""The single activity projection for a lead — used by BOTH the SPA timeline and the
-	Desk Activity Timeline section. Newest first; one entry per activity task."""
+	"""The single activity projection for a lead — used by BOTH the SPA timeline and the Desk Activity
+	Timeline. Newest first; ONE rich entry per activity task: its status, captured location, and the
+	documents it attached — so the timeline renders the whole action as one chained line."""
 	activity_types = _activity_type_names()
 	if not activity_types:
 		return []
 	tasks = frappe.get_all(
 		"CRM Task",
 		filters={"reference_docname": lead, "custom_task_type": ["in", list(activity_types)]},
-		fields=["name", "creation", "modified", "status", "custom_task_type",
-				"custom_visit_status", "custom_location_address", "assigned_to", "owner"],
+		fields=["name", "creation", "modified", "status", "custom_task_type", "description",
+				"custom_visit_status", "custom_activity_payload", "assigned_to", "owner", *FIRST_CLASS,
+				"custom_location_latitude", "custom_location_longitude",
+				"custom_location_address", "custom_location_captured_at"],
 		order_by="creation desc",
 	)
+	cfgs = {tn: _type_config(tn) for tn in {t.custom_task_type for t in tasks if t.custom_task_type}}
+	files_by_key = _lead_files(lead)
 	out = []
 	for t in tasks:
 		who = t.assigned_to or t.owner
+		cfg = cfgs.get(t.custom_task_type)
+		loc = _task_location(t)
 		out.append({
 			"name": t.name,
 			"creation": str(t.creation),
+			"modified": str(t.modified),
 			"date": formatdate(t.creation, "d MMM"),
 			"datetime": format_datetime(t.creation, "d MMM, h:mm a"),
 			"owner": who,
 			"owner_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"activity_type": t.custom_task_type,
 			"status": t.custom_visit_status or t.status,
+			"done": (t.status or "") in ("Done", "Completed"),
 			"address": t.custom_location_address or "",
+			"location": ({"address": loc["address"],
+						  "map_url": "https://www.google.com/maps?q={0},{1}".format(loc["lat"], loc["lng"])}
+						 if loc else None),
+			"documents": _activity_documents(_task_values(t, cfg), cfg, files_by_key),
 		})
 	return out
