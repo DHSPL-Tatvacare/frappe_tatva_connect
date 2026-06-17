@@ -68,11 +68,15 @@ def _access_token(info) -> str | None:
 
 
 def _post_one(project_id, access_token, fcm_token, title, body, data) -> requests.Response:
+	# DATA-ONLY message: title/body travel inside `data`, and the service worker's
+	# onBackgroundMessage renders the single banner. A top-level `notification` block makes
+	# the browser auto-display it AND still fire onBackgroundMessage -> two banners per event.
+	payload = {"title": title, "body": body}
+	payload.update({k: str(v) for k, v in (data or {}).items()})
 	message = {
 		"message": {
 			"token": fcm_token,
-			"notification": {"title": title, "body": body},
-			"data": {k: str(v) for k, v in (data or {}).items()},
+			"data": payload,
 			"webpush": {"fcm_options": {"link": (data or {}).get("route") or "/crm"}},
 		}
 	}
