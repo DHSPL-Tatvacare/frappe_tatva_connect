@@ -141,4 +141,10 @@ AUTOMATIONS = [
 		trigger_detail="CRM Lead API Field · on_update + on_trash",
 		backs=["tatva_connect.api.partner.clear_catalog_cache"],
 	),
+	Auto(
+		key="Observability::Metrics::rollup",
+		fires_on="Schedule",
+		trigger_detail="every 6h",
+		backs=["tatva_connect.observability.rollup.run"],
+	),
 ]
