@@ -4,6 +4,10 @@
 # Register modules.txt -> Module Def FIRST, before any doctype sync (migrate on an
 # existing site doesn't; add_module_defs runs only at install-app). Idempotent.
 tatva_connect.patches.register_modules
+# A module added to modules.txt AFTER the first migrate gets no Module Def (register_modules
+# already ran, won't re-run) -> its doctypes fail to sync. Re-run add_module_defs once so the
+# Push Notifications module + CRM Push Settings/Subscription land. Idempotent.
+tatva_connect.patches.register_push_notifications_module
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
