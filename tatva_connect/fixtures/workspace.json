@@ -1,0 +1,37 @@
+[
+ {
+  "doctype": "Workspace",
+  "name": "Tatva Connect",
+  "label": "Tatva Connect",
+  "title": "Tatva Connect",
+  "module": "Tatva Connect",
+  "public": 1,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Connect \\u2014 Automation &amp; Config</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Automations\", \"col\": 4}}]",
+  "shortcuts": [
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Automations",
+    "link_to": "CRM Tatva Automation",
+    "color": "Grey",
+    "doc_view": "List"
+   }
+  ],
+  "roles": [
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "System Manager"
+   },
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "Sales Manager"
+   }
+  ]
+ }
+]

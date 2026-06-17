@@ -21,6 +21,10 @@ tatva_connect.patches.retire_location_captures_fields
 # custom_lsq_lead_stage_legacy) superseded by the grain-scoped custom_stage. Idempotent;
 # also runs on after_migrate.
 tatva_connect.patches.retire_lead_stage_legacy_fields
+# Orphan cleanup: move WhatsApp template caps onto CRM WATI Settings and delete the misnamed
+# `Tatva Automation Settings` single (lost its only switch in the automation-seam refactor).
+# Copy-forward preserves tuned caps; idempotent (no-op once gone / on a fresh install).
+tatva_connect.patches.retire_tatva_automation_settings
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/

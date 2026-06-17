@@ -4382,7 +4382,7 @@
   "columns": 0,
   "default": null,
   "depends_on": null,
-  "description": "Field-sales: the activity type auto-raised as the first open task when a lead on this program is assigned (behind Tatva Automation Settings master switch). Blank = nothing auto-raised.",
+  "description": "Field-sales: the activity type auto-raised as the first open task when a lead on this program is assigned (gated by the 'followup' switch in CRM Tatva Automation). Blank = nothing auto-raised.",
   "docstatus": 0,
   "doctype": "Custom Field",
   "dt": "CRM Program",

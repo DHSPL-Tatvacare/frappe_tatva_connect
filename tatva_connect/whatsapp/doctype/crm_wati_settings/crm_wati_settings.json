@@ -6,10 +6,30 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_template_caps",
+  "template_cap_per_hour",
+  "template_cap_per_day",
   "section_break_debug",
   "debug_log_payloads"
  ],
  "fields": [
+  {
+   "fieldname": "section_template_caps",
+   "fieldtype": "Section Break",
+   "label": "Template Rate Caps"
+  },
+  {
+   "description": "Max manual template sends per lead in a rolling 1-hour window (chat-box/picker path only; automated Notification sends are never throttled). Blank or 0 = this window is disabled. Code default 5.",
+   "fieldname": "template_cap_per_hour",
+   "fieldtype": "Int",
+   "label": "Template Cap / Hour"
+  },
+  {
+   "description": "Max manual template sends per lead in a rolling 24-hour window. Blank or 0 = disabled. Code default 10.",
+   "fieldname": "template_cap_per_day",
+   "fieldtype": "Int",
+   "label": "Template Cap / Day"
+  },
   {
    "fieldname": "section_break_debug",
    "fieldtype": "Section Break",

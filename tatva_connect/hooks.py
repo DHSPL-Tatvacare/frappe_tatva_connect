@@ -141,6 +141,10 @@ after_migrate = [
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
+	# Config control plane — the Desk workspace + its grouped sidebar ship as code, filtered to
+	# OUR records so a future export never vacuums other apps' workspaces/sidebars.
+	{"dt": "Workspace", "filters": [["name", "=", "Tatva Connect"]]},
+	{"dt": "Workspace Sidebar", "filters": [["name", "=", "Tatva Connect"]]},
 	{
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to native doctypes,
