@@ -1,10 +1,8 @@
 """Idempotent catalog sync — one `CRM Tatva Automation` row per registry entry.
 
-Runs on after_migrate. Insert missing rows with their structural fields + the
-intrinsic `enabled` (1 for always-on rows, 0 for toggles — toggles ship DORMANT,
-the operator enables them via the cutover SQL). Existing rows refresh structural
-fields ONLY — never the operator-set `enabled` — except always-on rows are forced
-to 1 (they always run; the row is visibility-only).
+Runs on after_migrate. Insert a missing row DORMANT (`enabled=0`); the operator
+turns it on and it STAYS on. Code never owns `enabled`: existing rows refresh only
+their descriptive/structural fields, so no deploy ever flips an operator's switch.
 """
 import frappe
 
@@ -19,9 +17,7 @@ def _scheduled_job(auto):
 def _structural_values(auto):
 	return {
 		"area": auto.key.split("::")[0],
-		"control": auto.control,
 		"fires_on": auto.fires_on,
-		"lock_reason": auto.lock_reason,
 		"trigger_detail": auto.trigger_detail,
 		"requires": auto.requires,
 		"scheduled_job": _scheduled_job(auto),
@@ -30,19 +26,16 @@ def _structural_values(auto):
 
 def sync_catalog():
 	for auto in AUTOMATIONS:
-		always_on = auto.control == "Always-on"
 		if frappe.db.exists("CRM Tatva Automation", auto.key):
 			doc = frappe.get_doc("CRM Tatva Automation", auto.key)
 			for field, value in _structural_values(auto).items():
 				doc.set(field, value)
-			# never touch operator-set `enabled` for toggles; always-on are forced on.
-			if always_on:
-				doc.enabled = 1
+			# NEVER touch `enabled` — config is the operator's, code only refreshes labels.
 			doc.save(ignore_permissions=True)
 		else:
 			doc = frappe.new_doc("CRM Tatva Automation")
 			doc.automation_key = auto.key
 			for field, value in _structural_values(auto).items():
 				doc.set(field, value)
-			doc.enabled = 1 if always_on else 0
+			doc.enabled = 0  # ships dormant (invariant 6); operator enables, it stays.
 			doc.insert(ignore_permissions=True)

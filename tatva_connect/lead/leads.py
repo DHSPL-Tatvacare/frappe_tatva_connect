@@ -3,6 +3,7 @@ import frappe
 from frappe import _
 from frappe.utils import cstr
 
+from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
 
 # Phone-type fields on CRM Lead we keep canonical (+E.164). mobile_no is the dedup +
@@ -33,6 +34,8 @@ def canonicalize_routing_fields(doc, method=None):
 	some rows store '' and others NULL for an omitted line, get_value's IS NULL misses
 	the '' rows -> a duplicate lead slips through. Storing only NULL closes that gap.
 	Runs BEFORE dedup_guard (before_validate precedes validate)."""
+	if not automation.is_enabled("Lead::CRM Lead::dedup"):
+		return
 	for f in ROUTING_FIELDS:
 		if doc.get(f) == "":
 			doc.set(f, None)
@@ -42,6 +45,8 @@ def normalize_lead_phones(doc, method=None):
 	"""Canonicalise phone fields to +E.164 on every write (validate), so dedup and
 	WhatsApp-inbound lookup are reliable no matter how a writer formatted the number.
 	Runs BEFORE dedup_guard (hooks.py orders them)."""
+	if not automation.is_enabled("Lead::CRM Lead::dedup"):
+		return
 	for f in PHONE_FIELDS:
 		val = doc.get(f)
 		if val:
@@ -63,6 +68,8 @@ def dedup_guard(doc, method=None):
 
 	No mobile_no -> nothing to dedup (some leads are email/name only).
 	"""
+	if not automation.is_enabled("Lead::CRM Lead::dedup"):
+		return
 	if not doc.mobile_no:
 		return
 
@@ -93,6 +100,8 @@ def validate_stage(doc, method=None):
 	on the lead's program, and derive the read-only custom_main_stage for grouping.
 	Empty = lifecycle not set yet. Soft, clear errors — no silent corrections.
 	"""
+	if not automation.is_enabled("Lead::CRM Lead::dedup"):
+		return
 	if not doc.custom_stage:
 		doc.custom_main_stage = None
 		return
@@ -161,6 +170,8 @@ def sync_headline_metrics(doc, method=None):
 	can sort/scan/kanban on them. Idempotent: re-derives from the child each write,
 	whether the change came from the partner API or a UI/grid edit. No lab row leaves
 	the headlines as-is (don't clobber on an unrelated save)."""
+	if not automation.is_enabled("Lead::CRM Lead::headline"):
+		return
 	# Defensive (P9): during the profile-restructure migration the lab table's columns
 	# may briefly be out of sync with the doc meta — skip rather than throw on a live
 	# Lead save if the source lab column is missing.

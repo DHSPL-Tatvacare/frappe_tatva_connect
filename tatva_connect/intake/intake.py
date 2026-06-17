@@ -10,6 +10,8 @@ import re
 import frappe
 from frappe import _
 
+from tatva_connect import automation
+
 _TABLE = {
 	"plan": "custom_plan_profile",
 	"care": "custom_care_providers_profile",
@@ -27,6 +29,8 @@ def _normalize_phone(raw: str) -> str:
 
 def process_submission(doc, method=None):
 	"""after_insert on the staging doctype -> upsert the CRM Lead."""
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return
 	if doc.processed or not doc.intake_form:
 		return
 	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)

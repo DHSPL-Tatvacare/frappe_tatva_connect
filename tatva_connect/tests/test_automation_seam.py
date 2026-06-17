@@ -2,9 +2,9 @@
 # See license.txt
 """Tests for the Automation Control Plane seam (tatva_connect/automation/).
 
-Covers the read accessor, idempotent catalog seed, guard/infra lock, the
-migrate-time drift check, and that the registry exactly mirrors hooks.py +
-the cutover enable SQL. See docs/plans/2026-06-17-automation-control-plane.md.
+Covers the read accessor, idempotent catalog seed, operator-owned `enabled`
+(never rewritten by sync), the migrate-time drift check, and that the registry
+exactly mirrors hooks.py + the cutover enable SQL.
 """
 import os
 import unittest
@@ -53,12 +53,12 @@ class TestAutomationSeam(FrappeTestCase):
 
 	def test_seed_idempotent(self):
 		"""A second sync_catalog() preserves an operator-set switch value but
-		refreshes a structural field (control)."""
-		# Operator turns a switch ON and we scribble a stale control onto it.
+		refreshes the descriptive/structural fields from the registry."""
+		# Operator turns a switch ON; we scribble a stale label onto it.
 		frappe.db.set_value(
 			"CRM Tatva Automation",
 			"Storage::Azure::offload",
-			{"enabled": 1, "control": "STALE CONTROL"},
+			{"enabled": 1, "trigger_detail": "STALE"},
 		)
 
 		seed.sync_catalog()
@@ -67,29 +67,24 @@ class TestAutomationSeam(FrappeTestCase):
 		# operator-set enabled survives ...
 		self.assertEqual(doc.enabled, 1)
 		# ... structural field is refreshed from the registry.
-		self.assertEqual(doc.control, _BY_KEY["Storage::Azure::offload"].control)
+		self.assertEqual(doc.trigger_detail, _BY_KEY["Storage::Azure::offload"].trigger_detail)
 
-	# --- guard / infra lock ----------------------------------------------
+	# --- enabled is operator-owned ---------------------------------------
 
-	def test_guard_infra_locked(self):
-		"""Every Always-on row is enabled=1 after sync; the controller forces
-		it back to 1 even if someone sets 0."""
-		for auto in AUTOMATIONS:
-			if auto.control != "Always-on":
-				continue
-			self.assertEqual(
-				frappe.db.get_value("CRM Tatva Automation", auto.key, "enabled"),
-				1,
-				f"{auto.key} ({auto.control}) must seed enabled=1",
-			)
+	def test_enabled_is_operator_owned(self):
+		"""sync_catalog seeds a missing row dormant, then NEVER rewrites `enabled`
+		again — the operator's choice survives every migrate, both directions and
+		uniformly for every row (no locked/always-on class). Asserted on a former
+		always-on key, which under the old model would have been forced back to 1."""
+		key = "Lead::CRM Lead::dedup"
 
-			doc = frappe.get_doc("CRM Tatva Automation", auto.key)
-			doc.enabled = 0
-			doc.save(ignore_permissions=True)
-			doc.reload()
-			self.assertEqual(
-				doc.enabled, 1, f"controller must force {auto.key} back to enabled=1"
-			)
+		frappe.db.set_value("CRM Tatva Automation", key, "enabled", 1)
+		seed.sync_catalog()
+		self.assertEqual(frappe.db.get_value("CRM Tatva Automation", key, "enabled"), 1)
+
+		frappe.db.set_value("CRM Tatva Automation", key, "enabled", 0)
+		seed.sync_catalog()
+		self.assertEqual(frappe.db.get_value("CRM Tatva Automation", key, "enabled"), 0)
 
 	# --- drift check -----------------------------------------------------
 
@@ -147,11 +142,11 @@ class TestAutomationSeam(FrappeTestCase):
 			)
 
 	def test_cutover_completeness(self):
-		"""Every switch whose behaviour is unconditional-today must be accounted
-		for in the cutover enable SQL (the active UPDATE or the documented PROD
-		operator note). Guards/infra need no SQL — they always run."""
-		# Switches that fire unconditionally today (plan §1d / cutover runbook).
-		unconditional = {
+		"""Everything ships dormant now; the operator enables what they want at
+		cutover. This guards the cutover enable SQL against a forgotten integration
+		switch — each must be named in the active UPDATE or the documented PROD note."""
+		# Integration switches the operator turns on at cutover (cutover runbook).
+		cutover = {
 			"Task::CRM Task::transitions",
 			"Storage::File::draft-cleanup",
 			"WhatsApp::WATI::templates",
@@ -166,30 +161,17 @@ class TestAutomationSeam(FrappeTestCase):
 		with open(_ENABLE_SQL, encoding="utf-8") as fh:
 			sql_text = fh.read()
 
-		for key in sorted(unconditional):
-			auto = _BY_KEY[key]
-			self.assertEqual(
-				auto.control, "Toggle", f"{key} is expected to be a toggle"
-			)
+		for key in sorted(cutover):
+			self.assertIn(key, _BY_KEY, f"{key} not in registry")
 			# The key is named somewhere in the enable file — either the active
 			# UPDATE (dev live state) or the PROD-operator note (e.g. template_sync,
 			# documented but not enabled on dev because WATI is off here).
 			self.assertIn(
 				key,
 				sql_text,
-				f"unconditional-today switch '{key}' is missing from the cutover "
-				f"enable SQL ({os.path.basename(_ENABLE_SQL)})",
+				f"cutover switch '{key}' is missing from the enable SQL "
+				f"({os.path.basename(_ENABLE_SQL)})",
 			)
-
-		# And no always-on row leaked into the enable SQL (they must never be
-		# toggled from there).
-		for auto in AUTOMATIONS:
-			if auto.control == "Always-on":
-				self.assertNotIn(
-					f"'{auto.key}'",
-					sql_text,
-					f"always-on '{auto.key}' must not appear in the enable SQL",
-				)
 
 
 if __name__ == "__main__":

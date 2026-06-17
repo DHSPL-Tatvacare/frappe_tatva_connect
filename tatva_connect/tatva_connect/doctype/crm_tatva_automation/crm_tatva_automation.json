@@ -9,13 +9,11 @@
  "field_order": [
   "automation_key",
   "area",
-  "control",
   "fires_on",
   "trigger_detail",
   "enabled",
   "requires",
   "scheduled_job",
-  "lock_reason",
   "description"
  ],
  "fields": [
@@ -37,14 +35,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "control",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Control",
-   "options": "Toggle\nAlways-on",
-   "read_only": 1
-  },
-  {
    "fieldname": "fires_on",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -61,12 +51,11 @@
   },
   {
    "default": "0",
-   "description": "The ONE operator-editable field. Toggles: toggle here or inline in the list. Always-on rows always run — shown ticked + read-only.",
+   "description": "The ONE operator-owned field. ON = the tatva_connect hook rides and enforces; OFF = dormant, native frappe/crm behaviour stands. Toggle here or inline in the list; your choice survives every deploy.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Enabled",
-   "read_only_depends_on": "eval:doc.control=='Always-on'"
+   "label": "Enabled"
   },
   {
    "fieldname": "requires",
@@ -78,13 +67,6 @@
    "fieldname": "scheduled_job",
    "fieldtype": "Data",
    "label": "Scheduled Job",
-   "read_only": 1
-  },
-  {
-   "fieldname": "lock_reason",
-   "fieldtype": "Select",
-   "label": "Lock Reason",
-   "options": "Safety\nSystem",
    "read_only": 1
   },
   {

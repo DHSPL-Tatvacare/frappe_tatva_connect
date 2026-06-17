@@ -53,6 +53,8 @@ def seed_checklist(doc, method=None):
 	(Product Line / Group / Program) + the task's type. Runs at creation, or when a
 	type is first set on an existing task. No type / no matching template -> no
 	checklist (task closes freely). Never overwrites a caller-supplied checklist."""
+	if not automation.is_enabled("Task::CRM Task::guards"):
+		return
 	if doc.custom_checklist or not doc.custom_task_type:
 		return
 	if not doc.is_new():
@@ -70,6 +72,8 @@ def seed_checklist(doc, method=None):
 def enforce_checklist(doc, method=None):
 	"""Block marking a task Done while a required checklist item is unticked. Fires
 	on both close paths (modal save and the quick status dropdown both run validate)."""
+	if not automation.is_enabled("Task::CRM Task::guards"):
+		return
 	if doc.status != DONE_STATUS:
 		return
 	pending = [r.item for r in (doc.custom_checklist or []) if r.required and not r.done]
@@ -92,6 +96,8 @@ def enforce_location(doc, method=None):
 	from tatva_connect.activity.automation import reconstruct_values
 	from tatva_connect.location.api import location_required
 
+	if not automation.is_enabled("Task::CRM Task::guards"):
+		return
 	# Location is captured when the visit is LOGGED (Done), not while the task is an open to-do.
 	# An open/assigned in-person task legitimately has no coordinates yet — only block on completion.
 	if doc.status != DONE_STATUS:
@@ -119,6 +125,8 @@ def enforce_activity_logged(doc, method=None):
 	never a silent empty activity. One brain: activity.api.activity_is_unlogged owns the rule."""
 	from tatva_connect.activity.api import activity_is_unlogged
 
+	if not automation.is_enabled("Task::CRM Task::guards"):
+		return
 	if activity_is_unlogged(doc):
 		frappe.throw(
 			_("Log this activity's details before marking it Done — open the task and fill its form."),

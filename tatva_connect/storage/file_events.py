@@ -20,6 +20,7 @@ from urllib.parse import quote
 
 import frappe
 
+from tatva_connect import automation
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
@@ -37,11 +38,18 @@ def apply_privacy_policy(doc, method=None):
 	"""Fail-closed file privacy (runs on File.validate): an attachment is PRIVATE unless its
 	doctype is a *Settings doctype (logos/banners) or operator-listed public in CRM Azure
 	Storage Settings. Unattached files keep the uploader's choice. is_private only gates
-	serving (see storage/api.download_file); storage is one private container either way."""
+	serving (see storage/api.download_file); storage is one private container either way.
+
+	The toggle (Storage::File::privacy) governs ONLY whether the operator's PUBLIC exceptions
+	are honored. The private floor is unconditional — OFF can only make a file MORE private,
+	never leak one (invariant 15 is fail-closed, never operator-disableable into a leak)."""
 	dt = doc.attached_to_doctype
 	if not dt:
 		return
-	doc.is_private = 0 if (_is_settings_doctype(dt) or dt in _public_attachment_doctypes()) else 1
+	allow_public = automation.is_enabled("Storage::File::privacy") and (
+		_is_settings_doctype(dt) or dt in _public_attachment_doctypes()
+	)
+	doc.is_private = 0 if allow_public else 1
 
 
 def offload(doc) -> bool:

@@ -33,6 +33,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr
 
+from tatva_connect import automation
+
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:
 # it lives in the `CRM Lead API Field` master, one row per namespaced `section:fieldname`
@@ -95,6 +97,8 @@ def _catalog():
 
 def clear_catalog_cache(doc=None, method=None):
 	"""doc_events hook (CRM Lead API Field on_update/on_trash) — drop the cached catalog."""
+	if not automation.is_enabled("Partner::Catalog::cache"):
+		return
 	frappe.cache().delete_value(_CATALOG_CACHE_KEY)
 
 # Forced for partners, accepted from a trusted System Manager. Never a catalog field.
