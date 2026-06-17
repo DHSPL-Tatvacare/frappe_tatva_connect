@@ -19,6 +19,7 @@ import frappe
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_observability_indexes,
 	recreate_whatsapp_message_id_index_composite,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
@@ -29,6 +30,7 @@ _STEPS = (
 	add_acefone_telephony_medium,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
+	add_observability_indexes,
 )
 
 

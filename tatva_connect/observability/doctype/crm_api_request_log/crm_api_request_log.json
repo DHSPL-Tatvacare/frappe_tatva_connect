@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "autoincrement",
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "Raw, disposable request-level log for external-facing endpoints (Partner API + inbound webhooks). Auto-purged by Log Settings (operator-configured, ~7 days). The rollup job aggregates these into CRM API Metric before they expire.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "request_time",
+  "channel",
+  "endpoint",
+  "source",
+  "http_method",
+  "status_code",
+  "is_error",
+  "duration_ms"
+ ],
+ "fields": [
+  {"fieldname": "request_time", "fieldtype": "Datetime", "label": "Request Time", "in_list_view": 1, "read_only": 1, "search_index": 1},
+  {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Partner API\nInbound Webhook", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "endpoint", "fieldtype": "Data", "label": "Endpoint", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "source", "fieldtype": "Data", "label": "Source", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "http_method", "fieldtype": "Data", "label": "HTTP Method", "read_only": 1},
+  {"fieldname": "status_code", "fieldtype": "Int", "label": "Status Code", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "is_error", "fieldtype": "Check", "label": "Is Error", "read_only": 1},
+  {"fieldname": "duration_ms", "fieldtype": "Int", "label": "Duration (ms)", "in_list_view": 1, "read_only": 1}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "CRM API Request Log",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "export": 1, "role": "Sales Manager"},
+  {"create": 1, "delete": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

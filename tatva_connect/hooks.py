@@ -133,7 +133,12 @@ doc_events = {
 # mirror is almost always current (manual "Sync from WATI" stays real-time).
 scheduler_events = {
 	"cron": {
-		"0 */6 * * *": ["tatva_connect.whatsapp.templates_sync.scheduled_sync_all"],
+		# Every 6h: WATI template mirror refresh + roll the raw API/webhook log up into
+		# the immortal CRM API Metric table (observability plane).
+		"0 */6 * * *": [
+			"tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
+			"tatva_connect.observability.rollup.run",
+		],
 		# Daily: sweep abandoned email-draft staging files.
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 	},
@@ -448,10 +453,17 @@ required_apps = ["crm", "frappe_whatsapp"]
 
 # Request Events
 # ----------------
-# before_request = ["tatva_connect.utils.before_request"]
-# Rewrite framework-layer errors (bad key / malformed body / not-whitelisted) on
-# partner-API paths into the unified {status:error, error:{code,message}} contract.
-after_request = ["tatva_connect.api.partner.normalise_partner_response"]
+# Observability: stamp a monotonic start on every request; the after_request logger
+# below reads it to compute latency for the watched endpoints.
+before_request = ["tatva_connect.observability.capture.stamp_start"]
+# 1. Rewrite framework-layer errors (bad key / malformed body / not-whitelisted) on
+#    partner-API paths into the unified {status:error, error:{code,message}} contract.
+# 2. Log one raw row per partner-API / inbound-webhook hit (runs last, after the
+#    response status is final). Both are no-ops for other endpoints.
+after_request = [
+	"tatva_connect.api.partner.normalise_partner_response",
+	"tatva_connect.observability.capture.log_request",
+]
 
 # Job Events
 # ----------
