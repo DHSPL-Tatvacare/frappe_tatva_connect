@@ -25,15 +25,18 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Automation Key",
+   "read_only": 1,
    "reqd": 1,
    "set_only_once": 1,
    "unique": 1
   },
   {
+   "description": "Code-owned (from automation/registry.py). Read-only — operators only flip Enabled.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Label",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -41,20 +44,23 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Entity",
-   "options": "WhatsApp\nTelephony\nStorage\nLocation\nTasks\nLeads\nSystem"
+   "options": "WhatsApp\nTelephony\nStorage\nLocation\nTasks\nLeads\nSystem",
+   "read_only": 1
   },
   {
    "fieldname": "kind",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Kind",
-   "options": "Switch\nGuard\nInfra"
+   "options": "Switch\nGuard\nInfra",
+   "read_only": 1
   },
   {
    "fieldname": "trigger",
    "fieldtype": "Select",
    "label": "Trigger",
-   "options": "Integration\nDoc Event\nScheduled\nWebhook\nAPI"
+   "options": "Integration\nDoc Event\nScheduled\nWebhook\nAPI",
+   "read_only": 1
   },
   {
    "fieldname": "trigger_detail",
@@ -64,7 +70,7 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:!in_list(['Guard','Infra'], doc.kind)",
+   "description": "The ONE operator-editable field. Switches: toggle here or inline in the list. Guards/Infra always run — shown ticked + read-only.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -86,12 +92,14 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Description"
+   "label": "Description",
+   "read_only": 1
   },
   {
    "fieldname": "why_locked",
    "fieldtype": "Small Text",
-   "label": "Why Locked"
+   "label": "Why Locked",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -104,15 +112,15 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
+   "create": 0,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "share": 0,
    "write": 1
   },
   {
