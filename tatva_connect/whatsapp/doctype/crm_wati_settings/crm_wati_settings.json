@@ -19,13 +19,13 @@
    "label": "Template Rate Caps"
   },
   {
-   "description": "Max manual template sends per lead in a rolling 1-hour window (chat-box/picker path only; automated Notification sends are never throttled). Blank or 0 = this window is disabled. Code default 5.",
+   "description": "Max manual template sends per lead in a rolling hour. Blank or 0 disables (default 5).",
    "fieldname": "template_cap_per_hour",
    "fieldtype": "Int",
    "label": "Template Cap / Hour"
   },
   {
-   "description": "Max manual template sends per lead in a rolling 24-hour window. Blank or 0 = disabled. Code default 10.",
+   "description": "Max manual template sends per lead in a rolling 24 hours. Blank or 0 disables (default 10).",
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day"
@@ -38,7 +38,7 @@
   },
   {
    "default": "0",
-   "description": "DEBUG ONLY — when ON, every authenticated inbound WATI payload is stored to Integration Request (service 'WATI', auto-clears in 90 days) to troubleshoot delivery. Payloads contain PHI; keep OFF in normal operation. Off = nothing stored.",
+   "description": "Store inbound WATI payloads to Integration Request (auto-clears in 90 days) to debug delivery. Contains PHI — keep off in normal use.",
    "fieldname": "debug_log_payloads",
    "fieldtype": "Check",
    "label": "Debug: Log Inbound Payloads"
