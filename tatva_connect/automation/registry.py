@@ -87,6 +87,16 @@ AUTOMATIONS = [
 		trigger_detail="daily 02:30",
 		backs=["tatva_connect.api.email.purge_draft_attachments"],
 	),
+	Auto(
+		key="Push::FCM::notify",
+		control="Toggle",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · after_insert · ToDo · after_insert",
+		backs=[
+			"tatva_connect.push_notifications.events.on_task_created",
+			"tatva_connect.push_notifications.events.on_lead_assigned",
+		],
+	),
 	# --- Always-on (fail-closed safety / system rows, locked ON, visible) ---
 	Auto(
 		key="Lead::CRM Lead::dedup",

@@ -9,3 +9,4 @@ Telephony
 Storage
 Location
 Activity
+Push Notifications

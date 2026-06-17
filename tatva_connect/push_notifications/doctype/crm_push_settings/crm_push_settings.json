@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_server",
+  "service_account_json",
+  "section_web",
+  "web_api_key",
+  "web_auth_domain",
+  "web_project_id",
+  "column_break_web",
+  "web_messaging_sender_id",
+  "web_app_id",
+  "vapid_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_server",
+   "fieldtype": "Section Break",
+   "label": "Server — FCM HTTP v1"
+  },
+  {
+   "description": "Firebase service-account key (Project Settings → Service accounts → Generate new private key). Paste the JSON minified to one line, or its base64. Stored encrypted. project_id is read from inside it — no separate field.",
+   "fieldname": "service_account_json",
+   "fieldtype": "Password",
+   "label": "Service Account JSON"
+  },
+  {
+   "description": "Public Firebase web-app config the browser SDK needs to register a device token. Not secret (ships in client code). Project Settings → General → Your apps (Web).",
+   "fieldname": "section_web",
+   "fieldtype": "Section Break",
+   "label": "Web Push — Browser SDK"
+  },
+  {
+   "fieldname": "web_api_key",
+   "fieldtype": "Data",
+   "label": "Web API Key"
+  },
+  {
+   "fieldname": "web_auth_domain",
+   "fieldtype": "Data",
+   "label": "Auth Domain"
+  },
+  {
+   "fieldname": "web_project_id",
+   "fieldtype": "Data",
+   "label": "Project ID"
+  },
+  {
+   "fieldname": "column_break_web",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "web_messaging_sender_id",
+   "fieldtype": "Data",
+   "label": "Messaging Sender ID"
+  },
+  {
+   "fieldname": "web_app_id",
+   "fieldtype": "Data",
+   "label": "Web App ID"
+  },
+  {
+   "description": "Web Push certificate key pair (Cloud Messaging → Web configuration → Key pair).",
+   "fieldname": "vapid_key",
+   "fieldtype": "Data",
+   "label": "VAPID Key"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Push Notifications",
+ "name": "CRM Push Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

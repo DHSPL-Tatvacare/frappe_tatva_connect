@@ -90,6 +90,10 @@ doc_events = {
 		"on_update": [
 			"tatva_connect.activity.automation.apply_transitions",
 		],
+		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
+		"after_insert": [
+			"tatva_connect.push_notifications.events.on_task_created",
+		],
 	},
 	"WhatsApp Message": {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone.
@@ -107,9 +111,13 @@ doc_events = {
 	"CRM Enrolment Submission": {
 		"after_insert": "tatva_connect.intake.intake.process_submission",
 	},
-	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up).
+	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up)
+	# AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
-		"after_insert": "tatva_connect.tasks.tasks.on_lead_assignment",
+		"after_insert": [
+			"tatva_connect.tasks.tasks.on_lead_assignment",
+			"tatva_connect.push_notifications.events.on_lead_assigned",
+		],
 	},
 	# Azure Blob offload: push bytes after the row + local file exist (core insert and
 	# thumbnailing untouched); delete the blob when the File is deleted. Gated by the
