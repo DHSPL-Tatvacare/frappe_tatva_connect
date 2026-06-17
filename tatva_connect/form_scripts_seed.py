@@ -8,10 +8,11 @@ import frappe
 
 # (CRM Form Script name, dt, view, app-relative js path)
 SCRIPTS = [
-	("WATI Send Template (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_template.js"),
-	("WATI WhatsApp Gate (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_gate.js"),
-	("WATI WhatsApp Window (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_window.js"),
-	("WATI Failed Reason (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_failed_reason.js"),
+	# All 4 WATI WhatsApp form scripts (whatsapp_template/gate/window/failed_reason.js) RETIRED — the
+	# WhatsApp UI is now native first-class in the CRM fork (frontend/src/tatva/TatvaWhatsAppTemplate.vue
+	# + TatvaWhatsAppWindowNotice.vue, plus failed-reason Tooltip / grain tab gate seams). Backend
+	# (routing/WATI/api) unchanged — the native components call the same whitelisted endpoints. Archived
+	# to archive/whatsapp-native-promotion/. Disabled idempotently via RETIRED below.
 	# "Hide Status Pill (CRM Lead)" (hide_status_pill.js) RETIRED — lead lifecycle is now the native
 	# grain-scoped stage pill (custom_stage) in the CRM fork; nothing to hide. Archived to
 	# archive/lead-stage-retired-hide-status-pill/. Disabled idempotently via RETIRED below.
@@ -33,6 +34,11 @@ SCRIPTS = [
 RETIRED = [
 	"Log Activity (CRM Lead)",  # Phase 2: ad-hoc punch -> native TatvaTaskModal create flow (fork)
 	"Hide Status Pill (CRM Lead)",  # lead stage native: grain-scoped stage pill (custom_stage) in the fork
+	# WhatsApp UI promoted to native first-class components in the CRM fork (backend untouched):
+	"WATI Send Template (CRM Lead)",  # -> TatvaWhatsAppTemplate.vue + header split button (Send Template / Refresh History)
+	"WATI WhatsApp Gate (CRM Lead)",  # -> native grain-routed tab gate (whatsappRouted composable)
+	"WATI WhatsApp Window (CRM Lead)",  # -> TatvaWhatsAppWindowNotice.vue in WhatsAppBox (24h window-closed card)
+	"WATI Failed Reason (CRM Lead)",  # -> native Tooltip on the failed Badge in WhatsAppArea.vue
 ]
 
 
