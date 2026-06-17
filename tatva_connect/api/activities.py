@@ -38,12 +38,14 @@ def _activity_events(entries):
 		"creation": e["creation"],
 		"owner": e["owner"],
 		"owner_name": e["owner_name"],
-		"verb": "completed" if e.get("done") else "logged",
+		"verb": "completed" if e.get("done") else "created",
 		"subject": e["activity_type"],
 		"status": e.get("status") or "",
 		"location": e.get("location"),
 		"documents": e.get("documents") or [],
-		"is_automation": False,
+		# Badge automation only while it's still the system's act — an auto-created follow-up.
+		# Once a human completes it (done), it's their action, so the badge drops.
+		"is_automation": bool(e.get("automated")) and not e.get("done"),
 	} for e in entries]
 
 

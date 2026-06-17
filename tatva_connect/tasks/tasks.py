@@ -163,6 +163,9 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 			"assigned_to": assigned_to,
 			"reference_doctype": "CRM Lead",
 			"reference_docname": lead,
+			# Every caller of this helper is an automation (lead-assignment follow-up, activity
+			# transition, WhatsApp inbound) -> stamp it so the timeline can badge it as automated.
+			"custom_automated": 1,
 		}
 	)
 	task.insert(ignore_permissions=True)

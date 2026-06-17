@@ -485,7 +485,8 @@ def lead_timeline(lead):
 		"CRM Task",
 		filters={"reference_docname": lead, "custom_task_type": ["in", list(activity_types)]},
 		fields=["name", "creation", "modified", "status", "custom_task_type", "description",
-				"custom_visit_status", "custom_activity_payload", "assigned_to", "owner", *FIRST_CLASS,
+				"custom_visit_status", "custom_activity_payload", "custom_automated",
+				"assigned_to", "owner", *FIRST_CLASS,
 				"custom_location_latitude", "custom_location_longitude",
 				"custom_location_address", "custom_location_captured_at"],
 		order_by="creation desc",
@@ -508,6 +509,7 @@ def lead_timeline(lead):
 			"activity_type": t.custom_task_type,
 			"status": t.custom_visit_status or t.status,
 			"done": (t.status or "") in ("Done", "Completed"),
+			"automated": bool(t.custom_automated),
 			"address": t.custom_location_address or "",
 			"location": ({"address": loc["address"],
 						  "map_url": "https://www.google.com/maps?q={0},{1}".format(loc["lat"], loc["lng"])}
