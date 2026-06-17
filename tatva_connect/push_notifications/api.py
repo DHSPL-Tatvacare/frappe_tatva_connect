@@ -47,15 +47,18 @@ def unregister_token(fcm_token):
 
 @frappe.whitelist()
 def get_web_config():
-	"""Public Firebase web config + VAPID key for the browser SDK (not secret).
+	"""Public Firebase web config + VAPID key for the browser SDK. The key + VAPID are
+	stored as Password fields (masked in the form), so read them via get_password.
 	`enabled` is true only once the operator has filled the form."""
 	s = frappe.get_cached_doc(SETTINGS)
+	api_key = s.get_password("web_api_key", raise_exception=False)
+	vapid_key = s.get_password("vapid_key", raise_exception=False)
 	return {
-		"apiKey": s.web_api_key,
+		"apiKey": api_key,
 		"authDomain": s.web_auth_domain,
 		"projectId": s.web_project_id,
 		"messagingSenderId": s.web_messaging_sender_id,
 		"appId": s.web_app_id,
-		"vapidKey": s.vapid_key,
-		"enabled": bool(s.web_api_key and s.vapid_key),
+		"vapidKey": vapid_key,
+		"enabled": bool(api_key and vapid_key),
 	}

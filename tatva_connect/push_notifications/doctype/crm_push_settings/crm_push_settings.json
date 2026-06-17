@@ -37,7 +37,7 @@
   },
   {
    "fieldname": "web_api_key",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "label": "Web API Key"
   },
   {
@@ -67,7 +67,7 @@
   {
    "description": "Web Push certificate key pair (Cloud Messaging → Web configuration → Key pair).",
    "fieldname": "vapid_key",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "label": "VAPID Key"
   }
  ],
