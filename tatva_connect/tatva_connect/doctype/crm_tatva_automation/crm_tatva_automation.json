@@ -53,6 +53,7 @@
    "read_only": 1
   },
   {
+   "description": "Read as DocType · event — the record(s) and moment(s) that make this automation fire (e.g. CRM Task · validate = when a task is saved).",
    "fieldname": "trigger_detail",
    "fieldtype": "Data",
    "label": "Trigger Detail",
