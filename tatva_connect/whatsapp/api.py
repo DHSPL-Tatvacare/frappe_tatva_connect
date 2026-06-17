@@ -51,7 +51,7 @@ def assert_wati(account):
 def is_enabled() -> bool:
 	"""WATI master kill-switch. Dormant by default — OFF until explicitly enabled
 	(a blank/unsaved single reads as disabled)."""
-	return automation.is_enabled("wati")
+	return automation.is_enabled("WhatsApp::WATI::messaging")
 
 
 def assert_enabled():

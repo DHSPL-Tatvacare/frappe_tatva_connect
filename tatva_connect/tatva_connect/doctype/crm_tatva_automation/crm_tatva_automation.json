@@ -8,16 +8,15 @@
  "engine": "InnoDB",
  "field_order": [
   "automation_key",
-  "label",
-  "entity",
-  "kind",
-  "trigger",
+  "area",
+  "control",
+  "fires_on",
   "trigger_detail",
   "enabled",
   "requires",
   "scheduled_job",
-  "description",
-  "why_locked"
+  "lock_reason",
+  "description"
  ],
  "fields": [
   {
@@ -31,35 +30,26 @@
    "unique": 1
   },
   {
-   "description": "Code-owned (from automation/registry.py). Read-only — operators only flip Enabled.",
-   "fieldname": "label",
+   "fieldname": "area",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Label",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "entity",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Entity",
-   "options": "WhatsApp\nTelephony\nStorage\nLocation\nTasks\nLeads\nSystem",
+   "label": "Area",
    "read_only": 1
   },
   {
-   "fieldname": "kind",
+   "fieldname": "control",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Kind",
-   "options": "Switch\nGuard\nInfra",
+   "label": "Control",
+   "options": "Toggle\nAlways-on",
    "read_only": 1
   },
   {
-   "fieldname": "trigger",
+   "fieldname": "fires_on",
    "fieldtype": "Select",
-   "label": "Trigger",
-   "options": "Integration\nDoc Event\nScheduled\nWebhook\nAPI",
+   "in_list_view": 1,
+   "label": "Fires On",
+   "options": "Doc Event\nSchedule\nProvider call",
    "read_only": 1
   },
   {
@@ -70,12 +60,12 @@
   },
   {
    "default": "0",
-   "description": "The ONE operator-editable field. Switches: toggle here or inline in the list. Guards/Infra always run — shown ticked + read-only.",
+   "description": "The ONE operator-editable field. Toggles: toggle here or inline in the list. Always-on rows always run — shown ticked + read-only.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled",
-   "read_only_depends_on": "eval:in_list(['Guard','Infra'], doc.kind)"
+   "read_only_depends_on": "eval:doc.control=='Always-on'"
   },
   {
    "fieldname": "requires",
@@ -90,15 +80,16 @@
    "read_only": 1
   },
   {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description",
+   "fieldname": "lock_reason",
+   "fieldtype": "Select",
+   "label": "Lock Reason",
+   "options": "Safety\nSystem",
    "read_only": 1
   },
   {
-   "fieldname": "why_locked",
+   "fieldname": "description",
    "fieldtype": "Small Text",
-   "label": "Why Locked",
+   "label": "Description",
    "read_only": 1
   }
  ],
@@ -132,6 +123,5 @@
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
- "title_field": "label"
+ "states": []
 }

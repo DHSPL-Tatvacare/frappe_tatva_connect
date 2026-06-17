@@ -16,7 +16,7 @@ def on_lead_assignment(doc, method=None):
 	Assignment Rule sets the owner; gated by the master switch (OFF by default)."""
 	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 		return
-	if not automation.is_enabled("followup"):
+	if not automation.is_enabled("Task::Assignment::followup"):
 		return
 	lead = frappe.db.get_value(
 		"CRM Lead", doc.reference_name, ["lead_name", "custom_current_program"], as_dict=True

@@ -25,6 +25,10 @@ tatva_connect.patches.retire_lead_stage_legacy_fields
 # `Tatva Automation Settings` single (lost its only switch in the automation-seam refactor).
 # Copy-forward preserves tuned caps; idempotent (no-op once gone / on a fresh install).
 tatva_connect.patches.retire_tatva_automation_settings
+# Automation registry rekey: rename CRM Tatva Automation rows from flat keys (wati, acefone, …)
+# to grain-scoped composite `::` keys (WhatsApp::WATI::messaging, …). Preserves operators'
+# Enabled state across the PK rename. Idempotent; no-op on a fresh install.
+tatva_connect.patches.migrate_automation_to_composite_keys
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/

@@ -41,46 +41,46 @@
     "child": 1,
     "indent": 0,
     "link_to": "CRM Tatva Automation",
-    "route_options": "{\"trigger\": \"Doc Event\"}"
+    "route_options": "{\"fires_on\": \"Doc Event\"}"
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "Scheduled Jobs",
+    "label": "Scheduled",
     "link_type": "DocType",
     "collapsible": 1,
     "child": 1,
     "indent": 0,
     "link_to": "CRM Tatva Automation",
-    "route_options": "{\"trigger\": \"Scheduled\"}"
+    "route_options": "{\"fires_on\": \"Schedule\"}"
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "Integrations (switches)",
+    "label": "Provider calls",
     "link_type": "DocType",
     "collapsible": 1,
     "child": 1,
     "indent": 0,
     "link_to": "CRM Tatva Automation",
-    "route_options": "{\"trigger\": \"Integration\"}"
+    "route_options": "{\"fires_on\": \"Provider call\"}"
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "Guards",
+    "label": "Always-on",
     "link_type": "DocType",
     "collapsible": 1,
     "child": 1,
     "indent": 0,
     "link_to": "CRM Tatva Automation",
-    "route_options": "{\"kind\": \"Guard\"}"
+    "route_options": "{\"control\": \"Always-on\"}"
    },
    {
     "doctype": "Workspace Sidebar Item",

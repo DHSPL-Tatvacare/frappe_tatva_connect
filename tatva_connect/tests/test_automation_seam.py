@@ -38,12 +38,12 @@ class TestAutomationSeam(FrappeTestCase):
 		module wrapper that delegates to it (whatsapp.api.is_enabled)."""
 		from tatva_connect.whatsapp import api as wati
 
-		frappe.db.set_value("CRM Tatva Automation", "wati", "enabled", 0)
-		self.assertFalse(settings.is_enabled("wati"))
+		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::WATI::messaging", "enabled", 0)
+		self.assertFalse(settings.is_enabled("WhatsApp::WATI::messaging"))
 		self.assertFalse(wati.is_enabled())
 
-		frappe.db.set_value("CRM Tatva Automation", "wati", "enabled", 1)
-		self.assertTrue(settings.is_enabled("wati"))
+		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::WATI::messaging", "enabled", 1)
+		self.assertTrue(settings.is_enabled("WhatsApp::WATI::messaging"))
 		self.assertTrue(wati.is_enabled())
 
 		# Unknown key is fail-closed dormant.
@@ -53,34 +53,34 @@ class TestAutomationSeam(FrappeTestCase):
 
 	def test_seed_idempotent(self):
 		"""A second sync_catalog() preserves an operator-set switch value but
-		refreshes a structural field (label)."""
-		# Operator turns a switch ON and we scribble a stale label onto it.
+		refreshes a structural field (control)."""
+		# Operator turns a switch ON and we scribble a stale control onto it.
 		frappe.db.set_value(
 			"CRM Tatva Automation",
-			"azure",
-			{"enabled": 1, "label": "STALE LABEL"},
+			"Storage::Azure::offload",
+			{"enabled": 1, "control": "STALE CONTROL"},
 		)
 
 		seed.sync_catalog()
 
-		doc = frappe.get_doc("CRM Tatva Automation", "azure")
+		doc = frappe.get_doc("CRM Tatva Automation", "Storage::Azure::offload")
 		# operator-set enabled survives ...
 		self.assertEqual(doc.enabled, 1)
 		# ... structural field is refreshed from the registry.
-		self.assertEqual(doc.label, _BY_KEY["azure"].label)
+		self.assertEqual(doc.control, _BY_KEY["Storage::Azure::offload"].control)
 
 	# --- guard / infra lock ----------------------------------------------
 
 	def test_guard_infra_locked(self):
-		"""Every Guard/Infra row is enabled=1 after sync; the controller forces
+		"""Every Always-on row is enabled=1 after sync; the controller forces
 		it back to 1 even if someone sets 0."""
 		for auto in AUTOMATIONS:
-			if auto.kind not in ("Guard", "Infra"):
+			if auto.control != "Always-on":
 				continue
 			self.assertEqual(
 				frappe.db.get_value("CRM Tatva Automation", auto.key, "enabled"),
 				1,
-				f"{auto.key} ({auto.kind}) must seed enabled=1",
+				f"{auto.key} ({auto.control}) must seed enabled=1",
 			)
 
 			doc = frappe.get_doc("CRM Tatva Automation", auto.key)
@@ -152,12 +152,12 @@ class TestAutomationSeam(FrappeTestCase):
 		operator note). Guards/infra need no SQL — they always run."""
 		# Switches that fire unconditionally today (plan §1d / cutover runbook).
 		unconditional = {
-			"activity_transitions",
-			"draft_cleanup",
-			"template_sync",
-			"azure",
-			"location",
-			"followup",
+			"Task::CRM Task::transitions",
+			"Storage::File::draft-cleanup",
+			"WhatsApp::WATI::templates",
+			"Storage::Azure::offload",
+			"Location::Google::capture",
+			"Task::Assignment::followup",
 		}
 
 		if not os.path.exists(_ENABLE_SQL):
@@ -169,7 +169,7 @@ class TestAutomationSeam(FrappeTestCase):
 		for key in sorted(unconditional):
 			auto = _BY_KEY[key]
 			self.assertEqual(
-				auto.kind, "Switch", f"{key} is expected to be a switch"
+				auto.control, "Toggle", f"{key} is expected to be a toggle"
 			)
 			# The key is named somewhere in the enable file — either the active
 			# UPDATE (dev live state) or the PROD-operator note (e.g. template_sync,
@@ -181,14 +181,14 @@ class TestAutomationSeam(FrappeTestCase):
 				f"enable SQL ({os.path.basename(_ENABLE_SQL)})",
 			)
 
-		# And no guard/infra row leaked into the enable SQL (they must never be
+		# And no always-on row leaked into the enable SQL (they must never be
 		# toggled from there).
 		for auto in AUTOMATIONS:
-			if auto.kind in ("Guard", "Infra"):
+			if auto.control == "Always-on":
 				self.assertNotIn(
 					f"'{auto.key}'",
 					sql_text,
-					f"guard/infra '{auto.key}' must not appear in the enable SQL",
+					f"always-on '{auto.key}' must not appear in the enable SQL",
 				)
 
 

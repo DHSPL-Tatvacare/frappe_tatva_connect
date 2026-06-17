@@ -32,7 +32,7 @@ _SAS_CACHE_SKEW = 30  # refresh the cached link this many seconds before it expi
 
 def is_enabled() -> bool:
 	"""Master switch — read fresh so a flip takes effect across workers at once."""
-	return automation.is_enabled("azure")
+	return automation.is_enabled("Storage::Azure::offload")
 
 
 def is_local_url(file_url: str | None) -> bool:

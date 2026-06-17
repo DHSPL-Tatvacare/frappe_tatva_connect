@@ -16,7 +16,7 @@ FOLLOWUP_DUE_HOURS = 4
 def on_inbound_message(doc, method=None):
 	# Master switch — OFF by default (esp. in prod so it never fires on a historical
 	# backfill). Flip the `followup` automation ON to enable.
-	if not automation.is_enabled("followup"):
+	if not automation.is_enabled("Task::Assignment::followup"):
 		return
 	if (doc.type or "") != "Incoming":
 		return

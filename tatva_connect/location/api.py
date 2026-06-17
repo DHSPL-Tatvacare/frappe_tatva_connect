@@ -61,7 +61,7 @@ def is_location_tracked(lead):
 	"""Allowed radius (metres) if this lead's grain is location-tracked, else None. Grain-scoped
 	via the shared brain (blank axis = wildcard). Dormant: kill-switch off or no grains -> None."""
 	s = _settings()
-	if not automation.is_enabled("location"):
+	if not automation.is_enabled("Location::Google::capture"):
 		return None
 	grains = [
 		{"vertical": r.vertical, "group": r.group, "program": r.program, "radius_m": r.radius_m}
@@ -604,7 +604,7 @@ def map_config():
 	dialog maps all obey the same operator switches (CRM Maps Settings → Map Display). Blank field =
 	code default (thumbnails OSM, dialogs Google). Geocoding + Desk history stay Google regardless."""
 	s = _settings()
-	google_ok = bool(automation.is_enabled("location") and _api_key())
+	google_ok = bool(automation.is_enabled("Location::Google::capture") and _api_key())
 	return {
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
 		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),

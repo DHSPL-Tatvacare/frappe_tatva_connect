@@ -74,7 +74,7 @@ def stage_crm_file(reference_doctype, reference_name, source_file):
 def purge_draft_attachments():
 	"""Daily: drop staged draft files left after a send or an abandoned compose. Folder-scoped
 	and the on_trash ref-count keeps any shared blob alive for the sent copy / original."""
-	if not automation.is_enabled("draft_cleanup"):
+	if not automation.is_enabled("Storage::File::draft-cleanup"):
 		return
 	cutoff = add_to_date(now_datetime(), hours=-DRAFT_TTL_HOURS)
 	stale = frappe.get_all(

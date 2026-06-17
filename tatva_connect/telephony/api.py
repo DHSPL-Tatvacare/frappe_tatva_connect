@@ -37,7 +37,7 @@ def is_enabled() -> bool:
 	immediately across all worker processes. Per-account `enabled` flags are
 	checked by the routing/handler layer, not here.
 	"""
-	return automation.is_enabled("acefone")
+	return automation.is_enabled("Telephony::Acefone::calls")
 
 
 def assert_enabled():

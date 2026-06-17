@@ -41,7 +41,7 @@ def apply_transitions(doc, method=None):
 	"""CRM Task on_update: when a logged activity FIRST becomes Done, run its type's transitions.
 	Fires once (idempotent) — skips unless this save is the Done flip. Each rule is isolated in a
 	try/except so one bad config row never breaks the save."""
-	if not automation.is_enabled("activity_transitions"):
+	if not automation.is_enabled("Task::CRM Task::transitions"):
 		return
 	from tatva_connect.activity.api import _type_has_schema
 
