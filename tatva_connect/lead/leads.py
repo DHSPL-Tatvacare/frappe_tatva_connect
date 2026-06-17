@@ -124,6 +124,27 @@ def validate_stage(doc, method=None):
 		doc.custom_main_stage = stage.stage
 
 
+@frappe.whitelist()
+def lead_stages(lead):
+	"""Stages available to this lead's grain — the header-pill + picker source.
+	Mirror of activity.api.list_types_for_lead: ONE indexed query, selectable
+	leaves only, ordered by position. A blank `program` on a stage = wildcard
+	(forward-compat; today every stage is program-scoped). Server-scoped: the
+	program comes from the lead, never the client (invariant 9)."""
+	program = frappe.db.get_value("CRM Lead", lead, "custom_current_program") or ""
+	return frappe.db.sql(
+		"""
+		SELECT name, stage, substage_of, display_label, color, position
+		FROM `tabCRM Lead Stage`
+		WHERE selectable = 1
+		  AND (program = '' OR program IS NULL OR program = %(p)s)
+		ORDER BY position ASC, stage ASC
+		""",
+		{"p": program},
+		as_dict=True,
+	)
+
+
 def _latest_lab_row(doc):
 	"""The most recent CRM Lab Profile child row, or None. 'Latest' = newest
 	report_date; rows with no date sort last, ties broken by grid order (idx)."""

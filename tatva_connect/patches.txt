@@ -17,6 +17,10 @@ tatva_connect.patches.recreate_whatsapp_message_id_index_composite
 # Activity/location rebuild: drop the superseded CRM Lead "Location Captures" section + HTML field
 # (collapsed into the unified "Activity & Location" view). Idempotent; also runs on after_migrate.
 tatva_connect.patches.retire_location_captures_fields
+# Lead stage native: drop the redundant lifecycle fields (custom_program_lifecycle_stage,
+# custom_lsq_lead_stage_legacy) superseded by the grain-scoped custom_stage. Idempotent;
+# also runs on after_migrate.
+tatva_connect.patches.retire_lead_stage_legacy_fields
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/

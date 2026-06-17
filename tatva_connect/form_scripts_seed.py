@@ -12,7 +12,9 @@ SCRIPTS = [
 	("WATI WhatsApp Gate (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_gate.js"),
 	("WATI WhatsApp Window (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_window.js"),
 	("WATI Failed Reason (CRM Lead)", "CRM Lead", "Form", "whatsapp/form_scripts/whatsapp_failed_reason.js"),
-	("Hide Status Pill (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/hide_status_pill.js"),
+	# "Hide Status Pill (CRM Lead)" (hide_status_pill.js) RETIRED — lead lifecycle is now the native
+	# grain-scoped stage pill (custom_stage) in the CRM fork; nothing to hide. Archived to
+	# archive/lead-stage-retired-hide-status-pill/. Disabled idempotently via RETIRED below.
 	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/data_tab_gate.js"),
 	("Email Attach (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/email_attach.js"),
 	("Delete Modal Fit (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/delete_modal_fit.js"),
@@ -30,6 +32,7 @@ SCRIPTS = [
 # (its old flow) can never keep running after the .js is removed. The logic now lives in the CRM fork.
 RETIRED = [
 	"Log Activity (CRM Lead)",  # Phase 2: ad-hoc punch -> native TatvaTaskModal create flow (fork)
+	"Hide Status Pill (CRM Lead)",  # lead stage native: grain-scoped stage pill (custom_stage) in the fork
 ]
 
 
