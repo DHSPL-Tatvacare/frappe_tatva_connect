@@ -100,7 +100,7 @@ def validate_stage(doc, method=None):
 	on the lead's program, and derive the read-only custom_main_stage for grouping.
 	Empty = lifecycle not set yet. Soft, clear errors — no silent corrections.
 	"""
-	if not automation.is_enabled("Lead::CRM Lead::dedup"):
+	if not automation.is_enabled("Lead::CRM Lead::stage"):
 		return
 	if not doc.custom_stage:
 		doc.custom_main_stage = None

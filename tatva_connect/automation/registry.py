@@ -91,12 +91,20 @@ AUTOMATIONS = [
 		key="Lead::CRM Lead::dedup",
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · before_validate + validate",
+		# Phone + routing canonicalisation ride WITH dedup, not as separate switches:
+		# the dedup anchor compares on the canonical form, so dedup silently misses
+		# duplicates without them — one mechanism, one toggle.
 		backs=[
 			"tatva_connect.lead.leads.canonicalize_routing_fields",
 			"tatva_connect.lead.leads.normalize_lead_phones",
 			"tatva_connect.lead.leads.dedup_guard",
-			"tatva_connect.lead.leads.validate_stage",
 		],
+	),
+	Auto(
+		key="Lead::CRM Lead::stage",
+		fires_on="Doc Event",
+		trigger_detail="CRM Lead · validate",
+		backs=["tatva_connect.lead.leads.validate_stage"],
 	),
 	Auto(
 		key="Task::CRM Task::guards",
