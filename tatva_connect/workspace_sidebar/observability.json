@@ -1,6 +1,6 @@
 {
  "app": "tatva_connect",
- "creation": "2026-06-18 21:00:00.000000",
+ "creation": "2026-06-18 23:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "header_icon": "gauge",
@@ -10,20 +10,9 @@
    "child": 0,
    "collapsible": 1,
    "icon": "layout-dashboard",
-   "indent": 1,
-   "keep_closed": 0,
-   "label": "Dashboard",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Section Break"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "gauge",
    "indent": 0,
    "keep_closed": 0,
-   "label": "API Dashboard",
+   "label": "Overview",
    "link_to": "Observability",
    "link_type": "Workspace",
    "show_arrow": 0,
@@ -100,7 +89,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-18 21:00:00.000000",
+ "modified": "2026-06-18 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",
