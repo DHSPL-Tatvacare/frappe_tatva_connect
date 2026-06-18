@@ -60,17 +60,22 @@ def matching_rules(vertical, group, program, task_type):
 	return rows
 
 
-def criteria_match(criteria, context):
+def criteria_match(criteria, context, field_types=None):
 	"""True if EVERY criterion matches the context (spec §4). A rule with no criteria matches on
-	grain + trigger alone. One bad criterion never raises — an unparseable compare is a non-match."""
+	grain + trigger alone. `field_types` maps fieldname -> schema type so comparisons evaluate
+	type-aware (the same types the builder offers operators for — one brain). One bad criterion never
+	raises — an unparseable compare is a non-match."""
+	field_types = field_types or {}
 	for c in criteria:
-		if not _one_match(c, context):
+		if not _one_match(c, context, field_types.get(c.field)):
 			return False
 	return True
 
 
-def _one_match(c, context):
-	"""Evaluate a single criterion against the context, using native filter-operator semantics."""
+def _one_match(c, context, ftype=None):
+	"""Evaluate a single criterion against the context, type-aware (frappe casts both sides by the
+	field's type: Datetime->get_datetime, Check->cint, numeric->flt) so a raw datetime/int from the
+	activity form matches the typed criterion instead of silently failing."""
 	left = context.get(c.field)
 	op = c.operator
 	if op == "is set":
@@ -83,9 +88,9 @@ def _one_match(c, context):
 			return compare(str(left or ""), op, items)
 		if op == "between":
 			lo, hi = (str(c.value or "").split(",") + ["", ""])[:2]
-			return _between(left, lo.strip(), hi.strip())
+			return _between(left, lo.strip(), hi.strip(), ftype)
 		if op in _NATIVE_OPS:
-			return compare(left, op, c.value)
+			return compare(left, op, c.value, ftype)
 	except Exception as e:
 		# A comparison BUG must not masquerade as a clean non-match (which would silently kill the
 		# rule with no trace). Log it (countable), then treat as non-match.
@@ -97,10 +102,18 @@ def _one_match(c, context):
 	return False
 
 
-def _between(left, lo, hi):
-	"""Inclusive numeric/string range — mirrors the list-view 'between' filter."""
+def _between(left, lo, hi, ftype=None):
+	"""Inclusive range. Dates/datetimes are cast via get_datetime (a date literal vs a stored datetime
+	would otherwise float()-fail then compare lexically); numbers via float; else string."""
 	if left in (None, ""):
 		return False
+	if ftype in ("Datetime", "Date"):
+		from frappe.utils import get_datetime
+
+		try:
+			return get_datetime(lo) <= get_datetime(left) <= get_datetime(hi)
+		except Exception:
+			return False
 	try:
 		return float(lo) <= float(left) <= float(hi)
 	except (ValueError, TypeError):

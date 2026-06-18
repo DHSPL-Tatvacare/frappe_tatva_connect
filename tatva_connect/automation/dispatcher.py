@@ -75,12 +75,21 @@ def _dispatch(doc):
 	if not matched:
 		return
 	context = build_context(doc)
+	field_types = _field_types(doc.custom_task_type)
 	grain = _grain_tag(*axes)
 	for r in matched:
 		try:
-			_run_rule(r, lead, context, doc, axes, grain)
+			_run_rule(r, lead, context, doc, axes, grain, field_types)
 		except Exception as e:
 			_log_error(r.name, "(rule)", grain, e)
+
+
+def _field_types(task_type):
+	"""{fieldname: schema type} for the trigger task type — so criteria evaluate type-aware. Reuses
+	the same describe resolver the builder + validator use (one brain, no parallel schema read)."""
+	from tatva_connect.automation.describe import fields_for_task_type
+
+	return {f["key"]: f["type"] for f in fields_for_task_type(task_type)}
 
 
 def build_context(doc):
@@ -88,11 +97,11 @@ def build_context(doc):
 	return reconstruct_values(doc)
 
 
-def _run_rule(r, lead, context, trigger_doc, axes, grain):
+def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 	"""Evaluate one rule's criteria; if all match, run its actions in a guarded executor and log."""
 	started = time.monotonic()
 	rule = frappe.get_doc("CRM Automation Rule", r.name)
-	if not rules.criteria_match(rule.criteria, context):
+	if not rules.criteria_match(rule.criteria, context, field_types):
 		return  # not a fire — no log (only fires are audited)
 
 	success = 0

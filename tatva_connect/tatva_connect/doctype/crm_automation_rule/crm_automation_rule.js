@@ -87,12 +87,14 @@ function apply_criterion_row(frm, cdt, cdn) {
 	if (c.operator && !d.operators.includes(c.operator)) {
 		frappe.model.set_value(cdt, cdn, "operator", "");
 	}
+	// escape_html: options come from CRM Task Type Field.options (free text) and land in
+	// set_description, which renders raw HTML — escape to stop stored XSS at the rule author.
 	if (Array.isArray(d.options)) {
-		val_df.description = __("one of: {0}", [d.options.join(", ")]);
+		val_df.description = __("one of: {0}", [d.options.map(frappe.utils.escape_html).join(", ")]);
 	} else if (d.type === "Datetime") {
 		val_df.description = __("a date / time value");
 	} else if (d.type === "Link") {
-		val_df.description = __("a {0} record", [d.options || "linked"]);
+		val_df.description = __("a {0} record", [frappe.utils.escape_html(d.options || "linked")]);
 	} else {
 		val_df.description = "";
 	}
