@@ -44,7 +44,7 @@ class TestNearMe(FrappeTestCase):
 
 	def _make_lead(self, lat, lng, vertical=None):
 		ld = frappe.get_doc({
-			"doctype": "CRM Lead", "lead_name": "Dr Test", "status": "New",
+			"doctype": "CRM Lead", "first_name": "Dr", "lead_name": "Dr Test", "status": "New",
 			"custom_clinic_latitude": lat, "custom_clinic_longitude": lng,
 			"custom_clinic_address": "Test clinic",
 		})
