@@ -85,12 +85,9 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
-		# After a logged activity becomes Done, run its config-driven journey (next task + stage).
-		# on_update (not validate): the doc is committed before we raise follow-ups / move the stage.
+		# Automation engine: on the first Done flip of a lead-linked task, enqueue (after commit) every
+		# enabled rule whose grain + task type match the lead (gated, fail-closed, non-re-entrant).
 		"on_update": [
-			"tatva_connect.activity.automation.apply_transitions",
-			# Automation engine: on the first Done flip of a lead-linked task, run every
-			# enabled rule whose grain matches the lead (gated, fail-closed, non-re-entrant).
 			"tatva_connect.automation.dispatcher.fire_rules",
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
@@ -174,10 +171,15 @@ after_migrate = [
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
-	# Config control plane — the Desk workspace + its grouped sidebar ship as code, filtered to
-	# OUR records so a future export never vacuums other apps' workspaces/sidebars.
+	# Desk spaces ship as code — ONE seam for every app-intrinsic space (Tatva Connect,
+	# Observability, ...): its Workspace + Workspace Sidebar + launcher Desktop Icon all ship
+	# as name-filtered fixtures that auto-apply on migrate. Name-filtered so a future export
+	# never vacuums other apps' workspaces/sidebars/icons. A new space just adds its name here.
 	{"dt": "Workspace", "filters": [["name", "in", ["Tatva Connect", "Observability"]]]},
-	{"dt": "Workspace Sidebar", "filters": [["name", "=", "Tatva Connect"]]},
+	{"dt": "Workspace Sidebar", "filters": [["name", "in", ["Tatva Connect", "Observability"]]]},
+	# Launcher tile. The APP's own /desk tile is auto-created from the add_to_apps_screen hook
+	# (app-level, once); a SUB-space like Observability isn't an app, so it ships its tile here.
+	{"dt": "Desktop Icon", "filters": [["name", "in", ["Observability"]]]},
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no
 	# module-folder auto-sync), so they ship as name-scoped fixtures. The Dashboard Chart
 	# SOURCE that powers the custom charts is module-standard (observability/dashboard_chart_source/)

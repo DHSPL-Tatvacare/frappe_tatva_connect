@@ -445,5 +445,68 @@
     "link_to": "Webhook"
    }
   ]
+ },
+ {
+  "doctype": "Workspace Sidebar",
+  "name": "Observability",
+  "title": "Observability",
+  "app": "tatva_connect",
+  "module": "Observability",
+  "standard": 1,
+  "header_icon": "dashboard",
+  "items": [
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "API Dashboard",
+    "link_type": "Workspace",
+    "link_to": "Observability",
+    "icon": "dashboard",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "API Metrics",
+    "link_type": "DocType",
+    "link_to": "CRM API Metric",
+    "icon": "list",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "API Request Log",
+    "link_type": "DocType",
+    "link_to": "CRM API Request Log",
+    "icon": "file",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Metric Settings",
+    "link_type": "DocType",
+    "link_to": "CRM API Metric Settings",
+    "icon": "setting-gear",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 0
+   }
+  ]
  }
 ]

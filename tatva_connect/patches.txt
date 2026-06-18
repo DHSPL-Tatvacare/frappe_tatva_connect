@@ -40,6 +40,15 @@ tatva_connect.patches.migrate_automation_to_composite_keys
 # granularity+endpoint+bucket_start) — can't be declared in doctype JSON. Idempotent;
 # also runs on after_migrate via schema_setup.
 tatva_connect.patches.add_observability_indexes
+# Fold the legacy task-transition engine into the unified automation engine: the
+# `CRM Task Type Transition` child doctype + the `transitions` field on CRM Task Type +
+# activity.automation.apply_transitions are removed (doctype archived to archive/doctype/).
+# Existing transition rows are migrated to CRM Automation Rule by the operator-run db-seeds SQL
+# (db-seeds/2026-06-18-*-migrate-transitions-to-automation-rules.sql) BEFORE this deploy. This
+# patch only carries the legacy master switch (Task::CRM Task::transitions) onto the unified one
+# (Task::Automation::rules) so on stays on / off stays off; the orphaned legacy registry row is
+# then pruned by seed.sync_catalog on after_migrate.
+tatva_connect.patches.fold_transitions_switch
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/

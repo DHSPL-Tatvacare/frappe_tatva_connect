@@ -90,18 +90,6 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Task::CRM Task::transitions",
-		fires_on="Doc Event",
-		trigger_detail="CRM Task · on_update",
-		purpose=(
-			"When an activity task is marked Done, automatically creates the configured next task "
-			"and moves the lead to its next stage — no manual hand-off.\n"
-			"Example: completing a 'First Call' task auto-creates the 'Schedule Demo' task and "
-			"advances the lead to 'Contacted'."
-		),
-		backs=["tatva_connect.activity.automation.apply_transitions"],
-	),
-	Auto(
 		key="Task::Assignment::followup",
 		fires_on="Doc Event",
 		trigger_detail="ToDo · after_insert · WhatsApp Message · after_insert",

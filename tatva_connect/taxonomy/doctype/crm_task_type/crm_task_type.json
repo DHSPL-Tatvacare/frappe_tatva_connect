@@ -16,8 +16,7 @@
   "schema_section",
   "schema",
   "scope_section",
-  "scope",
-  "transitions"
+  "scope"
  ],
  "fields": [
   {
@@ -81,13 +80,6 @@
    "fieldtype": "Table",
    "label": "Scope",
    "options": "CRM Task Type Scope"
-  },
-  {
-   "description": "Journey rules: on outcome, create the next task and/or set the lead stage.",
-   "fieldname": "transitions",
-   "fieldtype": "Table",
-   "label": "Transitions",
-   "options": "CRM Task Type Transition"
   }
  ],
  "grid_page_length": 50,
