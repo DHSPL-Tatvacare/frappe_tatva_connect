@@ -8,13 +8,13 @@
  "engine": "InnoDB",
  "field_order": [
   "automation_key",
+  "description",
   "area",
   "fires_on",
   "trigger_detail",
   "enabled",
   "requires",
-  "scheduled_job",
-  "description"
+  "scheduled_job"
  ],
  "fields": [
   {

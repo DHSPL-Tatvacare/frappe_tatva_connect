@@ -19,6 +19,7 @@ def _structural_values(auto):
 		"area": auto.key.split("::")[0],
 		"fires_on": auto.fires_on,
 		"trigger_detail": auto.trigger_detail,
+		"description": auto.purpose,
 		"requires": auto.requires,
 		"scheduled_job": _scheduled_job(auto),
 	}
