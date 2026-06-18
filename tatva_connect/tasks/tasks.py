@@ -141,11 +141,14 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	`due_at` if given, else `due_in_hours` from now). Also the method the WhatsApp
 	inbound event calls.
 
-	Best-effort throttle: the check-then-insert isn't locked, so two near-simultaneous
-	inbound messages for the same lead could rarely create two tasks. Acceptable — a
-	duplicate follow-up is merely noisy, never wrong."""
+	Race-free throttle: a row lock on the lead serializes concurrent creates, so simultaneous
+	fires (automation engine / assignment / inbound) for the same lead can't slip two tasks past
+	the check-then-insert."""
 	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
+
+	# Lock the lead row so the check-then-insert below is serialized per lead (no duplicate task).
+	frappe.db.get_value("CRM Lead", lead, "name", for_update=True)
 
 	existing = frappe.db.get_value(
 		"CRM Task",

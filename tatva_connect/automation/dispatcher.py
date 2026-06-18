@@ -97,16 +97,33 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain):
 
 	success = 0
 	errors = []
-	for action in rule.actions:
+	details = []
+	for i, action in enumerate(rule.actions, 1):
+		label = _action_label(action)
 		try:
 			_run_action(action, lead, context, axes)
 			success += 1
+			details.append("{0}. {1}: ok".format(i, label))
 		except Exception as e:
 			errors.append("{0}: {1}".format(action.action_type, e))
+			details.append("{0}. {1}: FAILED — {2}".format(i, label, e))
 			_log_error(rule.name, action.action_type, grain, e)
 
 	duration_ms = int((time.monotonic() - started) * 1000)
-	_write_run_log(rule, lead, trigger_doc, grain, success, len(errors), "; ".join(errors), duration_ms)
+	_write_run_log(rule, lead, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
+
+
+def _action_label(a):
+	"""Short human label of an action for the per-action audit trail in the run log."""
+	if a.action_type == "Create Task":
+		return "Create Task {0}".format(a.task_type or "?")
+	if a.action_type == "Set Field":
+		return "Set Field {0}".format(a.fieldname or "?")
+	if a.action_type in ("Append Child Row", "Upsert Child Row"):
+		return "{0} {1}".format(a.action_type, a.child_table or "?")
+	if a.action_type == "Call Webhook":
+		return "Call Webhook {0}".format(a.webhook_endpoint or "?")
+	return a.action_type or "?"
 
 
 # -- actions -----------------------------------------------------------------
@@ -320,9 +337,10 @@ def _grain_tag(vertical, group, program):
 	return "{0}::{1}::{2}".format(vertical or "", group or "", program or "")
 
 
-def _write_run_log(rule, lead, trigger_doc, grain, success, failed, error, duration_ms):
+def _write_run_log(rule, lead, trigger_doc, grain, success, failed, error, details, duration_ms):
 	"""ONE Run Log row per fire (spec §8). Its own try/except — a log-write failure never breaks
-	the run. `error` carries every failed action's message (not just the last)."""
+	the run. `error` carries every failed action's message; `details` the per-action ok/FAILED trail
+	(so a partial fire shows exactly which write landed)."""
 	outcome = "Success" if not failed else ("Partial" if success else "Failed")
 	try:
 		frappe.get_doc(
@@ -339,6 +357,7 @@ def _write_run_log(rule, lead, trigger_doc, grain, success, failed, error, durat
 				"actions_failed": failed,
 				"outcome": outcome,
 				"error": error or "",
+				"details": details or "",
 				"duration_ms": duration_ms,
 			}
 		).insert(ignore_permissions=True)

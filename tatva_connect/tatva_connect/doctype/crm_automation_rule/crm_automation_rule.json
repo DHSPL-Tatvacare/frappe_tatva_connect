@@ -80,20 +80,23 @@
   {
    "description": "Grain axis. At least one of vertical / group / program must be set — a rule with no grain is rejected (no global rule). Blank axis = wildcard.",
    "fieldname": "vertical",
-   "fieldtype": "Data",
-   "label": "Vertical"
+   "fieldtype": "Link",
+   "label": "Vertical",
+   "options": "CRM Vertical"
   },
   {
    "description": "Grain axis. Blank = wildcard for this axis.",
    "fieldname": "group",
-   "fieldtype": "Data",
-   "label": "Group"
+   "fieldtype": "Link",
+   "label": "Group",
+   "options": "CRM Group"
   },
   {
    "description": "Grain axis. Blank = wildcard for this axis.",
    "fieldname": "program",
-   "fieldtype": "Data",
-   "label": "Program"
+   "fieldtype": "Link",
+   "label": "Program",
+   "options": "CRM Program"
   },
   {
    "description": "Structured conditions on the completed task's activity context — ALL must match. No rows = the rule matches on grain + trigger alone.",

@@ -443,65 +443,6 @@
     "child": 1,
     "indent": 0,
     "link_to": "Webhook"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Observability",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "API Dashboard",
-    "link_type": "Workspace",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "Observability"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "API Metrics",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM API Metric"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "API Request Log",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM API Request Log"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Metric Settings",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM API Metric Settings"
    }
   ]
  }

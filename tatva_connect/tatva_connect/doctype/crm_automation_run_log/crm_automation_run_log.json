@@ -19,6 +19,7 @@
   "actions_failed",
   "outcome",
   "error",
+  "details",
   "duration_ms"
  ],
  "fields": [
@@ -33,6 +34,7 @@
   {"fieldname": "actions_failed", "fieldtype": "Int", "label": "Actions Failed", "read_only": 1},
   {"fieldname": "outcome", "fieldtype": "Select", "label": "Outcome", "options": "Success\nPartial\nFailed", "in_list_view": 1, "read_only": 1},
   {"fieldname": "error", "fieldtype": "Small Text", "label": "Error", "read_only": 1},
+  {"fieldname": "details", "fieldtype": "Small Text", "label": "Action Details", "read_only": 1},
   {"fieldname": "duration_ms", "fieldtype": "Int", "label": "Duration (ms)", "in_list_view": 1, "read_only": 1}
  ],
  "index_web_pages_for_search": 0,

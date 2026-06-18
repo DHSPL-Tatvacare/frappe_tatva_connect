@@ -26,9 +26,9 @@
   {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "description": "For a child-row target: mark the field that is this child's natural upsert key. Phase-2 child writes."},
   {"fieldname": "label", "fieldtype": "Data", "label": "Label", "in_list_view": 1},
   {"fieldname": "section_key", "fieldtype": "Data", "label": "Section", "description": "Routing section, e.g. lead / plan / lab. Parent (lead) vs child sections."},
-  {"fieldname": "vertical", "fieldtype": "Data", "label": "Vertical", "description": "Grain axis. Blank = wildcard for this axis."},
-  {"fieldname": "group", "fieldtype": "Data", "label": "Group", "description": "Grain axis. Blank = wildcard for this axis."},
-  {"fieldname": "program", "fieldtype": "Data", "label": "Program", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "vertical", "fieldtype": "Link", "options": "CRM Vertical", "label": "Vertical", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "group", "fieldtype": "Link", "options": "CRM Group", "label": "Group", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "program", "fieldtype": "Link", "options": "CRM Program", "label": "Program", "description": "Grain axis. Blank = wildcard for this axis."},
   {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "in_list_view": 1, "description": "Fail-closed: a field is writable only while this is ticked."}
  ],
  "index_web_pages_for_search": 1,
