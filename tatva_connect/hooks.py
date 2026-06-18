@@ -89,6 +89,9 @@ doc_events = {
 		# on_update (not validate): the doc is committed before we raise follow-ups / move the stage.
 		"on_update": [
 			"tatva_connect.activity.automation.apply_transitions",
+			# Automation engine: on the first Done flip of a lead-linked task, run every
+			# enabled rule whose grain matches the lead (gated, fail-closed, non-re-entrant).
+			"tatva_connect.automation.dispatcher.fire_rules",
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
 		"after_insert": [
@@ -141,6 +144,8 @@ scheduler_events = {
 		],
 		# Daily: sweep abandoned email-draft staging files.
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
+		# Daily: prune automation Run Log rows past the retention window.
+		"0 3 * * *": ["tatva_connect.automation.dispatcher.sweep_run_log"],
 	},
 }
 

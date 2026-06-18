@@ -11,6 +11,9 @@ tatva_connect.patches.rename_push_module_to_notifications
 # Same story for the Observability module (CRM API Request Log / Metric / Metric Settings):
 # register its Module Def before its doctypes sync on an existing site. Idempotent.
 tatva_connect.patches.register_observability_module
+# Same story for the Automation module (CRM Automation engine doctypes): register its
+# Module Def before its doctypes sync on an existing site. Idempotent.
+tatva_connect.patches.register_automation_module
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

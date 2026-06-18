@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:{target_doctype}::{fieldname}::{vertical}::{group}::{program}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "Fail-closed WRITE allowlist for the Automation engine: the only (doctype, field) targets a rule's SET_FIELD / child-row action may write, scoped by grain. Ships EMPTY — a field not listed here cannot be set, period. Grain axes left blank act as a wildcard for that axis. System Manager curates this surface; ops author rules within it.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "target_doctype",
+  "fieldname",
+  "child_table_field",
+  "is_row_key",
+  "label",
+  "section_key",
+  "vertical",
+  "group",
+  "program",
+  "enabled"
+ ],
+ "fields": [
+  {"fieldname": "target_doctype", "fieldtype": "Data", "label": "Target DocType", "reqd": 1, "in_list_view": 1, "description": "DocType the field lives on, e.g. CRM Lead, CRM Lab Profile."},
+  {"fieldname": "fieldname", "fieldtype": "Data", "label": "Fieldname", "reqd": 1, "in_list_view": 1, "description": "The fieldname on the target doctype."},
+  {"fieldname": "child_table_field", "fieldtype": "Data", "label": "Child Table Field", "description": "For child-row writes only: the CRM Lead child-table fieldname this row writes into, e.g. custom_lab_profile. Blank for the parent (lead). Phase-2 child writes."},
+  {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "description": "For a child-row target: mark the field that is this child's natural upsert key. Phase-2 child writes."},
+  {"fieldname": "label", "fieldtype": "Data", "label": "Label", "in_list_view": 1},
+  {"fieldname": "section_key", "fieldtype": "Data", "label": "Section", "description": "Routing section, e.g. lead / plan / lab. Parent (lead) vs child sections."},
+  {"fieldname": "vertical", "fieldtype": "Data", "label": "Vertical", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "group", "fieldtype": "Data", "label": "Group", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "program", "fieldtype": "Data", "label": "Program", "description": "Grain axis. Blank = wildcard for this axis."},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "in_list_view": 1, "description": "Fail-closed: a field is writable only while this is ticked."}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Automation",
+ "name": "CRM Automatable Field",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

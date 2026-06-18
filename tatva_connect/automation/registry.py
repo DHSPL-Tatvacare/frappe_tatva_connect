@@ -203,6 +203,30 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Task::Automation::rules",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · on_update",
+		purpose=(
+			"The automation engine: when an activity task is marked Done, runs every enabled "
+			"rule whose grain matches the lead — checking its criteria, then firing its actions "
+			"(create a task, set a field) in order.\n"
+			"Example: an operator builds a rule for the Diabetes program so that completing a "
+			"'First Consult' task whose outcome is 'Enrolled' creates a 'Welcome Call' task."
+		),
+		backs=["tatva_connect.automation.dispatcher.fire_rules"],
+	),
+	Auto(
+		key="Task::Automation::run-log-sweep",
+		fires_on="Schedule",
+		trigger_detail="daily 03:00",
+		purpose=(
+			"Each night, prunes automation Run Log rows past the retention window so the audit "
+			"trail stays useful without growing without bound.\n"
+			"Example: run-log entries older than the retention period are removed at 03:00."
+		),
+		backs=["tatva_connect.automation.dispatcher.sweep_run_log"],
+	),
+	Auto(
 		key="Storage::File::privacy",
 		fires_on="Doc Event",
 		trigger_detail="File · validate",

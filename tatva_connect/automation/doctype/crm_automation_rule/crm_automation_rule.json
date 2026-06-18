@@ -1,0 +1,166 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:rule_name",
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "A declarative, grain-scoped automation rule: Trigger → When (criteria, all match) → Then (actions, in order). Ships dormant (enabled off) and is rejected at save if it has no grain or targets a field outside the Automatable-Field allowlist.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_name",
+  "enabled",
+  "priority",
+  "trigger_section",
+  "trigger_type",
+  "task_type",
+  "when_section",
+  "vertical",
+  "group",
+  "program",
+  "criteria",
+  "then_section",
+  "actions",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "rule_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Rule Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "description": "Dormant by default: nothing fires until an operator ticks this on (and the master kill switch is on).",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Among matching rules, lower priority fires first; ties break by creation order.",
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Priority"
+  },
+  {
+   "fieldname": "trigger_section",
+   "fieldtype": "Section Break",
+   "label": "Trigger"
+  },
+  {
+   "default": "Task Completed",
+   "description": "The event that fires this rule. v1: a CRM Task marked Done.",
+   "fieldname": "trigger_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Trigger Type",
+   "options": "Task Completed",
+   "reqd": 1
+  },
+  {
+   "description": "The activity type whose completion fires this rule. Must exist as a CRM Task Type.",
+   "fieldname": "task_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Task Type",
+   "options": "CRM Task Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "when_section",
+   "fieldtype": "Section Break",
+   "label": "When (Grain + Criteria)"
+  },
+  {
+   "description": "Grain axis. At least one of vertical / group / program must be set — a rule with no grain is rejected (no global rule). Blank axis = wildcard.",
+   "fieldname": "vertical",
+   "fieldtype": "Data",
+   "label": "Vertical"
+  },
+  {
+   "description": "Grain axis. Blank = wildcard for this axis.",
+   "fieldname": "group",
+   "fieldtype": "Data",
+   "label": "Group"
+  },
+  {
+   "description": "Grain axis. Blank = wildcard for this axis.",
+   "fieldname": "program",
+   "fieldtype": "Data",
+   "label": "Program"
+  },
+  {
+   "description": "Structured conditions on the completed task's activity context — ALL must match. No rows = the rule matches on grain + trigger alone.",
+   "fieldname": "criteria",
+   "fieldtype": "Table",
+   "label": "Criteria",
+   "options": "CRM Automation Criterion"
+  },
+  {
+   "fieldname": "then_section",
+   "fieldtype": "Section Break",
+   "label": "Then (Actions)"
+  },
+  {
+   "description": "Actions to run in order when the trigger fires and all criteria match.",
+   "fieldname": "actions",
+   "fieldtype": "Table",
+   "label": "Actions",
+   "options": "CRM Automation Action"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Automation",
+ "name": "CRM Automation Rule",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
