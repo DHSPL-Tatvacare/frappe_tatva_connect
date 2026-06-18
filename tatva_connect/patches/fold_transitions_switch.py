@@ -13,7 +13,11 @@ UNIFIED = "Task::Automation::rules"
 
 
 def execute():
-	if not (frappe.db.exists("CRM Tatva Automation", LEGACY) and frappe.db.exists("CRM Tatva Automation", UNIFIED)):
-		return
-	enabled = frappe.db.get_value("CRM Tatva Automation", LEGACY, "enabled")
-	frappe.db.set_value("CRM Tatva Automation", UNIFIED, "enabled", enabled)
+	# Carry the operator's switch choice onto the unified engine (on stays on / off stays off).
+	if frappe.db.exists("CRM Tatva Automation", LEGACY) and frappe.db.exists("CRM Tatva Automation", UNIFIED):
+		enabled = frappe.db.get_value("CRM Tatva Automation", LEGACY, "enabled")
+		frappe.db.set_value("CRM Tatva Automation", UNIFIED, "enabled", enabled)
+	# Drop the now-orphaned legacy child table. Frappe's orphan sweep deletes the DocType but leaves
+	# the physical table; its rows were migrated to CRM Automation Rule by the db-seeds SQL before
+	# this deploy. Idempotent; no-op on a fresh install.
+	frappe.db.sql("DROP TABLE IF EXISTS `tabCRM Task Type Transition`")
