@@ -2,8 +2,10 @@
 
   * Per-user prefs — a rep reads/writes ONLY their OWN opt-in row. The doctype stays
     System-Manager-only; these run as the session user and write with ignore_permissions
-    scoped to that user (a rep never touches another's prefs). The panel lists ONLY
-    globally-enabled grains (the operator's gate), so reps never see a dead toggle.
+    scoped to that user (a rep never touches another's prefs). The panel lists EVERY
+    catalog grain so reps see what exists; ones the operator hasn't globally enabled come
+    back `available: False` (the panel greys + disables them, and save rejects changes to
+    them — so a rep can never opt into a type the org switched off).
   * Device registration — register/unregister this browser's FCM token and fetch the
     public Web Push config the browser SDK needs (the FCM transport's enrolment).
 """
@@ -12,7 +14,6 @@ import json
 import frappe
 from frappe.utils import now_datetime
 
-from tatva_connect import automation
 from tatva_connect.notifications import catalog
 
 PREFERENCE = "CRM Notification Preference"
@@ -23,9 +24,9 @@ SUBSCRIPTION = "CRM Push Subscription"
 # ── Per-user prefs ────────────────────────────────────────────────────────────────────
 
 
-def _enabled_grains() -> list:
-	"""Catalog grains whose global automation gate is ON — the only ones a rep can see."""
-	return [g for g in catalog.all_grains() if automation.is_enabled(g.automation_key)]
+def _enabled_automation_keys() -> set:
+	"""Every globally-enabled automation key — one batched read (no per-grain query)."""
+	return set(frappe.get_all("CRM Tatva Automation", filters={"enabled": 1}, pluck="name"))
 
 
 def _stored_optins(user) -> dict:
@@ -44,42 +45,52 @@ def _stored_optins(user) -> dict:
 
 @frappe.whitelist()
 def get_my_notification_prefs():
-	"""The prefs panel: one entry per globally-enabled grain, merged with the rep's opt-ins.
-	`enabled` = the rep's stored choice, falling back to the grain's default_optin."""
+	"""One entry per catalog grain so reps see the full registry. `available` = the operator
+	has globally enabled it; `enabled` = the rep's stored opt-in (falling back to default)."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	stored = _stored_optins(user)
+	enabled_keys = _enabled_automation_keys()
 	return [
 		{
 			"grain_key": g.key,
 			"label": g.label,
 			"description": g.description,
+			"available": g.automation_key in enabled_keys,
 			"enabled": stored.get(g.key, g.default_optin),
 		}
-		for g in _enabled_grains()
+		for g in catalog.all_grains()
 	]
 
 
 @frappe.whitelist()
 def save_my_notification_prefs(prefs):
 	"""Persist the rep's opt-ins onto their OWN row. `prefs` = [{grain_key, enabled}, …].
-	Only globally-enabled, known grains are stored — anything else is ignored (fail-closed)."""
+	Changes apply ONLY to globally-enabled grains (a greyed type can't be flipped from the
+	panel, nor via a crafted payload); a disabled grain's existing opt-in is preserved so it
+	returns intact if the operator re-enables it."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	if isinstance(prefs, str):
 		prefs = json.loads(prefs)
 
-	allowed = {g.key for g in _enabled_grains()}
-	chosen = {p["grain_key"]: bool(p["enabled"]) for p in prefs if p.get("grain_key") in allowed}
+	available = {g.key for g in catalog.all_grains() if g.automation_key in _enabled_automation_keys()}
+	final = _stored_optins(user)  # start from what's stored (preserves disabled-grain opt-ins)
+	for p in prefs:
+		key = p.get("grain_key")
+		if key in available:  # only operator-enabled grains are the rep's to change
+			final[key] = bool(p.get("enabled"))
 
+	known = {g.key for g in catalog.all_grains()}
 	name = frappe.db.exists(PREFERENCE, {"user": user})
 	doc = frappe.get_doc(PREFERENCE, name) if name else frappe.new_doc(PREFERENCE)
 	doc.user = user
 	doc.set("subscriptions", [])
-	for grain_key, enabled in chosen.items():
-		doc.append("subscriptions", {"grain_key": grain_key, "channel": "live", "enabled": int(enabled)})
+	for grain_key, enabled in final.items():
+		if grain_key in known:  # drop rows for retired grains
+			doc.append("subscriptions", {"grain_key": grain_key, "channel": "live", "enabled": int(enabled)})
 	doc.save(ignore_permissions=True)
 	return {"ok": True}
 
