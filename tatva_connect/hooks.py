@@ -10,16 +10,17 @@ app_license = "mit"
 # is never lost between deploys.
 app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
 
-# Tatva Connect as an "app" in the desk switcher: its workspaces (Communications, Automations,
-# Partner API, Infrastructure, Field Operations, Observability) group under it because their
-# module belongs to tatva_connect. Opens on the Tatva Connect home (a hub linking to the six
-# spaces). Gated by has_permission to the roles that see the workspaces (System/Sales Manager).
+# Tatva Connect as an "app" in the desk switcher. Its six children (Communications, Automations,
+# Partner API, Infrastructure, Field Operations, Observability) appear in the "Workspaces" flyout
+# via child Desktop Icons (parent_icon="Tatva Connect", shipped as standard files in desktop_icon/);
+# each opens its own Workspace Sidebar — exactly like Frappe Framework's Build/Data/Email. Opens on
+# Communications. Gated by has_permission to the roles that see the workspaces (System/Sales Manager).
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",
 		"title": "Tatva Connect",
 		"logo": "/assets/tatva_connect/images/tatva-connect.png",
-		"route": "/app/tatva-connect",
+		"route": "/app/communications",
 		"has_permission": "tatva_connect.api.apps.check_app_permission",
 	}
 ]
