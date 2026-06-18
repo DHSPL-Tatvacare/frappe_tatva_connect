@@ -353,7 +353,9 @@ def _insert_outbound_row(event: dict, account, lead, wid, media=None, wid_media=
 	if frappe.db.exists("WhatsApp Message", name):
 		return
 
-	is_template = event.get("eventType") == "templateMessageSent_v2"
+	# The Sent event already carries the fully-rendered body in `text` (template variables
+	# substituted), so store it as a plain Manual bubble — we're mirroring a message, not
+	# re-sending a template, and "Template" without a `template` link renders blank.
 	status = STATUS_BY_EVENT.get(event.get("eventType")) or _status_from_string(event.get("statusString"))
 	doc = frappe.get_doc(
 		{
@@ -362,7 +364,7 @@ def _insert_outbound_row(event: dict, account, lead, wid, media=None, wid_media=
 			"to": event.get("waId"),
 			"message": event.get("text"),
 			"content_type": event.get("type") or "text",
-			"message_type": "Template" if is_template else "Manual",
+			"message_type": "Manual",
 			"message_id": event.get("localMessageId"),  # lets later DELIVERED/READ events tick this row
 			"custom_wati_id": wid,
 			"conversation_id": event.get("conversationId"),
