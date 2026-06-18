@@ -67,6 +67,7 @@
   },
   {
    "columns": 2,
+   "default": "Literal",
    "depends_on": "eval:doc.action_type==\"Set Field\"",
    "description": "Literal = use the Value as-is. From Context = read the named Context Field from the completed task's activity context.",
    "fieldname": "value_mode",

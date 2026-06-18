@@ -75,7 +75,13 @@ def _one_match(c, context):
 			return _between(left, lo.strip(), hi.strip())
 		if op in _NATIVE_OPS:
 			return compare(left, op, c.value)
-	except Exception:
+	except Exception as e:
+		# A comparison BUG must not masquerade as a clean non-match (which would silently kill the
+		# rule with no trace). Log it (countable), then treat as non-match.
+		frappe.log_error(
+			title="automation: criterion eval failed",
+			message="field={0} op={1} :: {2}".format(c.field, op, e),
+		)
 		return False
 	return False
 

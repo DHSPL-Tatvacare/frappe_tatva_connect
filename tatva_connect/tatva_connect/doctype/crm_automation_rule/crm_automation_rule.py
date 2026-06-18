@@ -65,6 +65,10 @@ class CRMAutomationRule(Document):
 				continue
 			if not (a.target_doctype and a.fieldname):
 				frappe.throw(_("A Set Field action needs both a Target DocType and a Fieldname."), title=_("Incomplete action"))
+			if a.value_mode not in ("Literal", "From Context"):
+				frappe.throw(_("A Set Field action needs a Value Mode (Literal or From Context)."), title=_("Incomplete action"))
+			if a.value_mode == "From Context" and not a.context_field:
+				frappe.throw(_("'From Context' needs a Context Field."), title=_("Incomplete action"))
 			if not self._allowlisted(a.target_doctype, a.fieldname):
 				frappe.throw(
 					_("Field {0} on {1} is not in the Automatable-Field allowlist for this grain. Add it (enabled) before a rule can set it.").format(
@@ -92,6 +96,12 @@ class CRMAutomationRule(Document):
 				frappe.throw(_("Upsert Child Row needs a Match (JSON)."), title=_("Incomplete action"))
 			if a.action_type == "Append Child Row" and not set_map:
 				frappe.throw(_("Append Child Row needs a Set (JSON)."), title=_("Incomplete action"))
+			overlap = set(set_map) & set(match_map)
+			if overlap:
+				frappe.throw(
+					_("A child-row action's Set fields must not include its Match keys: {0}").format(", ".join(sorted(overlap))),
+					title=_("Set / Match overlap"),
+				)
 			for f in set(set_map) | set(match_map):
 				if not self._allowlisted(child_dt, f, child_table=a.child_table, require_row_key=(f in match_map)):
 					frappe.throw(
