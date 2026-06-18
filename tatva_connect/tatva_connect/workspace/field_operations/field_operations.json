@@ -9,7 +9,7 @@
  "for_user": "",
  "hide_custom": 0,
  "icon": "project",
- "idx": 5,
+ "idx": 6,
  "is_hidden": 0,
  "label": "Field Operations",
  "links": [],
@@ -31,7 +31,7 @@
    "role": "Sales Manager"
   }
  ],
- "sequence_id": 5.0,
+ "sequence_id": 6.0,
  "shortcuts": [
   {
    "color": "Grey",

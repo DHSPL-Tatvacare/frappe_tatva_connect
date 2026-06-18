@@ -50,12 +50,6 @@ tatva_connect.patches.add_observability_indexes
 # then pruned by seed.sync_catalog on after_migrate.
 tatva_connect.patches.fold_transitions_switch
 
-# The old catch-all "Tatva Connect" desk space was split into six focused spaces
-# (Communications, Automations, Partner API, Infrastructure, Field Operations, Observability).
-# Remove the obsolete "Tatva Connect" Workspace + Workspace Sidebar so they don't orphan in the
-# switcher. Skips if absent → no-op on a clean install.
-tatva_connect.patches.retire_tatva_connect_space
-
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/
 # (gitignored, on disk for bookkeeping). Each "skips if old absent", so they no-op on a

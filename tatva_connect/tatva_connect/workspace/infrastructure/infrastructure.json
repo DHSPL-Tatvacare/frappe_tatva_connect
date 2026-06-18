@@ -9,7 +9,7 @@
  "for_user": "",
  "hide_custom": 0,
  "icon": "setting",
- "idx": 4,
+ "idx": 5,
  "is_hidden": 0,
  "label": "Infrastructure",
  "links": [],
@@ -31,7 +31,7 @@
    "role": "Sales Manager"
   }
  ],
- "sequence_id": 4.0,
+ "sequence_id": 5.0,
  "shortcuts": [
   {
    "color": "Grey",

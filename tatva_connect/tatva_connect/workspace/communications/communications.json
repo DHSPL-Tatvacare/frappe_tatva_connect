@@ -9,7 +9,7 @@
  "for_user": "",
  "hide_custom": 0,
  "icon": "message",
- "idx": 1,
+ "idx": 2,
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
@@ -31,7 +31,7 @@
    "role": "Sales Manager"
   }
  ],
- "sequence_id": 1.0,
+ "sequence_id": 2.0,
  "shortcuts": [
   {
    "color": "Grey",

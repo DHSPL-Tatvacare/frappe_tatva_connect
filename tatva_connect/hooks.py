@@ -12,14 +12,14 @@ app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
 
 # Tatva Connect as an "app" in the desk switcher: its workspaces (Communications, Automations,
 # Partner API, Infrastructure, Field Operations, Observability) group under it because their
-# module belongs to tatva_connect. Opens on the Automations control plane. Gated by
-# has_permission to the roles that can see the workspaces (System Manager, Sales Manager).
+# module belongs to tatva_connect. Opens on the Tatva Connect home (a hub linking to the six
+# spaces). Gated by has_permission to the roles that see the workspaces (System/Sales Manager).
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",
 		"title": "Tatva Connect",
 		"logo": "/assets/tatva_connect/images/tatva-connect.png",
-		"route": "/app/automations",
+		"route": "/app/tatva-connect",
 		"has_permission": "tatva_connect.api.apps.check_app_permission",
 	}
 ]
