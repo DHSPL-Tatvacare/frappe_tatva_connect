@@ -52,6 +52,21 @@ AUTOMATIONS = [
 		requires="WhatsApp::WATI::messaging",
 	),
 	Auto(
+		key="WhatsApp::WATI::backfill",
+		fires_on="Schedule",
+		trigger_detail="operator-armed · getMessages history pull",
+		purpose=(
+			"Tops up the WhatsApp tab from WATI's message history — pulls a lead's full two-way "
+			"thread (including replies typed directly in the WATI portal) and inserts any messages "
+			"the live webhook missed, de-duplicated by WATI message id. Dormant and unscheduled by "
+			"default; the operator arms it with a cron when a gap needs filling.\n"
+			"Example: an agent answered a patient inside the WATI portal during a webhook outage; "
+			"running the backfill brings those messages onto the lead's WhatsApp tab."
+		),
+		backs=["tatva_connect.whatsapp.backfill.scheduled_backfill"],
+		requires="WhatsApp::WATI::messaging",
+	),
+	Auto(
 		key="Telephony::Acefone::calls",
 		fires_on="Provider call",
 		trigger_detail="telephony/api gate",

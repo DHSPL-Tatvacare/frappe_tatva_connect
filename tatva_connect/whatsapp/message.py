@@ -74,6 +74,12 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 
 	# --- send seams (override the builders, not notify) ---
 	def send_outgoing(self):
+		# Ingested mirror: this Outgoing row records a message that already exists on WATI
+		# (typed in the WATI portal, or pulled by the history backfill) — it must NEVER be
+		# re-sent. The webhook/backfill set this flag before insert; honour it before any
+		# provider call (guardrail: a received message can't loop back out).
+		if self.flags.get("tatva_ingested"):
+			return
 		account = self._wati_account()
 		if account is None:
 			return super().send_outgoing()
