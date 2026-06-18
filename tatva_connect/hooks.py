@@ -92,7 +92,7 @@ doc_events = {
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
 		"after_insert": [
-			"tatva_connect.push_notifications.events.on_task_created",
+			"tatva_connect.notifications.events.on_task_created",
 		],
 	},
 	"WhatsApp Message": {
@@ -116,7 +116,7 @@ doc_events = {
 	"ToDo": {
 		"after_insert": [
 			"tatva_connect.tasks.tasks.on_lead_assignment",
-			"tatva_connect.push_notifications.events.on_lead_assigned",
+			"tatva_connect.notifications.events.on_lead_assigned",
 		],
 	},
 	# Azure Blob offload: push bytes after the row + local file exist (core insert and
@@ -155,6 +155,9 @@ after_migrate = [
 	# path drifts out of the registry. Catalog after schema, drift after the rows exist.
 	"tatva_connect.automation.seed.sync_catalog",
 	"tatva_connect.automation.drift.assert_registered",
+	# Every notification grain must point at a real automation row (the ONE global gate);
+	# a drifting catalog fails the migrate, beside the automation drift check above.
+	"tatva_connect.notifications.drift.assert_registered",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",

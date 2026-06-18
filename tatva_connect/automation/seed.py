@@ -1,8 +1,11 @@
-"""Idempotent catalog sync — one `CRM Tatva Automation` row per registry entry.
+"""Idempotent catalog reconcile — EXACTLY one `CRM Tatva Automation` row per registry entry.
 
 Runs on after_migrate. Insert a missing row DORMANT (`enabled=0`); the operator
 turns it on and it STAYS on. Code never owns `enabled`: existing rows refresh only
 their descriptive/structural fields, so no deploy ever flips an operator's switch.
+A row whose key has LEFT the registry (a retired automation) is pruned — the catalog
+is the source of truth, and an unreferenced row does nothing, so its removal is a
+no-op behaviourally. No one-off patch is ever needed to retire an automation.
 """
 import frappe
 
@@ -40,3 +43,10 @@ def sync_catalog():
 				doc.set(field, value)
 			doc.enabled = 0  # ships dormant (invariant 6); operator enables, it stays.
 			doc.insert(ignore_permissions=True)
+
+	# Prune rows whose key left the registry (a retired automation). The catalog is the
+	# source of truth; an unreferenced row is a dead toggle — deleting it changes nothing.
+	live = {auto.key for auto in AUTOMATIONS}
+	for name in frappe.get_all("CRM Tatva Automation", pluck="name"):
+		if name not in live:
+			frappe.delete_doc("CRM Tatva Automation", name, ignore_permissions=True, force=True)

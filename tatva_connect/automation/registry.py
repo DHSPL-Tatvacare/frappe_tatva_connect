@@ -129,18 +129,29 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api.email.purge_draft_attachments"],
 	),
 	Auto(
-		key="Push::FCM::notify",
+		key="Notify::Lead::assigned",
 		fires_on="Doc Event",
-		trigger_detail="CRM Task · after_insert · ToDo · after_insert",
+		trigger_detail="ToDo · after_insert",
 		purpose=(
-			"Sends a mobile push notification to the assigned rep on the two moments that matter — "
-			"a new task and a new lead assignment.\n"
-			"Example: a manager assigns a lead; the rep's phone buzzes with a 'New lead assigned' "
-			"notification."
+			"Notifies a rep when a new lead is assigned to them — in-app while they're online, "
+			"a mobile push when they're away. The rep opts in per notification.\n"
+			"Example: a manager assigns a lead; the rep gets a 'New lead assigned' notification."
 		),
 		backs=[
-			"tatva_connect.push_notifications.events.on_task_created",
-			"tatva_connect.push_notifications.events.on_lead_assigned",
+			"tatva_connect.notifications.events.on_lead_assigned",
+		],
+	),
+	Auto(
+		key="Notify::Task::assigned",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · after_insert",
+		purpose=(
+			"Notifies a rep when a new task is assigned to them — in-app while they're online, "
+			"a mobile push when they're away. The rep opts in per notification.\n"
+			"Example: a manager assigns a task; the rep gets a 'New task assigned' notification."
+		),
+		backs=[
+			"tatva_connect.notifications.events.on_task_created",
 		],
 	),
 	Auto(

@@ -9,5 +9,5 @@ Telephony
 Storage
 Location
 Activity
-Push Notifications
+Notifications
 Observability

@@ -4,10 +4,10 @@
 # Register modules.txt -> Module Def FIRST, before any doctype sync (migrate on an
 # existing site doesn't; add_module_defs runs only at install-app). Idempotent.
 tatva_connect.patches.register_modules
-# A module added to modules.txt AFTER the first migrate gets no Module Def (register_modules
-# already ran, won't re-run) -> its doctypes fail to sync. Re-run add_module_defs once so the
-# Push Notifications module + CRM Push Settings/Subscription land. Idempotent.
-tatva_connect.patches.register_push_notifications_module
+# The `Push Notifications` module collapsed into the unified `Notifications` module (push is
+# one transport, not a domain — mirrors whatsapp/). Repoint the Module Def + its existing
+# doctypes on an existing site BEFORE its doctypes sync. Idempotent; no-op on fresh install.
+tatva_connect.patches.rename_push_module_to_notifications
 # Same story for the Observability module (CRM API Request Log / Metric / Metric Settings):
 # register its Module Def before its doctypes sync on an existing site. Idempotent.
 tatva_connect.patches.register_observability_module
@@ -47,6 +47,7 @@ tatva_connect.patches.add_observability_indexes
 # clean install. Kept here commented for file-level history. To restore for an IN-PLACE
 # upgrade of an old-schema prod DB: move the file back into tatva_connect/patches/ and
 # uncomment the line (renames belong in [pre_model_sync], the rest in [post_model_sync]).
+# tatva_connect.patches.register_push_notifications_module  # pre  — superseded by rename_push_module_to_notifications
 # tatva_connect.patches.rename_doctypes_partner_api      # pre  — Lead API * -> CRM Lead API *
 # tatva_connect.patches.rename_doctypes_whatsapp         # pre  — WATI * -> CRM WATI *
 # tatva_connect.patches.rename_doctypes_telephony        # pre  — Acefone * -> CRM Acefone *

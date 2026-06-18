@@ -215,7 +215,7 @@
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Section Break",
-    "label": "Push",
+    "label": "Notifications",
     "link_type": "DocType",
     "collapsible": 1,
     "child": 0,
@@ -244,6 +244,18 @@
     "child": 1,
     "indent": 0,
     "link_to": "CRM Push Subscription"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Notification Preferences",
+    "link_type": "DocType",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "link_to": "CRM Notification Preference"
    },
    {
     "doctype": "Workspace Sidebar Item",

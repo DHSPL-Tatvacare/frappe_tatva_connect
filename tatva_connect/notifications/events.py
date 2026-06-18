@@ -1,15 +1,15 @@
-"""Push triggers — notify the assigned Sales Rep on the two moments that matter.
+"""Notification triggers — resolve the recipient + hand off to the ONE send path.
 
   * New lead assigned to a rep  -> ToDo.after_insert (reference_type == CRM Lead)
   * New task assigned to a rep   -> CRM Task.after_insert
 
-Both gate on the master switch first, then enqueue the actual FCM call on the short
-queue so the save path is never blocked by a network round-trip. Logic stays here;
-the registry row (`Push::FCM::notify`) is the single on/off.
+Each handler does the minimum: figure out WHO + WHAT, then call `dispatch.notify`. The
+global gate, opt-in filter, bell persistence, and FCM transport all live behind
+`dispatch.notify` — none of that leaks back here (one brain, invariant A.8).
 """
 import frappe
 
-from tatva_connect.push_notifications import sender
+from tatva_connect.notifications import dispatch
 
 
 def _route_for_task(doc) -> str:
@@ -22,12 +22,11 @@ def _route_for_task(doc) -> str:
 
 
 def on_task_created(doc, method=None):
-	if not sender.is_enabled() or not doc.get("assigned_to"):
+	if not doc.get("assigned_to"):
 		return
-	frappe.enqueue(
-		"tatva_connect.push_notifications.sender.send_to_users",
-		queue="short",
-		users=[doc.assigned_to],
+	dispatch.notify(
+		"Task::Assignment::assigned",
+		[doc.assigned_to],
 		title="New task assigned",
 		body=doc.get("title") or "You have a new task",
 		data={"doctype": "CRM Task", "name": doc.name, "route": _route_for_task(doc)},
@@ -36,13 +35,12 @@ def on_task_created(doc, method=None):
 
 def on_lead_assigned(doc, method=None):
 	# doc is the ToDo created by assignment; act only on CRM Lead assignments.
-	if not sender.is_enabled() or doc.reference_type != "CRM Lead" or not doc.allocated_to:
+	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 		return
 	lead_name = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_name") or doc.reference_name
-	frappe.enqueue(
-		"tatva_connect.push_notifications.sender.send_to_users",
-		queue="short",
-		users=[doc.allocated_to],
+	dispatch.notify(
+		"Lead::Assignment::assigned",
+		[doc.allocated_to],
 		title="New lead assigned",
 		body=lead_name,
 		data={"doctype": "CRM Lead", "name": doc.reference_name, "route": f"/crm/leads/{doc.reference_name}"},
