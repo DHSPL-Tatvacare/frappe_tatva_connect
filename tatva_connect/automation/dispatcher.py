@@ -43,15 +43,27 @@ def fire_rules(doc, method=None):
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
 		return
 
+	try:
+		_dispatch(doc)
+	except Exception:
+		# Engine-level failure (grain/criteria/etc.) must never abort the user's task save (spec §5.2).
+		frappe.log_error("automation: dispatch failed")
+
+
+def _dispatch(doc):
+	"""Resolve the lead's grain, fan out to matching rules, run each (per-rule guarded)."""
 	lead = doc.reference_docname
 	vertical, group, program = rules.lead_axes(lead)
 	matched = rules.matching_rules(vertical, group, program)
 	if not matched:
 		return
-
 	context = build_context(doc)
+	grain = _grain_tag(vertical, group, program)
 	for r in matched:
-		_run_rule(r, lead, context, doc, grain=_grain_tag(vertical, group, program))
+		try:
+			_run_rule(r, lead, context, doc, grain=grain)
+		except Exception as e:
+			_log_error(r.name, "(rule)", grain, e)
 
 
 def build_context(doc):
