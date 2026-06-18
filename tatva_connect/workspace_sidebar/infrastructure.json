@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "setting",
+ "header_icon": "server",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "assets",
+   "icon": "database",
    "indent": 1,
    "keep_closed": 0,
    "label": "Storage",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "file-large",
+   "icon": "hard-drive",
    "indent": 0,
    "keep_closed": 0,
    "label": "Azure Blob",
@@ -32,7 +32,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "google",
+   "icon": "map-pin",
    "indent": 1,
    "keep_closed": 0,
    "label": "Location",
@@ -43,7 +43,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "google",
+   "icon": "map",
    "indent": 0,
    "keep_closed": 0,
    "label": "Maps",

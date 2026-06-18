@@ -8,7 +8,7 @@
  "doctype": "Workspace",
  "for_user": "",
  "hide_custom": 0,
- "icon": "integration",
+ "icon": "webhook",
  "idx": 3,
  "is_hidden": 0,
  "label": "Partner API",

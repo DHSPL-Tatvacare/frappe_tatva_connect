@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "integration",
+ "header_icon": "webhook",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "integration",
+   "icon": "plug",
    "indent": 1,
    "keep_closed": 0,
    "label": "Lead Intake",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "customization",
+   "icon": "settings-2",
    "indent": 0,
    "keep_closed": 0,
    "label": "API Fields",
@@ -32,7 +32,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "branch",
+   "icon": "git-branch",
    "indent": 0,
    "keep_closed": 0,
    "label": "API Mappings",

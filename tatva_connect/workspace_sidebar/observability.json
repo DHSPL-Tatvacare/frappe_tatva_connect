@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "dashboard",
+ "header_icon": "gauge",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "dashboard",
+   "icon": "layout-dashboard",
    "indent": 1,
    "keep_closed": 0,
    "label": "Dashboard",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "dashboard-list",
+   "icon": "gauge",
    "indent": 0,
    "keep_closed": 0,
    "label": "API Dashboard",
@@ -32,7 +32,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "chart",
+   "icon": "chart-line",
    "indent": 1,
    "keep_closed": 0,
    "label": "Metrics & Logs",
@@ -43,7 +43,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "number-card",
+   "icon": "activity",
    "indent": 0,
    "keep_closed": 0,
    "label": "API Metrics",
@@ -55,7 +55,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "list-alt",
+   "icon": "scroll-text",
    "indent": 0,
    "keep_closed": 0,
    "label": "API Request Log",
@@ -67,7 +67,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "list-alt",
+   "icon": "logs",
    "indent": 0,
    "keep_closed": 0,
    "label": "Automation Run Log",
@@ -79,7 +79,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "setting-gear",
+   "icon": "settings",
    "indent": 1,
    "keep_closed": 0,
    "label": "Settings",
@@ -90,7 +90,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "setting-gear",
+   "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
    "label": "Metric Settings",

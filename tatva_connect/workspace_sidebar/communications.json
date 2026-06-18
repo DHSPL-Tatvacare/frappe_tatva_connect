@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "message",
+ "header_icon": "messages-square",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "message",
+   "icon": "message-circle",
    "indent": 1,
    "keep_closed": 0,
    "label": "WhatsApp",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "organization",
+   "icon": "building-2",
    "indent": 0,
    "keep_closed": 0,
    "label": "WATI Accounts",
@@ -33,7 +33,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "branch",
+   "icon": "git-branch",
    "indent": 0,
    "keep_closed": 0,
    "label": "WATI Routing",
@@ -45,7 +45,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "setting-gear",
+   "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
    "label": "WATI Settings",
@@ -57,7 +57,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "call",
+   "icon": "phone",
    "indent": 1,
    "keep_closed": 0,
    "label": "Telephony",
@@ -68,7 +68,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "organization",
+   "icon": "building-2",
    "indent": 0,
    "keep_closed": 0,
    "label": "Acefone Accounts",
@@ -80,7 +80,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "branch",
+   "icon": "git-branch",
    "indent": 0,
    "keep_closed": 0,
    "label": "Acefone Routing",
@@ -92,7 +92,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "setting-gear",
+   "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
    "label": "Acefone Settings",
@@ -104,7 +104,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "notification",
+   "icon": "bell",
    "indent": 1,
    "keep_closed": 0,
    "label": "Push Notifications",
@@ -115,7 +115,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "message-1",
+   "icon": "send",
    "indent": 0,
    "keep_closed": 0,
    "label": "Firebase Messaging",
@@ -127,7 +127,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "card",
+   "icon": "smartphone",
    "indent": 0,
    "keep_closed": 0,
    "label": "Push Devices",
@@ -139,7 +139,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "setting",
+   "icon": "sliders-horizontal",
    "indent": 0,
    "keep_closed": 0,
    "label": "Notification Preferences",

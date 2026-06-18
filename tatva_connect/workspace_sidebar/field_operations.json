@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "project",
+ "header_icon": "map-pinned",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "project",
+   "icon": "list-todo",
    "indent": 1,
    "keep_closed": 0,
    "label": "Tasks",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "list-alt",
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "Task Types",
@@ -32,7 +32,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "tick",
+   "icon": "check-check",
    "indent": 0,
    "keep_closed": 0,
    "label": "Checklist Templates",
@@ -44,7 +44,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "edit",
+   "icon": "file-input",
    "indent": 1,
    "keep_closed": 0,
    "label": "Intake",
@@ -55,7 +55,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "text",
+   "icon": "file-text",
    "indent": 0,
    "keep_closed": 0,
    "label": "Intake Forms",
@@ -67,7 +67,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "read-status",
+   "icon": "inbox",
    "indent": 0,
    "keep_closed": 0,
    "label": "Submissions",
@@ -79,7 +79,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "review",
+   "icon": "shield-check",
    "indent": 1,
    "keep_closed": 0,
    "label": "Audit",
@@ -90,7 +90,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "quality",
+   "icon": "badge-check",
    "indent": 0,
    "keep_closed": 0,
    "label": "Visit Audit",

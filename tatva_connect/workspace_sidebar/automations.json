@@ -3,13 +3,13 @@
  "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
- "header_icon": "tool",
+ "header_icon": "workflow",
  "idx": 0,
  "items": [
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "tool",
+   "icon": "sliders-horizontal",
    "indent": 1,
    "keep_closed": 0,
    "label": "Control Plane",
@@ -20,7 +20,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "list-alt",
+   "icon": "list",
    "indent": 0,
    "keep_closed": 0,
    "label": "All Automations",
@@ -32,7 +32,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "filter",
+   "icon": "list-filter",
    "indent": 0,
    "keep_closed": 0,
    "label": "Doc Events",
@@ -45,7 +45,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "today",
+   "icon": "calendar-clock",
    "indent": 0,
    "keep_closed": 0,
    "label": "Scheduled",
@@ -58,7 +58,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "integration",
+   "icon": "webhook",
    "indent": 0,
    "keep_closed": 0,
    "label": "Provider Calls",
@@ -71,7 +71,7 @@
   {
    "child": 0,
    "collapsible": 1,
-   "icon": "change",
+   "icon": "workflow",
    "indent": 1,
    "keep_closed": 0,
    "label": "Rule Engine",
@@ -82,7 +82,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "list-alt",
+   "icon": "list-checks",
    "indent": 0,
    "keep_closed": 0,
    "label": "Automation Rules",
@@ -94,7 +94,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "customization",
+   "icon": "settings-2",
    "indent": 0,
    "keep_closed": 0,
    "label": "Automatable Fields",
@@ -106,7 +106,7 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "link-url",
+   "icon": "webhook",
    "indent": 0,
    "keep_closed": 0,
    "label": "Webhook Endpoints",
