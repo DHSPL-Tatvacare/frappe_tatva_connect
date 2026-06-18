@@ -43,6 +43,19 @@ def apply_schema():
 			frappe.db.rollback()
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
 	_ensure_fixed_settings()
+	_assert_observability_bands()
+
+
+def _assert_observability_bands():
+	"""Fail loudly if the latency-band single-source-of-truth drifts from the CRM API Metric
+	columns (a new band added to LATENCY_BANDS without a matching column, or vice versa)."""
+	try:
+		from tatva_connect.observability.constants import assert_bands_match_schema
+
+		assert_bands_match_schema()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "apply_schema: observability bands")
 
 
 def _ensure_fixed_settings():

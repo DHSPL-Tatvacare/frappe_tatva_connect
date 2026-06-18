@@ -1,0 +1,12 @@
+{
+ "creation": "2026-06-18 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Dashboard Chart Source",
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "API Observability",
+ "owner": "Administrator",
+ "source_name": "API Observability",
+ "timeseries": 1
+}

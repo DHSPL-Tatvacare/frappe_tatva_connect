@@ -1,0 +1,58 @@
+[
+ {
+  "doctype": "Number Card",
+  "name": "API Requests (24h)",
+  "label": "API · Requests (24h)",
+  "module": "Observability",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Document Type",
+  "document_type": "CRM API Metric",
+  "function": "Sum",
+  "aggregate_function_based_on": "request_count",
+  "filters_json": "[[\"CRM API Metric\",\"granularity\",\"=\",\"hour\"]]",
+  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "color": "#449CF0",
+  "show_percentage_stats": 1,
+  "stats_time_interval": "Daily"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "API Errors (24h)",
+  "label": "API · Errors (24h)",
+  "module": "Observability",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Document Type",
+  "document_type": "CRM API Metric",
+  "function": "Sum",
+  "aggregate_function_based_on": "error_count",
+  "filters_json": "[[\"CRM API Metric\",\"granularity\",\"=\",\"hour\"]]",
+  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "color": "#E24C4C",
+  "show_percentage_stats": 1,
+  "stats_time_interval": "Daily"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "API Error Rate (24h)",
+  "label": "API · Error Rate (24h)",
+  "module": "Observability",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Custom",
+  "method": "tatva_connect.observability.analytics.error_rate_card",
+  "color": "#ED6396"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "API p95 Latency (24h)",
+  "label": "API · p95 Latency (24h)",
+  "module": "Observability",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Custom",
+  "method": "tatva_connect.observability.analytics.p95_card",
+  "color": "#FFC732"
+ }
+]

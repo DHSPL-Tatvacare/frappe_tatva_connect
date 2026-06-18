@@ -168,8 +168,19 @@ after_migrate = [
 fixtures = [
 	# Config control plane — the Desk workspace + its grouped sidebar ship as code, filtered to
 	# OUR records so a future export never vacuums other apps' workspaces/sidebars.
-	{"dt": "Workspace", "filters": [["name", "=", "Tatva Connect"]]},
+	{"dt": "Workspace", "filters": [["name", "in", ["Tatva Connect", "Observability"]]]},
 	{"dt": "Workspace Sidebar", "filters": [["name", "=", "Tatva Connect"]]},
+	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no
+	# module-folder auto-sync), so they ship as name-scoped fixtures. The Dashboard Chart
+	# SOURCE that powers the custom charts is module-standard (observability/dashboard_chart_source/)
+	# and syncs on migrate. Name-filtered so export never vacuums other apps' charts/cards.
+	{"dt": "Dashboard Chart", "filters": [["name", "in", [
+		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
+		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
+	]]]},
+	{"dt": "Number Card", "filters": [["name", "in", [
+		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
+	]]]},
 	{
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to native doctypes,
