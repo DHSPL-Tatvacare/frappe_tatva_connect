@@ -11,4 +11,3 @@ Location
 Activity
 Notifications
 Observability
-Automation
