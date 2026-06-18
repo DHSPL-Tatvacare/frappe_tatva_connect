@@ -22,7 +22,10 @@ SCRIPTS = [
 	# "Log Activity (CRM Lead)" (activity_log.js) RETIRED in Phase 2 — the ad-hoc punch is now native in
 	# the CRM fork (TatvaTasks owns window.__tcLogActivity → TatvaTaskModal create mode). Archived to
 	# archive/phase2-retired-adhoc-punch/. Disabled idempotently via RETIRED below.
-	("Near Me (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/near_me.js"),
+	# "Near Me (CRM Lead)" (near_me.js) RETIRED — the header-button hack is now a native first-class
+	# screen in the CRM fork (pages/NearMe.vue: left-menu item → map + cross-grain doctor directory,
+	# gated by the Field Map User role + Location::NearMe::directory switch). Backend is
+	# tatva_connect/near_me/api.py. Archived to archive/near-me-native-promotion/. Disabled via RETIRED below.
 	("Task Modal Fit (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_modal_fit.js"),
 	# v1 "Task Location Capture (CRM Task)" (task_location.js) RETIRED in Phase B — location folded
 	# into the activity flow (save_activity + enforce_location). Archived to archive/phase-b-retired-v1-location/.
@@ -39,6 +42,8 @@ RETIRED = [
 	"WATI WhatsApp Gate (CRM Lead)",  # -> native grain-routed tab gate (whatsappRouted composable)
 	"WATI WhatsApp Window (CRM Lead)",  # -> TatvaWhatsAppWindowNotice.vue in WhatsAppBox (24h window-closed card)
 	"WATI Failed Reason (CRM Lead)",  # -> native Tooltip on the failed Badge in WhatsAppArea.vue
+	"Task Location Capture (CRM Task)",  # Phase B: v1 location folded into the activity flow (task_activity.js + save_activity/enforce_location)
+	"Near Me (CRM Lead)",  # -> native Near Me page (fork pages/NearMe.vue) + tatva_connect/near_me/api.py
 ]
 
 

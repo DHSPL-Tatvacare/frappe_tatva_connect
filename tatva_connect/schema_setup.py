@@ -43,6 +43,7 @@ def apply_schema():
 			frappe.db.rollback()
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
 	_ensure_fixed_settings()
+	_ensure_field_map_role()
 	_assert_observability_bands()
 
 
@@ -56,6 +57,24 @@ def _assert_observability_bands():
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "apply_schema: observability bands")
+
+
+def _ensure_field_map_role():
+	"""Seed the `Field Map User` role — the single gate for the Near Me directory page in the CRM
+	fork. The role's EXISTENCE is structural to the feature (identical in every deployment), so it
+	belongs here; ASSIGNING it to users is operator business data and is NEVER done in code. The
+	page also requires the `Location::NearMe::directory` switch ON, so a seeded-but-unassigned role
+	plus an off switch keeps the feature fully dormant (CLAUDE.md #4/#6). Idempotent; isolated."""
+	try:
+		if not frappe.db.exists("Role", "Field Map User"):
+			role = frappe.new_doc("Role")
+			role.role_name = "Field Map User"
+			role.desk_access = 0  # SPA-only role; no Desk surface
+			role.save(ignore_permissions=True)
+			frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_field_map_role")
 
 
 def _ensure_fixed_settings():

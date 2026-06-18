@@ -105,6 +105,19 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Location::NearMe::directory",
+		fires_on="Provider call",
+		trigger_detail="near_me/api gate",
+		purpose=(
+			"Powers the Near Me page — a cross-business-line map + list of every doctor lead with a "
+			"pinned clinic, so a rep on the road can find and call nearby doctors. Visible only to "
+			"users with the Field Map User role, and only while this switch is on.\n"
+			"Example: a rep opens Near Me, sees doctors within 15 km of their phone's location on a "
+			"map, and taps a card to call or get directions."
+		),
+		backs=[],
+	),
+	Auto(
 		key="Task::Assignment::followup",
 		fires_on="Doc Event",
 		trigger_detail="ToDo · after_insert · WhatsApp Message · after_insert",
