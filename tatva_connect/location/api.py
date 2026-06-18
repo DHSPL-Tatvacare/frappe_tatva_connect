@@ -600,17 +600,30 @@ def _resolve_provider(pref, default, google_ok):
 @frappe.whitelist()
 def map_config():
 	"""The in-app map display config for the SPA: which provider renders each surface, already resolved
-	for availability. ONE source so the card thumbnail, the detail-modal map, and the block/receipt
-	dialog maps all obey the same operator switches (CRM Maps Settings → Map Display). Blank field =
-	code default (thumbnails OSM, dialogs Google). Geocoding + Desk history stay Google regardless."""
+	for availability. ONE source so EVERY map surface — card thumbnail, detail-modal map, block/receipt
+	dialogs, AND the interactive Near Me map — obeys the operator switches (CRM Maps Settings → Map
+	Display). Blank field = code default (thumbnails OSM, dialogs Google, Near Me OSM). Geocoding + Desk
+	history stay Google regardless.
+
+	Two kinds of Google here:
+	  • STATIC surfaces (thumbnail/dialog) use the key-safe `static_map` proxy — `google_ok` gates them
+	    (capture switch on + server key set); the key never reaches the browser.
+	  • The INTERACTIVE Near Me map uses the Google Maps JavaScript API, which by design runs in the
+	    browser and needs a key there — so it's gated on a SEPARATE, referrer-restricted browser key
+	    (`google_maps_browser_key`), never the server key. No browser key => Near Me stays OSM."""
 	s = _settings()
 	google_ok = bool(automation.is_enabled("Location::Google::capture") and _api_key())
+	browser_key = (s.get("google_maps_browser_key") or "").strip()
+	nearme = _resolve_provider(s.get("nearme_map_provider"), "osm", bool(browser_key))
 	return {
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
 		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),
+		"nearme": nearme,
 		"zoom": cint(s.static_map_zoom) or 16,
 		"tile_url": (s.get("osm_tile_url") or "").strip() or DEFAULT_OSM_TILES,
 		"google_available": google_ok,
+		# Only handed to the browser when Near Me actually resolves to Google (minimise exposure).
+		"browser_key": browser_key if nearme == "google" else "",
 	}
 
 

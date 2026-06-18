@@ -8,11 +8,13 @@
  "field_order": [
   "section_break_maps",
   "google_maps_api_key",
+  "google_maps_browser_key",
   "static_map_zoom",
   "check_connection",
   "section_break_display",
   "thumbnail_map_provider",
   "dialog_map_provider",
+  "nearme_map_provider",
   "osm_tile_url",
   "geocoding_provider",
   "section_break_triggers",
@@ -30,6 +32,12 @@
    "fieldname": "google_maps_api_key",
    "fieldtype": "Password",
    "label": "Google Maps API Key"
+  },
+  {
+   "description": "Referrer-restricted Google Maps JavaScript-API key for the interactive Near Me map. Kept SEPARATE from the server key above on purpose: the server key never reaches the browser (this repo is public). Paste your JS-API key (HTTP-referrer restricted) here. Blank = Near Me uses OpenStreetMap.",
+   "fieldname": "google_maps_browser_key",
+   "fieldtype": "Data",
+   "label": "Google Maps Browser Key (JS API)"
   },
   {
    "description": "Map thumbnail zoom (blank = 16; higher = closer to the pin).",
@@ -62,6 +70,13 @@
    "fieldname": "dialog_map_provider",
    "fieldtype": "Select",
    "label": "Dialog Map Provider",
+   "options": "\nOpenStreetMap\nGoogle"
+  },
+  {
+   "description": "The full-screen interactive Near Me map (pan/zoom/clustering). Blank = OpenStreetMap (free, no key). Google = an interactive Google JS map, which needs the Browser Key above (falls back to OpenStreetMap if that key is blank).",
+   "fieldname": "nearme_map_provider",
+   "fieldtype": "Select",
+   "label": "Near Me Map Provider",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
