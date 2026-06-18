@@ -1,0 +1,65 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-06-18 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "dashboard",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "API Dashboard",
+   "link_to": "Observability",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "list",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "API Metrics",
+   "link_to": "CRM API Metric",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "file",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "API Request Log",
+   "link_to": "CRM API Request Log",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "setting-gear",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Metric Settings",
+   "link_to": "CRM API Metric Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Observability",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Observability"
+}
