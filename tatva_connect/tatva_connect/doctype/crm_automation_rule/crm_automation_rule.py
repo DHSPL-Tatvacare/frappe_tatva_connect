@@ -14,6 +14,8 @@ class CRMAutomationRule(Document):
 		self._require_task_type()
 		self._validate_criteria_fields()
 		self._validate_set_field_actions()
+		self._validate_child_actions()
+		self._validate_webhook_actions()
 
 	def _require_grain(self):
 		"""No global rule: at least one grain axis must be set (invariant #11 / spec §5.1)."""
@@ -71,14 +73,54 @@ class CRMAutomationRule(Document):
 					title=_("Field not allowlisted"),
 				)
 
-	def _allowlisted(self, target_doctype, fieldname):
+	def _validate_child_actions(self):
+		"""Append/Upsert Child Row: the child table must be a Table field on CRM Lead; every set (and
+		match) field must be allowlisted for the child doctype at this grain; upsert match keys must be
+		marked is_row_key. Fail-closed (spec §4.2/§5.3)."""
+		for a in self.actions:
+			if a.action_type not in ("Append Child Row", "Upsert Child Row"):
+				continue
+			if not a.child_table:
+				frappe.throw(_("A child-row action needs a Child Table."), title=_("Incomplete action"))
+			field = frappe.get_meta("CRM Lead").get_field(a.child_table)
+			if not field or field.fieldtype != "Table":
+				frappe.throw(_("{0} is not a child table on CRM Lead.").format(frappe.bold(a.child_table)), title=_("Bad child table"))
+			child_dt = field.options
+			set_map = _parse_json(a.set_json, _("Set (JSON)"))
+			match_map = _parse_json(a.match_json, _("Match (JSON)")) if a.action_type == "Upsert Child Row" else {}
+			if a.action_type == "Upsert Child Row" and not match_map:
+				frappe.throw(_("Upsert Child Row needs a Match (JSON)."), title=_("Incomplete action"))
+			if a.action_type == "Append Child Row" and not set_map:
+				frappe.throw(_("Append Child Row needs a Set (JSON)."), title=_("Incomplete action"))
+			for f in set(set_map) | set(match_map):
+				if not self._allowlisted(child_dt, f, child_table=a.child_table, require_row_key=(f in match_map)):
+					frappe.throw(
+						_("Field {0} on {1} ({2}) is not in the Automatable-Field allowlist for this grain.").format(
+							frappe.bold(f), frappe.bold(child_dt), frappe.bold(a.child_table)
+						),
+						title=_("Field not allowlisted"),
+					)
+
+	def _validate_webhook_actions(self):
+		"""Call Webhook: the endpoint must be set and exist (spec §6). URL/secret stay admin-curated."""
+		for a in self.actions:
+			if a.action_type != "Call Webhook":
+				continue
+			if not a.webhook_endpoint:
+				frappe.throw(_("A Call Webhook action needs an endpoint."), title=_("Incomplete action"))
+			if not frappe.db.exists("Webhook", a.webhook_endpoint):
+				frappe.throw(_("Webhook endpoint {0} does not exist.").format(frappe.bold(a.webhook_endpoint)), title=_("Unknown endpoint"))
+
+	def _allowlisted(self, target_doctype, fieldname, child_table=None, require_row_key=False):
 		"""True if an enabled allowlist row covers (doctype, field) at a grain compatible with this
-		rule: each SET allowlist axis must equal the rule's value; a BLANK allowlist axis is a wildcard."""
-		rows = frappe.get_all(
-			"CRM Automatable Field",
-			filters={"target_doctype": target_doctype, "fieldname": fieldname, "enabled": 1},
-			fields=["vertical", "group", "program"],
-		)
+		rule: each SET allowlist axis must equal the rule's value; a BLANK allowlist axis is a wildcard.
+		For child-row targets the row must also match the child table (and be a row-key when required)."""
+		filters = {"target_doctype": target_doctype, "fieldname": fieldname, "enabled": 1}
+		if child_table is not None:
+			filters["child_table_field"] = child_table
+		if require_row_key:
+			filters["is_row_key"] = 1
+		rows = frappe.get_all("CRM Automatable Field", filters=filters, fields=["vertical", "group", "program"])
 		for r in rows:
 			if self._grain_matches(r):
 				return True
@@ -90,3 +132,17 @@ class CRMAutomationRule(Document):
 			if rval and rval != (self.get(axis) or ""):
 				return False
 		return True
+
+
+def _parse_json(raw, label):
+	"""Parse a child-row JSON map; throw a clear authoring error if it's not a JSON object."""
+	if not (raw or "").strip():
+		return {}
+	try:
+		data = frappe.parse_json(raw)
+	except Exception:
+		data = None
+	if isinstance(data, dict):
+		return data
+	frappe.throw(_("{0} must be a JSON object like {{\"field\": \"value\"}}.").format(label), title=_("Bad JSON"))
+	return {}  # unreachable (frappe.throw raises) — keeps the return type a clean dict

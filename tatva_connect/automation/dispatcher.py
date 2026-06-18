@@ -12,6 +12,7 @@ A belt-and-braces `doc.flags.in_automation` + the dispatch's own guard keep it n
 the trigger surface widens later. Nothing is reimplemented — grain, context, task creation, and the
 allowlist all reuse existing brains.
 """
+import json
 import time
 
 import frappe
@@ -86,14 +87,18 @@ def _run_rule(r, lead, context, trigger_doc, grain):
 
 
 def _run_action(action, lead, context):
-	"""Dispatch one action by type. v1: Create Task + Set Field (spec §4). Raises on failure so the
-	caller's per-action guard records it — one failure never touches siblings."""
-	if action.action_type == "Create Task":
-		_action_create_task(action, lead, context)
-	elif action.action_type == "Set Field":
-		_action_set_field(action, lead, context)
-	else:
+	"""Dispatch one action by type (spec §4). Raises on failure so the caller's per-action guard
+	records it — one failure never touches siblings."""
+	handler = {
+		"Create Task": _action_create_task,
+		"Set Field": _action_set_field,
+		"Append Child Row": _action_append_child,
+		"Upsert Child Row": _action_upsert_child,
+		"Call Webhook": _action_call_webhook,
+	}.get(action.action_type)
+	if handler is None:
 		raise ValueError(f"unknown action type {action.action_type!r}")
+	handler(action, lead, context)
 
 
 def _action_create_task(action, lead, context):
@@ -119,24 +124,131 @@ def _action_set_field(action, lead, context):
 		)
 	value = context.get(action.context_field) if action.value_mode == "From Context" else action.value
 
-	target = lead if action.target_doctype == "CRM Lead" else None
-	if target is None:
+	if action.target_doctype != "CRM Lead":
 		# v1 SET_FIELD targets the trigger's lead. A non-lead target would need its own resolution
-		# (Phase 2 child-row work) — reject rather than guess.
-		raise ValueError(f"Set Field target {action.target_doctype} is not supported in v1 (lead only)")
-	tdoc = frappe.get_doc("CRM Lead", target)
+		# (Phase 2 child-row work covers child tables) — reject rather than guess.
+		raise ValueError(f"Set Field target {action.target_doctype} is not supported (lead only)")
+	tdoc = frappe.get_doc("CRM Lead", lead)
 	tdoc.set(action.fieldname, value)
 	tdoc.flags.in_automation = True
 	tdoc.save(ignore_permissions=True)
 
 
-def _allowlisted(target_doctype, fieldname, lead):
+def _action_append_child(action, lead, context):
+	"""APPEND_CHILD_ROW — add a new row to a CRM Lead child table (spec §4.2), via the unified
+	load+save path so the lead's hooks (headline sync etc.) re-run."""
+	child_table, child_dt = _child_target(action)
+	values = _resolve_map(action.set_json, context)
+	if not values:
+		raise ValueError("Append Child Row needs a non-empty Set (JSON)")
+	_assert_child_allowlisted(child_dt, child_table, set(values), lead)
+	tdoc = frappe.get_doc("CRM Lead", lead)
+	tdoc.append(child_table, values)
+	tdoc.flags.in_automation = True
+	tdoc.save(ignore_permissions=True)
+
+
+def _action_upsert_child(action, lead, context):
+	"""UPSERT_CHILD_ROW — find the row by natural key (match) and update it, else append (spec §4.2).
+	Drug Program keyed on cycle_date is the canonical case."""
+	child_table, child_dt = _child_target(action)
+	match = _resolve_map(action.match_json, context)
+	values = _resolve_map(action.set_json, context)
+	if not match:
+		raise ValueError("Upsert Child Row needs a non-empty Match (JSON)")
+	_assert_child_allowlisted(child_dt, child_table, set(match) | set(values), lead, keys=set(match))
+	tdoc = frappe.get_doc("CRM Lead", lead)
+	row = _find_child_row(tdoc.get(child_table), match)
+	if row:
+		for k, v in values.items():
+			row.set(k, v)
+	else:
+		tdoc.append(child_table, {**match, **values})
+	tdoc.flags.in_automation = True
+	tdoc.save(ignore_permissions=True)
+
+
+def _action_call_webhook(action, lead, context):
+	"""CALL_WEBHOOK — invoke a curated native Webhook's delivery (spec §6). We don't rebuild HTTP:
+	enqueue Frappe's own enqueue_webhook (HMAC sign + 3 retries + Webhook Request Log) with the lead
+	as payload context. The endpoint is picked, never typed; its URL/secret stay admin-curated."""
+	if not action.webhook_endpoint:
+		raise ValueError("Call Webhook action missing an endpoint")
+	if not frappe.db.exists("Webhook", action.webhook_endpoint):
+		raise ValueError(f"Webhook endpoint {action.webhook_endpoint!r} does not exist")
+	lead_doc = frappe.get_doc("CRM Lead", lead)
+	frappe.enqueue(
+		"frappe.integrations.doctype.webhook.webhook.enqueue_webhook",
+		doc=lead_doc,
+		webhook={"name": action.webhook_endpoint},
+		enqueue_after_commit=True,
+	)
+
+
+# -- child-row + value helpers -----------------------------------------------
+
+
+def _resolve(spec, context):
+	"""A value is literal unless it starts with `$ctx.` — then it's pulled from the activity context."""
+	if isinstance(spec, str) and spec.startswith("$ctx."):
+		return context.get(spec[5:])
+	return spec
+
+
+def _resolve_map(raw, context):
+	"""Parse a {fieldname: value} JSON map and resolve each value (literal | $ctx.<field>)."""
+	if not (raw or "").strip():
+		return {}
+	try:
+		data = json.loads(raw)
+	except (ValueError, TypeError):
+		raise ValueError("invalid JSON in a child-row action")
+	if not isinstance(data, dict):
+		raise ValueError("child-row action JSON must be an object")
+	return {k: _resolve(v, context) for k, v in data.items()}
+
+
+def _child_target(action):
+	"""(child_table fieldname, child doctype). The child table must be a Table field on CRM Lead."""
+	if not action.child_table:
+		raise ValueError("child-row action missing Child Table")
+	field = frappe.get_meta("CRM Lead").get_field(action.child_table)
+	if not field or field.fieldtype != "Table":
+		raise ValueError(f"{action.child_table!r} is not a child table on CRM Lead")
+	return action.child_table, field.options
+
+
+def _find_child_row(rows, match):
+	for row in rows or []:
+		if all(str(row.get(k) or "") == str(v or "") for k, v in match.items()):
+			return row
+	return None
+
+
+def _assert_child_allowlisted(child_dt, child_table, fields, lead, keys=None):
+	"""Every set/match field must be in the enabled allowlist for the child table at the lead's grain;
+	match keys must additionally be marked is_row_key. Fail-closed (spec §5.3)."""
+	keys = keys or set()
+	for f in fields:
+		if not _allowlisted(child_dt, f, lead, child_table=child_table, require_row_key=(f in keys)):
+			raise PermissionError(
+				f"{f} on {child_dt} ({child_table}) is not in the enabled Automatable-Field allowlist"
+			)
+
+
+def _allowlisted(target_doctype, fieldname, lead, child_table=None, require_row_key=False):
 	"""Runtime re-check of the fail-closed write allowlist (mirrors the rule controller, by grain).
-	An enabled row whose set axes equal the lead's grain (blank axis = wildcard) authorizes the write."""
+	An enabled row whose set axes equal the lead's grain (blank axis = wildcard) authorizes the write.
+	For child-row writes the row must also match the child table (and be a row-key when required)."""
 	vertical, group, program = rules.lead_axes(lead)
+	filters = {"target_doctype": target_doctype, "fieldname": fieldname, "enabled": 1}
+	if child_table is not None:
+		filters["child_table_field"] = child_table
+	if require_row_key:
+		filters["is_row_key"] = 1
 	rows = frappe.get_all(
 		"CRM Automatable Field",
-		filters={"target_doctype": target_doctype, "fieldname": fieldname, "enabled": 1},
+		filters=filters,
 		fields=["vertical", "group", "program"],
 	)
 	axes = {"vertical": vertical or "", "group": group or "", "program": program or ""}

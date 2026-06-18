@@ -436,6 +436,18 @@
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Webhook Endpoints",
+    "link_type": "DocType",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "link_to": "Webhook"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
     "type": "Section Break",
     "label": "Observability",
     "link_type": "DocType",

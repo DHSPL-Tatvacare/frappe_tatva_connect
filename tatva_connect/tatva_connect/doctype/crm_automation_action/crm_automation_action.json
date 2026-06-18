@@ -13,7 +13,11 @@
   "fieldname",
   "value_mode",
   "value",
-  "context_field"
+  "context_field",
+  "child_table",
+  "match_json",
+  "set_json",
+  "webhook_endpoint"
  ],
  "fields": [
   {
@@ -23,7 +27,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action Type",
-   "options": "Create Task\nSet Field",
+   "options": "Create Task\nSet Field\nAppend Child Row\nUpsert Child Row\nCall Webhook",
    "reqd": 1
   },
   {
@@ -85,6 +89,37 @@
    "fieldname": "context_field",
    "fieldtype": "Data",
    "label": "Context Field"
+  },
+  {
+   "depends_on": "eval:[\"Append Child Row\",\"Upsert Child Row\"].includes(doc.action_type)",
+   "description": "CRM Lead child-table fieldname to write into, e.g. custom_lab_profile.",
+   "fieldname": "child_table",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Child Table"
+  },
+  {
+   "depends_on": "eval:doc.action_type==\"Upsert Child Row\"",
+   "description": "JSON {child_fieldname: value} identifying the row to update; if none matches, a new row is appended. Each key must be an enabled row-key in the allowlist. Use \"$ctx.<field>\" to pull from the activity context.",
+   "fieldname": "match_json",
+   "fieldtype": "Small Text",
+   "label": "Match (JSON)"
+  },
+  {
+   "depends_on": "eval:[\"Append Child Row\",\"Upsert Child Row\"].includes(doc.action_type)",
+   "description": "JSON {child_fieldname: value} to set on the row. Each key must be in the allowlist for this grain. Use \"$ctx.<field>\" to pull from the activity context; otherwise the value is literal.",
+   "fieldname": "set_json",
+   "fieldtype": "Small Text",
+   "label": "Set (JSON)"
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.action_type==\"Call Webhook\"",
+   "description": "The configured outbound endpoint to call (native Webhook, delivery-only). Admin-curated; the rule only picks it.",
+   "fieldname": "webhook_endpoint",
+   "fieldtype": "Link",
+   "label": "Webhook Endpoint",
+   "options": "Webhook"
   }
  ],
  "grid_page_length": 50,
