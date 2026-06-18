@@ -1,6 +1,6 @@
 {
  "app": "tatva_connect",
- "creation": "2026-06-18 20:00:00.000000",
+ "creation": "2026-06-18 21:00:00.000000",
  "docstatus": 0,
  "doctype": "Desktop Icon",
  "hidden": 0,
@@ -10,7 +10,8 @@
  "label": "Partner API",
  "link_to": "Partner API",
  "link_type": "Workspace Sidebar",
- "modified": "2026-06-18 20:00:00.000000",
+ "logo_url": "/assets/tatva_connect/images/spaces/partner_api.png",
+ "modified": "2026-06-18 21:00:00.000000",
  "modified_by": "Administrator",
  "name": "Partner API",
  "owner": "Administrator",

@@ -1,6 +1,6 @@
 {
  "app": "tatva_connect",
- "creation": "2026-06-18 20:00:00.000000",
+ "creation": "2026-06-18 21:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "header_icon": "messages-square",
@@ -149,7 +149,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-18 20:00:00.000000",
+ "modified": "2026-06-18 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
