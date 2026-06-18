@@ -2,18 +2,18 @@
  "app": "tatva_connect",
  "charts": [],
  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Acefone Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}]",
- "creation": "2026-06-18 00:00:00.000000",
+ "creation": "2026-06-18 18:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
  "for_user": "",
  "hide_custom": 0,
  "icon": "message",
- "idx": 2,
+ "idx": 1,
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-06-18 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -31,7 +31,7 @@
    "role": "Sales Manager"
   }
  ],
- "sequence_id": 2.0,
+ "sequence_id": 1.0,
  "shortcuts": [
   {
    "color": "Grey",

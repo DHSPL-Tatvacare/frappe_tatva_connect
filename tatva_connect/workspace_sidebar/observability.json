@@ -1,6 +1,6 @@
 {
  "app": "tatva_connect",
- "creation": "2026-06-18 00:00:00.000000",
+ "creation": "2026-06-18 18:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace Sidebar",
  "header_icon": "dashboard",
@@ -100,7 +100,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-06-18 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",
