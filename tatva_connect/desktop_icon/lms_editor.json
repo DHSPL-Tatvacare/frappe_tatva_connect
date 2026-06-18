@@ -1,0 +1,21 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-06-18 22:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "Link",
+ "idx": 1,
+ "label": "LMS Editor",
+ "link": "/desk/learning",
+ "link_type": "External",
+ "logo_url": "/assets/tatva_connect/images/spaces/lms_editor.png",
+ "modified": "2026-06-18 22:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "LMS Editor",
+ "owner": "Administrator",
+ "parent_icon": "LMS",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}
