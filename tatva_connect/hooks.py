@@ -5,14 +5,21 @@ app_description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony
 app_email = "pareekshith.bompally@tatvacare.in"
 app_license = "mit"
 
-# App-launcher tile (/apps): a "Tatva Connect" card that opens the Desk workspace.
-# Gated by has_permission to the same roles that can see the workspace (System Manager,
-# Sales Manager) — the tile never shows to ineligible users.
+# App logo — shown in the desk app-switcher header AND the /apps tile. Ships as a committed
+# asset (public/images/tatva-connect.png); `bench build` republishes it every deploy, so it
+# is never lost between deploys.
+app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
+
+# Tatva Connect as an "app" in the desk switcher: its workspaces (Communications, Automations,
+# Partner API, Infrastructure, Field Operations, Observability) group under it because their
+# module belongs to tatva_connect. Opens on the Automations control plane. Gated by
+# has_permission to the roles that can see the workspaces (System Manager, Sales Manager).
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",
 		"title": "Tatva Connect",
-		"route": "/app/tatva-connect",
+		"logo": "/assets/tatva_connect/images/tatva-connect.png",
+		"route": "/app/automations",
 		"has_permission": "tatva_connect.api.apps.check_app_permission",
 	}
 ]
@@ -171,15 +178,16 @@ after_migrate = [
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
-	# Desk spaces ship as code — ONE seam for every app-intrinsic space (Tatva Connect,
-	# Observability, ...): its Workspace + Workspace Sidebar + launcher Desktop Icon all ship
-	# as name-filtered fixtures that auto-apply on migrate. Name-filtered so a future export
-	# never vacuums other apps' workspaces/sidebars/icons. A new space just adds its name here.
-	{"dt": "Workspace", "filters": [["name", "in", ["Tatva Connect", "Observability"]]]},
-	{"dt": "Workspace Sidebar", "filters": [["name", "in", ["Tatva Connect", "Observability"]]]},
-	# Launcher tile. The APP's own /desk tile is auto-created from the add_to_apps_screen hook
-	# (app-level, once); a SUB-space like Observability isn't an app, so it ships its tile here.
-	{"dt": "Desktop Icon", "filters": [["name", "in", ["Observability"]]]},
+	# Desk spaces ship as code. Each space = a matching Workspace + Workspace Sidebar fixture
+	# (name == title, so the sidebar renders for that workspace); workspaces group under the
+	# "Tatva Connect" app because their module belongs to tatva_connect. Name-filtered so a
+	# future export never vacuums other apps' records. A new space adds its name to BOTH lists.
+	{"dt": "Workspace", "filters": [["name", "in", [
+		"Communications", "Automations", "Partner API", "Infrastructure", "Field Operations", "Observability",
+	]]]},
+	{"dt": "Workspace Sidebar", "filters": [["name", "in", [
+		"Communications", "Automations", "Partner API", "Infrastructure", "Field Operations", "Observability",
+	]]]},
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no
 	# module-folder auto-sync), so they ship as name-scoped fixtures. The Dashboard Chart
 	# SOURCE that powers the custom charts is module-standard (observability/dashboard_chart_source/)

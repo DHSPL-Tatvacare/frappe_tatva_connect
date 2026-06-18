@@ -1,74 +1,13 @@
 [
  {
   "doctype": "Workspace Sidebar",
-  "name": "Tatva Connect",
-  "title": "Tatva Connect",
+  "name": "Communications",
+  "title": "Communications",
   "app": "tatva_connect",
   "module": "Tatva Connect",
   "standard": 1,
+  "header_icon": "message",
   "items": [
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Control Panel",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "All Automations",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Tatva Automation"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Doc Events",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Tatva Automation",
-    "route_options": "{\"fires_on\": \"Doc Event\"}"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Scheduled",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Tatva Automation",
-    "route_options": "{\"fires_on\": \"Schedule\"}"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Provider calls",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Tatva Automation",
-    "route_options": "{\"fires_on\": \"Provider call\"}"
-   },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
@@ -76,6 +15,7 @@
     "type": "Section Break",
     "label": "WhatsApp",
     "link_type": "DocType",
+    "icon": "message",
     "collapsible": 1,
     "child": 0,
     "indent": 1
@@ -87,10 +27,11 @@
     "type": "Link",
     "label": "WATI Accounts",
     "link_type": "DocType",
+    "link_to": "WhatsApp Account",
+    "icon": "organization",
     "collapsible": 1,
     "child": 1,
     "indent": 0,
-    "link_to": "WhatsApp Account",
     "route_options": "{\"custom_is_wati\": 1}"
    },
    {
@@ -100,10 +41,11 @@
     "type": "Link",
     "label": "WATI Routing",
     "link_type": "DocType",
+    "link_to": "CRM WATI Account Routing",
+    "icon": "branch",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM WATI Account Routing"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -112,10 +54,11 @@
     "type": "Link",
     "label": "WATI Settings",
     "link_type": "DocType",
+    "link_to": "CRM WATI Settings",
+    "icon": "setting-gear",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM WATI Settings"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -124,6 +67,7 @@
     "type": "Section Break",
     "label": "Telephony",
     "link_type": "DocType",
+    "icon": "call",
     "collapsible": 1,
     "child": 0,
     "indent": 1
@@ -135,10 +79,11 @@
     "type": "Link",
     "label": "Acefone Accounts",
     "link_type": "DocType",
+    "link_to": "CRM Acefone Account",
+    "icon": "organization",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Acefone Account"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -147,10 +92,11 @@
     "type": "Link",
     "label": "Acefone Routing",
     "link_type": "DocType",
+    "link_to": "CRM Acefone Account Routing",
+    "icon": "branch",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Acefone Account Routing"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -159,64 +105,20 @@
     "type": "Link",
     "label": "Acefone Settings",
     "link_type": "DocType",
+    "link_to": "CRM Acefone Settings",
+    "icon": "setting-gear",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Acefone Settings"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Section Break",
-    "label": "Storage",
+    "label": "Push Notifications",
     "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Azure Blob",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Azure Storage Settings"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Location",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Maps",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Maps Settings"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Notifications",
-    "link_type": "DocType",
+    "icon": "notification",
     "collapsible": 1,
     "child": 0,
     "indent": 1
@@ -228,10 +130,11 @@
     "type": "Link",
     "label": "Firebase Messaging",
     "link_type": "DocType",
+    "link_to": "CRM Push Settings",
+    "icon": "message-1",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Push Settings"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -240,10 +143,11 @@
     "type": "Link",
     "label": "Push Devices",
     "link_type": "DocType",
+    "link_to": "CRM Push Subscription",
+    "icon": "card",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Push Subscription"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -252,18 +156,31 @@
     "type": "Link",
     "label": "Notification Preferences",
     "link_type": "DocType",
+    "link_to": "CRM Notification Preference",
+    "icon": "setting",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Notification Preference"
-   },
+    "indent": 0
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace Sidebar",
+  "name": "Automations",
+  "title": "Automations",
+  "app": "tatva_connect",
+  "module": "Tatva Connect",
+  "standard": 1,
+  "header_icon": "tool",
+  "items": [
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Section Break",
-    "label": "Tasks & Activities",
+    "label": "Control Plane",
     "link_type": "DocType",
+    "icon": "tool",
     "collapsible": 1,
     "child": 0,
     "indent": 1
@@ -273,125 +190,64 @@
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "Task Types",
+    "label": "All Automations",
     "link_type": "DocType",
+    "link_to": "CRM Tatva Automation",
+    "icon": "list-alt",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Task Type"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "Checklist Templates",
+    "label": "Doc Events",
     "link_type": "DocType",
+    "link_to": "CRM Tatva Automation",
+    "icon": "filter",
     "collapsible": 1,
     "child": 1,
     "indent": 0,
-    "link_to": "CRM Task Checklist Template"
+    "route_options": "{\"fires_on\": \"Doc Event\"}"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Scheduled",
+    "link_type": "DocType",
+    "link_to": "CRM Tatva Automation",
+    "icon": "today",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "route_options": "{\"fires_on\": \"Schedule\"}"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Provider Calls",
+    "link_type": "DocType",
+    "link_to": "CRM Tatva Automation",
+    "icon": "integration",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "route_options": "{\"fires_on\": \"Provider call\"}"
    },
    {
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Section Break",
-    "label": "Intake",
+    "label": "Rule Engine",
     "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Intake Forms",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Intake Form"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Submissions",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Enrolment Submission"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Partner API",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "API Fields",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Lead API Field"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "API Mappings",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Lead API Mapping"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Operations",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 0,
-    "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Visit Audit",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Visit Audit"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Section Break",
-    "label": "Automation",
-    "link_type": "DocType",
+    "icon": "change",
     "collapsible": 1,
     "child": 0,
     "indent": 1
@@ -403,10 +259,11 @@
     "type": "Link",
     "label": "Automation Rules",
     "link_type": "DocType",
+    "link_to": "CRM Automation Rule",
+    "icon": "list-alt",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Automation Rule"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -415,22 +272,11 @@
     "type": "Link",
     "label": "Automatable Fields",
     "link_type": "DocType",
+    "link_to": "CRM Automatable Field",
+    "icon": "customization",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "CRM Automatable Field"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Run Log",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Automation Run Log"
+    "indent": 0
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -439,10 +285,233 @@
     "type": "Link",
     "label": "Webhook Endpoints",
     "link_type": "DocType",
+    "link_to": "Webhook",
+    "icon": "link-url",
     "collapsible": 1,
     "child": 1,
-    "indent": 0,
-    "link_to": "Webhook"
+    "indent": 0
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace Sidebar",
+  "name": "Partner API",
+  "title": "Partner API",
+  "app": "tatva_connect",
+  "module": "Tatva Connect",
+  "standard": 1,
+  "header_icon": "integration",
+  "items": [
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Lead Intake",
+    "link_type": "DocType",
+    "icon": "integration",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "API Fields",
+    "link_type": "DocType",
+    "link_to": "CRM Lead API Field",
+    "icon": "customization",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "API Mappings",
+    "link_type": "DocType",
+    "link_to": "CRM Lead API Mapping",
+    "icon": "branch",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace Sidebar",
+  "name": "Infrastructure",
+  "title": "Infrastructure",
+  "app": "tatva_connect",
+  "module": "Tatva Connect",
+  "standard": 1,
+  "header_icon": "setting",
+  "items": [
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Storage",
+    "link_type": "DocType",
+    "icon": "assets",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Azure Blob",
+    "link_type": "DocType",
+    "link_to": "CRM Azure Storage Settings",
+    "icon": "file-large",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Location",
+    "link_type": "DocType",
+    "icon": "google",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Maps",
+    "link_type": "DocType",
+    "link_to": "CRM Maps Settings",
+    "icon": "google",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace Sidebar",
+  "name": "Field Operations",
+  "title": "Field Operations",
+  "app": "tatva_connect",
+  "module": "Tatva Connect",
+  "standard": 1,
+  "header_icon": "project",
+  "items": [
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Tasks",
+    "link_type": "DocType",
+    "icon": "project",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Task Types",
+    "link_type": "DocType",
+    "link_to": "CRM Task Type",
+    "icon": "list-alt",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Checklist Templates",
+    "link_type": "DocType",
+    "link_to": "CRM Task Checklist Template",
+    "icon": "tick",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Intake",
+    "link_type": "DocType",
+    "icon": "edit",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Intake Forms",
+    "link_type": "DocType",
+    "link_to": "CRM Intake Form",
+    "icon": "text",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Submissions",
+    "link_type": "DocType",
+    "link_to": "CRM Enrolment Submission",
+    "icon": "read-status",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Audit",
+    "link_type": "DocType",
+    "icon": "review",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Visit Audit",
+    "link_type": "DocType",
+    "link_to": "CRM Visit Audit",
+    "icon": "quality",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
    }
   ]
  },
@@ -459,14 +528,38 @@
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Dashboard",
+    "link_type": "DocType",
+    "icon": "dashboard",
+    "collapsible": 1,
+    "child": 0,
+    "indent": 1
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
     "type": "Link",
     "label": "API Dashboard",
     "link_type": "Workspace",
     "link_to": "Observability",
-    "icon": "dashboard",
+    "icon": "dashboard-list",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Metrics & Logs",
+    "link_type": "DocType",
+    "icon": "chart",
     "collapsible": 1,
     "child": 0,
-    "indent": 0
+    "indent": 1
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -476,9 +569,9 @@
     "label": "API Metrics",
     "link_type": "DocType",
     "link_to": "CRM API Metric",
-    "icon": "list",
+    "icon": "number-card",
     "collapsible": 1,
-    "child": 0,
+    "child": 1,
     "indent": 0
    },
    {
@@ -489,10 +582,35 @@
     "label": "API Request Log",
     "link_type": "DocType",
     "link_to": "CRM API Request Log",
-    "icon": "file",
+    "icon": "list-alt",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Automation Run Log",
+    "link_type": "DocType",
+    "link_to": "CRM Automation Run Log",
+    "icon": "list-alt",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Section Break",
+    "label": "Settings",
+    "link_type": "DocType",
+    "icon": "setting-gear",
     "collapsible": 1,
     "child": 0,
-    "indent": 0
+    "indent": 1
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -504,7 +622,7 @@
     "link_to": "CRM API Metric Settings",
     "icon": "setting-gear",
     "collapsible": 1,
-    "child": 0,
+    "child": 1,
     "indent": 0
    }
   ]

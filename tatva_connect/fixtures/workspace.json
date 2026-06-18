@@ -1,21 +1,245 @@
 [
  {
   "doctype": "Workspace",
-  "name": "Tatva Connect",
+  "name": "Communications",
   "type": "Workspace",
-  "label": "Tatva Connect",
-  "title": "Tatva Connect",
+  "label": "Communications",
+  "title": "Communications",
   "module": "Tatva Connect",
+  "icon": "message",
   "public": 1,
-  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tatva Connect \\u2014 Automation &amp; Config</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Automations\", \"col\": 4}}]",
+  "sequence_id": 1,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Acefone Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}]",
   "shortcuts": [
    {
     "doctype": "Workspace Shortcut",
     "parentfield": "shortcuts",
     "parenttype": "Workspace",
     "type": "DocType",
-    "label": "Automations",
+    "label": "WhatsApp Accounts",
+    "link_to": "WhatsApp Account",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Acefone Accounts",
+    "link_to": "CRM Acefone Account",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Push Settings",
+    "link_to": "CRM Push Settings",
+    "color": "Grey",
+    "doc_view": "List"
+   }
+  ],
+  "roles": [
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "System Manager"
+   },
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "Sales Manager"
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace",
+  "name": "Automations",
+  "type": "Workspace",
+  "label": "Automations",
+  "title": "Automations",
+  "module": "Tatva Connect",
+  "icon": "tool",
+  "public": 1,
+  "sequence_id": 2,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Control Panel\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Automation Rules\", \"col\": 4}}]",
+  "shortcuts": [
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Control Panel",
     "link_to": "CRM Tatva Automation",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Automation Rules",
+    "link_to": "CRM Automation Rule",
+    "color": "Grey",
+    "doc_view": "List"
+   }
+  ],
+  "roles": [
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "System Manager"
+   },
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "Sales Manager"
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace",
+  "name": "Partner API",
+  "type": "Workspace",
+  "label": "Partner API",
+  "title": "Partner API",
+  "module": "Tatva Connect",
+  "icon": "integration",
+  "public": 1,
+  "sequence_id": 3,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Partner API</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Fields\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Mappings\", \"col\": 4}}]",
+  "shortcuts": [
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "API Fields",
+    "link_to": "CRM Lead API Field",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "API Mappings",
+    "link_to": "CRM Lead API Mapping",
+    "color": "Grey",
+    "doc_view": "List"
+   }
+  ],
+  "roles": [
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "System Manager"
+   },
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "Sales Manager"
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace",
+  "name": "Infrastructure",
+  "type": "Workspace",
+  "label": "Infrastructure",
+  "title": "Infrastructure",
+  "module": "Tatva Connect",
+  "icon": "setting",
+  "public": 1,
+  "sequence_id": 4,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Infrastructure</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Azure Storage\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Maps\", \"col\": 4}}]",
+  "shortcuts": [
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Azure Storage",
+    "link_to": "CRM Azure Storage Settings",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Maps",
+    "link_to": "CRM Maps Settings",
+    "color": "Grey",
+    "doc_view": "List"
+   }
+  ],
+  "roles": [
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "System Manager"
+   },
+   {
+    "doctype": "Has Role",
+    "parentfield": "roles",
+    "parenttype": "Workspace",
+    "role": "Sales Manager"
+   }
+  ]
+ },
+ {
+  "doctype": "Workspace",
+  "name": "Field Operations",
+  "type": "Workspace",
+  "label": "Field Operations",
+  "title": "Field Operations",
+  "module": "Tatva Connect",
+  "icon": "project",
+  "public": 1,
+  "sequence_id": 5,
+  "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Field Operations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Intake Forms\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}}]",
+  "shortcuts": [
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Task Types",
+    "link_to": "CRM Task Type",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Intake Forms",
+    "link_to": "CRM Intake Form",
+    "color": "Grey",
+    "doc_view": "List"
+   },
+   {
+    "doctype": "Workspace Shortcut",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "type": "DocType",
+    "label": "Visit Audit",
+    "link_to": "CRM Visit Audit",
     "color": "Grey",
     "doc_view": "List"
    }
@@ -163,6 +387,8 @@
     "parenttype": "Workspace",
     "role": "Sales Manager"
    }
-  ]
+  ],
+  "icon": "dashboard",
+  "sequence_id": 6
  }
 ]
