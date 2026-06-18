@@ -27,7 +27,7 @@
   }
  ],
  "content": "[{\"id\": \"obs_hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability - Partner API &amp; Webhooks</b></span>\", \"col\": 12}}, {\"id\": \"obs_c1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Requests (24h)\", \"col\": 3}}, {\"id\": \"obs_c2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors (24h)\", \"col\": 3}}, {\"id\": \"obs_c3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 3}}, {\"id\": \"obs_c4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 3}}, {\"id\": \"obs_ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Traffic (Daily)\", \"col\": 12}}, {\"id\": \"obs_ch2\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Endpoint\", \"col\": 6}}, {\"id\": \"obs_ch3\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Errors (Daily)\", \"col\": 6}}, {\"id\": \"obs_ch4\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API Error Rate (Daily)\", \"col\": 6}}, {\"id\": \"obs_ch5\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Daily)\", \"col\": 6}}, {\"id\": \"obs_ch6\", \"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Hourly)\", \"col\": 12}}, {\"id\": \"obs_s1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metrics (raw)\", \"col\": 4}}, {\"id\": \"obs_s2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}}, {\"id\": \"obs_s3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metric Settings\", \"col\": 4}}]",
- "creation": "2026-06-18 18:00:00.000000",
+ "creation": "2026-06-18 20:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -38,7 +38,7 @@
  "is_hidden": 0,
  "label": "Observability",
  "links": [],
- "modified": "2026-06-18 18:00:00.000000",
+ "modified": "2026-06-18 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",
