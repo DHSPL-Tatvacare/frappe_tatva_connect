@@ -54,7 +54,7 @@ def _dispatch(doc):
 	"""Resolve the lead's grain, fan out to matching rules, run each (per-rule guarded)."""
 	lead = doc.reference_docname
 	vertical, group, program = rules.lead_axes(lead)
-	matched = rules.matching_rules(vertical, group, program)
+	matched = rules.matching_rules(vertical, group, program, doc.custom_task_type)
 	if not matched:
 		return
 	context = build_context(doc)

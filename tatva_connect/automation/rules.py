@@ -24,10 +24,12 @@ def lead_axes(lead):
 	return _lead_axes(lead)
 
 
-def matching_rules(vertical, group, program):
-	"""Every ENABLED rule whose specified grain axes equal the lead's (blank axis = wildcard).
+def matching_rules(vertical, group, program, task_type):
+	"""Every ENABLED rule for this completed task's TYPE whose specified grain axes equal the lead's
+	(blank axis = wildcard).
 
-	ALL-MATCH fan-out (spec §5.1) — deliberately NOT resolve_scoped's pick-one. A rule with zero
+	ALL-MATCH fan-out (spec §5.1) — deliberately NOT resolve_scoped's pick-one. The trigger task type
+	must match (a rule fires only for the activity type it was authored against). A rule with zero
 	grain axes is rejected at author-time, so the query can never widen to a global default. Ordered
 	by priority then creation so the executor fires them deterministically."""
 	rows = frappe.db.sql(
@@ -35,12 +37,13 @@ def matching_rules(vertical, group, program):
 		SELECT name, vertical, `group`, program, task_type, priority
 		FROM `tabCRM Automation Rule`
 		WHERE enabled = 1
+		  AND task_type = %(tt)s
 		  AND (vertical = '' OR vertical IS NULL OR vertical = %(v)s)
 		  AND (`group`  = '' OR `group`  IS NULL OR `group`  = %(g)s)
 		  AND (program  = '' OR program  IS NULL OR program  = %(p)s)
 		ORDER BY priority ASC, creation ASC
 		""",
-		{"v": vertical or "", "g": group or "", "p": program or ""},
+		{"v": vertical or "", "g": group or "", "p": program or "", "tt": task_type or ""},
 		as_dict=True,
 	)
 	return rows
