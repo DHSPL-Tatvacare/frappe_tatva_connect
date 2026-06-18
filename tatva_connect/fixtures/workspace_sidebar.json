@@ -85,18 +85,6 @@
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
     "type": "Link",
-    "label": "WATI Settings",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM WATI Settings"
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
     "label": "WATI Accounts",
     "link_type": "DocType",
     "collapsible": 1,
@@ -121,24 +109,24 @@
     "doctype": "Workspace Sidebar Item",
     "parentfield": "items",
     "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "WATI Settings",
+    "link_type": "DocType",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "link_to": "CRM WATI Settings"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
     "type": "Section Break",
     "label": "Telephony",
     "link_type": "DocType",
     "collapsible": 1,
     "child": 0,
     "indent": 1
-   },
-   {
-    "doctype": "Workspace Sidebar Item",
-    "parentfield": "items",
-    "parenttype": "Workspace Sidebar",
-    "type": "Link",
-    "label": "Acefone Settings",
-    "link_type": "DocType",
-    "collapsible": 1,
-    "child": 1,
-    "indent": 0,
-    "link_to": "CRM Acefone Settings"
    },
    {
     "doctype": "Workspace Sidebar Item",
@@ -163,6 +151,18 @@
     "child": 1,
     "indent": 0,
     "link_to": "CRM Acefone Account Routing"
+   },
+   {
+    "doctype": "Workspace Sidebar Item",
+    "parentfield": "items",
+    "parenttype": "Workspace Sidebar",
+    "type": "Link",
+    "label": "Acefone Settings",
+    "link_type": "DocType",
+    "collapsible": 1,
+    "child": 1,
+    "indent": 0,
+    "link_to": "CRM Acefone Settings"
    },
    {
     "doctype": "Workspace Sidebar Item",
