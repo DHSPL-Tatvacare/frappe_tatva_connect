@@ -178,16 +178,15 @@ after_migrate = [
 # Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
-	# Desk spaces ship as code. Each space = a matching Workspace + Workspace Sidebar fixture
-	# (name == title, so the sidebar renders for that workspace); workspaces group under the
-	# "Tatva Connect" app because their module belongs to tatva_connect. Name-filtered so a
-	# future export never vacuums other apps' records. A new space adds its name to BOTH lists.
-	{"dt": "Workspace", "filters": [["name", "in", [
-		"Communications", "Automations", "Partner API", "Infrastructure", "Field Operations", "Observability",
-	]]]},
-	{"dt": "Workspace Sidebar", "filters": [["name", "in", [
-		"Communications", "Automations", "Partner API", "Infrastructure", "Field Operations", "Observability",
-	]]]},
+	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT shipped as fixtures. Frappe's
+	# migrate runs remove_orphan_entities() (frappe/migrate.py), which deletes any standard
+	# Workspace / Workspace Sidebar that has no backing FILE under the app — so a fixture-only
+	# space gets pruned on every migrate. Each space therefore ships as STANDARD FILES, the
+	# Frappe-native, prune-proof way (model sync auto-imports them):
+	#   <module>/workspace/<slug>/<slug>.json        e.g. tatva_connect/workspace/automations/…
+	#   workspace_sidebar/<name>.json                e.g. workspace_sidebar/automations.json
+	# A new space just drops its two files there. Only the dashboard CONTENT below stays fixtures
+	# (Dashboard Chart / Number Card have no module-folder sync).
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no
 	# module-folder auto-sync), so they ship as name-scoped fixtures. The Dashboard Chart
 	# SOURCE that powers the custom charts is module-standard (observability/dashboard_chart_source/)

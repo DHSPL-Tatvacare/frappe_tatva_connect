@@ -1,0 +1,63 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-06-18 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "setting",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "assets",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Storage",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file-large",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Azure Blob",
+   "link_to": "CRM Azure Storage Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "google",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Location",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "google",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Maps",
+   "link_to": "CRM Maps Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Infrastructure",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Infrastructure"
+}
