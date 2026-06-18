@@ -1,23 +1,53 @@
-"""Fold: carry the legacy task-transition engine's master switch onto the unified automation engine.
+"""Fold: carry the legacy task-transition engine's master switch onto the unified automation engine,
+then drop the orphaned legacy child table — safely.
 
 The legacy `Task::CRM Task::transitions` automation was folded into the unified engine
-(`Task::Automation::rules`) — its config rows are migrated by the db-seeds SQL, its code/doctype are
-removed. This one-time patch preserves the operator's choice: whatever the legacy switch was
-(on/off), the unified engine's switch becomes the same. Runs post_model_sync, BEFORE
-seed.sync_catalog (after_migrate) prunes the now-orphaned legacy registry row. Idempotent.
+(`Task::Automation::rules`): config rows migrated by the db-seeds SQL, code/doctype removed. This
+one-time patch (post_model_sync, BEFORE seed.sync_catalog prunes the legacy registry row):
+
+1. Carries the operator's switch (on stays on / off stays off). It UPSERTS the unified row so the
+   carry survives a multi-version-jump migrate where sync_catalog hasn't seeded the unified row yet
+   (sync_catalog's existing-row refresh never touches `enabled`, so a value set here holds).
+2. Drops the orphaned legacy table — but FAILS LOUD if it still holds un-migrated rows, so a
+   mis-ordered cutover (deploy before running the db-seeds migration SQL) can't silently destroy the
+   source data. Idempotent; no-op on a fresh install.
 """
 import frappe
 
 LEGACY = "Task::CRM Task::transitions"
 UNIFIED = "Task::Automation::rules"
+LEGACY_TABLE = "tabCRM Task Type Transition"
 
 
 def execute():
-	# Carry the operator's switch choice onto the unified engine (on stays on / off stays off).
-	if frappe.db.exists("CRM Tatva Automation", LEGACY) and frappe.db.exists("CRM Tatva Automation", UNIFIED):
-		enabled = frappe.db.get_value("CRM Tatva Automation", LEGACY, "enabled")
+	_carry_switch()
+	_drop_legacy_table()
+
+
+def _carry_switch():
+	if not frappe.db.exists("CRM Tatva Automation", LEGACY):
+		return
+	enabled = frappe.db.get_value("CRM Tatva Automation", LEGACY, "enabled")
+	if frappe.db.exists("CRM Tatva Automation", UNIFIED):
 		frappe.db.set_value("CRM Tatva Automation", UNIFIED, "enabled", enabled)
-	# Drop the now-orphaned legacy child table. Frappe's orphan sweep deletes the DocType but leaves
-	# the physical table; its rows were migrated to CRM Automation Rule by the db-seeds SQL before
-	# this deploy. Idempotent; no-op on a fresh install.
-	frappe.db.sql("DROP TABLE IF EXISTS `tabCRM Task Type Transition`")
+	else:
+		# Unified row not seeded yet (DB predates the engine; sync_catalog runs later in after_migrate
+		# and won't touch `enabled` on an existing row) — create it now carrying the legacy state.
+		doc = frappe.new_doc("CRM Tatva Automation")
+		doc.automation_key = UNIFIED
+		doc.enabled = enabled
+		doc.insert(ignore_permissions=True)
+
+
+def _drop_legacy_table():
+	if not frappe.db.table_exists("CRM Task Type Transition"):
+		return
+	rows = frappe.db.sql("SELECT COUNT(*) FROM `{0}`".format(LEGACY_TABLE))[0][0]
+	migrated = frappe.db.count("CRM Automation Rule", {"description": ["like", "Migrated transition:%"]})
+	if rows and not migrated:
+		frappe.throw(
+			"Automation fold aborted: `{0}` still holds {1} un-migrated transition rows. Run the "
+			"db-seeds migration SQL (…migrate-transitions-to-automation-rules.sql) FIRST, then migrate "
+			"again — refusing to drop the source data.".format(LEGACY_TABLE, rows)
+		)
+	frappe.db.sql("DROP TABLE IF EXISTS `{0}`".format(LEGACY_TABLE))

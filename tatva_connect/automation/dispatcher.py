@@ -101,7 +101,7 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain):
 	for i, action in enumerate(rule.actions, 1):
 		label = _action_label(action)
 		try:
-			_run_action(action, lead, context, axes)
+			_run_action(action, lead, context, axes, trigger_doc)
 			success += 1
 			details.append("{0}. {1}: ok".format(i, label))
 		except Exception as e:
@@ -129,7 +129,7 @@ def _action_label(a):
 # -- actions -----------------------------------------------------------------
 
 
-def _run_action(action, lead, context, axes):
+def _run_action(action, lead, context, axes, trigger_doc):
 	"""Dispatch one action by type (spec §4). Raises on failure so the caller's per-action guard
 	records it — one failure never touches siblings."""
 	handler = {
@@ -141,10 +141,10 @@ def _run_action(action, lead, context, axes):
 	}.get(action.action_type)
 	if handler is None:
 		raise ValueError(f"unknown action type {action.action_type!r}")
-	handler(action, lead, context, axes)
+	handler(action, lead, context, axes, trigger_doc)
 
 
-def _action_create_task(action, lead, context, axes):
+def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type."""
 	from tatva_connect.tasks.tasks import create_followup_task
@@ -153,10 +153,17 @@ def _action_create_task(action, lead, context, axes):
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
 	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
 		raise PermissionError(f"task type {action.task_type} is not in this lead's grain")
-	create_followup_task(lead=lead, task_type=action.task_type, due_at=_due_at(action, context))
+	# Carry the completing task's assignee onto the next task (old-engine parity — otherwise the
+	# follow-up lands unassigned, on no rep's list and with no assignment notification).
+	create_followup_task(
+		lead=lead,
+		task_type=action.task_type,
+		due_at=_due_at(action, context),
+		assigned_to=trigger_doc.get("assigned_to"),
+	)
 
 
-def _action_set_field(action, lead, context, axes):
+def _action_set_field(action, lead, context, axes, trigger_doc):
 	"""SET_FIELD via the UNIFIED write path (spec §4.1): load the doc, set the field, save — NEVER
 	frappe.db.set_value (which skips validate/hook re-mirroring). Re-checked against the enabled
 	allowlist at runtime (defense in depth, spec §5.3)."""
@@ -174,7 +181,7 @@ def _action_set_field(action, lead, context, axes):
 	tdoc.save(ignore_permissions=True)
 
 
-def _action_append_child(action, lead, context, axes):
+def _action_append_child(action, lead, context, axes, trigger_doc):
 	"""APPEND_CHILD_ROW — add a new row to a CRM Lead child table (spec §4.2), via load+save so the
 	lead's hooks re-run. Every field must be allowlisted for the child doctype at the lead's grain."""
 	child_table, child_dt = _child_target(action)
@@ -187,7 +194,7 @@ def _action_append_child(action, lead, context, axes):
 	tdoc.save(ignore_permissions=True)
 
 
-def _action_upsert_child(action, lead, context, axes):
+def _action_upsert_child(action, lead, context, axes, trigger_doc):
 	"""UPSERT_CHILD_ROW — find the row by natural key and update it, else append (spec §4.2). The
 	match is type-aware (so 7=='7'==7.0 and a date literal matches a stored date), refuses to match on
 	a blank key, never rewrites the key, and fails loud if the key is non-unique."""
@@ -211,7 +218,7 @@ def _action_upsert_child(action, lead, context, axes):
 	tdoc.save(ignore_permissions=True)
 
 
-def _action_call_webhook(action, lead, context, axes):
+def _action_call_webhook(action, lead, context, axes, trigger_doc):
 	"""CALL_WEBHOOK — invoke a curated native Webhook's delivery (spec §6). We don't rebuild HTTP:
 	enqueue Frappe's enqueue_webhook (HMAC + 3 retries + Webhook Request Log) with the lead as payload
 	context. The endpoint is picked, never typed; its URL/secret stay admin-curated."""

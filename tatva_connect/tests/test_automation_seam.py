@@ -147,7 +147,7 @@ class TestAutomationSeam(FrappeTestCase):
 		switch — each must be named in the active UPDATE or the documented PROD note."""
 		# Integration switches the operator turns on at cutover (cutover runbook).
 		cutover = {
-			"Task::CRM Task::transitions",
+			"Task::Automation::rules",
 			"Storage::File::draft-cleanup",
 			"WhatsApp::WATI::templates",
 			"Storage::Azure::offload",
