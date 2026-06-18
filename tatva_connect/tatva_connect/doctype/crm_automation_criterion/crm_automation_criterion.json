@@ -13,9 +13,9 @@
  "fields": [
   {
    "columns": 3,
-   "description": "Schema fieldname from the completed task's activity context to test (e.g. visit_status, next_steps).",
+   "description": "Activity-form field to test. Options are filled in from the chosen task type's schema by the builder.",
    "fieldname": "field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Field",
    "reqd": 1

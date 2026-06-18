@@ -330,11 +330,7 @@ def _allowlisted(target_doctype, fieldname, axes, child_table=None, require_row_
 	if require_row_key:
 		filters["is_row_key"] = 1
 	rows = frappe.get_all("CRM Automatable Field", filters=filters, fields=["vertical", "group", "program"])
-	av = {"vertical": axes[0] or "", "group": axes[1] or "", "program": axes[2] or ""}
-	for row in rows:
-		if all((row.get(a) or "") in ("", av[a]) for a in av):
-			return True
-	return False
+	return any(rules.grain_matches(row, axes[0], axes[1], axes[2]) for row in rows)
 
 
 # -- logging -----------------------------------------------------------------

@@ -36,25 +36,31 @@ class CRMAutomationRule(Document):
 				frappe.throw(_("Task Type {0} does not exist.").format(frappe.bold(tt)), title=_("Unknown task type"))
 
 	def _validate_criteria_fields(self):
-		"""Best-effort: a criterion's field should be a schema fieldname on the trigger task type's
-		activity form. Throw only when clearly invalid (the type has a schema and the field isn't in it)."""
-		schema = {
-			r.fieldname
-			for r in frappe.get_all(
-				"CRM Task Type Field",
-				filters={"parent": self.task_type, "parenttype": "CRM Task Type"},
-				fields=["fieldname"],
-			)
-		}
-		if not schema:
+		"""Each criterion's field must exist on the trigger task type's activity form, and its operator
+		must be valid for that field's type. Both resolved from the one describe contract — the same
+		source the builder renders from, so the form and the validator never drift."""
+		from tatva_connect.automation.describe import fields_for_task_type
+
+		descriptors = {f["key"]: f for f in fields_for_task_type(self.task_type)}
+		if not descriptors:
 			return  # no schema to check against — leave it (best-effort)
 		for c in self.criteria:
-			if c.field and c.field not in schema:
+			if not c.field:
+				continue
+			d = descriptors.get(c.field)
+			if d is None:
 				frappe.throw(
 					_("Criterion field {0} is not a field on task type {1}.").format(
 						frappe.bold(c.field), frappe.bold(self.task_type)
 					),
 					title=_("Unknown criterion field"),
+				)
+			elif c.operator and c.operator not in d["operators"]:
+				frappe.throw(
+					_("Operator {0} can't be used on {1} (a {2} field).").format(
+						frappe.bold(c.operator), frappe.bold(c.field), d["type"]
+					),
+					title=_("Operator not valid for field"),
 				)
 
 	def _validate_set_field_actions(self):
@@ -130,18 +136,10 @@ class CRMAutomationRule(Document):
 			filters["child_table_field"] = child_table
 		if require_row_key:
 			filters["is_row_key"] = 1
-		rows = frappe.get_all("CRM Automatable Field", filters=filters, fields=["vertical", "group", "program"])
-		for r in rows:
-			if self._grain_matches(r):
-				return True
-		return False
+		from tatva_connect.automation import rules
 
-	def _grain_matches(self, row):
-		for axis in ("vertical", "group", "program"):
-			rval = row.get(axis) or ""
-			if rval and rval != (self.get(axis) or ""):
-				return False
-		return True
+		rows = frappe.get_all("CRM Automatable Field", filters=filters, fields=["vertical", "group", "program"])
+		return any(rules.grain_matches(r, self.vertical, self.group, self.program) for r in rows)
 
 
 def _parse_json(raw, label):

@@ -17,6 +17,17 @@ from frappe.utils import compare
 _NATIVE_OPS = {"=", "!=", "<", ">", "<=", ">=", "like", "not like"}
 
 
+def grain_matches(row, vertical, group, program):
+	"""The one grain predicate (allowlist checks + the describe builder): a grain row matches a target
+	grain when each axis the row SETS equals the target's — a blank axis on the row is a wildcard.
+	Same semantics as matching_rules' SQL, applied per-row in Python."""
+	target = {"vertical": vertical or "", "group": group or "", "program": program or ""}
+	for axis, tval in target.items():
+		if (row.get(axis) or "") not in ("", tval):
+			return False
+	return True
+
+
 def lead_axes(lead):
 	"""(vertical, group, program) of a lead — the SAME accessor the activity engine uses (one brain)."""
 	from tatva_connect.activity.api import _lead_axes
