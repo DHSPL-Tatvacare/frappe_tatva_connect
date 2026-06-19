@@ -21,7 +21,7 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_noti
 )
 from frappe_whatsapp.utils import get_whatsapp_account
 
-from tatva_connect.whatsapp import api as wati
+from tatva_connect.whatsapp import providers
 
 
 class WATINotification(WhatsAppNotification):
@@ -34,25 +34,26 @@ class WATINotification(WhatsAppNotification):
 		if not account:
 			frappe.throw(_("Please set a default outgoing WhatsApp Account"))
 
-		# No-Meta guarantee: only WATI may send; non-WATI raises (never Meta fallback).
-		wati.assert_wati(account)
-		wati.assert_enabled()
+		# No-Meta guarantee: resolve the account's provider adapter. An account with no
+		# registered adapter (e.g. a Meta account) raises here — never a Meta fallback.
+		adapter = providers.adapter_for(account)
+		adapter.assert_enabled()
 
 		tpl = data.get("template", {}) or {}
-		params = self._wati_params_from_meta(tpl)
+		params = self._wati_params_from_meta(tpl, adapter)
 		success = False
 		error_message = None
 		try:
-			resp = wati.send_template_message(
+			resp = adapter.send_template_message(
 				account,
-				to_number=wati.normalize_number(data.get("to")),
+				to_number=adapter.normalize_number(data.get("to")),
 				template_name=tpl.get("name"),
 				broadcast_name=f"crm_notif_{frappe.scrub(self.template or self.name)}",
 				parameters=params,
 			)
 			# Same success contract as the manual-send path (one brain): classify once,
 			# then this path's side-effect is to raise (caught below -> Notification Log).
-			r = wati.classify_send_response(resp)
+			r = adapter.classify_send_response(resp)
 			if r.failed:
 				raise Exception(r.reason or "WATI send failed")
 			message_id = r.message_id
@@ -101,11 +102,11 @@ class WATINotification(WhatsAppNotification):
 				{"doctype": "WhatsApp Notification Log", "template": self.template, "meta_data": meta}
 			).insert(ignore_permissions=True)
 
-	def _wati_params_from_meta(self, tpl):
+	def _wati_params_from_meta(self, tpl, adapter):
 		"""Body params as WATI [{name, value}] — names by the template's real paramNames (one
-		brain with the manual path: wati.template_param_names), values from the operator's field
+		brain with the manual path: adapter.template_param_names), values from the operator's field
 		mapping (the native `fields` table). Positional fallback when the template has no names."""
-		names = wati.template_param_names(frappe.get_doc("WhatsApp Templates", self.template)) if self.template else []
+		names = adapter.template_param_names(frappe.get_doc("WhatsApp Templates", self.template)) if self.template else []
 		for component in tpl.get("components") or []:
 			if component.get("type") == "body":
 				params = component.get("parameters") or []
