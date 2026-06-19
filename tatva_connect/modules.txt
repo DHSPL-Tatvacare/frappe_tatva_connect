@@ -11,3 +11,4 @@ Location
 Activity
 Notifications
 Observability
+Smartview
