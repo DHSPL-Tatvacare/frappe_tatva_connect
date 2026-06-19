@@ -14,7 +14,15 @@
   "target_doctype",
   "child_table_field",
   "fieldname",
-  "is_row_key"
+  "is_row_key",
+  "smartview_section",
+  "sql_source",
+  "child_doctype",
+  "child_pick",
+  "filterable",
+  "sortable",
+  "surface",
+  "applies_to"
  ],
  "fields": [
   {"fieldname": "field_key", "fieldtype": "Data", "label": "Field Key", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "section:fieldname, e.g. lab:hba1c"},
@@ -23,7 +31,15 @@
   {"fieldname": "target_doctype", "fieldtype": "Data", "label": "Target DocType", "reqd": 1, "description": "DocType the field lives on, e.g. CRM Lead, CRM Lab Profile."},
   {"fieldname": "child_table_field", "fieldtype": "Data", "label": "Child Table Field", "description": "For child sections only: the CRM Lead child-table fieldname this section writes into, e.g. custom_lab_profile. Blank for the parent (lead) section."},
   {"fieldname": "fieldname", "fieldtype": "Data", "label": "Fieldname", "reqd": 1, "description": "The fieldname on the target doctype."},
-  {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "in_list_view": 1, "description": "For a child section: mark the ONE field that is this child's natural row key (the upsert-by-key address). A child section with a row-key field is multi-row; one without is single-row. Replaces the old hardcoded CHILD_CONFIG."}
+  {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "in_list_view": 1, "description": "For a child section: mark the ONE field that is this child's natural row key (the upsert-by-key address). A child section with a row-key field is multi-row; one without is single-row. Replaces the old hardcoded CHILD_CONFIG."},
+  {"fieldname": "smartview_section", "fieldtype": "Section Break", "label": "Smart Views"},
+  {"fieldname": "sql_source", "fieldtype": "Select", "label": "SQL Source", "options": "\nparent\nchild\ntask\ntask_child", "description": "Smart Views composer: where the column physically lives. parent/child = on CRM Lead (or its child table); task/task_child = on CRM Task (or its archetype child). Blank rows are partner-API-only (ignored by the composer)."},
+  {"fieldname": "child_doctype", "fieldtype": "Data", "label": "Child DocType", "description": "Smart Views: for sql_source child/task_child, the child DocType to LEFT JOIN, e.g. CRM Task Order Detail."},
+  {"fieldname": "child_pick", "fieldtype": "Data", "label": "Child Pick", "description": "Smart Views: how to flatten the child row. 'single' = one row (parent=name); 'latest_by:<field>' = newest row by that field."},
+  {"fieldname": "filterable", "fieldtype": "Check", "label": "Filterable", "description": "Smart Views: only filterable fields may reach a WHERE clause."},
+  {"fieldname": "sortable", "fieldtype": "Check", "label": "Sortable", "description": "Smart Views: only sortable fields may reach ORDER BY."},
+  {"fieldname": "surface", "fieldtype": "Select", "label": "Surface", "options": "\nworklist\ndetail", "description": "Smart Views display hint: worklist (column on the list) vs detail (drawer only)."},
+  {"fieldname": "applies_to", "fieldtype": "Data", "label": "Applies To", "description": "Smart Views scope: 'lead' for a lead-view field, or 'activity:<task_type>' for an activity-view field (e.g. activity:Order Punch Status). Blank = any base object."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
