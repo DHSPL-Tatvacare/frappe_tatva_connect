@@ -6,7 +6,7 @@ Meta via `notify()`. We subclass the controller and route sends through WATI.
 
 No-Meta guarantee (guardrails 1, 3, 5):
 - builders (`send_template`/`send_outgoing`) send via WATI;
-- every send boundary calls `wati.assert_wati(account)` — non-WATI raises;
+- every send resolves the provider adapter (providers.adapter_for); unknown provider raises;
 - `notify()` is overridden as a backstop: if any un-anticipated path calls it
   on a WATI account, we raise instead of letting it reach Meta.
 
@@ -20,7 +20,7 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message i
 	WhatsAppMessage,
 )
 
-from tatva_connect.whatsapp import api as wati
+from tatva_connect.whatsapp import providers
 
 
 class WATIWhatsAppMessage(WhatsAppMessage):
@@ -65,12 +65,14 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		if intended and (self.type or "") == "Outgoing":
 			self.reference_doctype, self.reference_name = intended
 
-	def _wati_account(self):
-		"""Return the linked WhatsApp Account doc iff it's a WATI tenant, else None."""
+	def _provider_account(self):
+		"""Return the linked WhatsApp Account doc iff it maps to a registered provider
+		adapter, else None (then the stock frappe_whatsapp Meta path runs). The adapter
+		that speaks this account's provider is resolved via providers.adapter_for."""
 		if not self.whatsapp_account:
 			return None
 		account = frappe.get_cached_doc("WhatsApp Account", self.whatsapp_account)
-		return account if wati.is_wati_account(account) else None
+		return account if providers.has_adapter(account) else None
 
 	# --- send seams (override the builders, not notify) ---
 	def send_outgoing(self):
@@ -80,13 +82,13 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		# provider call (guardrail: a received message can't loop back out).
 		if self.flags.get("tatva_ingested"):
 			return
-		account = self._wati_account()
+		account = self._provider_account()
 		if account is None:
 			return super().send_outgoing()
 		if self.type != "Outgoing":
 			return
-		wati.assert_wati(account)
-		wati.assert_enabled()
+		adapter = providers.adapter_for(account)
+		adapter.assert_enabled()
 		if self.message_type == "Template":
 			# before_insert sets message_type=Template when a template is chosen;
 			# don't re-send rows that already carry a message_id (retries / notif inserts).
@@ -94,66 +96,67 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 				self.send_template()
 			return
 		# Session message: an attachment (media) or free-text.
-		number = wati.normalize_number(self.to)
+		number = adapter.normalize_number(self.to)
 		if self.attach and self.content_type in ("document", "image", "video", "audio"):
-			resp = self._wati_send_attachment(account, number)
+			resp = self._send_attachment(account, number)
 		else:
-			resp = wati.send_session_message(account, number, self.message or "")
-		self._wati_apply_response(resp)
+			resp = adapter.send_session_message(account, number, self.message or "")
+		self._apply_send_response(resp)
 		if self.attach and self.content_type in ("document", "image", "video", "audio") \
 		   and self.reference_doctype == "CRM Lead" and self.reference_name:
 			from tatva_connect.whatsapp import media as media_module
 			self.attach = media_module.adopt_outbound_media(self.attach, self.reference_name, self.message_id)
 
-	def _wati_send_attachment(self, account, number):
-		"""Send the row's attachment through WATI (the file itself, not its name).
+	def _send_attachment(self, account, number):
+		"""Send the row's attachment through the provider (the file itself, not its name).
 
-		Our own File rows (incl. Azure-backed proxy URLs) always send as BYTES — WATI
-		cannot authenticate to our proxy URL, so a URL send would fail. Only a genuine
-		external link (not one of our File rows) uses the URL path.
+		Our own File rows (incl. Azure-backed proxy URLs) always send as BYTES — the
+		provider cannot authenticate to our proxy URL, so a URL send would fail. Only a
+		genuine external link (not one of our File rows) uses the URL path.
 		"""
 		import mimetypes
 
+		adapter = providers.adapter_for(account)
 		caption = self.message or ""
 		filedoc = frappe.db.exists("File", {"file_url": self.attach})
 		if filedoc:
 			fd = frappe.get_doc("File", filedoc)
 			filename = fd.file_name or self.attach.split("/")[-1]
 			mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-			return wati.send_session_file(account, number, filename, fd.get_content(), mimetype, caption)
+			return adapter.send_session_file(account, number, filename, fd.get_content(), mimetype, caption)
 		# Not one of our File rows -> a true external URL.
-		return wati.send_session_file_via_url(account, number, self.attach, caption)
+		return adapter.send_session_file_via_url(account, number, self.attach, caption)
 
 	def send_template(self):
-		account = self._wati_account()
+		account = self._provider_account()
 		if account is None:
 			return super().send_template()
-		wati.assert_wati(account)
-		wati.assert_enabled()
+		adapter = providers.adapter_for(account)
+		adapter.assert_enabled()
 		template = frappe.get_doc("WhatsApp Templates", self.template)
 		params = self._wati_body_parameters(template)
 		# Save the resolved values so the CRM WhatsApp tab renders {{N}} filled
 		# (crm substitutes the display from template_parameters).
 		if params:
 			self.template_parameters = json.dumps([p["value"] for p in params])
-		resp = wati.send_template_message(
+		resp = adapter.send_template_message(
 			account,
-			to_number=wati.normalize_number(self.to),
+			to_number=adapter.normalize_number(self.to),
 			template_name=template.actual_name or template.template_name,
 			# Campaign label from the clean template name (not the account-scoped record id),
 			# so WATI shows e.g. "crm_bcatechissue" and same-template sends group cleanly.
 			broadcast_name=f"crm_{frappe.scrub(template.actual_name or template.template_name)}",
 			parameters=params,
 		)
-		self._wati_apply_response(resp)
+		self._apply_send_response(resp)
 
 	def notify(self, data):
-		"""Backstop (guardrail #5): a WATI account must never reach Meta's notify().
+		"""Backstop (guardrail #5): a provider-backed account must never reach Meta's notify().
 
-		Our builders send via WATI and never call this for WATI accounts. If some
-		other code path does, fail loud rather than POST to Meta.
+		Our builders send via the resolved provider adapter and never call this for an
+		adapter-backed account. If some other code path does, fail loud rather than POST to Meta.
 		"""
-		account = self._wati_account()
+		account = self._provider_account()
 		if account is not None:
 			frappe.throw(
 				_("Blocked a Meta-bound send on WATI account '{0}'. WATI is the only transport.").format(
@@ -166,10 +169,10 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 	def send_read_receipt(self):
 		"""No-Meta backstop: upstream POSTs a read receipt to Meta's Graph API.
 
-		WATI has no read-receipt endpoint on our contract, so for a WATI account
-		this is a no-op — never fall through to super() (which would reach Meta).
+		WATI has no read-receipt endpoint on our contract, so for an adapter-backed
+		account this is a no-op — never fall through to super() (which would reach Meta).
 		"""
-		if self._wati_account() is not None:
+		if self._provider_account() is not None:
 			return None
 		return super().send_read_receipt()
 
@@ -218,15 +221,15 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		]
 
 	def _wati_param_names(self, template):
-		"""Ordered WATI parameter names — single source of truth in wati.template_param_names."""
-		return wati.template_param_names(template)
+		"""Ordered provider parameter names — single source of truth in the adapter."""
+		return providers.adapter_for(self._provider_account()).template_param_names(template)
 
-	def _wati_apply_response(self, resp):
-		"""Map a WATI send response onto the row. Manual-send side of the shared contract:
-		classify once (wati.classify_send_response — the single source of truth, also used by
+	def _apply_send_response(self, resp):
+		"""Map a provider send response onto the row. Manual-send side of the shared contract:
+		classify once (adapter.classify_send_response — the single source of truth, also used by
 		the notification path), then apply this path's side-effect: throw on failure (which
 		rolls back the insert), else stamp the message id and mark sent."""
-		r = wati.classify_send_response(resp)
+		r = providers.adapter_for(self._provider_account()).classify_send_response(resp)
 		if r.failed:
 			self.status = "failed"
 			frappe.throw(

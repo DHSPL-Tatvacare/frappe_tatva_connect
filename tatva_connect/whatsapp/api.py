@@ -25,11 +25,11 @@ CONTENT_TYPE = "application/json-patch+json"
 def is_wati_account(account) -> bool:
 	"""True if the WhatsApp Account is a WATI tenant (vs Meta Cloud).
 
-	Prefer the explicit `custom_is_wati` flag; fall back to the URL host marker
-	so detection works before the custom field exists.
+	Prefer the explicit `custom_provider` Select; fall back to the URL host marker
+	so detection works before the field is populated (the migration backfills it).
 	"""
-	if account.get("custom_is_wati"):
-		return True
+	if account.get("custom_provider"):
+		return account.get("custom_provider") == "WATI"
 	return WATI_HOST_MARKER in (account.get("url") or "")
 
 
@@ -104,7 +104,7 @@ class WatiSendResult(NamedTuple):
 
 def classify_send_response(resp) -> WatiSendResult:
 	"""Single source of truth for 'did this WATI send succeed?' — used by BOTH the
-	manual-send path (message._wati_apply_response) and the automated-notification path
+	manual-send path (message._apply_send_response) and the automated-notification path
 	(notification.notify), so the contract is encoded once, never two ways.
 
 	WATI is inconsistent across endpoints: template send returns {"result": true};

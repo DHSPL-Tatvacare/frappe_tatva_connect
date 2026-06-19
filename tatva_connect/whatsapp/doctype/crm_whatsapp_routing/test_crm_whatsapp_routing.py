@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestCRMWATIAccountRouting(FrappeTestCase):
+class TestCRMWhatsAppRouting(FrappeTestCase):
 	pass

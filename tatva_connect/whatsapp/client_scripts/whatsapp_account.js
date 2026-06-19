@@ -3,13 +3,13 @@
 //   1) "Generate Webhook Token" button  -> fills custom_webhook_token with a random secret.
 //   2) "Copy Webhook URL" button + a headline banner showing the ready-to-register inbound
 //      URL  https://<host>/webhooks/whatsapp/wati/<token>.
-// WATI-only: everything is gated on custom_is_wati, so non-WATI accounts see nothing extra.
+// WATI-only: everything is gated on custom_provider === 'WATI', so other providers see nothing extra.
 // This is the Desk-form counterpart to the CRM SPA's CRM Form Scripts (see form_scripts_seed).
 // No fork — a Client Script override on an upstream doctype.
 
 frappe.ui.form.on('WhatsApp Account', {
   refresh(frm) {
-    if (!frm.doc.custom_is_wati) return;
+    if (frm.doc.custom_provider !== 'WATI') return;
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {
       frm.set_value('custom_webhook_token', wati_random_token());
@@ -43,7 +43,7 @@ function wati_webhook_url(frm) {
 }
 
 function wati_show_webhook_url(frm) {
-  if (!frm.doc.custom_is_wati) return;
+  if (frm.doc.custom_provider !== 'WATI') return;
   frm.dashboard.clear_headline();
   if (!frm.doc.custom_webhook_token) return;
   frm.dashboard.set_headline(

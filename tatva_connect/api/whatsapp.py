@@ -224,7 +224,7 @@ def _enforce_manual_template_cap(reference_doctype, reference_name):
 		# "0" the operator saved means they disabled this window.
 		raw = frappe.db.get_value(
 			"Singles",
-			{"doctype": "CRM WATI Settings", "field": field},
+			{"doctype": "CRM WhatsApp Settings", "field": field},
 			"value",
 			order_by=None,  # tabSingles has no `modified` column
 		)

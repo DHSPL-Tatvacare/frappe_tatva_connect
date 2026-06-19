@@ -134,11 +134,11 @@ def webhook(**kwargs):
 	# Flat JSON payload -> plain dict (drop Frappe/query keys).
 	event = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token")}
 
-	# Debug capture — operator toggle, default OFF (CRM WATI Settings.debug_log_payloads).
+	# Debug capture — operator toggle, default OFF (CRM WhatsApp Settings.debug_log_payloads).
 	# Off = nothing stored (the webhook only ever translates payloads into WhatsApp
 	# Message rows). On = raw payload -> core Integration Request (service "WATI",
 	# 90-day auto-clear). Token already verified above; never raises.
-	if frappe.db.get_single_value("CRM WATI Settings", "debug_log_payloads"):
+	if frappe.db.get_single_value("CRM WhatsApp Settings", "debug_log_payloads"):
 		_debug_log_payload(event)
 
 	# Membership filter: drop non-CRM traffic with a 200 (zero rows written).
@@ -170,7 +170,7 @@ def webhook_urls():
 	host = get_url().rstrip("/")
 	out = {}
 	for acc in frappe.get_all(
-		"WhatsApp Account", filters={"custom_is_wati": 1}, fields=["name", "custom_webhook_token"]
+		"WhatsApp Account", fields=["name", "custom_webhook_token"]
 	):
 		out[acc.name] = (
 			f"{host}/webhooks/whatsapp/wati/{acc.custom_webhook_token}"

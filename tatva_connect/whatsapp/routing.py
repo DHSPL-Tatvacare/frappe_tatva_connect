@@ -28,16 +28,17 @@ def resolve_account_for_lead(lead):
 	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
 
-	# Only route to a WATI account that is Active. This is the per-account kill-switch:
+	# Only route to an Active account (any provider). This is the per-account kill-switch:
 	# set an account Inactive and its leads are blocked (never sent through a dead
-	# tenant) rather than silently delivered.
+	# tenant) rather than silently delivered. The provider is read off the resolved
+	# account later (providers.adapter_for) — routing itself is provider-neutral.
 	active = set(
-		frappe.get_all("WhatsApp Account", filters={"custom_is_wati": 1, "status": "Active"}, pluck="name")
+		frappe.get_all("WhatsApp Account", filters={"status": "Active"}, pluck="name")
 	)
 
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(
-		"CRM WATI Account Routing",
+		"CRM WhatsApp Routing",
 		fields=["whatsapp_account", "program", "psp_group", "vertical"],
 	):
 		if rule.whatsapp_account not in active:
@@ -61,10 +62,10 @@ def resolve_account_for_lead(lead):
 	if tie:
 		frappe.throw(
 			_(
-				"Ambiguous WATI routing: two equally-specific rules point at different "
-				"accounts for this lead. Fix the WATI Account Routing rules."
+				"Ambiguous WhatsApp routing: two equally-specific rules point at different "
+				"accounts for this lead. Fix the WhatsApp Routing rules."
 			),
-			title=_("Ambiguous WATI route"),
+			title=_("Ambiguous WhatsApp route"),
 		)
 	return best
 
@@ -121,7 +122,7 @@ def account_by_token(token):
 	if not token:
 		return None
 	return frappe.db.get_value(
-		"WhatsApp Account", {"custom_webhook_token": token, "custom_is_wati": 1}, "name"
+		"WhatsApp Account", {"custom_webhook_token": token}, "name"
 	)
 
 

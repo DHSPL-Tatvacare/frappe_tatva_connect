@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class CRMWATISettings(Document):
+class CRMWhatsAppSettings(Document):
 	pass

@@ -176,7 +176,7 @@ after_migrate = [
 	"tatva_connect.seeds.seed_master_data",
 ]
 
-# Schema-as-code: the custom_is_wati flag on WhatsApp Account ships as a fixture
+# Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture
 # (the WATI Settings doctype ships as its own doctype JSON in this app).
 fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT shipped as fixtures. Frappe's
