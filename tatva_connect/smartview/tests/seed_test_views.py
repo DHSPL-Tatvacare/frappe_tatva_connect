@@ -1,0 +1,88 @@
+"""TEST-ONLY seed — two standard Smart Views + their catalog rows, for the P0 headless proof.
+
+This is NOT business data and NOT a fixture: it ships under tests/, is idempotent, and is only
+ever run by the proof harness (run_proof) on a dev bench. Business catalog rows + real views ship
+as db-seeds the operator runs by hand (CLAUDE.md A5). The catalog rows seeded here describe the
+4 archetype child columns + a couple of CRM Lead parent fields so the composer has something to
+flatten and filter.
+"""
+import frappe
+
+# (field_key, label, fieldname, sql_source, child_doctype, child_pick, filterable, sortable, surface, applies_to)
+_CATALOG = [
+	# Lead parent fields
+	("lead:first_name", "First Name", "first_name", "parent", None, None, 1, 1, "worklist", "lead"),
+	("lead:status", "Status", "status", "parent", None, None, 1, 1, "worklist", "lead"),
+	("lead:mobile_no", "Mobile", "mobile_no", "parent", None, None, 1, 0, "worklist", "lead"),
+	# Activity (Order Punch) — task parent promoted columns
+	("act:title", "Title", "title", "task", None, None, 0, 1, "worklist", "activity:Order Punch Status"),
+	("act:status", "Status", "status", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
+	("act:outcome", "Outcome", "custom_outcome", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
+	# Activity (Order Punch) — order detail child columns (single row per task)
+	("order:outcome", "Order Outcome", "outcome", "task_child", "CRM Task Order Detail", "single", 1, 1, "worklist", "activity:Order Punch Status"),
+	("order:order_id", "Order ID", "order_id", "task_child", "CRM Task Order Detail", "single", 1, 1, "worklist", "activity:Order Punch Status"),
+	("order:units", "Units", "number_of_units", "task_child", "CRM Task Order Detail", "single", 1, 1, "worklist", "activity:Order Punch Status"),
+	("order:shipped_by", "Shipped By", "shipped_by_date", "task_child", "CRM Task Order Detail", "single", 1, 1, "worklist", "activity:Order Punch Status"),
+]
+
+_FIELDS = [
+	"field_key", "label", "fieldname", "sql_source", "child_doctype",
+	"child_pick", "filterable", "sortable", "surface", "applies_to",
+]
+
+TEST_ACTIVITY_TYPE = "Order Punch Status"
+LEAD_VIEW = "TEST Smart View — Leads"
+ACT_VIEW = "TEST Smart View — Order Punch"
+
+
+def _seed_catalog():
+	for row in _CATALOG:
+		vals = dict(zip(_FIELDS, row))
+		name = vals["field_key"]
+		# section_key/target_doctype/fieldname are required by the doctype; fill sane values.
+		if vals["sql_source"] in ("task", "task_child"):
+			vals["section_key"] = "activity"
+			vals["target_doctype"] = vals["child_doctype"] or "CRM Task"
+		else:
+			vals["section_key"] = "lead"
+			vals["target_doctype"] = "CRM Lead"
+		if frappe.db.exists("CRM Lead API Field", name):
+			doc = frappe.get_doc("CRM Lead API Field", name)
+			doc.update(vals)
+			doc.save(ignore_permissions=True)
+		else:
+			frappe.get_doc(dict(doctype="CRM Lead API Field", **vals)).insert(ignore_permissions=True)
+
+
+def _seed_views():
+	specs = [
+		dict(
+			label=LEAD_VIEW, base_object="Lead", is_standard=1,
+			columns=frappe.as_json(["lead:first_name", "lead:status", "lead:mobile_no"]),
+			predicate=frappe.as_json({"op": "and", "conditions": []}),
+		),
+		dict(
+			label=ACT_VIEW, base_object="Activity", activity_type=TEST_ACTIVITY_TYPE, is_standard=1,
+			columns=frappe.as_json(["act:title", "act:status", "order:outcome", "order:order_id", "order:units", "order:shipped_by"]),
+			predicate=frappe.as_json({"op": "and", "conditions": []}),
+		),
+	]
+	names = {}
+	for s in specs:
+		existing = frappe.db.get_value("CRM Smart View", {"label": s["label"]})
+		if existing:
+			doc = frappe.get_doc("CRM Smart View", existing)
+			doc.update(s)
+			doc.save(ignore_permissions=True)
+		else:
+			doc = frappe.get_doc(dict(doctype="CRM Smart View", **s)).insert(ignore_permissions=True)
+		names[s["base_object"]] = doc.name
+	return names
+
+
+def seed():
+	"""Idempotent: seed the test catalog rows + the two standard test views. Returns view names."""
+	_seed_catalog()
+	names = _seed_views()
+	frappe.db.commit()
+	return names
