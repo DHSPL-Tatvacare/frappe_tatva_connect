@@ -21,6 +21,7 @@ caller and identifies the receiving account (routing.account_by_token) — inbou
 depends on a WATI payload field. Setup: vault runbook 02-operations/runbooks/09.
 """
 import frappe
+from frappe.rate_limiter import rate_limit
 
 from tatva_connect.whatsapp import adapter
 from tatva_connect.whatsapp import api as wati
@@ -29,7 +30,7 @@ from tatva_connect.webhooks import spine
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(key="token", limit=600, seconds=60, ip_based=True)
+@rate_limit(key="token", limit=600, seconds=60, ip_based=True)
 def webhook(**kwargs):
 	"""Fast-ack endpoint. The spine does kill-switch -> token auth+scope -> always-on raw
 	log -> relevance pre-filter -> enqueue, and returns 'ok' fast; the worker dedupes and

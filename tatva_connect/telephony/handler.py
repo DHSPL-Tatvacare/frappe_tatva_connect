@@ -31,6 +31,7 @@ webhook. No dependence on the CDR's did_number for auth.
 """
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from tatva_connect.telephony import adapter
 from tatva_connect.telephony import api as acefone
@@ -45,25 +46,25 @@ from tatva_connect.webhooks import spine
 # Guest webhook endpoints (one per Acefone trigger) — thin spine front doors
 # ---------------------------------------------------------------------------
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
 def inbound_answered(**kwargs):
 	return _receive("inbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
 def inbound_complete(**kwargs):
 	return _receive("inbound_complete")
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
 def outbound_answered(**kwargs):
 	return _receive("outbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
 def outbound_complete(**kwargs):
 	return _receive("outbound_complete")
 
