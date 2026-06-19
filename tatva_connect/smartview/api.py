@@ -154,7 +154,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	parenttype; latest_by:<f> -> join a subquery picking the newest row per parent. The
 	driving table's own (parent/task) fields resolve straight off driving_table."""
 	field_terms = {}
-	join_specs = {}  # alias -> (child_doctype, pick)
+	join_specs = {}  # alias -> (aliased child table, pick)
 	for key in needed_keys:
 		r = cat.get(key)
 		if not r:
@@ -168,30 +168,33 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			continue
 		pick = (r.child_pick or "single").strip()
 		alias = "{0}__{1}".format(child_dt, pick).replace(" ", "_").replace(":", "_")
-		if alias not in join_specs:
-			join_specs[alias] = (child_dt, pick)
-		field_terms[key] = PseudoColumn("`{0}`.`{1}`".format(alias, r.fieldname))
+		child_tbl = join_specs.get(alias, (None,))[0]
+		if child_tbl is None:
+			child_tbl = DocType(child_dt).as_(alias)
+			join_specs[alias] = (child_tbl, pick, child_dt)
+		# A real Field off the aliased child table -> .as_(field_key) aliases correctly,
+		# so the row dict is keyed by field_key (never the bare fieldname).
+		field_terms[key] = child_tbl[r.fieldname]
 
 	# the physical table backing the driving doctype (qb aliases tables as `tab<DocType>`).
 	driving_tbl = "tab{0}".format(driving_name)
 
 	def apply(query):
-		for alias, (child_dt, pick) in join_specs.items():
-			child = DocType(child_dt)
+		for alias, (child_tbl, pick, child_dt) in join_specs.items():
 			if pick.startswith("latest_by:"):
 				order_field = pick.split(":", 1)[1]
+				inner = DocType(child_dt)
 				sub = (
-					frappe.qb.from_(child)
+					frappe.qb.from_(inner)
 					.select(PseudoColumn("*"))
-					.orderby(child[order_field], order=frappe.qb.desc)
+					.orderby(inner[order_field], order=frappe.qb.desc)
 				).as_(alias)
 				# Newest row per parent wins on the worklist's single-row expectation.
 				query = query.left_join(sub).on(
 					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))
 				)
 			else:
-				sub = child.as_(alias)
-				query = query.left_join(sub).on(
+				query = query.left_join(child_tbl).on(
 					PseudoColumn(
 						"`{0}`.`parent` = `{1}`.`name` AND `{0}`.`parenttype` = '{2}'".format(
 							alias, driving_tbl, driving_name
