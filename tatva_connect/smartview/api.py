@@ -179,7 +179,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 				order_field = pick.split(":", 1)[1]
 				sub = (
 					frappe.qb.from_(child)
-					.select(child.parent, child.star)
+					.select(PseudoColumn("*"))
 					.orderby(child[order_field], order=frappe.qb.desc)
 				).as_(alias)
 				# Newest row per parent wins on the worklist's single-row expectation.
