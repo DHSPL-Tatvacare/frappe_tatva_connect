@@ -63,11 +63,17 @@ def _build_catalog():
 	"""
 	rows = frappe.get_all(
 		"CRM Lead API Field",
-		fields=["field_key", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key"],
+		fields=["field_key", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key", "sql_source"],
 		order_by="field_key asc",
 	)
 	keys, section_doctype, section_child, section_title, section_key_field = [], {}, {}, {}, {}
 	for r in rows:
+		# Smart-Views-only activity rows (CRM Task / its archetype children) are NOT lead
+		# fields — the partner API exposes lead fields only. Skip them so they never reach
+		# a partner's lead_schema. Parent/child (CRM Lead) rows stay; blank sql_source =
+		# legacy partner-only rows stay.
+		if r.sql_source in ("task", "task_child"):
+			continue
 		keys.append(r.field_key)
 		section = r.section_key
 		section_doctype[section] = r.target_doctype
