@@ -1,6 +1,6 @@
 {
  "app": "tatva_connect",
- "creation": "2026-06-18 22:00:00.000000",
+ "creation": "2026-06-19 12:00:00.000000",
  "docstatus": 0,
  "doctype": "Desktop Icon",
  "hidden": 0,
@@ -12,7 +12,7 @@
  "logo_url": "/assets/tatva_connect/images/spaces/lms_editor.png",
  "modified": "2026-06-19 12:00:00.000000",
  "modified_by": "Administrator",
- "name": "LMS Editor",
+ "name": "Learning Editor",
  "owner": "Administrator",
  "parent_icon": "Frappe Learning",
  "restrict_removal": 0,
