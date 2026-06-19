@@ -49,7 +49,47 @@ def apply_schema():
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
 	_ensure_fixed_settings()
 	_ensure_field_map_role()
+	_ensure_new_modules()
 	_assert_observability_bands()
+
+
+def _ensure_new_modules():
+	"""Create a Module Def + sync its doctypes for any module in modules.txt missing one.
+
+	install-app reads modules.txt and creates every Module Def up front, so a FRESH install is
+	fine. But adding a NEW module to an already-installed app: the in-place `migrate` doctype-sync
+	runs BEFORE after_migrate and skips a module whose Module Def doesn't yet exist — so its
+	doctype JSONs never land. This guard (after_migrate) creates the missing Module Def and imports
+	that module's doctype files on the SAME migrate, so a new module builds on first migrate too.
+	Idempotent: a no-op once the Module Def + tables exist. Isolates its own failure."""
+	try:
+		import os
+
+		from frappe.modules.import_file import import_file_by_path
+
+		app_path = frappe.get_app_path("tatva_connect")
+		modules = [m.strip() for m in (frappe.get_module_list("tatva_connect") or []) if m.strip()]
+		tables = set(frappe.db.get_tables())
+		for module in modules:
+			if frappe.db.exists("Module Def", module):
+				continue
+			md = frappe.new_doc("Module Def")
+			md.module_name = module
+			md.app_name = "tatva_connect"
+			md.insert(ignore_permissions=True)
+			frappe.db.commit()
+			scrubbed = frappe.scrub(module)
+			dt_dir = os.path.join(app_path, scrubbed, "doctype")
+			if not os.path.isdir(dt_dir):
+				continue
+			for dt_folder in os.listdir(dt_dir):
+				json_path = os.path.join(dt_dir, dt_folder, dt_folder + ".json")
+				if os.path.exists(json_path):
+					import_file_by_path(json_path, force=True)
+			frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_new_modules")
 
 
 def _assert_observability_bands():
