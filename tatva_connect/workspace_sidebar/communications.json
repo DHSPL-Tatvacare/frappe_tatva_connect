@@ -83,8 +83,8 @@
    "icon": "building-2",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Acefone Accounts",
-   "link_to": "CRM Acefone Account",
+   "label": "Telephony Accounts",
+   "link_to": "CRM Telephony Account",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -95,8 +95,8 @@
    "icon": "git-branch",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Acefone Routing",
-   "link_to": "CRM Acefone Account Routing",
+   "label": "Telephony Routing",
+   "link_to": "CRM Telephony Routing",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -107,8 +107,8 @@
    "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Acefone Settings",
-   "link_to": "CRM Acefone Settings",
+   "label": "Telephony Settings",
+   "link_to": "CRM Telephony Settings",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"

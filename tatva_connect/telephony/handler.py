@@ -34,7 +34,7 @@ from frappe import _
 from tatva_connect.telephony import api as acefone
 from tatva_connect.telephony import routing
 
-SETTINGS = "CRM Acefone Settings"
+SETTINGS = "CRM Telephony Settings"
 TELEPHONY_MEDIUM = "Acefone"
 
 # Map (call_status, completed?) -> CRM Call Log status. Acefone gives
@@ -132,7 +132,7 @@ def _process(payload: dict, direction: str, completed: bool):
 	if doc:
 		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
-			doc.custom_acefone_account = account_name
+			doc.custom_telephony_account = account_name
 		doc.save(ignore_permissions=True)
 	else:
 		doc = frappe.new_doc("CRM Call Log")
@@ -141,7 +141,7 @@ def _process(payload: dict, direction: str, completed: bool):
 		doc.telephony_medium = TELEPHONY_MEDIUM
 		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
-			doc.custom_acefone_account = account_name
+			doc.custom_telephony_account = account_name
 		doc.insert(ignore_permissions=True)
 
 	frappe.db.commit()

@@ -20,7 +20,7 @@ def _canonicalize(doc):
 			doc.set(f, None)
 
 
-class CRMAcefoneAccountRouting(Document):
+class CRMTelephonyRouting(Document):
 	def before_insert(self):
 		_canonicalize(self)
 
@@ -37,7 +37,7 @@ class CRMAcefoneAccountRouting(Document):
 
 		mine = _triple(self)
 		for other in frappe.get_all(
-			"CRM Acefone Account Routing",
+			"CRM Telephony Routing",
 			filters={"name": ["!=", self.name or ""]},
 			fields=["name", "vertical", "psp_group", "program"],
 		):

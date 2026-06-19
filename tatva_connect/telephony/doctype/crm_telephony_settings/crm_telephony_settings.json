@@ -43,7 +43,7 @@
  "modified": "2026-06-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
- "name": "CRM Acefone Settings",
+ "name": "CRM Telephony Settings",
  "owner": "Administrator",
  "permissions": [
   {

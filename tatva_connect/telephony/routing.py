@@ -1,7 +1,7 @@
 """Route a telephony call to the correct Acefone account by taxonomy / DID.
 
 One Acefone tenant = one `Acefone Account` (its own DID, agent line and API
-token). An `Acefone Account Routing` rule maps a Product Line (CRM Vertical) /
+token). An `Telephony Routing` rule maps a Product Line (CRM Vertical) /
 Group (CRM Group) / Program (CRM Program) to an account. A rule matches a lead
 only if EVERY axis it specifies matches; among matching rules the MOST SPECIFIC
 wins (Program > Group > Product Line).
@@ -33,15 +33,15 @@ def resolve_account_for_lead(lead):
 	# is blocked, never dialled through a dead tenant) rather than silently routed.
 	# Mirrors wati.routing's Active-only filter.
 	active = set(
-		frappe.get_all("CRM Acefone Account", filters={"enabled": 1}, pluck="name")
+		frappe.get_all("CRM Telephony Account", filters={"enabled": 1}, pluck="name")
 	)
 
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(
-		"CRM Acefone Account Routing",
-		fields=["acefone_account", "program", "psp_group", "vertical"],
+		"CRM Telephony Routing",
+		fields=["telephony_account", "program", "psp_group", "vertical"],
 	):
-		if rule.acefone_account not in active:
+		if rule.telephony_account not in active:
 			continue
 		# Every axis the rule specifies must match the lead.
 		if rule.program and rule.program != program:
@@ -56,14 +56,14 @@ def resolve_account_for_lead(lead):
 			+ (_VERTICAL_W if rule.vertical else 0)
 		)
 		if score > best_score:
-			best, best_score, tie = rule.acefone_account, score, False
-		elif score == best_score and rule.acefone_account != best:
+			best, best_score, tie = rule.telephony_account, score, False
+		elif score == best_score and rule.telephony_account != best:
 			tie = True
 	if tie:
 		frappe.throw(
 			_(
 				"Ambiguous Acefone routing: two equally-specific rules point at different "
-				"accounts for this record. Fix the Acefone Account Routing rules."
+				"accounts for this record. Fix the Telephony Routing rules."
 			),
 			title=_("Ambiguous Acefone route"),
 		)
@@ -134,6 +134,6 @@ def account_for_did(did_number):
 	if not digits:
 		return None
 	account = frappe.db.get_value(
-		"CRM Acefone Account", {"caller_id": ["like", f"%{digits[-10:]}%"]}, "name"
+		"CRM Telephony Account", {"caller_id": ["like", f"%{digits[-10:]}%"]}, "name"
 	)
 	return account or None

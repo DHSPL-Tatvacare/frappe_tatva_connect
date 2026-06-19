@@ -15,6 +15,10 @@ tatva_connect.patches.register_observability_module
 # CRM WATI Settings -> CRM WhatsApp Settings, and replace custom_is_wati with the custom_provider
 # Select (data preserved). Runs before model sync so the new names/field exist when JSON syncs.
 tatva_connect.patches.generalize_whatsapp_spine
+# Provider-neutral telephony spine: rename CRM Acefone Account/Routing/Settings -> CRM Telephony
+# Account/Routing/Settings, rename the acefone_account / custom_acefone_account fields, and seed
+# the provider Select. Data preserved; runs before model sync so the new names exist when JSON syncs.
+tatva_connect.patches.generalize_telephony_spine
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

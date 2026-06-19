@@ -15,7 +15,7 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
-from tatva_connect.telephony import api as acefone
+from tatva_connect.telephony import providers
 from tatva_connect.telephony import routing
 
 MEDIUM = "Acefone"
@@ -24,24 +24,27 @@ RECORDING_ENDPOINT = "/api/method/tatva_connect.api.telephony.recording"
 
 @frappe.whitelist()
 def make_a_call(to_number, from_number=None, caller_id=None):
-	"""Place an Acefone bridge call — drop-in for crm's Exotel make_a_call.
+	"""Place a bridge call via the routed account's provider — drop-in for crm's Exotel make_a_call.
 
-	The native UI passes only the number, so we resolve the lead/deal and its
-	routed account from it. Returns the new call-log name (the popup just shows
-	"Calling…"); failures raise so the native toast shows a clean message.
+	The native UI passes only the number, so we resolve the lead/deal, its routed
+	telephony account, and that account's provider adapter from it. Returns the new
+	call-log name (the popup just shows "Calling…"); failures raise so the native
+	toast shows a clean message.
 	"""
-	acefone.assert_enabled()
-
 	ref_doctype, ref_name = _reference_for_number(to_number)
 	account_name = routing.resolve_for_reference(ref_doctype, ref_name) if ref_name else None
 	if not account_name:
-		frappe.throw(_("No Acefone account route for this number — configure Acefone Account Routing."))
+		frappe.throw(_("No telephony account route for this number — configure Telephony Routing."))
 
-	account = frappe.get_cached_doc("CRM Acefone Account", account_name)
+	account = frappe.get_cached_doc("CRM Telephony Account", account_name)
+	adapter = providers.adapter_for(account)
+	adapter.assert_enabled()
 	agent_number = _agent_number(account)
-	call_log = _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name)
+	call_log = _new_call_log(
+		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account)
+	)
 
-	resp = acefone.click_to_call(
+	resp = adapter.click_to_call(
 		account,
 		destination_number=to_number,
 		agent_number=agent_number,
@@ -77,13 +80,13 @@ def _agent_number(account):
 	return number
 
 
-def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name):
+def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium):
 	doc = frappe.new_doc("CRM Call Log")
 	doc.id = frappe.generate_hash(length=12)
 	doc.type = "Outgoing"
 	doc.status = "Initiated"
-	doc.telephony_medium = MEDIUM
-	doc.custom_acefone_account = account_name
+	doc.telephony_medium = medium
+	doc.custom_telephony_account = account_name
 	setattr(doc, "from", str(agent_number))
 	doc.to = str(to_number)
 	doc.caller = frappe.session.user

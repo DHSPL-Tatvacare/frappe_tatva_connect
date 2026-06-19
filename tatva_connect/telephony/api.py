@@ -25,7 +25,7 @@ from frappe.integrations.utils import make_get_request, make_post_request
 from tatva_connect import automation
 
 API_VERSION = "v1"
-SETTINGS = "CRM Acefone Settings"
+SETTINGS = "CRM Telephony Settings"
 DEFAULT_BASE_URL = "https://api.acefone.in"
 
 
@@ -44,7 +44,7 @@ def assert_enabled():
 	"""Block outbound calls when the GLOBAL kill-switch is off."""
 	if not is_enabled():
 		frappe.throw(
-			_("Acefone is disabled (CRM Acefone Settings → Enabled is off)."),
+			_("Acefone is disabled (CRM Telephony Settings → Enabled is off)."),
 			title=_("Acefone disabled"),
 		)
 

@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class CRMAcefoneSettings(Document):
+class CRMTelephonySettings(Document):
 	pass

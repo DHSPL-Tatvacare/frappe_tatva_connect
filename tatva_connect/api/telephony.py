@@ -29,9 +29,9 @@ def recording(call_log):
 		frappe.throw("No recording on this call.")
 
 	headers = {}
-	account = doc.get("custom_acefone_account")
+	account = doc.get("custom_telephony_account")
 	if account:
-		token = frappe.get_doc("CRM Acefone Account", account).get_password("api_token")
+		token = frappe.get_doc("CRM Telephony Account", account).get_password("api_token")
 		if token:
 			headers["Authorization"] = f"Bearer {token}"
 

@@ -132,9 +132,9 @@ def reconcile_window(from_date=None, to_date=None, dry_run=True, create_missing=
 	from_date = from_date or add_to_date(now, hours=-24).strftime("%Y-%m-%d %H:%M:%S")
 
 	summary = {"scanned": 0, "recording_backfilled": 0, "created": 0, "skipped_no_row": 0, "dry_run": bool(dry_run)}
-	accounts = frappe.get_all("CRM Acefone Account", pluck="name")
+	accounts = frappe.get_all("CRM Telephony Account", pluck="name")
 	for account_name in accounts:
-		account = frappe.get_doc("CRM Acefone Account", account_name)
+		account = frappe.get_doc("CRM Telephony Account", account_name)
 		for page in range(1, max_pages + 1):
 			resp = acefone.get_call_report(account, from_date=from_date, to_date=to_date, page=page, limit=100)
 			rows = _rows_from_report(resp)

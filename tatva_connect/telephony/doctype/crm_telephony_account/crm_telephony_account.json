@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "account_name",
+  "provider",
   "enabled",
   "column_break_top",
   "agent_number",
@@ -28,8 +29,16 @@
    "unique": 1
   },
   {
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "label": "Provider",
+   "options": "Acefone",
+   "in_list_view": 1,
+   "description": "Telephony provider that places and receives this account's calls."
+  },
+  {
    "default": "0",
-   "description": "Enable this Acefone account for send/receive. Starts OFF — tick once the account is fully configured.",
+   "description": "Enable this Acefone account for send/receive. Starts OFF \u2014 tick once the account is fully configured.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -87,7 +96,7 @@
  "modified": "2026-06-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Telephony",
- "name": "CRM Acefone Account",
+ "name": "CRM Telephony Account",
  "owner": "Administrator",
  "permissions": [
   {
