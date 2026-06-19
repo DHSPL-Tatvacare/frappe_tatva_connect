@@ -53,6 +53,12 @@ override_whitelisted_methods = {
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
 }
 
+# Smart Views — the grain surface. Read-only whitelisted endpoints (auto-discovered by
+# path via @frappe.whitelist): tatva_connect.smartview.api.field_catalog / get_data. The
+# composer ANDs the SAME CRM Task / CRM Lead permission_query_conditions registered below
+# into every list AND count (fail-closed). It reads the shared field catalog (CRM Lead API
+# Field) live — no separate cache to invalidate.
+
 # CRM Task has no native list scoping (crm scopes only Lead/Deal) -> every agent sees every
 # task. Mirror each task's parent Lead/Deal visibility onto Task lists + single-doc reads.
 permission_query_conditions = {
