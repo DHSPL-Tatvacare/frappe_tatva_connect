@@ -26,7 +26,7 @@ TEST_USER = "smartview-proof-agent@example.com"
 def _ensure_activity_type():
 	"""A minimal CRM Task Type with a scope row, so the type is a real activity type."""
 	if not frappe.db.exists("CRM Task Type", TYPE):
-		frappe.get_doc({"doctype": "CRM Task Type", "name": TYPE, "is_logged_complete": 1}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "CRM Task Type", "type_name": TYPE, "is_logged_complete": 1}).insert(ignore_permissions=True)
 	tt = frappe.get_doc("CRM Task Type", TYPE)
 	if not tt.get("scope"):
 		tt.append("scope", {"vertical": "", "group": "", "program": ""})
