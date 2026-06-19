@@ -19,7 +19,8 @@
   "column_break_api",
   "click_to_call_api_key",
   "section_break_webhook",
-  "webhook_token"
+  "webhook_token",
+  "recording_host_allowlist"
  ],
  "fields": [
   {
@@ -102,6 +103,13 @@
    "label": "Webhook Token",
    "no_copy": 1,
    "description": "Per-account inbound webhook secret. Appears in this account's webhook URL (/webhooks/telephony/<provider>/<token>/<event>) and both authenticates the caller and identifies the receiving account. Use a unique random value per account; blank = inbound disabled."
+  },
+  {
+   "fieldname": "recording_host_allowlist",
+   "fieldtype": "Table",
+   "label": "Recording Host Allowlist (SSRF)",
+   "options": "CRM Account Trusted Host",
+   "description": "Optional SSRF allowlist for recording fetches — pick the host(s) this account's recording URLs live on, e.g. the Acefone CDN (from CRM Trusted Fetch Host). If set, recordings are fetched ONLY from these hosts or their sub-domains. Blank = any public host (fetches to private/internal IPs are always blocked)."
   }
  ],
  "grid_page_length": 50,

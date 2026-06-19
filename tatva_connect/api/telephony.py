@@ -20,6 +20,8 @@ def recording(call_log):
 	import requests
 	from werkzeug.wrappers import Response
 
+	from tatva_connect.utils import assert_safe_public_url
+
 	doc = frappe.get_doc("CRM Call Log", call_log)
 	if not frappe.has_permission("CRM Call Log", "read", doc):
 		raise frappe.PermissionError("Not permitted to play this recording.")
@@ -29,13 +31,19 @@ def recording(call_log):
 		frappe.throw("No recording on this call.")
 
 	headers = {}
+	allowed = []
 	account = doc.get("custom_telephony_account")
 	if account:
-		token = frappe.get_doc("CRM Telephony Account", account).get_password("api_token")
+		acct = frappe.get_doc("CRM Telephony Account", account)
+		allowed = [row.host for row in (acct.get("recording_host_allowlist") or [])]
+		token = acct.get_password("api_token")
 		if token:
 			headers["Authorization"] = f"Bearer {token}"
 
 	try:
+		# SSRF guard: recording_url can originate from a webhook CDR. Restrict to this account's
+		# operator-configured host allowlist (blank = any public host; IP block still runs).
+		assert_safe_public_url(url, allowed)
 		resp = requests.get(url, headers=headers, timeout=30)
 		resp.raise_for_status()
 	except Exception:

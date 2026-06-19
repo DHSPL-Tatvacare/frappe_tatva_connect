@@ -258,7 +258,13 @@ def get_media(account, data: str) -> tuple[bytes, str]:
 	token — an unauthenticated GET returns 401 (verified)."""
 	import requests
 
+	from tatva_connect.utils import assert_safe_public_url
+
 	url = data if data.startswith("http") else f"{account.url}/api/file/showFile?fileName={data}"
+	# SSRF guard: the media URL can originate from a webhook payload. Restrict it to this
+	# account's operator-configured host allowlist (blank = any public host; IP block still runs).
+	allowed = [row.host for row in (account.get("custom_media_host_allowlist") or [])]
+	assert_safe_public_url(url, allowed)
 	token = account.get_password("token")
 	resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
 	resp.raise_for_status()
