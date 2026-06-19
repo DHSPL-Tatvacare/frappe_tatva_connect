@@ -22,6 +22,18 @@ def execute():
 	frappe.db.commit()
 
 
+def _column_exists(table, column):
+	"""True if the column physically exists on the table. Checked against information_schema
+	rather than frappe.db.has_column, which can report a stale/meta value after a raw drop."""
+	return bool(
+		frappe.db.sql(
+			"""SELECT 1 FROM information_schema.COLUMNS
+			   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s""",
+			(table, column),
+		)
+	)
+
+
 def _migrate_provider_field():
 	"""custom_is_wati (Check) -> custom_provider (Select), preserving each account's value."""
 	if not frappe.db.exists("Custom Field", "WhatsApp Account-custom_provider"):
@@ -38,7 +50,7 @@ def _migrate_provider_field():
 				"search_index": 1,
 			},
 		)
-	if frappe.db.has_column("WhatsApp Account", "custom_is_wati"):
+	if _column_exists("tabWhatsApp Account", "custom_is_wati"):
 		frappe.db.sql(
 			"""UPDATE `tabWhatsApp Account`
 			   SET custom_provider = IF(custom_is_wati = 1, 'WATI', 'Meta')
@@ -47,5 +59,5 @@ def _migrate_provider_field():
 		if frappe.db.exists("Custom Field", "WhatsApp Account-custom_is_wati"):
 			frappe.delete_doc("Custom Field", "WhatsApp Account-custom_is_wati", force=True)
 		# Deleting the Custom Field does not drop the DB column — remove the orphan explicitly.
-		if frappe.db.has_column("WhatsApp Account", "custom_is_wati"):
+		if _column_exists("tabWhatsApp Account", "custom_is_wati"):
 			frappe.db.sql_ddl("ALTER TABLE `tabWhatsApp Account` DROP COLUMN `custom_is_wati`")
