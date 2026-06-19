@@ -39,7 +39,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Fires On",
-   "options": "Doc Event\nSchedule\nProvider call",
+   "options": "Doc Event\nSchedule\nProvider call\nPermission",
    "read_only": 1
   },
   {

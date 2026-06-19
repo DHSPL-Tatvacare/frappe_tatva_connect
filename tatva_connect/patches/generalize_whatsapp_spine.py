@@ -46,3 +46,6 @@ def _migrate_provider_field():
 		)
 		if frappe.db.exists("Custom Field", "WhatsApp Account-custom_is_wati"):
 			frappe.delete_doc("Custom Field", "WhatsApp Account-custom_is_wati", force=True)
+		# Deleting the Custom Field does not drop the DB column — remove the orphan explicitly.
+		if frappe.db.has_column("WhatsApp Account", "custom_is_wati"):
+			frappe.db.sql_ddl("ALTER TABLE `tabWhatsApp Account` DROP COLUMN `custom_is_wati`")

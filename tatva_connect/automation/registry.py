@@ -4,7 +4,7 @@ Every automation is an operator toggle, gated via `is_enabled(key)`: ON -> the
 tatva_connect hook rides and enforces; OFF -> it's dormant and native frappe/crm
 behaviour stands. No locked/always-on class — the operator owns every `enabled`.
 
-`fires_on`: Doc Event · Schedule · Provider call.
+`fires_on`: Doc Event · Schedule · Provider call · Permission.
 `Area` is derived — segment 1 of the composite key (`key.split("::")[0]`).
 `purpose`: the plain-English "what this does" + one UX example, shown read-only in
 the form (seeded into `description` on every migrate — code-owned reference text).
@@ -216,6 +216,22 @@ AUTOMATIONS = [
 			"tatva_connect.tasks.tasks.enforce_checklist",
 			"tatva_connect.tasks.tasks.enforce_location",
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
+		],
+	),
+	Auto(
+		key="Task::CRM Task::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Task · permission_query_conditions + has_permission",
+		purpose=(
+			"Scopes CRM Tasks to who should see them — a rep sees a task only if it's theirs or "
+			"assigned to them, or its parent Lead/Deal is visible to them. Stock crm scopes Leads "
+			"and Deals but never Tasks, so without this every agent sees every task.\n"
+			"Example: a rep opens the Tasks list and sees only tasks on their own leads, not the "
+			"whole team's."
+		),
+		backs=[
+			"tatva_connect.tasks.permissions.get_task_permission_query_conditions",
+			"tatva_connect.tasks.permissions.has_task_permission",
 		],
 	),
 	Auto(

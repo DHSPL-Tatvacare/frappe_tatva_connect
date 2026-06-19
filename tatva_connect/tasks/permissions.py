@@ -5,7 +5,12 @@ it is the user's own / assigned task. Native permission hooks — no fork, no re
 import frappe
 from frappe.model.db_query import DatabaseQuery
 
+from tatva_connect import automation
+
 PARENT_DOCTYPES = ("CRM Lead", "CRM Deal")
+# Operator switch (control plane). OFF -> fall back to STOCK crm: no task-level scoping
+# (crm scopes only Lead/Deal), exactly as if tatva_connect weren't loaded.
+_SWITCH = "Task::CRM Task::visibility"
 
 
 def _is_privileged(user):
@@ -15,6 +20,8 @@ def _is_privileged(user):
 def get_task_permission_query_conditions(user=None):
 	"""List scoping. A task is visible iff it is the user's own/assigned, OR its parent
 	Lead/Deal is visible to the user (reusing the parent's own list conditions)."""
+	if not automation.is_enabled(_SWITCH):
+		return ""  # OFF -> stock crm: no extra list conditions (every task visible)
 	user = user or frappe.session.user
 	if _is_privileged(user):
 		return ""
@@ -32,6 +39,8 @@ def get_task_permission_query_conditions(user=None):
 def has_task_permission(doc, ptype, user):
 	"""Single-doc / deep-link read gate (the PQC governs lists only). Mirror the same rule
 	so a task on a hidden parent can't be opened by name."""
+	if not automation.is_enabled(_SWITCH):
+		return True  # OFF -> stock crm: no task-level read gate
 	user = user or frappe.session.user
 	if _is_privileged(user):
 		return True
