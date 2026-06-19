@@ -103,6 +103,63 @@ def field_catalog(base_object, activity_type=None):
 
 
 # ---------------------------------------------------------------------------
+# Tabs + sidebar gate — the READ-ONLY surface the SPA boots from.
+# get_smart_views feeds the store (the row of tabs); access() is the Near Me-style
+# fail-closed sidebar gate. Neither writes; neither ever throws on the happy path.
+# ---------------------------------------------------------------------------
+
+def _smart_view_tab(d):
+	"""One tab row for the frontend store — the minimal shape SmartViewTabs renders."""
+	return {
+		"name": d.name,
+		"label": d.label,
+		"base_object": d.base_object,
+		"activity_type": d.activity_type,
+		"color": d.color,
+		"icon": d.icon,
+		"order": cint(d.view_order),
+		"pinned": bool(d.pinned),
+	}
+
+
+@frappe.whitelist()
+def get_smart_views():
+	"""The caller's tabs: every standard (grain-shared) view + the caller's own, ordered.
+	P1 keeps curation simple — all is_standard=1 views (grain-filtering is P3). Read-only;
+	returns [] (never throws) when nothing is seeded, so the surface degrades gracefully."""
+	user = frappe.session.user
+	rows = frappe.get_all(
+		"CRM Smart View",
+		or_filters={"is_standard": 1, "owner_user": user},
+		fields=[
+			"name", "label", "base_object", "activity_type",
+			"color", "icon", "view_order", "pinned",
+		],
+		order_by="view_order asc, label asc",
+	)
+	return [_smart_view_tab(frappe._dict(r)) for r in rows]
+
+
+@frappe.whitelist()
+def access():
+	"""The sidebar gate (Near Me pattern). Fail-closed: visible only when the caller has at
+	least one Smart View to land on (a standard view or one of their own). Never throws — any
+	error reads as not-visible, so stock CRM shows no link when the surface is empty/absent."""
+	try:
+		user = frappe.session.user
+		if user in ("Guest", "Administrator"):
+			visible = frappe.db.count("CRM Smart View", {"is_standard": 1}) > 0 if user == "Administrator" else False
+		else:
+			visible = bool(
+				frappe.db.exists("CRM Smart View", {"is_standard": 1})
+				or frappe.db.exists("CRM Smart View", {"owner_user": user})
+			)
+	except Exception:
+		visible = False
+	return {"visible": visible}
+
+
+# ---------------------------------------------------------------------------
 # Query assembly.
 # ---------------------------------------------------------------------------
 
