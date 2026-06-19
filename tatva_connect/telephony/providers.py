@@ -24,9 +24,10 @@ PROVIDERS = {"Acefone": acefone}
 
 
 def provider_of(account) -> str:
-	"""The account's provider. Defaults to Acefone for rows created before the field
-	existed (the migration backfills them)."""
-	return account.get("provider") or "Acefone"
+	"""The account's provider, or '' when unset — an unconfigured account reads as inert
+	(adapter_for then raises), never a baked-in live transport. The migration backfills
+	existing rows to 'Acefone'."""
+	return account.get("provider") or ""
 
 
 def has_adapter(account) -> bool:

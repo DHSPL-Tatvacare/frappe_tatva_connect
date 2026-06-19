@@ -27,6 +27,17 @@ class CRMTelephonyRouting(Document):
 	def validate(self):
 		_canonicalize(self)
 
+		# No global default: a rule must scope at least one axis. An all-blank rule would
+		# match every lead (score 0) and silently become a catch-all.
+		if not (self.vertical or self.psp_group or self.program):
+			frappe.throw(
+				_(
+					"Set at least one of Product Line / Group / Program. An all-blank rule "
+					"would act as a global default, which is not allowed."
+				),
+				title=_("Invalid routing rule"),
+			)
+
 		# Two rules with the IDENTICAL (vertical, group, program) triple are equally
 		# specific and could both match a lead -> ambiguous routing. `format:` only
 		# enforces uniqueness at insert, so this also blocks a tuple-duplicate created

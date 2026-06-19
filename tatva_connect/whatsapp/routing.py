@@ -7,11 +7,13 @@ matching rules the MOST SPECIFIC wins (Program > Group > Product Line).
 
 There is deliberately **no global default** — an unmatched lead raises at send
 time (see message.set_whatsapp_account). We never silently send through the
-wrong tenant. A catch-all is possible only by an explicit rule with all axes
-blank, if the operator chooses to create one.
+wrong tenant, and an all-blank rule is rejected by the routing controller so a
+catch-all can't be created by accident.
 """
 import frappe
 from frappe import _
+
+from tatva_connect.whatsapp import providers
 
 # Specificity weights — higher = more specific.
 _PROGRAM_W, _GROUP_W, _VERTICAL_W = 4, 2, 1
@@ -28,13 +30,19 @@ def resolve_account_for_lead(lead):
 	group = lead.get("custom_group")
 	vertical = lead.get("custom_vertical")
 
-	# Only route to an Active account (any provider). This is the per-account kill-switch:
-	# set an account Inactive and its leads are blocked (never sent through a dead
-	# tenant) rather than silently delivered. The provider is read off the resolved
-	# account later (providers.adapter_for) — routing itself is provider-neutral.
-	active = set(
-		frappe.get_all("WhatsApp Account", filters={"status": "Active"}, pluck="name")
-	)
+	# Only route to an Active account whose provider has a registered send adapter. This is
+	# both the per-account kill-switch (set an account Inactive and its leads are blocked,
+	# never sent through a dead tenant) AND the fail-closed gate against a non-adapter
+	# (e.g. Meta) account: such an account is never selectable, so an unrouted lead raises
+	# rather than falling through to the wrong transport. Provider-neutral — any registered
+	# adapter qualifies.
+	active = {
+		a.name
+		for a in frappe.get_all(
+			"WhatsApp Account", filters={"status": "Active"}, fields=["name", "custom_provider"]
+		)
+		if a.custom_provider in providers.PROVIDERS
+	}
 
 	best, best_score, tie = None, -1, False
 	for rule in frappe.get_all(

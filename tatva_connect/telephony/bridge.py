@@ -54,7 +54,10 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 	if not (resp or {}).get("success"):
 		call_log.db_set("status", "Failed")
 		info = (resp or {}).get("message") or _("click-to-call was rejected")
-		frappe.throw(_("Acefone could not place the call: {0}").format(info), title=_("Call Failed"))
+		frappe.throw(
+			_("{0} could not place the call: {1}").format(providers.provider_of(account), info),
+			title=_("Call Failed"),
+		)
 	return {"name": call_log.name}
 
 
@@ -76,7 +79,7 @@ def _agent_number(account):
 		"CRM Telephony Agent", {"user": frappe.session.user}, "acefone_number"
 	) or account.agent_number
 	if not number:
-		frappe.throw(_("No Acefone agent number set for you or the account."))
+		frappe.throw(_("No telephony agent number set for you or the account."))
 	return number
 
 

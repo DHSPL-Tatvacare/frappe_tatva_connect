@@ -98,16 +98,16 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		# Session message: an attachment (media) or free-text.
 		number = adapter.normalize_number(self.to)
 		if self.attach and self.content_type in ("document", "image", "video", "audio"):
-			resp = self._send_attachment(account, number)
+			resp = self._send_attachment(account, number, adapter)
 		else:
 			resp = adapter.send_session_message(account, number, self.message or "")
-		self._apply_send_response(resp)
+		self._apply_send_response(resp, adapter)
 		if self.attach and self.content_type in ("document", "image", "video", "audio") \
 		   and self.reference_doctype == "CRM Lead" and self.reference_name:
 			from tatva_connect.whatsapp import media as media_module
 			self.attach = media_module.adopt_outbound_media(self.attach, self.reference_name, self.message_id)
 
-	def _send_attachment(self, account, number):
+	def _send_attachment(self, account, number, adapter):
 		"""Send the row's attachment through the provider (the file itself, not its name).
 
 		Our own File rows (incl. Azure-backed proxy URLs) always send as BYTES — the
@@ -116,7 +116,6 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		"""
 		import mimetypes
 
-		adapter = providers.adapter_for(account)
 		caption = self.message or ""
 		filedoc = frappe.db.exists("File", {"file_url": self.attach})
 		if filedoc:
@@ -134,7 +133,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		adapter = providers.adapter_for(account)
 		adapter.assert_enabled()
 		template = frappe.get_doc("WhatsApp Templates", self.template)
-		params = self._wati_body_parameters(template)
+		params = self._body_parameters(template, adapter)
 		# Save the resolved values so the CRM WhatsApp tab renders {{N}} filled
 		# (crm substitutes the display from template_parameters).
 		if params:
@@ -148,7 +147,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			broadcast_name=f"crm_{frappe.scrub(template.actual_name or template.template_name)}",
 			parameters=params,
 		)
-		self._apply_send_response(resp)
+		self._apply_send_response(resp, adapter)
 
 	def notify(self, data):
 		"""Backstop (guardrail #5): a provider-backed account must never reach Meta's notify().
@@ -177,7 +176,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		return super().send_read_receipt()
 
 	# --- helpers ---
-	def _wati_body_parameters(self, template):
+	def _body_parameters(self, template, adapter):
 		"""Resolve template body placeholders into WATI's [{name, value}] shape.
 
 		WATI matches params by NAME (the template's paramName), NOT by the {{N}}
@@ -186,7 +185,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		sample_values keys, in body order (built from WATI customParams by
 		templates_sync). Empty for a static-body template.
 		"""
-		names = self._wati_param_names(template)
+		names = self._param_names(template, adapter)
 
 		def _name(idx):  # idx = the 1-based {{N}} slot
 			return names[idx - 1] if 0 < idx <= len(names) else str(idx)
@@ -220,16 +219,16 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			for i, v in enumerate(values)
 		]
 
-	def _wati_param_names(self, template):
+	def _param_names(self, template, adapter):
 		"""Ordered provider parameter names — single source of truth in the adapter."""
-		return providers.adapter_for(self._provider_account()).template_param_names(template)
+		return adapter.template_param_names(template)
 
-	def _apply_send_response(self, resp):
+	def _apply_send_response(self, resp, adapter):
 		"""Map a provider send response onto the row. Manual-send side of the shared contract:
 		classify once (adapter.classify_send_response — the single source of truth, also used by
 		the notification path), then apply this path's side-effect: throw on failure (which
 		rolls back the insert), else stamp the message id and mark sent."""
-		r = providers.adapter_for(self._provider_account()).classify_send_response(resp)
+		r = adapter.classify_send_response(resp)
 		if r.failed:
 			self.status = "failed"
 			frappe.throw(

@@ -2,10 +2,12 @@
 
 One neutral spine (`WhatsApp Account` + `CRM WhatsApp Routing` + `CRM WhatsApp Settings`)
 serves every provider; each account row carries `custom_provider`. This module maps a
-provider value to the adapter module that speaks its API. EVERY send / webhook / backfill
-path resolves the adapter from the account and calls THROUGH it — so adding AISensy /
-Gupshup is: write an adapter module exposing the surface below, register it here, add the
-Select option. No call-site changes, no parallel spines, no parallel brains.
+provider value to the adapter module that speaks its API. Every outbound SEND path resolves
+the adapter from the account and calls THROUGH it — so adding AISensy / Gupshup is: write an
+adapter module exposing the surface below, register it here, add the Select option. No
+call-site changes, no parallel spines, no parallel brains. (Inbound webhook parsing and
+history pull are provider-specific modules — each provider brings its own — feeding the same
+shared WhatsApp Message + routing contract.)
 
 Adapter surface (duck-typed — already the shape of whatsapp/api.py):
     send_template_message · send_session_message · send_session_file ·
