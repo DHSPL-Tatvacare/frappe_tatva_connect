@@ -229,10 +229,11 @@ AUTOMATIONS = [
 			"Example: a rep opens the Tasks list and sees only tasks on their own leads, not the "
 			"whole team's."
 		),
-		backs=[
-			"tatva_connect.tasks.permissions.get_task_permission_query_conditions",
-			"tatva_connect.tasks.permissions.has_task_permission",
-		],
+		# Gated by the accessor inside tasks/permissions.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony/Location. The permission-hook
+		# targets must stay OUT of the registry (drift walks only doc_events+scheduler;
+		# perm/override targets are deliberately un-backed). See test_drift_ignores_overrides.
+		backs=[],
 	),
 	Auto(
 		key="Task::Automation::rules",
