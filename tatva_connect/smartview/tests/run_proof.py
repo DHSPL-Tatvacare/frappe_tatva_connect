@@ -53,9 +53,11 @@ def _reset_test_data():
 
 
 def _make_lead(first):
+	# TAG lives in first_name (a catalog-searchable projected field) so the proof can
+	# isolate its leads via the composer's own search path.
 	doc = frappe.get_doc({
-		"doctype": "CRM Lead", "first_name": first, "lead_name": "{0} {1}".format(first, TAG),
-		"status": "New",
+		"doctype": "CRM Lead", "first_name": "{0} {1}".format(first, TAG),
+		"lead_name": "{0} {1}".format(first, TAG), "status": "New",
 	}).insert(ignore_permissions=True)
 	return doc.name
 

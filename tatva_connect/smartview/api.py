@@ -172,6 +172,9 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			join_specs[alias] = (child_dt, pick)
 		field_terms[key] = PseudoColumn("`{0}`.`{1}`".format(alias, r.fieldname))
 
+	# the physical table backing the driving doctype (qb aliases tables as `tab<DocType>`).
+	driving_tbl = "tab{0}".format(driving_name)
+
 	def apply(query):
 		for alias, (child_dt, pick) in join_specs.items():
 			child = DocType(child_dt)
@@ -184,14 +187,14 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 				).as_(alias)
 				# Newest row per parent wins on the worklist's single-row expectation.
 				query = query.left_join(sub).on(
-					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_name))
+					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))
 				)
 			else:
 				sub = child.as_(alias)
 				query = query.left_join(sub).on(
 					PseudoColumn(
 						"`{0}`.`parent` = `{1}`.`name` AND `{0}`.`parenttype` = '{2}'".format(
-							alias, driving_name, driving_name
+							alias, driving_tbl, driving_name
 						)
 					)
 				)
