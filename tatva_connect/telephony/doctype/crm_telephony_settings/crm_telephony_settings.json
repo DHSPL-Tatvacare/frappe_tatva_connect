@@ -7,9 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "column_break_top",
-  "record_call",
-  "section_break_webhook",
-  "webhook_verify_token"
+  "record_call"
  ],
  "fields": [
   {
@@ -22,18 +20,6 @@
    "fieldname": "record_call",
    "fieldtype": "Check",
    "label": "Record Outgoing Calls"
-  },
-  {
-   "fieldname": "section_break_webhook",
-   "fieldtype": "Section Break",
-   "hide_border": 1,
-   "label": "Webhook"
-  },
-  {
-   "description": "Shared secret Acefone must include (?key=...) on every inbound webhook URL. Global; per-account attribution is by the CDR's did_number.",
-   "fieldname": "webhook_verify_token",
-   "fieldtype": "Data",
-   "label": "Webhook Verify Token"
   }
  ],
  "grid_page_length": 50,

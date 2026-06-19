@@ -11,17 +11,21 @@ with zero extra glue. Two seams:
   * make_acefone_call(...)         -> create an Initiated Outgoing row, fire
     click-to-call carrying the row name as custom_identifier for correlation.
 
-Acefone registers a SEPARATE webhook URL per trigger, so we expose four thin
-guest endpoints; each validates ?key=, honours the kill-switch, and delegates
-to the shared `_process`. Handlers always return "ok" fast and log on failure
-(Acefone retries non-2xx).
+Acefone registers a SEPARATE webhook URL per trigger, so we expose four thin guest
+endpoints; each honours the kill-switch, authenticates+identifies the receiving account from
+the URL token, and delegates to the shared `_process`. Handlers always return "ok" fast and
+log on failure (Acefone retries non-2xx).
 
-Register the URLs on Acefone as (one per trigger):
-    https://<host>/api/method/tatva_connect.telephony.handler.inbound_answered?key=<token>
-    https://<host>/api/method/tatva_connect.telephony.handler.inbound_complete?key=<token>
-    https://<host>/api/method/tatva_connect.telephony.handler.outbound_answered?key=<token>
-    https://<host>/api/method/tatva_connect.telephony.handler.outbound_complete?key=<token>
-where <token> == Acefone Settings.webhook_verify_token.
+Register the pretty, per-account URLs on each tenant's Acefone dashboard (one per trigger;
+generate the token and copy the URLs from the Telephony Account form):
+    https://<host>/webhooks/telephony/<provider>/<token>/inbound_answered
+    https://<host>/webhooks/telephony/<provider>/<token>/inbound_complete
+    https://<host>/webhooks/telephony/<provider>/<token>/outbound_answered
+    https://<host>/webhooks/telephony/<provider>/<token>/outbound_complete
+where <token> == that Telephony Account's `webhook_token`. nginx rewrites the path to the
+native endpoint with ?token=; the token both authenticates the caller and names the receiving
+account (routing.account_by_webhook_token) — auth + identity in one, mirroring the WhatsApp
+webhook. No dependence on the CDR's did_number for auth.
 
 CRITICAL seam note: the lead's Calls-tab feed (crm.api.activities.get_linked_calls)
 filters primarily on `reference_docname`, but crm's Exotel handler only fills the
@@ -34,7 +38,6 @@ from frappe import _
 from tatva_connect.telephony import api as acefone
 from tatva_connect.telephony import routing
 
-SETTINGS = "CRM Telephony Settings"
 TELEPHONY_MEDIUM = "Acefone"
 
 # Map (call_status, completed?) -> CRM Call Log status. Acefone gives
@@ -74,15 +77,25 @@ def outbound_complete(**kwargs):
 
 
 def _entry(direction: str, completed: bool):
-	"""Shared front door: verify token, kill-switch, then process. Always 'ok'."""
+	"""Shared front door: kill-switch, then resolve+authenticate the account from the URL
+	token, then process. Always returns 'ok' fast (Acefone retries non-2xx).
+
+	The token in the URL IS the receiving account's secret (mirrors the WhatsApp webhook):
+	nginx maps /webhooks/telephony/<provider>/<token>/<event> -> ?token=<token>; resolving the
+	account from it both rejects impostors and tells us which tenant received the call — no
+	dependence on the CDR's did_number for auth."""
 	if not acefone.is_enabled():
 		return "ok"
-	if not _valid_key():
-		raise frappe.PermissionError("Invalid Acefone webhook key")
 
-	payload = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "key")}
+	token = frappe.request.args.get("token") if frappe.request else None
+	token = token or frappe.form_dict.get("token")
+	account_name = routing.account_by_webhook_token(token)
+	if not account_name:
+		raise frappe.PermissionError("Invalid telephony webhook token")
+
+	payload = {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token")}
 	try:
-		_process(payload, direction=direction, completed=completed)
+		_process(payload, direction=direction, completed=completed, account_name=account_name)
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(
@@ -92,20 +105,15 @@ def _entry(direction: str, completed: bool):
 	return "ok"
 
 
-def _valid_key() -> bool:
-	expected = frappe.db.get_single_value(SETTINGS, "webhook_verify_token")
-	if not expected:
-		return False  # fail-closed: no token configured -> reject (set a token to receive)
-	key = frappe.request.args.get("key") if frappe.request else None
-	key = key or frappe.form_dict.get("key")
-	return key == expected
-
-
 # ---------------------------------------------------------------------------
 # CDR -> CRM Call Log
 # ---------------------------------------------------------------------------
-def _process(payload: dict, direction: str, completed: bool):
-	"""Create or update one CRM Call Log row from an Acefone CDR payload."""
+def _process(payload: dict, direction: str, completed: bool, account_name=None):
+	"""Create or update one CRM Call Log row from an Acefone CDR payload.
+
+	`account_name` is the receiving tenant. The webhook passes it (resolved from the URL
+	token); the reconcile pull passes None, so we fall back to matching the CDR's DID to a
+	Telephony Account."""
 	frappe.publish_realtime("acefone_call", payload)
 
 	# Acefone's `call_id` is STABLE across every trigger of one call ("tracks the
@@ -120,13 +128,13 @@ def _process(payload: dict, direction: str, completed: bool):
 	call_type = "Incoming" if direction == "inbound" else "Outgoing"
 	status = _status_from_cdr(payload, completed)
 
-	# Best-effort per-tenant attribution: match the CDR's DID to an Acefone
-	# Account. Never block logging if it doesn't resolve.
-	account_name = None
-	try:
-		account_name = routing.account_for_did(payload.get("did_number"))
-	except Exception:
-		frappe.log_error(title="Acefone: DID -> account match failed", message=frappe.get_traceback())
+	# Attribution: prefer the token-identified account (webhook); else match the CDR's DID
+	# to a Telephony Account (reconcile pull). Never block logging if it doesn't resolve.
+	if account_name is None:
+		try:
+			account_name = routing.account_for_did(payload.get("did_number"))
+		except Exception:
+			frappe.log_error(title="Acefone: DID -> account match failed", message=frappe.get_traceback())
 
 	doc = _find_existing(call_id, direction, customer_number, payload)
 	if doc:

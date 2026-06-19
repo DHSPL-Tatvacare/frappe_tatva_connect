@@ -71,6 +71,19 @@ server {
 		rewrite ^ /api/method/tatva_connect.whatsapp.webhook.webhook?token=$wati_token last;
 	}
 
+	# --- Telephony/Acefone inbound webhook — same pretty, per-account pattern (TatvaCare) ---
+	# Public URLs registered on each tenant's Acefone dashboard (one per trigger):
+	#   /webhooks/telephony/acefone/<token>/<event>,  <event> ∈ the four known triggers.
+	# <token> = that Telephony Account's "Webhook Token". The event is constrained to the four
+	# literals in the regex so only those handler methods are reachable (no arbitrary-method
+	# injection). We rewrite to the native endpoint with ?token=, then `last` falls through to
+	# @webserver — the same canonical proxy path. The handler resolves the receiving account
+	# from the token (tatva_connect.telephony.routing.account_by_webhook_token) — auth + identity
+	# in one, mirroring the WhatsApp webhook above.
+	location ~ ^/webhooks/telephony/acefone/(?<tel_token>[^/]+)/(?<tel_event>inbound_answered|inbound_complete|outbound_answered|outbound_complete)/?$ {
+		rewrite ^ /api/method/tatva_connect.telephony.handler.$tel_event?token=$tel_token last;
+	}
+
 	location / {
 		rewrite ^(.+)/$ $1 permanent;
 		rewrite ^(.+)/index\.html$ $1 permanent;

@@ -17,7 +17,9 @@
   "base_url",
   "api_token",
   "column_break_api",
-  "click_to_call_api_key"
+  "click_to_call_api_key",
+  "section_break_webhook",
+  "webhook_token"
  ],
  "fields": [
   {
@@ -88,6 +90,18 @@
    "fieldname": "click_to_call_api_key",
    "fieldtype": "Password",
    "label": "Click-to-Call API Key"
+  },
+  {
+   "fieldname": "section_break_webhook",
+   "fieldtype": "Section Break",
+   "label": "Inbound Webhook"
+  },
+  {
+   "fieldname": "webhook_token",
+   "fieldtype": "Data",
+   "label": "Webhook Token",
+   "no_copy": 1,
+   "description": "Per-account inbound webhook secret. Appears in this account's webhook URL (/webhooks/telephony/<provider>/<token>/<event>) and both authenticates the caller and identifies the receiving account. Use a unique random value per account; blank = inbound disabled."
   }
  ],
  "grid_page_length": 50,
