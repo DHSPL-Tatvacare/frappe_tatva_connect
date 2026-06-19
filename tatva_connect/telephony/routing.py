@@ -125,10 +125,16 @@ def account_by_webhook_token(token):
 	matches. Each tenant registers its webhook URLs carrying its own token
 	(/webhooks/telephony/<provider>/<token>/<event>), so the token both authenticates the
 	caller and names the receiving account — no dependence on the CDR's did_number for auth.
-	Mirrors whatsapp.routing.account_by_token. Returns the account name, or None."""
+	Mirrors whatsapp.routing.account_by_token. Returns the account name, or None.
+
+	Fail-closed on ambiguity: if two accounts somehow share a token (operator copy-paste),
+	return None rather than best-guess one — the misconfiguration surfaces instead of
+	cross-attributing a tenant's inbound calls (invariant: no best-guess on attribution)."""
+	token = (token or "").strip()
 	if not token:
 		return None
-	return frappe.db.get_value("CRM Telephony Account", {"webhook_token": token}, "name")
+	names = frappe.get_all("CRM Telephony Account", filters={"webhook_token": token}, pluck="name")
+	return names[0] if len(names) == 1 else None
 
 
 def account_for_did(did_number):

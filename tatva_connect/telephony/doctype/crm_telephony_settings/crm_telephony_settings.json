@@ -6,14 +6,9 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "column_break_top",
   "record_call"
  ],
  "fields": [
-  {
-   "fieldname": "column_break_top",
-   "fieldtype": "Column Break"
-  },
   {
    "default": "0",
    "description": "Ask Acefone to record outgoing (click-to-call) calls.",

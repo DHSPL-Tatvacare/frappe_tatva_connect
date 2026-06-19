@@ -1,4 +1,4 @@
-# Acefone telephony integration (`tatva_connect.acefone`)
+# Telephony integration (`tatva_connect.telephony`) — Acefone provider
 
 Logs phone calls into the CRM and lets agents click-to-call a lead — all through **Acefone** (our cloud telephony provider), via **clean backend overrides only, no crm fork**. Sibling of the WATI WhatsApp integration: same app, same dev-first discipline, same multi-account routing.
 
@@ -29,36 +29,37 @@ The CRM never reaches Exotel — `make_a_call` is fully replaced. `get_call_log`
 2. **Outbound click-to-call** — native phone icon → `make_a_call` → resolve account by routing → Acefone `click_to_call` → log the call. No sync call id, so we correlate the later webhook via a `custom_identifier` passthrough (fallback: number + recency).
 3. **Recordings** — play **inline** in the Calls tab via the native "Listen" badge; streamed on demand through our proxy (no storage — only the URL lives on the Call Log).
 4. **Multi-account routing** — multiple Acefone accounts, routed by the lead's Product Line / Group / Program (same model as WATI).
-5. **Kill-switch** — `Acefone Settings → Enabled`. Off = no calls, no inbound logging.
+5. **Kill-switch** — the `Telephony::Acefone::calls` automation switch. Off = no calls, no inbound logging.
 
 ## Folder / file map
 
 ```
-tatva_connect/acefone/
-├── api.py        Acefone HTTP client. Account-driven (each call takes an Acefone
-│                 Account doc → its base_url + Bearer api_token). click_to_call(),
-│                 get_all_messages() (CDR pull), global kill-switch helpers.
+tatva_connect/telephony/
+├── api.py        Acefone HTTP client (the provider adapter). Account-driven (each call
+│                 takes a Telephony Account doc → its base_url + Bearer api_token).
+│                 click_to_call(), get_call_report() (CDR pull), kill-switch helpers.
+├── providers.py  provider -> adapter registry (Acefone today); adapter_for(account).
 ├── bridge.py     The two crm overrides (make_a_call, get_call_log) + small helpers.
-│                 THIS is the native-UI piggyback.
+│                 THIS is the native-UI piggyback; dispatches via providers.adapter_for.
 ├── handler.py    Inbound webhook (4 guest endpoints, one per Acefone trigger) ->
-│                 _process -> CRM Call Log (idempotent on uuid). make_acefone_call
-│                 is a thin by-reference API wrapper that delegates to bridge.
-├── routing.py    Pick the Acefone account for a lead (outbound) / a DID (inbound).
-│                 Most-specific wins (Program > Group > Product Line); no global
-│                 default (unrouted outbound is blocked).
+│                 _process -> CRM Call Log (idempotent on call_id). Per-account token
+│                 auth + identity. make_acefone_call is a thin by-reference API wrapper.
+├── routing.py    Pick the Telephony account for a lead (outbound), a DID or a webhook
+│                 token (inbound). Most-specific wins; no global default.
+├── reconcile.py  Call-report pull (recording backfill / missed-call recovery; dormant).
+├── client_scripts/telephony_account.js   webhook setup affordances on the account form.
 └── README.md     this file
 
 tatva_connect/api/telephony.py   recording(call_log) — streams ONE recording on
-                 demand (proxied with the account token; nothing stored). Used by
-                 the get_call_log override.
+                 demand (proxied with the account token; nothing stored).
 
-tatva_connect/tatva_connect/doctype/
-├── acefone_account/          one record per account (creds + agent number + DID)
-├── acefone_account_routing/  taxonomy -> account rules (+ duplicate guard)
-└── acefone_settings/         global single: kill-switch + webhook secret
+tatva_connect/telephony/doctype/
+├── crm_telephony_account/   one record per account (provider + creds + DID + webhook_token)
+├── crm_telephony_routing/   taxonomy -> account rules (+ duplicate guard, no global default)
+└── crm_telephony_settings/  global single: record-outgoing-calls toggle
 ```
 
-Native `CRM Call Log` gains a Custom Field `custom_acefone_account` (which account handled the call) and an "Acefone" option on `telephony_medium` (Property Setter). `CRM Telephony Agent` gains `acefone_number` (the agent's originating line).
+Native `CRM Call Log` gains a Custom Field `custom_telephony_account` (which account handled the call) and an "Acefone" option on `telephony_medium` (Property Setter). `CRM Telephony Agent` gains `acefone_number` (the agent's originating line).
 
 ## Vendor API (Acefone) — what we use
 - Base `https://api.acefone.in/v1/`, auth **Bearer** (token from dashboard → API Connect → API Tokens; ask for a long-life token).
@@ -68,16 +69,16 @@ Native `CRM Call Log` gains a Custom Field `custom_acefone_account` (which accou
 - Docs: https://docs.acefone.in/
 
 ## Setup (multi-account)
-1. **Acefone Account** (Desk → New): account_name, enabled, base_url (`https://api.acefone.in`), api_token, agent_number, caller_id (DID). Or via API: `POST /api/resource/Acefone Account`.
-2. **Acefone Account Routing** rules: vertical / psp_group / program → Acefone Account. Most-specific wins; duplicates rejected; no global default.
+1. **CRM Telephony Account** (Desk → New): provider (Acefone), enabled, base_url (`https://api.acefone.in`), api_token, agent_number, caller_id (DID). Or via API: `POST /api/resource/CRM Telephony Account`.
+2. **CRM Telephony Routing** rules: vertical / psp_group / program → Telephony Account. Most-specific wins; duplicates rejected; no global default.
 3. **CRM Telephony Agent** → set each agent's `acefone_number`.
-4. **Enable the Exotel slot** (CRM Exotel Settings → Enabled) so the phone icon appears, and **CRM Acefone Settings → Enabled** (kill-switch on).
-5. **Register webhooks** per account: `https://<host>/api/method/tatva_connect.telephony.handler.{inbound_answered,inbound_complete,outbound_answered,outbound_complete}?key=<CRM Acefone Settings webhook_verify_token>`.
+4. **Enable the Exotel slot** (CRM Exotel Settings → Enabled) so the phone icon appears, and turn on the **`Telephony::Acefone::calls`** automation switch (kill-switch on).
+5. **Register webhooks** per account on the Acefone dashboard (one per trigger). Generate the token and copy the URLs from the Telephony Account form (**Generate Webhook Token** / **Copy Webhook URLs**): `https://<host>/webhooks/telephony/acefone/<token>/{inbound_answered,inbound_complete,outbound_answered,outbound_complete}`, where `<token>` = that account's `webhook_token` — it both authenticates the caller and identifies the receiving account. (Dev server without nginx: use the native form `…/api/method/tatva_connect.telephony.handler.<event>?token=<token>`.)
 
 ## Credentials to provide (to go live)
-1. **API Token** (long-life) → `Acefone Account.api_token`.
+1. **API Token** (long-life) → `CRM Telephony Account.api_token`.
 2. **Agent number** → `CRM Telephony Agent.acefone_number`.
-3. **A DID** → `Acefone Account.caller_id`.
+3. **A DID** → `CRM Telephony Account.caller_id`.
 
 ## Quirks / things to know
 - **No browser dialer** — Acefone is a bridge; only a status popup is possible (physics, not our limitation).
@@ -85,5 +86,5 @@ Native `CRM Call Log` gains a Custom Field `custom_acefone_account` (which accou
 - **Recordings: crm's `get_call_log` always points `recording_url_path` at its own Twilio/Exotel-only proxy**, so our override must **overwrite** it for Acefone — not just fill when empty.
 - **Triple error toasts** — a frappe-ui quirk (its `frappeRequest` calls `onError` twice + re-throws), so one backend error shows ~3 toasts. Affects all of crm, not just us; not fixable without forking the frontend bundle. Left as-is.
 - **Calls tab does not auto-refresh** after a call — crm only has a `whatsapp_message` socket listener, none for calls. A new call appears on reload. (No-fork fix possible via a form-script socket listener; not yet wired.)
-- **Webhook accepts requests when no verify-token is set** (to allow a first capture) — set the token before prod.
+- **Inbound is per-account token-authenticated** — a request with an unknown or blank token is rejected (fail-closed); generate + register each account's `webhook_token` to receive.
 - **Open items to verify on real creds:** exact `start_stamp` format / `duration` unit, whether `custom_identifier` round-trips, and whether the recording URL needs the Bearer token (the proxy already sends it).
