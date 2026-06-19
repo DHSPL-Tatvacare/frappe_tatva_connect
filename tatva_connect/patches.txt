@@ -19,6 +19,9 @@ tatva_connect.patches.generalize_whatsapp_spine
 # Account/Routing/Settings, rename the acefone_account / custom_acefone_account fields, and seed
 # the provider Select. Data preserved; runs before model sync so the new names exist when JSON syncs.
 tatva_connect.patches.generalize_telephony_spine
+# Neutralise the WhatsApp Message provider-id field: custom_wati_id -> custom_provider_message_id
+# (shared doctype; a neutral name lets a future provider reuse it). Data preserved; idempotent.
+tatva_connect.patches.neutralize_wati_message_id_field
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

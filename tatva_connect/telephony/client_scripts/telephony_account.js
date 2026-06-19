@@ -58,7 +58,7 @@ function telephony_show_webhook_urls(frm) {
   frm.dashboard.clear_headline();
   if (!frm.doc.webhook_token) return;
   const rows = telephony_webhook_urls(frm)
-    .map((u) => '<code>' + frappe.utils.escape_html(u) + '</code>')
+    .map((u) => '<span style="font-family:monospace">' + frappe.utils.escape_html(u) + '</span>')
     .join('<br>');
   frm.dashboard.set_headline(
     __('Inbound webhook URLs (one per Acefone trigger)') + ':<br>' + rows + '<br>' +

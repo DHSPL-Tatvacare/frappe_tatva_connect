@@ -114,7 +114,7 @@ def _process(payload: dict, direction: str, completed: bool, account_name=None):
 	`account_name` is the receiving tenant. The webhook passes it (resolved from the URL
 	token); the reconcile pull passes None, so we fall back to matching the CDR's DID to a
 	Telephony Account."""
-	frappe.publish_realtime("acefone_call", payload)
+	frappe.publish_realtime("telephony_call", payload)
 
 	# Acefone's `call_id` is STABLE across every trigger of one call ("tracks the
 	# different triggers for a particular call"); `uuid` VARIES per leg/connection.

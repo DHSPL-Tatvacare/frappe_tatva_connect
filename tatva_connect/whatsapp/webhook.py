@@ -15,7 +15,7 @@ only:
     Outgoing rows (the WATI portal is a second send surface beside the CRM tab);
   * status events whose localMessageId matches a row WE sent.
 Everything else is dropped. Idempotent on the WATI message id — inbound names on
-whatsappMessageId, outbound de-dupes on custom_wati_id (the id present on BOTH the
+whatsappMessageId, outbound de-dupes on custom_provider_message_id (the id present on BOTH the
 live webhook and the getMessages history, so live + backfill never collide).
 
 Inbound rows land in `WhatsApp Message` linked to the lead, so they render in the
@@ -282,7 +282,7 @@ def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=N
 			"message": event.get("text"),
 			"content_type": event.get("type") or "text",
 			"message_id": wid,
-			"custom_wati_id": event.get("id"),  # cross-path identity (live + history backfill)
+			"custom_provider_message_id": event.get("id"),  # cross-path identity (live + history backfill)
 			"conversation_id": event.get("conversationId"),
 			"profile_name": event.get("senderName"),
 			"whatsapp_account": account,
@@ -343,11 +343,11 @@ def _ingest_outbound(event: dict, account):
 
 def _insert_outbound_row(event: dict, account, lead, wid, media=None, wid_media=None):
 	"""Insert one Outgoing row mirroring a WATI-side message onto `lead`. Per-lead idempotent
-	on the WATI id (custom_wati_id) — the ONE key shared by the live webhook and the history
+	on the WATI id (custom_provider_message_id) — the ONE key shared by the live webhook and the history
 	backfill, so the two paths never double-insert the same message."""
 	if not wid:
 		return
-	if frappe.db.exists("WhatsApp Message", {"custom_wati_id": wid, "reference_name": lead}):
+	if frappe.db.exists("WhatsApp Message", {"custom_provider_message_id": wid, "reference_name": lead}):
 		return
 	name = f"{lead}-{wid}"
 	if frappe.db.exists("WhatsApp Message", name):
@@ -366,7 +366,7 @@ def _insert_outbound_row(event: dict, account, lead, wid, media=None, wid_media=
 			"content_type": event.get("type") or "text",
 			"message_type": "Manual",
 			"message_id": event.get("localMessageId"),  # lets later DELIVERED/READ events tick this row
-			"custom_wati_id": wid,
+			"custom_provider_message_id": wid,
 			"conversation_id": event.get("conversationId"),
 			"profile_name": event.get("operatorName"),  # who sent it on the WATI side (agent / "Bot")
 			"status": status,

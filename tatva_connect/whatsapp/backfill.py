@@ -8,7 +8,7 @@ thread — including replies typed directly in the WATI portal.
 This maps each history item into the SAME event shape the webhook handler reads and
 feeds it through `webhook.process_event`, so ALL the lead-linking / direction /
 status / media logic lives in ONE place (no second brain). De-dup is by the WATI
-message id (`custom_wati_id`), the one identity present on BOTH the live webhook and
+message id (`custom_provider_message_id`), the one identity present on BOTH the live webhook and
 the history API — so live + backfill never double-insert.
 
 DORMANT BY DESIGN: the scheduled entry is gated by the `WhatsApp::WATI::backfill`
@@ -57,7 +57,7 @@ def _already_have(lead: str, item: dict) -> bool:
 	"""Is this history item already a row on `lead`? Match on the WATI id first (set by both
 	ingest paths), then on localMessageId (covers rows WE sent, which carry it as message_id)."""
 	wid = item.get("id")
-	if wid and frappe.db.exists("WhatsApp Message", {"custom_wati_id": wid, "reference_name": lead}):
+	if wid and frappe.db.exists("WhatsApp Message", {"custom_provider_message_id": wid, "reference_name": lead}):
 		return True
 	lmid = item.get("localMessageId")
 	if lmid and frappe.db.exists("WhatsApp Message", {"message_id": lmid, "reference_name": lead}):

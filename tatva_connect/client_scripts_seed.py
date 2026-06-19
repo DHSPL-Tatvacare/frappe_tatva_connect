@@ -8,10 +8,17 @@ import os
 
 import frappe
 
+# Old record names retired by a rename — deleted on migrate so a renamed record never
+# double-binds its script alongside its predecessor.
+_RETIRED = [
+	"WhatsApp Account WATI Helpers",
+	"WhatsApp Notification WATI Helpers",
+]
+
 # (Client Script name, dt, view, app-relative js path)
 SCRIPTS = [
-	("WhatsApp Account WATI Helpers", "WhatsApp Account", "Form", "whatsapp/client_scripts/whatsapp_account.js"),
-	("WhatsApp Notification WATI Helpers", "WhatsApp Notification", "Form", "whatsapp/client_scripts/whatsapp_notification.js"),
+	("WhatsApp Account Webhook Helpers", "WhatsApp Account", "Form", "whatsapp/client_scripts/whatsapp_account.js"),
+	("WhatsApp Notification Helpers", "WhatsApp Notification", "Form", "whatsapp/client_scripts/whatsapp_notification.js"),
 	("CRM Telephony Account Webhook Helpers", "CRM Telephony Account", "Form", "telephony/client_scripts/telephony_account.js"),
 	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
@@ -20,6 +27,9 @@ SCRIPTS = [
 
 def seed():
 	base = frappe.get_app_path("tatva_connect")
+	for name in _RETIRED:
+		if frappe.db.exists("Client Script", name):
+			frappe.delete_doc("Client Script", name, ignore_permissions=True)
 	for name, dt, view, rel in SCRIPTS:
 		path = os.path.join(base, rel)
 		if not os.path.exists(path):
