@@ -613,7 +613,7 @@ def map_config():
 	    (`google_maps_browser_key`), never the server key. No browser key => Near Me stays OSM."""
 	s = _settings()
 	google_ok = bool(automation.is_enabled("Location::Google::capture") and _api_key())
-	browser_key = (s.get("google_maps_browser_key") or "").strip()
+	browser_key = (s.get_password("google_maps_browser_key", raise_exception=False) or "").strip()
 	nearme = _resolve_provider(s.get("nearme_map_provider"), "osm", bool(browser_key))
 	return {
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),

@@ -34,9 +34,9 @@
    "label": "Google Maps API Key"
   },
   {
-   "description": "Referrer-restricted Google Maps JavaScript-API key for the interactive Near Me map. Kept SEPARATE from the server key above on purpose: the server key never reaches the browser (this repo is public). Paste your JS-API key (HTTP-referrer restricted) here. Blank = Near Me uses OpenStreetMap.",
+   "description": "Key for the interactive Near Me Google map (used in the browser). Use a separate JS-API key restricted to your domains (HTTP referrer). Blank = Near Me uses OpenStreetMap.",
    "fieldname": "google_maps_browser_key",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "label": "Google Maps Browser Key (JS API)"
   },
   {
@@ -80,7 +80,7 @@
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "OpenStreetMap tile URL. Blank = default. Point at your own/proxied tiles for high traffic.",
+   "description": "Advanced. Where OpenStreetMap maps fetch their tiles, as a {z}/{x}/{y} URL template. Blank = the free public OSM tiles. For heavy traffic, point this at your own or a paid tile provider.",
    "fieldname": "osm_tile_url",
    "fieldtype": "Data",
    "label": "OpenStreetMap Tile URL"
