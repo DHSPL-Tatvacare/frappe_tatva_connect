@@ -9,9 +9,15 @@ window and:
   * backfills `recording_url` onto rows that are missing it, and
   * (optionally) recovers calls that have no row at all (a missed webhook),
 
-by mapping each report row into the SAME payload shape the webhook handler reads
-and feeding it through the idempotent `handler._process` — so all the
+by mapping each report row into the SAME payload shape the webhook adapter reads
+and feeding it through the idempotent `adapter._process` — so all the
 lead-linking / status / recording logic lives in one place.
+
+NOTE — deliberate adapter-entry asymmetry: this PULL path enters at the adapter's
+low-level `_process` (not the spine front door), because there is no live request,
+token or raw-log to replay — the Call Report API IS the trusted source. The webhook
+PUSH path enters via the spine. Don't "unify" these into one entry point; the
+asymmetry is by design.
 
 SAFETY: Acefone's field names are inconsistent across products, so the exact id
 that matches a webhook row to a report row must be pinned from a live capture
@@ -21,8 +27,8 @@ that matches a webhook row to a report row must be pinned from a live capture
 import frappe
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
+from tatva_connect.telephony import adapter
 from tatva_connect.telephony import api as acefone
-from tatva_connect.telephony import handler
 
 # How far on either side of a report's timestamp we accept a number-match to an
 # existing row when the id doesn't line up (seconds).
@@ -48,7 +54,7 @@ def _report_call_key(row: dict):
 
 
 def _report_to_payload(row: dict, direction: str) -> dict:
-	"""Map a Call Report row into the webhook payload keys `handler._process` reads."""
+	"""Map a Call Report row into the webhook payload keys `adapter._process` reads."""
 	src = row.get("source") or row.get("caller_id_number")
 	dst = row.get("destination") or row.get("call_to_number") or row.get("dest_num")
 	# Inbound: customer is the caller (source) -> our DID (destination).
@@ -106,7 +112,7 @@ def _existing_row(key, customer_number, when):
 	rows = frappe.get_all(
 		"CRM Call Log",
 		filters={
-			"telephony_medium": handler.TELEPHONY_MEDIUM,
+			"telephony_medium": adapter.TELEPHONY_MEDIUM,
 			"creation": ["between", [lo, hi]],
 		},
 		or_filters={"from": ["like", f"%{digits[-10:]}%"], "to": ["like", f"%{digits[-10:]}%"]},
@@ -161,12 +167,12 @@ def _reconcile_one(row, dry_run, create_missing, summary):
 		if payload["recording_url"] and not has_rec:
 			summary["recording_backfilled"] += 1
 			if not dry_run:
-				handler._process(payload, direction=direction, completed=True)
+				adapter._process(payload, direction=direction, completed=True)
 		return
 	if create_missing:
 		summary["created"] += 1
 		if not dry_run:
-			handler._process(payload, direction=direction, completed=True)
+			adapter._process(payload, direction=direction, completed=True)
 	else:
 		summary["skipped_no_row"] += 1
 

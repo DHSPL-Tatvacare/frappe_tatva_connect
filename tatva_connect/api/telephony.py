@@ -40,10 +40,12 @@ def recording(call_log):
 		if token:
 			headers["Authorization"] = f"Bearer {token}"
 
+	# SSRF guard: recording_url can originate from a webhook CDR. Restrict to this account's
+	# operator-configured host allowlist (blank = any public host; IP block still runs). Hoisted
+	# above the try so a block raises its own clear error, not the generic fetch-failed message.
+	assert_safe_public_url(url, allowed)
+
 	try:
-		# SSRF guard: recording_url can originate from a webhook CDR. Restrict to this account's
-		# operator-configured host allowlist (blank = any public host; IP block still runs).
-		assert_safe_public_url(url, allowed)
 		resp = requests.get(url, headers=headers, timeout=30)
 		resp.raise_for_status()
 	except Exception:

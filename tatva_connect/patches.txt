@@ -60,6 +60,15 @@ tatva_connect.patches.add_observability_indexes
 # (Task::Automation::rules) so on stays on / off stays off; the orphaned legacy registry row is
 # then pruned by seed.sync_catalog on after_migrate.
 tatva_connect.patches.fold_transitions_switch
+# Webhook secrets Data->Password: the inbound webhook tokens (WhatsApp Account.custom_webhook_token,
+# CRM Telephony Account.webhook_token) flip to Password. Carry each existing plaintext into the
+# encrypted store so values survive the field-type switch (merge-not-clobber; column placeholder is
+# the idempotency guard). Idempotent; also runs on after_migrate via schema_setup.
+tatva_connect.patches.migrate_webhook_tokens_to_password
+# L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
+# Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
+# spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field
+# orphans harmlessly; field sync drops it on the next migrate. Noted here for file-level history.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/

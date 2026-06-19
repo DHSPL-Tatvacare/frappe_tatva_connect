@@ -1,93 +1,66 @@
 """Route a telephony call to the correct Acefone account by taxonomy / DID.
 
-One Acefone tenant = one `Acefone Account` (its own DID, agent line and API
-token). An `Telephony Routing` rule maps a Product Line (CRM Vertical) /
+One Acefone tenant = one `CRM Telephony Account` (its own DID, agent line and API
+token). A `CRM Telephony Routing` rule maps a Product Line (CRM Vertical) /
 Group (CRM Group) / Program (CRM Program) to an account. A rule matches a lead
 only if EVERY axis it specifies matches; among matching rules the MOST SPECIFIC
 wins (Program > Group > Product Line).
 
 There is deliberately **no global default** — an unmatched record returns None
-and the caller (handler.make_acefone_call) raises rather than dial through the
-wrong tenant. Mirrors tatva_connect/wati/routing.py.
+and the caller (adapter.make_acefone_call) raises rather than dial through the
+wrong tenant.
+
+This module is the Acefone-flavoured **thin wrapper** over the shared engine in
+`tatva_connect.routing`: it declares Acefone's config (account doctype, token
+field, routing doctype, link field, active-account rule) and owns the Acefone
+phone query (last-10 LIKE). All resolution logic lives in the shared engine.
 """
 import frappe
-from frappe import _
 
-# Specificity weights — higher = more specific.
-_PROGRAM_W, _GROUP_W, _VERTICAL_W = 4, 2, 1
+from tatva_connect import routing as engine
+
+_ROUTING_DOCTYPE = "CRM Telephony Routing"
+_ACCOUNT_LINK_FIELD = "telephony_account"
+
+
+def _active_account_names():
+	"""Selectable Acefone accounts: enabled==1. The per-account kill-switch — disable
+	an account and its rules become unselectable (the lead is blocked, never dialled
+	through a dead tenant) rather than silently routed. Mirrors WATI's Active-only
+	filter."""
+	return set(
+		frappe.get_all("CRM Telephony Account", filters={"enabled": 1}, pluck="name")
+	)
 
 
 def resolve_account_for_lead(lead):
 	"""Return the Acefone Account name for a lead, or None if no rule matches.
 
-	Most-specific rule wins (Program > Group > Product Line). If two equally
-	specific rules point at DIFFERENT accounts for the same lead, that's an
-	ambiguous config — raise rather than pick one silently.
-	"""
-	program = lead.get("custom_current_program")
-	group = lead.get("custom_group")
-	vertical = lead.get("custom_vertical")
-
-	# M-5: only route to an ENABLED Acefone account. This is the per-account
-	# kill-switch — disable an account and its rules become unselectable (the lead
-	# is blocked, never dialled through a dead tenant) rather than silently routed.
-	# Mirrors wati.routing's Active-only filter.
-	active = set(
-		frappe.get_all("CRM Telephony Account", filters={"enabled": 1}, pluck="name")
+	Most-specific rule wins (Program > Group > Product Line); an ambiguous
+	equally-specific tie raises. Thin wrapper over the shared engine."""
+	return engine.resolve_account_for_lead(
+		lead,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+		active_names=_active_account_names(),
 	)
-
-	best, best_score, tie = None, -1, False
-	for rule in frappe.get_all(
-		"CRM Telephony Routing",
-		fields=["telephony_account", "program", "psp_group", "vertical"],
-	):
-		if rule.telephony_account not in active:
-			continue
-		# Every axis the rule specifies must match the lead.
-		if rule.program and rule.program != program:
-			continue
-		if rule.psp_group and rule.psp_group != group:
-			continue
-		if rule.vertical and rule.vertical != vertical:
-			continue
-		score = (
-			(_PROGRAM_W if rule.program else 0)
-			+ (_GROUP_W if rule.psp_group else 0)
-			+ (_VERTICAL_W if rule.vertical else 0)
-		)
-		if score > best_score:
-			best, best_score, tie = rule.telephony_account, score, False
-		elif score == best_score and rule.telephony_account != best:
-			tie = True
-	if tie:
-		frappe.throw(
-			_(
-				"Ambiguous Acefone routing: two equally-specific rules point at different "
-				"accounts for this record. Fix the Telephony Routing rules."
-			),
-			title=_("Ambiguous Acefone route"),
-		)
-	return best
 
 
 def leads_for_number_and_account(lead_names, account):
-	"""Inbound attribution (M-4): of the candidate leads sharing a phone, return those
+	"""Inbound attribution: of the candidate leads sharing a phone, return those
 	whose taxonomy routes to `account`. The inverse of resolve_account_for_lead — it
 	scopes an inbound call to exactly the leads on the receiving account's line, never
-	across accounts. Returns [] if account is falsy. Mirrors wati.routing.
+	across accounts. Returns [] if account is falsy. Thin wrapper over the shared engine.
 
-	`lead_names` are already-anchored candidates (same last-10 phone)."""
-	if not account or not lead_names:
-		return []
-	out = []
-	for name in lead_names:
-		try:
-			if resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", name)) == account:
-				out.append(name)
-		except Exception:
-			# one lead's ambiguous/raising routing must not block the others
-			continue
-	return out
+	`lead_names` are already-anchored candidates (same last-10 phone) — the Acefone
+	phone-match seam lives in the adapter."""
+	return engine.leads_for_number_and_account(
+		lead_names,
+		account,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+		active_names=_active_account_names(),
+	)
 
 
 def resolve_for_reference(reference_doctype, reference_name):
@@ -125,16 +98,9 @@ def account_by_webhook_token(token):
 	matches. Each tenant registers its webhook URLs carrying its own token
 	(/webhooks/telephony/<provider>/<token>/<event>), so the token both authenticates the
 	caller and names the receiving account — no dependence on the CDR's did_number for auth.
-	Mirrors whatsapp.routing.account_by_token. Returns the account name, or None.
-
-	Fail-closed on ambiguity: if two accounts somehow share a token (operator copy-paste),
-	return None rather than best-guess one — the misconfiguration surfaces instead of
-	cross-attributing a tenant's inbound calls (invariant: no best-guess on attribution)."""
-	token = (token or "").strip()
-	if not token:
-		return None
-	names = frappe.get_all("CRM Telephony Account", filters={"webhook_token": token}, pluck="name")
-	return names[0] if len(names) == 1 else None
+	Fail-closed on ambiguity (two accounts sharing a token -> None, not a best guess).
+	Thin wrapper over the shared engine."""
+	return engine.account_by_token("CRM Telephony Account", "webhook_token", token)
 
 
 def account_for_did(did_number):

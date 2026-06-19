@@ -7,7 +7,15 @@ thread — including replies typed directly in the WATI portal.
 
 This maps each history item into the SAME event shape the webhook handler reads and
 feeds it through `webhook.process_event`, so ALL the lead-linking / direction /
-status / media logic lives in ONE place (no second brain). De-dup is by the WATI
+status / media logic lives in ONE place (no second brain).
+
+NOTE — deliberate adapter-entry asymmetry: this PULL path enters at the adapter's
+parsed entry (`process_event`), NOT the spine front door — there is no live request,
+token or raw-log to replay; WATI's getMessages API IS the trusted source. The live
+webhook PUSH path enters via the spine. Don't "unify" these into one entry point;
+the asymmetry is by design (mirror of the note in telephony/reconcile.py).
+
+De-dup is by the WATI
 message id (`custom_provider_message_id`), the one identity present on BOTH the live webhook and
 the history API — so live + backfill never double-insert.
 

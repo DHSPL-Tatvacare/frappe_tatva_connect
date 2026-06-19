@@ -8,9 +8,7 @@
  "field_order": [
   "section_template_caps",
   "template_cap_per_hour",
-  "template_cap_per_day",
-  "section_break_debug",
-  "debug_log_payloads"
+  "template_cap_per_day"
  ],
  "fields": [
   {
@@ -29,19 +27,6 @@
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day"
-  },
-  {
-   "fieldname": "section_break_debug",
-   "fieldtype": "Section Break",
-   "hide_border": 1,
-   "label": "Debug"
-  },
-  {
-   "default": "0",
-   "description": "Store inbound WATI payloads to Integration Request (auto-clears in 90 days) to debug delivery. Contains PHI — keep off in normal use.",
-   "fieldname": "debug_log_payloads",
-   "fieldtype": "Check",
-   "label": "Debug: Log Inbound Payloads"
   }
  ],
  "grid_page_length": 50,

@@ -318,7 +318,9 @@ required_apps = ["crm", "frappe_whatsapp"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/tatva_connect/css/tatva_connect.css"
-# app_include_js = "/assets/tatva_connect/js/tatva_connect.js"
+# Shared Desk helpers for the webhook account forms (token generator + server-sourced
+# URL banner); both account Client Scripts call into this one asset (no copy-paste).
+app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/tatva_connect/css/tatva_connect.css"

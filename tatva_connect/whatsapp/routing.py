@@ -1,6 +1,6 @@
 """Route a WhatsApp Message to the correct WATI account by the lead's taxonomy.
 
-One WATI tenant = one `WhatsApp Account`. A `WATI Account Routing` rule maps a
+One WATI tenant = one `WhatsApp Account`. A `CRM WhatsApp Routing` rule maps a
 Product Line (CRM Vertical) / Group (CRM Group) / Program (CRM Program) to an
 account. A rule matches a lead only if EVERY axis it specifies matches; among
 matching rules the MOST SPECIFIC wins (Program > Group > Product Line).
@@ -9,34 +9,29 @@ There is deliberately **no global default** — an unmatched lead raises at send
 time (see message.set_whatsapp_account). We never silently send through the
 wrong tenant, and an all-blank rule is rejected by the routing controller so a
 catch-all can't be created by accident.
+
+This module is the WATI-flavoured **thin wrapper** over the shared engine in
+`tatva_connect.routing`: it declares WATI's config (account doctype, token
+field, routing doctype, link field, active-account rule) and owns the WATI phone
+query (exact E.164). All resolution logic lives in the shared engine.
 """
 import frappe
-from frappe import _
 
+from tatva_connect import routing as engine
 from tatva_connect.whatsapp import providers
 
-# Specificity weights — higher = more specific.
-_PROGRAM_W, _GROUP_W, _VERTICAL_W = 4, 2, 1
+_ROUTING_DOCTYPE = "CRM WhatsApp Routing"
+_ACCOUNT_LINK_FIELD = "whatsapp_account"
 
 
-def resolve_account_for_lead(lead):
-	"""Return the WhatsApp Account name for a lead, or None if no rule matches.
-
-	Most-specific rule wins (Program > Group > Product Line). If two equally
-	specific rules point at DIFFERENT accounts for the same lead, that's an
-	ambiguous config — raise rather than pick one silently.
-	"""
-	program = lead.get("custom_current_program")
-	group = lead.get("custom_group")
-	vertical = lead.get("custom_vertical")
-
-	# Only route to an Active account whose provider has a registered send adapter. This is
-	# both the per-account kill-switch (set an account Inactive and its leads are blocked,
-	# never sent through a dead tenant) AND the fail-closed gate against a non-adapter
-	# (e.g. Meta) account: such an account is never selectable, so an unrouted lead raises
-	# rather than falling through to the wrong transport. Provider-neutral — any registered
-	# adapter qualifies.
-	active = {
+def _active_account_names():
+	"""Selectable WATI accounts: status Active AND a registered send adapter. This is
+	both the per-account kill-switch (set an account Inactive and its leads are blocked,
+	never sent through a dead tenant) AND the fail-closed gate against a non-adapter
+	(e.g. Meta) account: such an account is never selectable, so an unrouted lead raises
+	rather than falling through to the wrong transport. Provider-neutral — any registered
+	adapter qualifies."""
+	return {
 		a.name
 		for a in frappe.get_all(
 			"WhatsApp Account", filters={"status": "Active"}, fields=["name", "custom_provider"]
@@ -44,62 +39,49 @@ def resolve_account_for_lead(lead):
 		if a.custom_provider in providers.PROVIDERS
 	}
 
-	best, best_score, tie = None, -1, False
-	for rule in frappe.get_all(
-		"CRM WhatsApp Routing",
-		fields=["whatsapp_account", "program", "psp_group", "vertical"],
-	):
-		if rule.whatsapp_account not in active:
-			continue
-		# Every axis the rule specifies must match the lead.
-		if rule.program and rule.program != program:
-			continue
-		if rule.psp_group and rule.psp_group != group:
-			continue
-		if rule.vertical and rule.vertical != vertical:
-			continue
-		score = (
-			(_PROGRAM_W if rule.program else 0)
-			+ (_GROUP_W if rule.psp_group else 0)
-			+ (_VERTICAL_W if rule.vertical else 0)
-		)
-		if score > best_score:
-			best, best_score, tie = rule.whatsapp_account, score, False
-		elif score == best_score and rule.whatsapp_account != best:
-			tie = True
-	if tie:
-		frappe.throw(
-			_(
-				"Ambiguous WhatsApp routing: two equally-specific rules point at different "
-				"accounts for this lead. Fix the WhatsApp Routing rules."
-			),
-			title=_("Ambiguous WhatsApp route"),
-		)
-	return best
+
+def resolve_account_for_lead(lead):
+	"""Return the WhatsApp Account name for a lead, or None if no rule matches.
+
+	Most-specific rule wins (Program > Group > Product Line); an ambiguous
+	equally-specific tie raises. Thin wrapper over the shared engine."""
+	return engine.resolve_account_for_lead(
+		lead,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+		active_names=_active_account_names(),
+	)
 
 
-def leads_for_number_and_account(number_e164, account):
-	"""Inbound attribution: every CRM Lead with this phone whose routing resolves to
-	`account`. This is the inverse of resolve_account_for_lead — it scopes an inbound
-	message to exactly the leads sharing its conversation (phone + account), never
-	across accounts. Returns [] if account is falsy."""
-	if not account or not number_e164:
+def leads_for_number_and_account(lead_names, account):
+	"""Inbound attribution: of the candidate leads sharing a phone, return those whose
+	routing resolves to `account`. The inverse of resolve_account_for_lead — it scopes an
+	inbound message to exactly the leads sharing its conversation (phone + account), never
+	across accounts. Returns [] if account is falsy. Thin wrapper over the shared engine.
+
+	`lead_names` are already-anchored candidates — the WATI phone-match seam (exact E.164)
+	lives in the adapter (see candidates_for_number)."""
+	return engine.leads_for_number_and_account(
+		lead_names,
+		account,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+		active_names=_active_account_names(),
+	)
+
+
+def candidates_for_number(number_e164):
+	"""WATI phone-match seam: CRM Leads whose mobile_no is this exact E.164 (with or
+	without '+'). The taxonomy filter is the shared engine — feed these to
+	leads_for_number_and_account."""
+	if not number_e164:
 		return []
 	bare = number_e164.lstrip("+")
-	names = frappe.get_all(
+	return frappe.get_all(
 		"CRM Lead",
 		filters={"mobile_no": ["in", ["+" + bare, bare]]},
 		pluck="name",
 	)
-	out = []
-	for name in names:
-		try:
-			if resolve_account_for_lead(frappe.get_cached_doc("CRM Lead", name)) == account:
-				out.append(name)
-		except Exception:
-			# one lead's ambiguous/raising routing must not block the others
-			continue
-	return out
 
 
 def resolve_for_message(msg):
@@ -125,13 +107,9 @@ def account_by_token(token):
 	names the receiving account — no dependence on a payload field (WATI inbound carries
 	no reliable tenant id; channelPhoneNumber is present on ~13% of message events,
 	tenantId on 0%). Returns the account name, or None if the token matches no WATI
-	account (caller rejects). A single equality lookup over WhatsApp Account — a handful
-	of rows (one per tenant), so it's cheap even on the inbound firehose."""
-	if not token:
-		return None
-	return frappe.db.get_value(
-		"WhatsApp Account", {"custom_webhook_token": token}, "name"
-	)
+	account (caller rejects). Fail-closed on ambiguity. Thin wrapper over the shared
+	engine."""
+	return engine.account_by_token("WhatsApp Account", "custom_webhook_token", token)
 
 
 @frappe.whitelist()

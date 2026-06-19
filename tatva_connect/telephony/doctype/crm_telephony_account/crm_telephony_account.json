@@ -20,6 +20,7 @@
   "click_to_call_api_key",
   "section_break_webhook",
   "webhook_token",
+  "section_break_ssrf",
   "recording_host_allowlist"
  ],
  "fields": [
@@ -99,10 +100,15 @@
   },
   {
    "fieldname": "webhook_token",
-   "fieldtype": "Data",
+   "fieldtype": "Password",
    "label": "Webhook Token",
    "no_copy": 1,
    "description": "Per-account inbound webhook secret. Appears in this account's webhook URL (/webhooks/telephony/<provider>/<token>/<event>) and both authenticates the caller and identifies the receiving account. Use a unique random value per account; blank = inbound disabled."
+  },
+  {
+   "fieldname": "section_break_ssrf",
+   "fieldtype": "Section Break",
+   "label": "Outbound Fetch (SSRF Allowlist)"
   },
   {
    "fieldname": "recording_host_allowlist",

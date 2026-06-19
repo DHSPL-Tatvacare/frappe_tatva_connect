@@ -6,24 +6,16 @@ from urllib.parse import urlparse
 
 import frappe
 
-# ipaddress flags that mark a non-public (internal) address — fail-closed against SSRF.
-_BLOCKED_FLAGS = (
-	"is_private",
-	"is_loopback",
-	"is_link_local",
-	"is_reserved",
-	"is_multicast",
-	"is_unspecified",
-)
-
 
 def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None) -> None:
 	"""Block an outbound fetch whose host resolves to an internal / non-public address (SSRF).
 
 	Fail-closed: raises frappe.ValidationError on anything unsafe (bad scheme/host, off-domain,
-	unresolvable, or resolving to a private/loopback/link-local/reserved/multicast/unspecified
-	IP — e.g. 169.254.169.254 cloud metadata or a 10.x host). Does NOT defend against
-	DNS-rebinding TOCTOU between this resolve and the later fetch — accepted, out of scope.
+	unresolvable, or resolving to a non-global IP). The single `is_global` test covers every
+	special-use range in one rule — private/loopback/link-local/reserved/multicast/unspecified
+	AND CGNAT (100.64.0.0/10) and any future reserved range — e.g. 169.254.169.254 cloud metadata,
+	a 10.x host, or a 100.64.x carrier-NAT address. Does NOT defend against DNS-rebinding TOCTOU
+	between this resolve and the later fetch — accepted, out of scope.
 
 	`allowed_hosts` is an optional host or list of hosts (e.g. an operator-configured per-account
 	allowlist): when non-empty the URL host must equal or be a sub-domain of one of them; an
@@ -45,7 +37,7 @@ def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None) 
 
 	for info in infos:
 		ip = info[4][0]
-		if any(getattr(ipaddress.ip_address(ip), flag) for flag in _BLOCKED_FLAGS):
+		if not ipaddress.ip_address(ip).is_global:
 			_block(url, f"resolves to non-public address {ip}")
 
 
