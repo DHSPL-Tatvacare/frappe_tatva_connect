@@ -22,8 +22,6 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cint
 from pypika.terms import PseudoColumn
 
-from tatva_connect.taxonomy.grain import resolve_scoped
-
 LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
@@ -49,9 +47,9 @@ _OPS = {
 # ---------------------------------------------------------------------------
 # Catalog read — the allowlist for a (base_object, activity_type) scope.
 # Reuses the partner-API catalog table (CRM Lead API Field), reading the Smart
-# Views columns the partner path ignores. resolve_scoped is NOT used to score the
-# catalog rows (the catalog is global, not grain-keyed per row); the grain only
-# scopes which Smart Views a user sees (P3). applies_to filters by base object/type.
+# Views columns the partner path ignores. The catalog is global, not grain-keyed per
+# row; the grain only scopes which Smart Views a user sees (P3). applies_to filters by
+# base object/type.
 # ---------------------------------------------------------------------------
 
 def _scope_label(base_object, activity_type):
