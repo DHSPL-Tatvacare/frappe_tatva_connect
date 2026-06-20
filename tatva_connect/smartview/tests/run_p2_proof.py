@@ -72,20 +72,20 @@ def run():
 	a, b = _ensure_user(USER_A), _ensure_user(USER_B)
 	_reset()
 
-	# Two distinct REAL lead statuses, so the predicate filters on live data.
-	statuses = frappe.get_all("CRM Lead Status", pluck="name") or ["New"]
-	s1 = statuses[0]
-	s2 = statuses[1] if len(statuses) > 1 else s1
+	# A safe lead status (the first one rarely carries lost-reason validation).
+	s1 = (frappe.get_all("CRM Lead Status", pluck="name") or ["New"])[0]
 	_make_lead("Alpha", s1)
-	_make_lead("Bravo", s2)
+	_make_lead("Bravo", s1)
 	frappe.db.commit()
 
 	# catalog keys we can safely reference (real Lead catalog rows)
 	cat = api.field_catalog("Lead")
 	cat_keys = [c["field_key"] for c in cat]
 	filterable = [c["field_key"] for c in cat if c["filterable"]]
-	name_key = next((k for k in cat_keys if k.endswith(":first_name") or k.endswith("first_name")), cat_keys[0])
+	name_key = next((k for k in cat_keys if k.endswith("first_name")), cat_keys[0])
 	status_key = next((k for k in filterable if k.endswith("status")), filterable[0])
+	# A filterable text field for the predicate round-trip (so it narrows on live data).
+	text_key = next((k for k in filterable if k.endswith(("first_name", "lead_name", "mobile_no", "email_id"))), status_key)
 	results = []
 
 	print("\n== Create (non-operator owns a personal view) ==")
@@ -94,7 +94,7 @@ def run():
 		tab = api.upsert_view({
 			"label": "Mine " + TAG, "base_object": "Lead",
 			"columns": [name_key, status_key],
-			"predicate": {"op": "and", "conditions": [{"field": status_key, "operator": "=", "value": s2}]},
+			"predicate": {"op": "and", "conditions": [{"field": text_key, "operator": "like", "value": "Alpha"}]},
 		})
 		vname = tab["name"]
 		doc = frappe.get_doc("CRM Smart View", vname)
@@ -102,10 +102,11 @@ def run():
 		mine = [t["name"] for t in api.get_smart_views()]
 		results.append(_check("appears in A's get_smart_views", vname in mine))
 
-		print("\n== Predicate round-trips through get_data ==")
+		print("\n== Predicate round-trips through get_data (narrows the rows) ==")
 		data = api.get_data(vname, search=TAG)
-		got = [r.get(status_key) for r in data["rows"]]
-		results.append(_check("saved predicate status={0} -> only matching rows".format(s2), bool(got) and all(s == s2 for s in got)))
+		got = [r.get(text_key) for r in data["rows"]]
+		results.append(_check("saved predicate '{0} like Alpha' -> only Alpha rows".format(text_key),
+							 bool(got) and all("Alpha" in str(v) for v in got)))
 
 		print("\n== Interactive columns override (catalog-bounded) ==")
 		one = api.get_data(vname, columns=[status_key], search=TAG)
