@@ -168,16 +168,28 @@ def _driving(base_object, activity_type):
 	return (LEAD_DOCTYPE, DocType(LEAD_DOCTYPE)) if base_object == "Lead" else (TASK_DOCTYPE, DocType(TASK_DOCTYPE))
 
 
-def _pqc(doctype):
-	"""The framework's permission query conditions for the driving doctype, as ONE raw
-	criterion ANDed into the query (and the count). Fail-closed: ALWAYS applied. The
-	string is the framework's own (Task -> tasks.permissions; Lead -> crm PQC + match
-	conditions); never user input."""
+def _pqc_criterion(driving_name, driving_table):
+	"""The framework's permission scope for the driving doctype, as a qb criterion to AND in
+	(on rows AND count). Fail-closed: ALWAYS applied when a PQC exists.
+
+	The PQC is the framework's own opaque string (Task -> tasks.permissions; Lead -> crm PQC +
+	match conditions), and it references the driving doctype's columns UNQUALIFIED (e.g. bare
+	`name`, `lead_owner`). The moment our query LEFT JOINs a child table (every Activity view, and
+	any view projecting a child field) those bare columns collide with the child's `name`/`owner`
+	-> MySQL 1052 "ambiguous". So we never AND the raw string into the joined query. Instead we
+	scope the driving PK through a SINGLE-TABLE subquery where the bare columns resolve cleanly:
+	    driving.name IN (SELECT name FROM `tabX` WHERE <pqc>)
+	Semantically identical — the PQC only ever constrains the driving doctype's own rows."""
 	from frappe.model.db_query import DatabaseQuery
 
-	cond = DatabaseQuery(doctype).get_permission_query_conditions() or ""
-	cond = cond.strip()
-	return PseudoColumn("({0})".format(cond)) if cond else None
+	cond = (DatabaseQuery(driving_name).get_permission_query_conditions() or "").strip()
+	if not cond:
+		return None
+	# Fresh DocType -> renders as `tab<Doctype>` (NOT aliased), so a PQC that prefixes
+	# `tabX`.col still binds, and a bare col binds to the subquery's only table.
+	src = DocType(driving_name)
+	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn("({0})".format(cond)))
+	return driving_table.name.isin(sub)
 
 
 def _column_field_keys(view, cat):
@@ -392,7 +404,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if base_object == "Activity" and activity_type:
 		tc = driving_table.custom_task_type == activity_type
 		crit = tc if crit is None else (crit & tc)
-	pqc = _pqc(driving_name)
+	pqc = _pqc_criterion(driving_name, driving_table)
 	if pqc is not None:
 		crit = pqc if crit is None else (crit & pqc)
 
