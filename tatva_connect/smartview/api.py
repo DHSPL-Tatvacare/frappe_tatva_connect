@@ -293,13 +293,15 @@ def _predicate_where(node, cat, field_terms):
 
 
 def _apply_filters(crit, filters, cat, field_terms):
-	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded."""
+	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded.
+	Tolerant: an unknown field or unsupported operator is skipped, never raised — a
+	stale/odd ad-hoc filter narrows nothing rather than 500-ing the whole list."""
 	for f in filters or []:
 		if not (isinstance(f, (list, tuple)) and len(f) == 3):
 			continue
 		key, op, value = f
 		r = cat.get(key)
-		if not r or not r.filterable or key not in field_terms:
+		if not r or not r.filterable or key not in field_terms or op not in _OPS:
 			continue
 		c = _criterion(field_terms[key], op, value)
 		crit = c if crit is None else (crit & c)
@@ -340,9 +342,12 @@ def _col_fieldtype(r):
 
 
 @frappe.whitelist()
-def get_data(view, filters=None, sort=None, search=None, page=1, page_size=50):
+def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50):
 	"""THE composer. Returns {columns, rows, total} for a saved CRM Smart View, PQC-scoped.
-	Read-only. One qb query for the rows + one for the count; both AND the PQC."""
+	Read-only. One qb query for the rows + one for the count; both AND the PQC.
+
+	`columns` (optional) is an interactive, catalog-bounded override of the saved column set
+	(the ColumnSettings picker) — a transient projection, never persisted by this read path."""
 	v = frappe.get_doc("CRM Smart View", view)
 	base_object = v.base_object
 	activity_type = v.activity_type
@@ -351,6 +356,18 @@ def get_data(view, filters=None, sort=None, search=None, page=1, page_size=50):
 	driving_name, driving_table = _driving(base_object, activity_type)
 
 	col_keys = _column_field_keys(v, cat)
+	# Interactive column override wins over the saved set, but stays catalog-bounded: an
+	# unknown key is dropped; an empty/invalid request falls back to the saved columns.
+	if columns is not None:
+		if isinstance(columns, str):
+			try:
+				columns = frappe.parse_json(columns)
+			except Exception:
+				columns = None
+		if isinstance(columns, (list, tuple)):
+			req = [k for k in columns if k in cat]
+			if req:
+				col_keys = req
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
@@ -411,3 +428,135 @@ def get_data(view, filters=None, sort=None, search=None, page=1, page_size=50):
 		for k in col_keys if k in field_terms
 	]
 	return {"columns": columns, "rows": rows, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# Authoring (P2) — the ONLY write path. Owner-scoped + catalog-validated.
+# Every field_key in a predicate or column set must be a catalog row for the view's
+# scope (fail-closed allowlist); standard (grain-shared) views are operator-only;
+# a non-operator owns at most OWNER_VIEW_CAP personal views. Writes run our own
+# validation then save with ignore_permissions — the whitelisted method IS the gate
+# (invariant: server-scoped writes), so the doctype stays System-Manager-only in Desk.
+# ---------------------------------------------------------------------------
+
+OWNER_VIEW_CAP = 20
+
+
+def _is_operator():
+	return "System Manager" in frappe.get_roles()
+
+
+def _validate_columns(columns, cat):
+	"""The requested columns, every one a catalog field_key for the scope. Throws on any
+	unknown key (fail-closed allowlist). Returns the cleaned, order-preserving list."""
+	if isinstance(columns, str):
+		columns = frappe.parse_json(columns) if columns else []
+	columns = columns or []
+	bad = [k for k in columns if k not in cat]
+	if bad:
+		frappe.throw(_("Unknown column field(s): {0}").format(", ".join(map(str, bad))))
+	return list(columns)
+
+
+def _validate_predicate(node, cat):
+	"""Walk the predicate tree; every leaf field must be a filterable catalog row and every
+	operator one we support. Throws on violation (fail-closed). No SQL is built here — this
+	only gates what may later reach _predicate_where."""
+	if not isinstance(node, dict):
+		return
+	if "conditions" in node:
+		for c in node.get("conditions") or []:
+			_validate_predicate(c, cat)
+		return
+	key = node.get("field")
+	if not key:
+		return
+	r = cat.get(key)
+	if not r or not r.filterable:
+		frappe.throw(_("Field {0} is not a filterable catalog field for this view.").format(key))
+	if (node.get("operator") or "=") not in _OPS:
+		frappe.throw(_("Unsupported operator {0}").format(node.get("operator")))
+
+
+@frappe.whitelist()
+def upsert_view(view):
+	"""Create or update a Smart View — owner-scoped, catalog-validated. `view` is a dict (or
+	JSON string): {name?, label, base_object, activity_type?, predicate?, columns?, description?,
+	color?, icon?, view_order?, is_standard?, pinned?}. Returns the saved tab shape."""
+	if isinstance(view, str):
+		view = frappe.parse_json(view)
+	if not isinstance(view, dict):
+		frappe.throw(_("Invalid view payload."))
+
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+
+	base_object = view.get("base_object")
+	if base_object not in ("Lead", "Activity"):
+		frappe.throw(_("Unknown base object {0}").format(base_object))
+	label = (view.get("label") or "").strip()
+	if not label:
+		frappe.throw(_("A view name is required."))
+
+	activity_type = view.get("activity_type") or None
+	if base_object == "Activity":
+		if not activity_type:
+			frappe.throw(_("An activity type is required for an Activity view."))
+		if not frappe.db.exists("CRM Task Type", activity_type):
+			frappe.throw(_("Unknown activity type {0}").format(activity_type))
+	else:
+		activity_type = None
+
+	cat = _catalog_fields(base_object, activity_type)
+	columns = _validate_columns(view.get("columns"), cat)
+	predicate = view.get("predicate")
+	if isinstance(predicate, str):
+		predicate = frappe.parse_json(predicate) if predicate else None
+	if predicate:
+		_validate_predicate(predicate, cat)
+
+	operator = _is_operator()
+	name = view.get("name")
+	if name:
+		doc = frappe.get_doc("CRM Smart View", name)
+		# A standard view, or any view you don't own, is operator-only to edit.
+		if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not operator:
+			frappe.throw(_("You can only edit your own views."), frappe.PermissionError)
+	else:
+		# Create: enforce the per-owner cap on a non-operator's personal views.
+		if not (view.get("is_standard") and operator):
+			if frappe.db.count("CRM Smart View", {"owner_user": user, "is_standard": 0}) >= OWNER_VIEW_CAP:
+				frappe.throw(_("You have reached the limit of {0} views.").format(OWNER_VIEW_CAP))
+		doc = frappe.new_doc("CRM Smart View")
+
+	# Standard (grain-shared) views are operator-only; everyone else writes a view they own.
+	is_standard = 1 if (view.get("is_standard") and operator) else 0
+	doc.label = label
+	doc.base_object = base_object
+	doc.activity_type = activity_type
+	doc.is_standard = is_standard
+	doc.owner_user = None if is_standard else user
+	doc.predicate = frappe.as_json(predicate) if predicate else None
+	doc.columns = frappe.as_json(columns) if columns else None
+	doc.description = view.get("description") or None
+	doc.color = view.get("color") or None
+	doc.icon = view.get("icon") or None
+	doc.pinned = 1 if view.get("pinned") else 0
+	if view.get("view_order") is not None:
+		doc.view_order = cint(view.get("view_order"))
+	doc.save(ignore_permissions=True)
+	return _smart_view_tab(doc)
+
+
+@frappe.whitelist()
+def delete_view(name):
+	"""Delete a Smart View — owner-scoped. A standard view (or another user's) is operator-only."""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	doc = frappe.get_doc("CRM Smart View", name)
+	if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not _is_operator():
+		frappe.throw(_("You can only delete your own views."), frappe.PermissionError)
+	frappe.delete_doc("CRM Smart View", name, ignore_permissions=True)
+	return {"deleted": name}
