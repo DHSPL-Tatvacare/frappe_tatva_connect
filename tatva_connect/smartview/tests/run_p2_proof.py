@@ -71,8 +71,13 @@ def run():
 	frappe.flags.in_test = True
 	a, b = _ensure_user(USER_A), _ensure_user(USER_B)
 	_reset()
-	_make_lead("Alpha", "New")
-	_make_lead("Bravo", "Open")
+
+	# Two distinct REAL lead statuses, so the predicate filters on live data.
+	statuses = frappe.get_all("CRM Lead Status", pluck="name") or ["New"]
+	s1 = statuses[0]
+	s2 = statuses[1] if len(statuses) > 1 else s1
+	_make_lead("Alpha", s1)
+	_make_lead("Bravo", s2)
 	frappe.db.commit()
 
 	# catalog keys we can safely reference (real Lead catalog rows)
@@ -89,7 +94,7 @@ def run():
 		tab = api.upsert_view({
 			"label": "Mine " + TAG, "base_object": "Lead",
 			"columns": [name_key, status_key],
-			"predicate": {"op": "and", "conditions": [{"field": status_key, "operator": "=", "value": "Open"}]},
+			"predicate": {"op": "and", "conditions": [{"field": status_key, "operator": "=", "value": s2}]},
 		})
 		vname = tab["name"]
 		doc = frappe.get_doc("CRM Smart View", vname)
@@ -99,8 +104,8 @@ def run():
 
 		print("\n== Predicate round-trips through get_data ==")
 		data = api.get_data(vname, search=TAG)
-		statuses = [r.get(status_key) for r in data["rows"]]
-		results.append(_check("saved predicate status=Open -> only Open rows", bool(statuses) and all(s == "Open" for s in statuses)))
+		got = [r.get(status_key) for r in data["rows"]]
+		results.append(_check("saved predicate status={0} -> only matching rows".format(s2), bool(got) and all(s == s2 for s in got)))
 
 		print("\n== Interactive columns override (catalog-bounded) ==")
 		one = api.get_data(vname, columns=[status_key], search=TAG)
