@@ -44,10 +44,12 @@ def _reset():
 	frappe.db.commit()
 
 
-def _make_lead(first, status):
+def _make_lead(first, status, owner):
+	# lead_owner = the proof user, so the leads are visible to them under the lead PQC
+	# (the very scope the subquery fix exercises).
 	return frappe.get_doc({
 		"doctype": "CRM Lead", "first_name": "{0} {1}".format(first, TAG),
-		"lead_name": "{0} {1}".format(first, TAG), "status": status,
+		"lead_name": "{0} {1}".format(first, TAG), "status": status, "lead_owner": owner,
 	}).insert(ignore_permissions=True).name
 
 
@@ -74,8 +76,8 @@ def run():
 
 	# A safe lead status (the first one rarely carries lost-reason validation).
 	s1 = (frappe.get_all("CRM Lead Status", pluck="name") or ["New"])[0]
-	_make_lead("Alpha", s1)
-	_make_lead("Bravo", s1)
+	_make_lead("Alpha", s1, a)
+	_make_lead("Bravo", s1, a)
 	frappe.db.commit()
 
 	# catalog keys we can safely reference (real Lead catalog rows)
