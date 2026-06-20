@@ -113,6 +113,17 @@ def field_catalog(base_object, activity_type=None):
 # fail-closed sidebar gate. Neither writes; neither ever throws on the happy path.
 # ---------------------------------------------------------------------------
 
+def _can_write_view(d):
+	"""Whether the caller may edit/delete this view: a standard view is operator-only; a personal
+	view is editable by its owner (or an operator). Drives the tab's edit affordance — the server
+	upsert/delete still enforces the same rule, so the UI flag is convenience, never the gate."""
+	if _is_operator():
+		return True
+	if d.get("is_standard"):
+		return False
+	return (d.get("owner_user") or None) == frappe.session.user
+
+
 def _smart_view_tab(d):
 	"""One tab row for the frontend store — the minimal shape SmartViewTabs renders."""
 	return {
@@ -124,6 +135,8 @@ def _smart_view_tab(d):
 		"icon": d.icon,
 		"order": cint(d.view_order),
 		"pinned": bool(d.pinned),
+		"is_standard": bool(d.get("is_standard")),
+		"can_write": _can_write_view(d),
 	}
 
 
@@ -138,11 +151,42 @@ def get_smart_views():
 		or_filters={"is_standard": 1, "owner_user": user},
 		fields=[
 			"name", "label", "base_object", "activity_type",
-			"color", "icon", "view_order", "pinned",
+			"color", "icon", "view_order", "pinned", "is_standard", "owner_user",
 		],
 		order_by="view_order asc, label asc",
 	)
 	return [_smart_view_tab(frappe._dict(r)) for r in rows]
+
+
+@frappe.whitelist()
+def get_view(name):
+	"""The full editable definition of one view (for the authoring editor): scope + parsed
+	predicate + column keys. Readable when it's a standard view, the caller's own, or by an
+	operator; otherwise refused (fail-closed). Read-only."""
+	d = frappe.get_doc("CRM Smart View", name)
+	if not (d.is_standard or _is_operator() or (d.owner_user and d.owner_user == frappe.session.user)):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	try:
+		predicate = frappe.parse_json(d.predicate) if d.predicate else None
+	except Exception:
+		predicate = None
+	try:
+		columns = frappe.parse_json(d.columns) if d.columns else []
+	except Exception:
+		columns = []
+	return {
+		"name": d.name,
+		"label": d.label,
+		"base_object": d.base_object,
+		"activity_type": d.activity_type,
+		"description": d.description,
+		"color": d.color,
+		"icon": d.icon,
+		"predicate": predicate,
+		"columns": columns,
+		"is_standard": bool(d.is_standard),
+		"can_write": _can_write_view(d),
+	}
 
 
 @frappe.whitelist()
