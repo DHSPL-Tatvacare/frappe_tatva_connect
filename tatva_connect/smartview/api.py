@@ -324,6 +324,21 @@ def _apply_search(crit, search, cat, field_terms):
 	return sc if crit is None else (crit & sc)
 
 
+def _col_fieldtype(r):
+	"""The real DocField fieldtype for a catalog column, read from the live doctype meta
+	(never guessed). Drives the frontend's column width + cell formatting (Date/Datetime/
+	Currency...). target_doctype is the doctype the field lives on for every sql_source;
+	child_doctype is the fallback for child/task_child rows. Unknown -> 'Data' (inert)."""
+	dt = (r.target_doctype or "").strip() or (r.child_doctype if r.sql_source in ("child", "task_child") else None)
+	if not dt:
+		return "Data"
+	try:
+		df = frappe.get_meta(dt).get_field(r.fieldname)
+		return df.fieldtype if df else "Data"
+	except Exception:
+		return "Data"
+
+
 @frappe.whitelist()
 def get_data(view, filters=None, sort=None, search=None, page=1, page_size=50):
 	"""THE composer. Returns {columns, rows, total} for a saved CRM Smart View, PQC-scoped.
@@ -392,7 +407,7 @@ def get_data(view, filters=None, sort=None, search=None, page=1, page_size=50):
 	rows = rows_q.run(as_dict=True)
 
 	columns = [
-		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": "Data"}
+		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_fieldtype(cat[k])}
 		for k in col_keys if k in field_terms
 	]
 	return {"columns": columns, "rows": rows, "total": total}
