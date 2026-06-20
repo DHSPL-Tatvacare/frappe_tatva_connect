@@ -88,8 +88,10 @@ def field_catalog(base_object, activity_type=None):
 	if base_object not in ("Lead", "Activity"):
 		frappe.throw(_("Unknown base object {0}").format(base_object))
 	cat = _catalog_fields(base_object, activity_type)
-	return [
-		{
+	out = []
+	for r in cat.values():
+		df = _col_docfield(r)
+		out.append({
 			"field_key": r.field_key,
 			"label": r.label or r.fieldname,
 			"fieldname": r.fieldname,
@@ -97,9 +99,12 @@ def field_catalog(base_object, activity_type=None):
 			"filterable": bool(r.filterable),
 			"sortable": bool(r.sortable),
 			"surface": r.surface or "worklist",
-		}
-		for r in cat.values()
-	]
+			# fieldtype + options let the native Filter/ColumnSettings controls (operator menu,
+			# value widget, Link target) work off the catalog exactly as they do off doctype meta.
+			"fieldtype": df.fieldtype if df else "Data",
+			"options": (df.options or "") if df else "",
+		})
+	return out
 
 
 # ---------------------------------------------------------------------------
@@ -338,19 +343,24 @@ def _apply_search(crit, search, cat, field_terms):
 	return sc if crit is None else (crit & sc)
 
 
-def _col_fieldtype(r):
-	"""The real DocField fieldtype for a catalog column, read from the live doctype meta
-	(never guessed). Drives the frontend's column width + cell formatting (Date/Datetime/
-	Currency...). target_doctype is the doctype the field lives on for every sql_source;
-	child_doctype is the fallback for child/task_child rows. Unknown -> 'Data' (inert)."""
+def _col_docfield(r):
+	"""The live DocField backing a catalog row, read from doctype meta (never guessed).
+	target_doctype is the doctype the field lives on for every sql_source; child_doctype is
+	the fallback for child/task_child rows. None when it can't be resolved."""
 	dt = (r.target_doctype or "").strip() or (r.child_doctype if r.sql_source in ("child", "task_child") else None)
 	if not dt:
-		return "Data"
+		return None
 	try:
-		df = frappe.get_meta(dt).get_field(r.fieldname)
-		return df.fieldtype if df else "Data"
+		return frappe.get_meta(dt).get_field(r.fieldname)
 	except Exception:
-		return "Data"
+		return None
+
+
+def _col_fieldtype(r):
+	"""The DocField fieldtype for a catalog column — drives the frontend's column width +
+	cell formatting (Date/Datetime/Currency...). Unknown -> 'Data' (inert)."""
+	df = _col_docfield(r)
+	return df.fieldtype if df else "Data"
 
 
 @frappe.whitelist()
