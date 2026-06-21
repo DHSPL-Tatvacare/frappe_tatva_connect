@@ -539,7 +539,7 @@ def lead_location_view(lead):
 		rows = frappe.get_all(
 			"CRM Task",
 			filters={"reference_docname": lead, "custom_task_type": ["in", list(types)], "status": "Done"},
-			fields=["name", "custom_task_type", "custom_visit_status", "status", "modified", "creation",
+			fields=["name", "custom_task_type", "custom_outcome", "status", "modified", "creation",
 					"assigned_to", "owner", "custom_location_address", "custom_location_latitude",
 					"custom_location_longitude", "custom_location_captured_at"],
 			order_by="modified desc",
@@ -555,7 +555,7 @@ def lead_location_view(lead):
 			activities.append({
 				"task": t.name,
 				"type": t.custom_task_type or "",
-				"status": t.custom_visit_status or t.status or "",
+				"status": t.custom_outcome or t.status or "",
 				"rep": (who and frappe.db.get_value("User", who, "full_name")) or who or "",
 				"date": format_datetime(when, "d MMM, h:mm a"),
 				"located": located,

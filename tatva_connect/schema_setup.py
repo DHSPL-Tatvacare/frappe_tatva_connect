@@ -22,6 +22,7 @@ from tatva_connect.patches import (
 	add_observability_indexes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
+	retire_activity_legacy_columns,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
 )
@@ -31,6 +32,7 @@ _STEPS = (
 	add_acefone_telephony_medium,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
+	retire_activity_legacy_columns,
 	add_observability_indexes,
 	# Carry existing webhook tokens into the Password store after the Data->Password flip.
 	# install-app baselines patches.txt without running it, so this is the path that lands the

@@ -2,16 +2,17 @@
 
     bench --site dev.localhost execute tatva_connect.smartview.tests.run_proof.run
 
-Proves the composer end-to-end on real SQL:
-  * flattened child columns appear in a row (LEFT JOIN of CRM Task Order Detail),
-  * filter + sort on a CHILD column work,
+Proves the composer end-to-end on real SQL (unified 9-column activity model):
+  * the promoted CRM Task columns project in a row (custom_outcome / custom_reference / …),
+  * a display-only payload column projects via JSON_EXTRACT(custom_activity_payload),
+  * filter + sort on a PROMOTED column work,
   * the PQC is ANDed in (a non-privileged user sees FEWER rows than Administrator),
   * `total` (the PQC-scoped count) matches the returned/visible row count.
 
-Self-seeds isolated test data (a task type, two leads, three order-punch tasks with order
-detail rows), so it is deterministic and never depends on business data. Idempotent-ish:
-re-running reuses the seeded fixtures by their stable test keys. READ path only — it never
-mutates through the composer.
+Self-seeds isolated test data (a task type, two leads, three order-punch tasks written through
+the 9 promoted columns + a JSON payload), so it is deterministic and never depends on business
+data. Idempotent-ish: re-running reuses the seeded fixtures by their stable test keys. READ path
+only — it never mutates through the composer.
 """
 import frappe
 
@@ -45,8 +46,9 @@ def _ensure_user():
 
 
 def _reset_test_data():
-	"""Drop prior proof tasks/leads so counts are exact on a re-run."""
-	for t in frappe.get_all("CRM Task", filters={"custom_outcome": ["like", "%" + TAG + "%"]}, pluck="name"):
+	"""Drop prior proof tasks/leads so counts are exact on a re-run. Keys off the tagged title so
+	the promoted custom_outcome can hold a clean, filterable value (e.g. 'Delivered')."""
+	for t in frappe.get_all("CRM Task", filters={"title": ["like", "%" + TAG + "%"]}, pluck="name"):
 		frappe.delete_doc("CRM Task", t, ignore_permissions=True, force=True)
 	for ld in frappe.get_all("CRM Lead", filters={"lead_name": ["like", "%" + TAG + "%"]}, pluck="name"):
 		frappe.delete_doc("CRM Lead", ld, ignore_permissions=True, force=True)
@@ -63,15 +65,16 @@ def _make_lead(first):
 
 
 def _make_task(lead, owner, outcome, order_id, units, shipped_by):
+	# The unified model: outcome/order_id/shipped_by land in promoted columns; the type-specific
+	# leftover (cycle_category) lands in the display-only JSON payload.
 	t = frappe.get_doc({
 		"doctype": "CRM Task", "title": "{0} {1}".format(order_id, TAG),
 		"custom_task_type": TYPE, "status": "Todo",
 		"reference_doctype": "CRM Lead", "reference_docname": lead,
-		"custom_outcome": "{0} {1}".format(outcome, TAG),
-		"custom_order_detail": [{
-			"outcome": outcome, "order_id": order_id,
-			"number_of_units": units, "shipped_by_date": shipped_by,
-		}],
+		"custom_outcome": outcome,
+		"custom_reference": order_id,
+		"custom_scheduled_at": shipped_by,
+		"custom_activity_payload": frappe.as_json({"cycle_category": "Cycle-{0}".format(units)}),
 	})
 	t.insert(ignore_permissions=True)
 	# stamp owner explicitly (PQC keys off owner/assigned_to)
@@ -118,22 +121,22 @@ def run():
 	results.append(_check("rows returned (>=2 test leads)", len([r for r in data["rows"]]) >= 2))
 	results.append(_check("count == returned rows", data["total"] == len(data["rows"])))
 
-	print("\n== Activity view — flatten child columns ==")
+	print("\n== Activity view — promoted columns + display-only payload ==")
 	data = api.get_data(act_view)
 	cols = [c["key"] for c in data["columns"]]
-	results.append(_check("child column order:order_id projected", "order:order_id" in cols))
+	results.append(_check("promoted column act:reference projected", "act:reference" in cols))
 	row0 = data["rows"][0] if data["rows"] else {}
-	results.append(_check("flattened child value present (order:order_id non-null)",
-						   any(r.get("order:order_id") for r in data["rows"])))
-	print("    sample row:", {k: row0.get(k) for k in ("name", "order:order_id", "order:outcome", "order:units")})
+	results.append(_check("payload value present (act:cycle non-null via JSON_EXTRACT)",
+						   any(r.get("act:cycle") for r in data["rows"])))
+	print("    sample row:", {k: row0.get(k) for k in ("name", "act:reference", "act:outcome", "act:cycle")})
 
-	print("\n== Filter + sort on a CHILD column ==")
-	filtered = api.get_data(act_view, filters=[["order:outcome", "=", "Delivered"]], sort=["order:order_id", "asc"])
-	out_vals = [r.get("order:outcome") for r in filtered["rows"]]
-	results.append(_check("filter order:outcome=Delivered -> only Delivered rows",
+	print("\n== Filter + sort on a PROMOTED column ==")
+	filtered = api.get_data(act_view, filters=[["act:outcome", "=", "Delivered"]], sort=["act:reference", "asc"])
+	out_vals = [r.get("act:outcome") for r in filtered["rows"]]
+	results.append(_check("filter act:outcome=Delivered -> only Delivered rows",
 						   bool(out_vals) and all(v == "Delivered" for v in out_vals)))
-	ids = [r.get("order:order_id") for r in filtered["rows"]]
-	results.append(_check("sort by order:order_id asc -> ascending", ids == sorted(ids)))
+	ids = [r.get("act:reference") for r in filtered["rows"]]
+	results.append(_check("sort by act:reference asc -> ascending", ids == sorted(ids)))
 	results.append(_check("filtered count == rows", filtered["total"] == len(filtered["rows"])))
 
 	print("\n== PQC narrows rows (non-privileged user sees fewer) ==")

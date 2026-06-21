@@ -12,7 +12,7 @@
   "options",
   "reqd",
   "depends_on",
-  "first_class_target"
+  "target"
  ],
  "fields": [
   {
@@ -65,11 +65,11 @@
   },
   {
    "columns": 2,
-   "description": "Optional: a first-class CRM Task column this field writes to (e.g. custom_visit_status). Blank = stored in the JSON payload.",
-   "fieldname": "first_class_target",
+   "description": "Optional: which of the 9 promoted CRM Task columns this field writes to (custom_outcome, custom_reference, custom_asm, custom_scheduled_at, custom_followup_at, custom_key_date_1..4). Blank = stored in the JSON payload (display-only).",
+   "fieldname": "target",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "First-Class Target"
+   "label": "Target"
   }
  ],
  "grid_page_length": 50,

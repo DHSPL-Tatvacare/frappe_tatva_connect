@@ -22,6 +22,10 @@ tatva_connect.patches.generalize_telephony_spine
 # Neutralise the WhatsApp Message provider-id field: custom_wati_id -> custom_provider_message_id
 # (shared doctype; a neutral name lets a future provider reuse it). Data preserved; idempotent.
 tatva_connect.patches.neutralize_wati_message_id_field
+# Activity engine 9-column collapse: rename CRM Task Type Field.first_class_target -> target before
+# the doctype JSON syncs, so the renamed field map carries existing values (no orphan column).
+# Idempotent; no-op on a fresh install. See docs/plans/2026-06-21-activity-engine-unified-design.md.
+tatva_connect.patches.rename_task_field_target
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -65,6 +69,13 @@ tatva_connect.patches.fold_transitions_switch
 # encrypted store so values survive the field-type switch (merge-not-clobber; column placeholder is
 # the idempotency guard). Idempotent; also runs on after_migrate via schema_setup.
 tatva_connect.patches.migrate_webhook_tokens_to_password
+# Activity engine 9-column collapse: custom_visit_status -> custom_outcome, custom_next_visit_at ->
+# custom_followup_at, custom_demo_scheduled_at -> custom_scheduled_at (values carried forward), the
+# old single custom_key_date -> custom_key_date_1..4, custom_reference added — all via fixtures. This
+# patch drops the stale columns and the 4 dead archetype child doctypes (CRM Task Order/Clinical/Call/
+# Doc Detail — defined, never written; folders archived to archive/doctype/). Idempotent; also runs on
+# after_migrate via schema_setup. See docs/plans/2026-06-21-activity-engine-unified-design.md.
+tatva_connect.patches.retire_activity_legacy_columns
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field

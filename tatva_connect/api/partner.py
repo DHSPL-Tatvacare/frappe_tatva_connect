@@ -68,11 +68,11 @@ def _build_catalog():
 	)
 	keys, section_doctype, section_child, section_title, section_key_field = [], {}, {}, {}, {}
 	for r in rows:
-		# Smart-Views-only activity rows (CRM Task / its archetype children) are NOT lead
+		# Smart-Views-only activity rows (CRM Task promoted columns / payload) are NOT lead
 		# fields — the partner API exposes lead fields only. Skip them so they never reach
 		# a partner's lead_schema. Parent/child (CRM Lead) rows stay; blank sql_source =
 		# legacy partner-only rows stay.
-		if r.sql_source in ("task", "task_child"):
+		if r.sql_source in ("task", "payload"):
 			continue
 		keys.append(r.field_key)
 		section = r.section_key

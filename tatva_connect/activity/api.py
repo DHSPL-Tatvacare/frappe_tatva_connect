@@ -16,9 +16,14 @@ from frappe.utils import flt, format_datetime, formatdate
 
 from tatva_connect.taxonomy.grain import resolve_scoped
 
-# The only CRM Task columns an activity field may write to (first_class_target).
-# Anything else in the schema goes to the JSON payload.
-FIRST_CLASS = ("custom_visit_status", "custom_next_visit_at", "custom_asm", "custom_demo_scheduled_at")
+# The 9 promoted CRM Task columns an activity field may route to (the schema field's `target`).
+# Anything else in the schema goes to the JSON payload (display-only). See
+# docs/plans/2026-06-21-activity-engine-unified-design.md §4.
+PROMOTED_COLUMNS = (
+	"custom_outcome", "custom_reference", "custom_asm",
+	"custom_scheduled_at", "custom_followup_at",
+	"custom_key_date_1", "custom_key_date_2", "custom_key_date_3", "custom_key_date_4",
+)
 
 
 def _lead_axes(lead):
@@ -72,12 +77,12 @@ def activity_is_unlogged(doc):
 		return False
 	if not _type_has_schema(doc.custom_task_type):
 		return False
-	# save_activity always writes a payload string (even "{}") + the first-class cols; a raw
+	# save_activity always writes a payload string (even "{}") + the promoted cols; a raw
 	# set_value(status=Done) leaves the payload untouched (None/blank). So a present payload OR
-	# any first-class value means the form was submitted -> logged.
+	# any promoted value means the form was submitted -> logged.
 	if (doc.custom_activity_payload or "").strip():
 		return False
-	return not any(doc.get(f) for f in FIRST_CLASS)
+	return not any(doc.get(f) for f in PROMOTED_COLUMNS)
 
 
 @frappe.whitelist()
@@ -138,7 +143,7 @@ def get_schema(task_type):
 			"fieldtype": f.fieldtype,
 			"options": f.options or "",
 			"reqd": int(f.reqd or 0),
-			"first_class_target": f.first_class_target or "",
+			"target": f.target or "",
 			"depends_on": (f.get("depends_on") or ""),
 		}
 		for f in doc.schema
@@ -191,23 +196,24 @@ def compute_activity(lead, task_type, values, task=None):
 		frappe.throw(_("This activity is not available for this lead."), title=_("Out of scope"))
 
 	tt = frappe.get_doc("CRM Task Type", task_type)
-	first_class, payload = {}, {}
+	promoted, payload = {}, {}
 	for f in tt.schema:
 		val = values.get(f.fieldname)
 		# Only enforce required on fields the depends_on actually shows — a hidden field is never
 		# submitted, so requiring it would brick the save (one rule, same as the client).
 		if f.reqd and _field_visible(f.get("depends_on"), values) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
-		target = f.first_class_target or ""
-		(first_class if target in FIRST_CLASS else payload)[target or f.fieldname] = val
+		target = f.target or ""
+		# Route by the schema field's target: one of the 9 promoted columns, else the JSON payload.
+		(promoted if target in PROMOTED_COLUMNS else payload)[target or f.fieldname] = val
 
 	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
-	_validate_asm(first_class.get("custom_asm"))
+	_validate_asm(promoted.get("custom_asm"))
 
 	fields = {
 		"custom_activity_payload": json.dumps(payload, default=str),
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
-		**first_class,
+		**promoted,
 	}
 	notes = values.get("notes")
 	if notes and frappe.get_meta("CRM Task").has_field("description"):
@@ -289,7 +295,7 @@ def lead_task_board(lead):
 		fields=[
 			"name", "title", "custom_task_type", "status", "priority", "due_date",
 			"assigned_to", "owner", "creation", "description", "custom_activity_payload",
-			*FIRST_CLASS,
+			*PROMOTED_COLUMNS,
 			"custom_location_latitude", "custom_location_longitude",
 			"custom_location_address", "custom_location_captured_at",
 		],
@@ -340,7 +346,7 @@ def _type_config(task_type):
 				"options": f.options or "",
 				"reqd": int(f.reqd or 0),
 				"depends_on": (f.get("depends_on") or ""),
-				"first_class_target": f.first_class_target or "",
+				"target": f.target or "",
 			}
 			for f in doc.schema
 		],
@@ -359,7 +365,7 @@ def task_detail(task):
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date",
 		 "assigned_to", "owner", "creation", "description", "custom_activity_payload",
-		 *FIRST_CLASS,
+		 *PROMOTED_COLUMNS,
 		 "custom_location_latitude", "custom_location_longitude",
 		 "custom_location_address", "custom_location_captured_at",
 		 "reference_doctype", "reference_docname"],
@@ -411,9 +417,9 @@ def _task_values(r, cfg):
 			frappe.log_error(f"activity: bad payload on task {r.name}")
 	if cfg:
 		for f in cfg["fields"]:
-			fct = f.get("first_class_target")
-			if fct and r.get(fct) not in (None, ""):
-				vals[f["fieldname"]] = str(r.get(fct))
+			tgt = f.get("target")
+			if tgt and r.get(tgt) not in (None, ""):
+				vals[f["fieldname"]] = str(r.get(tgt))
 	if r.description:
 		vals.setdefault("notes", r.description)
 	return vals
@@ -485,8 +491,8 @@ def lead_timeline(lead):
 		"CRM Task",
 		filters={"reference_docname": lead, "custom_task_type": ["in", list(activity_types)]},
 		fields=["name", "creation", "modified", "status", "custom_task_type", "description",
-				"custom_visit_status", "custom_activity_payload", "custom_automated",
-				"assigned_to", "owner", *FIRST_CLASS,
+				"custom_activity_payload", "custom_automated",
+				"assigned_to", "owner", *PROMOTED_COLUMNS,
 				"custom_location_latitude", "custom_location_longitude",
 				"custom_location_address", "custom_location_captured_at"],
 		order_by="creation desc",
@@ -507,7 +513,7 @@ def lead_timeline(lead):
 			"owner": who,
 			"owner_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"activity_type": t.custom_task_type,
-			"status": t.custom_visit_status or t.status,
+			"status": t.custom_outcome or t.status,
 			"done": (t.status or "") in ("Done", "Completed"),
 			"automated": bool(t.custom_automated),
 			"address": t.custom_location_address or "",

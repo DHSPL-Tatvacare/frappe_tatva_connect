@@ -4,8 +4,9 @@ A Smart View is a saved tabbed list over leads (one row per patient) or activiti
 row per CRM Task of an activity type). Its rows come from ONE `frappe.qb` query that:
 
   1. drives off CRM Lead (lead view) or CRM Task WHERE custom_task_type = activity_type,
-  2. LEFT JOINs only the child tables actually referenced by columns/predicate
-     (single-row on parent=name, or a latest_by:<field> subquery),
+  2. LEFT JOINs only the CRM Lead child tables actually referenced by columns/predicate
+     (single-row on parent=name, or a latest_by:<field> subquery); CRM Task activity views
+     read the 9 promoted columns directly + display-only JSON_EXTRACT(custom_activity_payload),
   3. ANDs the permission query conditions — ALWAYS, fail-closed, on list AND count,
   4. translates the saved predicate JSON tree into nested qb WHERE (catalog fields only),
   5. applies ad-hoc filters/search/sort (catalog-bounded) and paginates,
@@ -20,7 +21,7 @@ from frappe import _
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Count
 from frappe.utils import cint
-from pypika.terms import PseudoColumn
+from pypika.terms import Function, PseudoColumn
 
 LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
@@ -63,7 +64,7 @@ def _catalog_fields(base_object, activity_type=None):
 	scope = _scope_label(base_object, activity_type)
 	rows = frappe.get_all(
 		"CRM Lead API Field",
-		filters={"sql_source": ["in", ["parent", "child", "task", "task_child"]]},
+		filters={"sql_source": ["in", ["parent", "child", "task", "payload"]]},
 		fields=[
 			"field_key", "label", "fieldname", "sql_source", "child_doctype",
 			"child_pick", "filterable", "sortable", "surface", "applies_to", "target_doctype",
@@ -265,10 +266,11 @@ def _predicate_keys(node, acc):
 
 
 def _joins(needed_keys, cat, driving_table, driving_name):
-	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, pick).
+	"""LEFT JOIN every CRM Lead child table referenced by `needed_keys`, once per (doctype, pick).
 	Returns (query-mutator, {field_key: pypika Field}). single -> join on parent=name +
-	parenttype; latest_by:<f> -> join a subquery picking the newest row per parent. The
-	driving table's own (parent/task) fields resolve straight off driving_table."""
+	parenttype; latest_by:<f> -> join a subquery picking the newest row per parent. The driving
+	table's own (parent/task) fields resolve straight off driving_table; payload fields resolve to
+	a JSON_EXTRACT off the task's custom_activity_payload (no join, display-only)."""
 	field_terms = {}
 	join_specs = {}  # alias -> (aliased child table, pick)
 	for key in needed_keys:
@@ -278,7 +280,16 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		if r.sql_source in ("parent", "task"):
 			field_terms[key] = driving_table[r.fieldname]
 			continue
-		# child / task_child -> needs a join
+		if r.sql_source == "payload":
+			# Display-only: JSON_UNQUOTE(JSON_EXTRACT(<task>.custom_activity_payload, '$.<key>')).
+			# The catalog marks payload rows filterable=0/sortable=0, so this term is only ever
+			# projected — it never reaches a WHERE/ORDER BY (enforced in _predicate_where/_apply_*).
+			field_terms[key] = Function(
+				"JSON_UNQUOTE",
+				Function("JSON_EXTRACT", driving_table.custom_activity_payload, "$.{0}".format(r.fieldname)),
+			)
+			continue
+		# child (CRM Lead child table) -> needs a join
 		child_dt = r.child_doctype
 		if not child_dt:
 			continue
@@ -388,8 +399,9 @@ def _apply_search(crit, search, cat, field_terms):
 def _col_docfield(r):
 	"""The live DocField backing a catalog row, read from doctype meta (never guessed).
 	target_doctype is the doctype the field lives on for every sql_source; child_doctype is
-	the fallback for child/task_child rows. None when it can't be resolved."""
-	dt = (r.target_doctype or "").strip() or (r.child_doctype if r.sql_source in ("child", "task_child") else None)
+	the fallback for child rows. None when it can't be resolved (payload rows resolve to None
+	-> 'Data', since the schema fieldname is not a real CRM Task docfield)."""
+	dt = (r.target_doctype or "").strip() or (r.child_doctype if r.sql_source == "child" else None)
 	if not dt:
 		return None
 	try:
