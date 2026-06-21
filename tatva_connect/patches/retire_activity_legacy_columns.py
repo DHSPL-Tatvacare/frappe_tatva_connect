@@ -26,13 +26,14 @@ _MERGES = (
 	("custom_demo_scheduled_at", "custom_scheduled_at"),
 )
 
-# Stale fields with no merge — always safe to drop (dropping the Custom Field drops the column).
+# Stale fields with no merge — always safe to retire (custom_key_date column + the 4 dead Table links,
+# which are child-table fields with no parent column, so only their Custom Field docs are removed).
 _STALE_FIELDS = (
-	"CRM Task-custom_key_date",
-	"CRM Task-custom_order_detail",
-	"CRM Task-custom_clinical_detail",
-	"CRM Task-custom_call_detail",
-	"CRM Task-custom_doc_detail",
+	"custom_key_date",
+	"custom_order_detail",
+	"custom_clinical_detail",
+	"custom_call_detail",
+	"custom_doc_detail",
 )
 
 _DEAD_CHILD_DOCTYPES = (
@@ -43,14 +44,20 @@ _DEAD_CHILD_DOCTYPES = (
 )
 
 
-def _drop_field(name):
-	if frappe.db.exists("Custom Field", name):
-		frappe.delete_doc("Custom Field", name, ignore_permissions=True, force=True)
+def _retire_column(fieldname):
+	"""Drop a retired CRM Task field end to end: delete its Custom Field doc AND the physical
+	column (deleting the Custom Field alone leaves the column behind on this MariaDB). A Table
+	field has no parent column — has_column is False, so only the Custom Field is removed."""
+	cf = "CRM Task-" + fieldname
+	if frappe.db.exists("Custom Field", cf):
+		frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)
+	if frappe.db.has_column(TASK, fieldname):
+		frappe.db.sql("ALTER TABLE `tabCRM Task` DROP COLUMN `{0}`".format(fieldname))
 
 
 def execute():
-	# 1) Carry values into the merged/renamed columns, then drop the old field — but ONLY once the
-	#    target column exists (the new fixture has synced). If it hasn't yet, leave the old field for
+	# 1) Carry values into the merged/renamed columns, then retire the old column — but ONLY once the
+	#    target column exists (the new fixture has synced). If it hasn't yet, leave the old column for
 	#    the after_migrate pass. NULLIF(CAST(... AS CHAR),'') treats NULL and '' as empty for both
 	#    Data and Datetime columns (a bare `= ''` truncates a datetime under strict mode).
 	for old, new in _MERGES:
@@ -62,11 +69,11 @@ def execute():
 			   WHERE NULLIF(CAST(`{old}` AS CHAR), '') IS NOT NULL
 			     AND NULLIF(CAST(`{new}` AS CHAR), '') IS NULL""".format(old=old, new=new)
 		)
-		_drop_field("CRM Task-" + old)
+		_retire_column(old)
 
-	# 2) Drop the stale Custom Fields (incl. the 4 dead Table links).
-	for name in _STALE_FIELDS:
-		_drop_field(name)
+	# 2) Retire the stale fields with no merge (custom_key_date + the 4 dead Table links).
+	for fieldname in _STALE_FIELDS:
+		_retire_column(fieldname)
 
 	# 3) Drop the 4 dead archetype child doctypes + their tables (folders archived to archive/doctype/).
 	for dt in _DEAD_CHILD_DOCTYPES:
