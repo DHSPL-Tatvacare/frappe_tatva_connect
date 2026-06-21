@@ -17,8 +17,9 @@ def execute():
 		return
 	if frappe.db.has_column(DT, "target"):
 		# Both present (an interrupted run): drop the legacy column, keep target.
-		frappe.db.sql("ALTER TABLE `{0}` DROP COLUMN `first_class_target`".format(TABLE))
+		frappe.db.sql_ddl("ALTER TABLE `{0}` DROP COLUMN `first_class_target`".format(TABLE))
 		return
-	frappe.db.sql(
+	# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard outside patch context.
+	frappe.db.sql_ddl(
 		"ALTER TABLE `{0}` CHANGE `first_class_target` `target` varchar(140)".format(TABLE)
 	)
