@@ -32,8 +32,9 @@ from frappe import _
 from frappe.utils import cint, cstr
 
 from tatva_connect import automation
-from tatva_connect.api._base import (  # noqa: F401  (normalise_partner_response re-exported for hooks)
+from tatva_connect.api._base import (  # noqa: F401  (re-exported for hooks + observability/capture.py)
 	BULK_MAX,
+	_PARTNER_PATH,
 	_api,
 	_classify,
 	_fail,
