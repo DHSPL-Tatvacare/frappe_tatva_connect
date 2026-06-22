@@ -30,6 +30,24 @@
       "tags": [
         "Lead"
       ]
+    },
+    {
+      "name": "Activities",
+      "tags": [
+        "Activities"
+      ]
+    },
+    {
+      "name": "Files",
+      "tags": [
+        "Files"
+      ]
+    },
+    {
+      "name": "Calls",
+      "tags": [
+        "Calls"
+      ]
     }
   ],
   "tags": [
@@ -42,6 +60,21 @@
       "name": "Lead",
       "description": "Your entire surface — the gated lead methods. Each one resolves what your key is allowed to do: your fixed product line, and the fields you may send and read. Raw `/api/resource/CRM Lead` is **not** available to partner keys (it returns `403`); these methods are the supported path.\n\n| HTTP method | Method | Does |\n|---|---|---|\n| GET | `lead_schema` | Discovery — exactly the fields YOUR key may send/read, plus your routing mode. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| POST | `lead_create` | Create-or-upsert by phone. Returns the CRM `name`. |\n| PUT | `lead_update` | Update a lead by CRM `name` (the id `lead_create` returned). |\n| DELETE | `lead_delete` | Delete a lead by CRM `name` (a lead with linked activity can't be deleted). |\n| POST | `lead_create_bulk` | `{\"leads\":[{...}, …]}` (≤ 100). Partial success. |\n| PUT | `lead_update_bulk` | `{\"updates\":[{\"name\":…, …}, …]}` (≤ 100). Partial success. |\n| DELETE | `lead_delete_bulk` | `{\"names\":[…]}` (≤ 100). Partial success. |\n| POST | `lead_get_bulk` | `{\"names\":[…]}` **or** `{\"mobile_nos\":[…]}` (≤ 100). Out-of-scope ids omitted. |\n| GET | `lead_list` | Curated filters + pagination, always scoped to your line. |\n\n**`lead_create` is the default write path.** It's idempotent on the lead grain, safe to retry, and handles the lookup-or-create for you.\n\n### Lead grain and dedup\n\nA lead is unique per **phone + product line + group** ([Lead identity](/concepts)). You never send routing — your line is fixed by your mapping — so for you, dedup is simply **phone within your line**: `lead_create` finds the lead matching your line and that phone and updates it, or creates a new one. The same phone on a different line is a separate lead.\n\n### Child profile writes\n\nProfile children (`custom_plan_profile`, `custom_lab_profile`) are sent as **embedded arrays** inside the body — at most one row per profile per lead. Writes **merge field-by-field** into the existing row: fields you send are overlaid, fields you omit are left alone. A partial write never wipes the row. This holds for `lead_create`, `lead_update`, and their bulk forms.\n\n### Routing\n\nRouting (`source`, line, group, program) is **forced server-side** from your key's mapping. Any routing field you send is silently ignored.\n\n### Field validation\n\n- **Allowed fields are per-key.** Call `lead_schema` for exactly what your key may send; anything outside that list is dropped. `mobile_no` is always allowed (the anchor).\n- **Required to create:** `mobile_no`. `first_name` and `status` are default-filled if missing.\n- **Required if status is Junk or Unqualified:** `lost_reason`.\n- **Link-validated** (the value must exist in its master): `status`, `source`, program, and `substage` on the plan profile.\n- **Never write:** `name` (auto-generated), `lead_name` (computed), `creation`, `modified`.\n\n### Reading leads\n\nThree paths: `lead_get` (one, by `name` or `mobile_no`), `lead_get_bulk` (many), `lead_list` (filtered + paginated). All return only your allowed fields and only leads on your line.\n\n`lead_list` honors a **curated set of filters only** — never arbitrary fields:\n\n| Parameter | Meaning |\n|---|---|\n| `status` | exact lead status |\n| `created_after` / `created_before` | `creation` date range |\n| `updated_after` / `updated_before` | `modified` date range |\n| `mobile_no` | exact phone |\n| `limit` | page size (default 20, max 200) |\n| `offset` | rows to skip (paging) |\n\nList results return curated parent fields, **no children** — use `lead_get` for the full record. Response: `{ok, total, count, offset, limit, leads:[…]}`.\n\n### Bulk partial success\n\nEvery bulk method runs each record independently — one bad row reports its error, the rest still commit. Response: `{ok, total, succeeded, failed, results:[{index, ok, action?, name?, error?}]}`.\n\n### Reading children\n\n`lead_get` / `lead_get_bulk` return the profile children inline, filtered to your allowed fields. Child tables can't be read directly via REST — always read them through the parent lead.\n\n---\n\nTo try any method below, [save your API key](/partner-validate-key) first — the try-it console then injects it on every request.",
       "x-zudoku-collapsed": false
+    },
+    {
+      "name": "Activities",
+      "description": "Log **activities** on a lead — CRM Tasks of an activity type (a grain-scoped CRM Task Type). The SAME key that writes your leads writes activities: there is NO per-entity enablement, the single enabled `CRM Lead API Mapping` row + its grain governs all four entity APIs.\n\n| HTTP method | Method | Does |\n|---|---|---|\n| GET | `activity_schema` | **Discovery BY LEAD** — the activity types available to a lead's grain, each with its field schema (what you may send for THIS patient). |\n| GET | `activity_get` | Read one activity by CRM Task `name`. |\n| POST | `activity_create` | Create-or-upsert (deduped on `external_id`). |\n| PUT | `activity_update` | Re-run compute on an activity by `name`. |\n| DELETE | `activity_delete` | Delete an activity by `name`. |\n| POST | `activity_create_bulk` | `{\"activities\":[…]}` (≤ 100). Partial success. |\n| POST | `activity_get_bulk` | `{\"names\":[…]}` **or** `{\"external_ids\":[…]}` (≤ 100). |\n| GET | `activity_list` | By lead (+ optional `task_type`/`status`), paginated. |\n\n### Discover before you send\n\nActivity fields are **grain-scoped** — different leads expose different types and fields. Call `activity_schema?lead=<id>` (or `?mobile_no=`) first; send and read values **keyed by the schema `fieldname`** under `values`. Never hardcode a field list.\n\n### Idempotency\n\n`external_id` (stored in `custom_lsq_activity_id`) is the idempotency key: re-sending the same `external_id` updates that activity, never doubles. Optional `created_at` backdates the activity for historical loads.\n\n### Scope\n\nEvery activity resolves its lead through the shared grain-scoped resolver — an out-of-scope or missing lead returns the SAME generic not-found (no probing). Rate limit 100 req/60s; bulk ≤ 100 with per-row partial success.",
+      "x-zudoku-collapsed": true
+    },
+    {
+      "name": "Files",
+      "description": "Attach **files** to a lead (or a scoped activity task). The SAME key as your leads — no per-entity enablement, the single enabled `CRM Lead API Mapping` row + its grain governs files too.\n\n| HTTP method | Method | Does |\n|---|---|---|\n| POST | `file_attach` | Download/decode bytes and attach to a lead (or a scoped task). |\n| GET | `file_get` | Read one file's metadata + proxy url. |\n| GET | `file_list` | A lead's files (optional `file_type`), paginated. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_attach_bulk` | `{\"files\":[…]}` (≤ 100). Partial success. |\n\n### Always private\n\n**Every file attached via this API is private** (fail-closed privacy) — `is_private` is always `true` and `file_url` is a proxy URL, never a raw blob key or local path. Send the bytes as a downloadable `file_url` (the server fetches it) OR `content_base64` (exactly one).\n\n### Idempotency\n\n`external_id` (stored in `custom_lsq_attachment_id`) is the idempotency key: re-attaching the same `external_id` to the same record returns the existing file with `action: exists`, never a duplicate.\n\n### Scope\n\nThe lead (or its task) is grain-scoped via the shared resolver — out-of-scope/missing is the SAME generic not-found. Rate limit 100 req/60s; bulk ≤ 100 partial success.",
+      "x-zudoku-collapsed": true
+    },
+    {
+      "name": "Calls",
+      "description": "Log **calls** on a lead — native `CRM Call Log` rows (the SAME store the telephony webhook writes). The SAME key as your leads — no per-entity enablement, the single enabled `CRM Lead API Mapping` row + its grain governs calls too.\n\n| HTTP method | Method | Does |\n|---|---|---|\n| POST | `call_create` | Create-or-upsert a call log (deduped on `external_id`). |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | A lead's calls (+ optional `direction`/`status`), paginated. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_create_bulk` | `{\"calls\":[…]}` (≤ 100). Partial success. |\n\n### Fail-closed attribution — read `lead`\n\nSend `lead`/`mobile_no` to attach explicitly (grain-scoped). OMIT both and the server does a **STRICT** last-10-digit match on the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to your grain. **No match or an ambiguous (2+) match leaves the call UNLINKED — `lead` comes back `null`** — never attached to a wrong lead. **Always read `lead`** to know whether the call was linked.\n\n### Idempotency\n\n`external_id` (stored in `custom_external_id`) is the idempotency key: re-sending the same `external_id` updates that call log, never doubles. The CRM Call Log autoname is `field:id`, so the row `name` is NOT your `external_id` (a synthetic `PARTNER-<external_id>` id is minted). Optional `started_at` backdates `creation` on insert.\n\n### Scope\n\nReads/deletes are grain-scoped; an unlinked call is never visible to a partner. Rate limit 100 req/60s; bulk ≤ 100 partial success.",
+      "x-zudoku-collapsed": true
     }
   ],
   "security": [
@@ -603,6 +636,471 @@
             "description": "Per-record outcome, in request order."
           }
         }
+      },
+      "ActivitySchemaField": {
+        "type": "object",
+        "description": "One field on an activity type, as returned by `activity_schema`. Send and read activity values keyed by `fieldname` (never hardcode a list — discover them per type).",
+        "properties": {
+          "fieldname": {
+            "type": "string",
+            "description": "The key to send/read this value under inside the activity `values` object."
+          },
+          "label": {
+            "type": "string",
+            "description": "Human label."
+          },
+          "type": {
+            "type": "string",
+            "description": "Frappe fieldtype (`Data`, `Float`, `Int`, `Date`, `Datetime`, `Select`, `Link`, `Check`, …)."
+          },
+          "options": {
+            "type": "string",
+            "nullable": true,
+            "description": "For `Link` the target doctype; for `Select` the newline-separated options; else null."
+          },
+          "reqd": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "`1` ⇒ required for this activity type."
+          }
+        }
+      },
+      "ActivityType": {
+        "type": "object",
+        "description": "One grain-scoped activity type available to a lead, returned by `activity_schema`. Pick a `name` and send its `fields` under `values`.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The activity type id (a CRM Task Type) — send it as `task_type` on create/update.",
+            "example": "Welcome Call"
+          },
+          "is_logged_complete": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "`1` ⇒ logging this activity marks it complete (it carries no separate status workflow)."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivitySchemaField"
+            },
+            "description": "The fields an integrator may send under `values` for this type."
+          }
+        }
+      },
+      "Activity": {
+        "type": "object",
+        "description": "The partner-facing shape of an activity (a CRM Task of an activity type). `values` is re-keyed to the type's schema `fieldname`s — read/write activity data through `values`, never raw CRM Task columns.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The CRM Task id — the activity's unique id (PUT/DELETE this back).",
+            "example": "abc123def4"
+          },
+          "lead": {
+            "type": "string",
+            "description": "The CRM Lead this activity hangs off.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          "task_type": {
+            "type": "string",
+            "description": "The activity type (a CRM Task Type from `activity_schema`).",
+            "example": "Welcome Call"
+          },
+          "status": {
+            "type": "string",
+            "description": "The task status (e.g. `Todo`, `Done`)."
+          },
+          "external_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "**Idempotency key** (stored in `custom_lsq_activity_id`). Re-sending the same `external_id` updates that activity, never doubles."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The activity's data, keyed by the type's schema `fieldname`s (discover them via `activity_schema`)."
+          }
+        }
+      },
+      "ActivityUpsertRequest": {
+        "type": "object",
+        "description": "Body for `activity_create` / `activity_update`. Target a lead by `lead` (CRM name) OR `mobile_no`. `task_type` names the activity type; `values` carries data keyed by the type's `fieldname`s (from `activity_schema`). `external_id` is the idempotency key — re-send to update, never doubles.",
+        "properties": {
+          "lead": {
+            "type": "string",
+            "description": "CRM Lead id. Send this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "Lead phone (auto-normalized). Send this OR `lead`.",
+            "example": "9000000001"
+          },
+          "task_type": {
+            "type": "string",
+            "description": "**Required.** The activity type — a `name` from `activity_schema`.",
+            "example": "Welcome Call"
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Idempotency key (stored in `custom_lsq_activity_id`). Re-sending the same value updates that activity instead of creating a new one."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Activity data keyed by the type's schema `fieldname`s. Required fields per type come from `activity_schema`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional. Backdates the activity's `creation` (historical / migration load). Ignored on update."
+          },
+          "name": {
+            "type": "string",
+            "description": "**`activity_update` only** — the CRM Task id to update.",
+            "example": "abc123def4"
+          }
+        },
+        "required": [
+          "task_type"
+        ]
+      },
+      "File": {
+        "type": "object",
+        "description": "The partner-facing shape of a file on a lead (or a scoped activity task). Files are **always private** (Invariant: fail-closed privacy) — `file_url` is a proxy URL, never a raw blob/local path.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The File id — the file's unique id (DELETE this back)."
+          },
+          "file_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "The document category (stored in `custom_file_type`), e.g. `Lab Report`, `Prescription` — caller-supplied."
+          },
+          "external_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "**Idempotency key** (stored in `custom_lsq_attachment_id`). Re-attaching the same `external_id` to the same record returns the existing file (`action: exists`)."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original file name."
+          },
+          "file_url": {
+            "type": "string",
+            "description": "Proxy URL to fetch the (private) bytes — never a raw blob key or local path."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "Always `true` — files attached via this API are private by design."
+          },
+          "attached_to_doctype": {
+            "type": "string",
+            "enum": [
+              "CRM Lead",
+              "CRM Task"
+            ],
+            "description": "What the file hangs off — the lead, or a scoped activity task."
+          },
+          "attached_to_name": {
+            "type": "string",
+            "description": "The id of the lead or task the file is attached to."
+          }
+        }
+      },
+      "FileAttachRequest": {
+        "type": "object",
+        "description": "Body for `file_attach`. Target a lead by `lead` OR `mobile_no` (optionally a scoped `activity` task). Supply the bytes as a downloadable `file_url` OR `content_base64` (exactly one). Idempotent on `external_id` + the target record.",
+        "properties": {
+          "lead": {
+            "type": "string",
+            "description": "CRM Lead id. Send this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "Lead phone (auto-normalized). Send this OR `lead`.",
+            "example": "9000000001"
+          },
+          "activity": {
+            "type": "string",
+            "description": "Optional CRM Task id to attach to instead of the lead. The task MUST belong to this lead (else generic not-found)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Required.** Idempotency key (stored in `custom_lsq_attachment_id`). Re-attaching the same value to the same record returns the existing file (`action: exists`)."
+          },
+          "file_type": {
+            "type": "string",
+            "description": "Document category (stored in `custom_file_type`), e.g. `Lab Report`."
+          },
+          "filename": {
+            "type": "string",
+            "description": "**Required.** The file name to store."
+          },
+          "file_url": {
+            "type": "string",
+            "description": "A (signed / expiring) URL the server downloads the bytes from. Send this OR `content_base64`."
+          },
+          "content_base64": {
+            "type": "string",
+            "description": "The file bytes, base64-encoded. Send this OR `file_url`."
+          }
+        },
+        "required": [
+          "external_id",
+          "filename"
+        ]
+      },
+      "Call": {
+        "type": "object",
+        "description": "The partner-facing shape of a call log (a native CRM Call Log row). **`lead` may be `null`** when no phone match or an ambiguous (2+) match was found — fail-closed attribution never attaches a call to the wrong lead. Always read `lead` to know whether the call was linked.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The CRM Call Log id (the autonamed row name; NOT the `external_id`)."
+          },
+          "external_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "**Idempotency key** (stored in `custom_external_id`). Re-sending the same value updates that call log, never doubles."
+          },
+          "lead": {
+            "type": "string",
+            "nullable": true,
+            "description": "The linked CRM Lead — **`null` when attribution found no/ambiguous match** (the call is left unlinked, never attached to a wrong lead). Read this."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ],
+            "description": "Call direction (maps to the CRM Call Log `type`: Inbound⇒Incoming, Outbound⇒Outgoing)."
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Calling party number."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Called party number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Call status (e.g. `Completed`, `Missed`, `No Answer`)."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Call duration in seconds."
+          },
+          "recording_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL of the call recording, if any."
+          },
+          "start_time": {
+            "type": "string",
+            "nullable": true,
+            "description": "Call start timestamp."
+          }
+        }
+      },
+      "CallUpsertRequest": {
+        "type": "object",
+        "description": "Body for `call_create`. `external_id` (idempotency key) and `direction` are required. Attribution: send `lead`/`mobile_no` to target a lead explicitly (grain-scoped); OMIT both to let the server STRICT-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within your grain — no/ambiguous match leaves the call **unlinked** (`lead: null`), never a wrong lead.",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "**Required.** Idempotency key (stored in `custom_external_id`). Re-sending the same value updates that call log, never doubles."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "Inbound",
+              "Outbound"
+            ],
+            "description": "**Required.** Call direction."
+          },
+          "lead": {
+            "type": "string",
+            "description": "Optional CRM Lead id to attach to (grain-scoped). If sent with `mobile_no`, `lead` wins.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "Optional lead phone (auto-normalized) to attach to (grain-scoped)."
+          },
+          "from_number": {
+            "type": "string",
+            "description": "Calling party number. On an Inbound call with no `lead`/`mobile_no`, this is the customer number used for attribution."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "Called party number. On an Outbound call with no `lead`/`mobile_no`, this is the customer number used for attribution."
+          },
+          "status": {
+            "type": "string",
+            "description": "Call status. Defaults to `Completed` on insert if omitted."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Call duration in seconds."
+          },
+          "recording_url": {
+            "type": "string",
+            "description": "URL of the call recording (optional)."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Call start time. On insert it also backdates the row's `creation` (historical load)."
+          }
+        },
+        "required": [
+          "external_id",
+          "direction"
+        ]
+      },
+      "EntityListResponse": {
+        "type": "object",
+        "description": "Success envelope from the entity list endpoints (`activity_list` / `file_list` / `call_list`). Top-level (no `message` wrapper), `action: fetched`. `data` is a page object with `total/count/offset/limit/has_more` plus the entity array (`activities` / `files` / `calls`).",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "fetched"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "description": "Total rows matching the filter (across all pages)."
+              },
+              "count": {
+                "type": "integer",
+                "description": "Rows in THIS page."
+              },
+              "offset": {
+                "type": "integer",
+                "description": "Rows skipped (paging)."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "Page size used (default 20, max 200)."
+              },
+              "has_more": {
+                "type": "boolean",
+                "description": "`true` if `offset + count < total` — page again."
+              }
+            },
+            "description": "Page object; the entity array is keyed `activities` / `files` / `calls` depending on the endpoint."
+          }
+        }
+      },
+      "EntityReadResponse": {
+        "type": "object",
+        "description": "Success envelope from the entity single-read / write endpoints (`*_get`, `activity_create/update`, `file_attach`, `call_create`, `activity_schema`). Top-level (no `message` wrapper). `action` reflects what happened; `data` is the entity (Activity / File / Call) or the schema/discovery object.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "fetched",
+              "created",
+              "updated",
+              "upserted",
+              "deleted",
+              "attached",
+              "exists"
+            ],
+            "description": "What happened. Writes: `created`/`updated`/`upserted` (activity), `attached`/`exists` (file), `created`/`updated` (call). Reads: `fetched`. Delete: `deleted`."
+          },
+          "data": {
+            "description": "The entity (Activity / File / Call), the `{name}` on a delete, or the discovery object on `activity_schema`."
+          }
+        }
+      },
+      "EntityGetBulkResponse": {
+        "type": "object",
+        "description": "Partial-success envelope for `activity_get_bulk`. Top-level (no `message` wrapper). `summary` is `{requested, found, not_found}`; `results[]` is input-ordered — `results[i]` is the i-th requested id. A found row carries `data` (the entity); a missing/out-of-scope id reports `not_found` in place.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "success"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "requested": {
+                "type": "integer"
+              },
+              "found": {
+                "type": "integer"
+              },
+              "not_found": {
+                "type": "integer"
+              }
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "description": "0-based position in the request array."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "success",
+                    "error"
+                  ]
+                },
+                "data": {
+                  "description": "The entity (present on a found row)."
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "description": "Present on a `not_found` row."
+                }
+              }
+            }
+          }
+        }
       }
     },
     "examples": {
@@ -1108,6 +1606,376 @@
         "summary": "Verified — your key is valid",
         "value": {
           "message": "your-integration@partner.example"
+        }
+      },
+      "ActivitySchemaResponse": {
+        "summary": "activity_schema — types available to a lead's grain",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "lead": "CRM-LEAD-2026-00123",
+            "task_types": [
+              {
+                "name": "Welcome Call",
+                "is_logged_complete": 1,
+                "fields": [
+                  {
+                    "fieldname": "call_outcome",
+                    "label": "Call Outcome",
+                    "type": "Select",
+                    "options": "Connected\nNo Answer\nBusy",
+                    "reqd": 1
+                  },
+                  {
+                    "fieldname": "notes",
+                    "label": "Notes",
+                    "type": "Small Text",
+                    "options": null,
+                    "reqd": 0
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "ActivityCreateRequest": {
+        "summary": "activity_create — log a welcome call (deduped on external_id)",
+        "value": {
+          "lead": "CRM-LEAD-2026-00123",
+          "task_type": "Welcome Call",
+          "external_id": "LSQ-ACT-88231",
+          "values": {
+            "call_outcome": "Connected",
+            "notes": "Patient onboarded, scheduled follow-up."
+          }
+        }
+      },
+      "ActivityUpsertResponse": {
+        "summary": "activity_create — upserted",
+        "value": {
+          "status": "success",
+          "action": "upserted",
+          "data": {
+            "name": "abc123def4",
+            "lead": "CRM-LEAD-2026-00123",
+            "task_type": "Welcome Call",
+            "status": "Done",
+            "external_id": "LSQ-ACT-88231",
+            "values": {
+              "call_outcome": "Connected",
+              "notes": "Patient onboarded, scheduled follow-up."
+            }
+          }
+        }
+      },
+      "ActivityCreateBulkRequest": {
+        "summary": "activity_create_bulk — two activities",
+        "value": {
+          "activities": [
+            {
+              "mobile_no": "9000000001",
+              "task_type": "Welcome Call",
+              "external_id": "LSQ-ACT-1",
+              "values": {
+                "call_outcome": "Connected"
+              }
+            },
+            {
+              "mobile_no": "9000000002",
+              "task_type": "Welcome Call",
+              "external_id": "LSQ-ACT-2",
+              "values": {
+                "call_outcome": "No Answer"
+              }
+            }
+          ]
+        }
+      },
+      "ActivityGetBulkRequest": {
+        "summary": "activity_get_bulk — by external_ids",
+        "value": {
+          "external_ids": [
+            "LSQ-ACT-1",
+            "LSQ-ACT-2"
+          ]
+        }
+      },
+      "ActivityGetBulkResponse": {
+        "summary": "activity_get_bulk — found 1 of 2",
+        "value": {
+          "status": "success",
+          "summary": {
+            "requested": 2,
+            "found": 1,
+            "not_found": 1
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "data": {
+                "name": "abc123def4",
+                "lead": "CRM-LEAD-2026-00123",
+                "task_type": "Welcome Call",
+                "status": "Done",
+                "external_id": "LSQ-ACT-1",
+                "values": {
+                  "call_outcome": "Connected"
+                }
+              }
+            },
+            {
+              "index": 1,
+              "status": "error",
+              "error": {
+                "code": "not_found",
+                "message": "Activity not found"
+              }
+            }
+          ]
+        }
+      },
+      "ActivityListResponse": {
+        "summary": "activity_list — page of a lead's activities",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 5,
+            "count": 1,
+            "offset": 0,
+            "limit": 20,
+            "has_more": false,
+            "activities": [
+              {
+                "name": "abc123def4",
+                "lead": "CRM-LEAD-2026-00123",
+                "task_type": "Welcome Call",
+                "status": "Done",
+                "external_id": "LSQ-ACT-1",
+                "values": {
+                  "call_outcome": "Connected"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "FileAttachRequestUrl": {
+        "summary": "file_attach — by file_url (server downloads it)",
+        "value": {
+          "lead": "CRM-LEAD-2026-00123",
+          "external_id": "LSQ-ATT-5521",
+          "file_type": "Lab Report",
+          "filename": "hba1c-2026-05.pdf",
+          "file_url": "https://signed.example/blob/abc?sig=..."
+        }
+      },
+      "FileAttachRequestBase64": {
+        "summary": "file_attach — by content_base64",
+        "value": {
+          "mobile_no": "9000000001",
+          "external_id": "LSQ-ATT-5522",
+          "file_type": "Prescription",
+          "filename": "rx.pdf",
+          "content_base64": "JVBERi0xLjQKJ..."
+        }
+      },
+      "FileAttachResponse": {
+        "summary": "file_attach — attached (private)",
+        "value": {
+          "status": "success",
+          "action": "attached",
+          "data": {
+            "name": "fghij67890",
+            "file_type": "Lab Report",
+            "external_id": "LSQ-ATT-5521",
+            "filename": "hba1c-2026-05.pdf",
+            "file_url": "/api/method/tatva_connect.storage.file_manager.proxy?key=...",
+            "is_private": true,
+            "attached_to_doctype": "CRM Lead",
+            "attached_to_name": "CRM-LEAD-2026-00123"
+          }
+        }
+      },
+      "FileAttachResponseExists": {
+        "summary": "file_attach — already attached (idempotent)",
+        "value": {
+          "status": "success",
+          "action": "exists",
+          "data": {
+            "name": "fghij67890",
+            "file_type": "Lab Report",
+            "external_id": "LSQ-ATT-5521",
+            "filename": "hba1c-2026-05.pdf",
+            "file_url": "/api/method/tatva_connect.storage.file_manager.proxy?key=...",
+            "is_private": true,
+            "attached_to_doctype": "CRM Lead",
+            "attached_to_name": "CRM-LEAD-2026-00123"
+          }
+        }
+      },
+      "FileListResponse": {
+        "summary": "file_list — a lead's files",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 2,
+            "count": 2,
+            "offset": 0,
+            "limit": 20,
+            "has_more": false,
+            "files": [
+              {
+                "name": "fghij67890",
+                "file_type": "Lab Report",
+                "external_id": "LSQ-ATT-5521",
+                "filename": "hba1c-2026-05.pdf",
+                "file_url": "/api/method/tatva_connect.storage.file_manager.proxy?key=...",
+                "is_private": true,
+                "attached_to_doctype": "CRM Lead",
+                "attached_to_name": "CRM-LEAD-2026-00123"
+              }
+            ]
+          }
+        }
+      },
+      "FileAttachBulkRequest": {
+        "summary": "file_attach_bulk — two files",
+        "value": {
+          "files": [
+            {
+              "mobile_no": "9000000001",
+              "external_id": "LSQ-ATT-1",
+              "file_type": "Lab Report",
+              "filename": "a.pdf",
+              "file_url": "https://signed.example/a"
+            },
+            {
+              "mobile_no": "9000000001",
+              "external_id": "LSQ-ATT-2",
+              "file_type": "Prescription",
+              "filename": "b.pdf",
+              "content_base64": "JVBER..."
+            }
+          ]
+        }
+      },
+      "CallCreateRequest": {
+        "summary": "call_create — explicit lead, inbound",
+        "value": {
+          "lead": "CRM-LEAD-2026-00123",
+          "external_id": "LSQ-CALL-9001",
+          "direction": "Inbound",
+          "from_number": "+919000000001",
+          "to_number": "+918040001234",
+          "status": "Completed",
+          "duration": 142,
+          "recording_url": "https://rec.example/9001.mp3",
+          "started_at": "2026-05-30T10:15:00"
+        }
+      },
+      "CallCreateRequestAttribute": {
+        "summary": "call_create — no lead, server strict-matches the customer number",
+        "value": {
+          "external_id": "LSQ-CALL-9002",
+          "direction": "Outbound",
+          "from_number": "+918040001234",
+          "to_number": "+919000000001",
+          "status": "Completed",
+          "duration": 30
+        }
+      },
+      "CallCreateResponse": {
+        "summary": "call_create — created and linked",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "PARTNER-LSQ-CALL-9001",
+            "external_id": "LSQ-CALL-9001",
+            "lead": "CRM-LEAD-2026-00123",
+            "direction": "Inbound",
+            "from_number": "+919000000001",
+            "to_number": "+918040001234",
+            "status": "Completed",
+            "duration": 142,
+            "recording_url": "https://rec.example/9001.mp3",
+            "start_time": "2026-05-30 10:15:00"
+          }
+        }
+      },
+      "CallCreateResponseUnlinked": {
+        "summary": "call_create — created but UNLINKED (no/ambiguous phone match)",
+        "description": "Attribution found no single matching lead in your grain, so `lead` is `null`. The call is stored but not attached to any lead — read `lead` to detect this.",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "PARTNER-LSQ-CALL-9002",
+            "external_id": "LSQ-CALL-9002",
+            "lead": null,
+            "direction": "Outbound",
+            "from_number": "+918040001234",
+            "to_number": "+919000000001",
+            "status": "Completed",
+            "duration": 30,
+            "recording_url": null,
+            "start_time": null
+          }
+        }
+      },
+      "CallListResponse": {
+        "summary": "call_list — a lead's calls",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 3,
+            "count": 1,
+            "offset": 0,
+            "limit": 20,
+            "has_more": false,
+            "calls": [
+              {
+                "name": "PARTNER-LSQ-CALL-9001",
+                "external_id": "LSQ-CALL-9001",
+                "lead": "CRM-LEAD-2026-00123",
+                "direction": "Inbound",
+                "from_number": "+919000000001",
+                "to_number": "+918040001234",
+                "status": "Completed",
+                "duration": 142,
+                "recording_url": "https://rec.example/9001.mp3",
+                "start_time": "2026-05-30 10:15:00"
+              }
+            ]
+          }
+        }
+      },
+      "CallCreateBulkRequest": {
+        "summary": "call_create_bulk — two calls",
+        "value": {
+          "calls": [
+            {
+              "external_id": "LSQ-CALL-1",
+              "direction": "Inbound",
+              "from_number": "+919000000001",
+              "to_number": "+918040001234",
+              "status": "Completed",
+              "duration": 60
+            },
+            {
+              "external_id": "LSQ-CALL-2",
+              "direction": "Outbound",
+              "from_number": "+918040001234",
+              "to_number": "+919000000099",
+              "status": "Missed"
+            }
+          ]
         }
       }
     }
@@ -2246,6 +3114,1745 @@
                     "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
                     "retry_after": 42
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_schema": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Activity Schema (discover types for a lead)",
+        "description": "**Discovery by lead.** Given `?lead=<id>` or `?mobile_no=`, returns the activity types available to that lead's grain, each with its field schema — exactly what an integrator may send for this patient. Send and read activity values keyed by the schema `fieldname`. Call this before building an activity payload; never hardcode a field list.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The activity types + field schemas available to this lead's grain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Schema": {
+                    "$ref": "#/components/examples/ActivitySchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_get": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Get Activity",
+        "description": "Read one activity by CRM Task `name`, scoped to your grain. Returns the activity with `values` re-keyed to its schema fieldnames. Out-of-scope/missing ⇒ generic `not_found`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Task id — the activity's unique id.",
+            "example": "abc123def4"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The activity (top-level `status`/`action:fetched`/`data`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "One activity": {
+                    "$ref": "#/components/examples/ActivityUpsertResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Activity not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_create": {
+      "post": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Create Activity",
+        "description": "Create-or-upsert an activity on a lead. Idempotent on `external_id` (stored in `custom_lsq_activity_id`): re-sending the same value updates that activity, never doubles. `task_type` and the `values` keys come from `activity_schema` for the lead's grain.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityUpsertRequest"
+              },
+              "examples": {
+                "Welcome call": {
+                  "$ref": "#/components/examples/ActivityCreateRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Activity created or updated (`action: upserted`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Upserted": {
+                    "$ref": "#/components/examples/ActivityUpsertResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_update": {
+      "put": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Update Activity",
+        "description": "Update an activity by CRM Task `name` — re-runs compute with the new `values`. Scope-checked to your grain. `task_type` defaults to the existing one if omitted.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityUpsertRequest"
+              },
+              "examples": {
+                "Update": {
+                  "summary": "activity_update — change values on a known activity",
+                  "value": {
+                    "name": "abc123def4",
+                    "task_type": "Welcome Call",
+                    "values": {
+                      "call_outcome": "No Answer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Activity updated (`action: updated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Activity not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_delete": {
+      "delete": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Delete Activity",
+        "description": "Delete one activity by CRM Task `name`, scope-checked (own line only). Out-of-scope/missing ⇒ the SAME generic not-found.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Task id to delete (may also be sent in the JSON body).",
+            "example": "abc123def4"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activity deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Activity not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_create_bulk": {
+      "post": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Bulk Create Activities",
+        "description": "Create-or-upsert up to 100 activities — body `{\"activities\": [ … ]}`. Same idempotent (`external_id`) and field rules as Create Activity; each row commits in its own savepoint (**partial success**).",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "activities": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ActivityUpsertRequest"
+                    },
+                    "description": "Up to 100 activity payloads (same shape as `activity_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Two activities": {
+                  "$ref": "#/components/examples/ActivityCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_get_bulk": {
+      "post": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Bulk Read Activities",
+        "description": "Read up to 100 activities by `names` OR `external_ids` (send one). Input-ordered `results[]` — `results[i]` is the i-th id; out-of-scope/unknown ids report `not_found` in place. POST because the id list travels in the body.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "names": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 100 CRM Task ids. Use this OR `external_ids`."
+                  },
+                  "external_ids": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Up to 100 idempotency keys (`custom_lsq_activity_id`). Use this OR `names`."
+                  }
+                },
+                "description": "Send exactly one of `names` / `external_ids`."
+              },
+              "examples": {
+                "By external_ids": {
+                  "$ref": "#/components/examples/ActivityGetBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Activities found (input-ordered `results[]`; missing/out-of-scope rows report `not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityGetBulkResponse"
+                },
+                "examples": {
+                  "Found 1 of 2": {
+                    "$ref": "#/components/examples/ActivityGetBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_list": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "List Activities",
+        "description": "List a lead's activities, paginated. `lead` (or `mobile_no`) is required and grain-scoped; optional `task_type` / `status` filters. Returns `{total, count, offset, limit, has_more, activities:[…]}`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to one activity type."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by task status."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the lead's activities under `data`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Page": {
+                    "$ref": "#/components/examples/ActivityListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_attach": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Attach File",
+        "description": "Attach a file to a lead (or a scoped activity task). Supply the bytes as a downloadable `file_url` (the server fetches it) OR `content_base64` (exactly one). **The file is always stored private.** Idempotent on `external_id` (stored in `custom_lsq_attachment_id`): re-attaching the same value to the same record returns the existing file with `action: exists`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileAttachRequest"
+              },
+              "examples": {
+                "By file_url": {
+                  "$ref": "#/components/examples/FileAttachRequestUrl"
+                },
+                "By content_base64": {
+                  "$ref": "#/components/examples/FileAttachRequestBase64"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File attached (`action: attached`) or already present (`action: exists`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Attached": {
+                    "$ref": "#/components/examples/FileAttachResponse"
+                  },
+                  "Already attached": {
+                    "$ref": "#/components/examples/FileAttachResponseExists"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead/activity not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_get": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Get File",
+        "description": "Read one file's metadata + proxy url by `name`, grain-scoped. Files are always private; `file_url` is a proxy URL. Out-of-scope/missing ⇒ generic `not_found`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The File id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file metadata + proxy url.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "One file": {
+                    "$ref": "#/components/examples/FileAttachResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_list": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "List Files",
+        "description": "List a lead's files (optional `file_type`), paginated. `lead` (or `mobile_no`) is required and grain-scoped. Returns `{total, count, offset, limit, has_more, files:[…]}`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          },
+          {
+            "name": "file_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by document category (`custom_file_type`)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the lead's files under `data`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Page": {
+                    "$ref": "#/components/examples/FileListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_delete": {
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Delete File",
+        "description": "Delete one file by `name`, scope-checked (own line only). The last-reference delete drops the underlying Azure blob. Out-of-scope/missing ⇒ the SAME generic not-found.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The File id to delete (may also be sent in the JSON body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_attach_bulk": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Bulk Attach Files",
+        "description": "Attach up to 100 files — body `{\"files\": [ … ]}`. Same private-by-default and idempotent (`external_id`) rules as Attach File; each file runs in its own savepoint (**partial success**).",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/FileAttachRequest"
+                    },
+                    "description": "Up to 100 file payloads (same shape as `file_attach`)."
+                  }
+                }
+              },
+              "examples": {
+                "Two files": {
+                  "$ref": "#/components/examples/FileAttachBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_create": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Create Call",
+        "description": "Create-or-upsert a call log. `external_id` and `direction` are required. Idempotent on `external_id` (stored in `custom_external_id`): re-sending updates the same row, never doubles.\n\n**Attribution is fail-closed — read `lead`.** Send `lead`/`mobile_no` to attach explicitly (grain-scoped); OMIT both to let the server STRICT-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within your grain. No match or an ambiguous (2+) match leaves the call **unlinked** — `lead` comes back `null` — never attached to a wrong lead.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallUpsertRequest"
+              },
+              "examples": {
+                "Explicit lead": {
+                  "$ref": "#/components/examples/CallCreateRequest"
+                },
+                "Server attribution": {
+                  "$ref": "#/components/examples/CallCreateRequestAttribute"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Call created or updated. **Read `data.lead`** — it is `null` when attribution found no/ambiguous match (the call is unlinked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Created (linked)": {
+                    "$ref": "#/components/examples/CallCreateResponse"
+                  },
+                  "Created (unlinked, lead null)": {
+                    "$ref": "#/components/examples/CallCreateResponseUnlinked"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An explicitly-sent lead/mobile_no was not found or is outside your line (identical — anti-enumeration). Server-attribution misses do NOT 404; they return `lead: null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_get": {
+      "get": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Get Call",
+        "description": "Read one call by `name`, grain-scoped (own line only). An UNLINKED call is never visible to a partner. Out-of-scope/missing ⇒ the SAME generic not-found.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Call Log id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The call (top-level `status`/`action:fetched`/`data`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "One call": {
+                    "$ref": "#/components/examples/CallCreateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Call not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_list": {
+      "get": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "List Calls",
+        "description": "List a lead's calls, paginated. `lead` (or `mobile_no`) is required and grain-scoped; optional `direction` (Inbound/Outbound) / `status` filters. Returns `{total, count, offset, limit, has_more, calls:[…]}`.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Inbound",
+                "Outbound"
+              ]
+            },
+            "description": "Filter by call direction."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by call status."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the lead's calls under `data`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Page": {
+                    "$ref": "#/components/examples/CallListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_delete": {
+      "delete": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Delete Call",
+        "description": "Delete one call by `name`, scope-checked (own line only). Out-of-scope/missing ⇒ the SAME generic not-found.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Call Log id to delete (may also be sent in the JSON body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Call deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Call not found or outside your line (identical — anti-enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_create_bulk": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Bulk Create Calls",
+        "description": "Create-or-upsert up to 100 call logs — body `{\"calls\": [ … ]}`. Same idempotent (`external_id`) and fail-closed attribution rules as Create Call; each row runs in its own savepoint (**partial success**). A row may succeed yet still be unlinked (`lead: null`) — but the bulk result reports `name`/`external_id`, not `lead`; read each back via `call_get`/`call_list` to confirm linkage.",
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "calls": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/CallUpsertRequest"
+                    },
+                    "description": "Up to 100 call payloads (same shape as `call_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Two calls": {
+                  "$ref": "#/components/examples/CallCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your key isn't permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
                 }
               }
             }
