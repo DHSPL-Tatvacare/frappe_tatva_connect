@@ -498,7 +498,7 @@ before_request = ["tatva_connect.observability.capture.stamp_start"]
 # 2. Log one raw row per partner-API / inbound-webhook hit (runs last, after the
 #    response status is final). Both are no-ops for other endpoints.
 after_request = [
-	"tatva_connect.api.partner.normalise_partner_response",
+	"tatva_connect.api._base.normalise_partner_response",
 	"tatva_connect.observability.capture.log_request",
 ]
 
