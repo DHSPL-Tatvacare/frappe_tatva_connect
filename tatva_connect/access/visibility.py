@@ -40,6 +40,22 @@ def _ref_parent(doc):
 	return None
 
 
+def _ref_or_links_parent(doc):
+	"""CRM Call Log carries BOTH a reference_* pair AND a `links` child table; crm's own
+	get_call_log reads the Lead/Deal off either. Prefer reference_*, else the first Lead/Deal
+	row in `links` — exactly crm's own resolution order. (Real call logs always set reference_*,
+	so the single-doc gate here and the reference-only list PQC agree in practice; the links
+	fallback is intentional defence for a theoretical links-only row — single-doc still scopes
+	it correctly, the list just won't surface it to a non-owner. Benign: never leaks.)"""
+	parent = _ref_parent(doc)
+	if parent:
+		return parent
+	for link in doc.get("links") or []:
+		if link.get("link_doctype") in PARENT_DOCTYPES and link.get("link_name"):
+			return link.get("link_doctype"), link.get("link_name")
+	return None
+
+
 def _ref_name_parent(doc):
 	"""WhatsApp Message links its parent via reference_doctype + `reference_name` (NOT the
 	`reference_docname` field name CRM Task/FCRM Note use). frappe_whatsapp's own doctype: the
@@ -52,7 +68,7 @@ def _ref_name_parent(doc):
 # child doctype -> resolver(doc) -> (parent_doctype, parent_name) | None
 PARENT_OF = {
 	"CRM Task": _ref_parent,
-	"CRM Call Log": _ref_parent,
+	"CRM Call Log": _ref_or_links_parent,
 	"FCRM Note": _ref_parent,
 	"WhatsApp Message": _ref_name_parent,
 }
