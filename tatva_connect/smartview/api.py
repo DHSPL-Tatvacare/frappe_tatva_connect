@@ -21,6 +21,7 @@ from frappe import _
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Count
 from frappe.utils import cint
+from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
 from tatva_connect.access import entitlement
@@ -348,12 +349,25 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			if pick.startswith("latest_by:"):
 				order_field = pick.split(":", 1)[1]
 				inner = DocType(child_dt)
-				sub = (
-					frappe.qb.from_(inner)
-					.select(PseudoColumn("*"))
+				# ONE row per parent — the newest by `order_field` (name as a deterministic
+				# tiebreaker). ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …) then keep rn=1;
+				# a bare ORDER-BY subquery would join EVERY child row and duplicate the parent.
+				rn = (
+					RowNumber()
+					.over(inner.parent)
 					.orderby(inner[order_field], order=frappe.qb.desc)
+					.orderby(inner.name, order=frappe.qb.desc)
+				)
+				ranked = (
+					frappe.qb.from_(inner)
+					.select(inner.star, rn.as_("_tc_rn"))
+					.where(inner.parenttype == driving_name)
+				)
+				sub = (
+					frappe.qb.from_(ranked)
+					.select(PseudoColumn("*"))
+					.where(PseudoColumn("`_tc_rn` = 1"))
 				).as_(alias)
-				# Newest row per parent wins on the worklist's single-row expectation.
 				query = query.left_join(sub).on(
 					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))
 				)

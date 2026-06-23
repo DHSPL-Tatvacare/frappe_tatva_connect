@@ -17,10 +17,15 @@ import frappe
 from tatva_connect.smartview import api
 
 TAG = "ZCHILD_PROOF"
+TAG2 = "ZCHILD_LATEST"
 SENTINEL = "CHILDVAL-42"
+OLD_VAL = "AAA-old"
+NEW_VAL = "ZZZ-new"              # latest_by orders DESC -> this wins over OLD_VAL
 PARENT_KEY = "lead:first_name"   # parent column (also the search handle)
-CHILD_KEY = "zchild:val"         # the child column under test
+CHILD_KEY = "zchild:val"         # single-row child column
+CHILD_LATEST_KEY = "zchild:latest"  # latest_by child column (same child field)
 VIEW_LABEL = "ZCHILD Smart View"
+VIEW2_LABEL = "ZCHILD Latest Smart View"
 
 
 def _dummy(cf):
@@ -60,6 +65,9 @@ def _seed_catalog(child_dt, child_field):
 		dict(field_key=CHILD_KEY, label="Child Val", fieldname=child_field, section_key="child",
 			 target_doctype=child_dt, sql_source="child", child_pick="single", applies_to="lead",
 			 filterable=1, sortable=1, surface="worklist"),
+		dict(field_key=CHILD_LATEST_KEY, label="Child Latest", fieldname=child_field, section_key="child",
+			 target_doctype=child_dt, sql_source="child", child_pick="latest_by:" + child_field,
+			 applies_to="lead", filterable=1, sortable=1, surface="worklist"),
 	]
 	for r in rows:
 		if frappe.db.exists("CRM Lead API Field", r["field_key"]):
@@ -79,10 +87,23 @@ def _seed_lead(parent_table_field, proj_field, reqd):
 	return lead.name
 
 
-def _seed_view():
-	existing = frappe.db.get_value("CRM Smart View", {"label": VIEW_LABEL})
-	spec = dict(label=VIEW_LABEL, base_object="Lead", is_standard=1,
-				columns=frappe.as_json([PARENT_KEY, CHILD_KEY]),
+def _seed_lead_multi(parent_table_field, proj_field, reqd):
+	"""A lead with TWO child rows so latest_by must pick exactly one (the newer value)."""
+	for ld in frappe.get_all("CRM Lead", filters={"lead_name": ["like", "%" + TAG2 + "%"]}, pluck="name"):
+		frappe.delete_doc("CRM Lead", ld, force=True, ignore_permissions=True)
+	lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": TAG2, "lead_name": TAG2, "status": "New"})
+	for val in (OLD_VAL, NEW_VAL):
+		row = dict(reqd)
+		row[proj_field] = val
+		lead.append(parent_table_field, row)
+	lead.insert(ignore_permissions=True)
+	return lead.name
+
+
+def _seed_view(label, columns):
+	existing = frappe.db.get_value("CRM Smart View", {"label": label})
+	spec = dict(label=label, base_object="Lead", is_standard=1,
+				columns=frappe.as_json(columns),
 				predicate=frappe.as_json({"op": "and", "conditions": []}))
 	if existing:
 		frappe.get_doc("CRM Smart View", existing).update(spec).save(ignore_permissions=True)
@@ -100,11 +121,14 @@ def run():
 	parent_table_field, child_dt, proj_field, reqd = _pick_writable_child()
 	print("    child doctype:", child_dt, "| field:", proj_field, "| via:", parent_table_field)
 	_seed_catalog(child_dt, proj_field)
-	lead = _seed_lead(parent_table_field, proj_field, reqd)
-	view = _seed_view()
+	_seed_lead(parent_table_field, proj_field, reqd)
+	_seed_lead_multi(parent_table_field, proj_field, reqd)
+	view = _seed_view(VIEW_LABEL, [PARENT_KEY, CHILD_KEY])
+	view2 = _seed_view(VIEW2_LABEL, [PARENT_KEY, CHILD_LATEST_KEY])
 	frappe.db.commit()
 
 	r = []
+	print("\n== single-row child flatten ==")
 	data = api.get_data(view, search=TAG)
 	cols = [c["key"] for c in data["columns"]]
 	print("    columns:", cols, "| total:", data["total"])
@@ -115,6 +139,14 @@ def run():
 	print("    row:", {k: row0.get(k) for k in (PARENT_KEY, CHILD_KEY, "name")})
 	r.append(_check("child value linearised onto the parent row", row0.get(CHILD_KEY) == SENTINEL))
 	r.append(_check("parent value present on the same row", (row0.get(PARENT_KEY) or "") == TAG))
+
+	print("\n== latest_by child flatten (2 child rows -> 1 parent row, newest wins) ==")
+	d2 = api.get_data(view2, search=TAG2)
+	print("    total:", d2["total"], "| rows:", len(d2["rows"]))
+	row1 = d2["rows"][0] if d2["rows"] else {}
+	print("    row:", {k: row1.get(k) for k in (PARENT_KEY, CHILD_LATEST_KEY, "name")})
+	r.append(_check("lead with 2 child rows appears exactly ONCE (no dup)", d2["total"] == 1 and len(d2["rows"]) == 1))
+	r.append(_check("latest_by picked the NEWEST value (ZZZ>AAA desc)", row1.get(CHILD_LATEST_KEY) == NEW_VAL))
 
 	ok = all(r)
 	print("\n==== CHILD-FLATTEN PROOF {0} ({1}/{2} checks passed) ====".format(
