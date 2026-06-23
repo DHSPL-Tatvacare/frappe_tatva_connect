@@ -173,6 +173,10 @@ _ERROR_MAP = {
 	frappe.PermissionError: ("forbidden", 403),
 	frappe.DoesNotExistError: ("not_found", 404),
 	frappe.ValidationError: ("validation_error", 400),
+	# Python builtins (no frappe equivalent) — Frappe's field coercion raises these on bad input
+	# (e.g. a malformed date); the caller's fault -> 400, not an opaque 500.
+	ValueError: ("validation_error", 400),
+	TypeError: ("validation_error", 400),
 }
 if hasattr(frappe, "DuplicateEntryError"):
 	_ERROR_MAP[frappe.DuplicateEntryError] = ("duplicate", 409)

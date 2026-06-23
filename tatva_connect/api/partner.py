@@ -405,15 +405,25 @@ def _curate(doc, parent_fields, child_allow):
 	return out
 
 
+# -- the lead's API contract — ONE source of truth for what the API actually enforces, so
+# lead_schema's `required` flags match behaviour (and can't drift from it).
+LEAD_IDENTITY = "mobile_no"   # the dedup anchor -> required
+_NAMELESS = "(no name)"       # placeholder for a lead sent without a name (the doctype requires one)
+# Parent fields the caller may OMIT (reported not-required, overriding the doctype's reqd flag):
+# first_name -> we fill the placeholder; status -> crm's CRM Lead controller defaults it.
+LEAD_OPTIONAL = ("first_name", "status")
+_LEAD_REQUIRED = {LEAD_IDENTITY: True, **{fn: False for fn in LEAD_OPTIONAL}}
+
+
 # -- per-record core (shared by singular + bulk) -----------------------------
 
 def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
 	"""Create-or-upsert one lead from a dict. Returns (doc, action)."""
-	mobile = _norm_phone(item.get("mobile_no"))
+	mobile = _norm_phone(item.get(LEAD_IDENTITY))
 	if not mobile:
-		frappe.throw(_("mobile_no is required"))
+		frappe.throw(_("{0} is required").format(LEAD_IDENTITY))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
-	parent["mobile_no"] = mobile
+	parent[LEAD_IDENTITY] = mobile
 
 	program = _resolve_program(item, mp, allowed_programs)
 	# "List mode" key (mapping program blank, e.g. Anaya): the caller supplies
@@ -440,8 +450,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 		doc.save(ignore_permissions=True)
 		return doc, "updated"
 
-	parent.setdefault("first_name", "(no name)")
-	parent.setdefault("status", "New")
+	parent.setdefault("first_name", _NAMELESS)  # status is left for crm's controller to default
 	doc = frappe.new_doc("CRM Lead")
 	doc.update(parent)
 	_apply_children(doc, children)
@@ -496,10 +505,11 @@ def lead_schema(**kwargs):
 	Two partners hitting this get different field lists — driven by their grid."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 
-	def describe(doctype, fields, force_required=None):
-		"""Field dicts for a section. `force_required` (a fieldname) is reported
-		required regardless of the doctype's reqd flag — used for a child key_field,
-		which the contract requires to address its row."""
+	def describe(doctype, fields, required_override=None):
+		"""Field dicts for a section. `required_override` ({fieldname: bool}) reports the API's
+		actual contract instead of the doctype's `reqd` flag — used for the parent (identity
+		required, defaulted fields not) and a child key_field (required to address its row)."""
+		required_override = required_override or {}
 		m = frappe.get_meta(doctype)
 		out = []
 		for fn in fields:
@@ -508,7 +518,7 @@ def lead_schema(**kwargs):
 				continue
 			out.append({
 				"fieldname": fn, "label": f.label, "type": f.fieldtype,
-				"required": bool(f.reqd) or fn == force_required,
+				"required": required_override.get(fn, bool(f.reqd)),
 				"options": (f.options or None) if f.fieldtype in ("Link", "Select") else None,
 			})
 		return out
@@ -528,11 +538,12 @@ def lead_schema(**kwargs):
 		children[cf] = {
 			"multi_row": bool(key_field),
 			"key_field": key_field,
-			"fields": describe(cat["section_doctype"][section], fields, force_required=key_field),
+			"fields": describe(cat["section_doctype"][section], fields,
+			                   required_override={key_field: True} if key_field else None),
 		}
 
 	out = {
-		"lead": describe("CRM Lead", parent_fields),
+		"lead": describe("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED),
 		"children": children,
 		"child_write": "Send each child as a JSON array under its key, e.g. "
 		               "custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. Multi-row "
