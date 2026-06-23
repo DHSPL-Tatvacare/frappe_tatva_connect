@@ -40,29 +40,29 @@ def _ref_parent(doc):
 	return None
 
 
-def _ref_or_links_parent(doc):
-	"""CRM Call Log carries BOTH a reference_* pair AND a `links` child table; crm's own
-	get_call_log reads the Lead/Deal off either. Prefer reference_*, else the first Lead/Deal
-	row in `links` — exactly crm's own resolution order."""
-	parent = _ref_parent(doc)
-	if parent:
-		return parent
-	for link in doc.get("links") or []:
-		if link.get("link_doctype") in PARENT_DOCTYPES and link.get("link_name"):
-			return link.get("link_doctype"), link.get("link_name")
+def _ref_name_parent(doc):
+	"""WhatsApp Message links its parent via reference_doctype + `reference_name` (NOT the
+	`reference_docname` field name CRM Task/FCRM Note use). frappe_whatsapp's own doctype: the
+	dynamic-link target is `reference_name`."""
+	if doc.get("reference_doctype") in PARENT_DOCTYPES and doc.get("reference_name"):
+		return doc.get("reference_doctype"), doc.get("reference_name")
 	return None
 
 
 # child doctype -> resolver(doc) -> (parent_doctype, parent_name) | None
 PARENT_OF = {
 	"CRM Task": _ref_parent,
-	"CRM Call Log": _ref_or_links_parent,
+	"CRM Call Log": _ref_parent,
+	"FCRM Note": _ref_parent,
+	"WhatsApp Message": _ref_name_parent,
 }
 
 # child doctype -> its operator switch (control plane). OFF -> stock crm (no scoping).
 _SWITCH_OF = {
 	"CRM Task": "Task::CRM Task::visibility",
 	"CRM Call Log": "Telephony::CRM Call Log::visibility",
+	"FCRM Note": "Note::FCRM Note::visibility",
+	"WhatsApp Message": "WhatsApp::WhatsApp Message::visibility",
 }
 
 
@@ -111,14 +111,17 @@ def scoped_pqc(doctype, user=None):
 	tbl = f"`tab{doctype}`"
 	u = frappe.db.escape(user)
 	clauses = [f"{tbl}.`owner`={u}"]
-	# `assigned_to` is a CRM Task field; Call Log has no such column (owner is the only
-	# self-ownership marker there). Only emit the clause where the column actually exists.
+	# `assigned_to` is a CRM Task field; Call Log/Note/WhatsApp have no such column (owner is
+	# the only self-ownership marker there). Only emit the clause where the column exists.
 	if frappe.db.has_column(doctype, "assigned_to"):
 		clauses.append(f"{tbl}.`assigned_to`={u}")
+	# The dynamic-link docname column differs per doctype: CRM Task/Call Log/FCRM Note use
+	# `reference_docname`; WhatsApp Message uses `reference_name`. Pick the one that exists.
+	ref_name = "reference_docname" if frappe.db.has_column(doctype, "reference_docname") else "reference_name"
 	for parent in PARENT_DOCTYPES:
 		clauses.append(
 			f"({tbl}.`reference_doctype`={frappe.db.escape(parent)} "
-			f"and {tbl}.`reference_docname` in {_visible_parent_subquery(parent, user)})"
+			f"and {tbl}.`{ref_name}` in {_visible_parent_subquery(parent, user)})"
 		)
 	return "(" + " or ".join(clauses) + ")"
 

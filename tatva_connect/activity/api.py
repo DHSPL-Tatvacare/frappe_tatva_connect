@@ -89,6 +89,7 @@ def activity_is_unlogged(doc):
 def open_activity_tasks(lead):
 	"""Open (not Done/Canceled) activity tasks on a lead — lets the client map a Tasks-tab row to
 	the activity type/name so completing it opens the activity form instead of an empty status flip."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	types = _activity_type_names()
 	if not types:
 		return []
@@ -110,6 +111,7 @@ def list_types_for_lead(lead):
 	query (no per-type N+1): a type is available if ANY of its scope rows matches the grain, where a
 	blank axis is a wildcard. (resolve_scoped's most-specific tie-break is only for radius/checklist;
 	availability just needs a match.) Flat regardless of catalog size."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	vertical, group, program = _lead_axes(lead)
 	rows = frappe.db.sql(
 		"""
@@ -250,6 +252,7 @@ def compute_activity(lead, task_type, values, task=None):
 def compute_activity_fields(lead, task_type, values):
 	"""Whitelisted compute for the native new-task path: the CRM Task form script stamps the result
 	onto the doc, then lets the native create save it ONCE (no double insert, no lingering popup)."""
+	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	return compute_activity(lead, task_type, values)
 
 
@@ -262,6 +265,7 @@ def save_activity(lead, task_type, values, task=None):
 
 	The shell insert is in the same request transaction as the guard: an out-of-range throw rolls the
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
+	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	if not task:
 		shell = frappe.get_doc({
 			"doctype": "CRM Task",
@@ -286,6 +290,7 @@ def lead_task_board(lead):
 	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
 	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
 	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
 
@@ -361,6 +366,7 @@ def task_detail(task):
 	from this (same shape as a lead_task_board task + its type config). `config` is null for a plain
 	(non-activity) task, so the client falls back to the native doctype modal. One brain reused
 	(_type_config / _task_values / _task_location)."""
+	frappe.has_permission("CRM Task", "read", doc=task, throw=True)
 	r = frappe.db.get_value(
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date",
@@ -484,6 +490,7 @@ def lead_timeline(lead):
 	"""The single activity projection for a lead — used by BOTH the SPA timeline and the Desk Activity
 	Timeline. Newest first; ONE rich entry per activity task: its status, captured location, and the
 	documents it attached — so the timeline renders the whole action as one chained line."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	activity_types = _activity_type_names()
 	if not activity_types:
 		return []

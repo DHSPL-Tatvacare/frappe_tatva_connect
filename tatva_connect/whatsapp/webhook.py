@@ -64,7 +64,7 @@ def webhook_urls():
 	from tatva_connect.webhooks.urls import get_account_webhook_urls
 
 	out = {}
-	for name in frappe.get_all("WhatsApp Account", pluck="name"):
+	for name in frappe.get_all("WhatsApp Account", pluck="name"):  # authz-ok: System Manager only (default whitelist gating); enumerates config accounts, not user records
 		res = get_account_webhook_urls("WhatsApp Account", name)
 		out[name] = res["urls"][0] if res["urls"] else None
 	return out

@@ -140,6 +140,7 @@ def lead_stages(lead):
 	leaves only, ordered by position. A blank `program` on a stage = wildcard
 	(forward-compat; today every stage is program-scoped). Server-scoped: the
 	program comes from the lead, never the client (invariant 9)."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	program = frappe.db.get_value("CRM Lead", lead, "custom_current_program") or ""
 	return frappe.db.sql(
 		"""
@@ -197,9 +198,12 @@ def lead_section_gate(reference_name=None):
 
 	Fail-safe: any error returns drug_program=False and is logged, so the gate shows
 	everything (a wrong hide could strand data) rather than failing silently."""
+	if not reference_name:
+		return {"drug_program": False}
+	# Gate OUTSIDE the try: the fail-safe below swallows exceptions, but a read denial
+	# must propagate (never silently resolve a hidden lead's section world).
+	frappe.has_permission("CRM Lead", "read", doc=reference_name, throw=True)
 	try:
-		if not reference_name:
-			return {"drug_program": False}
 		program = frappe.db.get_value("CRM Lead", reference_name, "custom_current_program")
 		is_drug = bool(program) and bool(frappe.db.get_value("CRM Program", program, "custom_is_drug_program"))
 		return {"drug_program": is_drug}

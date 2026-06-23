@@ -68,10 +68,14 @@ override_whitelisted_methods = {
 permission_query_conditions = {
 	"CRM Task": "tatva_connect.tasks.permissions.get_task_permission_query_conditions",
 	"CRM Call Log": "tatva_connect.telephony.permissions.get_call_log_permission_query_conditions",
+	"FCRM Note": "tatva_connect.notes.permissions.get_note_permission_query_conditions",
+	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
 	"CRM Call Log": "tatva_connect.telephony.permissions.has_call_log_permission",
+	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
+	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 }
 
 # Event-driven automations: each side-effect lives in its feature module

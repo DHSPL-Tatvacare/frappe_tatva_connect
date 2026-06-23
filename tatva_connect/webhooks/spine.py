@@ -171,7 +171,7 @@ def replay_failed(service, since=None):
 	}
 	if since:
 		filters["creation"] = [">=", since]
-	names = frappe.get_all("Integration Request", filters=filters, pluck="name")
+	names = frappe.get_all("Integration Request", filters=filters, pluck="name")  # authz-ok: operator-only DLQ replay over system Integration Request rows, not user records
 	for name in names:
 		frappe.enqueue(
 			"tatva_connect.webhooks.spine.replay",

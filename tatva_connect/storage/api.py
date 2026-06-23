@@ -46,7 +46,7 @@ def migrate_local_files(limit: int = 50) -> str:
 	if not blob_store.is_enabled():
 		frappe.throw(_("Enable Azure Storage first."))
 
-	names = frappe.get_all(
+	names = frappe.get_all(  # authz-ok: operator-only Azure backfill (gated on blob_store.is_enabled + System Manager), bulk maintenance over all files by design
 		"File",
 		filters={
 			"custom_uploaded_to_azure": 0,

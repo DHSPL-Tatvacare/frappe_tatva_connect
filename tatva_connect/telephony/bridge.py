@@ -32,6 +32,12 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 	toast shows a clean message.
 	"""
 	ref_doctype, ref_name = _reference_for_number(to_number)
+	# We mint a CRM Call Log against the resolved lead/deal with ignore_permissions below;
+	# gate that write on read-visibility of the parent (the same scope the visibility brain
+	# applies to the call log) so an agent can't call — and create a log against — a lead
+	# they cannot see.
+	if ref_name:
+		frappe.has_permission(ref_doctype, "read", ref_name, throw=True)
 	account_name = routing.resolve_for_reference(ref_doctype, ref_name) if ref_name else None
 	if not account_name:
 		frappe.throw(_("No telephony account route for this number — configure Telephony Routing."))

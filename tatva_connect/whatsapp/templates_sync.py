@@ -25,7 +25,7 @@ def sync_from_wati(account_name=None):
 	if account_name:
 		accounts = [account_name]
 	else:
-		accounts = frappe.get_all("WhatsApp Account", filters={"custom_provider": "WATI"}, pluck="name")
+		accounts = frappe.get_all("WhatsApp Account", filters={"custom_provider": "WATI"}, pluck="name")  # authz-ok: operator-only template sync over WATI config accounts, not user records
 	if not accounts:
 		frappe.throw("No WATI WhatsApp Account found to sync templates from.")
 

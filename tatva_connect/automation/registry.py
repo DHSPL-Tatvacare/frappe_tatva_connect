@@ -252,6 +252,38 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Note::FCRM Note::visibility",
+		fires_on="Permission",
+		trigger_detail="FCRM Note · permission_query_conditions + has_permission",
+		purpose=(
+			"Scopes notes to who should see them — a rep sees a note only if it's theirs or "
+			"its parent Lead/Deal is visible to them. Stock crm scopes Leads and Deals but "
+			"never notes, so without this every agent sees every team note.\n"
+			"Example: a rep opens a lead's Notes tab and sees only notes on their own leads, "
+			"not the whole team's."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
+		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
+		key="WhatsApp::WhatsApp Message::visibility",
+		fires_on="Permission",
+		trigger_detail="WhatsApp Message · permission_query_conditions + has_permission",
+		purpose=(
+			"Scopes WhatsApp messages to who should see them — a rep sees a message only if "
+			"it's theirs or its parent Lead/Deal is visible to them. Stock crm scopes Leads and "
+			"Deals but never WhatsApp threads, so without this every agent sees every conversation.\n"
+			"Example: a rep opens a lead's WhatsApp tab and sees only messages on their own "
+			"leads, not the whole team's."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
+		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · on_update",

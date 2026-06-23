@@ -41,7 +41,7 @@ def list_templates(reference_doctype=None, reference_name=None):
 	filters = {"status": "APPROVED"}
 	if account:
 		filters["whatsapp_account"] = account
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"WhatsApp Templates",
 		filters=filters,
 		fields=["name", "actual_name", "template", "category"],
@@ -131,7 +131,7 @@ def failed_reasons(reference_doctype, reference_name):
 	from crm.api.whatsapp import validate_access
 
 	validate_access(reference_doctype, reference_name)
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"WhatsApp Message",
 		filters={"reference_doctype": reference_doctype, "reference_name": reference_name, "status": "failed"},
 		fields=["name", "custom_failed_reason"],

@@ -27,6 +27,7 @@ def get_account_webhook_urls(account_doctype, name):
 	Returns `{"token_set": bool, "urls": [str, ...]}`: `token_set` is False (urls empty)
 	when the account has no token yet — the form shows a "generate a token" prompt instead
 	of a half-built URL."""
+	frappe.has_permission(account_doctype, "read", doc=name, throw=True)
 	cfg = registry.by_account_doctype(account_doctype)
 	if not cfg:
 		frappe.throw(_("Unsupported account doctype: {0}").format(account_doctype))

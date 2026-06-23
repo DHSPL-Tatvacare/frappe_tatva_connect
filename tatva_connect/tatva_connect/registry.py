@@ -74,7 +74,7 @@ def list_automations(app=None, doctype=None, include_disabled=0):
 		filters = dict(extra or {})
 		if not include_disabled and enabled_field:
 			filters[enabled_field] = 0 if enabled_field == "disabled" else 1
-		return frappe.get_all(dt, filters=filters, fields=fields)
+		return frappe.get_all(dt, filters=filters, fields=fields)  # authz-ok: operator-only config introspection (Automatable masters), not user records
 
 	assignment_rules = _db(
 		"Assignment Rule",

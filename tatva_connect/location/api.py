@@ -258,6 +258,7 @@ def _require_manager():
 @frappe.whitelist()
 def reanchor(lead, lat, lng, accuracy=None):
 	"""Manager-only: move a lead's clinic anchor to a new fix (override a stale/wrong anchor)."""
+	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	_require_manager()
 	ld = frappe.get_doc("CRM Lead", lead)
 	ld.custom_clinic_latitude = flt(lat)
@@ -271,6 +272,7 @@ def reanchor(lead, lat, lng, accuracy=None):
 def location_needed(lead, task_type, values=None):
 	"""Does this activity need a location for THESE submitted values? (In-Person OR a location_when
 	branch that matches, on a tracked grain.) The client's one probe before capturing GPS."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	return location_required(task_type, lead, values or {}) is not None
@@ -281,6 +283,7 @@ def lead_captures(lead):
 	"""Newest-first projection of every in-person location capture (a CRM Task carrying coordinates)
 	on a lead. The SINGLE captures projection — feeds BOTH the Desk 'Location Captures' listing and
 	the SPA timeline map link. Read-only; no map key leaves the server (the thumbnail hits static_map)."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	rows = frappe.get_all(
 		"CRM Task",
 		filters={
@@ -485,6 +488,7 @@ def precheck(lead, task_type, lat, lng, accuracy=None, values=None, task=None):
 	  {"needed": True, "ok": True,  "first": True}               # first capture — nothing to compare
 	  {"needed": True, "ok": True/False, "distance_m", "allowed_m", "anchor_lat/lng", "anchor_address"}
 	"""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	radius = location_required(task_type, lead, values or {})
@@ -523,6 +527,7 @@ def lead_location_view(lead):
 	stream through the key-safe static_map proxy."""
 	from tatva_connect.activity.api import _activity_type_names
 
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	ld = frappe.get_doc("CRM Lead", lead)
 	anchor = _read_anchor(ld)
 	anchor_out = None

@@ -147,6 +147,12 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
 
+	# Gate the user-facing entrypoint: raising a follow-up task writes to the lead's record set, so the
+	# caller must hold lead write. Internal automations (assignment / engine / inbound) run in the
+	# triggering user's session and already hold it; the insert itself stays ignore_permissions so the
+	# follow-up lands assigned even where the child docperm is narrower than lead access (one gate).
+	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+
 	# Lock the lead row so the check-then-insert below is serialized per lead (no duplicate task).
 	frappe.db.get_value("CRM Lead", lead, "name", for_update=True)
 
