@@ -28,7 +28,100 @@ def _normalize_phone(raw: str) -> str:
 
 
 def process_submission(doc, method=None):
-	"""after_insert on the staging doctype -> upsert the CRM Lead."""
+	"""after_insert on the staging doctype -> upsert the CRM Lead via the partner brain.
+
+	Intake is a SECOND SOURCE feeding the ONE lead-create brain (partner._upsert_one):
+	the form is resolved into a partner-shaped payload + a grain descriptor, then handed
+	to the brain — which owns find-or-create, forced routing, program resolution, child
+	upsert, dedup and the ignore_permissions write. Intake keeps only its own pre-step
+	(value resolution + master match) and post-step (notes, prescription, stamp).
+	"""
+	from tatva_connect.api.partner import _upsert_one
+
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return
+	if doc.processed or not doc.intake_form:
+		return
+	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)
+	if not cfg.enabled:
+		return
+
+	# Public form: never surface internal notices (e.g. assignment's "Shared with
+	# … Read access") to the patient. Request-scoped; auto-resets next request.
+	frappe.flags.mute_messages = True
+
+	# Resolve the form into a partner-shaped payload using intake's OWN field logic.
+	# parent_fields / child_allow are intake's tight allowlist — exactly the form's
+	# mapped targets (§2c) — built here from cfg.mappings, NOT the partner catalog.
+	item = {"mobile_no": doc.get("phone")}  # RAW phone; the brain's _norm_phone + doc_events canonicalise
+	parent_fields = []
+	child_allow = {}
+	notes = []
+	for m in cfg.mappings:
+		val = _resolve_value(doc, m)
+		if not val:
+			continue
+		prefix, _sep, field = (m.target or "").partition(":")
+		if prefix == "lead":
+			item[field] = val
+			parent_fields.append(field)
+		elif prefix in _TABLE:
+			cf = _TABLE[prefix]
+			item.setdefault(cf, [{}])[0][field] = val
+			child_allow.setdefault(cf, []).append(field)
+		elif prefix == "note":
+			notes.append((field or "Note", val))
+
+	# Provenance (latest-source-wins): stamp which intake form sourced this lead. Sent on
+	# every upsert; the brain's doc.update(parent) applies it on update too — so the lead
+	# always reflects its most recent source (see Phase 0 §provenance decision).
+	if cfg.get("custom_origin_vertical"):
+		item["custom_origin_vertical"] = cfg.get("custom_origin_vertical")
+		parent_fields.append("custom_origin_vertical")
+	item["custom_source_origin"] = "Intake form: {0}".format(cfg.name)
+	parent_fields.append("custom_source_origin")
+
+	# Grain descriptor — quacks like a CRM Lead API Mapping. The brain reads ONLY
+	# .source/.vertical/.crm_group/.program off mp (verified in _force_routing/_resolve_program),
+	# never a mapping's DB identity, so this _dict is a complete substitute.
+	mp = frappe._dict(
+		source=cfg.source,
+		vertical=cfg.custom_vertical,
+		crm_group=cfg.custom_group,
+		program=cfg.custom_current_program,
+	)
+
+	# is_sysmgr=False + mp set => _collect's allow_routing is False: submitter-sent routing
+	# is dropped, grain is forced from mp (§2c). allowed_programs=[] is unconsulted for a
+	# forced-program form (program_mode.resolve_program returns the pin before reading it).
+	doc_lead, _action = _upsert_one(
+		item, mp, False, parent_fields, child_allow, allowed_programs=[]
+	)
+
+	for title, content in notes:
+		frappe.get_doc(
+			{
+				"doctype": "FCRM Note",
+				"title": title,
+				"content": content,
+				"reference_doctype": "CRM Lead",
+				"reference_docname": doc_lead.name,
+			}
+		).insert(ignore_permissions=True)
+
+	_attach_prescription(doc, doc_lead.name)
+
+	doc.db_set("lead", doc_lead.name, update_modified=False)
+	doc.db_set("processed", 1, update_modified=False)
+
+
+def _process_submission_legacy(doc, method=None):
+	"""after_insert on the staging doctype -> upsert the CRM Lead.
+
+	LEGACY (Phase 0 spike): the pre-fold processor, kept verbatim for the parity test
+	(test_intake_brain_parity) to byte-compare against the new partner-brain path.
+	Deleted in Phase 0 finalize once parity is GREEN.
+	"""
 	if not automation.is_enabled("Lead::Enrolment::intake"):
 		return
 	if doc.processed or not doc.intake_form:
