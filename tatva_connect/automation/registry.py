@@ -344,6 +344,33 @@ AUTOMATIONS = [
 		backs=["tatva_connect.intake.intake.process_submission"],
 	),
 	Auto(
+		key="Intake::RateLimit::enforcement",
+		fires_on="Provider call",
+		trigger_detail="before_request · web-form accept · per-IP + per-phone counters",
+		purpose=(
+			"Caps enrolment-form submissions per IP and per phone, on top of frappe's native "
+			"per-IP 10/min, so a bot or a stuck client can't flood the form. OFF = native limit "
+			"only (today's behaviour). Caps are tunable in CRM Intake Settings.\n"
+			"Example: once on, a script POSTing the form in a loop is throttled with a clear "
+			"'try again later', while a real patient submitting once is unaffected."
+		),
+		# before_request gate — drift walks only doc_events/scheduler, so backs is empty
+		# (like the visibility/partner-rate-limit gates).
+		backs=[],
+	),
+	Auto(
+		key="Intake::File::screening",
+		fires_on="Doc Event",
+		trigger_detail="File · before_insert · enrolment attachments",
+		purpose=(
+			"Screens prescription uploads beyond Frappe's native size/extension/unsafe-PDF checks: "
+			"a magic-byte sniff (the bytes must match the claimed type) plus a ClamAV virus scan. "
+			"OFF = native checks only (today's behaviour). Needs the ClamAV container for the scan.\n"
+			"Example: once on, a .exe renamed to .pdf is rejected, and an infected upload is blocked."
+		),
+		backs=["tatva_connect.intake.guards.guard_file"],
+	),
+	Auto(
 		key="Partner::Catalog::cache",
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead API Field · on_update + on_trash",

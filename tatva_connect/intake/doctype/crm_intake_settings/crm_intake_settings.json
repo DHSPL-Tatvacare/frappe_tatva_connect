@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "ratelimit_section",
+  "ip_per_hour",
+  "phone_per_day",
+  "scanner_section",
+  "clamav_host",
+  "clamav_port",
+  "column_break_scanner",
+  "scanner_unavailable"
+ ],
+ "fields": [
+  {"fieldname": "ratelimit_section", "fieldtype": "Section Break", "label": "Submission Rate Limits"},
+  {"description": "Max enrolment submissions per IP per hour (on top of frappe's native 10/min). Blank = 20. Enforced when CRM Tatva Automation → Intake::RateLimit::enforcement is ON.", "fieldname": "ip_per_hour", "fieldtype": "Int", "label": "Per IP / hour"},
+  {"description": "Max submissions per phone number per day. Blank = 3.", "fieldname": "phone_per_day", "fieldtype": "Int", "label": "Per phone / day"},
+  {"fieldname": "scanner_section", "fieldtype": "Section Break", "label": "Virus Scan (ClamAV)"},
+  {"description": "clamd host. Blank = clamav (the compose service). Enable scanning via CRM Tatva Automation → Intake::File::screening.", "fieldname": "clamav_host", "fieldtype": "Data", "label": "ClamAV Host"},
+  {"description": "clamd TCP port. Blank = 3310.", "fieldname": "clamav_port", "fieldtype": "Int", "label": "ClamAV Port"},
+  {"fieldname": "column_break_scanner", "fieldtype": "Column Break"},
+  {"description": "What to do if the scanner is unreachable while screening is ON. block = reject the upload (safest); allow = accept it (magic-byte sniff still applies). Blank = block.", "fieldname": "scanner_unavailable", "fieldtype": "Select", "label": "If Scanner Unavailable", "options": "\nblock\nallow"}
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Intake",
+ "name": "CRM Intake Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "print": 1, "read": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

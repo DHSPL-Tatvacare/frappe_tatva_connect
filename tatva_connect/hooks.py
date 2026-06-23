@@ -147,6 +147,9 @@ doc_events = {
 	# thumbnailing untouched); delete the blob when the File is deleted. Gated by the
 	# CRM Azure Storage Settings kill-switch.
 	"File": {
+		# Screen enrolment-submission uploads beyond native size/extension/PDF checks
+		# (magic-byte + ClamAV). Scoped + gated inside guard_file; no-op for every other file.
+		"before_insert": "tatva_connect.intake.guards.guard_file",
 		"validate": "tatva_connect.storage.file_events.apply_privacy_policy",
 		"after_insert": "tatva_connect.storage.file_events.after_insert",
 		"on_trash": "tatva_connect.storage.file_events.on_trash",
@@ -346,6 +349,7 @@ app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
 # website_theme_scss = "tatva_connect/public/scss/website"
 
 # include js, css files in header of web form
+# (none — intake bot defence is server-side rate limiting, NOT a client widget; no DOM code)
 # webform_include_js = {"doctype": "public/js/doctype.js"}
 # webform_include_css = {"doctype": "public/css/doctype.css"}
 
@@ -502,7 +506,11 @@ app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
 # ----------------
 # Observability: stamp a monotonic start on every request; the after_request logger
 # below reads it to compute latency for the watched endpoints.
-before_request = ["tatva_connect.observability.capture.stamp_start"]
+before_request = [
+	"tatva_connect.observability.capture.stamp_start",
+	# Stricter per-IP/per-phone rate limit on the enrolment web-form submit (scoped + gated inside).
+	"tatva_connect.intake.guards.throttle_intake",
+]
 # 1. Rewrite framework-layer errors (bad key / malformed body / not-whitelisted) on
 #    partner-API paths into the unified {status:error, error:{code,message}} contract.
 # 2. Log one raw row per partner-API / inbound-webhook hit (runs last, after the

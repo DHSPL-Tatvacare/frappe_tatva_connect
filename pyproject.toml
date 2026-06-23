@@ -11,6 +11,7 @@ dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
     "azure-storage-blob~=12.20",  # Azure Blob file offload (tatva_connect/storage)
     "google-auth~=2.40",  # FCM HTTP v1 OAuth token mint (tatva_connect/push_notifications)
+    "clamd~=1.0",  # ClamAV INSTREAM virus scan for intake uploads (tatva_connect/intake/guards)
 ]
 
 [build-system]
