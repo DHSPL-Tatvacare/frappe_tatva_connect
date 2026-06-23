@@ -96,8 +96,8 @@ def run():
 	frappe.db.delete("CRM Lead Field Restriction", {"field": ["in", [GFIELD, OFIELD]]})
 	frappe.db.commit()
 	# entitled_grains is request-cached; clear so each phase re-reads.
-	frappe.local.__dict__.pop(entitlement._GRAINS_CACHE, None)
-	frappe.local.__dict__.pop(entitlement._RESTRICT_CACHE, None)
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
+	setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
 
 	r = []
 	print("\n== entitled_grains reads the assignment rule ==")
@@ -119,12 +119,12 @@ def run():
 	# now restrict the grain field for the role
 	frappe.get_doc({"doctype": "CRM Lead Field Restriction", "role": ROLE, "field": GFIELD}).insert(ignore_permissions=True)
 	frappe.db.commit()
-	frappe.local.__dict__.pop(entitlement._RESTRICT_CACHE, None)
+	setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
 	out2 = entitlement.resolve_fields(cat, {(v, g, p)}, [ROLE])
 	r.append(_check("restricted field hidden for role", GFIELD not in out2))
 
 	print("\n== field_catalog endpoint, as the agent ==")
-	frappe.local.__dict__.pop(entitlement._GRAINS_CACHE, None)
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
 	frappe.set_user(USER)
 	try:
 		keys = {f["field_key"] for f in api.field_catalog("Lead")}
@@ -134,7 +134,7 @@ def run():
 	r.append(_check("agent catalog excludes role-restricted field", GFIELD not in keys))
 
 	print("\n== System Manager sees ALL_GRAINS ==")
-	frappe.local.__dict__.pop(entitlement._GRAINS_CACHE, None)
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
 	r.append(_check("admin -> ALL_GRAINS", entitlement.entitled_grains("Administrator") == entitlement.ALL_GRAINS))
 
 	print("\n== assignment override ANDs grain ==")
