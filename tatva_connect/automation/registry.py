@@ -308,6 +308,22 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api.partner.clear_catalog_cache"],
 	),
 	Auto(
+		key="Partner::RateLimit::enforcement",
+		fires_on="Provider call",
+		trigger_detail="api/_base · @_api + _run_bulk gate",
+		purpose=(
+			"Throttles the partner API so no partner (or flood of partners) can starve the "
+			"shared web workers that also serve the CRM. OFF = no throttling (dormant); the API "
+			"behaves exactly as today.\n"
+			"Example: a partner script loops too fast; once on, extra calls get a 429 with a "
+			"Retry-After and the CRM stays responsive for everyone else."
+		),
+		# A gate inside _base (@_api + _run_bulk), NOT a doc_event/scheduler — like
+		# Telephony/Location/visibility, so backs is empty (drift walks only doc_events
+		# + scheduler paths; this gate's target stays OUT of the registry).
+		backs=[],
+	),
+	Auto(
 		key="Observability::Metrics::rollup",
 		fires_on="Schedule",
 		trigger_detail="every 6h",

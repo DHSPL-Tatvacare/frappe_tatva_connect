@@ -32,8 +32,8 @@ from frappe import _
 from frappe.utils import cint, get_datetime
 
 from tatva_connect.api._base import (  # noqa: F401
-	BULK_MAX,
 	_api,
+	_cfg,
 	_fail,  # noqa: F401  (kept available for symmetry with the sibling modules)
 	_norm_phone,
 	_ok,
@@ -43,9 +43,8 @@ from tatva_connect.api._base import (  # noqa: F401
 	resolve_lead,
 )
 
-# Pagination (mirrors the sibling list contract; BULK_MAX is the shared per-call cap).
-LIST_DEFAULT = 20       # default page size
-LIST_MAX = 200          # max page size
+# All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
+# Single via _cfg() — one source of truth, no module-local copy.
 
 DEDUP_FIELD = "custom_external_id"   # the idempotency key column on CRM Call Log
 
@@ -251,7 +250,8 @@ def call_list(**kwargs):
 	if data.get("status"):
 		filters["status"] = data.get("status")
 
-	limit = min(cint(data.get("limit")) or LIST_DEFAULT, LIST_MAX)
+	cfg = _cfg()
+	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
 
 	total = frappe.db.count("CRM Call Log", filters)

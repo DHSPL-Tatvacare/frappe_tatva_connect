@@ -13,21 +13,64 @@ Holds (moved verbatim from partner.py, behaviour-preserving):
   * `_ok` / `_fail`    — unified success / failure response writers
   * `_classify` + `_ERROR_MAP` — exception -> (code, http, message, fields)
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
-  * `_rate_limit_retry`— per-key count-based limiter (100 req / 60s)
+  * `_cfg`             — fresh read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
+  * `_rate_check`      — per-token + global token-bucket limiter (cost = records)
   * `_run_bulk`        — per-record savepoint -> partial success
   * `_read_list`       — parse a JSON-list request arg
   * `normalise_partner_response` — after_request gateway-error normaliser
   * `resolve_lead`     — the ONE grain-scoped lead resolver every entity API calls
 """
 import functools
+import time
 
 import frappe
 from frappe import _
 
-# Limits ---------------------------------------------------------------------
-BULK_MAX = 100          # records per bulk call
-RATE_LIMIT = 100        # requests per window, per API key, across all endpoints
-RATE_WINDOW = 60        # seconds
+from tatva_connect import automation
+
+# Config ---------------------------------------------------------------------
+# Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each
+# request via _cfg(). DEFAULTS is the blank-field fallback ONLY — never live policy.
+# 0-rules (applied centrally in _cfg, never at call sites):
+#   rate/burst fields  -> 0 = UNLIMITED for that dimension
+#   cap fields         -> 0 = REJECT (footgun), blank = the DEFAULT below
+_SETTINGS = "CRM Partner API Settings"
+_RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
+
+DEFAULTS = {
+	"window_seconds": 60,
+	"per_token_rate": 1200,
+	"per_token_burst": 1200,
+	"global_rate": 6000,
+	"global_burst": 6000,
+	"bulk_max_records": 100,
+	"list_max_page": 200,
+	"list_default_page": 20,
+	"file_download_timeout_seconds": 30,
+}
+# Rate/burst fields treat 0 as "unlimited"; everything else is a cap where 0 is rejected.
+_RATE_FIELDS = ("per_token_rate", "per_token_burst", "global_rate", "global_burst")
+
+
+def _cfg():
+	"""The partner-API numeric config, read FRESH each request (a Single is one cheap
+	row read; like is_enabled, an edit applies on the very next call — NO cache, no
+	cache-clear hook). Blank -> DEFAULTS; then the 0-rules: rate/burst 0 stays 0
+	(= unlimited), a cap field of 0 is rejected back to its DEFAULT. Any read error
+	-> the DEFAULTS (fail-open)."""
+	try:
+		row = frappe.db.get_singles_dict(_SETTINGS) or {}
+	except Exception:
+		frappe.log_error(title="Partner API _cfg read failed")
+		return dict(DEFAULTS)
+	cfg = {}
+	for field, default in DEFAULTS.items():
+		val = row.get(field)
+		val = default if val in (None, "") else int(val)
+		if field not in _RATE_FIELDS and val == 0:
+			val = default          # cap field: 0 is a footgun -> fall back to the default
+		cfg[field] = val
+	return cfg
 
 
 # -- caller resolution -------------------------------------------------------
@@ -153,40 +196,145 @@ def _classify(e, fn_name):
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
 
-def _rate_limit_retry():
-	"""100 requests / 60s PER API KEY, across all endpoints (each partner has its own
-	independent budget). Count-based per-key via frappe.cache — Frappe's native limiter
-	is site-wide and CPU-time-based, the wrong tool here. Returns the real seconds-to-
-	reset if the caller is over the limit, else None."""
-	key = frappe.cache.make_key("partner_rl:{0}".format(frappe.session.user))
-	count = frappe.cache.incrby(key, 1)
-	# Self-heal: incrby+expire is not atomic, so a crash/race between them can leave
-	# the counter with NO expire (ttl -1 in redis) -> it never resets -> the key 429s
-	# forever. On EVERY call, re-arm the expire whenever the ttl is missing/negative.
-	ttl = frappe.cache.ttl(key)
-	if ttl is None or ttl < 0:
-		frappe.cache.expire(key, RATE_WINDOW)
-	if count > RATE_LIMIT:
-		ttl = frappe.cache.ttl(key)
-		return ttl if (ttl and ttl > 0) else RATE_WINDOW
-	return None
+# A token bucket per key, entirely in Redis and ATOMIC (no read-then-write race in
+# Python). HASH {tokens, last_refill}; refill rate/window tokens per elapsed second,
+# capped at burst; consume `cost` only if the bucket can pay. ARGV: rate window burst
+# cost now. Returns {allowed, retry_after, remaining}. A rate of 0 means UNLIMITED for
+# this dimension (the limiter short-circuits to allow before calling the script).
+_RL_LUA = """
+local key = KEYS[1]
+local rate = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local burst = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+local now = tonumber(ARGV[5])
+local refill = rate / window
+local data = redis.call('HMGET', key, 'tokens', 'last_refill')
+local tokens = tonumber(data[1])
+local last = tonumber(data[2])
+if tokens == nil then tokens = burst; last = now end
+local elapsed = now - last
+if elapsed > 0 then
+  tokens = math.min(burst, tokens + elapsed * refill)
+  last = now
+end
+local allowed = 0
+local retry_after = 0
+if tokens >= cost then
+  tokens = tokens - cost
+  allowed = 1
+else
+  local deficit = cost - tokens
+  retry_after = math.ceil(deficit / refill)
+end
+redis.call('HMSET', key, 'tokens', tokens, 'last_refill', last)
+redis.call('EXPIRE', key, math.ceil(window * 2))
+return {allowed, retry_after, math.floor(tokens)}
+"""
+_RL_SHA = None
+
+
+def _run_bucket(name, rate, burst, window, cost):
+	"""Consume `cost` from the Redis token bucket `name`. rate 0 => unlimited (skip the
+	script). Atomic via EVALSHA (fallback EVAL on NOSCRIPT). Returns
+	(allowed, retry_after, remaining)."""
+	global _RL_SHA
+	if rate <= 0:
+		return True, 0, burst
+	import redis as _redis
+
+	key = frappe.cache.make_key("partner_rl:{0}".format(name))
+	args = [rate, window, burst, cost, int(time.time())]
+	try:
+		if _RL_SHA is None:
+			_RL_SHA = frappe.cache.script_load(_RL_LUA)
+		res = frappe.cache.evalsha(_RL_SHA, 1, key, *args)
+	except _redis.exceptions.NoScriptError:
+		_RL_SHA = frappe.cache.script_load(_RL_LUA)
+		res = frappe.cache.evalsha(_RL_SHA, 1, key, *args)
+	allowed, retry_after, remaining = int(res[0]), int(res[1]), int(res[2])
+	return bool(allowed), retry_after, remaining
+
+
+def _rate_check(cost, mapping):
+	"""Charge `cost` records against the buckets. Partner (has a mapping) -> the shared
+	`global` bucket THEN their own `tok:{partner}` bucket; throttled if EITHER denies.
+	System Manager with no mapping -> EXEMPT (returns None). Returns (retry_after,
+	remaining): retry_after is None on allow, the wait in seconds on a 429; remaining is
+	the per-token budget. Fail-open: ANY Redis/Lua error is logged and the request is
+	ALLOWED (returns None).
+
+	The per-token key is the session user — each partner is one User (the mapping row's
+	name == partner_user == their API key owner), so this is the per-partner bucket."""
+	if not mapping:
+		return None
+	cfg = _cfg()
+	window = cfg["window_seconds"] or DEFAULTS["window_seconds"]
+	try:
+		g_ok, g_retry, _g_rem = _run_bucket(
+			"global", cfg["global_rate"], cfg["global_burst"], window, cost
+		)
+		t_ok, t_retry, t_rem = _run_bucket(
+			"tok:{0}".format(frappe.session.user), cfg["per_token_rate"], cfg["per_token_burst"], window, cost
+		)
+	except Exception:
+		frappe.log_error(title="Partner API rate limiter failed (allowed)")
+		return None
+	# remaining is always the per-token budget (what RateLimit-Limit = per_token_rate
+	# pairs with — the partner's own ceiling), surfaced on both allow and 429.
+	if g_ok and t_ok:
+		return None, t_rem
+	# Denied: report the longer of the two waits.
+	return max(g_retry if not g_ok else 0, t_retry if not t_ok else 0), t_rem
+
+
+def _ratelimit_headers(mapping, remaining=None, retry_after=None):
+	"""IETF RateLimit-* headers on every partner response (+ Retry-After on a 429), set on
+	frappe.local.response_headers (app.py merges these into the final response). The limit
+	is the per-token budget (the partner's own ceiling); sysmgr/no-mapping callers are
+	exempt and get none. Never raises (header decoration must not break a response)."""
+	if not mapping:
+		return
+	try:
+		cfg = _cfg()
+		hdrs = frappe.local.response_headers
+		hdrs["RateLimit-Limit"] = str(cfg["per_token_rate"])
+		if remaining is not None:
+			hdrs["RateLimit-Remaining"] = str(max(remaining, 0))
+		hdrs["RateLimit-Reset"] = str(cfg["window_seconds"])
+		if retry_after is not None:
+			hdrs["Retry-After"] = str(retry_after)
+	except Exception:
+		frappe.log_error(title="Partner API ratelimit headers failed (ignored)")
 
 
 def _api(fn):
-	"""Wrap an endpoint: enforce the rate limit, run it, and emit the unified contract
-	on any failure (never a traceback). The endpoint writes its success body via
-	_ok() and returns None — so the response is always top-level."""
+	"""Wrap an endpoint: enforce the rate limit (when the automation switch is ON), run
+	it, and emit the unified contract on any failure (never a traceback). The endpoint
+	writes its success body via _ok() and returns None — so the response is always
+	top-level. A single endpoint costs 1 record; bulk endpoints add len(items) via
+	_run_bulk. Sysmgr/no-mapping callers are exempt."""
 	@functools.wraps(fn)
 	def wrapper(*args, **kwargs):
 		try:
-			retry = _rate_limit_retry()
-			if retry is not None:
-				return _fail(
-					"rate_limited",
-					_("Rate limit exceeded ({0} requests/min). Retry in {1}s.").format(RATE_LIMIT, retry),
-					429, retry_after=retry,
-				)
-			return fn(*args, **kwargs)
+			mapping = None
+			remaining = None
+			if automation.is_enabled(_RATE_ENFORCEMENT):
+				_user, mapping, _is_sysmgr = _resolve_caller()
+				check = _rate_check(1, mapping)
+				if check is not None:
+					retry_after, remaining = check
+					if retry_after is not None:
+						_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
+						return _fail(
+							"rate_limited",
+							_("Rate limit exceeded. Retry in {0}s.").format(retry_after),
+							429, retry_after=retry_after,
+						)
+			result = fn(*args, **kwargs)
+			if mapping is not None:
+				_ratelimit_headers(mapping, remaining=remaining)
+			return result
 		except Exception as e:
 			code, http, message, fields = _classify(e, fn.__name__)
 			if fields:
@@ -198,11 +346,27 @@ def _api(fn):
 
 def _run_bulk(items, fn):
 	"""Run `fn(index, item)` per record in its own savepoint -> partial success.
-	A failing record is rolled back and reported; the rest still commit."""
+	A failing record is rolled back and reported; the rest still commit. Cost = records:
+	the whole batch is charged len(items) against the rate buckets (when enforcement is
+	ON), so a 100-record bulk consumes like 100 singles, never like one request."""
 	if not isinstance(items, list):
 		frappe.throw(_("Expected a JSON array"))
-	if len(items) > BULK_MAX:
-		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(BULK_MAX, len(items)))
+	cfg = _cfg()
+	bulk_max = cfg["bulk_max_records"]
+	if len(items) > bulk_max:
+		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(bulk_max, len(items)))
+	if automation.is_enabled(_RATE_ENFORCEMENT):
+		_user, mapping, _is_sysmgr = _resolve_caller()
+		check = _rate_check(len(items), mapping)
+		if check is not None:
+			retry_after, remaining = check
+			if retry_after is not None:
+				_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
+				return _fail(
+					"rate_limited",
+					_("Rate limit exceeded. Retry in {0}s.").format(retry_after),
+					429, retry_after=retry_after,
+				)
 	results, ok = [], 0
 	for i, item in enumerate(items):
 		sp = "tc_bulk_{0}".format(i)

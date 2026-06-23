@@ -37,8 +37,8 @@ from frappe.utils import cint, get_datetime
 
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.api._base import (
-	BULK_MAX,
 	_api,
+	_cfg,
 	_fail,  # noqa: F401  (kept available for symmetry with partner.py)
 	_norm_phone,  # noqa: F401  (re-exported convenience)
 	_ok,
@@ -48,9 +48,8 @@ from tatva_connect.api._base import (
 	resolve_lead,
 )
 
-# Pagination (mirrors partner.lead_list; BULK_MAX is the shared per-call cap from _base).
-LIST_DEFAULT = 20       # default page size
-LIST_MAX = 200          # max page size
+# All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
+# Single via _cfg() — one source of truth, no module-local copy.
 
 DEDUP_FIELD = "custom_lsq_activity_id"   # the idempotency key column on CRM Task
 
@@ -271,8 +270,9 @@ def activity_get_bulk(**kwargs):
 
 	by = "name" if names else "external_id"
 	requested = list(names) if names else list(external_ids)
-	if len(requested) > BULK_MAX:
-		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(BULK_MAX, len(requested)))
+	bulk_max = _cfg()["bulk_max_records"]
+	if len(requested) > bulk_max:
+		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(bulk_max, len(requested)))
 
 	results, found = [], 0
 	for i, ident in enumerate(requested):
@@ -299,13 +299,14 @@ def activity_list(**kwargs):
 	user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead = resolve_lead(mp, is_sysmgr, data)
+	cfg = _cfg()
 
 	# Only activity-typed tasks (a configured CRM Task Type with a scope row) — plain
 	# tasks are not partner activities. Scope to this lead's referenced tasks.
 	activity_types = activity_brain._activity_type_names()
 	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 	if not activity_types:
-		_ok(action="fetched", data={"total": 0, "count": 0, "offset": 0, "limit": LIST_DEFAULT,
+		_ok(action="fetched", data={"total": 0, "count": 0, "offset": 0, "limit": cfg["list_default_page"],
 			"has_more": False, "activities": []})
 		return
 	if data.get("task_type"):
@@ -316,7 +317,7 @@ def activity_list(**kwargs):
 	if data.get("status"):
 		filters["status"] = data.get("status")
 
-	limit = min(cint(data.get("limit")) or LIST_DEFAULT, LIST_MAX)
+	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
 
 	total = frappe.db.count("CRM Task", filters)

@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_rate",
+  "window_seconds",
+  "per_token_rate",
+  "per_token_burst",
+  "global_rate",
+  "global_burst",
+  "section_break_payload",
+  "bulk_max_records",
+  "list_max_page",
+  "list_default_page",
+  "file_download_timeout_seconds"
+ ],
+ "fields": [
+  {"fieldname": "section_break_rate", "fieldtype": "Section Break", "label": "Rate limits"},
+  {"fieldname": "window_seconds", "fieldtype": "Int", "label": "Window (seconds)", "non_negative": 1, "description": "Refill window for the token buckets. Blank = code default (60)."},
+  {"fieldname": "per_token_rate", "fieldtype": "Int", "label": "Per-token Rate (records/window)", "non_negative": 1, "description": "Sustained records per window for ONE partner. 0 = unlimited per-token. Blank = code default (1200)."},
+  {"fieldname": "per_token_burst", "fieldtype": "Int", "label": "Per-token Burst", "non_negative": 1, "description": "Per-partner bucket capacity (max instantaneous burst). 0 = unlimited. Blank = code default (1200)."},
+  {"fieldname": "global_rate", "fieldtype": "Int", "label": "Global Rate (records/window)", "non_negative": 1, "description": "Sustained records per window across ALL partners combined. 0 = unlimited global. Blank = code default (6000)."},
+  {"fieldname": "global_burst", "fieldtype": "Int", "label": "Global Burst", "non_negative": 1, "description": "Global bucket capacity (max instantaneous burst across all partners). 0 = unlimited. Blank = code default (6000)."},
+  {"fieldname": "section_break_payload", "fieldtype": "Section Break", "label": "Payload & fetch"},
+  {"fieldname": "bulk_max_records", "fieldtype": "Int", "label": "Bulk Max Records", "non_negative": 1, "description": "Max records per bulk write call. 0 is rejected (an unbounded bulk is a footgun). Blank = code default (100)."},
+  {"fieldname": "list_max_page", "fieldtype": "Int", "label": "List Max Page", "non_negative": 1, "description": "Max records returned per read/list call. 0 is rejected. Blank = code default (200)."},
+  {"fieldname": "list_default_page", "fieldtype": "Int", "label": "List Default Page", "non_negative": 1, "description": "Page size when the caller omits `limit`. 0 is rejected. Blank = code default (20)."},
+  {"fieldname": "file_download_timeout_seconds", "fieldtype": "Int", "label": "File Download Timeout (seconds)", "non_negative": 1, "description": "Timeout when re-hosting an attachment from a partner-supplied source URL. 0 is rejected. Blank = code default (30)."}
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Partner API",
+ "name": "CRM Partner API Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "print": 1, "read": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

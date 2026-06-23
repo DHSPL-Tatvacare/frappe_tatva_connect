@@ -33,9 +33,9 @@ from frappe.utils import cint, cstr
 
 from tatva_connect import automation
 from tatva_connect.api._base import (  # noqa: F401  (re-exported for hooks + observability/capture.py)
-	BULK_MAX,
 	_PARTNER_PATH,
 	_api,
+	_cfg,
 	_classify,
 	_fail,
 	_norm_phone,
@@ -121,6 +121,9 @@ def clear_catalog_cache(doc=None, method=None):
 # Forced for partners, accepted from a trusted System Manager. Never a catalog field.
 ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_program")
 
+# All numeric caps (bulk size, list page sizes) live on the CRM Partner API Settings
+# Single, read fresh via _cfg() — there is no module-local copy (one source of truth).
+
 # Per child-table write/read contract (§3 of partner-api-child-table-contract.md).
 #   multi_row -> each row is addressed by key_field: upsert-by-key, never clobber.
 #   single-row -> one merged row; a 2nd distinct incoming row -> 400.
@@ -129,10 +132,6 @@ ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_p
 # grid doesn't tick it), mirroring the always-included lead:mobile_no pattern.
 # DERIVED FROM THE CATALOG (A4): a child section is multi-row iff one of its catalog
 # rows carries `is_row_key`; that row's fieldname is the key. No hardcoded map.
-
-# Limits  (BULK_MAX is imported from _base — the shared per-call cap)
-LIST_DEFAULT = 20       # default page size
-LIST_MAX = 200          # max page size
 
 # lead_list: only these (safe, indexed) filters are honoured. NOT arbitrary fields.
 #   key in request -> (CRM Lead field, operator)
@@ -178,9 +177,9 @@ def _child_key_field(cf):
 
 # -- helpers -----------------------------------------------------------------
 # Entity-agnostic plumbing (_resolve_caller, _norm_phone, _ok/_fail, _classify,
-# _api, _rate_limit_retry, _run_bulk, _read_list, normalise_partner_response) now
-# lives in tatva_connect.api._base and is imported above. Only lead-specific
-# helpers remain in this module.
+# _api, _cfg, _run_bulk, _read_list, normalise_partner_response) now lives in
+# tatva_connect.api._base and is imported above. Only lead-specific helpers remain
+# in this module.
 
 def _allowed_keys(user, has_mapping):
 	"""The catalog keys THIS caller may use. Partner with a non-empty grid -> that
@@ -544,7 +543,7 @@ def lead_schema(**kwargs):
 		"dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same "
 		         "patient updates that lead. Program is NOT part of identity: sending the same "
 		         "patient with a different program transitions the SAME lead, never a new one.",
-		"bulk": {"max_per_call": BULK_MAX, "list_page_max": LIST_MAX,
+		"bulk": {"max_per_call": _cfg()["bulk_max_records"], "list_page_max": _cfg()["list_max_page"],
 		         "list_filters": list(LIST_FILTERS.keys()) + ["mobile_no"]},
 	}
 	if mp and not mp.program:
@@ -690,8 +689,9 @@ def lead_get_bulk(**kwargs):
 	# input-ordered: results[i] corresponds to the i-th requested id, found or not.
 	by = "name" if names else "mobile_no"
 	requested = list(names) if names else [_norm_phone(m) for m in mobiles]
-	if len(requested) > BULK_MAX:
-		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(BULK_MAX, len(requested)))
+	bulk_max = _cfg()["bulk_max_records"]
+	if len(requested) > bulk_max:
+		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(bulk_max, len(requested)))
 
 	filters = {by: ["in", requested]}
 	if mp:
@@ -734,7 +734,8 @@ def lead_list(**kwargs):
 	if data.get("mobile_no"):
 		filters.append(["mobile_no", "=", _norm_phone(data.get("mobile_no"))])
 
-	limit = min(cint(data.get("limit")) or LIST_DEFAULT, LIST_MAX)
+	cfg = _cfg()
+	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
 
 	fields = list(dict.fromkeys(

@@ -30,8 +30,8 @@ from frappe import _
 from frappe.utils import cint
 
 from tatva_connect.api._base import (  # noqa: F401
-	BULK_MAX,
 	_api,
+	_cfg,
 	_fail,
 	_norm_phone,
 	_ok,
@@ -42,12 +42,8 @@ from tatva_connect.api._base import (  # noqa: F401
 )
 from tatva_connect.storage import file_manager
 
-# Pagination (mirrors partner.py's list contract; files are heavier so a tighter cap).
-LIST_DEFAULT = 20
-LIST_MAX = 200
-
-# How long we wait on the (signed, expiring) LSQ source URL before giving up.
-_DOWNLOAD_TIMEOUT = 30
+# All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
+# Settings Single via _cfg() — one source of truth, no module-local copy.
 
 
 # -- helpers -----------------------------------------------------------------
@@ -89,7 +85,7 @@ def _load_bytes(data):
 	if file_url:
 		import requests
 
-		resp = requests.get(file_url, timeout=_DOWNLOAD_TIMEOUT)
+		resp = requests.get(file_url, timeout=_cfg()["file_download_timeout_seconds"])
 		resp.raise_for_status()
 		return resp.content
 	if content_b64:
@@ -207,7 +203,8 @@ def file_list(**kwargs):
 	if data.get("file_type"):
 		filters["custom_file_type"] = data.get("file_type")
 
-	limit = min(cint(data.get("limit")) or LIST_DEFAULT, LIST_MAX)
+	cfg = _cfg()
+	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
 
 	total = frappe.db.count("File", filters)
