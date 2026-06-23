@@ -76,17 +76,13 @@ class TestWhatsAppMessageScope(FrappeTestCase):
 		doc.message = "secret"
 		doc.message_id = frappe.generate_hash(length=12)
 		doc.reference_doctype, doc.reference_name = reference
-		doc.flags.tatva_ingested = True
-		# Inbound rows arrive with the WATI account already stamped (by the webhook), so
-		# set_whatsapp_account no-ops. Mirror that here — otherwise before_insert demands a WATI
-		# Account Routing rule this scope test doesn't configure. ignore_links: the account link
-		# isn't what this test exercises.
-		doc.whatsapp_account = frappe.db.get_value("WhatsApp Account", {}, "name") or "TEST WATI"
-		doc.flags.ignore_links = True
-		doc.insert(ignore_permissions=True)
-		# crm's validate can rewrite reference_name to first-by-phone; pin it back explicitly
-		# so the test's parent linkage is deterministic.
-		doc.db_set("reference_name", reference[1])
+		# WhatsApp Message's before_insert is a full send/profile pipeline (WATI routing, contact
+		# profile, number formatting) — all irrelevant to ROW SCOPING and impossible to satisfy
+		# without a configured WATI tenant. db_insert() persists the row directly, skipping the
+		# controller hooks: the visibility brain operates on the stored row + its reference fields,
+		# which is exactly what this test exercises.
+		doc.name = doc.message_id
+		doc.db_insert()
 		self._made.append(("WhatsApp Message", doc.name))
 		return frappe.get_doc("WhatsApp Message", doc.name)
 
