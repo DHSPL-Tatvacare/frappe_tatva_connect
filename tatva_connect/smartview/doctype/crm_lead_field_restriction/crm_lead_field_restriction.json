@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{role}::{field}",
+ "creation": "2026-06-23 00:00:00.000000",
+ "description": "The internal role hide-list (\"disallowed\"). One row = this role never sees this catalog field in Smart Views. Granularity is role -> field (global; a sensitive field is sensitive in any grain). Read ONLY by the internal Smart Views resolver; NEVER by the partner API. Business rows ship via db-seeds (operator-run), not fixtures.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "role",
+  "field"
+ ],
+ "fields": [
+  {"fieldname": "role", "fieldtype": "Link", "options": "Role", "label": "Role", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "The role that is denied this field."},
+  {"fieldname": "field", "fieldtype": "Link", "options": "CRM Lead API Field", "label": "Field", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "The catalog field this role never sees in Smart Views."}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Smartview",
+ "name": "CRM Lead Field Restriction",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

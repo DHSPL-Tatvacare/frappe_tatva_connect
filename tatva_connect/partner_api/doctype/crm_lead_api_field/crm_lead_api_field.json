@@ -17,12 +17,16 @@
   "is_row_key",
   "smartview_section",
   "sql_source",
-  "child_doctype",
   "child_pick",
   "filterable",
   "sortable",
   "surface",
-  "applies_to"
+  "applies_to",
+  "grain_section",
+  "grain_vertical",
+  "grain_group",
+  "column_break_grain",
+  "grain_program"
  ],
  "fields": [
   {"fieldname": "field_key", "fieldtype": "Data", "label": "Field Key", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "section:fieldname, e.g. lab:hba1c"},
@@ -34,12 +38,16 @@
   {"fieldname": "is_row_key", "fieldtype": "Check", "label": "Is Row Key", "in_list_view": 1, "description": "For a child section: mark the ONE field that is this child's natural row key (the upsert-by-key address). A child section with a row-key field is multi-row; one without is single-row. Replaces the old hardcoded CHILD_CONFIG."},
   {"fieldname": "smartview_section", "fieldtype": "Section Break", "label": "Smart Views"},
   {"fieldname": "sql_source", "fieldtype": "Select", "label": "SQL Source", "options": "\nparent\nchild\ntask\npayload", "description": "Smart Views composer: where the column physically lives. parent/child = on CRM Lead (or its child table); task = a promoted CRM Task column (one of the 9); payload = a display-only JSON_EXTRACT off CRM Task.custom_activity_payload (not filterable/sortable). Blank rows are partner-API-only (ignored by the composer)."},
-  {"fieldname": "child_doctype", "fieldtype": "Data", "label": "Child DocType", "description": "Smart Views: for sql_source child, the CRM Lead child DocType to LEFT JOIN, e.g. CRM Drug Program Profile."},
   {"fieldname": "child_pick", "fieldtype": "Data", "label": "Child Pick", "description": "Smart Views: how to flatten the child row. 'single' = one row (parent=name); 'latest_by:<field>' = newest row by that field."},
   {"fieldname": "filterable", "fieldtype": "Check", "label": "Filterable", "description": "Smart Views: only filterable fields may reach a WHERE clause."},
   {"fieldname": "sortable", "fieldtype": "Check", "label": "Sortable", "description": "Smart Views: only sortable fields may reach ORDER BY."},
   {"fieldname": "surface", "fieldtype": "Select", "label": "Surface", "options": "\nworklist\ndetail", "description": "Smart Views display hint: worklist (column on the list) vs detail (drawer only)."},
-  {"fieldname": "applies_to", "fieldtype": "Data", "label": "Applies To", "description": "Smart Views scope: 'lead' for a lead-view field, or 'activity:<task_type>' for an activity-view field (e.g. activity:Order Punch Status). Blank = any base object."}
+  {"fieldname": "applies_to", "fieldtype": "Data", "label": "Applies To", "description": "Smart Views scope: 'lead' for a lead-view field, or 'activity:<task_type>' for an activity-view field (e.g. activity:Order Punch Status). Blank = any base object."},
+  {"fieldname": "grain_section", "fieldtype": "Section Break", "label": "Grain (Internal Field Entitlement)"},
+  {"fieldname": "grain_vertical", "fieldtype": "Link", "options": "CRM Vertical", "label": "Grain Product Line", "description": "Internal Smart Views only: restrict this field to one grain axis. Blank = universal (visible in any grain). Never read by the partner API."},
+  {"fieldname": "grain_group", "fieldtype": "Link", "options": "CRM Group", "label": "Grain Group", "description": "Blank = universal on this axis."},
+  {"fieldname": "column_break_grain", "fieldtype": "Column Break"},
+  {"fieldname": "grain_program", "fieldtype": "Link", "options": "CRM Program", "label": "Grain Program", "description": "Blank = universal on this axis."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],

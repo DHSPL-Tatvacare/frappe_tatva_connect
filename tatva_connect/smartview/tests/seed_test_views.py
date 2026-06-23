@@ -8,24 +8,24 @@ so the composer has something to project, filter and sort on the unified activit
 """
 import frappe
 
-# (field_key, label, fieldname, sql_source, child_doctype, child_pick, filterable, sortable, surface, applies_to)
+# (field_key, label, fieldname, sql_source, child_pick, filterable, sortable, surface, applies_to)
 _CATALOG = [
 	# Lead parent fields
-	("lead:first_name", "First Name", "first_name", "parent", None, None, 1, 1, "worklist", "lead"),
-	("lead:status", "Status", "status", "parent", None, None, 1, 1, "worklist", "lead"),
-	("lead:mobile_no", "Mobile", "mobile_no", "parent", None, None, 1, 0, "worklist", "lead"),
+	("lead:first_name", "First Name", "first_name", "parent", None, 1, 1, "worklist", "lead"),
+	("lead:status", "Status", "status", "parent", None, 1, 1, "worklist", "lead"),
+	("lead:mobile_no", "Mobile", "mobile_no", "parent", None, 1, 0, "worklist", "lead"),
 	# Activity (Order Punch) — the 9 promoted CRM Task columns (filter/sort)
-	("act:title", "Title", "title", "task", None, None, 0, 1, "worklist", "activity:Order Punch Status"),
-	("act:status", "Status", "status", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:outcome", "Outcome", "custom_outcome", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:reference", "Order ID", "custom_reference", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:scheduled", "Shipped By", "custom_scheduled_at", "task", None, None, 1, 1, "worklist", "activity:Order Punch Status"),
+	("act:title", "Title", "title", "task", None, 0, 1, "worklist", "activity:Order Punch Status"),
+	("act:status", "Status", "status", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
+	("act:outcome", "Outcome", "custom_outcome", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
+	("act:reference", "Order ID", "custom_reference", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
+	("act:scheduled", "Shipped By", "custom_scheduled_at", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
 	# Activity (Order Punch) — a display-only payload field (JSON_EXTRACT, not filter/sort)
-	("act:cycle", "Cycle", "cycle_category", "payload", None, None, 0, 0, "worklist", "activity:Order Punch Status"),
+	("act:cycle", "Cycle", "cycle_category", "payload", None, 0, 0, "worklist", "activity:Order Punch Status"),
 ]
 
 _FIELDS = [
-	"field_key", "label", "fieldname", "sql_source", "child_doctype",
+	"field_key", "label", "fieldname", "sql_source",
 	"child_pick", "filterable", "sortable", "surface", "applies_to",
 ]
 
@@ -41,7 +41,7 @@ def _seed_catalog():
 		# section_key/target_doctype/fieldname are required by the doctype; fill sane values.
 		if vals["sql_source"] in ("task", "payload"):
 			vals["section_key"] = "activity"
-			vals["target_doctype"] = vals["child_doctype"] or "CRM Task"
+			vals["target_doctype"] = "CRM Task"
 		else:
 			vals["section_key"] = "lead"
 			vals["target_doctype"] = "CRM Lead"

@@ -36,6 +36,9 @@ override_doctype_class = {
 	# Read offloaded file bytes from Azure Blob (see tatva_connect/storage). No-op for
 	# local files and when the storage kill-switch is off.
 	"File": "tatva_connect.storage.file_override.FileOverride",
+	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain
+	# lead. Stock for non-CRM-Lead rules and rules with no grain set.
+	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI, not Meta.

@@ -23,6 +23,8 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cint
 from pypika.terms import Function, PseudoColumn
 
+from tatva_connect.access import entitlement
+
 LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
@@ -46,47 +48,79 @@ _OPS = {
 
 
 # ---------------------------------------------------------------------------
-# Catalog read — the allowlist for a (base_object, activity_type) scope.
-# Reuses the partner-API catalog table (CRM Lead API Field), reading the Smart
-# Views columns the partner path ignores. The catalog is global, not grain-keyed per
-# row; the grain only scopes which Smart Views a user sees (P3). applies_to filters by
-# base object/type.
+# Catalog read — the grain-entitled allowlist for a (base_object, activity_type) scope.
+# Reuses the partner-API catalog table (CRM Lead API Field), reading the Smart Views
+# columns the partner path ignores. On THIS (internal) path the catalog is grain-filtered
+# and role-restricted by the one entitlement brain (tatva_connect.access.entitlement); the
+# partner path never does either. applies_to scopes by base object/type.
 # ---------------------------------------------------------------------------
 
 def _scope_label(base_object, activity_type):
 	return "activity:{0}".format(activity_type) if base_object == "Activity" else "lead"
 
 
-def _catalog_fields(base_object, activity_type=None):
-	"""Catalog rows usable by a view of this base object/type, keyed by field_key.
-	A row is in scope if it has a sql_source AND its applies_to is blank or matches
-	the scope label. The composer never touches a fieldname outside this dict."""
+def _all_catalog_rows():
+	"""Every catalog row, keyed by field_key. Request-cached — one read per request, shared
+	across every scope/grain resolution (was an uncached get_all per call)."""
+	def build():
+		rows = frappe.get_all(
+			"CRM Lead API Field",
+			filters={"sql_source": ["in", ["parent", "child", "task", "payload"]]},
+			fields=[
+				"field_key", "label", "fieldname", "sql_source", "child_pick",
+				"filterable", "sortable", "surface", "applies_to", "target_doctype",
+				"grain_vertical", "grain_group", "grain_program",
+			],
+			order_by="field_key asc",
+		)
+		return {r.field_key: r for r in rows}
+
+	return entitlement._request_cache("tatva_connect:smartview_catalog", "all", build)
+
+
+def _catalog_fields(base_object, activity_type, grains, roles):
+	"""Catalog rows usable by a view of this base object/type, keyed by field_key, after grain
+	entitlement: in scope (applies_to blank or matching), visible in `grains`, minus the fields
+	restricted for `roles`, plus the universal floor. The composer never touches a fieldname
+	outside this dict — so a saved view can never project a field outside its grain."""
 	scope = _scope_label(base_object, activity_type)
-	rows = frappe.get_all(
-		"CRM Lead API Field",
-		filters={"sql_source": ["in", ["parent", "child", "task", "payload"]]},
-		fields=[
-			"field_key", "label", "fieldname", "sql_source", "child_doctype",
-			"child_pick", "filterable", "sortable", "surface", "applies_to", "target_doctype",
-		],
-		order_by="field_key asc",
-	)
-	out = {}
-	for r in rows:
+	scoped = {}
+	for key, r in _all_catalog_rows().items():
 		applies = (r.applies_to or "").strip()
 		if applies and applies != scope:
 			continue
-		out[r.field_key] = r
-	return out
+		scoped[key] = r
+	return entitlement.resolve_fields(scoped, grains, roles)
+
+
+def _grains_for_view(v):
+	"""The grain a saved view resolves its fields against: its own stored (vertical, group,
+	program) when set, else the caller's entitled grains (fail-closed fallback)."""
+	return _grains_from_axes(v.vertical, v.group, v.program)
+
+
+def _grains_from_axes(vertical, group, program):
+	"""A one-grain set from explicit axes, or the caller's entitled grains when none given
+	(editor with no grain chosen yet → show what the caller could pick). Explicit axes are
+	CLAMPED to entitlement: a grain the caller isn't entitled to is rejected fail-closed, so a
+	client cannot widen scope past entitled_grains() on the picker, write, or data path."""
+	if vertical or group or program:
+		grain = (vertical or "", group or "", program or "")
+		if not entitlement.grain_entitled(grain):
+			frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
+		return {grain}
+	return entitlement.entitled_grains()
 
 
 @frappe.whitelist()
-def field_catalog(base_object, activity_type=None):
-	"""The allowed fields for the picker/condition builder, grain + type scoped.
-	The single source the editor (P2) and the composer agree on."""
+def field_catalog(base_object, activity_type=None, vertical=None, group=None, program=None):
+	"""The allowed fields for the picker/condition builder — type + grain scoped, role-restricted.
+	The single source the editor (P2) and the composer agree on. The editor passes its selected
+	grain (vertical/group/program); with none chosen the caller's entitled grains apply."""
 	if base_object not in ("Lead", "Activity"):
 		frappe.throw(_("Unknown base object {0}").format(base_object))
-	cat = _catalog_fields(base_object, activity_type)
+	grains = _grains_from_axes(vertical, group, program)
+	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	out = []
 	for r in cat.values():
 		df = _col_docfield(r)
@@ -178,6 +212,9 @@ def get_view(name):
 		"label": d.label,
 		"base_object": d.base_object,
 		"activity_type": d.activity_type,
+		"vertical": d.vertical,
+		"group": d.group,
+		"program": d.program,
 		"description": d.description,
 		"color": d.color,
 		"icon": d.icon,
@@ -290,7 +327,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			)
 			continue
 		# child (CRM Lead child table) -> needs a join
-		child_dt = r.child_doctype
+		child_dt = (r.target_doctype or "").strip()
 		if not child_dt:
 			continue
 		pick = (r.child_pick or "single").strip()
@@ -398,10 +435,10 @@ def _apply_search(crit, search, cat, field_terms):
 
 def _col_docfield(r):
 	"""The live DocField backing a catalog row, read from doctype meta (never guessed).
-	target_doctype is the doctype the field lives on for every sql_source; child_doctype is
-	the fallback for child rows. None when it can't be resolved (payload rows resolve to None
-	-> 'Data', since the schema fieldname is not a real CRM Task docfield)."""
-	dt = (r.target_doctype or "").strip() or (r.child_doctype if r.sql_source == "child" else None)
+	target_doctype is the doctype the field lives on for every sql_source. None when it can't be
+	resolved (payload rows resolve to None -> 'Data', since the schema fieldname is not a real
+	CRM Task docfield)."""
+	dt = (r.target_doctype or "").strip()
 	if not dt:
 		return None
 	try:
@@ -428,7 +465,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	base_object = v.base_object
 	activity_type = v.activity_type
 
-	cat = _catalog_fields(base_object, activity_type)
+	cat = _catalog_fields(base_object, activity_type, _grains_for_view(v), frappe.get_roles())
 	driving_name, driving_table = _driving(base_object, activity_type)
 
 	col_keys = _column_field_keys(v, cat)
@@ -584,7 +621,13 @@ def upsert_view(view):
 	else:
 		activity_type = None
 
-	cat = _catalog_fields(base_object, activity_type)
+	# The view's chosen grain bounds its catalog: columns/predicate are validated against exactly
+	# the fields visible in that grain, so a saved view can never carry an out-of-grain field.
+	vertical = view.get("vertical") or None
+	group = view.get("group") or None
+	program = view.get("program") or None
+	grains = _grains_from_axes(vertical, group, program)
+	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	columns = _validate_columns(view.get("columns"), cat)
 	predicate = view.get("predicate")
 	if isinstance(predicate, str):
@@ -611,6 +654,9 @@ def upsert_view(view):
 	doc.label = label
 	doc.base_object = base_object
 	doc.activity_type = activity_type
+	doc.vertical = vertical
+	doc.group = group
+	doc.program = program
 	doc.is_standard = is_standard
 	doc.owner_user = None if is_standard else user
 	doc.predicate = frappe.as_json(predicate) if predicate else None

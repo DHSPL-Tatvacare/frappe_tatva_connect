@@ -26,6 +26,11 @@ tatva_connect.patches.neutralize_wati_message_id_field
 # the doctype JSON syncs, so the renamed field map carries existing values (no orphan column).
 # Idempotent; no-op on a fresh install. See docs/plans/2026-06-21-activity-engine-unified-design.md.
 tatva_connect.patches.rename_task_field_target
+# CRM Lead API Field drops the redundant `child_doctype` column (target_doctype is now the single
+# source). Carry existing child rows' child_doctype onto target_doctype BEFORE the JSON syncs and
+# drops the column, so the smartview composer keeps its child join target. MUST be pre_model_sync.
+# Idempotent; guarded no-op once the column is gone / on a fresh install.
+tatva_connect.patches.backfill_catalog_target_doctype
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
