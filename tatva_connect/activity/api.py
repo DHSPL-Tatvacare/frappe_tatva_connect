@@ -290,10 +290,7 @@ def lead_task_board(lead):
 	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
 	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
 	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
-	if not frappe.db.exists("CRM Lead", lead):
-		frappe.throw(_("Lead {0} not found").format(lead))
-
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)  # also raises if the lead is missing
 	rows = frappe.get_all(
 		"CRM Task",
 		filters={"reference_doctype": "CRM Lead", "reference_docname": lead},

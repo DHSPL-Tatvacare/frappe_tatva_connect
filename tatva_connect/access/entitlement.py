@@ -12,6 +12,8 @@ System-Manager sentinel that matches every field without enumerating the masters
 """
 import frappe
 
+from tatva_connect.access import request_cache
+
 # System Manager sees every field — a sentinel so we never enumerate the grain masters.
 ALL_GRAINS = "__all__"
 
@@ -22,17 +24,6 @@ UNIVERSAL_KEYS = ("lead:name", "lead:mobile_no", "lead:status")
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _RESTRICT_CACHE = "tatva_connect:field_restrictions"
 _REPORTS_TO_DEPTH = 10
-
-
-def _request_cache(bucket, key, builder):
-	"""Per-request memoisation on frappe.local (cleared each request). One read per user."""
-	store = getattr(frappe.local, bucket, None)
-	if store is None:
-		store = {}
-		setattr(frappe.local, bucket, store)
-	if key not in store:
-		store[key] = builder()
-	return store[key]
 
 
 def _grain(row):
@@ -104,7 +95,7 @@ def entitled_grains(user=None):
 			return partner
 		return _internal_grains(user)
 
-	return _request_cache(_GRAINS_CACHE, user, build)
+	return request_cache(_GRAINS_CACHE, user, build)
 
 
 def field_in_grains(field_row, grains):
@@ -140,7 +131,7 @@ def _restricted_keys(roles):
 	per role. Read ONLY here — the partner API never consults this doctype."""
 	hidden = set()
 	for role in roles:
-		hidden |= _request_cache(_RESTRICT_CACHE, role, lambda role=role: set(frappe.get_all(
+		hidden |= request_cache(_RESTRICT_CACHE, role, lambda role=role: set(frappe.get_all(
 			"CRM Lead Field Restriction", filters={"role": role}, pluck="field",
 		)))
 	return hidden

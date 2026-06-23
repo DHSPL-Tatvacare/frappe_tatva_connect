@@ -84,11 +84,19 @@ class TestCallLogScope(FrappeTestCase):
 
 	# --- switch ON: scope enforced --------------------------------------
 	def test_in_scope_user_can_see(self):
-		for call in (self.call_ref, self.call_links):
-			self.assertTrue(
-				visibility.scoped_has_permission(call, "read", self.in_scope),
-				f"in-scope user denied on {call.name}",
-			)
+		self.assertTrue(
+			visibility.scoped_has_permission(self.call_ref, "read", self.in_scope),
+			f"in-scope user denied on {self.call_ref.name}",
+		)
+
+	def test_links_only_call_fails_closed(self):
+		"""ONE rule: we scope on reference_* — the canonical linkage every Acefone/partner call
+		log sets. A links-only call log (no reference parent) is an orphan -> DENIED for any
+		non-owner, including the in-scope user. Fail-closed; the single-doc gate and the
+		reference-only list PQC agree exactly (no asymmetry)."""
+		self.assertFalse(
+			visibility.scoped_has_permission(self.call_links, "read", self.in_scope),
+		)
 
 	def test_out_of_scope_user_blocked(self):
 		for call in (self.call_ref, self.call_links):

@@ -24,6 +24,7 @@ import frappe
 from frappe.model.db_query import DatabaseQuery
 
 from tatva_connect import automation
+from tatva_connect.access import request_cache
 
 PARENT_DOCTYPES = ("CRM Lead", "CRM Deal")
 
@@ -40,22 +41,6 @@ def _ref_parent(doc):
 	return None
 
 
-def _ref_or_links_parent(doc):
-	"""CRM Call Log carries BOTH a reference_* pair AND a `links` child table; crm's own
-	get_call_log reads the Lead/Deal off either. Prefer reference_*, else the first Lead/Deal
-	row in `links` — exactly crm's own resolution order. (Real call logs always set reference_*,
-	so the single-doc gate here and the reference-only list PQC agree in practice; the links
-	fallback is intentional defence for a theoretical links-only row — single-doc still scopes
-	it correctly, the list just won't surface it to a non-owner. Benign: never leaks.)"""
-	parent = _ref_parent(doc)
-	if parent:
-		return parent
-	for link in doc.get("links") or []:
-		if link.get("link_doctype") in PARENT_DOCTYPES and link.get("link_name"):
-			return link.get("link_doctype"), link.get("link_name")
-	return None
-
-
 def _ref_name_parent(doc):
 	"""WhatsApp Message links its parent via reference_doctype + `reference_name` (NOT the
 	`reference_docname` field name CRM Task/FCRM Note use). frappe_whatsapp's own doctype: the
@@ -68,7 +53,7 @@ def _ref_name_parent(doc):
 # child doctype -> resolver(doc) -> (parent_doctype, parent_name) | None
 PARENT_OF = {
 	"CRM Task": _ref_parent,
-	"CRM Call Log": _ref_or_links_parent,
+	"CRM Call Log": _ref_parent,
 	"FCRM Note": _ref_parent,
 	"WhatsApp Message": _ref_name_parent,
 }
@@ -101,25 +86,15 @@ def _visible_parent_subquery(parent, user):
 		where = f" and ({cond})" if cond else ""
 		return f"(select `name` from `tab{parent}` where 1=1{where})"
 
-	return _request_cache("tatva_connect:visible_parents", (parent, user), build)
-
-
-def _request_cache(bucket, key, builder):
-	"""Per-request memoisation on frappe.local (cleared each request). Matches entitlement.py."""
-	store = getattr(frappe.local, bucket, None)
-	if store is None:
-		store = {}
-		setattr(frappe.local, bucket, store)
-	if key not in store:
-		store[key] = builder()
-	return store[key]
+	return request_cache("tatva_connect:visible_parents", (parent, user), build)
 
 
 def scoped_pqc(doctype, user=None):
 	"""List scoping for `doctype`. A row is visible iff it is the user's own/assigned, OR its
 	parent Lead/Deal is visible (reusing the parent's own list conditions). Privileged or
-	switch-OFF -> "" (no extra conditions; stock crm)."""
-	if not automation.is_enabled(_SWITCH_OF[doctype]):
+	switch-OFF or an unregistered doctype -> "" (no extra conditions; stock crm)."""
+	switch = _SWITCH_OF.get(doctype)
+	if not switch or not automation.is_enabled(switch):
 		return ""
 	user = user or frappe.session.user
 	if _is_privileged(user):
@@ -148,7 +123,8 @@ def scoped_has_permission(doc, ptype, user):
 	Owner/assignee -> True. Else resolve the parent and defer to its READ scope; no resolvable
 	parent -> deny (fail-closed for a privacy CRM)."""
 	doctype = doc.doctype
-	if not automation.is_enabled(_SWITCH_OF[doctype]):
+	switch = _SWITCH_OF.get(doctype)
+	if not switch or not automation.is_enabled(switch):
 		return True
 	user = user or frappe.session.user
 	if _is_privileged(user):

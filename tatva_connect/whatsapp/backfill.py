@@ -112,8 +112,10 @@ def backfill_lead(lead_name: str, dry_run: bool = True) -> dict:
 def refresh_history(reference_name: str, dry_run=1) -> dict:
 	"""Manual entry — pull one lead's full WATI history and insert anything missing.
 
-	Defaults to a safe dry-run (counts only). System Manager only (default whitelist
-	gating). Gated on WATI being enabled; the operator runs this deliberately."""
+	Defaults to a safe dry-run (counts only). Requires WRITE access to the lead — so a caller
+	who cannot see/act on the lead can't even probe its WhatsApp metadata (let alone inject
+	history with dry_run=0). Gated on WATI being enabled; the operator runs this deliberately."""
+	frappe.has_permission("CRM Lead", "write", doc=reference_name, throw=True)
 	return backfill_lead(reference_name, dry_run=bool(int(dry_run)))
 
 
