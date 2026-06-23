@@ -77,11 +77,12 @@ class TestWhatsAppMessageScope(FrappeTestCase):
 		doc.message_id = frappe.generate_hash(length=12)
 		doc.reference_doctype, doc.reference_name = reference
 		doc.flags.tatva_ingested = True
-		# Skip validate: the WATI override's validate demands a WATI Account Routing rule for the
-		# lead's grain, which this scope test doesn't configure. We only need the persisted record
-		# + its parent linkage; ignore_validate inserts a clean row (reference_name is pinned below
-		# since crm's validate rewrite is skipped too).
-		doc.flags.ignore_validate = True
+		# Inbound rows arrive with the WATI account already stamped (by the webhook), so
+		# set_whatsapp_account no-ops. Mirror that here — otherwise before_insert demands a WATI
+		# Account Routing rule this scope test doesn't configure. ignore_links: the account link
+		# isn't what this test exercises.
+		doc.whatsapp_account = frappe.db.get_value("WhatsApp Account", {}, "name") or "TEST WATI"
+		doc.flags.ignore_links = True
 		doc.insert(ignore_permissions=True)
 		# crm's validate can rewrite reference_name to first-by-phone; pin it back explicitly
 		# so the test's parent linkage is deterministic.
