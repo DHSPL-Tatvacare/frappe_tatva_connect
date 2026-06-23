@@ -1978,6 +1978,70 @@
           ]
         }
       }
+    },
+    "headers": {
+      "RateLimit-Limit": {
+        "description": "Your key's own per-token record budget for the current window. Sent on every partner response (success and 429). A shared global ceiling is enforced separately, so a 429 can fire on the global bucket even while RateLimit-Remaining is above zero. Absent when rate-limit enforcement is off or the caller is exempt (a System Manager with no mapping).",
+        "schema": {
+          "type": "integer",
+          "example": 1200
+        }
+      },
+      "RateLimit-Remaining": {
+        "description": "Records still available in the current window before you are throttled. Cost is counted in **records** (a bulk of N costs N), not requests. Sent on every partner response (success and 429). Absent when rate-limit enforcement is off or the caller is exempt (a System Manager with no mapping).",
+        "schema": {
+          "type": "integer",
+          "example": 1158
+        }
+      },
+      "RateLimit-Reset": {
+        "description": "Seconds until the window refills and the budget resets. Sent on every partner response (success and 429). Absent when rate-limit enforcement is off or the caller is exempt (a System Manager with no mapping).",
+        "schema": {
+          "type": "integer",
+          "example": 37
+        }
+      },
+      "Retry-After": {
+        "description": "Sent only on a 429: seconds to wait before retrying. Mirrors `error.retry_after` in the body.",
+        "schema": {
+          "type": "integer",
+          "example": 42
+        }
+      }
+    },
+    "responses": {
+      "RateLimited": {
+        "description": "Rate limit exceeded (`error.code` = `rate_limited`). Throttling is cost-weighted in **records** and enforced against both your per-token budget and a shared global ceiling — you are limited if either is exhausted. Wait `Retry-After` / `error.retry_after` seconds, then retry (every write is idempotent, so retrying is safe).",
+        "headers": {
+          "RateLimit-Limit": {
+            "$ref": "#/components/headers/RateLimit-Limit"
+          },
+          "RateLimit-Remaining": {
+            "$ref": "#/components/headers/RateLimit-Remaining"
+          },
+          "RateLimit-Reset": {
+            "$ref": "#/components/headers/RateLimit-Reset"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PartnerError"
+            },
+            "example": {
+              "status": "error",
+              "error": {
+                "code": "rate_limited",
+                "message": "Rate limit exceeded. Retry in 42s.",
+                "retry_after": 42
+              }
+            }
+          }
+        }
+      }
     }
   },
   "paths": {
@@ -1996,6 +2060,17 @@
         "responses": {
           "200": {
             "description": "The caller's allowed fields + routing mode under `data` (no `message` wrapper).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2040,22 +2115,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2097,6 +2157,17 @@
         "responses": {
           "200": {
             "description": "The curated lead (top-level `status`/`action:fetched`/`data`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2158,22 +2229,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2282,6 +2338,17 @@
         "responses": {
           "200": {
             "description": "A page of curated leads under `data` (no children — use `lead_get` for the full record).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2326,22 +2393,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2383,6 +2435,17 @@
         "responses": {
           "200": {
             "description": "Lead created or updated (top-level `status`/`action`/`data`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2430,22 +2493,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2490,6 +2538,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2534,22 +2593,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2606,6 +2650,17 @@
         "responses": {
           "200": {
             "description": "Leads found (input-ordered `results[]`; missing/out-of-scope rows report `not_found`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2650,22 +2705,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2700,6 +2740,17 @@
         "responses": {
           "200": {
             "description": "Lead updated (top-level `status`/`action`/`data`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2761,22 +2812,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2835,6 +2871,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2879,22 +2926,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -2926,6 +2958,17 @@
         "responses": {
           "200": {
             "description": "Lead deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2997,22 +3040,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3057,6 +3085,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3101,22 +3140,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Rate limit exceeded (100 requests/min). Retry in 42s.",
-                    "retry_after": 42
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3158,6 +3182,17 @@
         "responses": {
           "200": {
             "description": "The activity types + field schemas available to this lead's grain.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3202,14 +3237,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3241,6 +3269,17 @@
         "responses": {
           "200": {
             "description": "The activity (top-level `status`/`action:fetched`/`data`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3285,14 +3324,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3327,6 +3359,17 @@
         "responses": {
           "200": {
             "description": "Activity created or updated (`action: upserted`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3381,14 +3424,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3430,6 +3466,17 @@
         "responses": {
           "200": {
             "description": "Activity updated (`action: updated`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3479,14 +3526,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3518,6 +3558,17 @@
         "responses": {
           "200": {
             "description": "Activity deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3557,14 +3608,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3609,6 +3653,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3648,14 +3703,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3709,6 +3757,17 @@
         "responses": {
           "200": {
             "description": "Activities found (input-ordered `results[]`; missing/out-of-scope rows report `not_found`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3753,14 +3812,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3841,6 +3893,17 @@
         "responses": {
           "200": {
             "description": "A page of the lead's activities under `data`.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3885,14 +3948,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -3930,6 +3986,17 @@
         "responses": {
           "200": {
             "description": "File attached (`action: attached`) or already present (`action: exists`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3987,14 +4054,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4025,6 +4085,17 @@
         "responses": {
           "200": {
             "description": "The file metadata + proxy url.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4069,14 +4140,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4148,6 +4212,17 @@
         "responses": {
           "200": {
             "description": "A page of the lead's files under `data`.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4192,14 +4267,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4230,6 +4298,17 @@
         "responses": {
           "200": {
             "description": "File deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4269,14 +4348,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4321,6 +4393,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4360,14 +4443,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4405,6 +4481,17 @@
         "responses": {
           "200": {
             "description": "Call created or updated. **Read `data.lead`** — it is `null` when attribution found no/ambiguous match (the call is unlinked).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4462,14 +4549,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4500,6 +4580,17 @@
         "responses": {
           "200": {
             "description": "The call (top-level `status`/`action:fetched`/`data`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4544,14 +4635,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4636,6 +4720,17 @@
         "responses": {
           "200": {
             "description": "A page of the lead's calls under `data`.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4680,14 +4775,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4718,6 +4806,17 @@
         "responses": {
           "200": {
             "description": "Call deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4757,14 +4856,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -4809,6 +4901,17 @@
         "responses": {
           "200": {
             "description": "Batch ran — partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4848,14 +4951,7 @@
             }
           },
           "429": {
-            "description": "Over 100 requests/60s for your key. `error.retry_after` = seconds to wait.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
