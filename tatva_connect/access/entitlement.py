@@ -51,14 +51,19 @@ def _partner_grain(user):
 
 
 def _direct_reports(user):
-	"""Users whose reports_to is `user` (one rung of the management chain)."""
+	"""Users whose reports_to is `user` (one rung of the management chain). `reports_to` is an
+	HRMS/Employee field, NOT present on User in a stock CRM — so this is guarded by the caller
+	(`_can_rollup`) and is a no-op until a reporting field exists. Full hierarchy roll-up via
+	CRM Sales Hierarchy is deferred (Q4); a manager meanwhile gets their own rule grains."""
 	return frappe.get_all("User", filters={"reports_to": user}, pluck="name")
 
 
 def _internal_grains(user):
 	"""Union of the grains on every CRM Lead Assignment Rule the user (or anyone reporting up to
 	them) is a member of. reports_to is walked breadth-first with a visited-set + depth cap so a
-	circular or deep chain can never loop or blow the stack."""
+	circular or deep chain can never loop or blow the stack. The roll-up only runs when User
+	actually has a `reports_to` field (else it cleanly no-ops to the user's own rule grains)."""
+	can_rollup = frappe.db.has_column("User", "reports_to")
 	grains, seen, frontier, depth = set(), {user}, [user], 0
 	while frontier and depth <= _REPORTS_TO_DEPTH:
 		rule_names = frappe.get_all(
@@ -73,11 +78,12 @@ def _internal_grains(user):
 		):
 			grains.add(_grain(r))
 		nxt = []
-		for u in frontier:
-			for report in _direct_reports(u):
-				if report not in seen:
-					seen.add(report)
-					nxt.append(report)
+		if can_rollup:
+			for u in frontier:
+				for report in _direct_reports(u):
+					if report not in seen:
+						seen.add(report)
+						nxt.append(report)
 		frontier, depth = nxt, depth + 1
 	return grains
 
