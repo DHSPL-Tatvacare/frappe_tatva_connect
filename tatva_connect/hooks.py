@@ -62,13 +62,16 @@ override_whitelisted_methods = {
 # into every list AND count (fail-closed). It reads the shared field catalog (CRM Lead API
 # Field) live — no separate cache to invalidate.
 
-# CRM Task has no native list scoping (crm scopes only Lead/Deal) -> every agent sees every
-# task. Mirror each task's parent Lead/Deal visibility onto Task lists + single-doc reads.
+# Child doctypes have no native list scoping (crm scopes only Lead/Deal) -> every agent sees
+# every row. Mirror each child's parent Lead/Deal visibility onto lists + single-doc reads.
+# All policy lives once in access/visibility.py; these just delegate per doctype.
 permission_query_conditions = {
 	"CRM Task": "tatva_connect.tasks.permissions.get_task_permission_query_conditions",
+	"CRM Call Log": "tatva_connect.telephony.permissions.get_call_log_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
+	"CRM Call Log": "tatva_connect.telephony.permissions.has_call_log_permission",
 }
 
 # Event-driven automations: each side-effect lives in its feature module

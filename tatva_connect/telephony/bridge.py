@@ -112,6 +112,7 @@ def get_call_log(name):
 	"""
 	from crm.fcrm.doctype.crm_call_log.crm_call_log import get_call_log as crm_get_call_log
 
+	frappe.has_permission("CRM Call Log", "read", name, throw=True)
 	data = crm_get_call_log(name)
 	# crm always points recording_url_path at its own (Twilio/Exotel-only) proxy,
 	# so for an Acefone call we OVERWRITE it with our streaming proxy.

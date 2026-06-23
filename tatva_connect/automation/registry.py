@@ -236,6 +236,22 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Telephony::CRM Call Log::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Call Log · permission_query_conditions + has_permission",
+		purpose=(
+			"Scopes call logs to who should see them — a rep sees a call only if it's theirs "
+			"or its parent Lead/Deal is visible to them. Stock crm scopes Leads and Deals but "
+			"never call logs, so without this every agent sees every call.\n"
+			"Example: a rep opens a lead's Calls tab and sees only calls on their own leads, "
+			"not the whole team's."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Task::CRM Task::visibility. The permission-hook
+		# targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · on_update",
