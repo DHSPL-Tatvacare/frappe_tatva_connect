@@ -37,27 +37,28 @@ class CRMEnrolmentSubmission(Document):
 			return  # no linked form => no grain to validate against
 		cfg = frappe.get_cached_doc("CRM Intake Form", self.intake_form)
 
-		# Hospital must be inside the form's grain. `all(grain.values())` mirrors the
-		# lookup, which returns nothing when the grain is incomplete (so no valid pick).
-		grain = {
-			"vertical": cfg.custom_vertical,
-			"group": cfg.custom_group,
-			"program": cfg.custom_current_program,
-		}
-		if self.hospital and not self.hospital_not_listed and all(grain.values()):
-			if not frappe.db.exists("CRM Hospital", {"name": self.hospital, **grain}):
+		# Hospital / Doctor anti-spoof, enforced ONLY where the master actually carries the
+		# data: a grain-tagged hospital must match the form's grain; a doctor linked to a
+		# hospital must be at the picked one. Untagged masters (today's seed has NULL grain /
+		# NULL hospital FK) are a no-op here — we never reject a legitimately-picked reference
+		# the catalog hasn't scoped yet.
+		if self.hospital and not self.hospital_not_listed:
+			h = frappe.db.get_value(
+				"CRM Hospital", self.hospital, ["vertical", "group", "program"], as_dict=True
+			)
+			if h and all([h.vertical, h.group, h.program]) and (
+				h.vertical != cfg.custom_vertical
+				or h.group != cfg.custom_group
+				or h.program != cfg.custom_current_program
+			):
 				frappe.throw(
 					_("Selected hospital is not available for this programme."),
 					title=_("Invalid hospital"),
 				)
 
-		# Doctor must practise at the picked Hospital (the Doctor -> Hospital FK).
-		if (
-			self.doctor
-			and not self.doctor_not_listed
-			and self.hospital
-			and not frappe.db.exists("CRM Doctor", {"name": self.doctor, "hospital": self.hospital})
-		):
-			frappe.throw(
-				_("Selected doctor is not at the chosen hospital."), title=_("Invalid doctor")
-			)
+		if self.doctor and not self.doctor_not_listed and self.hospital:
+			doc_hospital = frappe.db.get_value("CRM Doctor", self.doctor, "hospital")
+			if doc_hospital and doc_hospital != self.hospital:
+				frappe.throw(
+					_("Selected doctor is not at the chosen hospital."), title=_("Invalid doctor")
+				)
