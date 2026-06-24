@@ -141,10 +141,15 @@ class TestIntakeBrainParity(FrappeTestCase):
 			"remarks": remarks,
 			"prescription": prescription,
 		})
-		# Insert WITHOUT firing after_insert — we drive the processor explicitly per path
-		# so the test controls which one runs against a virgin row.
-		doc.flags.ignore_after_insert_event = True
-		doc.insert(ignore_permissions=True)
+		# Insert WITHOUT the after_insert processor firing, so the test drives the chosen
+		# path explicitly against a virgin row. Frappe always runs after_insert (there is no
+		# per-doc skip flag), but the hook (process_submission) is gated on the intake switch
+		# — so flip it OFF across the insert, then restore.
+		self._set_switch(_INTAKE_SWITCH, 0)
+		try:
+			doc.insert(ignore_permissions=True)
+		finally:
+			self._set_switch(_INTAKE_SWITCH, 1)
 		self._made.append(("CRM Enrolment Submission", doc.name))
 		return doc
 
