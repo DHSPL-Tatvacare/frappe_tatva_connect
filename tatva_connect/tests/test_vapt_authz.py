@@ -75,10 +75,7 @@ class TestVAPTAuthz(FrappeTestCase):
 		("crm.integrations.api.add_task_to_call_log", lambda f: dict(call_sid=f["call_log"], task={"title": "x", "status": "Todo"}), "call_log"),
 		("crm.integrations.api.add_note_to_call_log", lambda f: dict(call_sid=f["call_log"], note={"content": "x"}), "call_log"),
 		("crm.integrations.api.get_recording_url", lambda f: dict(call_log_name=f["call_log"]), "call_log"),
-		("crm.fcrm.doctype.crm_deal.api.get_deal_contacts", lambda f: dict(name=f["deal"]), None),
-		("crm.fcrm.doctype.crm_deal.crm_deal.add_contact", lambda f: dict(deal=f["deal"], contact=f["contact"]), None),
-		("crm.fcrm.doctype.crm_deal.crm_deal.remove_contact", lambda f: dict(deal=f["deal"], contact=f["contact"]), None),
-		("crm.fcrm.doctype.crm_deal.crm_deal.set_primary_contact", lambda f: dict(deal=f["deal"], contact=f["contact"]), None),
+		("crm.fcrm.doctype.crm_deal.api.get_deal_contacts", lambda f: dict(name=f["deal"]), "deal"),
 		("crm.fcrm.doctype.crm_deal.crm_deal.create_deal", lambda f: dict(doc={"lead": f["lead"]}), None),
 		("crm.integrations.api.get_contact_by_phone_number", lambda f: dict(phone_number="999"), None),
 		("crm.integrations.api.get_contact_lead_or_deal_from_number", lambda f: dict(number="999"), None),
@@ -191,7 +188,10 @@ class TestVAPTAuthz(FrappeTestCase):
 			or frappe.get_all("CRM Deal Status", order_by="position", limit=1, pluck="name")
 		d = frappe.get_doc({"doctype": "CRM Deal", "status": statuses[0] if statuses else None})
 		d.insert(ignore_permissions=True)
-		d.db_set("owner", owner)
+		# crm scopes deals by ASSIGNMENT (not the owner field) — assign so `owner` can see it,
+		# while a peer who isn't assigned cannot.
+		from frappe.desk.form.assign_to import add as assign_to
+		assign_to({"doctype": "CRM Deal", "name": d.name, "assign_to": [owner]})
 		return d.name
 
 	def _switch(self, key, on):

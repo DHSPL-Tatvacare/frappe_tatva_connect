@@ -55,12 +55,20 @@ override_whitelisted_methods = {
 	# (native timeline omits task lifecycle). Derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
 	# VAPT hardening — native crm methods that BYPASS the permission engine (get_all /
-	# ignore_permissions / un-gated get_doc), so the doctype matrix can't reach them.
-	# Intercept -> has_permission gate -> delegate to the unchanged native fn. No crm fork.
-	# See tatva_connect/access/native_guards.py.
+	# ignore_permissions / un-gated get_doc), so neither the doctype matrix nor a doctype's
+	# has_permission hook can reach them. Intercept -> has_permission gate -> delegate to the
+	# unchanged native fn. No crm fork. See tatva_connect/access/native_guards.py.
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
 	"crm.integrations.api.add_task_to_call_log": "tatva_connect.access.native_guards.add_task_to_call_log",
+	"crm.integrations.api.add_note_to_call_log": "tatva_connect.access.native_guards.add_note_to_call_log",
+	"crm.integrations.api.get_recording_url": "tatva_connect.access.native_guards.get_recording_url",
+	"crm.integrations.api.set_default_calling_medium": "tatva_connect.access.native_guards.set_default_calling_medium",
+	"crm.integrations.api.get_contact_by_phone_number": "tatva_connect.access.native_guards.get_contact_by_phone_number",
+	"crm.integrations.api.get_contact_lead_or_deal_from_number": "tatva_connect.access.native_guards.get_contact_lead_or_deal_from_number",
+	"crm.fcrm.doctype.crm_deal.crm_deal.create_deal": "tatva_connect.access.native_guards.create_deal",
+	"crm.fcrm.doctype.crm_deal.api.get_deal_contacts": "tatva_connect.access.native_guards.get_deal_contacts",
+	"crm.api.whatsapp.get_whatsapp_messages": "tatva_connect.access.native_guards.get_whatsapp_messages",
 }
 
 # Smart Views — the grain surface. Read-only whitelisted endpoints (auto-discovered by
