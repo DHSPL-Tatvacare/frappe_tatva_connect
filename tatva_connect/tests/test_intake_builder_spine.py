@@ -29,7 +29,7 @@ _GROUP = "Anaya"
 _PROGRAM = "Nivolumab"
 _SOURCE = "Enrolment Form"
 _FORM = "Spine Builder Test"
-_PHONE = "9000000007"
+_PHONE = "+91 9000000007"
 
 
 class TestIntakeBuilderSpine(FrappeTestCase):

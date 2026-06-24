@@ -210,6 +210,18 @@ _SETTINGS_COLUMNS = (
 )
 
 
+def _has_legacy_web_form(cfg) -> bool:
+	"""True if a hand-built Web Form on the shared `CRM Enrolment Submission` sink already
+	serves this form (its hidden `intake_form` field defaults to this form). The builder
+	leaves such legacy forms untouched — no duplicate per-form sink, no broken public URL."""
+	for r in frappe.get_all(
+		"Web Form Field", filters={"fieldname": "intake_form", "default": cfg.name}, fields=["parent"]
+	):
+		if frappe.db.get_value("Web Form", r.parent, "doc_type") == "CRM Enrolment Submission":
+			return True
+	return False
+
+
 def _web_form_route(cfg) -> str:
 	"""Operator route wins (Route field on the Form tab); else derive from the form name.
 	The derived value is written back so the field shows the live route after first sync."""
@@ -262,7 +274,16 @@ def sync_form(cfg, method=None):
 
 	Server-internal only — callers are the form's own controller / an operator action,
 	both already System-Manager gated (the builder doctype is System-Manager-only).
-	Returns (doctype_name, web_form_name)."""
+	Returns (doctype_name, web_form_name), or (None, None) when it deliberately skips."""
+	# Skip gracefully (never throw on a plain save) if the name can't yield a runtime
+	# DocType (odd/test names): a bad name must not block saving the contract.
+	if not safe_doctype_name_for(cfg):
+		return None, None
+	# Never clobber a LEGACY form — one already served by a hand-built Web Form on the
+	# shared `CRM Enrolment Submission` sink keeps working as-is; the builder only scaffolds
+	# NEW per-form sinks. (No silent auto-migration of live public forms.)
+	if _has_legacy_web_form(cfg):
+		return None, None
 	dt = _ensure_doctype(cfg)
 	wf = _ensure_web_form(cfg, dt)
 

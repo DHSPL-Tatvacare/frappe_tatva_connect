@@ -38,6 +38,9 @@ class TestIntakeSubmissionValidate(FrappeTestCase):
 		_ensure("CRM Program", "OtherProg", program_name="OtherProg")
 		cls.hosp_bad = "{0}::{1}::OtherProg::Fortis".format(V, G)
 		_ensure("CRM Hospital", cls.hosp_bad, hospital_name="Fortis", vertical=V, group=G, program="OtherProg")
+		# A real doctor at the OTHER hospital — used to prove the doctor->hospital FK check bites.
+		cls.doc_bad = "{0}::Dr B".format(cls.hosp_bad)
+		_ensure("CRM Doctor", cls.doc_bad, doctor_name="Dr B", hospital=cls.hosp_bad)
 		if not frappe.db.exists("CRM Intake Form", FORM):
 			frappe.get_doc({
 				"doctype": "CRM Intake Form", "form_name": FORM, "enabled": 1,
@@ -71,7 +74,7 @@ class TestIntakeSubmissionValidate(FrappeTestCase):
 
 	def test_doctor_not_at_hospital_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
-			self._sub(hospital=self.hosp, doctor="{0}::Ghost".format(self.hosp_bad)).validate()
+			self._sub(hospital=self.hosp, doctor=self.doc_bad).validate()
 
 	def test_not_listed_skips_scope_check(self):
 		# Operator typed a hospital not in the master -> manual path, grain check skipped.
