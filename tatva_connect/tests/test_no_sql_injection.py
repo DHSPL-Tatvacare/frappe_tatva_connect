@@ -28,6 +28,7 @@ Plant `frappe.db.sql("SELECT ... " + user_input)` in any in-scope file and this 
 """
 import ast
 import os
+import subprocess
 
 from frappe.tests.utils import FrappeTestCase
 
@@ -80,15 +81,38 @@ def _violations_in(tree):
 			yield name, node.lineno, node.end_lineno
 
 
+def _tracked_set():
+	"""Absolute paths of git-tracked .py files, or None if git is unavailable. A CI lock polices
+	the COMMITTED codebase, not untracked scratch scripts a dev bench may carry (CI runs on a
+	clean checkout anyway) — so an unmarked interpolation in litter never makes this flap."""
+	try:
+		root = subprocess.run(
+			["git", "-C", _APP_DIR, "rev-parse", "--show-toplevel"],
+			capture_output=True, text=True, check=True,
+		).stdout.strip()
+		out = subprocess.run(
+			["git", "-C", _APP_DIR, "ls-files", "*.py"],
+			capture_output=True, text=True, check=True,
+		).stdout
+	except Exception:
+		return None
+	return {os.path.join(root, line) for line in out.splitlines() if line}
+
+
 def _python_files():
+	tracked = _tracked_set()
 	for root, _dirs, files in os.walk(_APP_DIR):
 		if "__pycache__" in root:
 			continue
 		if any(s in root + os.sep for s in _SKIP):
 			continue
 		for name in files:
-			if name.endswith(".py"):
-				yield os.path.join(root, name)
+			if not name.endswith(".py"):
+				continue
+			path = os.path.join(root, name)
+			if tracked is not None and os.path.abspath(path) not in tracked:
+				continue  # untracked bench litter — not part of the committed codebase
+			yield path
 
 
 def _scan():
