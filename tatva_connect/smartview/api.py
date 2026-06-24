@@ -76,7 +76,7 @@ def _all_catalog_rows():
 		)
 		return {r.field_key: r for r in rows}
 
-	return entitlement._request_cache("tatva_connect:smartview_catalog", "all", build)
+	return entitlement.request_cache("tatva_connect:smartview_catalog", "all", build)
 
 
 def _catalog_fields(base_object, activity_type, grains, roles):
