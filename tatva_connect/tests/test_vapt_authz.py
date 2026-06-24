@@ -186,7 +186,9 @@ class TestVAPTAuthz(FrappeTestCase):
 		return d.name
 
 	def _deal(self, owner):
-		statuses = frappe.get_all("CRM Deal Status", limit=1, pluck="name")
+		# an OPEN status — terminal ones (Lost/Won) demand extra fields (lost reason, etc.)
+		statuses = frappe.get_all("CRM Deal Status", filters={"type": "Open"}, limit=1, pluck="name") \
+			or frappe.get_all("CRM Deal Status", order_by="position", limit=1, pluck="name")
 		d = frappe.get_doc({"doctype": "CRM Deal", "status": statuses[0] if statuses else None})
 		d.insert(ignore_permissions=True)
 		d.db_set("owner", owner)
