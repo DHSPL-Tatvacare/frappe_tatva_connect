@@ -7,6 +7,12 @@ dist/
 # os
 .DS_Store
 
+# scratch screenshots dumped at the repo ROOT only (images committed under subdirs like
+# handbook/assets/ or api-docs/public/ stay tracked — these patterns are root-anchored)
+/*.png
+/*.jpg
+/*.jpeg
+
 # python
 __pycache__/
 *.pyc
@@ -37,3 +43,15 @@ db-seeds/
 # Restore into tatva_connect/patches/ + patches.txt ONLY for an in-place upgrade of an
 # old-schema prod DB; a clean rebuild never needs them.
 archive/
+
+# Internal / local-only — kept out of the public repo (operator-shared via other channels).
+# operator-facing handbook (markdown + diagrams/screenshots) — shared out-of-band, not public
+handbook/
+# NOTE: gitignore does NOT support inline (trailing) comments — the comment must be on its own
+# line, or the whole line is treated as the pattern and silently fails to match.
+# split-tier + prod-split compose/Containerfile (shared with DevOps directly)
+deploy/
+# all migration/util scripts (LSQ, anaya, etc.) — creds/PHI-adjacent
+scripts/
+# local Claude Code settings/state
+.claude/
