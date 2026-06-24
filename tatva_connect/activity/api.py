@@ -314,6 +314,7 @@ def lead_task_board(lead):
 	tasks = []
 	for r in rows:
 		who = r.assigned_to or r.owner
+		who_doc = frappe.db.get_value("User", who, ["full_name", "user_image"], as_dict=True) if who else None
 		done = r.status == "Done"
 		# Completed when = the explicit Completed-On if set, else the modified time of a Done task.
 		# Completed by = modified_by (the last actor on a Done task) — the available attribution.
@@ -327,7 +328,8 @@ def lead_task_board(lead):
 			"priority": r.priority,
 			"due": formatdate(r.due_date, "d MMM yyyy") if r.due_date else None,
 			"rep": who,
-			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
+			"rep_name": (who_doc and who_doc.full_name) or who,
+			"rep_image": who_doc.user_image if who_doc else None,
 			"creation": str(r.creation),
 			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
 			"completed_on": format_datetime(completed_raw, "d MMM yyyy") if (done and completed_raw) else None,
