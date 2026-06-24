@@ -182,9 +182,10 @@ class TestIntakeBrainParity(FrappeTestCase):
 	def test_create_routes_and_maps(self):
 		phone = "9000000001"
 		sub = self._submission(phone)
-		rx_url = self._make_private_file(sub.name)
-		sub.db_set("prescription", rx_url, update_modified=False)
-		sub.reload()
+		# The Web Form submits the row carrying the uploaded Attach value, so after_insert
+		# hands process_submission an in-memory doc with `prescription` already set — mirror
+		# that exactly (an out-of-band db_set+reload does not reproduce the real submit shape).
+		sub.prescription = self._make_private_file(sub.name)
 
 		intake.process_submission(sub)
 
