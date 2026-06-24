@@ -296,7 +296,8 @@ def lead_task_board(lead):
 		filters={"reference_doctype": "CRM Lead", "reference_docname": lead},
 		fields=[
 			"name", "title", "custom_task_type", "status", "priority", "due_date",
-			"assigned_to", "owner", "creation", "description", "custom_activity_payload",
+			"assigned_to", "owner", "creation", "modified", "modified_by",
+			"custom_completed_on", "description", "custom_activity_payload",
 			*PROMOTED_COLUMNS,
 			"custom_location_latitude", "custom_location_longitude",
 			"custom_location_address", "custom_location_captured_at",
@@ -313,17 +314,24 @@ def lead_task_board(lead):
 	tasks = []
 	for r in rows:
 		who = r.assigned_to or r.owner
+		done = r.status == "Done"
+		# Completed when = the explicit Completed-On if set, else the modified time of a Done task.
+		# Completed by = modified_by (the last actor on a Done task) — the available attribution.
+		completed_raw = r.custom_completed_on or (r.modified if done else None)
+		completer = r.modified_by if done else None
 		tasks.append({
 			"name": r.name,
 			"title": r.title,
 			"task_type": r.custom_task_type or "",
 			"status": r.status,
 			"priority": r.priority,
-			"due_date": str(r.due_date) if r.due_date else None,
+			"due": formatdate(r.due_date, "d MMM yyyy") if r.due_date else None,
 			"rep": who,
 			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"creation": str(r.creation),
 			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
+			"completed_on": format_datetime(completed_raw, "d MMM yyyy") if (done and completed_raw) else None,
+			"completed_by": (completer and frappe.db.get_value("User", completer, "full_name")) or completer,
 			"values": _task_values(r, types.get(r.custom_task_type)),
 			"location": _task_location(r),
 		})

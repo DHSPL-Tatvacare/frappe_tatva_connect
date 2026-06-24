@@ -211,7 +211,11 @@ def lead_detail(lead):
 			"value": value,
 			"empty": _is_empty(value),
 			"read_only": _is_readonly(row.get("target_doctype"), row.get("fieldname")),
+			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
+			"_idx": df.idx if df else 10_000,
 		})
+	for b in buckets.values():
+		b["fields"].sort(key=lambda f: (f.pop("_idx"), f["label"]))
 	sections = sorted(buckets.values(), key=lambda s: s["order"])
 	return {"sections": sections}
 
