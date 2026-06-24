@@ -96,6 +96,7 @@ def account_for_payload(payload, event):
 	try:
 		return routing.account_for_did(payload.get("did_number"))
 	except Exception:
+		frappe.log_error(title="telephony: account_for_payload failed", message=frappe.get_traceback())
 		return None
 
 

@@ -1,20 +1,4 @@
-"""Split the legacy free-text `target` on CRM Intake Field Map rows into the structured
-(target_table, target_field) pair.
-
-The mapping contract moved from a single `"prefix:field"` Data column to a discoverable,
-validated pair: `target_table` (Select) + `target_field` (Data). This carries existing rows
-forward so no mapping is lost when the legacy `target` column is dropped on field-sync.
-
-FORMAT-ONLY: `"plan:nivo_dosage"` -> table="plan", field="nivo_dosage". It does NOT remap
-`plan` -> `drug` (the Nivolumab dosage/indication fields actually live on the drug child) —
-that data correction is Phase-D, done deliberately on the real form, not here.
-
-Runs in patches.txt [pre_model_sync]: the split must happen BEFORE the new JSON syncs and
-drops `target`, so we add the two columns physically, populate them, then let the JSON
-formalise them (same shape as the whatsapp/telephony spine renames). Idempotent + guarded —
-a no-op once the legacy column is gone (already migrated / fresh install), and per-row it
-only fills a blank structured pair.
-"""
+"""Split the legacy free-text `target` ("plan:field") on CRM Intake Field Map into the structured (target_table, target_field) pair before the JSON drops it (pre-model-sync, format-only); guarded, idempotent."""
 import frappe
 
 _DT = "CRM Intake Field Map"
@@ -22,8 +6,7 @@ _TABLE = "tab" + _DT
 
 
 def _column_exists(table, column):
-	"""True if the column physically exists. Read from information_schema, not has_column,
-	which can report a stale meta value after a raw DDL change in the same migrate."""
+	"""True if the column physically exists; read from information_schema (has_column can report stale after a raw DDL change in the same migrate)."""
 	return bool(
 		frappe.db.sql(
 			"""SELECT 1 FROM information_schema.COLUMNS

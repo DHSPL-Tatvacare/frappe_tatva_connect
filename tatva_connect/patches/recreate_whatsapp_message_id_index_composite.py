@@ -1,17 +1,4 @@
-"""Recreate WhatsApp Message uniqueness as composite (message_id, reference_name).
-
-The original single-column unique index on `message_id`
-(add_whatsapp_message_id_unique_index) blocked a shared WhatsApp number from
-mirroring the same message onto more than one lead (the same patient enrolled in
-two programs). Refresh on the second lead hit `DuplicateEntryError`, and an inbound
-reply could land on only one lead. We replace it with a composite unique index so
-each lead holds its own copy of a shared thread, while still deduping redelivered
-webhooks per lead.
-
-MariaDB treats NULLs as distinct in a unique index, so draft rows (no message_id)
-are unaffected. Defensive: if legacy duplicate (message_id, reference_name) pairs
-exist the composite index can't be created — log and skip rather than abort migrate.
-"""
+"""Replace the single-column message_id unique index with composite (message_id, reference_name) so a shared number can mirror a message onto multiple leads while still per-lead deduping; skip+log if legacy dupes exist."""
 import frappe
 
 

@@ -42,6 +42,7 @@ _STEPS = (
 
 
 def apply_schema():
+	failures = []
 	for mod in _STEPS:
 		try:
 			mod.execute()
@@ -49,10 +50,15 @@ def apply_schema():
 		except Exception:
 			frappe.db.rollback()
 			frappe.log_error(frappe.get_traceback(), f"apply_schema: {mod.__name__}")
+			failures.append(mod.__name__)
 	_ensure_fixed_settings()
 	_ensure_field_map_role()
 	_ensure_new_modules()
 	_assert_observability_bands()
+	if failures:
+		# Each step isolates its own failure above (rollback + log) so the rest still run — but a
+		# real structural gap must NOT pass as a green migrate. Fail loud once every step ran.
+		frappe.throw("Schema setup failed for: {0}. See Error Log for tracebacks.".format(", ".join(failures)))
 
 
 def _ensure_new_modules():

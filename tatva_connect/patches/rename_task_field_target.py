@@ -1,11 +1,4 @@
-"""Rename CRM Task Type Field.first_class_target -> target (the 9-column field map).
-
-The schema field that says which promoted CRM Task column a form field writes to was renamed
-first_class_target -> target when the activity engine collapsed to 9 columns. This runs in
-[pre_model_sync] so the column is renamed BEFORE the doctype JSON syncs — sync then sees `target`
-already present (no orphaned first_class_target column, existing values preserved). Idempotent:
-a no-op on a fresh install (column already `target` from the JSON) and on re-run.
-"""
+"""Rename CRM Task Type Field.first_class_target -> target before the doctype JSON syncs, preserving values (pre-model-sync); idempotent."""
 import frappe
 
 TABLE = "tabCRM Task Type Field"

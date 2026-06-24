@@ -5,16 +5,10 @@ app_description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony
 app_email = "pareekshith.bompally@tatvacare.in"
 app_license = "mit"
 
-# App logo — shown in the desk app-switcher header AND the /apps tile. Ships as a committed
-# asset (public/images/tatva-connect.png); `bench build` republishes it every deploy, so it
-# is never lost between deploys.
+# App logo (desk switcher header + /apps tile); ships as a committed asset, republished by `bench build` each deploy.
 app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"
 
-# Tatva Connect as an "app" in the desk switcher. Its six children (Communications, Automations,
-# Partner API, Infrastructure, Field Operations, Observability) appear in the "Workspaces" flyout
-# via child Desktop Icons (parent_icon="Tatva Connect", shipped as standard files in desktop_icon/);
-# each opens its own Workspace Sidebar — exactly like Frappe Framework's Build/Data/Email. Opens on
-# Communications. Gated by has_permission to the roles that see the workspaces (System/Sales Manager).
+# Tatva Connect desk-switcher app; six child workspaces via child Desktop Icons, gated by has_permission (System/Sales Manager).
 add_to_apps_screen = [
 	{
 		"name": "tatva_connect",
@@ -25,39 +19,26 @@ add_to_apps_screen = [
 	}
 ]
 
-# WATI WhatsApp — route frappe_whatsapp through WATI; never reach Meta.
-# Seam 1: WhatsApp Message      — agent sends + CRM template picker.
-# Seam 2: WhatsApp Notification — automated/scheduled sends (own Meta call).
-# Templates: neutralise Meta create/edit/fetch (templates live on WATI).
+# WATI WhatsApp — route frappe_whatsapp through WATI (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
 	"WhatsApp Message": "tatva_connect.whatsapp.message.WATIWhatsAppMessage",
 	"WhatsApp Notification": "tatva_connect.whatsapp.notification.WATINotification",
 	"WhatsApp Templates": "tatva_connect.whatsapp.templates.WATITemplates",
-	# Read offloaded file bytes from Azure Blob (see tatva_connect/storage). No-op for
-	# local files and when the storage kill-switch is off.
+	# Read offloaded file bytes from Azure Blob; no-op for local files and when the storage kill-switch is off.
 	"File": "tatva_connect.storage.file_override.FileOverride",
-	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain
-	# lead. Stock for non-CRM-Lead rules and rules with no grain set.
+	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain lead; stock otherwise.
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
 }
 
-# Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI, not Meta.
-# The desk list-view button calls this method; routing it here means that button
-# (and any caller) syncs the read-only WATI mirror — never reaches Meta.
+# Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI (read-only mirror), not Meta — for the desk button and any caller.
 override_whitelisted_methods = {
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_from_wati",
-	# Acefone rides crm's NATIVE call UI (no fork): the native phone icon's call
-	# method becomes an Acefone bridge call, and the call-log fetch gains a
-	# playable recording path for Acefone. See tatva_connect/telephony/bridge.py.
+	# Acefone rides crm's NATIVE call UI (no fork): phone icon -> Acefone bridge call, call-log fetch gains a playable recording path.
 	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.telephony.bridge.make_a_call",
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
-	# Mirror LSQ: surface Task created/closed inside the Lead/Deal activity timeline
-	# (native timeline omits task lifecycle). Derived on read, nothing stored.
+	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
-	# VAPT hardening — native crm methods that BYPASS the permission engine (get_all /
-	# ignore_permissions / un-gated get_doc), so neither the doctype matrix nor a doctype's
-	# has_permission hook can reach them. Intercept -> has_permission gate -> delegate to the
-	# unchanged native fn. No crm fork. See tatva_connect/access/native_guards.py.
+	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
 	"crm.integrations.api.add_task_to_call_log": "tatva_connect.access.native_guards.add_task_to_call_log",
@@ -71,15 +52,9 @@ override_whitelisted_methods = {
 	"crm.api.whatsapp.get_whatsapp_messages": "tatva_connect.access.native_guards.get_whatsapp_messages",
 }
 
-# Smart Views — the grain surface. Read-only whitelisted endpoints (auto-discovered by
-# path via @frappe.whitelist): tatva_connect.smartview.api.field_catalog / get_data. The
-# composer ANDs the SAME CRM Task / CRM Lead permission_query_conditions registered below
-# into every list AND count (fail-closed). It reads the shared field catalog (CRM Lead API
-# Field) live — no separate cache to invalidate.
+# Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.
 
-# Child doctypes have no native list scoping (crm scopes only Lead/Deal) -> every agent sees
-# every row. Mirror each child's parent Lead/Deal visibility onto lists + single-doc reads.
-# All policy lives once in access/visibility.py; these just delegate per doctype.
+# Child doctypes have no native list scoping (crm scopes only Lead/Deal); mirror each child's parent Lead/Deal visibility onto lists + single-doc reads. Policy lives once in access/visibility.py.
 permission_query_conditions = {
 	"CRM Task": "tatva_connect.tasks.permissions.get_task_permission_query_conditions",
 	"CRM Call Log": "tatva_connect.telephony.permissions.get_call_log_permission_query_conditions",
@@ -93,13 +68,10 @@ has_permission = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 }
 
-# Event-driven automations: each side-effect lives in its feature module
-# (lead/, tasks/, whatsapp/, intake/) — providers only persist their own records.
-# Providers only persist their own records; every side-effect hangs off here.
+# Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
 	"CRM Lead": {
-		# canonicalise empty routing fields (''->None) BEFORE dedup, so the
-		# {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
+		# canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
 		"before_validate": [
 			"tatva_connect.lead.leads.canonicalize_routing_fields",
 		],
@@ -113,10 +85,7 @@ doc_events = {
 		],
 	},
 	"CRM Task": {
-		# seed first (fills the checklist from the template), then enforce (gates Done).
-		# enforce_location is the fail-closed backstop for location-required task types:
-		# the client form script captures + writes coords; this guarantees they're present
-		# on every save path (incl. API/import), or the save is blocked.
+		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
 		"validate": [
 			"tatva_connect.tasks.tasks.seed_checklist",
 			"tatva_connect.tasks.tasks.enforce_checklist",
@@ -124,8 +93,7 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
-		# Automation engine: on the first Done flip of a lead-linked task, enqueue (after commit) every
-		# enabled rule whose grain + task type match the lead (gated, fail-closed, non-re-entrant).
+		# Automation engine: on the first Done flip of a lead-linked task, enqueue (after commit) every matching enabled rule (gated, fail-closed, non-re-entrant).
 		"on_update": [
 			"tatva_connect.automation.dispatcher.fire_rules",
 		],
@@ -135,13 +103,11 @@ doc_events = {
 		],
 	},
 	"WhatsApp Message": {
-		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone.
-		# Runs after crm validate, before db_insert + crm on_update. Inbound-only (flag-gated).
+		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone; runs after crm validate, before db_insert; inbound-only (flag-gated).
 		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
 		"after_insert": "tatva_connect.whatsapp.inbound.on_inbound_message",
 	},
-	# the partner-API catalog is data-driven (read from CRM Lead API Field, cached) —
-	# drop the cache whenever a catalog row changes so the API picks it up at once.
+	# the partner-API catalog is data-driven (cached read of CRM Lead API Field); drop the cache on any catalog row change so the API picks it up at once.
 	"CRM Lead API Field": {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
@@ -150,38 +116,29 @@ doc_events = {
 	"CRM Enrolment Submission": {
 		"after_insert": "tatva_connect.intake.intake.process_submission",
 	},
-	# Per-form intake sinks are runtime custom DocTypes (one per CRM Intake Form), so they
-	# can't carry their own code hook — a single wildcard after_insert is the native way to
-	# process them. It early-returns cheaply (a cached set membership test) for every doctype
-	# that is NOT an enabled intake form's submission table.
+	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	"*": {
 		"after_insert": "tatva_connect.intake.intake.route_submission",
 	},
-	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache
-	# whenever a form is added, toggled, or removed so the guard never serves a stale set.
+	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache on any form add/toggle/remove so it never serves a stale set.
 	"CRM Intake Form": {
-		# On save: (1) scaffold/sync the per-form DocType + Web Form from the contract,
-		# (2) refresh the wildcard-router guard set so the new sink routes immediately.
+		# On save: scaffold/sync the per-form DocType + Web Form from the contract, then refresh the wildcard-router guard set so the new sink routes immediately.
 		"on_update": [
 			"tatva_connect.intake.builder.sync_form",
 			"tatva_connect.intake.intake.bust_intake_doctype_cache",
 		],
 		"on_trash": "tatva_connect.intake.intake.bust_intake_doctype_cache",
 	},
-	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up)
-	# AND push the assignment to the rep's devices (gated, enqueued).
+	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
 		"after_insert": [
 			"tatva_connect.tasks.tasks.on_lead_assignment",
 			"tatva_connect.notifications.events.on_lead_assigned",
 		],
 	},
-	# Azure Blob offload: push bytes after the row + local file exist (core insert and
-	# thumbnailing untouched); delete the blob when the File is deleted. Gated by the
-	# CRM Azure Storage Settings kill-switch.
+	# Azure Blob offload: push bytes after the row + local file exist, delete the blob on File delete; gated by the CRM Azure Storage Settings kill-switch.
 	"File": {
-		# Screen enrolment-submission uploads beyond native size/extension/PDF checks
-		# (magic-byte + ClamAV). Scoped + gated inside guard_file; no-op for every other file.
+		# Screen enrolment-submission uploads beyond native checks (magic-byte + ClamAV); scoped + gated inside guard_file, no-op for every other file.
 		"before_insert": "tatva_connect.intake.guards.guard_file",
 		"validate": "tatva_connect.storage.file_events.apply_privacy_policy",
 		"after_insert": "tatva_connect.storage.file_events.after_insert",
@@ -189,12 +146,10 @@ doc_events = {
 	},
 }
 
-# Safety-net: re-sync every WATI account's templates every 6 hours so the local
-# mirror is almost always current (manual "Sync from WATI" stays real-time).
+# Safety-net: re-sync every WATI account's templates every 6h so the local mirror stays current (manual "Sync from WATI" stays real-time).
 scheduler_events = {
 	"cron": {
-		# Every 6h: WATI template mirror refresh + roll the raw API/webhook log up into
-		# the immortal CRM API Metric table (observability plane).
+		# Every 6h: WATI template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
 		"0 */6 * * *": [
 			"tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
 			"tatva_connect.observability.rollup.run",
@@ -206,49 +161,30 @@ scheduler_events = {
 	},
 }
 
-# Ship the CRM Form Scripts (WATI send-template + WhatsApp UI gate) from their .js
-# source files on every migrate — keeps them version-controlled and in sync.
+# Ship the CRM Form Scripts from their .js source files on every migrate — keeps them version-controlled and in sync.
 after_migrate = [
-	# Structural patches (indexes/Select options/custom fields). install-app baselines
-	# patches.txt WITHOUT running it, so these never land on a fresh DB — re-run them here
-	# (idempotent) so a clean install actually gets them. Schema before data.
+	# Structural patches (indexes/Select options/custom fields); install-app baselines patches.txt WITHOUT running it, so re-run them here (idempotent). Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
-	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT
-	# fix). Structural + idempotent — runs here for the same reason as schema_setup above.
+	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT fix); structural + idempotent, same reason as schema_setup above.
 	"tatva_connect.access.lockdown.apply",
-	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler
-	# path drifts out of the registry. Catalog after schema, drift after the rows exist.
+	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
+	"tatva_connect.seeds.seed_master_data",
+	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
 	"tatva_connect.automation.drift.assert_registered",
-	# Every notification grain must point at a real automation row (the ONE global gate);
-	# a drifting catalog fails the migrate, beside the automation drift check above.
+	# Every notification grain must point at a real automation row (the ONE global gate); a drifting catalog fails the migrate.
 	"tatva_connect.notifications.drift.assert_registered",
 	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
 	"tatva_connect.access.lockdown.assert_locked",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
-	# Master-data seeds: install-app baselines patches.txt without running it, so seed
-	# here (idempotent; runs after fixtures so Linked masters exist; safe on every migrate).
-	"tatva_connect.seeds.seed_master_data",
 ]
 
-# Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture
-# (the WATI Settings doctype ships as its own doctype JSON in this app).
+# Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the WATI Settings doctype ships as its own doctype JSON).
 fixtures = [
-	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT shipped as fixtures. Frappe's
-	# migrate runs remove_orphan_entities() (frappe/migrate.py), which deletes any standard
-	# Workspace / Workspace Sidebar that has no backing FILE under the app — so a fixture-only
-	# space gets pruned on every migrate. Each space therefore ships as STANDARD FILES, the
-	# Frappe-native, prune-proof way (model sync auto-imports them):
-	#   <module>/workspace/<slug>/<slug>.json        e.g. tatva_connect/workspace/automations/…
-	#   workspace_sidebar/<name>.json                e.g. workspace_sidebar/automations.json
-	# A new space just drops its two files there. Only the dashboard CONTENT below stays fixtures
-	# (Dashboard Chart / Number Card have no module-folder sync).
-	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no
-	# module-folder auto-sync), so they ship as name-scoped fixtures. The Dashboard Chart
-	# SOURCE that powers the custom charts is module-standard (observability/dashboard_chart_source/)
-	# and syncs on migrate. Name-filtered so export never vacuums other apps' charts/cards.
+	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
+	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
 		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
 		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
@@ -258,39 +194,25 @@ fixtures = [
 	]]]},
 	{
 		"dt": "Custom Field",
-		# Full parity (schema-as-code): ship EVERY custom field we add to native doctypes,
-		# not a curated subset, so a fresh `bench migrate` reproduces the ENTIRE Lead schema
-		# (all 42 CRM Lead fields incl. routing/stage/headline/footprint/child-links) on a
-		# clean server. Every Custom Field on these doctypes is ours (modules own native
-		# fields in JSON, not as Custom Fields); workflow_state is Frappe-managed (excluded).
+		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).
 		"filters": [
 			["dt", "in", ["CRM Lead", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
-	# WhatsApp Message: ship ONLY our field by name — never vacuum crm/frappe_whatsapp's
-	# own custom fields on this shared doctype.
+	# WhatsApp Message: ship ONLY our field by name — never vacuum crm/frappe_whatsapp's own custom fields on this shared doctype.
 	{"dt": "Custom Field", "filters": [["name", "in", ["WhatsApp Message-custom_failed_reason"]]]},
-	# Field-property overrides on CRM data-model doctypes (profile Select fields with
-	# no options -> free-text, so form-written values both store AND display).
+	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
-		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override
-		# follows the field (the migration recreates these on the new doctype + drops the stale Plan ones).
+		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
 		"CRM Drug Program Profile-nivo_indication-fieldtype",
 		"CRM Drug Program Profile-nivo_indication-options",
-		# Scoping fix: exclude the secondary (history) Link fields from User Permission
-		# matching, so a Program/Vertical-scoped user is filtered by the CURRENT field
-		# only. Without this, a blank/different previous_program/origin_vertical fails the
-		# match under strict perms and HIDES valid in-scope leads. See docs/plans.
+		# Scoping fix: exclude the secondary (history) Link fields from User Permission matching so a scoped user is filtered by the CURRENT field only (else blank/different history HIDES valid in-scope leads).
 		"CRM Lead-custom_previous_program-ignore_user_permissions",
 		"CRM Lead-custom_origin_vertical-ignore_user_permissions",
-		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0).
-		# Vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
+		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0); vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
 		"CRM Lead-custom_current_program-permlevel",
-		# Field governance (Phase 3): clinical + patient fields are API-owned -> read-only
-		# (agents can't hand-edit). Lead-detail fields stay writable. Priority Text is
-		# admin-only (permlevel 1). Global default grid columns via in_list_view on the
-		# child profile DocFields (NOT the per-user gear).
+		# Field governance (Phase 3): clinical + patient fields are API-owned -> read-only; lead-detail fields stay writable; global default grid columns via in_list_view on child profile DocFields.
 		"CRM Lead-mobile_no-read_only",
 		"CRM Lead-first_name-read_only",
 		"CRM Lead-last_name-read_only",
@@ -319,20 +241,14 @@ fixtures = [
 		"CRM Plan Profile-member_id-in_list_view",
 		"CRM Plan Profile-payment_link-in_list_view",
 		"CRM Plan Profile-plan_name-in_list_view",
-		# WATI Bearer tokens are long JWTs (>300 chars); raise the native token field's
-		# form length cap (300 -> 1000) so an operator can paste a real token. Column is
-		# already TEXT, so this is form-validation only (no DB alter, no fork).
+		# WATI Bearer tokens are long JWTs (>300 chars); raise the token field's form length cap (300 -> 1000) so an operator can paste a real token (column is already TEXT — form-validation only).
 		"WhatsApp Account-token-length",
-		# Declutter (WATI-only): frappe_whatsapp's WhatsApp Account ships Meta-handshake
-		# fields we never use (we're WATI, never Meta). Hide them so the form shows exactly
-		# one inbound secret — our custom_webhook_token — and no dead Meta inputs. Values are
-		# untouched (hidden, not dropped); no fork.
+		# Declutter (WATI-only): hide frappe_whatsapp's Meta-handshake fields we never use, so the form shows just our custom_webhook_token (values hidden, not dropped).
 		"WhatsApp Account-webhook_verify_token-hidden",
 		"WhatsApp Account-app_id-hidden",
 		"WhatsApp Account-business_id-hidden",
 		"WhatsApp Account-phone_id-hidden",
-		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our WATI
-		# text-template path doesn't use, so the form shows just template + variable mapping + account.
+		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our WATI text-template path doesn't use, so the form shows just template + variable mapping + account.
 		"WhatsApp Notification-code-hidden",
 		"WhatsApp Notification-attach_document_print-hidden",
 		"WhatsApp Notification-custom_attachment-hidden",
@@ -342,21 +258,13 @@ fixtures = [
 		"WhatsApp Notification-attach_from_field-hidden",
 		"WhatsApp Notification-button_fields-hidden",
 	]]]},
-	# NOTE: only schema-as-code ships as fixtures (Custom Field = the columns; Property
-	# Setter = field-level overrides). Business/master DATA is NOT seeded — it ships as
-	# manual SQL in db-seeds/ (gitignored, date+commit named) that the operator runs
-	# post-migrate, then activates via the relevant Settings form. The app comes up
-	# DORMANT on a fresh DB. Moved out of fixtures: CRM Vertical / Group / Program (was
-	# taxonomy), CRM Fields Layout (was UI layouts). Reference data (CRM City) is still
-	# seeded via seed_india_cities (intrinsic, identical everywhere).
+	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 ]
 
 # Apps
 # ------------------
 
-# Hard deps: we override frappe_whatsapp doctypes and extend crm. Declaring them
-# enforces install order so the custom_field.json fixture (which has WhatsApp Account
-# fields) never aborts and silently drops the CRM Lead fields with it.
+# Hard deps: we override frappe_whatsapp doctypes and extend crm; declaring them enforces install order so the custom_field fixture never aborts and drops the CRM Lead fields.
 required_apps = ["crm", "frappe_whatsapp"]
 
 # Each item in the list will be shown as an app in the apps page
@@ -375,8 +283,7 @@ required_apps = ["crm", "frappe_whatsapp"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/tatva_connect/css/tatva_connect.css"
-# Shared Desk helpers for the webhook account forms (token generator + server-sourced
-# URL banner); both account Client Scripts call into this one asset (no copy-paste).
+# Shared Desk helpers for the webhook account forms (token generator + URL banner); both account Client Scripts call this one asset.
 app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
 
 # include js, css files in header of web template
@@ -542,17 +449,13 @@ app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
 
 # Request Events
 # ----------------
-# Observability: stamp a monotonic start on every request; the after_request logger
-# below reads it to compute latency for the watched endpoints.
+# Observability: stamp a monotonic start on every request; the after_request logger reads it to compute latency for watched endpoints.
 before_request = [
 	"tatva_connect.observability.capture.stamp_start",
 	# Stricter per-IP/per-phone rate limit on the enrolment web-form submit (scoped + gated inside).
 	"tatva_connect.intake.guards.throttle_intake",
 ]
-# 1. Rewrite framework-layer errors (bad key / malformed body / not-whitelisted) on
-#    partner-API paths into the unified {status:error, error:{code,message}} contract.
-# 2. Log one raw row per partner-API / inbound-webhook hit (runs last, after the
-#    response status is final). Both are no-ops for other endpoints.
+# Rewrite framework-layer errors on partner-API paths into the unified error contract, then log one raw row per partner-API/webhook hit (runs last); both no-op for other endpoints.
 after_request = [
 	"tatva_connect.api._base.normalise_partner_response",
 	"tatva_connect.observability.capture.log_request",

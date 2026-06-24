@@ -1,14 +1,4 @@
-"""Add a unique index on `WhatsApp Message.message_id`.
-
-Inbound ingest and status threading both key on message_id. Without a DB-level
-unique constraint, two workers processing the same redelivered WATI webhook can
-both pass the application-level `exists()` check and insert duplicate rows. A
-unique index closes that race (MySQL/MariaDB allow multiple NULLs, so rows
-without a message_id — e.g. drafts — are unaffected).
-
-Defensive: if legacy duplicate message_ids already exist the index can't be
-created; we log and skip rather than abort `bench migrate`.
-"""
+"""Add a unique index on WhatsApp Message.message_id to close the redelivered-webhook double-insert race (NULLs unaffected); skip+log if legacy dupes exist."""
 import frappe
 
 

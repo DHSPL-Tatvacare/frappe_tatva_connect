@@ -1,13 +1,4 @@
-"""Seed the CRM City master from the bundled India city+state list (dr5hn, ODbL).
-
-Each entry is [city_name, state]. State matches the form's State options exactly, so
-the cascade (pick State -> search its cities) works.
-
-CRM City is now keyed by the (city_name, state) tuple — name = "<city>::<state>"
-(autoname format:{city_name}::{state}) — so the same town name can legitimately
-recur across states. Idempotent: refreshes nothing in place (state is part of the
-key now); inserts only the composite rows that don't yet exist.
-"""
+"""Seed CRM City from the bundled India city+state list (dr5hn, ODbL), keyed "<city>::<state>" so a town name can recur across states; idempotent, inserts only missing composite rows."""
 import json
 import os
 

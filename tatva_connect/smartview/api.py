@@ -203,10 +203,12 @@ def get_view(name):
 	try:
 		predicate = frappe.parse_json(d.predicate) if d.predicate else None
 	except Exception:
+		frappe.log_error(title="smartview: corrupt predicate JSON", message=f"view={d.name}")
 		predicate = None
 	try:
 		columns = frappe.parse_json(d.columns) if d.columns else []
 	except Exception:
+		frappe.log_error(title="smartview: corrupt columns JSON", message=f"view={d.name}")
 		columns = []
 	return {
 		"name": d.name,

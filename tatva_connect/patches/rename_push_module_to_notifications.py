@@ -1,15 +1,4 @@
-"""Collapse the `Push Notifications` module into the unified `Notifications` module.
-
-Push was only ever ONE transport channel; the notifications domain — catalog / dispatch /
-presence / opt-in + the FCM transport + (later) email — is one self-contained module now,
-mirroring `whatsapp/` and `telephony/`. On an EXISTING site the old `Push Notifications`
-Module Def and its already-migrated doctypes (CRM Push Settings / CRM Push Subscription)
-must be repointed to `Notifications` BEFORE model sync reads the relocated JSONs (which now
-declare `module: Notifications`), or their required `module` Link is unresolvable.
-
-pre_model_sync, idempotent, and a no-op on a fresh install (install-app creates
-`Notifications` directly from modules.txt, so there is no old module to collapse).
-"""
+"""Collapse the `Push Notifications` module into unified `Notifications`: repoint its doctypes before model sync reads the relocated JSONs, then drop the empty old Module Def; pre-model-sync, idempotent."""
 import frappe
 from frappe.installer import add_module_defs
 

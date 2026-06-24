@@ -1,16 +1,4 @@
-"""Composite indexes on CRM API Metric (the immortal aggregate table).
-
-Doctype JSON can't express composite indexes, so — like
-recreate_whatsapp_message_id_index_composite — we build them in code. Idempotent
-(SHOW INDEX guard). Runs on after_migrate via schema_setup for fresh installs, and from
-patches.txt [post_model_sync] for existing DBs.
-
-    ix_gran_bucket   (granularity, bucket_start)            -> chart range queries
-    ix_gran_ep       (granularity, endpoint, bucket_start)  -> per-endpoint dashboards
-
-The raw CRM API Request Log only needs a single index on request_time, which is
-declared as `search_index` in its JSON, so Frappe builds it automatically — not here.
-"""
+"""Build CRM API Metric composite indexes (gran+bucket, gran+endpoint+bucket) in code — doctype JSON can't express composite indexes; idempotent (SHOW INDEX guard)."""
 import frappe
 
 _TABLE = "tabCRM API Metric"

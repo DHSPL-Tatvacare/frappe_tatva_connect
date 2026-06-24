@@ -48,6 +48,8 @@ def fire_rules(doc, method=None):
 		queue="short",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.get("in_test")),
+		job_id=f"automation-run-for-task::{doc.name}",
+		deduplicate=True,  # a job already queued/running for this task is not re-queued (no double-fire)
 		task_name=doc.name,
 	)
 

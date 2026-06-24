@@ -322,7 +322,7 @@ def _reverse_geocode(lat, lng):
 		results = (r.json() or {}).get("results") or []
 		return results[0]["formatted_address"] if results else None
 	except Exception:
-		frappe.log_error("location: reverse-geocode failed")
+		frappe.log_error(title="location: reverse-geocode failed", message=frappe.get_traceback())
 		return None
 
 
@@ -340,7 +340,7 @@ def geocode(address):
 		loc = results[0]["geometry"]["location"]
 		return flt(loc["lat"]), flt(loc["lng"])
 	except Exception:
-		frappe.log_error("location: forward-geocode failed")
+		frappe.log_error(title="location: forward-geocode failed", message=frappe.get_traceback())
 		return None
 
 
@@ -368,7 +368,7 @@ def geocode_search(query):
 			out.append({"address": res["formatted_address"], "lat": flt(loc["lat"]), "lng": flt(loc["lng"])})
 		return out
 	except Exception:
-		frappe.log_error("location: geocode_search failed")
+		frappe.log_error(title="location: geocode_search failed", message=frappe.get_traceback())
 		return []
 
 
@@ -397,7 +397,7 @@ def place_autocomplete(query):
 				out.append({"place_id": pp["placeId"], "description": (pp.get("text") or {}).get("text", "")})
 		return out
 	except Exception:
-		frappe.log_error("location: place_autocomplete failed")
+		frappe.log_error(title="location: place_autocomplete failed", message=frappe.get_traceback())
 		return []
 
 
@@ -420,7 +420,7 @@ def place_details(place_id):
 		return {"lat": flt(loc.get("latitude")), "lng": flt(loc.get("longitude")),
 				"address": j.get("formattedAddress", "")}
 	except Exception:
-		frappe.log_error("location: place_details failed")
+		frappe.log_error(title="location: place_details failed", message=frappe.get_traceback())
 		return None
 
 
@@ -652,6 +652,7 @@ def static_map(lat, lng, here_lat=None, here_lng=None):
 		params["zoom"] = _settings().static_map_zoom or 16
 		params["markers"] = f"color:red|{lat},{lng}"
 	resp = requests.get(STATICMAP_URL, params=params, timeout=_TIMEOUT)
+	resp.raise_for_status()  # a Google 403 (bad key/quota) returns an error PNG — don't serve it as a map
 	frappe.response["type"] = "binary"
 	frappe.response["filecontent"] = resp.content
 	frappe.response["filename"] = "map.png"

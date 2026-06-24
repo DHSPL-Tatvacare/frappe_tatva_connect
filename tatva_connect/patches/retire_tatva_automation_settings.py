@@ -1,11 +1,4 @@
-"""One-time: retire the orphaned `Tatva Automation Settings` single.
-
-It lost its only switch in the automation-seam refactor and held just the two WhatsApp
-template caps — a misnamed cousin of `CRM Tatva Automation`. The caps are WhatsApp config, so
-they move onto `CRM WhatsApp Settings`. Copy each value forward first (preserve a prod operator's
-tuned cap, and never clobber a value already set on WhatsApp Settings), then delete the DocType
-and its Singles rows so a re-run no-ops. On a fresh install the old single never existed -> clean no-op.
-"""
+"""Retire the orphaned `Tatva Automation Settings` single: copy its two WhatsApp template caps onto CRM WhatsApp Settings (without clobbering set values), then delete the DocType + Singles rows; idempotent."""
 import frappe
 
 _OLD = "Tatva Automation Settings"

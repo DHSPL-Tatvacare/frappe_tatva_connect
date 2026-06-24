@@ -1,14 +1,4 @@
-"""Register "Acefone" as a telephony medium across the CRM call doctypes.
-
-Adds "Acefone" to the Select options of:
-  * CRM Call Log.telephony_medium   (read_only field; the value the handler writes)
-  * CRM Telephony Agent.default_medium
-
-We do this via Property Setters created in code (rather than hand-written
-fixture JSON) because the exact stock options string can drift between crm
-versions; appending defensively to whatever is live avoids clobbering it.
-Idempotent: re-running is a no-op once "Acefone" is present.
-"""
+"""Append "Acefone" to the telephony_medium / default_medium Selects via code Property Setters (stock options drift between crm versions); idempotent."""
 import frappe
 
 _TARGETS = [
@@ -24,8 +14,7 @@ def execute():
 
 
 def _current_options(doctype: str, fieldname: str) -> str:
-	"""The live Select options: a Property Setter override if present, else the
-	doctype's own field definition."""
+	"""The live Select options: a Property Setter override if present, else the field's own definition."""
 	ps = frappe.db.get_value(
 		"Property Setter",
 		{"doc_type": doctype, "field_name": fieldname, "property": "options"},

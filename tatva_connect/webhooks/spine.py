@@ -99,6 +99,8 @@ def _persist_raw(service, event, payload, account):
 		return doc.name
 	except Exception:
 		frappe.db.rollback()
+		# the raw log is the durability guarantee behind the fast ACK — never lose a failure silently
+		frappe.log_error(title="webhook spine: raw-log persist failed", message=frappe.get_traceback())
 		return None
 
 
@@ -109,7 +111,7 @@ def _mark_log(log, status):
 	try:
 		frappe.db.set_value("Integration Request", log, "status", status, update_modified=False)
 	except Exception:
-		pass
+		frappe.log_error(title="webhook spine: mark-log status flip failed", message=frappe.get_traceback())
 
 
 # ---------------------------------------------------------------------------

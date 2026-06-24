@@ -16,7 +16,8 @@
   "bulk_max_records",
   "list_max_page",
   "list_default_page",
-  "file_download_timeout_seconds"
+  "file_download_timeout_seconds",
+  "file_download_max_mb"
  ],
  "fields": [
   {"fieldname": "section_break_rate", "fieldtype": "Section Break", "label": "Rate limits"},
@@ -29,7 +30,8 @@
   {"fieldname": "bulk_max_records", "fieldtype": "Int", "label": "Bulk Max Records", "non_negative": 1, "description": "Max records per bulk write call. 0 is rejected (an unbounded bulk is a footgun). Blank = code default (100)."},
   {"fieldname": "list_max_page", "fieldtype": "Int", "label": "List Max Page", "non_negative": 1, "description": "Max records returned per read/list call. 0 is rejected. Blank = code default (200)."},
   {"fieldname": "list_default_page", "fieldtype": "Int", "label": "List Default Page", "non_negative": 1, "description": "Page size when the caller omits `limit`. 0 is rejected. Blank = code default (20)."},
-  {"fieldname": "file_download_timeout_seconds", "fieldtype": "Int", "label": "File Download Timeout (seconds)", "non_negative": 1, "description": "Timeout when re-hosting an attachment from a partner-supplied source URL. 0 is rejected. Blank = code default (30)."}
+  {"fieldname": "file_download_timeout_seconds", "fieldtype": "Int", "label": "File Download Timeout (seconds)", "non_negative": 1, "description": "Timeout when re-hosting an attachment from a partner-supplied source URL. 0 is rejected. Blank = code default (30)."},
+  {"fieldname": "file_download_max_mb", "fieldtype": "Int", "label": "File Download Max Size (MB)", "non_negative": 1, "description": "Max size (MB) of an attachment re-hosted from a partner-supplied source URL; a larger download is rejected. 0 is rejected. Blank = code default (25)."}
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,

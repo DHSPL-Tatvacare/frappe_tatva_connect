@@ -1,10 +1,4 @@
-"""Provider-neutral WhatsApp spine.
-
-Renames the WATI-anchored doctypes and replaces the `custom_is_wati` flag with the
-`custom_provider` Select. Runs before model sync so the renamed doctypes and the new
-field are already in place when the JSON and fixtures sync. Idempotent; a fresh install
-(nothing to rename) is a clean no-op.
-"""
+"""Rename the WATI-anchored WhatsApp doctypes to a provider-neutral spine and replace the custom_is_wati flag with the custom_provider Select (pre-model-sync); idempotent."""
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 
@@ -23,8 +17,7 @@ def execute():
 
 
 def _column_exists(table, column):
-	"""True if the column physically exists on the table. Checked against information_schema
-	rather than frappe.db.has_column, which can report a stale/meta value after a raw drop."""
+	"""True if the column physically exists; checked via information_schema (frappe.db.has_column can report stale after a raw drop)."""
 	return bool(
 		frappe.db.sql(
 			"""SELECT 1 FROM information_schema.COLUMNS

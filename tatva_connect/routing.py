@@ -133,6 +133,8 @@ def leads_for_number_and_account(
 			if resolved == account:
 				out.append(name)
 		except Exception:
-			# one lead's ambiguous/raising routing must not block the others
+			# one lead's ambiguous/raising routing must not block the others — but log it so a
+			# genuine misconfig (e.g. two equally-specific rules) surfaces instead of vanishing
+			frappe.log_error(title="routing: lead account resolve failed", message=frappe.get_traceback())
 			continue
 	return out

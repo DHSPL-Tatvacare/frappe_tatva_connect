@@ -47,6 +47,7 @@ DEFAULTS = {
 	"list_max_page": 200,
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
+	"file_download_max_mb": 25,
 }
 # Rate/burst fields treat 0 as "unlimited"; everything else is a cap where 0 is rejected.
 _RATE_FIELDS = ("per_token_rate", "per_token_burst", "global_rate", "global_burst")

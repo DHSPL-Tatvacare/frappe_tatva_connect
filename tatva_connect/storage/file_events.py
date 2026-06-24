@@ -24,10 +24,6 @@ from tatva_connect import automation
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
-def _is_settings_doctype(dt):
-	return bool(dt) and dt.endswith("Settings")
-
-
 def _public_attachment_doctypes() -> set:
 	"""Operator-listed doctypes whose attachments may be public (config, empty by default)."""
 	raw = frappe.db.get_single_value("CRM Azure Storage Settings", "public_attachment_doctypes") or ""
@@ -36,19 +32,19 @@ def _public_attachment_doctypes() -> set:
 
 def apply_privacy_policy(doc, method=None):
 	"""Fail-closed file privacy (runs on File.validate): an attachment is PRIVATE unless its
-	doctype is a *Settings doctype (logos/banners) or operator-listed public in CRM Azure
-	Storage Settings. Unattached files keep the uploader's choice. is_private only gates
-	serving (see storage/api.download_file); storage is one private container either way.
+	doctype is operator-listed public in CRM Azure Storage Settings (Public Attachment
+	Doctypes). Unattached files keep the uploader's choice. is_private only gates serving
+	(see storage/api.download_file); storage is one private container either way.
 
 	The toggle (Storage::File::privacy) governs ONLY whether the operator's PUBLIC exceptions
 	are honored. The private floor is unconditional — OFF can only make a file MORE private,
-	never leak one (invariant 15 is fail-closed, never operator-disableable into a leak)."""
+	never leak one (invariant 15 is fail-closed, never operator-disableable into a leak).
+	Privacy is decided ONLY by the explicit operator allowlist — never inferred from a doctype
+	name — so a doctype the operator never listed always defaults private."""
 	dt = doc.attached_to_doctype
 	if not dt:
 		return
-	allow_public = automation.is_enabled("Storage::File::privacy") and (
-		_is_settings_doctype(dt) or dt in _public_attachment_doctypes()
-	)
+	allow_public = automation.is_enabled("Storage::File::privacy") and dt in _public_attachment_doctypes()
 	doc.is_private = 0 if allow_public else 1
 
 

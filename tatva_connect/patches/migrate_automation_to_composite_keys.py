@@ -1,13 +1,4 @@
-"""One-time: rename `CRM Tatva Automation` rows from flat keys to composite `::` keys.
-
-The automation registry moved from flat keys (e.g. `wati`, `acefone`) to grain-scoped
-composite primary keys (e.g. `WhatsApp::WATI::messaging`). This patch renames each existing
-row in place, which PRESERVES every operator's tuned Enabled state across the PK rename
-(the new seeder would otherwise re-seed switches dormant).
-
-Idempotent: each rename skips if the old key is already gone or the new key already exists.
-No-op on a fresh install — the old flat keys never existed there.
-"""
+"""Rename CRM Tatva Automation rows from flat keys to composite `::` keys in place, preserving each operator's tuned Enabled state across the PK rename; idempotent."""
 import frappe
 
 _RENAMES = {

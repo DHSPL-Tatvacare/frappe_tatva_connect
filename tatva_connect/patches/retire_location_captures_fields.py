@@ -1,11 +1,4 @@
-"""Retire the superseded CRM Lead "Location Captures" section + HTML field.
-
-The activity/location rebuild collapsed the two separate Desk sections (Activity Timeline +
-Location Captures) into ONE unified "Activity & Location" view rendered into
-custom_activity_timeline_html. The old fields are gone from the fixture, but Frappe's fixture
-sync does NOT delete a Custom Field that disappears from the JSON — so the stale rows + DB
-columns linger. This removes them. Idempotent: a no-op once they're gone.
-"""
+"""Delete the superseded CRM Lead "Location Captures" section + HTML Custom Fields (folded into the unified Activity & Location view); fixture sync never drops them, so remove explicitly; idempotent."""
 import frappe
 
 _STALE = (

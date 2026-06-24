@@ -85,9 +85,20 @@ def _load_bytes(data):
 	if file_url:
 		import requests
 
-		resp = requests.get(file_url, timeout=_cfg()["file_download_timeout_seconds"])
+		from tatva_connect.utils import assert_safe_public_url
+
+		assert_safe_public_url(file_url)  # SSRF: block internal/metadata targets before fetching
+		cfg = _cfg()
+		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
+		resp = requests.get(file_url, timeout=cfg["file_download_timeout_seconds"], stream=True)
 		resp.raise_for_status()
-		return resp.content
+		chunks, total = [], 0
+		for chunk in resp.iter_content(64 * 1024):
+			total += len(chunk)
+			if total > max_bytes:
+				frappe.throw(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]))
+			chunks.append(chunk)
+		return b"".join(chunks)
 	if content_b64:
 		try:
 			return base64.b64decode(content_b64, validate=True)
