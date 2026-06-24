@@ -56,7 +56,7 @@ _AGG_SELECT = ", ".join([
 
 def run():
 	"""Scheduler entrypoint. Idempotent; safe to run as often as you like."""
-	if frappe.db.sql(f"SELECT GET_LOCK('{_LOCK}', 0)")[0][0] != 1:
+	if frappe.db.sql(f"SELECT GET_LOCK('{_LOCK}', 0)")[0][0] != 1:  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		return  # another worker holds the lock — skip this tick
 	try:
 		lag = int(frappe.db.get_single_value(SETTINGS, "lag_seconds") or 300)
@@ -70,7 +70,7 @@ def run():
 		# 'from' = last watermark, else oldest surviving raw row, else 7 days back.
 		frm = frappe.db.get_single_value(SETTINGS, "last_rolled_until")
 		if not frm:
-			frm = frappe.db.sql(f"SELECT MIN(request_time) FROM `{RAW}`")[0][0]
+			frm = frappe.db.sql(f"SELECT MIN(request_time) FROM `{RAW}`")[0][0]  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		frm = get_datetime(frm) if frm else (now_datetime() - dt.timedelta(days=7))
 
 		log = f"nothing to do (window {frm} >= {to})"
@@ -85,13 +85,13 @@ def run():
 		frappe.db.set_single_value(SETTINGS, "last_run_at", now_datetime())
 		frappe.db.set_single_value(SETTINGS, "last_run_log", log)
 	finally:
-		frappe.db.sql(f"SELECT RELEASE_LOCK('{_LOCK}')")
+		frappe.db.sql(f"SELECT RELEASE_LOCK('{_LOCK}')")  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		frappe.db.commit()
 
 
 def _rollup_raw_to_5min(frm, to):
 	"""Tier 1: raw request rows -> 5-min buckets over the closed window [frm, to)."""
-	frappe.db.sql(
+	frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"""
 		INSERT INTO `{AGG}`
 			(name, creation, modified, owner, modified_by, docstatus, idx,
@@ -111,7 +111,7 @@ def _rollup_raw_to_5min(frm, to):
 		""",
 		{"frm": frm, "to": to},
 	)
-	return frappe.db.sql(
+	return frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"SELECT COUNT(*) FROM `{RAW}` WHERE request_time >= %(frm)s AND request_time < %(to)s",
 		{"frm": frm, "to": to},
 	)[0][0]
@@ -121,7 +121,7 @@ def _rollup_metric(src_gran, dst_gran, secs, frm, to):
 	"""Tiers 2 & 3: re-aggregate finer metric rows into coarser buckets by SUM/MIN/MAX.
 	Lower bound widened to the start of the dst-bucket containing `frm`, so a coarse bucket
 	is always rebuilt from ALL its source rows, not just the new slice."""
-	frappe.db.sql(
+	frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"""
 		INSERT INTO `{AGG}`
 			(name, creation, modified, owner, modified_by, docstatus, idx,
@@ -143,7 +143,7 @@ def _rollup_metric(src_gran, dst_gran, secs, frm, to):
 		""",
 		{"src": src_gran, "dst": dst_gran, "secs": secs, "frm": frm, "to": to},
 	)
-	return frappe.db.sql(
+	return frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"""
 		SELECT COUNT(*) FROM `{AGG}`
 		WHERE granularity = %(dst)s
@@ -157,7 +157,7 @@ def _rollup_metric(src_gran, dst_gran, secs, frm, to):
 def _purge_5min(days):
 	"""Drop fine-grain rows past the retention window. Hourly/daily are immortal."""
 	cutoff = now_datetime() - dt.timedelta(days=int(days))
-	frappe.db.sql(
+	frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"DELETE FROM `{AGG}` WHERE granularity = '5min' AND bucket_start < %(c)s",
 		{"c": cutoff},
 	)

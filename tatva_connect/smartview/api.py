@@ -274,7 +274,7 @@ def _pqc_criterion(driving_name, driving_table):
 	# Fresh DocType -> renders as `tab<Doctype>` (NOT aliased), so a PQC that prefixes
 	# `tabX`.col still binds, and a bare col binds to the subquery's only table.
 	src = DocType(driving_name)
-	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn("({0})".format(cond)))
+	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn("({0})".format(cond)))  # sqli-ok: framework PQC string from get_permission_query_conditions() — not user input
 	return driving_table.name.isin(sub)
 
 
@@ -369,11 +369,11 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 					.where(PseudoColumn("`_tc_rn` = 1"))
 				).as_(alias)
 				query = query.left_join(sub).on(
-					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))
+					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 				)
 			else:
 				query = query.left_join(child_tbl).on(
-					PseudoColumn(
+					PseudoColumn(  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 						"`{0}`.`parent` = `{1}`.`name` AND `{0}`.`parenttype` = '{2}'".format(
 							alias, driving_tbl, driving_name
 						)

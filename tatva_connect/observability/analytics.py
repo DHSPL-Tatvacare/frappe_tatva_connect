@@ -67,7 +67,7 @@ def series(metric, granularity, frm, to, filters=None):
 	"""Time-series points for one metric: returns (labels, values) over [frm, to)."""
 	conds, params = _where(granularity, filters)
 	params.update(frm=frm, to=to)
-	rows = frappe.db.sql(
+	rows = frappe.db.sql(  # sqli-ok: constant AGG table + _SUMS/DIMENSIONS identifiers; filter values bound via %()s
 		f"""SELECT bucket_start, {_SUMS}
 			FROM `{AGG}`
 			WHERE {' AND '.join(conds)} AND bucket_start >= %(frm)s AND bucket_start < %(to)s
@@ -85,7 +85,7 @@ def series(metric, granularity, frm, to, filters=None):
 def _card(metric, filters, hours, fieldtype):
 	conds, params = _where("hour", frappe.parse_json(filters) if isinstance(filters, str) else filters)
 	params["frm"] = add_to_date(now_datetime(), hours=-hours)
-	row = frappe.db.sql(
+	row = frappe.db.sql(  # sqli-ok: constant AGG table + _SUMS/DIMENSIONS identifiers; filter values bound via %()s
 		f"SELECT {_SUMS} FROM `{AGG}` WHERE {' AND '.join(conds)} AND bucket_start >= %(frm)s",
 		params,
 		as_dict=True,
