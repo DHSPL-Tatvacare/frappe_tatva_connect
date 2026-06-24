@@ -110,7 +110,9 @@ class TestIntakeBrainParity(FrappeTestCase):
 			"doctype": "CRM Enrolment Submission",
 			"intake_form": _FORM,
 			"patient_name": name,
-			"phone": phone,
+			# Phone fieldtype requires a country code on insert (what the real Web Form
+			# control always sends); lookups below normalise via to_e164 either way.
+			"phone": phone if phone.startswith("+") else "+91 " + phone,
 			"state": "Karnataka",
 			"city": city,
 			"nivolumab_dosage": dosage,
