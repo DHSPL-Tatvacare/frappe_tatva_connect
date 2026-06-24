@@ -185,28 +185,8 @@ def sync_headline_metrics(doc, method=None):
 		doc.set(parent_field, row.get(lab_field))
 
 
-@frappe.whitelist()
-def lead_section_gate(reference_name=None):
-	"""Does this lead belong to the oncology drug-program world? The Data-tab gate
-	(lead_data_tab_gate.js) calls this to decide which profile sections to show: a
-	drug-program lead sees the Drug Program section and hides the metabolic ones; a
-	metabolic lead does the reverse.
-
-	The 'world' is CONFIG, not code: each `CRM Program` row self-declares it via the
-	`custom_is_drug_program` flag. A new oncology program = a CRM Program row with that
-	box ticked — no code change, and the JS never hardcodes a program list.
-
-	Fail-safe: any error returns drug_program=False and is logged, so the gate shows
-	everything (a wrong hide could strand data) rather than failing silently."""
-	if not reference_name:
-		return {"drug_program": False}
-	# Gate OUTSIDE the try: the fail-safe below swallows exceptions, but a read denial
-	# must propagate (never silently resolve a hidden lead's section world).
-	frappe.has_permission("CRM Lead", "read", doc=reference_name, throw=True)
-	try:
-		program = frappe.db.get_value("CRM Lead", reference_name, "custom_current_program")
-		is_drug = bool(program) and bool(frappe.db.get_value("CRM Program", program, "custom_is_drug_program"))
-		return {"drug_program": is_drug}
-	except Exception:
-		frappe.log_error(title="lead_section_gate failed", message=frappe.get_traceback())
-		return {"drug_program": False}
+# lead_section_gate() RETIRED — the Data-tab drug-vs-metabolic section gate is now resolved
+# server-side inside the projection (tatva_connect.lead.detail: the program "world" via
+# CRM Program.custom_is_drug_program), and rendered by the native fork panel (tatva/DetailPanel.vue).
+# Its only caller (lead/form_scripts/data_tab_gate.js) is archived to
+# archive/lead-detail-native-promotion/. No DOM section-hiding hack remains.

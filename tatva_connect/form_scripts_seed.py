@@ -16,7 +16,11 @@ SCRIPTS = [
 	# "Hide Status Pill (CRM Lead)" (hide_status_pill.js) RETIRED — lead lifecycle is now the native
 	# grain-scoped stage pill (custom_stage) in the CRM fork; nothing to hide. Archived to
 	# archive/lead-stage-retired-hide-status-pill/. Disabled idempotently via RETIRED below.
-	("Data Tab Program Gate (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/data_tab_gate.js"),
+	# "Data Tab Program Gate (CRM Lead)" (data_tab_gate.js) RETIRED — the Data tab is now the native
+	# grain/brain-aware panel in the CRM fork (frontend/src/tatva/DetailPanel.vue, fed by
+	# tatva_connect.lead.detail.lead_detail). Drug-vs-metabolic section applicability is resolved
+	# server-side in the projection (the program "world"), so the DOM section-hiding hack is gone.
+	# Archived to archive/lead-detail-native-promotion/. Disabled idempotently via RETIRED below.
 	("Email Attach (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/email_attach.js"),
 	("Delete Modal Fit (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/delete_modal_fit.js"),
 	# "Log Activity (CRM Lead)" (activity_log.js) RETIRED in Phase 2 — the ad-hoc punch is now native in
@@ -44,6 +48,7 @@ RETIRED = [
 	"WATI Failed Reason (CRM Lead)",  # -> native Tooltip on the failed Badge in WhatsAppArea.vue
 	"Task Location Capture (CRM Task)",  # Phase B: v1 location folded into the activity flow (task_activity.js + save_activity/enforce_location)
 	"Near Me (CRM Lead)",  # -> native Near Me page (fork pages/NearMe.vue) + tatva_connect/near_me/api.py
+	"Data Tab Program Gate (CRM Lead)",  # -> native Data tab (fork tatva/DetailPanel.vue) + tatva_connect/lead/detail.py; applicability resolved server-side
 ]
 
 
