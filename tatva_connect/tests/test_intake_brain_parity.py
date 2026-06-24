@@ -111,6 +111,7 @@ class TestIntakeBrainParity(FrappeTestCase):
 			"custom_group": _GROUP,
 			"custom_current_program": _PROGRAM,
 			"mappings": [
+				{"source_field": "phone", "fieldtype": "Phone", "target_table": "lead", "target_field": "mobile_no"},
 				{"source_field": "patient_name", "target_table": "lead", "target_field": "first_name"},
 				{"source_field": "nivolumab_dosage", "manual_field": "nivolumab_dosage_manual",
 				 "target_table": "drug", "target_field": "nivo_dosage"},

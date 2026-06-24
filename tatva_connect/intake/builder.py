@@ -15,13 +15,14 @@ import re
 import frappe
 from frappe import _
 
-# Fields every per-form submission table carries, independent of the contract.
-# `intake_form` is the back-link the wildcard router reads to resolve the contract;
-# `phone` is the lead dedup anchor the fold always reads (intrinsic to every intake);
-# `prescription` is the optional attachment the fold surfaces onto the lead.
+# The ONLY field every per-form submission table carries, independent of the contract:
+# the hidden back-link the wildcard router reads to resolve the contract. Everything the
+# patient sees is declared in the contract's grid — nothing else is injected (no hardcoding).
 _INTAKE_FORM_FIELD = "intake_form"
-_PHONE_FIELD = "phone"
-_PRESCRIPTION_FIELD = "prescription"
+
+# Layout / display fieldtypes — they appear on the Web Form for structure but are NOT
+# storage columns on the submission DocType (and never map to a lead field).
+_LAYOUT_FIELDTYPES = {"Section Break", "Column Break", "Page Break", "HTML"}
 
 # Mirror of frappe's own DocType-name rule (doctype.py START_WITH_LETTERS_PATTERN):
 # start with a letter, then letters / digits / space / underscore / hyphen. We
@@ -64,20 +65,53 @@ def _safe_fieldname(fieldname: str) -> str:
 	return fieldname
 
 
-def _source_fields(cfg) -> list[str]:
-	"""The submission-side columns the contract declares — the distinct `source_field`
-	(and `manual_field`) of every mapping row. Validated as safe identifiers."""
-	names: list[str] = []
+def _field_label(m) -> str:
+	"""Operator's custom label, else a title-cased fieldname (no baked label)."""
+	return (m.get("label") or "").strip() or frappe.unscrub(m.source_field)
+
+
+def _row_fields(cfg) -> list[dict]:
+	"""The contract's declared fields, validated — the ONE source both the submission DocType
+	columns and the Web Form Field rows derive from (so the two fronts are always identical).
+	One entry per mapping row (carrying its real fieldtype/label/reqd/options + back-ref to the
+	mapping for show-if), plus any companion `manual_field` as a plain Data field."""
+	rows: list[dict] = []
+	seen: set[str] = set()
 	for m in cfg.mappings:
-		for fn in (m.source_field, m.manual_field):
-			if fn and fn not in names:
-				names.append(_safe_fieldname(fn))
-	return names
+		fn = _safe_fieldname((m.source_field or "").strip())
+		if fn in seen:
+			continue
+		seen.add(fn)
+		rows.append(
+			{
+				"fieldname": fn,
+				"fieldtype": (m.get("fieldtype") or "Data").strip(),
+				"label": _field_label(m),
+				"reqd": 1 if m.get("reqd") else 0,
+				"options": (m.get("options") or "").strip() or None,
+				"mapping": m,
+			}
+		)
+		manual = (m.get("manual_field") or "").strip()
+		if manual and manual not in seen:
+			seen.add(manual)
+			rows.append(
+				{
+					"fieldname": _safe_fieldname(manual),
+					"fieldtype": "Data",
+					"label": frappe.unscrub(manual),
+					"reqd": 0,
+					"options": None,
+					"mapping": None,
+				}
+			)
+	return rows
 
 
 def _docfields(cfg) -> list[dict]:
-	"""The full DocField list for the per-form submission DocType: the hidden back-link,
-	the prescription attachment, then one Data column per declared source field."""
+	"""DocField list for the per-form submission DocType: the hidden back-link + one column per
+	DATA-bearing contract field, each carrying the contract's own fieldtype/options. Layout /
+	display types (Section/Column/Page Break, HTML) are web-form-only and are NOT columns."""
 	fields = [
 		{
 			"fieldname": _INTAKE_FORM_FIELD,
@@ -86,12 +120,15 @@ def _docfields(cfg) -> list[dict]:
 			"hidden": 1,
 			"read_only": 1,
 			"default": cfg.name,
-		},
-		{"fieldname": _PHONE_FIELD, "label": "Patient Phone Number", "fieldtype": "Phone", "reqd": 1},
-		{"fieldname": _PRESCRIPTION_FIELD, "label": "Upload Prescription", "fieldtype": "Attach"},
+		}
 	]
-	for fn in _source_fields(cfg):
-		fields.append({"fieldname": fn, "label": frappe.unscrub(fn), "fieldtype": "Data"})
+	for r in _row_fields(cfg):
+		if r["fieldtype"] in _LAYOUT_FIELDTYPES:
+			continue
+		df = {"fieldname": r["fieldname"], "label": r["label"], "fieldtype": r["fieldtype"], "reqd": r["reqd"]}
+		if r["options"]:
+			df["options"] = r["options"]
+		fields.append(df)
 	return fields
 
 
@@ -152,33 +189,27 @@ def _depends_on(field: str, op: str, value: str) -> str | None:
 	return None
 
 
-def _show_if_by_source(cfg) -> dict:
-	"""{source_field: mapping} so a Web Form Field input can pick up its own show-if. The
-	source_field is the Web Form Field's fieldname; show_if_field references another such field."""
-	out = {}
-	for m in cfg.mappings:
-		if m.source_field and m.get("show_if_op"):
-			out.setdefault(m.source_field, m)
-	return out
-
-
-def _web_form_fields(cfg, source_fields: list[str]) -> list[dict]:
-	"""Web Form Field rows — one input per declared source field, plus the prescription
-	attach. The hidden back-link is NOT a form input (it's defaulted server-side). Each
-	field's structured show-if is compiled to depends_on (+ mandatory_depends_on if reqd)."""
-	show_if = _show_if_by_source(cfg)
-	rows = [{"fieldname": _PHONE_FIELD, "label": "Patient Phone Number", "fieldtype": "Phone", "reqd": 1}]
-	for fn in source_fields:
-		row = {"fieldname": fn, "label": frappe.unscrub(fn), "fieldtype": "Data"}
-		m = show_if.get(fn)
-		if m:
+def _web_form_fields(cfg) -> list[dict]:
+	"""Web Form Field rows — one per declared contract field (incl. layout fields, for form
+	structure), each with its fieldtype / label / reqd / options and compiled show-if. The
+	hidden back-link is NOT a form input (it's defaulted server-side). The grid IS this list:
+	editor and published form are the same set, in the same order — no shadow representation."""
+	rows: list[dict] = []
+	for r in _row_fields(cfg):
+		is_layout = r["fieldtype"] in _LAYOUT_FIELDTYPES
+		row = {"fieldname": r["fieldname"], "label": r["label"], "fieldtype": r["fieldtype"]}
+		if r["reqd"] and not is_layout:
+			row["reqd"] = 1
+		if r["options"]:
+			row["options"] = r["options"]
+		m = r["mapping"]
+		if m and m.get("show_if_op"):
 			dep = _depends_on(m.get("show_if_field"), m.get("show_if_op"), m.get("show_if_value"))
 			if dep:
 				row["depends_on"] = dep
-				if m.get("reqd"):
+				if r["reqd"] and not is_layout:
 					row["mandatory_depends_on"] = dep
 		rows.append(row)
-	rows.append({"fieldname": _PRESCRIPTION_FIELD, "label": "Upload Prescription", "fieldtype": "Attach"})
 	return rows
 
 
@@ -204,7 +235,6 @@ _SETTINGS_COLUMNS = (
 	"meta_title",
 	"meta_description",
 	"success_url",
-	"banner_image",
 	"success_title",
 	"success_message",
 )
@@ -234,8 +264,6 @@ def _ensure_web_form(cfg, dt: str) -> str:
 	rebuilt from the contract each sync — the contract is the ONE writer of these columns.
 	Access defaults (anonymous / no-login / multiple) live as a code fallback so a blank
 	contract is still sane; an operator value always wins. Returns the Web Form name."""
-	source_fields = _source_fields(cfg)
-
 	values = {
 		"title": cfg.form_name,
 		"route": _web_form_route(cfg),
@@ -244,9 +272,9 @@ def _ensure_web_form(cfg, dt: str) -> str:
 		"anonymous": 1 if cfg.get("anonymous") is None else cfg.get("anonymous"),
 		"login_required": cfg.get("login_required") or 0,
 		"allow_multiple": 1 if cfg.get("allow_multiple") is None else cfg.get("allow_multiple"),
-		# Banner / after-submit (Text Editor on both sides; introduction -> introduction_text).
+		# Introduction (Text Editor, sanitised HTML incl. any inline banner image) -> introduction_text.
 		"introduction_text": cfg.get("introduction"),
-		"web_form_fields": _web_form_fields(cfg, source_fields),
+		"web_form_fields": _web_form_fields(cfg),
 		# List columns reference real DocType fields; the back-link is a safe, present column.
 		"list_columns": [{"fieldname": _INTAKE_FORM_FIELD, "label": "Intake Form", "fieldtype": "Data"}],
 	}

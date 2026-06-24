@@ -7,57 +7,105 @@
  "engine": "InnoDB",
  "field_order": [
   "source_field",
-  "manual_field",
+  "fieldtype",
+  "label",
+  "reqd",
+  "options",
+  "map_section",
   "target_table",
   "target_field",
+  "map_col",
+  "manual_field",
   "master_doctype",
+  "showif_section",
   "show_if_field",
   "show_if_op",
+  "showif_col",
   "show_if_value"
  ],
  "fields": [
   {
    "columns": 2,
-   "description": "Field name on the submission (the picked value).",
+   "description": "The web-form field name (a plain identifier, e.g. patient_name). Becomes the submission column.",
    "fieldname": "source_field",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Source Field",
+   "label": "Field",
    "reqd": 1
   },
   {
    "columns": 2,
-   "description": "Optional companion 'Other / enter manually' field, used when the pick is empty or 'Other'.",
-   "fieldname": "manual_field",
+   "default": "Data",
+   "description": "The web-form input type (same set as the native Web Form builder).",
+   "fieldname": "fieldtype",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Fieldtype",
+   "options": "Data\nPhone\nSelect\nDate\nDatetime\nTime\nCheck\nInt\nFloat\nCurrency\nSmall Text\nText\nText Editor\nAttach\nAttach Image\nLink\nPassword\nRating\nSignature\nColor\nDuration\nHTML\nSection Break\nColumn Break\nPage Break",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Label shown on the public form (defaults to a title-cased Field name).",
+   "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Manual Field"
+   "label": "Custom Label"
   },
   {
    "columns": 1,
-   "description": "Where it lands. lead = CRM Lead; plan/care/lab/drug = the matching child profile; note = an FCRM Note.",
+   "fieldname": "reqd",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Mandatory"
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.fieldtype=='Select' || doc.fieldtype=='Link'",
+   "description": "For Select: one option per line. For Link: the target DocType.",
+   "fieldname": "options",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Options"
+  },
+  {
+   "fieldname": "map_section",
+   "fieldtype": "Section Break",
+   "label": "Maps to Lead / Profile"
+  },
+  {
+   "description": "Where this field's value lands. lead = CRM Lead; plan/care/lab/drug = the matching child profile; note = an FCRM Note. Leave blank for layout-only fields (Section/Column Break, HTML).",
    "fieldname": "target_table",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "label": "Target Table",
-   "options": "lead\nplan\ncare\nlab\ndrug\nnote",
-   "reqd": 1
+   "options": "\nlead\nplan\ncare\nlab\ndrug\nnote"
   },
   {
-   "columns": 2,
-   "description": "The fieldname on the resolved doctype the value lands in (for note: the Note title).",
+   "description": "The fieldname on the resolved doctype the value lands in (for note: the Note title). One row must target lead → mobile_no (the lead's phone).",
    "fieldname": "target_field",
    "fieldtype": "Autocomplete",
-   "in_list_view": 1,
-   "label": "Target Field",
-   "reqd": 1
+   "label": "Target Field"
   },
   {
-   "columns": 2,
-   "description": "If manual value used, auto-create this master record (so it joins the pick-list next time).",
+   "fieldname": "map_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Optional companion 'Other / enter manually' field, used when the pick is empty or 'Other'.",
+   "fieldname": "manual_field",
+   "fieldtype": "Data",
+   "label": "Manual Field"
+  },
+  {
+   "description": "If a manual value is used, auto-create this master record (so it joins the pick-list next time).",
    "fieldname": "master_doctype",
    "fieldtype": "Data",
    "label": "Master DocType"
+  },
+  {
+   "fieldname": "showif_section",
+   "fieldtype": "Section Break",
+   "label": "Show If (conditional visibility)"
   },
   {
    "description": "Show this field only when another field meets the condition below (compiled to depends_on).",
@@ -72,6 +120,10 @@
    "options": "\nis_checked\nis_not_checked\nis_empty\nis_not_empty\nequals"
   },
   {
+   "fieldname": "showif_col",
+   "fieldtype": "Column Break"
+  },
+  {
    "description": "The value to compare against (used only by the 'equals' operator).",
    "fieldname": "show_if_value",
    "fieldtype": "Data",
@@ -81,7 +133,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-24 00:00:00.000000",
+ "modified": "2026-06-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Field Map",

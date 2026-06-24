@@ -92,6 +92,7 @@ class TestIntakeBuilderSpine(FrappeTestCase):
 			"custom_group": _GROUP,
 			"custom_current_program": _PROGRAM,
 			"mappings": [
+				{"source_field": "phone", "fieldtype": "Phone", "target_table": "lead", "target_field": "mobile_no"},
 				{"source_field": "patient_name", "target_table": "lead", "target_field": "first_name"},
 				{"source_field": "city_text", "target_table": "lead", "target_field": "custom_city"},
 			],
@@ -119,8 +120,10 @@ class TestIntakeBuilderSpine(FrappeTestCase):
 		self.assertTrue(frappe.db.exists("DocType", dt))
 		self.assertTrue(frappe.db.get_value("DocType", dt, "custom"))
 		meta = frappe.get_meta(dt)
-		for fn in ("intake_form", "phone", "prescription", "patient_name", "city_text"):
+		# Only the contract's fields (+ the hidden back-link) — nothing hardcoded; no prescription.
+		for fn in ("intake_form", "phone", "patient_name", "city_text"):
 			self.assertTrue(meta.has_field(fn), f"per-form doctype missing column {fn}")
+		self.assertFalse(meta.has_field("prescription"), "prescription must NOT be auto-injected anymore")
 		# The DB table actually exists (the doctype is real, not virtual).
 		self.assertTrue(frappe.db.table_exists(dt), f"table tab{dt} was not created")
 

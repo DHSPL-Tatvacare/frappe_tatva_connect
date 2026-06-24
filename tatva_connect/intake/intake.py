@@ -134,7 +134,10 @@ def _fold_submission_to_lead(doc, cfg):
 	# Resolve the form into a partner-shaped payload using intake's OWN field logic.
 	# parent_fields / child_allow are intake's tight allowlist — exactly the form's
 	# mapped targets (§2c) — built here from cfg.mappings, NOT the partner catalog.
-	item = {"mobile_no": doc.get("phone")}  # RAW phone; the brain's _norm_phone + doc_events canonicalise
+	# No hardcoded phone field: mobile_no is populated by the mapping loop below from whichever
+	# field the contract maps to lead.mobile_no (validated to exist on save). The brain's
+	# _norm_phone + doc_events canonicalise the raw value to E.164.
+	item = {}
 	parent_fields = []
 	child_allow = {}
 	notes = []
@@ -192,7 +195,7 @@ def _fold_submission_to_lead(doc, cfg):
 			}
 		).insert(ignore_permissions=True)
 
-	_attach_prescription(doc, doc_lead.name)
+	_attach_files(doc, doc_lead.name)
 
 	# Stamp the result back on the submission — but only on a doctype that carries these
 	# result fields (the CRM Enrolment Submission staging table). A per-form runtime sink
@@ -278,7 +281,7 @@ def _process_submission_legacy(doc, method=None):
 			}
 		).insert(ignore_permissions=True)
 
-	_attach_prescription(doc, lead.name)
+	_attach_files(doc, lead.name)
 
 	doc.db_set("lead", lead.name, update_modified=False)
 	doc.db_set("processed", 1, update_modified=False)
@@ -382,12 +385,14 @@ def _apply_target(lead, table, field, val):
 	return None
 
 
-def _attach_prescription(doc, lead_name):
-	"""The Attach field already stored a File against the submission; also surface
-	it on the lead so it shows in the lead's attachments."""
-	url = doc.get("prescription")
-	if not url:
-		return
+def _attach_files(doc, lead_name):
+	"""Surface every uploaded attachment onto the lead so files show in its attachments.
+	No hardcoded field name: we read the submission's OWN Attach / Attach Image fields, so a
+	form can declare any attachment (prescription, report, ...) and all of them are linked."""
 	from tatva_connect.storage import file_manager
 
-	file_manager.link(url, attached_to_doctype="CRM Lead", attached_to_name=lead_name)
+	for df in doc.meta.fields:
+		if df.fieldtype in ("Attach", "Attach Image"):
+			url = doc.get(df.fieldname)
+			if url:
+				file_manager.link(url, attached_to_doctype="CRM Lead", attached_to_name=lead_name)
