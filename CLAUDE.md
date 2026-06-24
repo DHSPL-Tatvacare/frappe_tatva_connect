@@ -73,6 +73,7 @@ Packaging: scaffold with `bench new-app`; `pyproject.toml`, not `setup.py`; `.gi
 14. **Dead/legacy code is archived, not stranded.** Move it to gitignored `archive/`, remove it from the active code, and leave a commented trace in the relevant index file (e.g. `patches.txt`). Never silently delete.
 15. **File privacy is fail-closed.** Every attachment is **private** unless its doctype is a `*Settings` doctype (logos) or operator-listed public in **CRM Azure Storage Settings → Public Attachment Doctypes**. Never hardcode a privacy doctype list — a forgotten patient doctype must default private, never leak.
 16. **No best guesses on inbound attribution.** Inbound messages/calls attach ONLY to a lead matched on **phone + the receiving account's grouping** (WhatsApp token / Acefone DID). No hit ⇒ **drop** (and log) — never fall back to first/most-recent/any-lead-by-phone.
+17. **Smart Views are 100% user-built — NEVER seeded.** Ship the engine (doctype, composer, catalog, grain entitlement, the authoring UI), not a single `CRM Smart View` record. No `is_standard` seed, no `after_migrate`/patch/fixture/db-seed that creates a view, no "starter" or "default" view of any kind — on a fresh DB the Smart Views tab starts **empty** and every view that ever exists was authored by a user through the editor. The only thing that exists in code is the machinery; the content is always the operator's/user's. (Stronger than invariant 4: a smart view is never "structurally intrinsic" — there is no exception.)
 
 ### B. How to work with me
 
