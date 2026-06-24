@@ -26,6 +26,22 @@ _ROUTING = ("source", "custom_vertical", "custom_group", "custom_current_program
 _INTAKE_FORM_FIELD = "intake_form"
 
 
+def target_doctype(target_table):
+	"""Resolve a mapping's target_table to the DOCTYPE whose fields it writes:
+	`lead` -> CRM Lead; a child table -> the child doctype (the CRM Lead Table field's
+	`options`, NOT the fieldname); `note` / unknown -> None. ONE resolver — the save-time
+	validation AND the builder field-discovery both call this, so a child-table fieldname
+	(`custom_drug_program_profile`) can never again be mistaken for a doctype."""
+	table = (target_table or "").strip()
+	if table == "lead":
+		return "CRM Lead"
+	cf = _TABLE.get(table)
+	if not cf:
+		return None
+	df = frappe.get_meta("CRM Lead").get_field(cf)
+	return df.options if df else None
+
+
 def _normalize_phone(raw: str) -> str:
 	digits = re.sub(r"\D", "", raw or "")
 	if len(digits) == 10:

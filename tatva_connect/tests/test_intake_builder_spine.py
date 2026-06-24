@@ -16,9 +16,9 @@ CRM Intake Form. No fixtures shipped; the grain masters are built minimally in s
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect import intake
 from tatva_connect.automation import seed
 from tatva_connect.intake import builder
+from tatva_connect.intake import intake
 from tatva_connect.whatsapp.phone import to_e164
 
 _INTAKE_SWITCH = "Lead::Enrolment::intake"

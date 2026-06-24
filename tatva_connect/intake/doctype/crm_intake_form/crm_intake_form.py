@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from tatva_connect.intake.intake import _TABLE
+from tatva_connect.intake.intake import target_doctype
 from tatva_connect.taxonomy.normalize import normalize_field
 
 
@@ -35,7 +35,7 @@ class CRMIntakeForm(Document):
 				)
 			if table == "note":
 				continue
-			dt = "CRM Lead" if table == "lead" else _TABLE.get(table)
+			dt = target_doctype(table)
 			if not dt:
 				frappe.throw(
 					_("Unknown Target Table '{0}' (source '{1}').").format(table, m.source_field or "?"),

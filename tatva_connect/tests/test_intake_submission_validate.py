@@ -34,7 +34,8 @@ class TestIntakeSubmissionValidate(FrappeTestCase):
 		_ensure("CRM Hospital", cls.hosp, hospital_name="Apollo", vertical=V, group=G, program=P)
 		cls.doc_doctor = "{0}::Dr A".format(cls.hosp)
 		_ensure("CRM Doctor", cls.doc_doctor, doctor_name="Dr A", hospital=cls.hosp)
-		# Out-of-grain hospital (different program) to prove the grain check bites
+		# Out-of-grain hospital (a real but different program) to prove the grain check bites
+		_ensure("CRM Program", "OtherProg", program_name="OtherProg")
 		cls.hosp_bad = "{0}::{1}::OtherProg::Fortis".format(V, G)
 		_ensure("CRM Hospital", cls.hosp_bad, hospital_name="Fortis", vertical=V, group=G, program="OtherProg")
 		if not frappe.db.exists("CRM Intake Form", FORM):

@@ -12,18 +12,9 @@ boolean `published` on the form the scaffolder already owns.
 import frappe
 from frappe import _
 
-# One source for the target_table -> child-doctype map: import it from intake.py,
-# never duplicate. lead -> CRM Lead; plan/care/lab/drug -> the child profile; note -> [].
-from tatva_connect.intake.intake import _TABLE
-
-
-def _resolve_doctype(target_table: str) -> str | None:
-	"""target_table -> the doctype whose fields can be picked. lead = CRM Lead; the child
-	profiles via the shared _TABLE; note has no schema (free-text Note title) -> None."""
-	table = (target_table or "").strip()
-	if table == "lead":
-		return "CRM Lead"
-	return _TABLE.get(table)  # None for "note" / anything unknown
+# ONE resolver, shared with the save-time validation — target_table -> the doctype whose
+# fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
+from tatva_connect.intake.intake import target_doctype as _resolve_doctype
 
 
 @frappe.whitelist()
