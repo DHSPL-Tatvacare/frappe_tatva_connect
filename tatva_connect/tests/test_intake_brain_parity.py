@@ -127,12 +127,22 @@ class TestIntakeBrainParity(FrappeTestCase):
 		self._made.append(("CRM Enrolment Submission", doc.name))
 		return doc
 
+	# A minimal but VALID PDF (parseable by the native File.check_content / pypdf pass).
+	_MIN_PDF = (
+		b"%PDF-1.4\n"
+		b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+		b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+		b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] >>endobj\n"
+		b"trailer<< /Size 4 /Root 1 0 R >>\n"
+		b"%%EOF\n"
+	)
+
 	def _make_private_file(self, attached_to):
 		"""A stored private File standing in for an uploaded prescription; returns its file_url."""
 		f = frappe.get_doc({
 			"doctype": "File",
 			"file_name": "rx.pdf",
-			"content": b"%PDF-1.4 test prescription",
+			"content": self._MIN_PDF,
 			"attached_to_doctype": "CRM Enrolment Submission",
 			"attached_to_name": attached_to,
 			"is_private": 1,
