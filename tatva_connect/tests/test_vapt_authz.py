@@ -134,15 +134,7 @@ class TestVAPTAuthz(FrappeTestCase):
 
     # ---------- L4: drift guard ----------
     def test_L4_locked_doctypes_have_no_all_or_guest_crud(self):
-        locked = ["Contact"]
-        bad = frappe.db.sql(
-            """
-            select parent, role from `tabDocPerm`
-              where parent in %(d)s and role in ('All','Guest') and (`write`=1 or `create`=1 or `delete`=1)
-            union
-            select parent, role from `tabCustom DocPerm`
-              where parent in %(d)s and role in ('All','Guest') and (`write`=1 or `create`=1 or `delete`=1)
-            """,
-            {"d": locked},
-        )
+        from tatva_connect.access import lockdown
+
+        bad = [g for dt in lockdown.LOCKED_MATRIX for g in lockdown.effective_all_guest_grants(dt)]
         self.assertEqual(bad, [], f"L4 BREACH: locked doctype(s) still open to All/Guest: {bad}")

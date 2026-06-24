@@ -55,19 +55,26 @@ def apply(*args, **kwargs):
 	frappe.clear_cache()
 
 
-def assert_locked(*args, **kwargs):
-	"""Fail the migrate if a locked doctype is open to All/Guest write/create/delete — the
-	Layer-4 drift guard, same idiom as automation.drift / notifications.drift assert_registered."""
-	locked = list(LOCKED_MATRIX)
-	bad = frappe.db.sql(
-		"""
-		select parent, role from `tabDocPerm`
-		  where parent in %(d)s and role in ('All','Guest') and (`write`=1 or `create`=1 or `delete`=1)
-		union
-		select parent, role from `tabCustom DocPerm`
-		  where parent in %(d)s and role in ('All','Guest') and (`write`=1 or `create`=1 or `delete`=1)
-		""",
-		{"d": locked},
+def effective_all_guest_grants(doctype):
+	"""All/Guest grants that EFFECTIVELY allow write/create/delete on `doctype`.
+
+	Resolves like Frappe does: when any Custom DocPerm exists for the doctype it OVERRIDES the
+	stock DocPerm (the stock rows still physically sit in `tabDocPerm` but are ignored), so we
+	read Custom DocPerm when present, else the stock DocPerm. Checking raw `tabDocPerm` alone is
+	wrong — it reports a false leak for a doctype we've already locked via Custom DocPerm.
+	"""
+	src = "Custom DocPerm" if frappe.db.exists("Custom DocPerm", {"parent": doctype}) else "DocPerm"
+	rows = frappe.get_all(
+		src,
+		filters={"parent": doctype, "role": ["in", ["All", "Guest"]]},
+		fields=["role", "write", "create", "delete"],
 	)
+	return [(doctype, r.role) for r in rows if r.write or r.create or r.delete]
+
+
+def assert_locked(*args, **kwargs):
+	"""Fail the migrate if a locked doctype is EFFECTIVELY open to All/Guest write/create/delete
+	— the Layer-4 drift guard, same idiom as automation.drift / notifications.drift."""
+	bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]
 	if bad:
 		frappe.throw(f"Permission lockdown drift — locked doctypes open to All/Guest: {bad}")
