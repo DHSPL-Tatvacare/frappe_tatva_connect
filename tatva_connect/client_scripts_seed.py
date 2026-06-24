@@ -22,6 +22,7 @@ SCRIPTS = [
 	("CRM Telephony Account Webhook Helpers", "CRM Telephony Account", "Form", "telephony/client_scripts/telephony_account.js"),
 	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
+	("CRM Intake Form Builder", "CRM Intake Form", "Form", "intake/client_scripts/crm_intake_form.js"),
 ]
 
 

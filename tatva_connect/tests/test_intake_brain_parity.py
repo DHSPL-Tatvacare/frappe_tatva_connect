@@ -90,11 +90,11 @@ class TestIntakeBrainParity(FrappeTestCase):
 			"custom_group": _GROUP,
 			"custom_current_program": _PROGRAM,
 			"mappings": [
-				{"source_field": "patient_name", "target": "lead:first_name"},
+				{"source_field": "patient_name", "target_table": "lead", "target_field": "first_name"},
 				{"source_field": "nivolumab_dosage", "manual_field": "nivolumab_dosage_manual",
-				 "target": "plan:drug_dosage"},
-				{"source_field": "nivolumab_indication", "target": "plan:indication"},
-				{"source_field": "remarks", "target": "note:Enrolment Remarks"},
+				 "target_table": "drug", "target_field": "nivo_dosage"},
+				{"source_field": "nivolumab_indication", "target_table": "drug", "target_field": "nivo_indication"},
+				{"source_field": "remarks", "target_table": "note", "target_field": "Enrolment Remarks"},
 			],
 		})
 		doc.insert(ignore_permissions=True)
@@ -173,11 +173,11 @@ class TestIntakeBrainParity(FrappeTestCase):
 		self.assertEqual(lead.source, _SOURCE)
 		# mapped lead field
 		self.assertEqual(lead.first_name, "Asha Test")
-		# child profile row
-		plan = lead.get("custom_plan_profile")
-		self.assertTrue(plan, "plan profile row missing")
-		self.assertEqual(plan[0].drug_dosage, "40 mg")
-		self.assertEqual(plan[0].indication, "NSCLC")
+		# child profile row (dosage/indication land on the drug-program child)
+		drug = lead.get("custom_drug_program_profile")
+		self.assertTrue(drug, "drug program profile row missing")
+		self.assertEqual(drug[0].nivo_dosage, "40 mg")
+		self.assertEqual(drug[0].nivo_indication, "NSCLC")
 		# FCRM Note
 		notes = frappe.get_all("FCRM Note", filters={
 			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
@@ -213,7 +213,7 @@ class TestIntakeBrainParity(FrappeTestCase):
 			}), 1, "more than one lead on the grain")
 		# the update took
 		self.assertEqual(lead2.first_name, "Asha Updated")
-		self.assertEqual(lead2.get("custom_plan_profile")[0].indication, "RCC")
+		self.assertEqual(lead2.get("custom_drug_program_profile")[0].nivo_indication, "RCC")
 
 	# --- PARITY: NEW path == legacy, on independent leads ---------------
 	def test_parity_new_vs_legacy(self):
@@ -245,12 +245,12 @@ class TestIntakeBrainParity(FrappeTestCase):
 				mismatches[k] = (nv, lv)
 		self.assertEqual(mismatches, {}, f"parent-field parity drift: {mismatches}")
 
-		# child plan profile: same mapped values
-		new_plan = new_lead.get("custom_plan_profile")
-		legacy_plan = legacy_lead.get("custom_plan_profile")
-		self.assertEqual(len(new_plan), len(legacy_plan))
-		self.assertEqual(new_plan[0].drug_dosage, legacy_plan[0].drug_dosage)
-		self.assertEqual(new_plan[0].indication, legacy_plan[0].indication)
+		# child drug-program profile: same mapped values (dosage/indication land here, not plan)
+		new_drug = new_lead.get("custom_drug_program_profile")
+		legacy_drug = legacy_lead.get("custom_drug_program_profile")
+		self.assertEqual(len(new_drug), len(legacy_drug))
+		self.assertEqual(new_drug[0].nivo_dosage, legacy_drug[0].nivo_dosage)
+		self.assertEqual(new_drug[0].nivo_indication, legacy_drug[0].nivo_indication)
 
 		# notes: same set of (title, content)
 		def note_set(lead):

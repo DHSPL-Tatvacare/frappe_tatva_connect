@@ -334,14 +334,25 @@ AUTOMATIONS = [
 	Auto(
 		key="Lead::Enrolment::intake",
 		fires_on="Doc Event",
-		trigger_detail="CRM Enrolment Submission · after_insert",
+		trigger_detail="CRM Enrolment Submission · after_insert · ANY per-form sink · after_insert (*)",
 		purpose=(
 			"Turns a submitted enrolment/intake form into a fully-populated lead, mapping each "
-			"answer to the right field and creating masters as needed.\n"
+			"answer to the right field and creating masters as needed. Each intake form has its own "
+			"runtime submission DocType; a single wildcard after_insert routes any of them through "
+			"the same lead-create brain (a cheap cached guard ignores every non-intake doctype).\n"
 			"Example: a patient submits the enrolment web form; a new lead is created with their "
 			"details, program, and attachments already filled in."
 		),
-		backs=["tatva_connect.intake.intake.process_submission"],
+		# process_submission = the legacy shared-staging sink; route_submission = the wildcard
+		# brain for per-form sinks; bust_intake_doctype_cache = the guard-set cache invalidator
+		# (a CRM Intake Form on_update/on_trash doc_event, hence backed here too).
+		backs=[
+			"tatva_connect.intake.intake.process_submission",
+			"tatva_connect.intake.intake.route_submission",
+			"tatva_connect.intake.intake.bust_intake_doctype_cache",
+			# CRM Intake Form on_update -> scaffold/sync the per-form DocType + Web Form.
+			"tatva_connect.intake.builder.sync_form",
+		],
 	),
 	Auto(
 		key="Intake::RateLimit::enforcement",

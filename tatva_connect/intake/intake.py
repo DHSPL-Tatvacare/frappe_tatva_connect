@@ -16,8 +16,14 @@ _TABLE = {
 	"plan": "custom_plan_profile",
 	"care": "custom_care_providers_profile",
 	"lab": "custom_lab_profile",
+	# The drug-program child holds Nivolumab dosage/indication (nivo_dosage / nivo_indication).
+	# Its absence here is the live data-loss bug — a `drug:*` mapping had nowhere to land.
+	"drug": "custom_drug_program_profile",
 }
 _ROUTING = ("source", "custom_vertical", "custom_group", "custom_current_program", "custom_origin_vertical")
+
+# The back-link the per-form submission row carries to its contract (set by the builder).
+_INTAKE_FORM_FIELD = "intake_form"
 
 
 def _normalize_phone(raw: str) -> str:
@@ -27,8 +33,75 @@ def _normalize_phone(raw: str) -> str:
 	return "+" + digits
 
 
+_INTAKE_DOCTYPES_CACHE_KEY = "tatva_connect:intake_doctypes"
+
+
+def _intake_doctypes() -> set:
+	"""The DocType names that are an enabled intake form's submission sink — the cheap
+	guard set the wildcard router checks. Memoised; busted on any CRM Intake Form write
+	(and on every sync_form). Names are DERIVED from the form name via the builder, so
+	there is no stored column to read."""
+	cached = frappe.cache().get_value(_INTAKE_DOCTYPES_CACHE_KEY)
+	if cached is None:
+		from tatva_connect.intake.builder import safe_doctype_name_for
+
+		cached = set()
+		# The wildcard fires site-wide, incl. during install before the contract table exists.
+		if frappe.db.table_exists("CRM Intake Form"):
+			for cfg in frappe.get_all("CRM Intake Form", filters={"enabled": 1}, fields=["name", "form_name"]):
+				dt = safe_doctype_name_for(frappe._dict(cfg))  # None for a legacy/invalid name
+				if dt and frappe.db.exists("DocType", dt):
+					cached.add(dt)
+		frappe.cache().set_value(_INTAKE_DOCTYPES_CACHE_KEY, cached)
+	return cached
+
+
+def bust_intake_doctype_cache(doc=None, method=None):
+	"""Drop the memoised intake-doctype guard set. doc_events hook on CRM Intake Form
+	(on_update/on_trash) AND called by builder.sync_form, so the wildcard router's guard
+	never serves a stale set after a form is added, toggled, or scaffolded."""
+	frappe.cache().delete_value(_INTAKE_DOCTYPES_CACHE_KEY)
+
+
+def route_submission(doc, method=None):
+	"""Wildcard after_insert (doc_events["*"]) — the ONE brain for EVERY per-form intake
+	sink. Fires site-wide, so it early-returns cheaply for any doctype that is not an
+	enabled intake form's submission table (a single cached set membership test). Runtime
+	per-form doctypes can't carry their own code hooks; the wildcard is the native,
+	single-brain way to process them. On a hit it runs the same fold as process_submission."""
+	if doc.doctype not in _intake_doctypes():
+		return
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return
+	if not doc.get(_INTAKE_FORM_FIELD):
+		return
+	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(_INTAKE_FORM_FIELD))
+	if not cfg.enabled:
+		return
+	_fold_submission_to_lead(doc, cfg)
+
+
 def process_submission(doc, method=None):
-	"""after_insert on the staging doctype -> upsert the CRM Lead via the partner brain.
+	"""after_insert on the CRM Enrolment Submission staging doctype -> upsert the lead.
+
+	The legacy shared-staging path. Resolves the contract then hands off to the ONE fold
+	(_fold_submission_to_lead) — the SAME body the wildcard router runs, so there is one
+	implementation, never a copy.
+	"""
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return
+	if doc.processed or not doc.intake_form:
+		return
+	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)
+	if not cfg.enabled:
+		return
+	_fold_submission_to_lead(doc, cfg)
+
+
+def _fold_submission_to_lead(doc, cfg):
+	"""The ONE fold: a resolved submission row + its contract -> a routed CRM Lead via the
+	partner brain. Shared by BOTH process_submission (CRM Enrolment Submission) and the
+	wildcard route_submission (per-form runtime doctypes) — one implementation, no copy.
 
 	Intake is a SECOND SOURCE feeding the ONE lead-create brain (partner._upsert_one):
 	the form is resolved into a partner-shaped payload + a grain descriptor, then handed
@@ -37,14 +110,6 @@ def process_submission(doc, method=None):
 	(value resolution + master match) and post-step (notes, prescription, stamp).
 	"""
 	from tatva_connect.api.partner import _upsert_one
-
-	if not automation.is_enabled("Lead::Enrolment::intake"):
-		return
-	if doc.processed or not doc.intake_form:
-		return
-	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)
-	if not cfg.enabled:
-		return
 
 	# Public form: never surface internal notices (e.g. assignment's "Shared with
 	# … Read access") to the patient. Request-scoped; auto-resets next request.
@@ -61,15 +126,17 @@ def process_submission(doc, method=None):
 		val = _resolve_value(doc, m)
 		if not val:
 			continue
-		prefix, _sep, field = (m.target or "").partition(":")
-		if prefix == "lead":
+		# ONE target representation: the structured (target_table, target_field) pair.
+		table = (m.target_table or "").strip()
+		field = (m.target_field or "").strip()
+		if table == "lead":
 			item[field] = val
 			parent_fields.append(field)
-		elif prefix in _TABLE:
-			cf = _TABLE[prefix]
+		elif table in _TABLE:
+			cf = _TABLE[table]
 			item.setdefault(cf, [{}])[0][field] = val
 			child_allow.setdefault(cf, []).append(field)
-		elif prefix == "note":
+		elif table == "note":
 			notes.append((field or "Note", val))
 
 	# Provenance (latest-source-wins): stamp which intake form sourced this lead. Sent on
@@ -111,8 +178,14 @@ def process_submission(doc, method=None):
 
 	_attach_prescription(doc, doc_lead.name)
 
-	doc.db_set("lead", doc_lead.name, update_modified=False)
-	doc.db_set("processed", 1, update_modified=False)
+	# Stamp the result back on the submission — but only on a doctype that carries these
+	# result fields (the CRM Enrolment Submission staging table). A per-form runtime sink
+	# may not, so guard each set on field existence (no stamp != failed processing).
+	meta = doc.meta
+	if meta.has_field("lead"):
+		doc.db_set("lead", doc_lead.name, update_modified=False)
+	if meta.has_field("processed"):
+		doc.db_set("processed", 1, update_modified=False)
 
 
 def _process_submission_legacy(doc, method=None):
@@ -169,7 +242,7 @@ def _process_submission_legacy(doc, method=None):
 		val = _resolve_value(doc, m)
 		if not val:
 			continue
-		note = _apply_target(lead, m.target, val)
+		note = _apply_target(lead, m.target_table, m.target_field, val)
 		if note:
 			notes.append(note)
 
@@ -213,9 +286,9 @@ def _resolve_value(doc, m):
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
 	if manual and (not picked or picked == "Others" or picked == "Other"):
 		if m.master_doctype:
-			# The display field the value lands in is the part after the target prefix
-			# (e.g. care:doctor_name -> doctor_name). Derived, not stored on the map.
-			display_field = (m.target or "").partition(":")[2] or None
+			# The display field the value lands in is the mapping's target_field
+			# (e.g. care / doctor_name). Read from the structured target.
+			display_field = (m.target_field or "").strip() or None
 			canonical = _ensure_master(m.master_doctype, display_field, manual)
 			return canonical or manual
 		return manual
@@ -275,17 +348,20 @@ def _ensure_master(doctype, display_field, value):
 	return d.get(display_field)
 
 
-def _apply_target(lead, target, val):
-	"""target = lead:field | plan:field | care:field | lab:field | note:Title.
-	Returns (title, content) for note targets (created after the lead is saved)."""
-	prefix, _, field = (target or "").partition(":")
-	if prefix == "lead":
+def _apply_target(lead, table, field, val):
+	"""Structured target: table in (lead|plan|care|lab|drug|note), field = the destination
+	fieldname (or the Note title for `note`). Returns (title, content) for note targets
+	(created after the lead is saved). Legacy comparator path only — the live fold inlines
+	this same dispatch (one representation, read both places)."""
+	table = (table or "").strip()
+	field = (field or "").strip()
+	if table == "lead":
 		lead.set(field, val)
-	elif prefix in _TABLE:
-		rows = lead.get(_TABLE[prefix])
-		row = rows[0] if rows else lead.append(_TABLE[prefix], {})
+	elif table in _TABLE:
+		rows = lead.get(_TABLE[table])
+		row = rows[0] if rows else lead.append(_TABLE[table], {})
 		row.set(field, val)
-	elif prefix == "note":
+	elif table == "note":
 		return (field or "Note", val)
 	return None
 

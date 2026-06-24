@@ -41,7 +41,7 @@ class TestIntakeSubmissionValidate(FrappeTestCase):
 			frappe.get_doc({
 				"doctype": "CRM Intake Form", "form_name": FORM, "enabled": 1,
 				"custom_vertical": V, "custom_group": G, "custom_current_program": P,
-				"mappings": [{"source_field": "patient_name", "target": "lead:first_name"}],
+				"mappings": [{"source_field": "patient_name", "target_table": "lead", "target_field": "first_name"}],
 			}).insert(ignore_permissions=True)
 
 	def _sub(self, **over):

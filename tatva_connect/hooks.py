@@ -135,6 +135,24 @@ doc_events = {
 	"CRM Enrolment Submission": {
 		"after_insert": "tatva_connect.intake.intake.process_submission",
 	},
+	# Per-form intake sinks are runtime custom DocTypes (one per CRM Intake Form), so they
+	# can't carry their own code hook — a single wildcard after_insert is the native way to
+	# process them. It early-returns cheaply (a cached set membership test) for every doctype
+	# that is NOT an enabled intake form's submission table.
+	"*": {
+		"after_insert": "tatva_connect.intake.intake.route_submission",
+	},
+	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache
+	# whenever a form is added, toggled, or removed so the guard never serves a stale set.
+	"CRM Intake Form": {
+		# On save: (1) scaffold/sync the per-form DocType + Web Form from the contract,
+		# (2) refresh the wildcard-router guard set so the new sink routes immediately.
+		"on_update": [
+			"tatva_connect.intake.builder.sync_form",
+			"tatva_connect.intake.intake.bust_intake_doctype_cache",
+		],
+		"on_trash": "tatva_connect.intake.intake.bust_intake_doctype_cache",
+	},
 	# Lead assigned to an agent -> raise a "Call Lead" task (on-lead-create follow-up)
 	# AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
