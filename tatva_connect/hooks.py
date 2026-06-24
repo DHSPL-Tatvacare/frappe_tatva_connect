@@ -54,6 +54,13 @@ override_whitelisted_methods = {
 	# Mirror LSQ: surface Task created/closed inside the Lead/Deal activity timeline
 	# (native timeline omits task lifecycle). Derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
+	# VAPT hardening — native crm methods that BYPASS the permission engine (get_all /
+	# ignore_permissions / un-gated get_doc), so the doctype matrix can't reach them.
+	# Intercept -> has_permission gate -> delegate to the unchanged native fn. No crm fork.
+	# See tatva_connect/access/native_guards.py.
+	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
+	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
+	"crm.integrations.api.add_task_to_call_log": "tatva_connect.access.native_guards.add_task_to_call_log",
 }
 
 # Smart Views — the grain surface. Read-only whitelisted endpoints (auto-discovered by
@@ -198,6 +205,9 @@ after_migrate = [
 	# patches.txt WITHOUT running it, so these never land on a fresh DB — re-run them here
 	# (idempotent) so a clean install actually gets them. Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
+	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT
+	# fix). Structural + idempotent — runs here for the same reason as schema_setup above.
+	"tatva_connect.access.lockdown.apply",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler
 	# path drifts out of the registry. Catalog after schema, drift after the rows exist.
 	"tatva_connect.automation.seed.sync_catalog",
@@ -205,6 +215,8 @@ after_migrate = [
 	# Every notification grain must point at a real automation row (the ONE global gate);
 	# a drifting catalog fails the migrate, beside the automation drift check above.
 	"tatva_connect.notifications.drift.assert_registered",
+	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
+	"tatva_connect.access.lockdown.assert_locked",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
