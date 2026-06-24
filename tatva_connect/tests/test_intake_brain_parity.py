@@ -105,12 +105,14 @@ class TestIntakeBrainParity(FrappeTestCase):
 
 	def _submission(self, phone, *, name="Asha Test", dosage="40 mg",
 	                indication="NSCLC", remarks="Started cycle 1", prescription=None):
+		city = self._ensure("CRM City", "Bengaluru::Karnataka", {"city_name": "Bengaluru", "state": "Karnataka"})
 		doc = frappe.get_doc({
 			"doctype": "CRM Enrolment Submission",
 			"intake_form": _FORM,
 			"patient_name": name,
 			"phone": phone,
 			"state": "Karnataka",
+			"city": city,
 			"nivolumab_dosage": dosage,
 			"nivolumab_indication": indication,
 			"remarks": remarks,
