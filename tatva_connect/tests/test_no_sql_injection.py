@@ -9,9 +9,16 @@ SOURCE (AST, not the running app) and FAILS if any line builds raw SQL by STRING
   * `frappe.db.sql(...)` / `frappe.db.sql_ddl(...)` / `frappe.db.multisql(...)`
   * `PseudoColumn(...)`        (pypika raw fragment — bypasses pypika's value escaping)
 
-"Interpolation" = the first/query argument is an f-string, a `"...".format(...)` call, or a
-`%` / `+` string concatenation. A plain string literal (optionally with `%(name)s` bind
-params as a separate argument) is the SAFE form and is never flagged.
+"Interpolation" = the first/query argument is an f-string, a `"...".format(...)`/`.format_map(...)`
+call, or a `%` / `+` string concatenation. A plain string literal (optionally with `%(name)s`
+bind params as a separate argument) is the SAFE form and is never flagged.
+
+KNOWN GAPS (a tripwire, not a proof — do NOT defeat it, use bind params): the lock inspects only
+the FIRST POSITIONAL arg of the sink, so a query assembled in a local then passed by name
+(`q = f"..."; frappe.db.sql(q)`), a `str.join()`/comprehension-built string, or a `query=`
+keyword arg are NOT caught. These need taint analysis; flagging them statically would be
+false-positive noise. The rule remains: bind every value as `%(name)s` — never build SQL from
+request data by any means.
 
 A flagged line is CLEARED only by an explicit `# sqli-ok: <reason>` marker on any line of the
 call — the tiny, documented allowlist for the handful of spots that interpolate a CONSTANT
@@ -30,7 +37,12 @@ import ast
 import os
 import subprocess
 
-from frappe.tests.utils import FrappeTestCase
+try:  # This is a pure-AST source lock — it runs in the bench AND standalone (tcsec, no frappe).
+	from frappe.tests.utils import FrappeTestCase
+except ModuleNotFoundError:
+	import unittest
+
+	FrappeTestCase = unittest.TestCase
 
 # The raw-SQL sinks: a string reaching any of these is executed verbatim (no escaping).
 SQL_SINKS = ("sql", "sql_ddl", "multisql", "PseudoColumn")
@@ -47,9 +59,9 @@ def _is_interpolation(node):
 	the dangerous shape. A bare literal/Name/bind-param call is NOT interpolation."""
 	if isinstance(node, ast.JoinedStr):  # f"...{x}..."
 		return True
-	if isinstance(node, ast.Call):  # "...".format(...)
+	if isinstance(node, ast.Call):  # "...".format(...) / "...".format_map(...)
 		fn = node.func
-		return isinstance(fn, ast.Attribute) and fn.attr == "format"
+		return isinstance(fn, ast.Attribute) and fn.attr in ("format", "format_map")
 	if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):  # "..." % x  /  "..." + x
 		return True
 	return False
@@ -150,6 +162,7 @@ class TestNoSqlInjection(FrappeTestCase):
 		# f-string, .format(), %-format, +concat -> all dangerous.
 		self.assertTrue(_is_interpolation(self._first_call_arg0('frappe.db.sql(f"SELECT {x}")')))
 		self.assertTrue(_is_interpolation(self._first_call_arg0('frappe.db.sql("SELECT {0}".format(x))')))
+		self.assertTrue(_is_interpolation(self._first_call_arg0('frappe.db.sql("SELECT {a}".format_map(d))')))
 		self.assertTrue(_is_interpolation(self._first_call_arg0('frappe.db.sql("SELECT %s" % x)')))
 		self.assertTrue(_is_interpolation(self._first_call_arg0('frappe.db.sql("SELECT " + x)')))
 

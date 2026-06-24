@@ -12,8 +12,9 @@ invariants that together mean "not injectable":
   1. NO SQL ERROR        — a payload never raises a database error. The composer either matches
                            nothing or matches safely; it never produces malformed SQL.
   2. NO SCOPE BYPASS     — a tautology ("' OR 1=1 -- ") never widens the row set. A lead the
-                           caller is NOT entitled to (the CRM Lead permission_query_conditions
-                           the composer ANDs in) NEVER appears, and the row count never exceeds
+                           caller is NOT entitled to (the CRM Lead permission_query_conditions —
+                           registered by the upstream `crm` fork, ANDed into every composer query
+                           by api._pqc_criterion) NEVER appears, and the row count never exceeds
                            the entitled baseline. This is the one that matters: injection must
                            not defeat the grain/PQC scope.
   3. NO IDENTIFIER INJECTION — a column/sort/filter KEY that is not a catalog field_key is
@@ -64,6 +65,7 @@ SECRET_TAG = "ZSQLI_SECRET"      # a lead the caller must NEVER see, whatever th
 class TestSmartViewSqlInjection(FrappeTestCase):
 	def setUp(self):
 		self._made = []
+		self.visible = self.secret = None  # so tearDown never AttributeErrors if setUp throws early
 		self._seed_catalog()
 		self.user = self._seed_user()
 		self.visible = self._seed_lead(VISIBLE_TAG, owner=self.user)
@@ -75,7 +77,8 @@ class TestSmartViewSqlInjection(FrappeTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.delete("User Permission", {"allow": "CRM Lead", "for_value": self.visible})
+		if self.visible:
+			frappe.db.delete("User Permission", {"allow": "CRM Lead", "for_value": self.visible})
 		for dt, name in reversed(self._made):
 			frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
 
