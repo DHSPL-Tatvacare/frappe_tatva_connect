@@ -1,0 +1,20 @@
+# Candidate endpoints for the sqlmap DAST lane (`tcsec dast`).
+# One URL per line; '#' comments ignored. These are the request-input surfaces worth probing
+# for SQLi — whitelisted API methods that take client params and reach a query.
+#
+# USAGE (devbench only — never prod):
+#   1. Log into the devbench CRM, copy the `sid=...` session cookie.
+#   2. Probe one endpoint:
+#        python security/tcsec.py dast \
+#          --target "http://dev.localhost/api/method/tatva_connect.smartview.api.list_view?view=1" \
+#          --cookie "sid=<your-session-id>"
+#   3. Loop over this file:
+#        grep -vE '^\s*#|^\s*$' security/dast-targets.txt | while read -r u; do
+#          python security/tcsec.py dast --target "$u" --cookie "sid=<sid>"; done
+#
+# The harness refuses any host outside localhost/dev.localhost/127.0.0.1 unless you pass
+# --i-have-authorization (and you must NEVER point it at prod).
+
+# Examples — replace params with real values; uncomment to use:
+# http://dev.localhost/api/method/tatva_connect.smartview.api.list_view?view=1
+# http://dev.localhost/api/method/tatva_connect.near_me.api.search?lat=0&lng=0&q=x

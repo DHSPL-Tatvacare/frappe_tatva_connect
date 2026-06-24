@@ -61,3 +61,20 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
+
+# ── Security / test harness (driven by `security/tcsec.py`; see security/README.md) ──
+
+[tool.bandit]
+# SAST over the shipped app code. Excludes are NOT app attack surface:
+#   tests      — payload corpora (deliberate injection strings) + asserts; covered by the AST locks
+#   .devbench  — local docker bench clone (never shipped)
+#   archive    — dead/legacy code, out of active use
+#   node_modules / scripts — vendored JS / local-only migration utilities
+exclude_dirs = ["tests", ".devbench", "archive", "node_modules", "scripts"]
+
+[tool.pytest.ini_options]
+# `tcsec locks` invokes pytest with an EXPLICIT file allowlist (the decoupled AST scanners),
+# so it never collects the frappe-dependent runtime tests. These defaults just keep a bare
+# `pytest` run from wandering into the vendored/bench trees.
+norecursedirs = [".devbench", "archive", "node_modules", "dist", ".zudoku"]
+markers = ["static: pure-AST source lock, runnable without a bench"]

@@ -1,0 +1,72 @@
+rules:
+  # Raw SQL built by string interpolation reaching a Frappe raw-SQL sink → injection.
+  # Twin of tatva_connect/tests/test_no_sql_injection.py, in semgrep's dataflow engine.
+  - id: frappe-raw-sql-interpolation
+    languages: [python]
+    severity: ERROR
+    message: >
+      Raw SQL built by f-string/.format()/concatenation reaches frappe.db.sql. Use parameterised
+      queries (bind values via a separate arg) or pypika. See invariant A.1 / test_no_sql_injection.
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern-either:
+          - pattern: frappe.db.sql(f"...", ...)
+          - pattern: frappe.db.sql("...".format(...), ...)
+          - pattern: frappe.db.sql("..." % ..., ...)
+          - pattern: frappe.db.sql("..." + ..., ...)
+          - pattern: frappe.db.multisql(f"...", ...)
+
+  # ignore_permissions=True skips Frappe's has_permission gate — must be guarded/justified.
+  - id: frappe-ignore-permissions-true
+    languages: [python]
+    severity: WARNING
+    message: >
+      ignore_permissions=True bypasses the permission gate. Confirm an explicit auth check precedes
+      it (invariant A.1 / test_no_perm_bypass) and add a `# authz-ok: <reason>` marker if deliberate.
+    metadata:
+      cwe: "CWE-862: Missing Authorization"
+      owasp: "A01:2021 Broken Access Control"
+    patterns:
+      - pattern-either:
+          - pattern: $X.insert(ignore_permissions=True)
+          - pattern: $X.save(ignore_permissions=True)
+          - pattern: $X.delete(ignore_permissions=True)
+          - pattern: $X.submit(ignore_permissions=True)
+
+  # Shell command injection surface.
+  - id: subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: "subprocess called with shell=True — command injection risk. Pass an argv list instead."
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+
+  # TLS verification disabled — MITM exposure on outbound calls (WATI/Acefone/Azure).
+  - id: requests-verify-false
+    languages: [python]
+    severity: ERROR
+    message: "TLS verification disabled (verify=False) — MITM risk on an outbound HTTPS call."
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: requests.$M(..., verify=False, ...)
+      - pattern: requests.request(..., verify=False, ...)
+
+  # Weak hash for any security purpose.
+  - id: weak-hash-md5-sha1
+    languages: [python]
+    severity: WARNING
+    message: "MD5/SHA1 is cryptographically broken — use hashlib.sha256+ for any security use."
+    metadata:
+      cwe: "CWE-327: Use of a Broken Cryptographic Algorithm"
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)

@@ -1,0 +1,20 @@
+# Security + test harness deps for `tcsec` (see security/README.md).
+# Install into an ISOLATED pyenv venv, never the bench env:
+#   pyenv virtualenv 3.12.12 venv-python-frappe-sec
+#   pyenv activate venv-python-frappe-sec
+#   pip install -r security/requirements.txt
+#
+# Pinned because this repo is public and CI must be reproducible. Bump deliberately.
+
+bandit[toml,sarif]==1.9.4   # Python SAST (AST scanner)
+pip-audit==2.10.1           # dependency CVE / advisory scan
+detect-secrets==1.5.0       # secret-leak scan (repo is public)
+semgrep==1.167.0            # pattern SAST + custom Frappe-aware rules
+pytest==9.1.1               # standalone runner for the decoupled AST locks
+sqlmap==1.10.6              # DAST: active SQLi probe of live endpoints (devbench ONLY, never prod)
+ruff==0.15.19              # lint + format gate (quality lane; bandit stays the SAST authority)
+rich==15.0.0               # spinners, color, per-tool stat tables, output panels
+playwright==1.60.0         # --pdf: render branded HTML report → PDF (chromium installs to a
+                           # gitignored dir via PLAYWRIGHT_BROWSERS_PATH; pip pkg lives in the venv)
+# NOTE: `--explain` shells out to the `claude -p` CLI (uses your existing local login) — no
+# Anthropic SDK, no API key, no network call this harness manages. Install Claude Code separately.

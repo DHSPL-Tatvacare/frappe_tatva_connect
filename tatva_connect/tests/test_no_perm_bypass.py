@@ -22,7 +22,12 @@ in any whitelisted method with no guard/marker and it goes RED.
 import ast
 import os
 
-from frappe.tests.utils import FrappeTestCase
+try:  # This is a pure-AST source lock — it runs in the bench AND standalone (tcsec, no frappe).
+	from frappe.tests.utils import FrappeTestCase
+except ModuleNotFoundError:
+	import unittest
+
+	FrappeTestCase = unittest.TestCase
 
 # Tokens that prove a function authorizes (any one in the function's CODE — decorators +
 # executable statements, never docstrings/comments — clears its bypasses).
