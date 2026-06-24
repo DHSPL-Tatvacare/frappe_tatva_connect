@@ -26,6 +26,25 @@ _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _DEDUP_SWITCH = "Lead::CRM Lead::dedup"
 
 # The grain under test (mirrors the live "Nivolumab Enrolment" form).
+def _minimal_pdf():
+	"""Smallest PDF the native File.check_content (pypdf) accepts — real objects, xref, startxref, EOF."""
+	objs = [
+		b"<< /Type /Catalog /Pages 2 0 R >>",
+		b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] >>",
+	]
+	pdf, offsets = b"%PDF-1.4\n", []
+	for i, body in enumerate(objs, start=1):
+		offsets.append(len(pdf))
+		pdf += b"%d 0 obj" % i + body + b"\nendobj\n"
+	xref_pos = len(pdf)
+	pdf += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+	for off in offsets:
+		pdf += b"%010d 00000 n \n" % off
+	pdf += b"trailer<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref_pos)
+	return pdf
+
+
 _VERTICAL = "GoodFlip Care"
 _GROUP = "Anaya"
 _PROGRAM = "Nivolumab"
@@ -127,22 +146,12 @@ class TestIntakeBrainParity(FrappeTestCase):
 		self._made.append(("CRM Enrolment Submission", doc.name))
 		return doc
 
-	# A minimal but VALID PDF (parseable by the native File.check_content / pypdf pass).
-	_MIN_PDF = (
-		b"%PDF-1.4\n"
-		b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
-		b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
-		b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] >>endobj\n"
-		b"trailer<< /Size 4 /Root 1 0 R >>\n"
-		b"%%EOF\n"
-	)
-
 	def _make_private_file(self, attached_to):
 		"""A stored private File standing in for an uploaded prescription; returns its file_url."""
 		f = frappe.get_doc({
 			"doctype": "File",
 			"file_name": "rx.pdf",
-			"content": self._MIN_PDF,
+			"content": _minimal_pdf(),
 			"attached_to_doctype": "CRM Enrolment Submission",
 			"attached_to_name": attached_to,
 			"is_private": 1,
