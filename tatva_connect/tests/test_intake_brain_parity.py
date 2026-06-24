@@ -24,6 +24,7 @@ from tatva_connect.whatsapp.phone import to_e164
 
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _DEDUP_SWITCH = "Lead::CRM Lead::dedup"
+_SCREEN_SWITCH = "Intake::File::screening"  # keep OFF: this test is brain parity, not virus scanning
 
 # The grain under test (mirrors the live "Nivolumab Enrolment" form).
 def _minimal_pdf():
@@ -58,6 +59,7 @@ class TestIntakeBrainParity(FrappeTestCase):
 		self._made = []  # (doctype, name) torn down in reverse
 		self._set_switch(_INTAKE_SWITCH, 1)
 		self._set_switch(_DEDUP_SWITCH, 1)
+		self._set_switch(_SCREEN_SWITCH, 0)
 
 		self._ensure("CRM Vertical", _VERTICAL, {"vertical_name": _VERTICAL})
 		self._ensure("CRM Group", _GROUP, {"group_name": _GROUP})
