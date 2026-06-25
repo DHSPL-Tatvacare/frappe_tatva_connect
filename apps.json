@@ -1,5 +1,5 @@
 [
-  { "url": "https://github.com/devops-tatvacare/tatva_frappe_crm", "branch": "tatva" },
+  { "url": "https://github.com/DHSPL-Tatvacare/frappe_tatva_crm", "branch": "tatva" },
   { "url": "https://github.com/shridarpatil/frappe_whatsapp", "branch": "master" },
   { "url": "https://github.com/frappe/telephony", "branch": "develop" },
   { "url": "https://github.com/frappe/helpdesk", "branch": "v1.26.0" },
