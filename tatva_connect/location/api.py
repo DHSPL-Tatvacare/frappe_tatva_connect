@@ -663,6 +663,7 @@ def static_map(lat, lng, here_lat=None, here_lng=None):
 def test_connection():
 	"""Settings 'Check connection' button: reverse-geocode a fixed sample point and report the
 	resolved address — proves the key, billing, and the Geocoding API are all live."""
+	frappe.has_permission("CRM Maps Settings", "read", throw=True)
 	if not _api_key():
 		frappe.throw(_("Set a Google Maps API key first, then save."))
 	addr = _reverse_geocode(*_SAMPLE)

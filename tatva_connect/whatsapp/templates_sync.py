@@ -22,10 +22,13 @@ def sync_from_wati(account_name=None):
 	template namespace). Records are keyed per account so two tenants can share a
 	template name without clobbering each other.
 	"""
+	from crm.api.whatsapp import validate_access
+	validate_access()  # WhatsApp role gate (System Manager / Sales Manager / Sales User) — reps refresh their own account
 	if account_name:
 		accounts = [account_name]
 	else:
-		accounts = frappe.get_all("WhatsApp Account", filters={"custom_provider": "WATI"}, pluck="name")  # authz-ok: operator-only template sync over WATI config accounts, not user records
+		frappe.only_for(["System Manager", "Sales Manager"])  # the all-accounts sweep is managers/scheduler only (the rep UI always passes an account)
+		accounts = frappe.get_all("WhatsApp Account", filters={"custom_provider": "WATI"}, pluck="name")  # authz-ok: gated above; enumerates WATI config accounts, not user records
 	if not accounts:
 		frappe.throw("No WATI WhatsApp Account found to sync templates from.")
 

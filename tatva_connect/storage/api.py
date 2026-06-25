@@ -35,6 +35,7 @@ def download_file(file_name: str):
 @frappe.whitelist()
 def test_connection() -> str:
 	"""Settings button: prove the connection string reaches the account."""
+	frappe.has_permission("CRM Azure Storage Settings", "read", throw=True)
 	BlobStore().service.get_service_properties()
 	return _("Connection to Azure Blob Storage succeeded.")
 
@@ -43,10 +44,11 @@ def test_connection() -> str:
 def migrate_local_files(limit: int = 50) -> str:
 	"""Backfill existing local files (oldest first). Idempotent — already-offloaded rows
 	are filtered out. Re-run until it reports 0."""
+	frappe.has_permission("CRM Azure Storage Settings", "write", throw=True)
 	if not blob_store.is_enabled():
 		frappe.throw(_("Enable Azure Storage first."))
 
-	names = frappe.get_all(  # authz-ok: operator-only Azure backfill (gated on blob_store.is_enabled + System Manager), bulk maintenance over all files by design
+	names = frappe.get_all(  # authz-ok: caller gated above (Storage Settings write); bulk maintenance over all files by design
 		"File",
 		filters={
 			"custom_uploaded_to_azure": 0,
