@@ -20,13 +20,41 @@ the visibility brain — not this module. This module is purely the doctype-leve
 import frappe
 from frappe.permissions import reset_perms
 
+from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
+
 # doctype -> {role: (read, write, create, delete)}. ONLY these roles get access; every other
 # role is denied. Extend per the app-wide lock-list rollout (File, ToDo, HD Ticket, ...).
+# System Manager is listed on every row because a Custom DocPerm OVERRIDES the stock DocPerm
+# entirely — omit it and the stock System Manager grant would vanish.
 LOCKED_MATRIX = {
 	"Contact": {
 		"System Manager": (1, 1, 1, 1),
 		"Sales Manager": (1, 1, 1, 1),  # managers may delete (clean up duplicates/junk)
 		"Sales User": (1, 1, 1, 0),  # reps cannot delete
+	},
+	# WhatsApp is a CAPABILITY (whatsapp/roles.py), decoupled from Sales — these upstream
+	# frappe_whatsapp doctypes can't carry our perms in their own JSON, so we lock them here.
+	# This RELOCATES the crm fork's add_roles() grant (which is now guarded to defer to us).
+	"WhatsApp Message": {
+		"System Manager": (1, 1, 1, 1),
+		WHATSAPP_USER: (1, 1, 1, 0),  # send (create) + react (write) + read thread; no delete
+		WHATSAPP_ADMIN: (1, 1, 1, 1),
+	},
+	"WhatsApp Templates": {
+		"System Manager": (1, 1, 1, 1),
+		WHATSAPP_USER: (1, 0, 0, 0),  # picker read-only (sync writes via low-level db_*, no perm)
+		WHATSAPP_ADMIN: (1, 1, 1, 1),
+	},
+	# Config — Admin only (+ System Manager backstop). Users never configure accounts/settings.
+	# Routing resolution reads these via frappe.get_all/get_cached_value (perm-bypassing), so a
+	# User with no read here still gets the tab — verified, not assumed.
+	"WhatsApp Account": {
+		"System Manager": (1, 1, 1, 1),
+		WHATSAPP_ADMIN: (1, 1, 1, 1),
+	},
+	"WhatsApp Settings": {
+		"System Manager": (1, 1, 1, 1),
+		WHATSAPP_ADMIN: (1, 1, 1, 1),
 	},
 }
 

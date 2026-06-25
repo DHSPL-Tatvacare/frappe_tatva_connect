@@ -115,6 +115,9 @@ def refresh_history(reference_name: str, dry_run=1) -> dict:
 	Defaults to a safe dry-run (counts only). Requires WRITE access to the lead — so a caller
 	who cannot see/act on the lead can't even probe its WhatsApp metadata (let alone inject
 	history with dry_run=0). Gated on WATI being enabled; the operator runs this deliberately."""
+	from crm.api.whatsapp import validate_access
+
+	validate_access()  # WhatsApp capability gate — pulling WATI history is a WhatsApp action
 	frappe.has_permission("CRM Lead", "write", doc=reference_name, throw=True)
 	return backfill_lead(reference_name, dry_run=bool(int(dry_run)))
 

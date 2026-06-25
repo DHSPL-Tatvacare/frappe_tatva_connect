@@ -12,6 +12,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.whatsapp import api as wati
+from tatva_connect.whatsapp import roles
 
 
 @frappe.whitelist()
@@ -23,11 +24,11 @@ def sync_from_wati(account_name=None):
 	template name without clobbering each other.
 	"""
 	from crm.api.whatsapp import validate_access
-	validate_access()  # WhatsApp role gate (System Manager / Sales Manager / Sales User) — reps refresh their own account
+	validate_access()  # WhatsApp capability gate (reads whatsapp_capability_roles) — a User refreshes its own account
 	if account_name:
 		accounts = [account_name]
 	else:
-		frappe.only_for(["System Manager", "Sales Manager"])  # the all-accounts sweep is managers/scheduler only (the rep UI always passes an account)
+		frappe.only_for(roles.ADMIN_ROLES)  # the all-accounts sweep is WhatsApp Admin / scheduler only (the rep UI always passes an account)
 		accounts = frappe.get_all("WhatsApp Account", filters={"custom_provider": "WATI"}, pluck="name")  # authz-ok: gated above; enumerates WATI config accounts, not user records
 	if not accounts:
 		frappe.throw("No WATI WhatsApp Account found to sync templates from.")

@@ -25,6 +25,7 @@ from frappe.rate_limiter import rate_limit
 
 from tatva_connect.whatsapp import adapter
 from tatva_connect.whatsapp import api as wati
+from tatva_connect.whatsapp import roles
 from tatva_connect.whatsapp import routing
 from tatva_connect.webhooks import spine
 
@@ -60,11 +61,12 @@ def webhook_urls():
 	"""Back-compat WATI-only helper: {account: url|None} across ALL WhatsApp Accounts
 	(None = token not set yet). The per-account form now uses the provider-neutral
 	`tatva_connect.webhooks.urls.get_account_webhook_urls`; this thin wrapper stays for any
-	existing caller. System Manager only (default @frappe.whitelist gating)."""
+	existing caller. WhatsApp Admin / System Manager only — these are account config URLs."""
+	frappe.only_for(roles.ADMIN_ROLES)  # config endpoint: a bare @frappe.whitelist() allows ANY logged-in user, so gate explicitly
 	from tatva_connect.webhooks.urls import get_account_webhook_urls
 
 	out = {}
-	for name in frappe.get_all("WhatsApp Account", pluck="name"):  # authz-ok: System Manager only (default whitelist gating); enumerates config accounts, not user records
+	for name in frappe.get_all("WhatsApp Account", pluck="name"):  # authz-ok: gated to Admin above; enumerates config accounts, not user records
 		res = get_account_webhook_urls("WhatsApp Account", name)
 		out[name] = res["urls"][0] if res["urls"] else None
 	return out

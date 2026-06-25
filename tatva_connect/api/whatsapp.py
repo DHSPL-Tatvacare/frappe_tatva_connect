@@ -10,6 +10,16 @@ import re
 import frappe
 from frappe import _
 
+from tatva_connect.whatsapp import roles
+
+
+@frappe.whitelist()
+def whatsapp_access():
+	"""Does the current user hold a WhatsApp capability role? Drives the SPA tab gate — the
+	per-USER half (lead_has_route is the per-lead half). Capability only, never lead access:
+	the same allow-list the server enforces on every send (whatsapp_capability_roles)."""
+	return {"has_role": bool(set(roles.CAPABILITY_ROLES) & set(frappe.get_roles()))}
+
 
 @frappe.whitelist()
 def list_templates(reference_doctype=None, reference_name=None):
@@ -68,6 +78,9 @@ def get_template_variables(template):
 	[{index, hint}] where hint is the WATI sample value for that slot (from
 	sample_values). No WATI API call.
 	"""
+	from crm.api.whatsapp import validate_access
+
+	validate_access()  # WhatsApp capability gate — template internals are not for non-WhatsApp users
 	doc = frappe.get_cached_doc("WhatsApp Templates", template)
 	body = doc.template or ""
 	indexes = sorted({int(m) for m in re.findall(r"\{\{\s*(\d+)\s*\}\}", body)})

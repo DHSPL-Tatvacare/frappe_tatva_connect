@@ -1,3 +1,5 @@
+from tatva_connect.whatsapp import roles as whatsapp_roles
+
 app_name = "tatva_connect"
 app_title = "Tatva Connect"
 app_publisher = "TatvaCare"
@@ -259,7 +261,13 @@ fixtures = [
 		"WhatsApp Notification-button_fields-hidden",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
+	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.
+	{"dt": "Role", "filters": [["name", "in", [whatsapp_roles.WHATSAPP_USER, whatsapp_roles.WHATSAPP_ADMIN]]]},
 ]
+
+# WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to
+# decide who may use WhatsApp, so the allow-list lives here, not in the fork. See whatsapp/roles.py.
+whatsapp_capability_roles = whatsapp_roles.CAPABILITY_ROLES
 
 # Apps
 # ------------------

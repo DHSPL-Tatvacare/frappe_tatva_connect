@@ -126,6 +126,9 @@ def lead_has_route(reference_doctype=None, reference_name=None):
 	try:
 		if reference_doctype != "CRM Lead" or not reference_name:
 			return {"has_route": False, "account": None}
+		# Anti-IDOR: routing/account is config — never reveal it for a lead the caller can't read.
+		if not frappe.has_permission("CRM Lead", ptype="read", doc=reference_name):
+			return {"has_route": False, "account": None}
 		lead = frappe.get_cached_doc("CRM Lead", reference_name)
 		account = resolve_account_for_lead(lead)
 		return {"has_route": bool(account), "account": account}
