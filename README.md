@@ -1,4 +1,4 @@
-# tatva_frappe_custom
+# frappe_tatva_connect
 
 TatvaCare's in-house customization layer for our Frappe CRM. It holds the custom app
 **`tatva_connect`** plus the API documentation portal (`api-docs/`).

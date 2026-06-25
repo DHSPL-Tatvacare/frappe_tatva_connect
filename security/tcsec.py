@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tcsec — the unified security + test harness for tatva_frappe_custom.
+"""tcsec — the unified security + test harness for frappe_tatva_connect.
 
 ONE flag-driven CLI that runs every static security scan AND the runtime Frappe suite from a
 single isolated pyenv venv, with a rich at-a-glance UI. See security/README.md for install/usage.

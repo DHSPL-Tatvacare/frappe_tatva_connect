@@ -7,5 +7,5 @@
   { "url": "https://github.com/frappe/lms", "branch": "v2.55.0" },
   { "url": "https://github.com/frappe/wiki", "branch": "v3.0.0-rc.4" },
   { "url": "https://github.com/frappe/insights", "branch": "v3.10.1" },
-  { "url": "https://github.com/devops-tatvacare/tatva_frappe_custom", "branch": "main" }
+  { "url": "https://github.com/devops-tatvacare/frappe_tatva_connect", "branch": "main" }
 ]
