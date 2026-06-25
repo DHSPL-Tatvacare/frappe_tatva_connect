@@ -77,6 +77,18 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "inbox",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Submissions",
+   "link_type": "URL",
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/app/crm-lead?custom_source_origin=[\"like\",\"Intake form:%25\"]"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "shield-check",
