@@ -64,6 +64,10 @@ tatva_connect.patches.migrate_automation_to_composite_keys
 # granularity+endpoint+bucket_start) — can't be declared in doctype JSON. Idempotent;
 # also runs on after_migrate via schema_setup.
 tatva_connect.patches.add_observability_indexes
+# Composite index on CRM Task (reference_docname, custom_task_type, status) — backs the
+# activity-metrics recompute count. Can't be declared in doctype JSON. Idempotent; also runs
+# on after_migrate via schema_setup. See docs/plans/2026-06-26-lead-data-model-MASTER-build.md §7.
+tatva_connect.patches.add_crm_task_metrics_index
 # Fold the legacy task-transition engine into the unified automation engine: the
 # `CRM Task Type Transition` child doctype + the `transitions` field on CRM Task Type +
 # activity.automation.apply_transitions are removed (doctype archived to archive/doctype/).

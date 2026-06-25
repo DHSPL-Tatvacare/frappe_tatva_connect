@@ -19,6 +19,7 @@ import frappe
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_crm_task_metrics_index,
 	add_observability_indexes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
@@ -34,6 +35,7 @@ _STEPS = (
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,
 	add_observability_indexes,
+	add_crm_task_metrics_index,
 	# Carry existing webhook tokens into the Password store after the Data->Password flip.
 	# install-app baselines patches.txt without running it, so this is the path that lands the
 	# carry on an existing DB's first redeploy; a fresh install has blank tokens (clean no-op).

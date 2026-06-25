@@ -410,6 +410,20 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Activity::Metrics::rollup",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · on_update/on_submit/on_cancel/on_trash",
+		purpose=(
+			"Keeps each lead's per-activity counts (demo visits, courtesy calls, …) correct by "
+			"recomputing the affected count from the task table whenever an activity task changes — "
+			"an absolute, self-healing recompute, so a count never drifts. OFF = counts are left as "
+			"loaded (today's behaviour); loading activities doesn't fire per-row work.\n"
+			"Example: a rep marks a 'Demo Visit' task Done; the lead's Demo Visit count ticks up to "
+			"the true number of completed demo visits."
+		),
+		backs=["tatva_connect.tasks.metrics.refresh_for_lead"],
+	),
+	Auto(
 		key="Observability::Metrics::rollup",
 		fires_on="Schedule",
 		trigger_detail="every 6h",

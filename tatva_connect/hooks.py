@@ -98,8 +98,19 @@ doc_events = {
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
 		# Automation engine: on the first Done flip of a lead-linked task, enqueue (after commit) every matching enabled rule (gated, fail-closed, non-re-entrant).
+		# Metrics rollup: recompute the lead's count for this task's type (absolute, self-healing, gated, injection-safe).
 		"on_update": [
 			"tatva_connect.automation.dispatcher.fire_rules",
+			"tatva_connect.tasks.metrics.refresh_for_lead",
+		],
+		"on_submit": [
+			"tatva_connect.tasks.metrics.refresh_for_lead",
+		],
+		"on_cancel": [
+			"tatva_connect.tasks.metrics.refresh_for_lead",
+		],
+		"on_trash": [
+			"tatva_connect.tasks.metrics.refresh_for_lead",
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
 		"after_insert": [
