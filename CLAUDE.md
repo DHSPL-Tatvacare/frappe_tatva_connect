@@ -8,7 +8,7 @@ audience: any LLM or engineer working in this repository
 
 # CLAUDE.md — working in this repo
 
-This repo (`frappe_tatva_connect`, **public**: github.com/devops-tatvacare/frappe_tatva_connect) is the **code home** for the TatvaCare Frappe CRM: the custom app **`tatva_connect`** (WATI WhatsApp, Acefone telephony, intake forms, Azure storage, overrides) **and** the API docs site (`api-docs/`).
+This repo (`frappe_tatva_connect`, **public**: github.com/DHSPL-Tatvacare/frappe_tatva_connect) is the **code home** for the TatvaCare Frappe CRM: the custom app **`tatva_connect`** (WATI WhatsApp, Acefone telephony, intake forms, Azure storage, overrides) **and** the API docs site (`api-docs/`).
 
 Two homes, kept separate — know which you're in:
 
@@ -121,7 +121,7 @@ Hard-won from the Smart Views + lead-tab work. Every UI change obeys these. Brea
 
 ## Local dev flow — update `tatva_connect` on the devbench (git-based, NO rsync/copy)
 
-The devbench `apps/tatva_connect` is a **real git clone** of this repo (`origin` = `github.com/devops-tatvacare/frappe_tatva_connect`, branch `main`). The **GitHub repo is the source of truth** — never rsync/copy the working tree into the bench. Loop: **edit → commit → push to `main` → pull on the devbench.**
+The devbench `apps/tatva_connect` is a **real git clone** of this repo (`origin` = `github.com/DHSPL-Tatvacare/frappe_tatva_connect`, branch `main`). The **GitHub repo is the source of truth** — never rsync/copy the working tree into the bench. Loop: **edit → commit → push to `main` → pull on the devbench.**
 
 **Environment:** container `frappedev-frappe-1` · bench `/workspace/development/frappe-bench` · site `dev.localhost`.
 
