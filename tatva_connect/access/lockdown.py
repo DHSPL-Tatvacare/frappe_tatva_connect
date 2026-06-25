@@ -35,15 +35,21 @@ LOCKED_MATRIX = {
 	# WhatsApp is a CAPABILITY (whatsapp/roles.py), decoupled from Sales — these upstream
 	# frappe_whatsapp doctypes can't carry our perms in their own JSON, so we lock them here.
 	# This RELOCATES the crm fork's add_roles() grant (which is now guarded to defer to us).
+	# READ-ONLY for both roles. The WATI send fires in WhatsAppMessage.before_insert, and every
+	# legit send/react path inserts with ignore_permissions AFTER validate_access + the rate-cap.
+	# So no user role needs `create` — and granting it is a send-gate BYPASS: a holder could insert
+	# an Outgoing row directly (frappe.client.insert) and send to any number, skipping the gate,
+	# cap, and 24h window. Read is all a sender/viewer needs; sends go through the gated methods.
 	"WhatsApp Message": {
 		"System Manager": (1, 1, 1, 1),
-		WHATSAPP_USER: (1, 1, 1, 0),  # send (create) + react (write) + read thread; no delete
-		WHATSAPP_ADMIN: (1, 1, 1, 1),
+		WHATSAPP_USER: (1, 0, 0, 0),
+		WHATSAPP_ADMIN: (1, 0, 0, 0),
 	},
 	"WhatsApp Templates": {
 		"System Manager": (1, 1, 1, 1),
-		WHATSAPP_USER: (1, 0, 0, 0),  # picker read-only (sync writes via low-level db_*, no perm)
-		WHATSAPP_ADMIN: (1, 1, 1, 1),
+		# Read-only mirror of WATI (templates_sync writes via low-level db_*, no user perm needed).
+		WHATSAPP_USER: (1, 0, 0, 0),
+		WHATSAPP_ADMIN: (1, 0, 0, 0),
 	},
 	# Config — Admin only (+ System Manager backstop). Users never configure accounts/settings.
 	# Routing resolution reads these via frappe.get_all/get_cached_value (perm-bypassing), so a
