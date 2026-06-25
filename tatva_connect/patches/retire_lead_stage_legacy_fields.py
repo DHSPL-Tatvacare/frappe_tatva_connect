@@ -5,7 +5,6 @@ LEAD = "CRM Lead"
 _STALE = (
 	"custom_program_lifecycle_stage",
 	"custom_lsq_lead_stage_legacy",
-	"custom_substage",
 )
 
 

@@ -64,10 +64,17 @@ def _internal_grains(user):
 		)
 		for r in frappe.get_all(
 			"Assignment Rule",
-			filters={"name": ["in", rule_names], "document_type": "CRM Lead"},
+			# disabled:0 — a disabled rule grants NO lead access, so it contributes no grains
+			# (else entitlement diverges from the assignment-driven lead visibility).
+			filters={"name": ["in", rule_names], "document_type": "CRM Lead", "disabled": 0},
 			fields=["grain_vertical", "grain_group", "grain_program"],
 		):
-			grains.add(_grain(r))
+			g = _grain(r)
+			# A fully-blank grain (every axis blank) is NOT a wildcard here — it means the
+			# rule carries no scope, so it grants no entitlement (fail-closed; a partial
+			# grain like (vertical, '', '') still legitimately wildcards its blank axes).
+			if any(g):
+				grains.add(g)
 		nxt = []
 		if can_rollup:
 			for u in frontier:

@@ -113,6 +113,11 @@ def refresh_for_lead(doc, method=None):
 	written column comes only from the code dict."""
 	if not automation.is_enabled(_GATE):
 		return
+	# reference_doctype is a free DocType link + reference_docname a Dynamic Link, so a task
+	# may point at a non-Lead doc (e.g. CRM Deal); scope strictly to CRM Lead or we'd write a
+	# metrics row keyed to a non-lead parent and over-count on any name collision.
+	if doc.reference_doctype != _PARENT_DT:
+		return
 	if doc.reference_docname is None:
 		return
 	field = _metric_field(doc.custom_task_type)
@@ -122,6 +127,7 @@ def refresh_for_lead(doc, method=None):
 	n = frappe.db.count(
 		"CRM Task",
 		{
+			"reference_doctype": _PARENT_DT,
 			"reference_docname": doc.reference_docname,
 			"custom_task_type": doc.custom_task_type,
 			"status": _DONE_STATUS,
@@ -159,6 +165,7 @@ def _aggregate_write():
 		"CRM Task",
 		filters={
 			"status": _DONE_STATUS,
+			"reference_doctype": _PARENT_DT,
 			"reference_docname": ["is", "set"],
 			"custom_task_type": ["in", list(TASK_TYPE_TO_METRIC.keys())],
 		},

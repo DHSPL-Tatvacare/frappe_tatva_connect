@@ -105,6 +105,26 @@ def run():
 	print("    grains:", grains)
 	r.append(_check("agent grain == rule grain (v,g,p)", grains == {(v, g, p)}))
 
+	print("\n== blank-grain rule grants NO scope; disabled rule contributes NO grains ==")
+	# blank-grain: a rule with every axis blank must NOT entitle the user to all grains.
+	frappe.db.set_value("Assignment Rule", RULE,
+		{"grain_vertical": "", "grain_group": "", "grain_program": ""})
+	frappe.db.commit()
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
+	r.append(_check("blank-grain rule -> no entitled grains (not all-grains)",
+		entitlement.entitled_grains(USER) == set()))
+	# disabled: even a populated-grain rule must contribute nothing while disabled.
+	frappe.db.set_value("Assignment Rule", RULE,
+		{"grain_vertical": v, "grain_group": g, "grain_program": p, "disabled": 1})
+	frappe.db.commit()
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
+	r.append(_check("disabled rule -> no entitled grains",
+		entitlement.entitled_grains(USER) == set()))
+	# restore for the rest of the proof.
+	frappe.db.set_value("Assignment Rule", RULE, "disabled", 0)
+	frappe.db.commit()
+	setattr(frappe.local, entitlement._GRAINS_CACHE, {})
+
 	print("\n== field_in_grains containment ==")
 	gin = frappe.get_doc("CRM Lead API Field", GFIELD).as_dict()
 	gout = frappe.get_doc("CRM Lead API Field", OFIELD).as_dict()
