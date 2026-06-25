@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{category}::{vertical}::{group}::{program}::{value}",
+ "creation": "2026-06-26 00:00:00.000000",
+ "description": "A grain-scoped picklist option. `category` groups options for one field (e.g. 'lead_source'); a blank grain axis (vertical/group/program) is a global/wildcard option visible in every grain. `value` is the stored token; `display_label` is shown in the picker. depends_on_field/value make this option appear only when another field on the form holds a given value (cascading picklists). Reached ONLY via the scoped picklist_query / grain-clamped list reads.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "category",
+  "value",
+  "display_label",
+  "vertical",
+  "group",
+  "program",
+  "position",
+  "depends_on_field",
+  "depends_on_value"
+ ],
+ "fields": [
+  {
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "reqd": 1
+  },
+  {
+   "description": "The stored token written to the lead field.",
+   "fieldname": "value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Value",
+   "reqd": 1
+  },
+  {
+   "description": "Human label shown in the picker (defaults to the value if blank).",
+   "fieldname": "display_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Label"
+  },
+  {
+   "default": "",
+   "description": "Blank = global (visible in every grain). Stored as '' never NULL — canonical so the scoped query and the permission_query_conditions match identically.",
+   "fieldname": "vertical",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product Line"
+  },
+  {
+   "default": "",
+   "fieldname": "group",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Group"
+  },
+  {
+   "default": "",
+   "fieldname": "program",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Program"
+  },
+  {
+   "default": "0",
+   "fieldname": "position",
+   "fieldtype": "Int",
+   "label": "Position"
+  },
+  {
+   "description": "Cascading picklist: this option appears only when the form field named here holds depends_on_value. Blank = always available.",
+   "fieldname": "depends_on_field",
+   "fieldtype": "Data",
+   "label": "Depends On Field"
+  },
+  {
+   "fieldname": "depends_on_value",
+   "fieldtype": "Data",
+   "label": "Depends On Value"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM Picklist Value",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "value,display_label",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "display_label"
+}

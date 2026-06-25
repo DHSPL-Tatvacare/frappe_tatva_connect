@@ -62,6 +62,8 @@ permission_query_conditions = {
 	"CRM Call Log": "tatva_connect.telephony.permissions.get_call_log_permission_query_conditions",
 	"FCRM Note": "tatva_connect.notes.permissions.get_note_permission_query_conditions",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
+	# Picklist Engine: clamp any generic list read of CRM Picklist Value to the caller's entitled grains, so get_list can't bypass the scoped picklist_query.
+	"CRM Picklist Value": "tatva_connect.access.picklist.get_picklist_value_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
