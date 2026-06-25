@@ -1,0 +1,118 @@
+# APP BOX — full Frappe stack, NO database. Runs on the app VM.
+#   docker compose -p crm -f compose.app.yml --env-file .env up -d
+# Reaches the DB box at DB_HOST:3306 over the private VNet (no shared docker network needed —
+# plain outbound to the DB VM IP). Redis stays app-local.
+name: crm
+
+x-image: &image
+  image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
+  pull_policy: ${PULL_POLICY:-always}
+  restart: unless-stopped
+
+# Services that hold the bench: mount the shared `sites` volume + wait for configurator.
+x-bench: &bench
+  <<: *image
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+
+services:
+  # One-shot: writes db_host/redis into the SHARED config via bench, then exits.
+  # Uses *bench (so it mounts the sites volume — else its writes vanish), with depends_on cleared.
+  configurator:
+    <<: *bench
+    depends_on: {}
+    restart: on-failure
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g  db_host  $$DB_HOST;
+        bench set-config -gp db_port  $$DB_PORT;
+        bench set-config -g  redis_cache    "redis://redis-cache:6379";
+        bench set-config -g  redis_queue    "redis://redis-queue:6379";
+        bench set-config -g  redis_socketio "redis://redis-queue:6379";
+        bench set-config -gp socketio_port 9000;
+        bench set-config -g  chromium_path /usr/bin/chromium-headless-shell;
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+
+  backend:
+    <<: *bench
+    environment:
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-8}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
+      GUNICORN_TIMEOUT: 120
+
+  websocket:
+    <<: *image
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+
+  queue-short:
+    <<: *bench
+    command: bench worker --queue short,default
+
+  queue-long:
+    <<: *bench
+    command: bench worker --queue long,default,short
+
+  # EXACTLY ONE scheduler. Two = every scheduled job fires twice.
+  scheduler:
+    <<: *bench
+    command: bench schedule
+
+  redis-cache:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+  redis-queue:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - redis-queue-data:/data
+
+  # On-demand virus scanner for guest file uploads (intake enrolment form). App-local,
+  # NO public port — only bench services reach it at clamav:3310. Dormant until the operator
+  # enables Intake::File::screening. Budget ~1.5 GB RAM (the signature DB loads into memory).
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav-db:/var/lib/clamav   # persist the ~250 MB signature DB across restarts
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      start_period: 300s            # first boot downloads signatures via freshclam
+
+  frontend:
+    <<: *image
+    command: ["nginx-entrypoint.sh"]
+    depends_on: [backend, websocket]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-$$host}
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    ports:
+      - "${APP_PUBLISH:-8080}:8080"   # your edge/LB terminates 443 and forwards here
+
+volumes:
+  sites:
+  redis-queue-data:
+  clamav-db:

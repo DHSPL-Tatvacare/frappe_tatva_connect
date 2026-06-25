@@ -1,0 +1,11 @@
+[
+  { "url": "https://github.com/devops-tatvacare/tatva_frappe_crm", "branch": "tatva" },
+  { "url": "https://github.com/shridarpatil/frappe_whatsapp", "branch": "master" },
+  { "url": "https://github.com/frappe/telephony", "branch": "develop" },
+  { "url": "https://github.com/frappe/helpdesk", "branch": "v1.26.0" },
+  { "url": "https://github.com/frappe/payments", "branch": "version-16" },
+  { "url": "https://github.com/frappe/lms", "branch": "v2.55.0" },
+  { "url": "https://github.com/frappe/wiki", "branch": "v3.0.0-rc.4" },
+  { "url": "https://github.com/frappe/insights", "branch": "v3.10.1" },
+  { "url": "https://github.com/devops-tatvacare/tatva_frappe_custom", "branch": "main" }
+]
