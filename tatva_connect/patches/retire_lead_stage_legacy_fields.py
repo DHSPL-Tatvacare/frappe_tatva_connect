@@ -5,6 +5,9 @@ LEAD = "CRM Lead"
 _STALE = (
 	"custom_program_lifecycle_stage",
 	"custom_lsq_lead_stage_legacy",
+	# Phase 4: the old "Main Stage" parent — superseded by the derived custom_stage
+	# (the leaf rep-pick is now custom_substage). No fixture defines it -> orphan; drop it.
+	"custom_main_stage",
 )
 
 

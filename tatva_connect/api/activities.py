@@ -13,10 +13,10 @@ from crm.api.activities import get_activities as _native_get_activities
 
 from tatva_connect.activity.api import _blob_key, lead_timeline
 
-# Lead field-changes we never surface in the audit: derived (custom_main_stage follows custom_stage)
+# Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage)
 # or auto-synced headline mirrors (the latest-lab snapshot). Keeps the signal, drops the churn.
 _NOISE_FIELDS = {
-	"custom_main_stage",
+	"custom_stage",
 	"custom_latest_hba1c", "custom_latest_fbs",
 	"custom_height_feet", "custom_weight_kg", "custom_last_report_date",
 }
@@ -62,7 +62,9 @@ def _task_events(tasks):
 
 
 def _stage_moved(a):
-	"""A native custom_stage change -> a legible stage_moved row (PKs resolved to stage names)."""
+	"""A native custom_substage change -> a legible stage_moved row (PKs resolved to stage names).
+	The rep PICKS the sub-stage (the leaf); the parent custom_stage is derived, so the move that
+	matters in the audit is the leaf the rep changed."""
 	d = a.get("data") or {}
 	return {
 		"activity_type": "stage_moved",
@@ -78,7 +80,7 @@ def _stage_moved(a):
 def _curate_native(activities, doc_keys):
 	"""Keep the native rows that belong in the audit; transform/drop the rest:
 	- attachment_log for a file folded into an activity -> dropped (shown inside that activity);
-	- custom_stage change -> a clean stage_moved row;
+	- custom_substage change (the rep's PICK) -> a clean stage_moved row;
 	- derived / auto-synced field noise -> dropped.
 	"""
 	out = []
@@ -90,7 +92,7 @@ def _curate_native(activities, doc_keys):
 				out.append(a)
 		elif at in ("changed", "added", "removed"):
 			field = d.get("field")
-			if field == "custom_stage":
+			if field == "custom_substage":
 				out.append(_stage_moved(a))
 			elif field not in _NOISE_FIELDS:
 				out.append(a)

@@ -95,19 +95,19 @@ def dedup_guard(doc, method=None):
 
 
 def validate_stage(doc, method=None):
-	"""Single combined Stage pick: custom_stage links one selectable leaf of
+	"""Single combined Stage pick: custom_substage links one selectable leaf of
 	CRM Lead Stage (a substage, or a main stage with no substages). Validate it's
-	on the lead's program, and derive the read-only custom_main_stage for grouping.
+	on the lead's program, and derive the read-only parent custom_stage for grouping.
 	Empty = lifecycle not set yet. Soft, clear errors — no silent corrections.
 	"""
 	if not automation.is_enabled("Lead::CRM Lead::stage"):
 		return
-	if not doc.custom_stage:
-		doc.custom_main_stage = None
+	if not doc.custom_substage:
+		doc.custom_stage = None
 		return
 
 	stage = frappe.db.get_value(
-		"CRM Lead Stage", doc.custom_stage, ["program", "stage", "substage_of", "selectable"], as_dict=True
+		"CRM Lead Stage", doc.custom_substage, ["program", "stage", "substage_of", "selectable"], as_dict=True
 	)
 	if not stage:
 		return
@@ -116,21 +116,21 @@ def validate_stage(doc, method=None):
 	if program and stage.program != program:
 		frappe.throw(
 			_("Stage {0} belongs to a different program. Pick a stage for {1}.").format(
-				doc.custom_stage, program
+				doc.custom_substage, program
 			),
 			title=_("Invalid stage"),
 		)
 	if not stage.selectable:
 		frappe.throw(
-			_("{0} is a grouping stage, not a pickable one. Pick a specific stage.").format(doc.custom_stage),
+			_("{0} is a grouping stage, not a pickable one. Pick a specific stage.").format(doc.custom_substage),
 			title=_("Invalid stage"),
 		)
 
-	# derive the main stage: a substage's parent, else the stage itself
+	# derive the parent stage: a substage's parent, else the stage itself
 	if stage.substage_of:
-		doc.custom_main_stage = frappe.db.get_value("CRM Lead Stage", stage.substage_of, "stage")
+		doc.custom_stage = frappe.db.get_value("CRM Lead Stage", stage.substage_of, "stage")
 	else:
-		doc.custom_main_stage = stage.stage
+		doc.custom_stage = stage.stage
 
 
 @frappe.whitelist()
