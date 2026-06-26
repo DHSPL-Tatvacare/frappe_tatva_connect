@@ -40,6 +40,9 @@ override_whitelisted_methods = {
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
+	# Attach the standard _link_titles map so list/Kanban cells show a Link's clean title (its
+	# doctype title_field) instead of the composite :: PK. Generic; delegates to native get_data.
+	"crm.api.doc.get_data": "tatva_connect.api.list_link_titles.get_data",
 	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
