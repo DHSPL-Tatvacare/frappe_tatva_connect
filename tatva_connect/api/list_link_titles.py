@@ -24,7 +24,9 @@ def get_data(**kwargs):
 def _native_get_data(**kwargs):
 	from crm.api.doc import get_data as native
 
-	return native(**kwargs)
+	# This override is dispatched with the full form_dict (cmd, etc.); forward only the args the
+	# native signature accepts — frappe.get_newargs is the same filter frappe.call uses.
+	return native(**frappe.get_newargs(native, kwargs))
 
 
 def _attach_link_titles(result):
