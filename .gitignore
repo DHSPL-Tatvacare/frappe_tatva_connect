@@ -35,6 +35,13 @@ custom-user-work/
 # playwright mcp scratch (browser logs/snapshots)
 .playwright-mcp/
 
+# authz test framework — dev-only artifacts (never committed; public repo)
+authz_creds.json
+tatva_connect/tests/authz/playwright/.auth/
+tatva_connect/tests/authz/playwright/node_modules/
+tatva_connect/tests/authz/playwright/test-results/
+tatva_connect/tests/authz/playwright/playwright-report/
+
 # Manual DB seed bundles (alembic-style, date+commit named). Operator runs these
 # post-migrate; never auto-applied. Tracked by filename, not committed.
 db-seeds/

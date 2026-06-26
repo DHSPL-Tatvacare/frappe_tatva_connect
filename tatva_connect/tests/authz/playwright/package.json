@@ -1,0 +1,13 @@
+{
+  "name": "authz-playwright",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright authz/VAPT suite for the TatvaCare CRM SPA — grain leak + escalation checks.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
