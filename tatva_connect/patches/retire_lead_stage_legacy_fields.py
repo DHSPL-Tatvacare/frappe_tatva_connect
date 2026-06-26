@@ -8,6 +8,10 @@ _STALE = (
 	# Phase 4: the old "Main Stage" parent — superseded by the derived custom_stage
 	# (the leaf rep-pick is now custom_substage). No fixture defines it -> orphan; drop it.
 	"custom_main_stage",
+	# Post-Phase-4: custom_stage_reason had no LSQ source (not in the parity map) and no
+	# picklist category to fill it — the reason is already baked into the granular sub-stage
+	# value. Removed from fixtures; drop the orphan column + Custom Field doc.
+	"custom_stage_reason",
 )
 
 
