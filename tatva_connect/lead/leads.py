@@ -126,13 +126,10 @@ def validate_stage(doc, method=None):
 			title=_("Invalid stage"),
 		)
 
-	# derive the parent stage ONLY where the grain has a two-level ladder (the picked leaf
-	# has a parent). For flat grains (Anaya, TatvaPractice) there is no parent map, so the
-	# sub-stage is the only level and custom_stage stays blank — never duplicate the leaf.
-	if stage.substage_of:
-		doc.custom_stage = frappe.db.get_value("CRM Lead Stage", stage.substage_of, "stage")
-	else:
-		doc.custom_stage = None
+	# custom_stage is a Link -> CRM Lead Stage, so it must hold a stage NAME (PK `program::stage`),
+	# never a bare label. Two-level grain (the leaf has a parent) -> the parent's PK; flat grain
+	# (no parent, e.g. Anaya/TatvaPractice) -> the leaf itself IS the stage, so mirror the sub-stage.
+	doc.custom_stage = stage.substage_of or doc.custom_substage
 
 
 @frappe.whitelist()
