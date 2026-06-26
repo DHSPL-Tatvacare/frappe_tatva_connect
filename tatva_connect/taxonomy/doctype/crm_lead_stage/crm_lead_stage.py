@@ -50,10 +50,7 @@ class CRMLeadStage(Document):
 				)
 
 	def before_save(self):
-		"""Derive the readable display_label shown in the Lead's Stage picker:
-		'Program / Main / Substage' for a substage, else 'Program / Stage'."""
-		if self.substage_of:
-			parent_stage = frappe.db.get_value("CRM Lead Stage", self.substage_of, "stage")
-			self.display_label = "{0} / {1} / {2}".format(self.program, parent_stage, self.stage)
-		else:
-			self.display_label = "{0} / {1}".format(self.program, self.stage)
+		"""The human label shown in the UI — just the clean stage name (e.g. "New Patient").
+		The composite `::` name is the PK (DB/code only); the UI reads this title via
+		title_field + show_title_field_in_link, so `::` never reaches the screen."""
+		self.display_label = self.stage
