@@ -54,16 +54,18 @@ def _grain_of(task_type):
 	return {"vertical": rows[0].vertical or "", "group": rows[0].grp or "", "program": rows[0].program or ""} if rows else None
 
 
-def _scope_applies(task_type, vertical, group, program):
-	"""True if this activity type's grain matches the lead's grain — the SAME brain (resolve_scoped)
-	over the type's own grain (a set axis must equal the lead's; a blank axis is a wildcard)."""
-	grain = _grain_of(task_type)
-	if not grain:
+def _grain_matches(grain, vertical, group, program):
+	"""THE one availability predicate, shared by the picker (list_types_for_lead) and the gate
+	(_scope_applies): a SET axis must equal the lead's; a BLANK axis is a wildcard; an ALL-BLANK grain
+	is dormant (never available). Built on the shared resolve_scoped brain — no third definition."""
+	if not grain or not (grain.get("vertical") or grain.get("group") or grain.get("program")):
 		return False
-	try:
-		return resolve_scoped([grain], vertical, group, program) is not None
-	except frappe.ValidationError:
-		return True
+	return resolve_scoped([grain], vertical, group, program) is not None
+
+
+def _scope_applies(task_type, vertical, group, program):
+	"""True if this activity type is available to the lead's grain — via the ONE shared predicate."""
+	return _grain_matches(_grain_of(task_type), vertical, group, program)
 
 
 def _activity_type_names():
@@ -146,36 +148,37 @@ def open_activity_tasks(lead):
 @frappe.whitelist()
 def list_types_for_lead(lead):
 	"""Activity types available to this lead's grain — the searchable picker source. Grain lives on the
-	PARENT (composite key); a type is available when its vertical equals the lead's and its group/program
-	match-or-are-blank (wildcard). A type with NO vertical is dormant (never shown) — preserving the old
-	"no scope = dormant" semantics. ONE indexed query, no N+1. Same availability-filter shape as
-	picklist_query; resolve_scoped's most-specific tie-break is only for radius/checklist.
-	Value = the composite PK (`name`); label = the clean `type_name`.
-	# sqli-ok: identifiers are constants; every value is bound %(name)s."""
+	PARENT (composite key); availability is the ONE shared `_grain_matches` predicate (same brain the
+	gate uses) — a set axis equals the lead's, a blank axis is a wildcard, an all-blank grain is dormant.
+	Native `frappe.get_all` pre-filters to candidate grains (no raw SQL), then the predicate decides.
+	Value = the composite PK (`name`); label = the clean `type_name`."""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	vertical, group, program = _lead_axes(lead)
-	rows = frappe.db.sql(
-		"""
-		SELECT tt.name, tt.type_name, tt.is_logged_complete, tt.visit_mode
-		FROM `tabCRM Task Type` tt
-		WHERE tt.vertical = %(v)s
-		  AND (tt.`group` = '' OR tt.`group` IS NULL OR tt.`group` = %(g)s)
-		  AND (tt.program = '' OR tt.program IS NULL OR tt.program = %(p)s)
-		ORDER BY tt.type_name
-		""",
-		{"v": vertical, "g": group, "p": program},
-		as_dict=True,
+	rows = frappe.get_all(
+		"CRM Task Type",
+		filters={
+			"vertical": ["in", ["", vertical]],
+			"group": ["in", ["", group]],
+			"program": ["in", ["", program]],
+		},
+		fields=["name", "type_name", "vertical", "`group` as grp", "program", "is_logged_complete", "visit_mode"],
+		order_by="type_name",
 	)
-	return [
-		{"name": r.name, "label": r.type_name or r.name,
-		 "is_logged_complete": int(r.is_logged_complete or 0), "visit_mode": r.visit_mode or ""}
-		for r in rows
-	]
+	out = []
+	for r in rows:
+		if not _grain_matches({"vertical": r.vertical, "group": r.grp, "program": r.program}, vertical, group, program):
+			continue
+		out.append({
+			"name": r.name, "label": r.type_name or r.name,
+			"is_logged_complete": int(r.is_logged_complete or 0), "visit_mode": r.visit_mode or "",
+		})
+	return out
 
 
 @frappe.whitelist()
 def get_schema(task_type):
 	"""The activity type's per-field schema, in order — for the client form."""
+	frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
 	doc = frappe.get_doc("CRM Task Type", task_type)
 	return [
 		{
@@ -378,7 +381,10 @@ def lead_task_board(lead):
 		tasks.append({
 			"name": r.name,
 			"title": r.title,
-			"task_type": type_names.get(r.custom_task_type, "") or r.custom_task_type or "",
+			# task_type = the composite PK (the key: config lookup / save / schema). task_type_label =
+			# the clean type_name (display / filter / search). NEVER conflate the two.
+			"task_type": r.custom_task_type or "",
+			"task_type_label": type_names.get(r.custom_task_type, "") or r.custom_task_type or "",
 			"status": r.status,
 			"priority": r.priority,
 			"due": formatdate(r.due_date, "d MMM yyyy") if r.due_date else None,
@@ -451,7 +457,8 @@ def task_detail(task):
 			"name": r.name,
 			"title": r.title,
 			"description": r.description,
-			"task_type": r.custom_task_type or "",
+			"task_type": r.custom_task_type or "",  # composite PK (the key)
+			"task_type_label": (frappe.db.get_value("CRM Task Type", r.custom_task_type, "type_name") or r.custom_task_type) if r.custom_task_type else "",
 			"status": r.status,
 			"priority": r.priority,
 			"due_date": str(r.due_date) if r.due_date else None,
@@ -474,6 +481,7 @@ def type_config(task_type):
 	"""Render config (fields + is_logged_complete + captures_location) for ONE task type — the
 	create-mode modal's source when the chosen type has no existing task seeding it into
 	lead_task_board. Same brain (_type_config) the board uses, so card/modal/create stay consistent."""
+	frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
 	cfg = _type_config(task_type)
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))

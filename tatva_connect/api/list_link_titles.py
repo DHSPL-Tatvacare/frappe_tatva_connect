@@ -54,17 +54,21 @@ def _attach_link_titles(result, doctype=None):
 	titles = result.setdefault("_link_titles", {})
 
 	def add(target_dt, value):
-		# Only when the target opts into showing its title in links (framework flag). Value read
-		# (get_cached_value): the row value is already in the caller's permitted result, so resolving
-		# its display label exposes nothing new.
+		# Only when the target opts into showing its title in links (framework flag). For a Dynamic Link
+		# (e.g. FCRM Note.reference_docname -> CRM Lead/Deal) the target can be a permissioned record, so
+		# gate on read before resolving its title — a caller who can see the row but not the referenced
+		# lead must not get the lead's name. (Static Link masters like Stage/Picklist read freely.)
 		if not (target_dt and value):
 			return
 		meta = frappe.get_meta(target_dt)
 		if not (meta.show_title_field_in_link and meta.title_field):
 			return
 		key = f"{target_dt}::{value}"
-		if key not in titles:
-			titles[key] = frappe.get_cached_value(target_dt, value, meta.title_field) or value
+		if key in titles:
+			return
+		if not frappe.has_permission(target_dt, "read", doc=value):
+			return
+		titles[key] = frappe.get_cached_value(target_dt, value, meta.title_field) or value
 
 	for row in rows:
 		for fieldname, target_dt in link_fields.items():
