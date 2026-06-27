@@ -30,10 +30,13 @@ SCRIPTS = [
 	# screen in the CRM fork (pages/NearMe.vue: left-menu item → map + cross-grain doctor directory,
 	# gated by the Field Map User role + Location::NearMe::directory switch). Backend is
 	# tatva_connect/near_me/api.py. Archived to archive/near-me-native-promotion/. Disabled via RETIRED below.
-	("Task Modal Fit (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_modal_fit.js"),
-	# v1 "Task Location Capture (CRM Task)" (task_location.js) RETIRED in Phase B — location folded
-	# into the activity flow (save_activity + enforce_location). Archived to archive/phase-b-retired-v1-location/.
-	("Activity Complete (CRM Task)", "CRM Task", "Form", "tasks/form_scripts/task_activity.js"),
+	# "Task Modal Fit (CRM Task)" (task_modal_fit.js) RETIRED — the DOM/MutationObserver height hijack on
+	# crm's DoctypeModal is gone: the native TaskModal (fork tatva/TaskModal.vue) is the one task modal
+	# (create/edit/view/complete) with its own contained body + internal scroll. Disabled via RETIRED below.
+	# "Activity Complete (CRM Task)" (task_activity.js) RETIRED — the form-script activity+location flow
+	# (onBeforeCreate/onValidate) now lives in TaskModal: pick a grain-scoped type → schema fields →
+	# resolveLocation (only when the type needs it) → compute_activity_fields/save_activity. Same server
+	# brains + enforce_* backstops. Disabled via RETIRED below.
 ]
 
 # CRM Form Scripts we used to ship but have RETIRED. Disabled idempotently so a stale enabled record
@@ -49,6 +52,8 @@ RETIRED = [
 	"Task Location Capture (CRM Task)",  # Phase B: v1 location folded into the activity flow (task_activity.js + save_activity/enforce_location)
 	"Near Me (CRM Lead)",  # -> native Near Me page (fork pages/NearMe.vue) + tatva_connect/near_me/api.py
 	"Data Tab Program Gate (CRM Lead)",  # -> native Data tab (fork tatva/DetailPanel.vue) + tatva_connect/lead/detail.py; applicability resolved server-side
+	"Task Modal Fit (CRM Task)",  # -> native TaskModal contained body + internal scroll (fork tatva/TaskModal.vue); DOM height hijack gone
+	"Activity Complete (CRM Task)",  # -> native TaskModal activity flow (grain-scoped type -> schema -> save_activity/compute_activity_fields); enforce_* backstops kept
 ]
 
 

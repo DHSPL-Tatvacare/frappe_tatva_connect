@@ -390,7 +390,7 @@ def task_detail(task):
 	frappe.has_permission("CRM Task", "read", doc=task, throw=True)
 	r = frappe.db.get_value(
 		"CRM Task", task,
-		["name", "title", "custom_task_type", "status", "priority", "due_date",
+		["name", "title", "custom_task_type", "status", "priority", "due_date", "start_date",
 		 "assigned_to", "owner", "creation", "description", "custom_activity_payload",
 		 *PROMOTED_COLUMNS,
 		 "custom_location_latitude", "custom_location_longitude",
@@ -408,10 +408,15 @@ def task_detail(task):
 		"task": {
 			"name": r.name,
 			"title": r.title,
+			"description": r.description,
 			"task_type": r.custom_task_type or "",
 			"status": r.status,
 			"priority": r.priority,
 			"due_date": str(r.due_date) if r.due_date else None,
+			"start_date": str(r.start_date) if r.start_date else None,
+			"assigned_to": r.assigned_to,
+			"reference_doctype": r.reference_doctype,
+			"reference_docname": r.reference_docname,
 			"rep": who,
 			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"creation": str(r.creation),
