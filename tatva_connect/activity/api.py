@@ -305,6 +305,18 @@ def lead_task_board(lead):
 		order_by="modified desc",
 	)
 
+	# Attachment counts in ONE grouped query (no per-card N+1): {task_name: count}.
+	attach_counts = {}
+	task_names = [r.name for r in rows]
+	if task_names:
+		for f in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "CRM Task", "attached_to_name": ["in", task_names]},
+			fields=["attached_to_name", "count(name) as c"],
+			group_by="attached_to_name",
+		):
+			attach_counts[f.attached_to_name] = f.c
+
 	types = {}
 	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
 		cfg = _type_config(tn)
@@ -336,6 +348,7 @@ def lead_task_board(lead):
 			"completed_by": (completer and frappe.db.get_value("User", completer, "full_name")) or completer,
 			"values": _task_values(r, types.get(r.custom_task_type)),
 			"location": _task_location(r),
+			"attachments": attach_counts.get(r.name, 0),
 		})
 
 	from tatva_connect.location.api import _read_anchor

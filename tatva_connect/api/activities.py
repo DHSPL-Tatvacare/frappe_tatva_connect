@@ -116,4 +116,23 @@ def get_activities(name: str):
 		+ _task_events(plain_tasks)
 	)
 	activities.sort(key=lambda x: str(x["creation"]), reverse=True)
+	_annotate_attachments(notes, "FCRM Note")
 	return activities, calls, notes, tasks, attachments
+
+
+def _annotate_attachments(rows, doctype):
+	"""Fold an attachment count onto each row (in place) in ONE grouped File query — drives the
+	paperclip indicator on the unified note/task cards. No-op when there are no rows."""
+	names = [r["name"] for r in rows]
+	if not names:
+		return
+	counts = {}
+	for f in frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]},
+		fields=["attached_to_name", "count(name) as c"],
+		group_by="attached_to_name",
+	):
+		counts[f.attached_to_name] = f.c
+	for r in rows:
+		r["attachments"] = counts.get(r["name"], 0)
