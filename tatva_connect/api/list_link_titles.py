@@ -17,7 +17,7 @@ import frappe
 def get_data(**kwargs):
 	result = _native_get_data(**kwargs)
 	if isinstance(result, dict):
-		_attach_link_titles(result)
+		_attach_link_titles(result, kwargs.get("doctype"))
 	return result
 
 
@@ -29,30 +29,45 @@ def _native_get_data(**kwargs):
 	return native(**frappe.get_newargs(native, kwargs))
 
 
-def _attach_link_titles(result):
+def _attach_link_titles(result, doctype=None):
 	rows = result.get("data") or []
-	fields = result.get("fields") or []
-	if not rows or not fields:
+	if not rows:
 		return
 
-	# Link fields whose target shows its title in links -> (target doctype, its title field).
-	link_fields = {}
-	for f in fields:
+	# Static Link fields (target doctype is fixed) from the result's field list.
+	link_fields = {}  # fieldname -> fixed target doctype
+	for f in result.get("fields") or []:
 		if f.get("fieldtype") == "Link" and f.get("options") and f.get("fieldname"):
-			meta = frappe.get_meta(f["options"])
-			if meta.show_title_field_in_link and meta.title_field:
-				link_fields[f["fieldname"]] = (f["options"], meta.title_field)
-	if not link_fields:
+			link_fields[f["fieldname"]] = f["options"]
+
+	# Dynamic Link fields (target doctype is per-row, the value of the `options` field) from the
+	# listed doctype's meta — e.g. FCRM Note.reference_docname -> the row's reference_doctype (CRM Lead).
+	dynamic_fields = {}  # fieldname -> options fieldname (the doctype selector)
+	if doctype:
+		for f in frappe.get_meta(doctype).fields:
+			if f.fieldtype == "Dynamic Link" and f.options:
+				dynamic_fields[f.fieldname] = f.options
+
+	if not link_fields and not dynamic_fields:
 		return
 
 	titles = result.setdefault("_link_titles", {})
+
+	def add(target_dt, value):
+		# Only when the target opts into showing its title in links (framework flag). Value read
+		# (get_cached_value): the row value is already in the caller's permitted result, so resolving
+		# its display label exposes nothing new.
+		if not (target_dt and value):
+			return
+		meta = frappe.get_meta(target_dt)
+		if not (meta.show_title_field_in_link and meta.title_field):
+			return
+		key = f"{target_dt}::{value}"
+		if key not in titles:
+			titles[key] = frappe.get_cached_value(target_dt, value, meta.title_field) or value
+
 	for row in rows:
-		for fieldname, (target_dt, title_field) in link_fields.items():
-			value = row.get(fieldname)
-			if not value:
-				continue
-			key = f"{target_dt}::{value}"
-			if key not in titles:
-				# Value read (get_cached_value): the row value is already in the caller's permitted
-				# result, so resolving its display label exposes nothing new.
-				titles[key] = frappe.get_cached_value(target_dt, value, title_field) or value
+		for fieldname, target_dt in link_fields.items():
+			add(target_dt, row.get(fieldname))
+		for fieldname, options_field in dynamic_fields.items():
+			add(row.get(options_field), row.get(fieldname))
