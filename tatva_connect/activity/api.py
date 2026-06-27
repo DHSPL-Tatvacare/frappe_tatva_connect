@@ -36,31 +36,44 @@ def _lead_axes(lead):
 	return (v.custom_vertical or ""), (v.custom_group or ""), (v.custom_current_program or "")
 
 
-def _scope_rows(task_type):
-	return frappe.get_all(
+def _grain_of(task_type):
+	"""The activity type's grain — now on the PARENT record (composite key vertical::group::program::
+	type_name). Falls back to the deprecated `scope` child table for any record not yet re-keyed, so
+	resolution is correct on both sides of the migration. Returns a {vertical, group, program} dict (the
+	resolve_scoped candidate shape) or None for a dormant/unscoped type."""
+	g = frappe.db.get_value(
+		"CRM Task Type", task_type, ["vertical", "`group` as grp", "program"], as_dict=True
+	)
+	if g and (g.vertical or g.grp or g.program):
+		return {"vertical": g.vertical or "", "group": g.grp or "", "program": g.program or ""}
+	rows = frappe.get_all(
 		"CRM Task Type Scope",
 		filters={"parent": task_type, "parenttype": "CRM Task Type"},
-		fields=["vertical", "group", "program"],
+		fields=["vertical", "`group` as grp", "program"],
 	)
+	return {"vertical": rows[0].vertical or "", "group": rows[0].grp or "", "program": rows[0].program or ""} if rows else None
 
 
 def _scope_applies(task_type, vertical, group, program):
-	"""True if this activity type is available to the lead's grain. Same brain as the
-	checklist resolver; an ambiguous (redundant) scope still counts as available."""
-	rows = _scope_rows(task_type)
-	if not rows:
+	"""True if this activity type's grain matches the lead's grain — the SAME brain (resolve_scoped)
+	over the type's own grain (a set axis must equal the lead's; a blank axis is a wildcard)."""
+	grain = _grain_of(task_type)
+	if not grain:
 		return False
 	try:
-		return resolve_scoped(rows, vertical, group, program) is not None
+		return resolve_scoped([grain], vertical, group, program) is not None
 	except frappe.ValidationError:
 		return True
 
 
 def _activity_type_names():
-	"""Every CRM Task Type configured as an activity (has at least one scope row)."""
-	return {r.parent for r in frappe.get_all(
+	"""Every CRM Task Type configured as an activity (grain-assigned). Post-migration the grain is the
+	parent vertical; the deprecated scope child is a fallback for any not-yet-re-keyed record."""
+	names = {r.name for r in frappe.get_all("CRM Task Type", filters={"vertical": ["!=", ""]}, fields=["name"])}
+	names |= {r.parent for r in frappe.get_all(
 		"CRM Task Type Scope", filters={"parenttype": "CRM Task Type"}, fields=["parent"], distinct=True
 	)}
+	return names
 
 
 def _type_has_schema(task_type):
@@ -108,28 +121,29 @@ def open_activity_tasks(lead):
 
 @frappe.whitelist()
 def list_types_for_lead(lead):
-	"""Activity types available to this lead's grain — the searchable picker source. ONE indexed
-	query (no per-type N+1): a type is available if ANY of its scope rows matches the grain, where a
-	blank axis is a wildcard. (resolve_scoped's most-specific tie-break is only for radius/checklist;
-	availability just needs a match.) Flat regardless of catalog size."""
+	"""Activity types available to this lead's grain — the searchable picker source. Grain lives on the
+	PARENT (composite key); a type is available when its vertical equals the lead's and its group/program
+	match-or-are-blank (wildcard). A type with NO vertical is dormant (never shown) — preserving the old
+	"no scope = dormant" semantics. ONE indexed query, no N+1. Same availability-filter shape as
+	picklist_query; resolve_scoped's most-specific tie-break is only for radius/checklist.
+	Value = the composite PK (`name`); label = the clean `type_name`.
+	# sqli-ok: identifiers are constants; every value is bound %(name)s."""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	vertical, group, program = _lead_axes(lead)
 	rows = frappe.db.sql(
 		"""
-		SELECT DISTINCT tt.name, tt.is_logged_complete, tt.visit_mode
+		SELECT tt.name, tt.type_name, tt.is_logged_complete, tt.visit_mode
 		FROM `tabCRM Task Type` tt
-		JOIN `tabCRM Task Type Scope` sc
-		  ON sc.parent = tt.name AND sc.parenttype = 'CRM Task Type'
-		WHERE (sc.vertical = '' OR sc.vertical IS NULL OR sc.vertical = %(v)s)
-		  AND (sc.`group`  = '' OR sc.`group`  IS NULL OR sc.`group`  = %(g)s)
-		  AND (sc.program  = '' OR sc.program  IS NULL OR sc.program  = %(p)s)
-		ORDER BY tt.name
+		WHERE tt.vertical = %(v)s
+		  AND (tt.`group` = '' OR tt.`group` IS NULL OR tt.`group` = %(g)s)
+		  AND (tt.program = '' OR tt.program IS NULL OR tt.program = %(p)s)
+		ORDER BY tt.type_name
 		""",
 		{"v": vertical, "g": group, "p": program},
 		as_dict=True,
 	)
 	return [
-		{"name": r.name, "label": r.name,
+		{"name": r.name, "label": r.type_name or r.name,
 		 "is_logged_complete": int(r.is_logged_complete or 0), "visit_mode": r.visit_mode or ""}
 		for r in rows
 	]
@@ -268,9 +282,11 @@ def save_activity(lead, task_type, values, task=None):
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	if not task:
+		# title = the clean type_name (display), never the composite PK.
+		title = frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type
 		shell = frappe.get_doc({
 			"doctype": "CRM Task",
-			"title": task_type,
+			"title": title,
 			"custom_task_type": task_type,
 			"assigned_to": frappe.session.user,
 			"reference_doctype": "CRM Lead",
@@ -319,10 +335,12 @@ def lead_task_board(lead):
 	) if task_names else Counter()
 
 	types = {}
+	type_names = {}  # composite PK -> clean type_name (display label, never the PK)
 	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
 		cfg = _type_config(tn)
 		if cfg:
 			types[tn] = cfg
+		type_names[tn] = frappe.db.get_value("CRM Task Type", tn, "type_name") or tn
 
 	tasks = []
 	for r in rows:
@@ -336,7 +354,7 @@ def lead_task_board(lead):
 		tasks.append({
 			"name": r.name,
 			"title": r.title,
-			"task_type": r.custom_task_type or "",
+			"task_type": type_names.get(r.custom_task_type, "") or r.custom_task_type or "",
 			"status": r.status,
 			"priority": r.priority,
 			"due": formatdate(r.due_date, "d MMM yyyy") if r.due_date else None,

@@ -23,6 +23,7 @@ from tatva_connect.patches import (
 	add_observability_indexes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
+	rekey_task_types_composite,
 	retire_activity_legacy_columns,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
@@ -36,6 +37,9 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
+	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
+	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
+	rekey_task_types_composite,
 	# Carry existing webhook tokens into the Password store after the Data->Password flip.
 	# install-app baselines patches.txt without running it, so this is the path that lands the
 	# carry on an existing DB's first redeploy; a fresh install has blank tokens (clean no-op).

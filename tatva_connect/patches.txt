@@ -60,6 +60,11 @@ tatva_connect.patches.retire_tatva_automation_settings
 # to grain-scoped composite `::` keys (WhatsApp::WATI::messaging, …). Preserves operators'
 # Enabled state across the PK rename. Idempotent; no-op on a fresh install.
 tatva_connect.patches.migrate_automation_to_composite_keys
+# CRM Task Type rekey: name-keyed (type_name) -> grain composite `::` keys
+# (vertical::group::program::type_name) so a type_name can carry a different schema per grain (ADR).
+# Grain moves from the scope child table onto the parent. Cascades the custom_task_type Link.
+# Idempotent; no-op on a fresh install (seeds create composite keys directly).
+tatva_connect.patches.rekey_task_types_composite
 # Observability: composite indexes on CRM API Metric (granularity+bucket_start,
 # granularity+endpoint+bucket_start) — can't be declared in doctype JSON. Idempotent;
 # also runs on after_migrate via schema_setup.

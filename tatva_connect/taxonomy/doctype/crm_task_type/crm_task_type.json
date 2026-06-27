@@ -1,13 +1,17 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:type_name",
+ "autoname": "format:{vertical}::{group}::{program}::{type_name}",
  "creation": "2026-06-03 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "type_name",
+  "grain_section",
+  "vertical",
+  "group",
+  "program",
   "description",
   "activity_section",
   "visit_mode",
@@ -24,8 +28,31 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Task Type",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
+  },
+  {
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "Grain (composite key)"
+  },
+  {
+   "description": "Grain axis. Blank = wildcard (available across that axis). The composite key is vertical::group::program::type_name, so the SAME type_name can carry a different schema per grain.",
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "label": "Vertical",
+   "options": "CRM Vertical"
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "options": "CRM Group"
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "options": "CRM Program"
   },
   {
    "fieldname": "description",
@@ -72,14 +99,15 @@
   {
    "fieldname": "scope_section",
    "fieldtype": "Section Break",
-   "label": "Availability (Lead Grain)"
+   "label": "Availability (Lead Grain) — DEPRECATED"
   },
   {
-   "description": "Which leads can log this activity, by grain. Blank axis = wildcard. No rows = the type never appears as an activity (dormant).",
+   "description": "DEPRECATED — grain now lives in the composite key (vertical/group/program above). Kept read-only during migration; ignored by resolution. Will be removed once prod is re-keyed.",
    "fieldname": "scope",
    "fieldtype": "Table",
-   "label": "Scope",
-   "options": "CRM Task Type Scope"
+   "label": "Scope (deprecated)",
+   "options": "CRM Task Type Scope",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -109,7 +137,9 @@
   }
  ],
  "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "type_name"
 }
