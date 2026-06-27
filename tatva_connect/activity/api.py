@@ -76,6 +76,30 @@ def _activity_type_names():
 	return names
 
 
+def resolve_type_for_lead(lead, type_name):
+	"""Resolve a bare `type_name` to its grain-specific composite-key CRM Task Type for THIS lead's
+	grain — most-specific-wins via the shared `resolve_scoped` brain. The composite key carries the
+	grain, so the same type_name (e.g. "Welcome Call") resolves to the right record per grain. Returns
+	the composite PK, or None if no grain-matching record exists. Any caller that holds a type_name
+	(not a PK) — the LSQ migration, future imports — goes through here (no own codepath)."""
+	if not type_name:
+		return None
+	vertical, group, program = _lead_axes(lead)
+	candidates = [
+		{"name": r.name, "vertical": r.vertical, "group": r.grp, "program": r.program}
+		for r in frappe.get_all(
+			"CRM Task Type",
+			filters={"type_name": type_name},
+			fields=["name", "vertical", "`group` as grp", "program"],
+		)
+	]
+	if not candidates:
+		# Not yet re-keyed (a name-keyed record still named exactly type_name) — use it as-is.
+		return type_name if frappe.db.exists("CRM Task Type", type_name) else None
+	winner = resolve_scoped(candidates, vertical, group, program)
+	return winner["name"] if winner else None
+
+
 def _type_has_schema(task_type):
 	"""True if the type carries a form schema (≥1 field) — i.e. completing it must log details."""
 	return bool(task_type and frappe.db.exists(
