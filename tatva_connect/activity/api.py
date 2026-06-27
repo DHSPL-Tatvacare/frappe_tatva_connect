@@ -8,6 +8,7 @@ the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a ty
 Ships dormant: a CRM Task Type with no scope row never surfaces as an activity.
 """
 import json
+from collections import Counter
 from urllib.parse import parse_qs, urlparse
 
 import frappe
@@ -305,17 +306,17 @@ def lead_task_board(lead):
 		order_by="modified desc",
 	)
 
-	# Attachment counts in ONE grouped query (no per-card N+1): {task_name: count}.
-	attach_counts = {}
+	# Attachment counts in ONE query (no per-card N+1): {task_name: count}. Count in Python — this
+	# frappe rejects SQL functions passed as string fields, and the row set here is small.
 	task_names = [r.name for r in rows]
-	if task_names:
+	attach_counts = Counter(
+		f.attached_to_name
 		for f in frappe.get_all(
 			"File",
 			filters={"attached_to_doctype": "CRM Task", "attached_to_name": ["in", task_names]},
-			fields=["attached_to_name", "count(name) as c"],
-			group_by="attached_to_name",
-		):
-			attach_counts[f.attached_to_name] = f.c
+			fields=["attached_to_name"],
+		)
+	) if task_names else Counter()
 
 	types = {}
 	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:

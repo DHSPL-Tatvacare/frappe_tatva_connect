@@ -7,6 +7,8 @@ assembler: it folds each logged activity's documents + captured location INTO on
 relabels stage changes legibly, and drops derived/auto-synced field noise — so the timeline reads
 as a per-lead audit. Derived on read, nothing stored. Registered via override_whitelisted_methods.
 """
+from collections import Counter
+
 import frappe
 
 from crm.api.activities import get_activities as _native_get_activities
@@ -121,18 +123,19 @@ def get_activities(name: str):
 
 
 def _annotate_attachments(rows, doctype):
-	"""Fold an attachment count onto each row (in place) in ONE grouped File query — drives the
-	paperclip indicator on the unified note/task cards. No-op when there are no rows."""
+	"""Fold an attachment count onto each row (in place) — drives the paperclip indicator on the
+	unified note/task cards. ONE File query, counted in Python (this frappe rejects SQL functions
+	as string fields, and the row set is small). No-op when there are no rows."""
 	names = [r["name"] for r in rows]
 	if not names:
 		return
-	counts = {}
-	for f in frappe.get_all(
-		"File",
-		filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]},
-		fields=["attached_to_name", "count(name) as c"],
-		group_by="attached_to_name",
-	):
-		counts[f.attached_to_name] = f.c
+	counts = Counter(
+		f.attached_to_name
+		for f in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]},
+			fields=["attached_to_name"],
+		)
+	)
 	for r in rows:
 		r["attachments"] = counts.get(r["name"], 0)
