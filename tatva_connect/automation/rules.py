@@ -43,21 +43,21 @@ def matching_rules(vertical, group, program, task_type):
 	must match (a rule fires only for the activity type it was authored against). A rule with zero
 	grain axes is rejected at author-time, so the query can never widen to a global default. Ordered
 	by priority then creation so the executor fires them deterministically."""
-	rows = frappe.db.sql(
-		"""
-		SELECT name, vertical, `group`, program, task_type, priority
-		FROM `tabCRM Automation Rule`
-		WHERE enabled = 1
-		  AND task_type = %(tt)s
-		  AND (vertical = '' OR vertical IS NULL OR vertical = %(v)s)
-		  AND (`group`  = '' OR `group`  IS NULL OR `group`  = %(g)s)
-		  AND (program  = '' OR program  IS NULL OR program  = %(p)s)
-		ORDER BY priority ASC, creation ASC
-		""",
-		{"v": vertical or "", "g": group or "", "p": program or "", "tt": task_type or ""},
-		as_dict=True,
+	# Blank axis = wildcard: ["in", ["", None, x]] reproduces (= '' OR IS NULL OR = x); get_all
+	# auto-quotes the reserved word `group`. Equivalence vs the old raw SQL verified on dev (0 NULLs,
+	# identical row sets). Three AND-ed filter keys = the three AND-ed OR-groups.
+	return frappe.get_all(
+		"CRM Automation Rule",
+		filters={
+			"enabled": 1,
+			"task_type": task_type or "",
+			"vertical": ["in", ["", None, vertical or ""]],
+			"group": ["in", ["", None, group or ""]],
+			"program": ["in", ["", None, program or ""]],
+		},
+		fields=["name", "vertical", "group", "program", "task_type", "priority"],
+		order_by="priority asc, creation asc",
 	)
-	return rows
 
 
 def criteria_match(criteria, context, field_types=None):

@@ -280,7 +280,7 @@ def _resolve_map(raw, context):
 	if not (raw or "").strip():
 		return {}
 	try:
-		data = json.loads(raw)
+		data = json.loads(raw)  # ALLOWLIST 2026-06-29: keep raw — the except gives a precise "invalid JSON" error; parse_json won't raise.
 	except (ValueError, TypeError):
 		raise ValueError("invalid JSON in a child-row action")
 	if not isinstance(data, dict):

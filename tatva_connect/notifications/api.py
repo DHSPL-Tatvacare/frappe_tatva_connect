@@ -74,7 +74,7 @@ def save_my_notification_prefs(prefs):
 	if user == "Guest":
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	if isinstance(prefs, str):
-		prefs = json.loads(prefs)
+		prefs = json.loads(prefs)  # ALLOWLIST 2026-06-29: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
 
 	available = {g.key for g in catalog.all_grains() if g.automation_key in _enabled_automation_keys()}
 	final = _stored_optins(user)  # start from what's stored (preserves disabled-grain opt-ins)
