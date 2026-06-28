@@ -78,8 +78,10 @@ has_permission = {
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
 	"CRM Lead": {
-		# canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
+		# stamp/clamp the lead's grain from the acting user's entitlement (single->auto, manager->validated pick),
+		# THEN canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
 		"before_validate": [
+			"tatva_connect.lead.leads.stamp_entitled_grain",
 			"tatva_connect.lead.leads.canonicalize_routing_fields",
 		],
 		# canonicalise phones (+E.164) first, then dedup on the canonical value
@@ -199,7 +201,7 @@ after_migrate = [
 	"tatva_connect.api.email.ensure_draft_folder",
 ]
 
-# Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the WATI Settings doctype ships as its own doctype JSON).
+# Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
 fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
@@ -218,8 +220,18 @@ fixtures = [
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
-	# WhatsApp Message: ship ONLY our field by name — never vacuum crm/frappe_whatsapp's own custom fields on this shared doctype.
-	{"dt": "Custom Field", "filters": [["name", "in", ["WhatsApp Message-custom_failed_reason"]]]},
+	# Shared doctypes (frappe_whatsapp / frappe-core / crm own them): ship ONLY our custom fields BY NAME —
+	# never the dt-in vacuum — so export never sweeps the owner's fields. custom_provider_message_id backs
+	# the WhatsApp dedup/composite index; grain_* drive grain-scoped assignment; custom_lsq_activity_id is
+	# the LSQ idempotency key (notes; the CRM Task copy ships via the CRM Task dt-in filter above).
+	{"dt": "Custom Field", "filters": [["name", "in", [
+		"WhatsApp Message-custom_failed_reason",
+		"WhatsApp Message-custom_provider_message_id",
+		"Assignment Rule-grain_vertical",
+		"Assignment Rule-grain_group",
+		"Assignment Rule-grain_program",
+		"FCRM Note-custom_lsq_activity_id",
+	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).

@@ -41,6 +41,41 @@ def canonicalize_routing_fields(doc, method=None):
 			doc.set(f, None)
 
 
+def stamp_entitled_grain(doc, method=None):
+	"""Stamp / clamp the lead's grain from the acting user's entitlement — the ONE grain brain
+	(access.entitlement). A user NEVER free-picks grain: a single-grain user's grain is auto-applied
+	(no picker); a manager's picked grain (sent by the form) is clamped to entitlement; a System
+	Manager may set any. Fail-closed for interactive users — no entitlement, an unentitled grain, or a
+	blank grain with multiple options is rejected.
+
+	Trusted server paths (partner API, intake) insert with ignore_permissions and force their own
+	grain via _force_routing, so they already carry the clamp (same source, access.entitlement) —
+	skip them here. Runs before canonicalize_routing_fields so dedup sees the stamped grain."""
+	if doc.flags.ignore_permissions:
+		return
+	from tatva_connect.access.entitlement import ALL_GRAINS, entitled_grains, grain_entitled
+
+	grains = entitled_grains()
+	if grains == ALL_GRAINS:
+		return  # System Manager — trusts the form's pick (any grain).
+	if not grains:
+		frappe.throw(_("You have no grain entitlement to create a lead."), frappe.PermissionError)
+
+	if not any(doc.get(f) for f in ROUTING_FIELDS):
+		# Single grain → apply silently, no question. Multiple (manager) → the form must send the pick.
+		if len(grains) == 1:
+			vertical, group, program = next(iter(grains))
+			doc.custom_vertical = vertical or None
+			doc.custom_group = group or None
+			doc.custom_current_program = program or None
+			return
+		frappe.throw(_("Select a grain for this lead."))
+
+	grain = (doc.custom_vertical or "", doc.custom_group or "", doc.custom_current_program or "")
+	if not grain_entitled(grain):
+		frappe.throw(_("That grain is not within your entitlement."), frappe.PermissionError)
+
+
 def normalize_lead_phones(doc, method=None):
 	"""Canonicalise phone fields to +E.164 on every write (validate), so dedup and
 	WhatsApp-inbound lookup are reliable no matter how a writer formatted the number.
