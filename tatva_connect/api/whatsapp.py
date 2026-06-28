@@ -99,7 +99,7 @@ def _param_names(sample_values):
 	if not sample_values:
 		return []
 	try:
-		parsed = json.loads(sample_values)
+		parsed = json.loads(sample_values)  # ALLOWLIST 2026-06-29: keep raw — parse_json won't raise, would dead-path the legacy CSV fallback; do NOT convert.
 	except Exception:
 		return [str(i + 1) for i in range(len(sample_values.split(",")))]
 	if isinstance(parsed, dict):
@@ -161,7 +161,7 @@ def _parse_hints(sample_values):
 	if not sample_values:
 		return {}
 	try:
-		parsed = json.loads(sample_values)
+		parsed = json.loads(sample_values)  # ALLOWLIST 2026-06-29: keep raw — parse_json won't raise, would dead-path the legacy CSV fallback; do NOT convert.
 	except Exception:
 		parts = [h.strip() for h in sample_values.split(",")]
 		return {str(i + 1): v for i, v in enumerate(parts)}
@@ -235,6 +235,7 @@ def _enforce_manual_template_cap(reference_doctype, reference_name):
 		# to 0 there, which we'd wrongly read as "disabled". The raw value is None
 		# only when the field was never saved -> apply the default cap. An EXPLICIT
 		# "0" the operator saved means they disabled this window.
+		# ALLOWLIST 2026-06-29: keep raw — get_single_value casts an unset Int to 0 (=disabled); do NOT convert in any sweep.
 		raw = frappe.db.get_value(
 			"Singles",
 			{"doctype": "CRM WhatsApp Settings", "field": field},
