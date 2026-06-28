@@ -15,7 +15,7 @@ import base64
 import json
 
 import frappe
-import requests
+import requests  # ALLOWLIST 2026-06-29: FCM stays raw — caller prunes dead tokens via Response.status_code/.text; make_post_request raises on non-2xx + returns parsed JSON, breaking the prune. Do NOT convert.
 
 SETTINGS = "CRM Push Settings"
 SUBSCRIPTION = "CRM Push Subscription"

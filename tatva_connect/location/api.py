@@ -16,7 +16,7 @@ committed (this repo is public), and never reaches the browser — both Google c
 """
 import math
 
-import requests
+import requests  # ALLOWLIST 2026-06-29: location stays raw — geocoding needs an explicit timeout (make_* drops it) and StaticMap streams raw image bytes (make_* JSON-parses). Do NOT convert.
 
 import frappe
 from frappe import _
