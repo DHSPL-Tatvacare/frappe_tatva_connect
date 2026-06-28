@@ -84,7 +84,7 @@ Packaging: scaffold with `bench new-app`; `pyproject.toml`, not `setup.py`; `.gi
     - **Config/secrets:** `frappe.conf` and Password field + `doc.get_password()` — never `os.getenv` for config or secrets in plaintext Data fields.
     - **Cross-cutting:** `frappe.throw`/typed `frappe.*Error` (not `raise Exception`) · `frappe.logger()`/`frappe.log_error()` (not `print`/`logging`) · `frappe.enqueue` (not `threading`) · `frappe.cache()` (not module-dict/`lru_cache`) · `frappe.has_permission`/`only_for` (not hand-rolled role-string gates) · `frappe.generate_hash` (not bespoke `hashlib`/`uuid` tokens).
     - **One brain (ties to invariant 8):** a util the framework lacks but the app needs (e.g. phone normalization — Frappe has no E.164 normalizer) gets **one** shared helper, never re-implemented per file.
-    When a hand-rolled path is genuinely justified (no native equivalent, or a pre-model-sync DDL), leave a one-line comment saying why, so the next reader doesn't "fix" it. **When in doubt, grep for the native helper before writing the line.**
+    When a hand-rolled path is genuinely justified (no native equivalent, or a pre-model-sync DDL), tag it with the existing provenance marker (`# sqli-ok: …` for raw SQL whose identifiers are constants + values bound `%(name)s`; `# authz-ok: …` for a deliberate perm bypass) saying why, so the next reader doesn't "fix" it. Raw SQL that survives MUST bind every value as `%(name)s` and escape identities via `frappe.db.escape` — never string-interpolate a value; this is enforced by `tatva_connect/tests/test_no_sql_injection.py`, which fails CI on an unmarked interpolation. **When in doubt, grep for the native helper before writing the line.**
 
 ### B. How to work with me
 

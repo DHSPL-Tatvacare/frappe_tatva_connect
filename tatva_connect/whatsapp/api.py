@@ -85,6 +85,7 @@ def _post(url: str, token: str, body: dict) -> dict:
 	body so the caller surfaces a clean message instead of a 500.
 	"""
 	try:
+		# ALLOWLIST: json.dumps for the HTTP wire body (frappe.as_json reformats bytes).
 		return make_post_request(url, headers=_headers(token), data=json.dumps(body))
 	except Exception as e:
 		resp = getattr(frappe.flags, "integration_request", None)
@@ -152,7 +153,7 @@ def template_param_names(template) -> list:
 	(WATI customParams in body order). One source of truth for BOTH the manual and the
 	automated-notification send paths. [] if none; callers fall back to the positional index."""
 	try:
-		sv = json.loads(template.sample_values) if template.sample_values else {}
+		sv = frappe.parse_json(template.sample_values) or {}
 		return list(sv.keys())
 	except Exception:
 		return []

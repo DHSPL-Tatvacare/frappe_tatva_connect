@@ -18,6 +18,7 @@ Row-scope (which records within a doctype a role may see) is a SEPARATE layer �
 the visibility brain — not this module. This module is purely the doctype-level gate.
 """
 import frappe
+from frappe import _
 from frappe.permissions import reset_perms
 
 from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
@@ -111,4 +112,4 @@ def assert_locked(*args, **kwargs):
 	— the Layer-4 drift guard, same idiom as automation.drift / notifications.drift."""
 	bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]
 	if bad:
-		frappe.throw(f"Permission lockdown drift — locked doctypes open to All/Guest: {bad}")
+		frappe.throw(_("Permission lockdown drift — locked doctypes open to All/Guest: {0}").format(bad))

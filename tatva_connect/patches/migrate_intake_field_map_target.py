@@ -20,13 +20,17 @@ def execute():
 	if not frappe.db.table_exists(_DT):
 		return
 	# The legacy column is dropped once the new JSON syncs; nothing to carry after that.
-	if not _column_exists(_TABLE, "target"):
+	if not frappe.db.has_column(_DT, "target"):
 		return
 
 	# Ensure the destination columns exist (pre_model_sync runs before the JSON adds them).
+	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_table"):
+		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
 		frappe.db.sql_ddl("ALTER TABLE `{0}` ADD COLUMN `target_table` varchar(140)".format(_TABLE))
+	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_field"):
+		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
 		frappe.db.sql_ddl("ALTER TABLE `{0}` ADD COLUMN `target_field` varchar(140)".format(_TABLE))
 
 	rows = frappe.db.sql(

@@ -8,8 +8,6 @@ schema fieldname regardless of where the writer parked the value.
 The legacy task-type transition engine (apply_transitions / _apply_one) that also lived here was
 folded into the unified automation engine — see db-seeds migration + patches.txt trace.
 """
-import json
-
 import frappe
 
 
@@ -22,7 +20,7 @@ def reconstruct_values(doc):
 	payload = (doc.get("custom_activity_payload") or "").strip()
 	if payload:
 		try:
-			values.update(json.loads(payload) or {})
+			values.update(frappe.parse_json(payload) or {})
 		except (ValueError, TypeError):
 			frappe.log_error("automation: bad activity payload JSON")
 	for f in frappe.get_all(

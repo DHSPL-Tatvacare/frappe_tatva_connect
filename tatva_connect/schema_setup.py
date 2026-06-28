@@ -16,6 +16,7 @@ Only TWO things genuinely belong here — structures we can't put in a file:
 Each step isolates its own failure (rollback + log) so one gap never aborts the migrate.
 """
 import frappe
+from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
@@ -64,7 +65,7 @@ def apply_schema():
 	if failures:
 		# Each step isolates its own failure above (rollback + log) so the rest still run — but a
 		# real structural gap must NOT pass as a green migrate. Fail loud once every step ran.
-		frappe.throw("Schema setup failed for: {0}. See Error Log for tracebacks.".format(", ".join(failures)))
+		frappe.throw(_("Schema setup failed for: {0}. See Error Log for tracebacks.").format(", ".join(failures)))
 
 
 def _ensure_new_modules():

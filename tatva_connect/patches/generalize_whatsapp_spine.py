@@ -43,7 +43,8 @@ def _migrate_provider_field():
 				"search_index": 1,
 			},
 		)
-	if _column_exists("tabWhatsApp Account", "custom_is_wati"):
+	if frappe.db.has_column("WhatsApp Account", "custom_is_wati"):
+		# ALLOWLIST: backfill UPDATE the ORM cannot express (CASE over an old column being retired)
 		frappe.db.sql(
 			"""UPDATE `tabWhatsApp Account`
 			   SET custom_provider = IF(custom_is_wati = 1, 'WATI', 'Meta')
@@ -52,5 +53,7 @@ def _migrate_provider_field():
 		if frappe.db.exists("Custom Field", "WhatsApp Account-custom_is_wati"):
 			frappe.delete_doc("Custom Field", "WhatsApp Account-custom_is_wati", force=True)
 		# Deleting the Custom Field does not drop the DB column — remove the orphan explicitly.
+		# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 		if _column_exists("tabWhatsApp Account", "custom_is_wati"):
+			# ALLOWLIST: raw DROP COLUMN DDL — no Frappe helper
 			frappe.db.sql_ddl("ALTER TABLE `tabWhatsApp Account` DROP COLUMN `custom_is_wati`")

@@ -12,8 +12,6 @@ does so it threads + shows in the lead tab. No Meta call, ever.
 
 Registered via `override_doctype_class` in hooks.py.
 """
-import json
-
 import frappe
 from frappe import _
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_notification.whatsapp_notification import (
@@ -55,7 +53,7 @@ class WATINotification(WhatsAppNotification):
 			# then this path's side-effect is to raise (caught below -> Notification Log).
 			r = adapter.classify_send_response(resp)
 			if r.failed:
-				raise Exception(r.reason or "WATI send failed")
+				frappe.throw(_("WATI send failed: {0}").format(r.reason) if r.reason else _("WATI send failed"))
 			message_id = r.message_id
 
 			if not self.get("content_type"):
@@ -70,7 +68,7 @@ class WATINotification(WhatsAppNotification):
 				"content_type": self.content_type,
 				"use_template": 1,
 				"template": self.template,
-				"template_parameters": json.dumps([p["value"] for p in params], default=str) if params else None,
+				"template_parameters": frappe.as_json([p["value"] for p in params]) if params else None,
 				"whatsapp_account": account.name,
 			}
 			if doc_data:

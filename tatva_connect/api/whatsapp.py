@@ -406,10 +406,8 @@ def _to_system_naive(iso):
 	if not iso:
 		return None
 	try:
-		import datetime
-
 		base = str(iso).replace("Z", "").split(".")[0].split("+")[0]
-		dt_utc = datetime.datetime.strptime(base, "%Y-%m-%dT%H:%M:%S")
+		dt_utc = frappe.utils.get_datetime(base)
 		return frappe.utils.convert_utc_to_system_timezone(dt_utc).replace(tzinfo=None)
 	except Exception:
 		return None

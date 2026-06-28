@@ -18,8 +18,6 @@ Adapter contract (duck-typed module, no ABC):
   * already_processed(payload, event, account) -> bool — idempotency vs the target doctype
   * handle(payload, event, account) -> None            — parse + clean DB moves + fail-closed attribution
 """
-import json
-
 import frappe
 
 from tatva_connect.webhooks import registry
@@ -92,7 +90,7 @@ def _persist_raw(service, event, payload, account):
 				"integration_request_service": service,
 				"request_description": f"{service} {event or ''}".strip(),
 				"status": "Queued",
-				"data": json.dumps(payload, default=str),
+				"data": frappe.as_json(payload),
 			}
 		).insert(ignore_permissions=True)
 		frappe.db.commit()
@@ -154,7 +152,7 @@ def replay(integration_request):
 	not the live request token."""
 	row = frappe.get_doc("Integration Request", integration_request)
 	service = row.integration_request_service
-	payload = json.loads(row.data or "{}")
+	payload = frappe.parse_json(row.data) or {}
 	event = _event_from_description(service, row.request_description)
 	account = _account_for_replay(service, payload, event)
 	process(service, payload, account, vendor_event=event, log=row.name)

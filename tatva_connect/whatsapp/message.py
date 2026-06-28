@@ -12,8 +12,6 @@ No-Meta guarantee (guardrails 1, 3, 5):
 
 Registered via `override_doctype_class` in hooks.py.
 """
-import json
-
 import frappe
 from frappe import _
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import (
@@ -137,7 +135,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		# Save the resolved values so the CRM WhatsApp tab renders {{N}} filled
 		# (crm substitutes the display from template_parameters).
 		if params:
-			self.template_parameters = json.dumps([p["value"] for p in params])
+			self.template_parameters = frappe.as_json([p["value"] for p in params])
 		resp = adapter.send_template_message(
 			account,
 			to_number=adapter.normalize_number(self.to),
@@ -194,7 +192,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		# for an empty slot rather than dropping it (dropping would shift later slots).
 		if self.body_param:
 			try:
-				bp = json.loads(self.body_param)
+				bp = frappe.parse_json(self.body_param)
 			except Exception:
 				return []
 			return [

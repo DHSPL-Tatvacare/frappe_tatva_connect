@@ -12,9 +12,9 @@ def execute():
 	if not frappe.db.table_exists("CRM API Metric"):
 		return
 	for name, cols in _INDEXES:
-		if frappe.db.sql(f"SHOW INDEX FROM `{_TABLE}` WHERE Key_name = %s", name):
+		if frappe.db.has_index(_TABLE, name):
 			continue
 		try:
-			frappe.db.sql(f"ALTER TABLE `{_TABLE}` ADD INDEX `{name}` ({cols})")
+			frappe.db.add_index("CRM API Metric", [c.strip().strip("`") for c in cols.split(",")], name)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"observability: index {name} failed")

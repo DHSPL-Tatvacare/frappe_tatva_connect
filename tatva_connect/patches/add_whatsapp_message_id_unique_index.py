@@ -6,10 +6,7 @@ def execute():
 	table = "tabWhatsApp Message"
 	index_name = "message_id_unique"
 
-	existing = frappe.db.sql(
-		f"SHOW INDEX FROM `{table}` WHERE Key_name = %s", index_name
-	)
-	if existing:
+	if frappe.db.has_index(table, index_name):
 		return
 
 	dupes = frappe.db.sql(
@@ -30,9 +27,7 @@ def execute():
 		return
 
 	try:
-		frappe.db.sql(
-			f"ALTER TABLE `{table}` ADD UNIQUE INDEX `{index_name}` (`message_id`)"
-		)
+		frappe.db.add_unique("WhatsApp Message", ["message_id"], index_name)
 	except Exception:
 		frappe.log_error(
 			title="WATI: message_id unique index failed",

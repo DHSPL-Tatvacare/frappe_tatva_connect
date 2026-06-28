@@ -6,8 +6,6 @@ pulls `getMessageTemplates` and writes local rows as a **read-only reflection**,
 using `db_insert` / `db_update` to bypass frappe_whatsapp's Meta-bound
 validate/after_insert entirely. No Meta, no WATI push.
 """
-import json
-
 import frappe
 
 from tatva_connect import automation
@@ -84,7 +82,7 @@ def _sync_one(account_name):
 			# picker can show an exact per-variable hint. The {{N}} -> CRM field
 			# mapping lives in `field_names` (operator-set) — never overwritten here.
 			custom_params = t.get("customParams") or []
-			sample_values = json.dumps(
+			sample_values = frappe.as_json(
 				{
 					str(p.get("paramName") or i + 1): (p.get("paramValue") or "")
 					for i, p in enumerate(custom_params)

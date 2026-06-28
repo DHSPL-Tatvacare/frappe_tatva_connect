@@ -7,7 +7,6 @@ the SPA Activity timeline and the Desk Lead timeline. Availability is grain-scop
 the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or scope.
 Ships dormant: a CRM Task Type with no scope row never surfaces as an activity.
 """
-import json
 from collections import Counter
 from urllib.parse import parse_qs, urlparse
 
@@ -255,7 +254,7 @@ def compute_activity(lead, task_type, values, task=None):
 	_validate_asm(promoted.get("custom_asm"))
 
 	fields = {
-		"custom_activity_payload": json.dumps(payload, default=str),
+		"custom_activity_payload": frappe.as_json(payload),
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
 		**promoted,
 	}
