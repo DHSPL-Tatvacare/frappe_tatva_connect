@@ -15,7 +15,7 @@ single. Managed identity is a later swap behind this same `BlobStore` seam.
 
 import mimetypes
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 import frappe
@@ -152,7 +152,7 @@ class BlobStore:
 			blob_name=blob_key,
 			account_key=self.service.credential.account_key,
 			permission=BlobSasPermissions(read=True),
-			expiry=datetime.now(timezone.utc) + timedelta(seconds=ttl),
+			expiry=frappe.utils.get_datetime_in_timezone("UTC") + timedelta(seconds=ttl),
 		)
 		url = f"{self._blob(blob_key).url}?{token}"
 		frappe.cache().set_value(cache_key, url, expires_in_sec=max(ttl - _SAS_CACHE_SKEW, _SAS_CACHE_SKEW))

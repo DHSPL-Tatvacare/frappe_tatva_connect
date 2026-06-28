@@ -434,7 +434,6 @@ def normalise_partner_response(response=None, request=None):
 	including the framework-layer ones (bad key / malformed body / not-whitelisted) —
 	speak our contract. Never raises (Frappe logs after_request failures, non-fatal)."""
 	try:
-		import json
 		if response is None:
 			return
 		# The earliest pre-handler errors (bad key, malformed body) fire before Frappe
@@ -448,9 +447,8 @@ def normalise_partner_response(response=None, request=None):
 			return
 		if response.status_code < 400:
 			return
-		try:
-			body = json.loads(response.get_data(as_text=True) or "{}")
-		except Exception:
+		body = frappe.parse_json(response.get_data(as_text=True) or "{}")
+		if not isinstance(body, dict):
 			body = {}
 		if isinstance(body, dict) and body.get("status") == "error":
 			return  # already our contract (an _api/_fail response) — leave it
@@ -458,7 +456,7 @@ def normalise_partner_response(response=None, request=None):
 			request, response.status_code, (body or {}).get("exc_type")
 		)
 		response.status_code = http
-		response.set_data(json.dumps({"status": "error", "error": {"code": code, "message": _(message)}}))
+		response.set_data(frappe.as_json({"status": "error", "error": {"code": code, "message": _(message)}}))
 		response.headers["Content-Type"] = "application/json"
 	except Exception:
 		frappe.logger().error("normalise_partner_response failed", exc_info=True)

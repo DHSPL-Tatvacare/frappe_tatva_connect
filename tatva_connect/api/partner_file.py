@@ -83,7 +83,7 @@ def _load_bytes(data):
 	file_url = data.get("file_url")
 	content_b64 = data.get("content_base64")
 	if file_url:
-		import requests
+		import requests  # ALLOWLIST 2026-06-29: streaming download (stream=True) with a byte-cap + raise_for_status — make_get_request returns processed JSON, can't stream/cap. Do NOT convert.
 
 		from tatva_connect.utils import assert_safe_public_url
 

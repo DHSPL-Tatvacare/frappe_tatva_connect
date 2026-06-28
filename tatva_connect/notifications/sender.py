@@ -31,10 +31,10 @@ def _service_account_info():
 	if not raw:
 		return None
 	try:
-		return json.loads(raw)
+		return json.loads(raw)  # ALLOWLIST 2026-06-29: keep raw — parse_json won't raise, would dead-path the base64 fallback below.
 	except Exception:
 		try:
-			return json.loads(base64.b64decode(raw))
+			return json.loads(base64.b64decode(raw))  # ALLOWLIST 2026-06-29: base64-of-JSON fallback; parse_json won't raise.
 		except Exception:
 			frappe.log_error("service_account_json is neither valid JSON nor base64-JSON", "Notifications")
 			return None
@@ -74,7 +74,7 @@ def _post_one(project_id, access_token, fcm_token, title, body, data) -> request
 	return requests.post(
 		FCM_ENDPOINT.format(project_id=project_id),
 		headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-		data=json.dumps(message),
+		json=message,
 		timeout=10,
 	)
 

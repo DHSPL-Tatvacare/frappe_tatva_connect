@@ -3,10 +3,10 @@
 Adapted from sanskar-onehash/crm_acefone_integration (MIT).
 
 Thin wrapper over Acefone's REST API (https://api.acefone.in, version path
-/v1/). Auth is a Bearer token that lives PER TENANT on an `Acefone Account` doc
-— this module is account-driven: every HTTP call takes the account whose creds
-to use (resolved upstream by acefone/routing.py). The only GLOBAL state is the
-`Acefone Settings` kill-switch. We keep this module side-effect free: it never
+/v1/). Auth is a Bearer token that lives PER TENANT on a `CRM Telephony Account`
+doc — this module is account-driven: every HTTP call takes the account whose creds
+to use (resolved upstream by telephony/routing.py). The only GLOBAL state is the
+`CRM Telephony Settings` kill-switch. We keep this module side-effect free: it never
 writes a CRM Call Log — that lives in handler.py. Mirrors the kill-switch +
 defensive-POST conventions of tatva_connect/wati/api.py.
 
@@ -14,7 +14,6 @@ Click-to-call returns only {"success": bool, "message": str} (no synchronous
 call id), so correlation back to a CRM Call Log row is carried via
 `custom_identifier` (echoed in the webhook) — see handler.py.
 """
-import json
 import re
 from urllib.parse import urlencode
 
@@ -61,7 +60,7 @@ def base_url_of(account) -> str:
 
 
 def _headers(account) -> dict:
-	"""Bearer auth from this Acefone Account's api_token Password field."""
+	"""Bearer auth from this CRM Telephony Account's api_token Password field."""
 	token = account.get_password("api_token")
 	return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -75,7 +74,7 @@ def _post(account, endpoint: str, body: dict) -> dict:
 	"""
 	url = f"{base_url_of(account)}/{API_VERSION}/{endpoint.lstrip('/')}"
 	try:
-		return make_post_request(url, headers=_headers(account), data=json.dumps(body))
+		return make_post_request(url, headers=_headers(account), json=body)
 	except Exception as e:
 		resp = getattr(frappe.flags, "integration_request", None)
 		if resp is not None:

@@ -161,4 +161,4 @@ def _purge_5min(days):
 		f"DELETE FROM `{AGG}` WHERE granularity = '5min' AND bucket_start < %(c)s",
 		{"c": cutoff},
 	)
-	return frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+	return frappe.db.sql("SELECT ROW_COUNT()")[0][0]  # sqli-ok: constant query, no input — reads the DELETE's affected-row count (no frappe rowcount API).

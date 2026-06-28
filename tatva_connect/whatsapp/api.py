@@ -5,7 +5,6 @@ Thin wrapper over WATI's REST API, live-verified shapes (see vault design
 `WhatsApp Account` row: base URL in `url` (e.g. https://live-mt-server.wati.io/360078),
 JWT in the `token` Password field. We detect WATI accounts by the host marker.
 """
-import json
 import re
 from typing import NamedTuple
 
@@ -58,8 +57,8 @@ def assert_enabled():
 	"""Block sends when the kill-switch is off (the switch must stop send AND receive)."""
 	if not is_enabled():
 		frappe.throw(
-			_("WATI is disabled (WATI Settings → Enabled is off). No messages are sent."),
-			title=_("WATI disabled"),
+			_("WhatsApp is disabled (CRM WhatsApp Settings → Enabled is off). No messages are sent."),
+			title=_("WhatsApp disabled"),
 		)
 
 
@@ -85,8 +84,7 @@ def _post(url: str, token: str, body: dict) -> dict:
 	body so the caller surfaces a clean message instead of a 500.
 	"""
 	try:
-		# ALLOWLIST: json.dumps for the HTTP wire body (frappe.as_json reformats bytes).
-		return make_post_request(url, headers=_headers(token), data=json.dumps(body))
+		return make_post_request(url, headers=_headers(token), json=body)
 	except Exception as e:
 		resp = getattr(frappe.flags, "integration_request", None)
 		if resp is not None:
@@ -184,7 +182,7 @@ def send_session_message(account, to_number: str, message: str):
 
 def send_session_file(account, to_number: str, filename: str, content: bytes, mimetype: str, caption: str = ""):
 	"""POST /api/v1/sendSessionFile/{number}?caption= — multipart upload (field 'file')."""
-	import requests
+	import requests  # ALLOWLIST 2026-06-29: multipart file upload (files=) + own non-raising response handling — make_post_request has no files= and raises on non-2xx. Do NOT convert.
 
 	token = account.get_password("token")
 	url = f"{account.url}/api/v1/sendSessionFile/{to_number}"
@@ -257,7 +255,7 @@ def get_media(account, data: str) -> tuple[bytes, str]:
 	(live webhook) or a relative path like 'data/images/<uuid>.jpg' (getMessages
 	history). Returns (content_bytes, content_type). Requires the account Bearer
 	token — an unauthenticated GET returns 401 (verified)."""
-	import requests
+	import requests  # ALLOWLIST 2026-06-29: raw-bytes media download (returns content + content-type) — make_get_request returns processed/JSON, can't stream bytes. Do NOT convert.
 
 	from tatva_connect.utils import assert_safe_public_url
 

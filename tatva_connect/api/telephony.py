@@ -17,7 +17,7 @@ def recording(call_log):
 	the provider URL (with the account's Bearer token if the URL is protected)
 	and hand the bytes straight back. Pure pass-through, on play only.
 	"""
-	import requests
+	import requests  # ALLOWLIST 2026-06-29: raw-bytes recording pass-through (hands provider bytes straight to the browser) — make_get_request returns processed JSON. Do NOT convert.
 	from werkzeug.wrappers import Response
 
 	from tatva_connect.utils import assert_safe_public_url
