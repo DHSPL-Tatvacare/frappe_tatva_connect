@@ -34,7 +34,7 @@ def _active_account_names():
 
 
 def resolve_account_for_lead(lead):
-	"""Return the Acefone Account name for a lead, or None if no rule matches.
+	"""Return the CRM Telephony Account name for a lead, or None if no rule matches.
 
 	Most-specific rule wins (Program > Group > Product Line); an ambiguous
 	equally-specific tie raises. Thin wrapper over the shared engine."""
@@ -64,7 +64,7 @@ def leads_for_number_and_account(lead_names, account):
 
 
 def resolve_for_reference(reference_doctype, reference_name):
-	"""Resolve the Acefone Account for an outbound call from a CRM record.
+	"""Resolve the CRM Telephony Account for an outbound call from a CRM record.
 
 	* CRM Lead  -> resolve by the lead's own taxonomy.
 	* CRM Deal  -> resolve via the deal's linked lead if it carries the taxonomy
@@ -104,9 +104,9 @@ def account_by_webhook_token(token):
 
 
 def account_for_did(did_number):
-	"""Inbound: resolve which Acefone Account owns the DID a call landed on.
+	"""Inbound: resolve which CRM Telephony Account owns the DID a call landed on.
 
-	Matches an Acefone Account whose `caller_id` digits equal the CDR's
+	Matches a CRM Telephony Account whose `caller_id` digits equal the CDR's
 	`did_number` digits (last-10 LIKE). With
 	2+ accounts and no DID match we return None rather than guess and misattribute
 	to the wrong tenant — there is deliberately no single-account fallback.

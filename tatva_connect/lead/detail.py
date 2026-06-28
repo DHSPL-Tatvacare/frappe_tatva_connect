@@ -45,7 +45,7 @@ SECTION_REGISTRY = {
 _DEFAULT_SECTION = ("Lead Details", 10, "neutral")
 
 # Fields that live on CRM Task (activity surfaces) — never part of the lead profile.
-_ACTIVITY_DOCTYPES = ("CRM Task", "CRM Task Order Detail")
+_ACTIVITY_DOCTYPES = ("CRM Task",)
 
 # Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
 # (vertical/group) is the dedup anchor; program transitions happen via deliberate routing

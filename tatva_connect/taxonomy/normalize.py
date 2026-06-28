@@ -1,7 +1,7 @@
 """Shared display-value normalization for master records (M-2).
 
 Every `field:<name>` master (Doctor, Hospital, City, Group, Program, Vertical,
-Task Type, Intake Form, Acefone Account) and every auto-add path (the intake
+Task Type, Intake Form, CRM Telephony Account) and every auto-add path (the intake
 `_ensure_master`) runs a captured display value through `normalize_display` so
 desk, API and form entries converge to ONE canonical row — "Apollo ", "apollo"
 and "Apollo" all collapse to "Apollo".

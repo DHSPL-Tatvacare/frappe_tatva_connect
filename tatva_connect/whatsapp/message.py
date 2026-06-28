@@ -38,10 +38,10 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		if not account:
 			frappe.throw(
 				_(
-					"No WATI Account Routing rule matches this lead's Product Line / Group / "
-					"Program. Configure WATI Account Routing before sending."
+					"No CRM WhatsApp Routing rule matches this lead's Product Line / Group / "
+					"Program. Configure CRM WhatsApp Routing before sending."
 				),
-				title=_("No WATI route"),
+				title=_("No WhatsApp route"),
 			)
 		self.whatsapp_account = account
 
