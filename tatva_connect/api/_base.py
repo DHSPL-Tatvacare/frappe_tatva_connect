@@ -27,6 +27,7 @@ import frappe
 from frappe import _
 
 from tatva_connect import automation
+from tatva_connect.whatsapp.phone import to_e164
 
 # Config ---------------------------------------------------------------------
 # Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each
@@ -77,10 +78,10 @@ def _cfg():
 # -- caller resolution -------------------------------------------------------
 
 def _norm_phone(raw):
-	if not raw:
-		return raw
-	d = "".join(c for c in str(raw) if c.isdigit())
-	return ("+91" + d) if len(d) == 10 else (("+" + d) if d else raw)
+	"""E.164 normaliser — one brain: delegates to whatsapp.phone.to_e164, keeping the falsy
+	passthrough (None/'' unchanged) and the str() coercion (a JSON-number mobile_no still
+	normalises) of the original duplicated isdigit/+91 algorithm."""
+	return to_e164(str(raw)) if raw else raw
 
 
 def _resolve_caller():

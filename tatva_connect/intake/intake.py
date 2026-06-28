@@ -5,12 +5,11 @@ insert, this turns that row into a routed, deduped CRM Lead using the linked
 `CRM Intake Form` config: fixed routing + a field map. Adding a future form needs
 only a new Web Form + a new CRM Intake Form row — no new Python.
 """
-import re
-
 import frappe
 from frappe import _
 
 from tatva_connect import automation
+from tatva_connect.whatsapp.phone import to_e164
 
 _TABLE = {
 	"plan": "custom_plan_profile",
@@ -40,13 +39,6 @@ def target_doctype(target_table):
 		return None
 	df = frappe.get_meta("CRM Lead").get_field(cf)
 	return df.options if df else None
-
-
-def _normalize_phone(raw: str) -> str:
-	digits = re.sub(r"\D", "", raw or "")
-	if len(digits) == 10:
-		digits = "91" + digits
-	return "+" + digits
 
 
 _INTAKE_DOCTYPES_CACHE_KEY = "tatva_connect:intake_doctypes"
@@ -226,7 +218,7 @@ def _process_submission_legacy(doc, method=None):
 	# … Read access") to the patient. Request-scoped; auto-resets next request.
 	frappe.flags.mute_messages = True
 
-	mobile = _normalize_phone(doc.get("phone"))
+	mobile = to_e164(doc.get("phone"))
 
 	# M-3: resolve on the canonical lead grain — mobile + vertical + group — using the
 	# form's FORCED routing (cfg). A find-or-create on phone ALONE would hijack an
