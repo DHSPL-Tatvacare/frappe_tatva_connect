@@ -190,6 +190,20 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Lead::CRM Lead::grain",
+		fires_on="Doc Event",
+		trigger_detail="CRM Lead · before_validate",
+		purpose=(
+			"Files each new lead under the creator's entitled grain (product line / group / program) "
+			"instead of asking them to choose it — a single-grain user's grain is applied "
+			"automatically, a manager's chosen grain is validated against their entitlement, and an "
+			"out-of-scope or missing grain is rejected.\n"
+			"Example: a rep who works one program creates a lead and never sees a grain field; it is "
+			"filed under their program, and they can't file one outside it."
+		),
+		backs=["tatva_connect.lead.leads.stamp_entitled_grain"],
+	),
+	Auto(
 		key="Lead::CRM Lead::stage",
 		fires_on="Doc Event",
 		trigger_detail="CRM Lead · validate",

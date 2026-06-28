@@ -53,6 +53,8 @@ def stamp_entitled_grain(doc, method=None):
 	skip them here. Runs before canonicalize_routing_fields so dedup sees the stamped grain."""
 	if doc.flags.ignore_permissions:
 		return
+	if not automation.is_enabled("Lead::CRM Lead::grain"):
+		return
 	from tatva_connect.access.entitlement import ALL_GRAINS, entitled_grains, grain_entitled
 
 	grains = entitled_grains()
