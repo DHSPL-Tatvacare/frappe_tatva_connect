@@ -1,0 +1,85 @@
+# Static quality + security gate. NO deploy — Azure owns deploy; GitHub is code-mirror + checks only.
+# Single-developer, push-only (no PRs). Runs on every push to the three tiers. Needs NO Frappe bench —
+# pure source analysis, so it is fast (~2-3 min). The runtime test suite (bench run-tests) is a
+# separate workflow (phase 2). Tool versions mirror security/requirements.txt (single source of pins);
+# configs live in pyproject.toml ([tool.ruff], [tool.bandit]), security/semgrep-rules/, and
+# security/.secrets.baseline — the SAME configs `tcsec static` uses, so local and CI agree.
+name: Static checks
+
+on:
+  push:
+    # `main` is the current prod branch; DevOps will rename main -> prod. Drop `main` after that rename.
+    branches: [develop, uat, prod, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.15.19
+      - name: ruff check
+        run: ruff check tatva_connect
+      - name: ruff format --check
+        run: ruff format --check tatva_connect
+
+  sast:
+    name: SAST (bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "bandit[toml,sarif]==1.9.4"
+      - name: bandit
+        run: bandit -r tatva_connect -c pyproject.toml
+
+  secrets:
+    name: Secret scan (detect-secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install detect-secrets==1.5.0
+      - name: detect-secrets (tracked files vs baseline)
+        run: git ls-files -z | xargs -0 detect-secrets-hook --baseline security/.secrets.baseline
+
+  semgrep:
+    name: Semgrep (Frappe rules + p/python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install semgrep==1.167.0
+      - name: semgrep
+        run: semgrep scan --error --metrics off --config security/semgrep-rules --config p/python tatva_connect
+
+  ast-locks:
+    name: AST locks (guest-endpoint exposure)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest==9.1.1
+      # bench-free source lock: no NEW @frappe.whitelist(allow_guest=True) endpoint reaches the internet
+      # unreviewed. The other AST locks (no_sql_injection, no_perm_bypass) still need a bench -> phase 2.
+      - name: guest-endpoint exposure lock
+        run: pytest -q tatva_connect/tests/security/test_guest_endpoints.py
