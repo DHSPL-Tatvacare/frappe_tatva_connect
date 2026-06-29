@@ -8,8 +8,7 @@ name: Static checks
 
 on:
   push:
-    # `main` is the current prod branch; DevOps will rename main -> prod. Drop `main` after that rename.
-    branches: [develop, uat, prod, main]
+    branches: [develop, uat, prod]
   workflow_dispatch:
 
 permissions:
