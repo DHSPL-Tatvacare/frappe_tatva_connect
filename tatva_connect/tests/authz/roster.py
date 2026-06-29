@@ -53,8 +53,16 @@ _role_personas = [
 
 PERSONAS = _grain_personas + _role_personas
 
+# The Frappe built-in anonymous principal. A thin, NON-provisioned marker so intake (A14) cases can
+# reference the guest the same way they reference any persona — but it is deliberately NOT in
+# PERSONAS, so generator.seed() never creates it and teardown() never deletes the real Guest user.
+GUEST = "Guest"
+_GUEST_MARKER = {"persona": "guest", "email": GUEST, "password": None, "roles": [], "grain_key": None}
+
 
 def by_persona(name):
+	if name in ("guest", GUEST):
+		return _GUEST_MARKER
 	return next(p for p in PERSONAS if p["persona"] == name)
 
 

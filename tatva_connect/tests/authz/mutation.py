@@ -277,6 +277,124 @@ def _partner_write_out_of_grain():
 	return plant, detect
 
 
+def _partner_callog_cross_tenant():
+	"""DATA (A13 partner abuse, CALL surface): mint a CRM Call Log on an out-of-grain (grain_3) lead
+	and DocShare it WRITE to the partner. native_would_allow on that concrete Call Log must then report
+	write allowed — the cross-tenant attribution/write the partner-call grain scope must never permit
+	(mirrors _partner_write_out_of_grain on the lead surface, on the call-log row). The generator seeds
+	Leads+Tasks but NOT Call Logs, so the row is created here inside the caller-owned savepoint."""
+	def plant():
+		user = roster.email("partner")
+		leaked_lead = _lead_in_grain(2)  # grain_3 — outside the partner's grain_1
+		doc = frappe.new_doc("CRM Call Log")
+		# CRM Call Log autoname is field:id — set a synthetic id, exactly as partner_call._upsert_one does.
+		doc.id = f"AUTHZ-A13-{frappe.generate_hash(length=8)}"
+		doc.set("custom_external_id", f"AUTHZ-A13-MUT-{frappe.generate_hash(length=6)}")
+		doc.type = "Incoming"
+		doc.status = "Completed"
+		setattr(doc, "from", "")
+		doc.to = ""
+		doc.reference_doctype = "CRM Lead"
+		doc.reference_docname = leaked_lead
+		doc.insert(ignore_permissions=True)
+		_grant_docshare("CRM Call Log", doc.name, user, read=1, write=1)
+		return {"user": user, "doc": frappe.get_doc("CRM Call Log", doc.name)}
+
+	def detect(ctx):
+		return native_would_allow(ctx["user"], "CRM Call Log", "write", ctx["doc"])
+
+	return plant, detect
+
+
+def _guest_routing_coercion():
+	"""DATA/BEHAVIOURAL (A14 public-intake guest abuse): the intake fold hands the lead-create brain
+	(partner._upsert_one) is_sysmgr=False + mp, so allow_routing is False and a Guest's submitted
+	routing is DROPPED in favour of the form's grain. The bug we guard is "if allow_routing ever
+	flips, the foreign routing sticks". We can't edit code from a test, so we SIMULATE the flip's
+	effect: drive the brain in the routing-ALLOWED mode (is_sysmgr=True, mp=None) with a foreign-routing
+	payload — the EXACT lead a guest-routing-accepted bug would mint — and confirm the foreign vertical
+	stuck. detect() True = the foreign routing is observable, proving the routing-coercion check (the
+	A14 case asserts vertical == the form grain) is NOT blind (mirrors A2's program-only-match sim)."""
+	from tatva_connect.api import partner
+
+	def plant():
+		g_form = grains.GRAINS[0]     # the form/expected grain (grain_1)
+		g_foreign = grains.GRAINS[2]  # grain_3 — the smuggled foreign grain
+		doc, _action = partner._upsert_one(
+			{
+				"mobile_no": "9990014001",
+				"custom_vertical": g_foreign["vertical"],
+				"custom_group": g_foreign["group"],
+				"custom_current_program": g_foreign["program"],
+			},
+			None, True, ["mobile_no"], {}, allowed_programs=[],
+		)
+		return {"lead": doc.name, "expected_vertical": g_form["vertical"],
+		        "foreign_vertical": g_foreign["vertical"]}
+
+	def detect(ctx):
+		v = frappe.db.get_value("CRM Lead", ctx["lead"], "custom_vertical")
+		# Detected iff the foreign routing stuck (it did, because we removed the clamp) and is NOT the
+		# form's grain — exactly the leak the is_sysmgr=False+mp path prevents on the real fold.
+		return v == ctx["foreign_vertical"] and v != ctx["expected_vertical"]
+
+	return plant, detect
+
+
+def _smartview_grain_overgrant():
+	"""DATA (A12 grain-clamp / A7 column leak, SMART VIEW surface): over-grant a grain entitlement by
+	adding a probe to an OUT-OF-GRAIN Assignment Rule. The Smart View catalog resolves through
+	entitlement.resolve_fields keyed on entitled_grains(), so once the foreign grain is entitled a field
+	scoped to it enters the catalog — the out-of-grain column the grain clamp (_grains_from_axes /
+	_validate_columns) exists to stop. Mirrors _grant_permlevel1_read: prove a clean baseline (foreign
+	grain NOT entitled, foreign column absent), grant, then prove the delta — no dependency on a seeded
+	catalog row (the foreign-scoped field row is synthetic, present iff its grain is entitled)."""
+	from tatva_connect.access import entitlement
+	from tatva_connect.tests.authz.generator import TAG as _TAG
+
+	g_out = grains.GRAINS[2]  # grain_3 — the foreign line to over-grant
+	# A synthetic catalog row scoped to grain_3: field_in_grains() admits it ONLY when grain_3 is entitled.
+	foreign_key = "lead:authz_mut_grain3_col"
+	foreign_row = {"grain_vertical": g_out["vertical"], "grain_group": g_out["group"],
+	               "grain_program": g_out["program"]}
+	role = "Authz Mut SmartView Probe Role"
+	probe = "authz.mut.svprobe@example.test"
+	out_rule = "{}::{}".format(_TAG, g_out["key"])  # the grain_3 Assignment Rule seeded by generator
+
+	def plant():
+		if not frappe.db.exists("Role", role):
+			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}
+			               ).insert(ignore_permissions=True)
+		if not frappe.db.exists("User", probe):
+			frappe.get_doc({
+				"doctype": "User", "email": probe, "first_name": "svprobe",
+				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
+			}).insert(ignore_permissions=True)
+		# Clean baseline: the probe is entitled to NO grain (no Assignment Rule membership), so the
+		# grain_3-scoped column is absent from its resolved catalog.
+		_clear_access_caches()
+		base = entitlement.resolve_fields(
+			{foreign_key: foreign_row}, entitlement.entitled_grains(probe), [role])
+		baseline_has = foreign_key in base
+		# The over-grant: enrol the probe into the grain_3 Assignment Rule -> entitled_grains now
+		# includes grain_3, so the foreign-scoped column resolves into the catalog.
+		rule = frappe.get_doc("Assignment Rule", out_rule)
+		rule.append("users", {"user": probe})
+		rule.save(ignore_permissions=True)
+		_clear_access_caches()
+		return {"probe": probe, "key": foreign_key, "row": foreign_row, "role": role,
+		        "baseline_has": baseline_has}
+
+	def detect(ctx):
+		_clear_access_caches()
+		resolved = entitlement.resolve_fields(
+			{ctx["key"]: ctx["row"]}, entitlement.entitled_grains(ctx["probe"]), [ctx["role"]])
+		# Detected iff the foreign-grain column that was ABSENT at baseline is now in the catalog.
+		return (ctx["key"] in resolved) and not ctx["baseline_has"]
+
+	return plant, detect
+
+
 # ---- the registry of planted violations ---------------------------------------------------------
 # AT LEAST ONE per attack vector. Untestable-without-code-mutation vectors are declared explicitly
 # (never silently skipped) so the self-validation can surface them as build warnings.
@@ -293,7 +411,10 @@ def _build_mutations():
 	a10p, a10d = _share_doc_write("WhatsApp User", 0)  # wrapped-method data ceiling = native_would_allow on a shared doc
 	a11p, a11d = _open_doctype_to_role("Contact", "Purchase Master Manager")
 	a12p, a12d = _share_out_of_grain(4, 2)         # DocShare over-grant (the share IS the fence abuse)
+	a12svp, a12svd = _smartview_grain_overgrant()  # entitlement over-grant -> Smart View catalog leaks a foreign column
 	a13p, a13d = _partner_write_out_of_grain()
+	a13clp, a13cld = _partner_callog_cross_tenant()  # cross-tenant write on the CALL surface
+	a14p, a14d = _guest_routing_coercion()
 
 	return [
 		{"attack": "A1", "id": "MUT-A1-share-other-grain-lead",
@@ -379,11 +500,45 @@ def _build_mutations():
 		 "plant": a12p, "detect": a12d, "expected_detector": "oracle.native_visible_names",
 		 "untestable_without_code_mutation": None},
 
+		{"attack": "A12", "id": "MUT-A12-smartview-grain-overgrant",
+		 "english": "a probe is enrolled into an out-of-grain Assignment Rule -> entitlement widens and "
+		            "the Smart View catalog (entitlement.resolve_fields) surfaces a foreign-grain column "
+		            "the grain clamp must stop",
+		 "plant": a12svp, "detect": a12svd, "expected_detector": "entitlement.resolve_fields",
+		 "untestable_without_code_mutation": None},
+
 		{"attack": "A13", "id": "MUT-A13-partner-cross-tenant-write",
 		 "english": "the partner (mapped to grain_1) is DocShared write on a TatvaPractice lead -> "
 		            "cross-tenant write grant (attribution abuse, invariant 16)",
 		 "plant": a13p, "detect": a13d, "expected_detector": "oracle.native_would_allow",
 		 "untestable_without_code_mutation": None},
+
+		{"attack": "A13", "id": "MUT-A13-partner-callog-cross-tenant",
+		 "english": "the partner (mapped to grain_1) is DocShared write on a grain_3 lead's CRM Call Log "
+		            "-> cross-tenant write on the CALL surface (would_allow on the concrete row)",
+		 "plant": a13clp, "detect": a13cld, "expected_detector": "oracle.native_would_allow",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "A14", "id": "MUT-A14-guest-routing-coercion",
+		 "english": "the lead-create brain driven in routing-ALLOWED mode with a foreign-routing payload "
+		            "mints a lead on the foreign grain — the EXACT leak the intake fold's is_sysmgr=False+mp "
+		            "(allow_routing=False) prevents; proves the routing-coercion check is not blind",
+		 "plant": a14p, "detect": a14d, "expected_detector": "intake routing coercion (lead.custom_vertical)",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "A14", "id": "MUT-A14-guest-master-growth",
+		 "english": "a Guest manual-field submit must never grow a master (intake._ensure_master Guest "
+		            "guard); the guard is a pure code branch, so the differential lives in the CASE",
+		 "plant": None, "detect": None, "expected_detector": "row count of the growable master (CASE)",
+		 "untestable_without_code_mutation":
+			 "The Guest master-growth guard is a pure CODE branch (intake.py:355 "
+			 "`if frappe.session.user == 'Guest': return canonical`). Its failure mode is deleting that "
+			 "branch — a code mutation, which a test can't perform on app source. There is no DATA "
+			 "condition that flips frappe.session.user for an in-process oracle. The protection is the "
+			 "CASE A14-guest-no-master-growth, which IS a differential: it grows nothing as Guest and "
+			 "+1 as an authed caller against the SAME growable master (CRM Side Effect Option) — so if "
+			 "line 355 were deleted, the Guest no-grow assertion would fail. Recorded here, not silently "
+			 "skipped (audit M2)."},
 	]
 
 
