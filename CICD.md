@@ -18,9 +18,9 @@ Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`
   (frappe/whatsapp apps) is identical & pinned. `tatva_connect` stays on `main` until its branches are set up.
   Build picks the env: `APPS_JSON_BASE64=$(base64 -w0 apps.<env>.json)`.
 - **Promote by fast-forward** when green (`git merge --ff-only`), then rebuild that env's image. Branch name = env.
-- **CI (fork only):** `Frontend CI` (ESLint/Oxlint/Vitest) on every push to all three; `Backend CI` (heavy)
-  only on `uat`/`prod` + a weekly cron (Sat). Blocking is enforced by branch protection on `prod`. No external
-  services (Codecov/Semgrep stripped); SAST lives here in `tatva_connect` (tcsec).
+- **CI (fork only):** `Frontend CI` (ESLint/Oxlint/Vitest) on every push to all three + a weekly cron (Sat);
+  `Backend CI` (heavy) only on pushes to `uat`/`prod` (i.e. promote/ff-merge) — no cron. Blocking is enforced by
+  branch protection on `prod`. No external services (Codecov/Semgrep stripped); SAST lives in `tatva_connect` (tcsec).
 
 ## Conventions — commits & workflows (codified)
 **Commits — Conventional Commits** (both repos): `type(scope): summary` — lowercase, imperative, no period,
