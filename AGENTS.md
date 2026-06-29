@@ -1,4 +1,4 @@
-<!-- AUTHORITATIVE agent constitution. This is a byte-identical mirror of CLAUDE.md — edit BOTH. Updated 2026-06-29. -->
+<!-- AUTHORITATIVE agent constitution. AGENTS.md is a byte-identical mirror — edit BOTH. Updated 2026-06-29. -->
 
 # Working in this repo (read before any change)
 
@@ -27,8 +27,8 @@ masters use composite `::` primary keys, never `hash`.
   engine, observability, access/VAPT hardening. **59 custom doctypes**, registered in `hooks.py`.
   Modules: `whatsapp telephony taxonomy lead tasks activity automation notifications intake storage
   partner_api smartview observability access location`. Full list → `docs/INVENTORY.md`.
-- **The CRM fork** (`DHSPL-Tatvacare/frappe_tatva_crm`, branch `tatva`): thin, guarded extension
-  points ONLY — no business logic. Reason: the Vue SPA exposes no client hook for list/task actions.
+- **The CRM fork** (`DHSPL-Tatvacare/frappe_tatva_crm`, branches `develop`→`uat`→`prod`): thin, guarded
+  extension points ONLY — no business logic. Reason: the Vue SPA exposes no client hook for list/task actions.
 - **Key overrides (why):** WhatsApp Message/Notification/Templates → `whatsapp.*` (WATI, never Meta);
   `File` → Azure offload; `Assignment Rule` → grain-gated; exotel call → `telephony.bridge`; 11
   `access.native_guards` wrap engine-bypassing native crm methods (VAPT fail-closed).
@@ -102,7 +102,8 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, migration
   DORMANT); rules are user-built. Full detail → `CICD.md` and `db-seeds/INDEX.md`.
 
 ## Deploy posture (two lanes — full detail in CICD.md)
-- **Lane 1 — automatic:** build image (`apps.json`, 9 apps + fork) → install → `bench migrate` (applies
+- **Lane 1 — automatic:** build image (per-env apps file — `apps.uat.json`/`apps.prod.json` pin the fork's
+  branch `uat`/`prod`; `apps.json` = `develop`; 9 apps + fork) → install → `bench migrate` (applies
   doctypes/fixtures/patches/`after_migrate`) → `enable-scheduler`. Code carries NO business values.
 - **Lane 2 — manual operator:** run `db-seeds` (ordered, idempotent) → publish handbook → fill Settings
   forms + flip `CRM Tatva Automation` toggles → LSQ data migration. Nothing fires until toggled.
@@ -191,5 +192,5 @@ MUST be updated in the same change whenever code touches their content.** Stale 
 | Step-by-step prod runbook | `docs/prod-deploy/DEPLOY.md` |
 | Seed order, feature map, config activation | `db-seeds/INDEX.md` |
 | Migration order | `tatva_connect/patches.txt` |
-| The CRM fork + its divergence | `DHSPL-Tatvacare/frappe_tatva_crm` (branch `tatva`) → `CUSTOMIZATIONS.md` |
+| The CRM fork + its divergence | `DHSPL-Tatvacare/frappe_tatva_crm` (branches `develop`/`uat`/`prod`) → `CUSTOMIZATIONS.md` |
 | Strategy, decisions, live state | vault `tatvacare-obsidian/Projects/frappe-crm/` |

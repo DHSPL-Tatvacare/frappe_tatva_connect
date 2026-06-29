@@ -7,8 +7,20 @@ v16, split DB (app box and DB box on one private VNet), no data carried — real
 migration after**. Step-by-step runbook: `docs/prod-deploy/DEPLOY.md`. Seed details: `db-seeds/INDEX.md`.
 
 ## The posture in one line
-Build one image from `apps.json` → bring up boxes → `bench migrate` (applies ALL schema-as-code) →
+Build one image from the env's apps file → bring up boxes → `bench migrate` (applies ALL schema-as-code) →
 `enable-scheduler` → operator runs `db-seeds` → publish handbook → enable config → LSQ migration → cutover.
+
+## Branches & environments (codified)
+Solo flow, **no PRs**: in the CRM fork, `develop` → `uat` → `prod` (`prod` = renamed `tatva`; rename pending devops).
+- **local** = the dev bench tracks `develop` (`git checkout develop` — git clone, no image).
+- **UAT / PROD** = image built from the matching apps file, which pins only the fork's branch:
+  `apps.uat.json` (crm `uat`) · `apps.prod.json` (crm `prod`) · `apps.json` = `develop`. Everything else
+  (frappe/whatsapp apps) is identical & pinned. `tatva_connect` stays on `main` until its branches are set up.
+  Build picks the env: `APPS_JSON_BASE64=$(base64 -w0 apps.<env>.json)`.
+- **Promote by fast-forward** when green (`git merge --ff-only`), then rebuild that env's image. Branch name = env.
+- **CI (fork only):** `Frontend` (ESLint/Oxlint/Vitest) on every push to all three; `Server` (heavy) only on
+  `uat`/`prod` + a weekly cron (Sat). Blocking is enforced by branch protection on `prod`. No external services
+  (Codecov/Semgrep stripped); SAST lives here in `tatva_connect` (tcsec).
 
 ## Two lanes — what is automated, what is manual, and why
 
@@ -23,8 +35,9 @@ Both lanes must finish for "deploy = done." Lane 1 alone gives a working but **i
 30 automation toggles exist DORMANT, zero business data, nothing sends.
 
 ## Lane 1 — build + migrate (CI / DevOps)
-1. **Build image** from `apps.json` (9 apps: CRM fork@`tatva` + frappe_whatsapp, telephony, helpdesk,
-   payments, lms, wiki, insights, tatva_connect) on Frappe `v16` (`FRAPPE_CORE_REF=v16.22.0`). Tag by
+1. **Build image** from the env's apps file (`apps.uat.json`/`apps.prod.json`; 9 apps: CRM fork@`uat`/`prod`
+   + frappe_whatsapp, telephony, helpdesk, payments, lms, wiki, insights, tatva_connect) on Frappe `v16`
+   (`FRAPPE_CORE_REF=v16.22.0`). Tag by
    `$GIT_SHA`, never `latest`. Push to ACR.
 2. **Boxes up, create site, install apps** (`crm` + `frappe_whatsapp` before `tatva_connect` — its
    `required_apps`). Flush redis-cache before migrate (v16 module-map gotcha).
