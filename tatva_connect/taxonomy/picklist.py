@@ -123,7 +123,7 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 		conds["depends_on_field"] = ["in", [dep_field, ""]]
 		conds["depends_on_value"] = ["in", [dep_value, ""]]
 
-	return frappe.get_all(
+	return frappe.get_all(  # authz-ok: grain-clamped by _resolve_grain (entitlement + lead check_permission)
 		"CRM Picklist Value",
 		filters=conds,
 		fields=["name", "display_label"],

@@ -150,6 +150,7 @@ def replay(integration_request):
 	'<service> <event>' the front door wrote, so the event is recovered. Account is
 	re-resolved per adapter at handle time from the payload — replay carries the payload,
 	not the live request token."""
+	frappe.only_for("System Manager")
 	row = frappe.get_doc("Integration Request", integration_request)
 	service = row.integration_request_service
 	payload = frappe.parse_json(row.data) or {}
@@ -165,6 +166,7 @@ def replay_failed(service, since=None):
 	only those created on/after `since`). Returns the count re-enqueued. The original
 	rows stay; each re-run flips its own status. A truthful DLQ: a row is 'Failed' only
 	when its worker actually raised (M1), so replay never re-runs still-Queued/in-flight work."""
+	frappe.only_for("System Manager")
 	filters = {
 		"integration_request_service": service,
 		"status": "Failed",

@@ -155,14 +155,15 @@ def _read_anchor(ld):
 
 
 def _write_anchor(ld, lat, lng, source, address=None):
-	ld.custom_clinic_latitude = flt(lat)
-	ld.custom_clinic_longitude = flt(lng)
-	ld.custom_clinic_geo = _geojson_point(lat, lng)
+	# Targeted geo-cache write (db_set, like _resolve_anchor_address) — never a full lead save, so a
+	# read-only precheck can't trigger the lead's write/on_update pipeline (S.1). Values are server-derived.
+	ld.db_set("custom_clinic_latitude", flt(lat), update_modified=False)
+	ld.db_set("custom_clinic_longitude", flt(lng), update_modified=False)
+	ld.db_set("custom_clinic_geo", _geojson_point(lat, lng), update_modified=False)
 	if ld.meta.has_field("custom_clinic_source"):
-		ld.custom_clinic_source = source
+		ld.db_set("custom_clinic_source", source, update_modified=False)
 	if address and ld.meta.has_field("custom_clinic_address"):
-		ld.custom_clinic_address = address
-	ld.save(ignore_permissions=True)
+		ld.db_set("custom_clinic_address", address, update_modified=False)
 
 
 def _resolve_anchor_address(ld, anchor):

@@ -109,6 +109,14 @@ def _param_names(sample_values):
 	return []
 
 
+def _recipient_number(reference_doctype, reference_name):
+	"""The record's own number — the ONE permitted WhatsApp recipient. A template must never be
+	sent to a client-supplied arbitrary number through the org's WATI sender."""
+	if reference_doctype == "CRM Lead":
+		return frappe.db.get_value("CRM Lead", reference_name, "mobile_no")
+	return None
+
+
 @frappe.whitelist()
 def get_send_context(reference_doctype, reference_name):
 	"""One call for the Send-Template dialog: the resolved WATI account (name +
@@ -123,7 +131,7 @@ def get_send_context(reference_doctype, reference_name):
 		from tatva_connect.whatsapp import routing
 
 		lead = frappe.get_cached_doc(reference_doctype, reference_name)
-		mobile_no = lead.mobile_no
+		mobile_no = _recipient_number(reference_doctype, reference_name)
 		name = routing.resolve_account_for_lead(lead)
 		if name:
 			account = {
@@ -277,6 +285,14 @@ def send_template_with_params(reference_doctype, reference_name, template, to, b
 
 	validate_access(reference_doctype, reference_name)
 	_enforce_manual_template_cap(reference_doctype, reference_name)
+
+	# Bind the recipient to the record — never send to a client-supplied arbitrary number.
+	from tatva_connect.whatsapp.api import normalize_number
+
+	expected = _recipient_number(reference_doctype, reference_name)
+	if not expected or normalize_number(to) != normalize_number(expected):
+		frappe.throw(_("Recipient must match the record's number."), frappe.PermissionError)
+
 	doc = frappe.new_doc("WhatsApp Message")
 	doc.update(
 		{

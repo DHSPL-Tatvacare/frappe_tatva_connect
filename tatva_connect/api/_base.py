@@ -127,6 +127,31 @@ def resolve_lead(mp, is_sysmgr, data):
 	return lead_name
 
 
+def find_by_external_id_scoped(doctype, field, external_id, mp, is_sysmgr):
+	"""Resolve a partner `external_id` (stored in `field` — `custom_external_id` for calls,
+	`custom_lsq_activity_id` for activities) to ONE `doctype` row, but ONLY within the caller's grain
+	— the SAME scoping resolve_lead applies to leads. external_id is a PER-PARTNER namespace, not a
+	global one: a row is returned only when its linked CRM Lead is on the caller's (vertical, group),
+	so a partner can never address (overwrite / re-parent / read) another tenant's row by colliding an
+	external_id. System Manager (no mapping) is unscoped. Returns the row name or None."""
+	if not external_id:
+		return None
+	for r in frappe.get_all(
+		doctype,
+		filters={field: external_id},
+		fields=["name", "reference_doctype", "reference_docname"],
+	):
+		if is_sysmgr:
+			return r.name
+		if r.reference_doctype == "CRM Lead" and r.reference_docname:
+			g = frappe.db.get_value(
+				"CRM Lead", r.reference_docname, ["custom_vertical", "custom_group"], as_dict=True
+			)
+			if g and g.custom_vertical == mp.vertical and g.custom_group == mp.crm_group:
+				return r.name
+	return None
+
+
 # -- request-arg helpers -----------------------------------------------------
 
 def _read_list(data, key):

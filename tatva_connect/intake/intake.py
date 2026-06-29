@@ -350,6 +350,11 @@ def _ensure_master(doctype, display_field, value):
 		# Pick-only: do not grow from a form. Keep the typed value on the lead.
 		return canonical
 
+	# A.10: an untrusted anonymous (web-form Guest) submission never auto-creates a master — the
+	# typed value is stored as text. Governed growth (review_pending) is for authenticated callers only.
+	if frappe.session.user == "Guest":
+		return canonical
+
 	d = frappe.new_doc(doctype)
 	d.set(display_field, canonical)
 	# Governed growth (Phase 3): flag form-born rows for ops review/merge.

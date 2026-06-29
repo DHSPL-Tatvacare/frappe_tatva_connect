@@ -45,6 +45,7 @@ from tatva_connect.api._base import (
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
+	find_by_external_id_scoped,
 	resolve_lead,
 )
 
@@ -104,13 +105,6 @@ def _activity_payload(name):
 	}
 
 
-def _find_by_external_id(external_id):
-	"""The CRM Task name carrying this external_id (the dedup key), or None."""
-	if not external_id:
-		return None
-	return frappe.db.get_value("CRM Task", {DEDUP_FIELD: external_id}, "name")
-
-
 def _backdate(name, created_at):
 	"""Backdate the task's `creation` from a partner-supplied timestamp (migration /
 	historical load). No-op on a blank/unparseable value, so live creates keep `now`."""
@@ -137,7 +131,7 @@ def _upsert_one(item, mp, is_sysmgr):
 	values = item.get("values") or {}
 
 	external_id = item.get("external_id")
-	existing = _find_by_external_id(external_id)
+	existing = find_by_external_id_scoped("CRM Task", DEDUP_FIELD, external_id, mp, is_sysmgr)
 	# The brain computes + writes; `task=existing` re-runs compute on the same task
 	# (no duplicate insert). New external_id (or none) -> brain inserts the shell.
 	name = activity_brain.save_activity(lead, task_type, values, task=existing)
@@ -276,7 +270,7 @@ def activity_get_bulk(**kwargs):
 
 	results, found = [], 0
 	for i, ident in enumerate(requested):
-		name = ident if by == "name" else _find_by_external_id(ident)
+		name = ident if by == "name" else find_by_external_id_scoped("CRM Task", DEDUP_FIELD, ident, mp, is_sysmgr)
 		try:
 			if not name:
 				raise frappe.DoesNotExistError(_("Activity not found"))

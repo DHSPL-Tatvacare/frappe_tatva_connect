@@ -315,7 +315,8 @@ def _eq(a, b, df):
 	if df is not None:
 		try:
 			return frappe.utils.cast(df.fieldtype, a) == frappe.utils.cast(df.fieldtype, b)
-		except Exception:
+		# an uncastable value falls through to the None-safe equality below; never swallows a real error path.
+		except Exception:  # nosec B110
 			pass
 	return (a if a is not None else "") == (b if b is not None else "")
 

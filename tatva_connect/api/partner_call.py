@@ -40,6 +40,7 @@ from tatva_connect.api._base import (
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
+	find_by_external_id_scoped,
 	resolve_lead,
 )
 
@@ -124,13 +125,6 @@ def _scoped_call(name, mp, is_sysmgr):
 	return doc
 
 
-def _find_by_external_id(external_id):
-	"""The CRM Call Log name carrying this external_id (the dedup key), or None."""
-	if not external_id:
-		return None
-	return frappe.db.get_value("CRM Call Log", {DEDUP_FIELD: external_id}, "name")
-
-
 def _apply_fields(doc, data, lead_name):
 	"""Overlay the partner payload onto a CRM Call Log doc (create or update path)."""
 	direction = data.get("direction")
@@ -178,7 +172,7 @@ def _upsert_one(data, mp, is_sysmgr):
 
 	lead_name = _attribute_lead(data, mp, is_sysmgr)
 
-	existing = _find_by_external_id(external_id)
+	existing = find_by_external_id_scoped("CRM Call Log", DEDUP_FIELD, external_id, mp, is_sysmgr)
 	if existing:
 		doc = frappe.get_doc("CRM Call Log", existing)
 		_apply_fields(doc, data, lead_name)
@@ -186,10 +180,10 @@ def _upsert_one(data, mp, is_sysmgr):
 		return _call_view(doc), "updated"
 
 	doc = frappe.new_doc("CRM Call Log")
-	# The autoname is field:id, so the row NAME is `id`, NOT the dedup key. Mint a stable
-	# synthetic id (partner: prefix keeps it clear of provider call ids) and dedup on
-	# custom_external_id, exactly as the foundation field prescribes.
-	doc.id = f"PARTNER-{external_id}"
+	# The autoname is field:id, so the row NAME is `id`. external_id is only a PER-PARTNER dedup
+	# key (resolved grain-scoped above), never the row identity — so the id is a fresh hash that
+	# can't collide across tenants; dedup is the custom_external_id lookup, not the name.
+	doc.id = f"PARTNER-{frappe.generate_hash(length=10)}"
 	doc.set(DEDUP_FIELD, external_id)
 	# Sensible required-field floors so a sparse payload still inserts (status defaults New-
 	# equivalent "Completed" only if the caller sent none; from/to default to empty strings).
