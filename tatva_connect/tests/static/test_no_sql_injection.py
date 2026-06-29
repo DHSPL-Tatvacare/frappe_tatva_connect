@@ -50,7 +50,18 @@ SQL_SINKS = ("sql", "sql_ddl", "multisql", "PseudoColumn")
 # Per-line opt-out: the offending call carries this marker + a reason. Keep this list TINY.
 OPT_OUT = "sqli-ok:"
 
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../tatva_connect
+def _app_root():
+	"""The tatva_connect app dir, found by walking up to the `hooks.py` marker — robust to where
+	this test file sits (survives a tests/ reorg) and identical in the bench and standalone."""
+	d = os.path.dirname(os.path.abspath(__file__))
+	while d != os.path.dirname(d):
+		if os.path.exists(os.path.join(d, "hooks.py")):
+			return d
+		d = os.path.dirname(d)
+	raise RuntimeError("tatva_connect app root (hooks.py) not found above this test")
+
+
+_APP_DIR = _app_root()
 _SKIP = (os.sep + "tests" + os.sep, os.sep + "patches" + os.sep)
 
 
@@ -94,21 +105,19 @@ def _violations_in(tree):
 
 
 def _tracked_set():
-	"""Absolute paths of git-tracked .py files, or None if git is unavailable. A CI lock polices
-	the COMMITTED codebase, not untracked scratch scripts a dev bench may carry (CI runs on a
-	clean checkout anyway) — so an unmarked interpolation in litter never makes this flap."""
+	"""Absolute paths of git-tracked .py files under the app dir, or None if git is unavailable.
+	A CI lock polices the COMMITTED codebase, not untracked scratch scripts a dev bench may carry
+	(CI runs on a clean checkout anyway) — so an unmarked interpolation in litter never makes this
+	flap. `git ls-files` run from _APP_DIR returns paths RELATIVE TO _APP_DIR, so they must be
+	joined with _APP_DIR (not the repo toplevel)."""
 	try:
-		root = subprocess.run(
-			["git", "-C", _APP_DIR, "rev-parse", "--show-toplevel"],
-			capture_output=True, text=True, check=True,
-		).stdout.strip()
 		out = subprocess.run(
 			["git", "-C", _APP_DIR, "ls-files", "*.py"],
 			capture_output=True, text=True, check=True,
 		).stdout
 	except Exception:
 		return None
-	return {os.path.join(root, line) for line in out.splitlines() if line}
+	return {os.path.abspath(os.path.join(_APP_DIR, line)) for line in out.splitlines() if line}
 
 
 def _python_files():

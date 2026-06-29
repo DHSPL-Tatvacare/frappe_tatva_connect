@@ -361,7 +361,7 @@ frappe.call({doc: frm.doc, method: "my_method", args: {arg: value}})
     "read_from_replica": 1,
     "replica_host": "replica-host",
     "replica_db_name": "dbname",
-    "replica_db_password": "password"
+    "replica_db_password": "<replica-password>"
   }
   ```
 - **Multi-tenancy**: One database per site. Frappe isolates sites at the DB level.

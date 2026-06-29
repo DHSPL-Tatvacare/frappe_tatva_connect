@@ -1,9 +1,11 @@
 # Static quality + security gate. NO deploy — Azure owns deploy; GitHub is code-mirror + checks only.
-# Single-developer, push-only (no PRs). Runs on every push to the three tiers. Needs NO Frappe bench —
-# pure source analysis, so it is fast (~2-3 min). The runtime test suite (bench run-tests) is a
-# separate workflow (phase 2). Tool versions mirror security/requirements.txt (single source of pins);
-# configs live in pyproject.toml ([tool.ruff], [tool.bandit]), security/semgrep-rules/, and
-# security/.secrets.baseline — the SAME configs `tcsec static` uses, so local and CI agree.
+# Single-developer, push-only (no PRs). Runs on every push to the three tiers. Needs NO Frappe bench.
+#
+# ONE umbrella: the whole gate is `pytest tatva_connect/tests/static` — lint (ruff) + SAST (bandit) +
+# deps (pip-audit) + secrets (detect-secrets) + semgrep + the AST source-locks. The exact same checks
+# `tcsec static` runs locally, because both read ONE definition: tatva_connect/security/static_checks.py.
+# So local and CI can never drift. (The bench test suite — behaviour + authz — is a separate lane the
+# developer runs locally; it is not wired here yet.)
 name: Static checks
 
 on:
@@ -19,67 +21,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint (ruff)
+  static:
+    name: Static gate (pytest tatva_connect/tests/static)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff==0.15.19
-      - name: ruff check
-        run: ruff check tatva_connect
-      # NOTE: `ruff format --check` is intentionally NOT enforced yet — the codebase predates ruff-format
-      # adoption (~167/345 files would reformat). Enforcing it is a separate, deliberate mass-format pass,
-      # not part of the lint gate. The lint rules (check) ARE enforced.
-
-  sast:
-    name: SAST (bandit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install "bandit[toml,sarif]==1.9.4"
-      - name: bandit
-        run: bandit -r tatva_connect -c pyproject.toml
-
-  secrets:
-    name: Secret scan (detect-secrets)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install detect-secrets==1.5.0
-      - name: detect-secrets (tracked files vs baseline)
-        run: git ls-files -z | xargs -0 detect-secrets-hook --baseline security/.secrets.baseline
-
-  semgrep:
-    name: Semgrep (Frappe rules + p/python)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install semgrep==1.167.0
-      - name: semgrep
-        run: semgrep scan --error --metrics off --config security/semgrep-rules --config p/python tatva_connect
-
-  ast-locks:
-    name: AST locks (guest-endpoint exposure)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install pytest==9.1.1
-      # bench-free source lock: no NEW @frappe.whitelist(allow_guest=True) endpoint reaches the internet
-      # unreviewed. The other AST locks (no_sql_injection, no_perm_bypass) still need a bench -> phase 2.
-      - name: guest-endpoint exposure lock
-        run: pytest -q tatva_connect/tests/security/test_guest_endpoints.py
+      # Pinned tool versions — the SAME single source `tcsec` installs (tatva_connect/security/requirements.txt),
+      # so the gate is byte-for-byte reproducible between a developer's machine and CI.
+      - name: Install pinned scanners
+        run: pip install -r tatva_connect/security/requirements.txt
+      # lint + sast + deps + secrets + semgrep + AST locks, defined once in static_checks.py.
+      - name: Static gate
+        run: pytest tatva_connect/tests/static -q

@@ -31,7 +31,7 @@ Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`
 - e.g. `feat(lead): grain is entitlement-driven` · `ci: strip Codecov` · `fix(mobile): content-sized sheets`.
 
 **Workflow names** (GitHub Actions, fork) — pattern `<Area> CI`, job names are plain nouns:
-`Frontend CI` (jobs `Lint`, `Unit Tests`) · `Backend CI` (job `Tests`).
+`Frontend CI` (jobs `Lint`, `Tests`) · `Backend CI` (job `Tests`).
 
 ## Two lanes — what is automated, what is manual, and why
 

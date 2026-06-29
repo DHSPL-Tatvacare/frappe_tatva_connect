@@ -19,9 +19,19 @@ import ast
 import os
 import unittest
 
-# The tatva_connect package root = three levels up from this file (tests/security/<this>). Derived from
-# __file__ so this lock runs STANDALONE in CI (no frappe, no bench) AND unchanged inside bench run-tests.
-_APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def _app_root():
+	"""The tatva_connect app dir, found by walking up to the `hooks.py` marker — robust to where
+	this test file sits (survives a tests/ reorg) and identical in the bench and standalone."""
+	d = os.path.dirname(os.path.abspath(__file__))
+	while d != os.path.dirname(d):
+		if os.path.exists(os.path.join(d, "hooks.py")):
+			return d
+		d = os.path.dirname(d)
+	raise RuntimeError("tatva_connect app root (hooks.py) not found above this test")
+
+
+_APP_ROOT = _app_root()
 
 # The REVIEWED public (allow_guest) endpoints — audit 2026-06-29. Each is public for a concrete reason
 # and gates itself internally; adding to this list is a SECURITY REVIEW, not a formality.

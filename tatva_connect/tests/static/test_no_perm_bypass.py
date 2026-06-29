@@ -55,7 +55,18 @@ GUARD_TOKENS = (
 # Per-line opt-out: the offending line ends with this marker + a reason. Keep this list TINY.
 OPT_OUT = "authz-ok:"
 
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../tatva_connect
+def _app_root():
+	"""The tatva_connect app dir, found by walking up to the `hooks.py` marker — robust to where
+	this test file sits (survives a tests/ reorg) and identical in the bench and standalone."""
+	d = os.path.dirname(os.path.abspath(__file__))
+	while d != os.path.dirname(d):
+		if os.path.exists(os.path.join(d, "hooks.py")):
+			return d
+		d = os.path.dirname(d)
+	raise RuntimeError("tatva_connect app root (hooks.py) not found above this test")
+
+
+_APP_DIR = _app_root()
 
 
 def _is_whitelist(deco):
