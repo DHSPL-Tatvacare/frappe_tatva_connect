@@ -11,7 +11,7 @@ Build one image from the env's apps file → bring up boxes → `bench migrate` 
 `enable-scheduler` → operator runs `db-seeds` → publish handbook → enable config → LSQ migration → cutover.
 
 ## Branches & environments (codified)
-Solo flow, **no PRs**: in the CRM fork, `develop` → `uat` → `prod` (`prod` = renamed `tatva`; rename pending devops).
+Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`.
 - **local** = the dev bench tracks `develop` (`git checkout develop` — git clone, no image).
 - **UAT / PROD** = image built from the matching apps file, which pins only the fork's branch:
   `apps.uat.json` (crm `uat`) · `apps.prod.json` (crm `prod`) · `apps.json` = `develop`. Everything else
