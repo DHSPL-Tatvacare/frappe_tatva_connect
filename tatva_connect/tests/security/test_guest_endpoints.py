@@ -74,7 +74,7 @@ def _scan_guest_endpoints():
 			for node in ast.walk(tree):
 				if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
 					if any(_is_allow_guest_whitelist(d) for d in node.decorator_list):
-						found.add("{0}.{1}".format(module, node.name))
+						found.add(f"{module}.{node.name}")
 	return found
 
 
@@ -85,10 +85,10 @@ class TestGuestEndpoints(unittest.TestCase):
 		unreviewed = sorted(current - REVIEWED_GUEST_ENDPOINTS)
 		self.assertFalse(
 			unreviewed,
-			"PUBLIC EXPOSURE: {0} new @frappe.whitelist(allow_guest=True) endpoint(s) are callable by "
+			f"PUBLIC EXPOSURE: {len(unreviewed)} new @frappe.whitelist(allow_guest=True) endpoint(s) are callable by "
 			"an UNAUTHENTICATED caller and have NOT been security-reviewed. Review each (does it verify "
 			"a token? leak data? trust a client grain?), then add it to REVIEWED_GUEST_ENDPOINTS with a "
-			"reason — or remove allow_guest: {1}".format(len(unreviewed), unreviewed),
+			f"reason — or remove allow_guest: {unreviewed}",
 		)
 
 	def test_reviewed_allowlist_not_stale(self):
@@ -98,5 +98,5 @@ class TestGuestEndpoints(unittest.TestCase):
 		self.assertFalse(
 			stale,
 			"the reviewed guest-endpoint allowlist names endpoint(s) that no longer exist — remove "
-			"them so the audit list stays accurate: {0}".format(stale),
+			f"them so the audit list stays accurate: {stale}",
 		)

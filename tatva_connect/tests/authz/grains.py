@@ -19,7 +19,7 @@ _AXIS_MASTER = {"vertical": "CRM Vertical", "group": "CRM Group", "program": "CR
 
 
 def grain_key(vertical, group, program):
-	return "{0}::{1}::{2}".format(vertical or "", group or "", program or "")
+	return "{}::{}::{}".format(vertical or "", group or "", program or "")
 
 
 def _g(vertical, group, program):
@@ -64,8 +64,8 @@ def assert_masters_exist():
 	"""Fail loud if any canonical grain references a master that isn't seeded. Never auto-create."""
 	missing = missing_masters()
 	if missing:
-		rows = ", ".join("{0}='{1}'".format(dt, v) for dt, v in missing)
+		rows = ", ".join(f"{dt}='{v}'" for dt, v in missing)
 		frappe.throw(
 			"authz grains reference masters that do not exist on this site — seed them first "
-			"(masters are curated, never auto-created): {0}".format(rows)
+			f"(masters are curated, never auto-created): {rows}"
 		)

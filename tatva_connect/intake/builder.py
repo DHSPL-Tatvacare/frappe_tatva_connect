@@ -175,17 +175,17 @@ def _depends_on(field: str, op: str, value: str) -> str | None:
 	if not field or not op:
 		return None
 	if op == "is_checked":
-		return "eval:doc.{0}".format(field)
+		return f"eval:doc.{field}"
 	if op == "is_not_checked":
-		return "eval:!doc.{0}".format(field)
+		return f"eval:!doc.{field}"
 	if op == "is_empty":
-		return "eval:!doc.{0}".format(field)
+		return f"eval:!doc.{field}"
 	if op == "is_not_empty":
-		return "eval:doc.{0}".format(field)
+		return f"eval:doc.{field}"
 	if op == "equals":
 		# frappe.as_json gives a safely-quoted JS string literal (escapes quotes/backslashes)
 		# — the comparison value never reaches the expression as raw text.
-		return "eval:doc.{0}=={1}".format(field, frappe.as_json(value or ""))
+		return "eval:doc.{}=={}".format(field, frappe.as_json(value or ""))
 	return None
 
 

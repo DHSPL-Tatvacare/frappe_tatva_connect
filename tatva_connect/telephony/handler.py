@@ -33,9 +33,8 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from tatva_connect.telephony import adapter
+from tatva_connect.telephony import adapter, routing
 from tatva_connect.telephony import api as acefone
-from tatva_connect.telephony import routing
 from tatva_connect.webhooks import spine
 
 # TATVA L2: removed the TELEPHONY_MEDIUM / _process re-export shims (Invariant 14).

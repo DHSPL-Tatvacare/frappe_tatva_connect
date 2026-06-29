@@ -106,23 +106,23 @@ class TestRegistryCases(AuthzTestCase):
 
 	def _run_list_case(self, c):
 		if c.surface != "list":
-			self.skipTest("A1/A2 runner only handles surface 'list'; got {0}".format(c.surface))
+			self.skipTest(f"A1/A2 runner only handles surface 'list'; got {c.surface}")
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest("no seeded {0} target for case {1}".format(c.target, c.id))
+			self.skipTest(f"no seeded {c.target} target for case {c.id}")
 		visible = native_visible_names(user, c.doctype)  # the native ceiling (runs PQC)
 		if c.expected == "deny":
 			self.assertNotIn(
 				target, visible,
-				"A-LEAK: {0} ({1}) can see out-of-grain lead {2} — native list must not expose it"
-				.format(user, c.principal, target),
+				f"A-LEAK: {user} ({c.principal}) can see out-of-grain lead {target} — native list must not expose it"
+				,
 			)
 		else:
 			self.assertIn(
 				target, visible,
-				"REGRESSION: {0} ({1}) cannot see its own in-grain lead {2}"
-				.format(user, c.principal, target),
+				f"REGRESSION: {user} ({c.principal}) cannot see its own in-grain lead {target}"
+				,
 			)
 
 	# ---- A4: grain-vs-role restriction wins (field; MUTATES → savepoint) -------------------------
@@ -134,17 +134,17 @@ class TestRegistryCases(AuthzTestCase):
 
 	def _run_a4_case(self, c):
 		if c.surface != "field":
-			self.skipTest("A4 runner only handles surface 'field'; got {0}".format(c.surface))
+			self.skipTest(f"A4 runner only handles surface 'field'; got {c.surface}")
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest("no seeded {0} target for case {1}".format(c.target, c.id))
+			self.skipTest(f"no seeded {c.target} target for case {c.id}")
 		role = roster.by_persona(c.principal)["roles"][0]  # the persona's primary desk role
 		# Pick a real lead-surface catalog field this role would otherwise see, then restrict it.
 		victim_key = self._a4_restrictable_key(user)
 		if victim_key is None:
-			self.skipTest("no entitled lead-detail catalog field to restrict for {0}".format(user))
-		save_point = "authz_a4_{0}".format(c.id.replace("-", "_"))
+			self.skipTest(f"no entitled lead-detail catalog field to restrict for {user}")
+		save_point = "authz_a4_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
 			frappe.get_doc({
@@ -159,8 +159,8 @@ class TestRegistryCases(AuthzTestCase):
 			                 for s in payload.get("sections", []) for f in s.get("fields", [])}
 			self.assertNotIn(
 				victim_key, rendered_keys,
-				"A4: field {0} restricted for role {1} still renders in lead_detail for {2}"
-				.format(victim_key, role, user),
+				f"A4: field {victim_key} restricted for role {role} still renders in lead_detail for {user}"
+				,
 			)
 		finally:
 			frappe.db.rollback(save_point=save_point)
@@ -195,7 +195,7 @@ class TestRegistryCases(AuthzTestCase):
 				elif c.action == "write" and c.expected == "deny":
 					self._run_a7_edit_denied(c)
 				else:
-					self.skipTest("A7 runner: unhandled case shape {0}".format(c.id))
+					self.skipTest(f"A7 runner: unhandled case shape {c.id}")
 
 	def _run_a7_read_allowed(self, c):
 		"""A grain user CAN natively read its own grain fields — this is intended, not a leak (the
@@ -206,8 +206,8 @@ class TestRegistryCases(AuthzTestCase):
 		missing = [fn for fn in GRAIN_FIELDNAMES if fn not in permitted]
 		self.assertEqual(
 			missing, [],
-			"A7: grain user {0} is missing READ access to its own grain field(s) {1} — read is the "
-			"intended model (Sales User sees their grain)".format(user, missing),
+			f"A7: grain user {user} is missing READ access to its own grain field(s) {missing} — read is the "
+			"intended model (Sales User sees their grain)",
 		)
 
 	def _run_a7_edit_denied(self, c):
@@ -221,9 +221,9 @@ class TestRegistryCases(AuthzTestCase):
 		own = self._principal_grain(c.principal)
 		lead = self._lead_in_grain(own) if own else None
 		if lead is None:
-			self.skipTest("no seeded in-grain lead for case {0}".format(c.id))
+			self.skipTest(f"no seeded in-grain lead for case {c.id}")
 		out_program = next(g["program"] for g in grains.GRAINS if g["program"] != own["program"])
-		save_point = "authz_a7_{0}".format(c.id.replace("-", "_"))
+		save_point = "authz_a7_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
 			frappe.db.set_value("CRM Tatva Automation", _GRAIN_SWITCH, "enabled", 1)
@@ -248,20 +248,20 @@ class TestRegistryCases(AuthzTestCase):
 		user = self._principal_user(c)
 		target = self._resolve_target(c)
 		if target is None:
-			self.skipTest("no seeded {0} target for case {1}".format(c.target, c.id))
+			self.skipTest(f"no seeded {c.target} target for case {c.id}")
 		doc = frappe.get_doc(c.doctype, target)
 		allowed = native_would_allow(user, c.doctype, c.action, doc)  # doc mandatory
 		if c.expected == "deny":
 			self.assertFalse(
 				allowed,
-				"A6 ESCALATION: {0} ({1}) may {2} out-of-grain {3}/{4} natively"
-				.format(user, c.principal, c.action, c.doctype, target),
+				f"A6 ESCALATION: {user} ({c.principal}) may {c.action} out-of-grain {c.doctype}/{target} natively"
+				,
 			)
 		else:
 			self.assertTrue(
 				allowed,
-				"A6 REGRESSION: {0} ({1}) cannot {2} in-scope {3}/{4}"
-				.format(user, c.principal, c.action, c.doctype, target),
+				f"A6 REGRESSION: {user} ({c.principal}) cannot {c.action} in-scope {c.doctype}/{target}"
+				,
 			)
 
 	# ---- A3: privilege escalation (deny-sweep; oracle = capability) ------------------------------
@@ -282,12 +282,12 @@ class TestRegistryCases(AuthzTestCase):
 		"""Doctype-level DENY sweep — the only sanctioned doc=None oracle use (deny is the strongest
 		verdict, no false negative). Used by A3 (no_role gains nothing) and A11 (cross-app leak)."""
 		if c.expected != "deny":
-			self.skipTest("capability deny-sweep runner only judges DENY cases; {0} expects allow"
-			              .format(c.id))
+			self.skipTest(f"capability deny-sweep runner only judges DENY cases; {c.id} expects allow"
+			              )
 		user = self._principal_user(c)
 		allowed = native_doctype_capability(user, c.doctype, c.action)
 		self.assertFalse(
 			allowed,
-			"{0} BREACH: {1} ({2}) has {3} capability on {4}"
-			.format(c.attack, user, c.principal, c.action, c.doctype),
+			f"{c.attack} BREACH: {user} ({c.principal}) has {c.action} capability on {c.doctype}"
+			,
 		)

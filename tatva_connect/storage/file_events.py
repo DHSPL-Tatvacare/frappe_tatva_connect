@@ -24,6 +24,7 @@ from tatva_connect import automation
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
+
 def _public_attachment_doctypes() -> set:
 	"""Operator-listed doctypes whose attachments may be public (config, empty by default)."""
 	raw = frappe.db.get_single_value("CRM Azure Storage Settings", "public_attachment_doctypes") or ""

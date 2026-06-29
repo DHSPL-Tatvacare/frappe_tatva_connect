@@ -29,13 +29,13 @@ def _drop_legacy_table():
 	if not frappe.db.table_exists("CRM Task Type Transition"):
 		return
 	# ALLOWLIST: COUNT(*) on the legacy table — not a doctype, so frappe.db.count can't resolve it; LEGACY_TABLE is a constant.
-	rows = frappe.db.sql("SELECT COUNT(*) FROM `{0}`".format(LEGACY_TABLE))[0][0]
+	rows = frappe.db.sql(f"SELECT COUNT(*) FROM `{LEGACY_TABLE}`")[0][0]
 	migrated = frappe.db.count("CRM Automation Rule", {"description": ["like", "Migrated transition:%"]})
 	if rows and not migrated:
 		frappe.throw(
-			"Automation fold aborted: `{0}` still holds {1} un-migrated transition rows. Run the "
+			f"Automation fold aborted: `{LEGACY_TABLE}` still holds {rows} un-migrated transition rows. Run the "
 			"db-seeds migration SQL (…migrate-transitions-to-automation-rules.sql) FIRST, then migrate "
-			"again — refusing to drop the source data.".format(LEGACY_TABLE, rows)
+			"again — refusing to drop the source data."
 		)
 	# ALLOWLIST: raw DROP TABLE DDL — no Frappe helper
-	frappe.db.sql("DROP TABLE IF EXISTS `{0}`".format(LEGACY_TABLE))
+	frappe.db.sql(f"DROP TABLE IF EXISTS `{LEGACY_TABLE}`")

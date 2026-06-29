@@ -72,7 +72,8 @@ class TestDetailPureLogic(FrappeTestCase):
 			"lead:mobile_no": {"target_doctype": "CRM Lead", "fieldname": "mobile_no"},
 		}
 		# inject a read-only resolver: mobile_no is read-only (API-owned)
-		ro = lambda _dt, fn: fn == "mobile_no"
+		def ro(_dt, fn):
+			return fn == "mobile_no"
 		writable = detail.writable_keys(selected, is_readonly=ro)
 		self.assertIn("lead:first_name", writable)
 		self.assertNotIn("lead:mobile_no", writable)

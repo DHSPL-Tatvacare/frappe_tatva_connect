@@ -21,8 +21,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect import routing
-from tatva_connect import utils
+from tatva_connect import routing, utils
 from tatva_connect.webhooks import spine
 
 # --- WATI event shapes (verified live samples; see the plan) ---------------

@@ -56,7 +56,7 @@ def _short_col(doctype, action):
 	dt = (doctype or "").replace("CRM ", "").replace("WhatsApp ", "WA ")
 	act = {"read": "rd", "write": "wr", "create": "cr", "delete": "del",
 	       "field_read": "fld"}.get(action, action[:3])
-	return "{0}·{1}".format(dt, act)
+	return f"{dt}·{act}"
 
 
 def render(results):
@@ -107,15 +107,15 @@ def render(results):
 
 	lines.append("")
 	lines.append("legend: " + "  ".join(
-		"{0}={1} {2}".format(m, e, name)
+		f"{m}={e} {name}"
 		for name, (m, e) in _MARK.items()
 	) + "  ?=unknown")
 
 	if escalations:
 		lines.append("")
-		lines.append("🚨 ESCALATIONS ({0}):".format(len(escalations)))
+		lines.append(f"🚨 ESCALATIONS ({len(escalations)}):")
 		for r, c, cell in escalations:
-			lines.append("  🚨 {0}  [{1} {2}]  case={3}".format(
+			lines.append("  🚨 {}  [{} {}]  case={}".format(
 				r, c[0], c[1], cell.get("id") or "-"))
 
 	return "\n".join(lines) + "\n"
@@ -232,17 +232,17 @@ def summary_line(results, confusion=None):
 
 	reasons = []
 	if escalations:
-		reasons.append("{0} escalation(s) 🚨".format(escalations))
+		reasons.append(f"{escalations} escalation(s) 🚨")
 	if unknowns:
-		reasons.append("{0} unresolved verdict(s)".format(unknowns))
+		reasons.append(f"{unknowns} unresolved verdict(s)")
 	if recall is not None and recall < 1.0:
-		reasons.append("recall {0:.2f} < 1.0".format(recall))
+		reasons.append(f"recall {recall:.2f} < 1.0")
 
 	total = len(results)
 	if reasons:
-		return "FAIL ({0}) — {1} cells, A={2} D={3} X={4}".format(
+		return "FAIL ({}) — {} cells, A={} D={} X={}".format(
 			"; ".join(reasons), total, counts["ALLOW"], counts["DENY"], escalations)
 
 	recall_note = "recall 1.00" if recall is not None else "recall n/a (no confusion)"
-	return "PASS — {0} cells, A={1} D={2}, no escalation, {3}".format(
+	return "PASS — {} cells, A={} D={}, no escalation, {}".format(
 		total, counts["ALLOW"], counts["DENY"], recall_note)

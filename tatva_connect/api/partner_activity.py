@@ -39,8 +39,8 @@ from tatva_connect.activity import api as activity_brain
 from tatva_connect.api._base import (
 	_api,
 	_cfg,
-	_fail,  # noqa: F401  (kept available for symmetry with partner.py)
-	_norm_phone,  # noqa: F401  (re-exported convenience)
+	_fail,
+	_norm_phone,
 	_ok,
 	_read_list,
 	_resolve_caller,
@@ -175,7 +175,7 @@ def activity_schema(**kwargs):
 	"""DISCOVERY BY LEAD: given `?lead=<name>` or `?mobile_no=`, return the activity
 	types available to that lead's grain, each with its field schema — how an integrator
 	discovers exactly what to send for this patient. Grain-scoped through resolve_lead."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	lead = resolve_lead(mp, is_sysmgr, frappe.form_dict)
 
 	types = activity_brain.list_types_for_lead(lead)
@@ -204,7 +204,7 @@ def activity_schema(**kwargs):
 def activity_get(**kwargs):
 	"""Read one activity by CRM Task `name`, scoped to the caller's grain. Returns the
 	activity with `values` re-keyed to its schema fieldnames."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	row = _scoped_task(frappe.form_dict.get("name"), mp, is_sysmgr)
 	_ok(action="fetched", data=_activity_payload(row.name))
 
@@ -214,7 +214,7 @@ def activity_get(**kwargs):
 def activity_create(**kwargs):
 	"""Create-or-upsert an activity. Body: {lead|mobile_no, task_type, external_id,
 	values:{fieldname:value}, created_at?}. Deduped on external_id; re-send updates."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = _upsert_one(frappe.form_dict, mp, is_sysmgr)
 	_ok(action="upserted", data=data)
 
@@ -223,7 +223,7 @@ def activity_create(**kwargs):
 @_api
 def activity_update(**kwargs):
 	"""Update an activity by CRM Task `name` — re-run compute with new values. Scope-checked."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr)
 	_ok(action="updated", data=data)
 
@@ -232,7 +232,7 @@ def activity_update(**kwargs):
 @_api
 def activity_delete(**kwargs):
 	"""Delete an activity by CRM Task `name`, scope-checked (generic not-found)."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	name = frappe.form_dict.get("name")
 	_delete_one(name, mp, is_sysmgr)
 	_ok(action="deleted", data={"name": name})
@@ -245,7 +245,7 @@ def activity_delete(**kwargs):
 def activity_create_bulk(**kwargs):
 	"""Create-or-upsert many activities. Body: {"activities":[{...}, ...]} (<= 100).
 	Each record is enforced in its own savepoint -> partial success."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	activities = _read_list(frappe.form_dict, "activities") or []
 
 	def one(i, item):
@@ -261,7 +261,7 @@ def activity_create_bulk(**kwargs):
 def activity_get_bulk(**kwargs):
 	"""Read many activities by `names` OR `external_ids` (<= 100). Out-of-scope/unknown
 	ids are reported not_found in place — input-ordered (results[i] = the i-th id)."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	names = _read_list(data, "names")
 	external_ids = _read_list(data, "external_ids")
@@ -296,7 +296,7 @@ def activity_list(**kwargs):
 	"""List activities on a lead, paginated. `?lead=` (or `?mobile_no=`) is required and
 	grain-scoped through resolve_lead; optional `task_type` / `status` filters. Returns
 	{total, count, offset, limit, has_more, activities:[...]}."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead = resolve_lead(mp, is_sysmgr, data)
 	cfg = _cfg()

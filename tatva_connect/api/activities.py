@@ -10,7 +10,6 @@ as a per-lead audit. Derived on read, nothing stored. Registered via override_wh
 from collections import Counter
 
 import frappe
-
 from crm.api.activities import get_activities as _native_get_activities
 
 from tatva_connect.activity.api import _blob_key, lead_timeline

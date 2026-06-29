@@ -84,7 +84,7 @@ def _grain_filters(grain):
 	'' from the DB default, never NULL. So `= val OR = ''` here and the PQC backstop
 	(access.picklist._grain_clause) clamp the exact same rows — the two paths can never diverge."""
 	out = {}
-	for col, val in zip(_AXES, grain):
+	for col, val in zip(_AXES, grain, strict=False):
 		out[col] = ["in", [val, ""]] if val else ""
 	return out
 
@@ -111,7 +111,7 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 
 	grain = _resolve_grain(f)  # server-side; throws on an out-of-entitlement grain or unseeable lead
 
-	conds = {"category": category, "display_label": ["like", "%{0}%".format(txt)]}
+	conds = {"category": category, "display_label": ["like", f"%{txt}%"]}
 	conds.update(_grain_filters(grain))
 
 	# Cascading picklist: when the form supplies the parent field's current value, keep only

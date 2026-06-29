@@ -198,7 +198,7 @@ def _classify(e, fn_name):
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
 			return code, http, (str(e) or _("Request failed")), getattr(e, "fields", None)
-	frappe.log_error(title="Partner API error: {0}".format(fn_name))
+	frappe.log_error(title=f"Partner API error: {fn_name}")
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
 
@@ -249,7 +249,7 @@ def _run_bucket(name, rate, burst, window, cost):
 		return True, 0, burst
 	import redis as _redis
 
-	key = frappe.cache.make_key("partner_rl:{0}".format(name))
+	key = frappe.cache.make_key(f"partner_rl:{name}")
 	args = [rate, window, burst, cost, int(time.time())]
 	try:
 		if _RL_SHA is None:
@@ -281,7 +281,7 @@ def _rate_check(cost, mapping):
 			"global", cfg["global_rate"], cfg["global_burst"], window, cost
 		)
 		t_ok, t_retry, t_rem = _run_bucket(
-			"tok:{0}".format(frappe.session.user), cfg["per_token_rate"], cfg["per_token_burst"], window, cost
+			f"tok:{frappe.session.user}", cfg["per_token_rate"], cfg["per_token_burst"], window, cost
 		)
 	except Exception:
 		frappe.log_error(title="Partner API rate limiter failed (allowed)")
@@ -375,7 +375,7 @@ def _run_bulk(items, fn):
 				)
 	results, ok = [], 0
 	for i, item in enumerate(items):
-		sp = "tc_bulk_{0}".format(i)
+		sp = f"tc_bulk_{i}"
 		frappe.db.savepoint(sp)
 		try:
 			results.append(fn(i, item))

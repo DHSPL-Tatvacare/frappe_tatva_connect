@@ -23,11 +23,9 @@ depends on a WATI payload field. Setup: vault runbook 02-operations/runbooks/09.
 import frappe
 from frappe.rate_limiter import rate_limit
 
-from tatva_connect.whatsapp import adapter
-from tatva_connect.whatsapp import api as wati
-from tatva_connect.whatsapp import roles
-from tatva_connect.whatsapp import routing
 from tatva_connect.webhooks import spine
+from tatva_connect.whatsapp import adapter, roles, routing
+from tatva_connect.whatsapp import api as wati
 
 
 @frappe.whitelist(allow_guest=True)

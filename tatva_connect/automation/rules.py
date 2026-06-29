@@ -87,7 +87,7 @@ def _one_match(c, context, ftype=None):
 			items = [v.strip() for v in str(c.value or "").split(",")]
 			return compare(str(left or ""), op, items)
 		if op == "between":
-			lo, hi = (str(c.value or "").split(",") + ["", ""])[:2]
+			lo, hi = ([*str(c.value or "").split(","), "", ""])[:2]
 			return _between(left, lo.strip(), hi.strip(), ftype)
 		if op in _NATIVE_OPS:
 			return compare(left, op, c.value, ftype)
@@ -96,7 +96,7 @@ def _one_match(c, context, ftype=None):
 		# rule with no trace). Log it (countable), then treat as non-match.
 		frappe.log_error(
 			title="automation: criterion eval failed",
-			message="field={0} op={1} :: {2}".format(c.field, op, e),
+			message=f"field={c.field} op={op} :: {e}",
 		)
 		return False
 	return False

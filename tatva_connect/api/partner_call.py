@@ -31,10 +31,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime
 
-from tatva_connect.api._base import (  # noqa: F401
+from tatva_connect.api._base import (
 	_api,
 	_cfg,
-	_fail,  # noqa: F401  (kept available for symmetry with the sibling modules)
+	_fail,
 	_norm_phone,
 	_ok,
 	_read_list,
@@ -189,7 +189,7 @@ def _upsert_one(data, mp, is_sysmgr):
 	# The autoname is field:id, so the row NAME is `id`, NOT the dedup key. Mint a stable
 	# synthetic id (partner: prefix keeps it clear of provider call ids) and dedup on
 	# custom_external_id, exactly as the foundation field prescribes.
-	doc.id = "PARTNER-{0}".format(external_id)
+	doc.id = f"PARTNER-{external_id}"
 	doc.set(DEDUP_FIELD, external_id)
 	# Sensible required-field floors so a sparse payload still inserts (status defaults New-
 	# equivalent "Completed" only if the caller sent none; from/to default to empty strings).
@@ -216,7 +216,7 @@ def call_create(**kwargs):
 	started_at?}. Deduped on external_id; re-send updates the same row, never doubles.
 	Lead resolution is grain-scoped (lead/mobile_no) OR strict phone+grain match on the
 	customer number — no/ambiguous match leaves the call UNLINKED (never a wrong lead)."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	view, action = _upsert_one(frappe.form_dict, mp, is_sysmgr)
 	_ok(action=action, data=view)
 
@@ -226,7 +226,7 @@ def call_create(**kwargs):
 def call_get(**kwargs):
 	"""Read one call by `name`, grain-scoped (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	doc = _scoped_call(frappe.form_dict.get("name"), mp, is_sysmgr)
 	_ok(action="fetched", data=_call_view(doc))
 
@@ -237,7 +237,7 @@ def call_list(**kwargs):
 	"""List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
 	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset. Returns
 	{total, count, offset, limit, has_more, calls:[...]}."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead = resolve_lead(mp, is_sysmgr, data)
 
@@ -284,7 +284,7 @@ def call_list(**kwargs):
 def call_delete(**kwargs):
 	"""Delete one call by `name`, scope-checked (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	name = frappe.form_dict.get("name")
 	doc = _scoped_call(name, mp, is_sysmgr)
 	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)
@@ -297,7 +297,7 @@ def call_create_bulk(**kwargs):
 	"""Create-or-upsert many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record
 	is enforced in its own savepoint -> partial success; each is idempotent on its own
 	external_id."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	calls = _read_list(frappe.form_dict, "calls") or []
 
 	def one(i, item):

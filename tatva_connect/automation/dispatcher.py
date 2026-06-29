@@ -114,10 +114,10 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 		try:
 			_run_action(action, lead, context, axes, trigger_doc)
 			success += 1
-			details.append("{0}. {1}: ok".format(i, label))
+			details.append(f"{i}. {label}: ok")
 		except Exception as e:
-			errors.append("{0}: {1}".format(action.action_type, e))
-			details.append("{0}. {1}: FAILED — {2}".format(i, label, e))
+			errors.append(f"{action.action_type}: {e}")
+			details.append(f"{i}. {label}: FAILED — {e}")
 			_log_error(rule.name, action.action_type, grain, e)
 
 	duration_ms = int((time.monotonic() - started) * 1000)
@@ -127,13 +127,13 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 def _action_label(a):
 	"""Short human label of an action for the per-action audit trail in the run log."""
 	if a.action_type == "Create Task":
-		return "Create Task {0}".format(a.task_type or "?")
+		return "Create Task {}".format(a.task_type or "?")
 	if a.action_type == "Set Field":
-		return "Set Field {0}".format(a.fieldname or "?")
+		return "Set Field {}".format(a.fieldname or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):
-		return "{0} {1}".format(a.action_type, a.child_table or "?")
+		return "{} {}".format(a.action_type, a.child_table or "?")
 	if a.action_type == "Call Webhook":
-		return "Call Webhook {0}".format(a.webhook_endpoint or "?")
+		return "Call Webhook {}".format(a.webhook_endpoint or "?")
 	return a.action_type or "?"
 
 
@@ -158,8 +158,8 @@ def _run_action(action, lead, context, axes, trigger_doc):
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type."""
-	from tatva_connect.tasks.tasks import create_followup_task
 	from tatva_connect.activity.api import _scope_applies
+	from tatva_connect.tasks.tasks import create_followup_task
 
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
 	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
@@ -348,7 +348,7 @@ def _allowlisted(target_doctype, fieldname, axes, child_table=None, require_row_
 
 
 def _grain_tag(vertical, group, program):
-	return "{0}::{1}::{2}".format(vertical or "", group or "", program or "")
+	return "{}::{}::{}".format(vertical or "", group or "", program or "")
 
 
 def _write_run_log(rule, lead, trigger_doc, grain, success, failed, error, details, duration_ms):
@@ -384,7 +384,7 @@ def _log_error(rule_name, action_type, grain, err):
 	(so the tag isn't truncated into the 140-char Error Log title field, spec §8)."""
 	frappe.log_error(
 		title="automation: rule fire failed",
-		message="rule={r} action={a} grain={g} :: {e}".format(r=rule_name, a=action_type, g=grain, e=err),
+		message=f"rule={rule_name} action={action_type} grain={grain} :: {err}",
 	)
 
 

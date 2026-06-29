@@ -156,7 +156,7 @@ def _fold_submission_to_lead(doc, cfg):
 	if cfg.get("custom_origin_vertical"):
 		item["custom_origin_vertical"] = cfg.get("custom_origin_vertical")
 		parent_fields.append("custom_origin_vertical")
-	item["custom_source_origin"] = "Intake form: {0}".format(cfg.name)
+	item["custom_source_origin"] = f"Intake form: {cfg.name}"
 	parent_fields.append("custom_source_origin")
 
 	# Grain descriptor — quacks like a CRM Lead API Mapping. The brain reads ONLY
@@ -246,7 +246,7 @@ def _process_submission_legacy(doc, method=None):
 				lead.set(f, cfg.get(f))
 		# Provenance (hygiene rule 8): stamp which intake form created this lead.
 		if not (lead.get("custom_source_origin") or "").strip():
-			lead.custom_source_origin = "Intake form: {0}".format(cfg.name)
+			lead.custom_source_origin = f"Intake form: {cfg.name}"
 
 	notes = []
 	for m in cfg.mappings:

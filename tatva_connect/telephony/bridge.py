@@ -15,8 +15,7 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
-from tatva_connect.telephony import providers
-from tatva_connect.telephony import routing
+from tatva_connect.telephony import providers, routing
 
 MEDIUM = "Acefone"
 RECORDING_ENDPOINT = "/api/method/tatva_connect.api.telephony.recording"

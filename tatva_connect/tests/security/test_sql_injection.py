@@ -143,7 +143,7 @@ class TestSmartViewSqlInjection(FrappeTestCase):
 		data = None
 		try:
 			data = self._as_user(**kwargs)
-		except Exception as e:  # noqa: BLE001 - any raise here is a finding
+		except Exception as e:
 			self.fail(f"{label}: get_data RAISED {type(e).__name__}: {e}")
 		assert data is not None  # self.fail above raises otherwise; satisfies the type checker
 		names = [r.get("name") for r in data["rows"]]

@@ -15,6 +15,8 @@ override_whitelisted_methods and give a false green).
                             • an authorized owner is NOT denied         (no regression)
   L4  drift guard       — locked doctypes stay closed to All/Guest
 """
+from typing import ClassVar
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -68,7 +70,7 @@ class TestVAPTAuthz(FrappeTestCase):
 	# data-driven spec: (cmd, kwargs(fixtures), escalation_ref)
 	#   escalation_ref = the record a PEER cannot see (Lead/Call Log); None when the gate is
 	#   doctype-level (a Sales User legitimately passes it, so only no-role is denied).
-	L3 = [
+	L3: ClassVar = [
 		("crm.api.doc.get_assigned_users", lambda f: dict(doctype="CRM Lead", name=f["lead"]), "lead"),
 		("crm.api.doc.get_linked_docs_of_document", lambda f: dict(doctype="CRM Lead", docname=f["lead"]), "lead"),
 		("crm.api.whatsapp.get_whatsapp_messages", lambda f: dict(reference_doctype="CRM Lead", reference_name=f["lead"]), "lead"),

@@ -55,6 +55,9 @@ ignore = [
     "F405", # can't detect undefined names from * import
     "F722", # syntax error in forward type annotation
     "W191", # indentation contains tabs
+    "RUF002", # docstrings use deliberate math/set notation (union, cross, minus signs); the
+              # ambiguous-look-alike rule is noise for intentional symbols (ascii-izing corrupts meaning)
+    "RUF003", # same, in comments
 ]
 typing-modules = ["frappe.types.DF"]
 

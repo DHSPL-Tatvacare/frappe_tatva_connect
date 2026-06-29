@@ -29,7 +29,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from tatva_connect.api._base import (  # noqa: F401
+from tatva_connect.api._base import (
 	_api,
 	_cfg,
 	_fail,
@@ -187,7 +187,7 @@ def file_attach(**kwargs):
 	"""Attach a file to a lead (or a scoped activity task). Body:
 	{lead|mobile_no, activity?, external_id, file_type, file_url|content_base64, filename}.
 	Idempotent on external_id: re-sending returns the existing file (action="exists")."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	view, action = _attach_one(frappe.form_dict, mp, is_sysmgr)
 	_ok(action=action, data=view)
 
@@ -196,7 +196,7 @@ def file_attach(**kwargs):
 @_api
 def file_get(**kwargs):
 	"""Read one file by `name`, grain-scoped. Returns metadata + the proxy url."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	doc = _scoped_file(frappe.form_dict.get("name"), mp, is_sysmgr)
 	_ok(action="fetched", data=_file_view(doc))
 
@@ -206,7 +206,7 @@ def file_get(**kwargs):
 def file_list(**kwargs):
 	"""List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
 	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead_name = resolve_lead(mp, is_sysmgr, data)
 
@@ -248,7 +248,7 @@ def file_list(**kwargs):
 def file_delete(**kwargs):
 	"""Delete one file by `name`, scope-checked (own line only). Out-of-scope/missing ->
 	the SAME generic not-found. The on_trash hook drops the Azure blob (last reference)."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	name = frappe.form_dict.get("name")
 	doc = _scoped_file(name, mp, is_sysmgr)
 	frappe.delete_doc("File", doc.name, ignore_permissions=True)
@@ -260,7 +260,7 @@ def file_delete(**kwargs):
 def file_attach_bulk(**kwargs):
 	"""Attach many files. Body: {"files":[{...}, ...]} (<= 100). Partial success — each file
 	is idempotent on its own external_id."""
-	user, mp, is_sysmgr = _resolve_caller()
+	_user, mp, is_sysmgr = _resolve_caller()
 	files = _read_list(frappe.form_dict, "files") or []
 
 	def one(i, item):

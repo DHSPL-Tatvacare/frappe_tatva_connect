@@ -22,4 +22,4 @@ def execute():
 			frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path; deleting the Custom Field leaves the column.
 		if frappe.db.has_column(LEAD, fieldname):
-			frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP COLUMN `{0}`".format(fieldname))
+			frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Lead` DROP COLUMN `{fieldname}`")

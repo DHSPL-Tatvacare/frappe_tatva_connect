@@ -10,7 +10,7 @@ from typing import NamedTuple
 
 import frappe
 from frappe import _
-from frappe.integrations.utils import make_post_request, make_get_request
+from frappe.integrations.utils import make_get_request, make_post_request
 
 from tatva_connect import automation
 

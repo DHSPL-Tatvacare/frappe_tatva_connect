@@ -265,7 +265,12 @@ def compute_activity(lead, task_type, values, task=None):
 	# Location guard: in-person activity on a tracked grain must carry an in-range fix. The gate +
 	# anchor/radius rule live once in location.api (one brain); this just feeds them.
 	from tatva_connect.location.api import (
-		location_required, set_or_check_anchor, location_fields, _reverse_geocode, log_visit_audit)
+		_reverse_geocode,
+		location_fields,
+		location_required,
+		log_visit_audit,
+		set_or_check_anchor,
+	)
 
 	radius = location_required(task_type, lead, values)
 	if radius is None:
@@ -600,7 +605,7 @@ def lead_timeline(lead):
 			"automated": bool(t.custom_automated),
 			"address": t.custom_location_address or "",
 			"location": ({"address": loc["address"],
-						  "map_url": "https://www.google.com/maps?q={0},{1}".format(loc["lat"], loc["lng"])}
+						  "map_url": "https://www.google.com/maps?q={},{}".format(loc["lat"], loc["lng"])}
 						 if loc else None),
 			"documents": _activity_documents(_task_values(t, cfg), cfg, files_by_key),
 		})

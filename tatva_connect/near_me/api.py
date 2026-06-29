@@ -82,7 +82,7 @@ def doctors_in_territory(lat, lng, radius_km=DEFAULT_RADIUS_KM):
 				"stage": r.custom_stage or r.status or "",
 				"source": r.source or "",
 				"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
-				"distance_m": int(round(d)),
+				"distance_m": round(d),
 			})
 	out.sort(key=lambda x: x["distance_m"])
 	return out

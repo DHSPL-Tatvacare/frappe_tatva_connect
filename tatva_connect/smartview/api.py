@@ -39,8 +39,8 @@ _OPS = {
 	">=": lambda f, v: f >= v,
 	"<": lambda f, v: f < v,
 	"<=": lambda f, v: f <= v,
-	"like": lambda f, v: f.like("%{0}%".format(v)),
-	"not like": lambda f, v: f.not_like("%{0}%".format(v)),
+	"like": lambda f, v: f.like(f"%{v}%"),
+	"not like": lambda f, v: f.not_like(f"%{v}%"),
 	"in": lambda f, v: f.isin(v if isinstance(v, (list, tuple)) else [v]),
 	"not in": lambda f, v: f.notin(v if isinstance(v, (list, tuple)) else [v]),
 	"is set": lambda f, v: f.isnotnull(),
@@ -57,7 +57,7 @@ _OPS = {
 # ---------------------------------------------------------------------------
 
 def _scope_label(base_object, activity_type):
-	return "activity:{0}".format(activity_type) if base_object == "Activity" else "lead"
+	return f"activity:{activity_type}" if base_object == "Activity" else "lead"
 
 
 def _all_catalog_rows():
@@ -276,7 +276,7 @@ def _pqc_criterion(driving_name, driving_table):
 	# Fresh DocType -> renders as `tab<Doctype>` (NOT aliased), so a PQC that prefixes
 	# `tabX`.col still binds, and a bare col binds to the subquery's only table.
 	src = DocType(driving_name)
-	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn("({0})".format(cond)))  # sqli-ok: framework PQC string from get_permission_query_conditions() — not user input
+	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn(f"({cond})"))  # sqli-ok: framework PQC string from get_permission_query_conditions() — not user input
 	return driving_table.name.isin(sub)
 
 
@@ -326,7 +326,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			# projected — it never reaches a WHERE/ORDER BY (enforced in _predicate_where/_apply_*).
 			field_terms[key] = Function(
 				"JSON_UNQUOTE",
-				Function("JSON_EXTRACT", driving_table.custom_activity_payload, "$.{0}".format(r.fieldname)),
+				Function("JSON_EXTRACT", driving_table.custom_activity_payload, f"$.{r.fieldname}"),
 			)
 			continue
 		# child (CRM Lead child table) -> needs a join
@@ -334,7 +334,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		if not child_dt:
 			continue
 		pick = (r.child_pick or "single").strip()
-		alias = "{0}__{1}".format(child_dt, pick).replace(" ", "_").replace(":", "_")
+		alias = f"{child_dt}__{pick}".replace(" ", "_").replace(":", "_")
 		child_tbl = join_specs.get(alias, (None,))[0]
 		if child_tbl is None:
 			child_tbl = DocType(child_dt).as_(alias)
@@ -344,7 +344,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		field_terms[key] = child_tbl[r.fieldname]
 
 	# the physical table backing the driving doctype (qb aliases tables as `tab<DocType>`).
-	driving_tbl = "tab{0}".format(driving_name)
+	driving_tbl = f"tab{driving_name}"
 
 	def apply(query):
 		for alias, (child_tbl, pick, child_dt) in join_specs.items():
@@ -371,14 +371,12 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 					.where(PseudoColumn("`_tc_rn` = 1"))
 				).as_(alias)
 				query = query.left_join(sub).on(
-					PseudoColumn("`{0}`.`parent` = `{1}`.`name`".format(alias, driving_tbl))  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
+					PseudoColumn(f"`{alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 				)
 			else:
 				query = query.left_join(child_tbl).on(
 					PseudoColumn(  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
-						"`{0}`.`parent` = `{1}`.`name` AND `{0}`.`parenttype` = '{2}'".format(
-							alias, driving_tbl, driving_name
-						)
+						f"`{alias}`.`parent` = `{driving_tbl}`.`name` AND `{alias}`.`parenttype` = '{driving_name}'"
 					)
 				)
 		return query
@@ -437,7 +435,7 @@ def _apply_search(crit, search, cat, field_terms):
 	if not search:
 		return crit
 	likes = [
-		field_terms[k].like("%{0}%".format(search))
+		field_terms[k].like(f"%{search}%")
 		for k, r in cat.items()
 		if r.filterable and k in field_terms
 	]

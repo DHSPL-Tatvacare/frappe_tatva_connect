@@ -67,7 +67,7 @@ def _lead_in_grain(idx):
 		"name",
 	)
 	if not name:
-		frappe.throw("mutation precondition: no seeded lead for grain {0} — run generator.seed() "
+		frappe.throw("mutation precondition: no seeded lead for grain {} — run generator.seed() "
 		             "in setUpClass first".format(g["key"]))
 	return name
 
@@ -100,7 +100,7 @@ def _share_out_of_grain(grain_idx, other_idx):
 	"""DATA: share an other-grain lead to a grain user. The row oracle (get_list, honours shares)
 	must now list a lead the grain user should never own — a horizontal leak made visible."""
 	def plant():
-		user = roster.email("grain_{0}".format(grain_idx + 1))
+		user = roster.email(f"grain_{grain_idx + 1}")
 		leaked = _lead_in_grain(other_idx)
 		_grant_docshare("CRM Lead", leaked, user)
 		return {"user": user, "leaked": leaked}
@@ -122,11 +122,10 @@ def _open_doctype_to_role(doctype, role, ptype="read"):
 	layer-2 grant is visible here. (On a CONCRETE doc the deny-only layer-4 org_hierarchy hook would mask
 	this same grant — which is exactly why the old would_allow detector stayed green: a false negative.)"""
 	def plant():
-		probe = "authz.mut.{0}.{1}.{2}@example.test".format(
-			frappe.scrub(role), frappe.scrub(doctype), ptype)
+		probe = f"authz.mut.{frappe.scrub(role)}.{frappe.scrub(doctype)}.{ptype}@example.test"
 		if not frappe.db.exists("User", probe):
 			frappe.get_doc({
-				"doctype": "User", "email": probe, "first_name": "mut-{0}".format(role),
+				"doctype": "User", "email": probe, "first_name": f"mut-{role}",
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
 		# add_permission writes a Custom DocPerm; reset_perms is the rollback the savepoint handles.
@@ -154,10 +153,10 @@ def _share_doc_write(role, lead_idx):
 	has_lead_permission hook denies an unassigned probe, AND-composed, masking the grant. That mismatch
 	was the false negative this fixes."""
 	def plant():
-		probe = "authz.mut.{0}.shw@example.test".format(frappe.scrub(role))
+		probe = f"authz.mut.{frappe.scrub(role)}.shw@example.test"
 		if not frappe.db.exists("User", probe):
 			frappe.get_doc({
-				"doctype": "User", "email": probe, "first_name": "shw-{0}".format(role),
+				"doctype": "User", "email": probe, "first_name": f"shw-{role}",
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
 		lead = _lead_in_grain(lead_idx)
@@ -246,7 +245,7 @@ def _share_child_parent(grain_idx, other_idx):
 	— a child becomes visible it should not. Switch-agnostic: a DocShare grant widens read on any
 	path, which is exactly the over-grant the can_read_row oracle exists to catch."""
 	def plant():
-		user = roster.email("grain_{0}".format(grain_idx + 1))
+		user = roster.email(f"grain_{grain_idx + 1}")
 		leaked_lead = _lead_in_grain(other_idx)
 		task = _task_for_lead(leaked_lead)
 		if not task:

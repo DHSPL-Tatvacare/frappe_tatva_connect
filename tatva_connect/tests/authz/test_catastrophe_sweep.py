@@ -125,8 +125,7 @@ class TestCatastropheSweep(AuthzTestCase):
 		]
 		self.assertFalse(
 			leaks,
-			"CATASTROPHE: Guest/no-role can reach protected data — {0} grant(s): {1}".format(
-				len(leaks), leaks),
+			f"CATASTROPHE: Guest/no-role can reach protected data — {len(leaks)} grant(s): {leaks}",
 		)
 
 	# ---------- 2: system-takeover doctypes are denied to Guest / no-role ---------------------------
@@ -147,8 +146,7 @@ class TestCatastropheSweep(AuthzTestCase):
 					leaks.append((who, "User", p))
 		self.assertFalse(
 			leaks,
-			"CATASTROPHE: Guest/no-role can reach a system-takeover doctype — {0}: {1}".format(
-				len(leaks), leaks),
+			f"CATASTROPHE: Guest/no-role can reach a system-takeover doctype — {len(leaks)}: {leaks}",
 		)
 
 	# ---------- 3: Guest may write ONLY the reviewed stock allowlist --------------------------------
@@ -162,7 +160,7 @@ class TestCatastropheSweep(AuthzTestCase):
 		self.assertFalse(
 			unreviewed,
 			"CATASTROPHE: Guest can write UNREVIEWED doctype(s) — review each, then add to "
-			"STOCK_GUEST_WRITABLE with a reason (or lock it down): {0}".format(unreviewed),
+			f"STOCK_GUEST_WRITABLE with a reason (or lock it down): {unreviewed}",
 		)
 
 	# ---------- 4: a no-role user may write ONLY the reviewed stock allowlist -----------------------
@@ -177,7 +175,7 @@ class TestCatastropheSweep(AuthzTestCase):
 		self.assertFalse(
 			unreviewed,
 			"CATASTROPHE: no-role user can write UNREVIEWED doctype(s) — review each, then add to "
-			"STOCK_NOROLE_WRITABLE with a reason (or lock it down): {0}".format(unreviewed),
+			f"STOCK_NOROLE_WRITABLE with a reason (or lock it down): {unreviewed}",
 		)
 
 	def _assert_allowlist_is_clean(self, allowlist, who):
@@ -186,8 +184,8 @@ class TestCatastropheSweep(AuthzTestCase):
 		forbidden = (set(self.ours) | set(SENSITIVE_CRM) | set(ADMIN_STRUCTURAL)) & allowlist
 		self.assertFalse(
 			forbidden,
-			"the {0} write-allowlist contains protected doctype(s) {1} — a reviewed allowlist must "
-			"never bless our data / a crown jewel / an admin doctype".format(who, sorted(forbidden)),
+			f"the {who} write-allowlist contains protected doctype(s) {sorted(forbidden)} — a reviewed allowlist must "
+			"never bless our data / a crown jewel / an admin doctype",
 		)
 
 	# ---------- 5: cross-app junk role denied READ on sensitive CRM doctypes ------------------------
@@ -197,8 +195,8 @@ class TestCatastropheSweep(AuthzTestCase):
 		violations = [dt for dt in SENSITIVE_CRM if native_doctype_capability(user, dt, "read")]
 		self.assertFalse(
 			violations,
-			"CROSS-APP LEAK: junk role (Purchase Master Manager) {0} can READ sensitive CRM "
-			"doctype(s): {1}".format(user, violations),
+			f"CROSS-APP LEAK: junk role (Purchase Master Manager) {user} can READ sensitive CRM "
+			f"doctype(s): {violations}",
 		)
 
 	# ---------- 6: a role with NO lead business cannot write sensitive CRM --------------------------
@@ -218,18 +216,18 @@ class TestCatastropheSweep(AuthzTestCase):
 						violations.append((role, dt, ptype))
 		self.assertFalse(
 			violations,
-			"CATASTROPHE: role(s) with no lead business can write sensitive CRM doctypes — {0} "
-			"pair(s): {1}".format(len(violations), violations),
+			f"CATASTROPHE: role(s) with no lead business can write sensitive CRM doctypes — {len(violations)} "
+			f"pair(s): {violations}",
 		)
 
 	# ---------- helper ----------
 	def _probe_user(self, role):
 		"""A throwaway System User holding ONLY `role` — its has_permission verdict is that role's
 		ceiling. Created with ignore_permissions; the class rollback unwinds it (no commit)."""
-		email = "authz.probe.{0}@example.test".format(frappe.scrub(role))
+		email = f"authz.probe.{frappe.scrub(role)}@example.test"
 		if not frappe.db.exists("User", email):
 			frappe.get_doc({
-				"doctype": "User", "email": email, "first_name": "probe-{0}".format(role),
+				"doctype": "User", "email": email, "first_name": f"probe-{role}",
 				"user_type": "System User", "send_welcome_email": 0,
 				"roles": [{"role": role}],
 			}).insert(ignore_permissions=True)

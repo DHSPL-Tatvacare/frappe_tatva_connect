@@ -30,16 +30,16 @@ class TestIntakeSubmissionValidate(FrappeTestCase):
 		cls.city = "Bengaluru::Karnataka"
 		_ensure("CRM City", cls.city, city_name="Bengaluru", state=STATE)
 		# Hospital in grain; Doctor at that hospital
-		cls.hosp = "{0}::{1}::{2}::Apollo".format(V, G, P)
+		cls.hosp = f"{V}::{G}::{P}::Apollo"
 		_ensure("CRM Hospital", cls.hosp, hospital_name="Apollo", vertical=V, group=G, program=P)
-		cls.doc_doctor = "{0}::Dr A".format(cls.hosp)
+		cls.doc_doctor = f"{cls.hosp}::Dr A"
 		_ensure("CRM Doctor", cls.doc_doctor, doctor_name="Dr A", hospital=cls.hosp)
 		# Out-of-grain hospital (a real but different program) to prove the grain check bites
 		_ensure("CRM Program", "OtherProg", program_name="OtherProg")
-		cls.hosp_bad = "{0}::{1}::OtherProg::Fortis".format(V, G)
+		cls.hosp_bad = f"{V}::{G}::OtherProg::Fortis"
 		_ensure("CRM Hospital", cls.hosp_bad, hospital_name="Fortis", vertical=V, group=G, program="OtherProg")
 		# A real doctor at the OTHER hospital — used to prove the doctor->hospital FK check bites.
-		cls.doc_bad = "{0}::Dr B".format(cls.hosp_bad)
+		cls.doc_bad = f"{cls.hosp_bad}::Dr B"
 		_ensure("CRM Doctor", cls.doc_bad, doctor_name="Dr B", hospital=cls.hosp_bad)
 		if not frappe.db.exists("CRM Intake Form", FORM):
 			frappe.get_doc({

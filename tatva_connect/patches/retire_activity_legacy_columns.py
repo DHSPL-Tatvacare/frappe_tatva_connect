@@ -34,7 +34,7 @@ def _retire_column(fieldname):
 		frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)
 	if frappe.db.has_column(TASK, fieldname):
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path.
-		frappe.db.sql_ddl("ALTER TABLE `tabCRM Task` DROP COLUMN `{0}`".format(fieldname))
+		frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Task` DROP COLUMN `{fieldname}`")
 
 
 def execute():
@@ -43,10 +43,10 @@ def execute():
 		if not (frappe.db.has_column(TASK, old) and frappe.db.has_column(TASK, new)):
 			continue
 		frappe.db.sql(
-			"""UPDATE `tabCRM Task`
+			f"""UPDATE `tabCRM Task`
 			   SET `{new}` = `{old}`
 			   WHERE NULLIF(CAST(`{old}` AS CHAR), '') IS NOT NULL
-			     AND NULLIF(CAST(`{new}` AS CHAR), '') IS NULL""".format(old=old, new=new)
+			     AND NULLIF(CAST(`{new}` AS CHAR), '') IS NULL"""
 		)
 		_retire_column(old)
 

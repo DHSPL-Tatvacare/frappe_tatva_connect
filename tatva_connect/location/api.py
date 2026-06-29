@@ -16,9 +16,8 @@ committed (this repo is public), and never reaches the browser — both Google c
 """
 import math
 
-import requests  # ALLOWLIST 2026-06-29: location stays raw — geocoding needs an explicit timeout (make_* drops it) and StaticMap streams raw image bytes (make_* JSON-parses). Do NOT convert.
-
 import frappe
+import requests  # ALLOWLIST 2026-06-29: location stays raw — geocoding needs an explicit timeout (make_* drops it) and StaticMap streams raw image bytes (make_* JSON-parses). Do NOT convert.
 from frappe import _
 from frappe.utils import cint, flt, format_datetime
 
@@ -215,11 +214,11 @@ def set_or_check_anchor(lead, lat, lng, accuracy, radius):
 	if dist > allowed:
 		frappe.throw(
 			_("Visit blocked — you are {0} m from the doctor's location (allowed {1} m).").format(
-				int(round(dist)), int(round(allowed))
+				round(dist), round(allowed)
 			),
 			title=_("Out of range"),
 		)
-	return {"distance_m": int(round(dist)), "allowed_m": int(round(allowed)),
+	return {"distance_m": round(dist), "allowed_m": round(allowed),
 			"anchor_lat": anchor["lat"], "anchor_lng": anchor["lng"], "first": False}
 
 
@@ -467,7 +466,7 @@ def leads_near(lat, lng, radius_km=15):
 				"lng": r.custom_clinic_longitude,
 				"address": r.custom_clinic_address or "",
 				"stage": r.custom_stage or r.status or "",
-				"distance_m": int(round(d)),
+				"distance_m": round(d),
 			})
 	out.sort(key=lambda x: x["distance_m"])
 	return out
@@ -505,8 +504,8 @@ def precheck(lead, task_type, lat, lng, accuracy=None, values=None, task=None):
 			anchor = _read_anchor(ld)
 		else:
 			return {"needed": True, "ok": True, "first": True, "allowed_m": radius}
-	dist = int(round(haversine(anchor["lat"], anchor["lng"], lat, lng)))
-	allowed = int(round(radius + accuracy))
+	dist = round(haversine(anchor["lat"], anchor["lng"], lat, lng))
+	allowed = round(radius + accuracy)
 	ok = dist <= allowed
 	if not ok:
 		log_visit_audit(lead, task_type, "Rejected", lat=lat, lng=lng, distance_m=dist,
@@ -555,8 +554,8 @@ def lead_location_view(lead):
 			when = t.custom_location_captured_at or t.modified or t.creation
 			dist = None
 			if located and anchor:
-				dist = int(round(haversine(
-					anchor["lat"], anchor["lng"], t.custom_location_latitude, t.custom_location_longitude)))
+				dist = round(haversine(
+					anchor["lat"], anchor["lng"], t.custom_location_latitude, t.custom_location_longitude))
 			activities.append({
 				"task": t.name,
 				"type": t.custom_task_type or "",

@@ -18,8 +18,8 @@ grain masters; teardown removes everything created.
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.intake import intake
 from tatva_connect.automation import seed
+from tatva_connect.intake import intake
 from tatva_connect.whatsapp.phone import to_e164
 
 _INTAKE_SWITCH = "Lead::Enrolment::intake"

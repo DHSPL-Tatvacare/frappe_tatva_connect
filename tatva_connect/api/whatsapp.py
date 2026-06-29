@@ -318,9 +318,8 @@ def whatsapp_window_state(reference_doctype, reference_name):
 	the UI: when CLOSED, the free-text input box is hidden and only template
 	messages may be sent; a new inbound reopens it. Read-only, fail-open-to-closed.
 	"""
-	from frappe.utils import add_to_date, get_datetime, now_datetime
-
 	from crm.api.whatsapp import validate_access
+	from frappe.utils import add_to_date, get_datetime, now_datetime
 
 	validate_access(reference_doctype, reference_name)
 	last = frappe.db.get_value(
