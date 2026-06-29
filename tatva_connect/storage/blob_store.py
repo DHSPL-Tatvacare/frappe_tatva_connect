@@ -59,9 +59,9 @@ def blob_key_from_url(file_url: str | None) -> str | None:
 
 def _slug(value) -> str:
 	"""Make a record name safe for one blob path segment (keep it legible, no nested
-	folders): keep alnum/dot/dash/underscore, collapse the rest to '-'. Coerces to str
-	first — integer-autonamed records (e.g. CRM Task) carry an int name."""
-	return re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-") or "rec"
+	folders): keep alnum/dot/dash/underscore, collapse the rest to '-'. Coerces via
+	frappe.utils.cstr — integer-autonamed records (e.g. CRM Task) carry an int name."""
+	return re.sub(r"[^A-Za-z0-9._-]+", "-", frappe.utils.cstr(value)).strip("-") or "rec"
 
 
 class BlobStore:
