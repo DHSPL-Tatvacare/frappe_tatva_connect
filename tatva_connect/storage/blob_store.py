@@ -5,12 +5,13 @@
 
 Clean-room (principles, not code, shared with community Azure apps): a File's bytes
 live in a private Azure Blob container; the File row keeps a permission-gated proxy
-URL; downloads are served as short-lived SAS links. Every tunable — credentials,
-container names, link validity, local-copy removal — lives in `CRM Azure Storage
-Settings`; nothing is hardcoded here.
+URL; downloads are served as short-lived SAS links. Credentials + the env/legacy
+container come from `site_config` via `storage.location` (a property of the box, never
+the DB); behavioural tunables (link validity, local-copy removal) live in `CRM Azure
+Storage Settings`. Nothing is hardcoded here.
 
-Auth today = connection string (account key), stored encrypted on the settings
-single. Managed identity is a later swap behind this same `BlobStore` seam.
+Auth today = connection string (account key) from site_config. Managed identity is a
+later swap behind this same `BlobStore` seam.
 """
 
 import mimetypes
@@ -22,6 +23,7 @@ import frappe
 from frappe import _
 
 from tatva_connect import automation
+from tatva_connect.storage import location
 
 SETTINGS = "CRM Azure Storage Settings"
 DOWNLOAD_METHOD = "tatva_connect.storage.api.download_file"
@@ -62,7 +64,8 @@ def _slug(value: str) -> str:
 
 
 class BlobStore:
-	"""Thin wrapper over the Azure SDK, configured entirely from the settings single.
+	"""Thin wrapper over the Azure SDK: creds + container from `location` (site_config),
+	behavioural tunables from the settings single.
 
 	The SDK is imported lazily so merely importing this module never requires the
 	package to be present (keeps app load + non-storage code paths clean).
@@ -77,36 +80,33 @@ class BlobStore:
 		if self._service is None:
 			from azure.storage.blob import BlobServiceClient
 
-			conn = self.settings.get_password("connection_string")
-			if not conn:
-				frappe.throw(_("Set the Connection String in {0}.").format(SETTINGS))
-			self._service = BlobServiceClient.from_connection_string(conn)
+			self._service = BlobServiceClient.from_connection_string(location.connection_string())
 		return self._service
 
-	@property
-	def container(self) -> str:
-		# One private container for everything: bytes are NEVER world-readable in Azure.
-		# Frappe's own is_private flag still drives the download gate (see api.download_file);
-		# it does not need to change where the bytes live.
-		name = self.settings.private_container
-		if not name:
-			frappe.throw(_("Set the Private Container in {0}.").format(SETTINGS))
-		return name
+	def _container_for_key(self, blob_key: str) -> str:
+		# One private container per BOX (the env); old keys route to the legacy container.
+		# Bytes are NEVER world-readable in Azure — is_private still drives the download gate
+		# (api.download_file). Fail-closed: an old key with no legacy container does no Azure op.
+		if location.is_new_scheme(blob_key):
+			return location.env()
+		legacy = location.legacy_container()
+		if not legacy:
+			frappe.throw(_("No storage container resolvable for this file in this environment."))
+		return legacy
 
 	def new_key(
 		self, file_name: str, attached_to_doctype: str | None, attached_to_name: str | None = None
 	) -> str:
 		"""Collision-proof blob key, grouped so the container browses sensibly:
-		`<doctype>/<record>/<hash>_<name>` when the file is attached to a record (one
-		folder per lead etc.), else `<doctype>/<hash>/<name>` or `<hash>/<name>`. The
-		short hash keeps same-named files in one record from clashing."""
+		`<app>/<owner_doctype>/<owner_id>/<hash>_<name>`, where app + owner come from the
+		walk-up resolver (an email attachment lands in its lead's folder). Unresolvable ->
+		`platform/_unattached/<hash>_<name>`. The short hash keeps same-named files apart."""
 		name = frappe.scrub(file_name) or "file"
 		tag = frappe.generate_hash(length=10)
-		if attached_to_doctype and attached_to_name:
-			return "/".join([frappe.scrub(attached_to_doctype), _slug(attached_to_name), f"{tag}_{name}"])
-		parts = [frappe.scrub(attached_to_doctype)] if attached_to_doctype else []
-		parts += [tag, name]
-		return "/".join(parts)
+		owner_dt, owner_nm, app = location.resolve_owner(attached_to_doctype, attached_to_name)
+		if owner_dt and owner_nm:
+			return "/".join([app, frappe.scrub(owner_dt), _slug(owner_nm), f"{tag}_{name}"])
+		return "/".join([location.DEFAULT_APP, "_unattached", f"{tag}_{name}"])
 
 	# --- operations (only PRIVATE files are ever offloaded; one private container) ---
 	def upload(self, blob_key: str, content: bytes, file_name: str) -> str:
@@ -138,7 +138,8 @@ class BlobStore:
 
 	def sas_url(self, blob_key: str) -> str:
 		"""A short-lived read link, cached until just before it expires."""
-		cache_key = f"{_SAS_CACHE_PREFIX}{self.container}::{blob_key}"
+		container = self._container_for_key(blob_key)
+		cache_key = f"{_SAS_CACHE_PREFIX}{container}::{blob_key}"
 		cached = frappe.cache().get_value(cache_key)
 		if cached:
 			return cached
@@ -148,7 +149,7 @@ class BlobStore:
 		ttl = int(self.settings.sas_ttl_seconds or 900)
 		token = generate_blob_sas(
 			account_name=self.service.account_name,
-			container_name=self.container,
+			container_name=container,
 			blob_name=blob_key,
 			account_key=self.service.credential.account_key,
 			permission=BlobSasPermissions(read=True),
@@ -160,8 +161,9 @@ class BlobStore:
 
 	# --- internals ---
 	def _blob(self, blob_key: str):
-		self._ensure_container(self.container)
-		return self.service.get_blob_client(container=self.container, blob=blob_key)
+		container = self._container_for_key(blob_key)
+		self._ensure_container(container)
+		return self.service.get_blob_client(container=container, blob=blob_key)
 
 	def _ensure_container(self, name: str):
 		from azure.core.exceptions import ResourceExistsError

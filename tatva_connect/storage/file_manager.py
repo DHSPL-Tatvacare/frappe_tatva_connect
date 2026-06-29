@@ -92,7 +92,7 @@ def rehome(file, attached_to_doctype, attached_to_name, *, private=True, meta=No
 		store = BlobStore()
 		old_key = blob_key_from_url(file.file_url)
 		new_key = store.new_key(file.file_name, attached_to_doctype, attached_to_name)
-		if (old_key or "").split("/")[0:2] != new_key.split("/")[0:2]:
+		if (old_key or "").split("/")[0:3] != new_key.split("/")[0:3]:
 			new_url = store.upload(new_key, store.download(old_key), file.file_name)
 			store.delete(old_key)
 	frappe.db.set_value(

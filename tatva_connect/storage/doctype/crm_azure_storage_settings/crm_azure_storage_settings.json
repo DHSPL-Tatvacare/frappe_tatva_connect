@@ -6,9 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "connection_string",
-  "containers_section",
-  "private_container",
   "behaviour_section",
   "sas_ttl_seconds",
   "remove_local_after_upload",
@@ -17,23 +14,6 @@
   "check_connection"
  ],
  "fields": [
-  {
-   "description": "Azure connection string (carries the account key): DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-   "fieldname": "connection_string",
-   "fieldtype": "Password",
-   "label": "Connection String"
-  },
-  {
-   "fieldname": "containers_section",
-   "fieldtype": "Section Break",
-   "label": "Containers"
-  },
-  {
-   "description": "Name of the private Azure container you want files stored in (you set this). Created automatically if it doesn't exist.",
-   "fieldname": "private_container",
-   "fieldtype": "Data",
-   "label": "Private Container"
-  },
   {
    "fieldname": "behaviour_section",
    "fieldtype": "Section Break",
