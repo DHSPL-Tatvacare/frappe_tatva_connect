@@ -49,9 +49,9 @@ from tatva_connect.tests.authz.oracle import (
 	native_would_allow,
 )
 
-# Grain fields are permlevel-1 on CRM Lead; a user without permlevel-1 read must never receive them.
-PERMLEVEL_FIELDS = ("custom_vertical", "custom_group", "custom_current_program")
-# The CRM Lead API Field catalog keys for those grain fields (Field Restriction targets a catalog row).
+# custom_vertical / custom_group are permlevel-1 on CRM Lead (verified live 2026-06-29);
+# custom_current_program is permlevel-0, so it is NOT a permlevel-leak target. A7 tests the two
+# genuinely permlevel-1 fields. RESTRICTABLE_FIELD is the catalog key a Field Restriction targets (A4).
 RESTRICTABLE_FIELD = "custom_vertical"
 
 
@@ -112,11 +112,18 @@ def _share_out_of_grain(grain_idx, other_idx):
 	return plant, detect
 
 
-def _open_doctype_to_role(doctype, role):
-	"""DATA: add a Custom DocPerm granting `role` read on a doctype outside its remit. The capability
-	oracle must now report the role CAN read it — the cross-app / escalation leak."""
+def _open_doctype_to_role(doctype, role, ptype="read"):
+	"""DATA: add a Custom DocPerm granting `role` `ptype` on a doctype outside its remit. The capability
+	oracle (native_doctype_capability, doc=None) must now report the role HAS that capability — the
+	cross-app (A11) / vertical-escalation (A3) leak.
+
+	doc=None is the SOUND oracle for a doctype-capability grant: has_permission with doc=None evaluates
+	role perms only (verified in permissions.py — the controller `has_permission` hooks need a doc), so a
+	layer-2 grant is visible here. (On a CONCRETE doc the deny-only layer-4 org_hierarchy hook would mask
+	this same grant — which is exactly why the old would_allow detector stayed green: a false negative.)"""
 	def plant():
-		probe = "authz.mut.{0}@example.test".format(frappe.scrub(role))
+		probe = "authz.mut.{0}.{1}.{2}@example.test".format(
+			frappe.scrub(role), frappe.scrub(doctype), ptype)
 		if not frappe.db.exists("User", probe):
 			frappe.get_doc({
 				"doctype": "User", "email": probe, "first_name": "mut-{0}".format(role),
@@ -124,61 +131,84 @@ def _open_doctype_to_role(doctype, role):
 			}).insert(ignore_permissions=True)
 		# add_permission writes a Custom DocPerm; reset_perms is the rollback the savepoint handles.
 		frappe.permissions.add_permission(doctype, role, permlevel=0)
-		frappe.permissions.update_permission_property(doctype, role, 0, "read", 1)
+		frappe.permissions.update_permission_property(doctype, role, 0, ptype, 1)
+		if ptype != "read":  # write/create/delete capability implies the doctype must be readable too
+			frappe.permissions.update_permission_property(doctype, role, 0, "read", 1)
 		frappe.clear_cache(doctype=doctype)
-		return {"probe": probe, "doctype": doctype}
+		return {"probe": probe, "doctype": doctype, "ptype": ptype}
 
 	def detect(ctx):
-		return native_doctype_capability(ctx["probe"], ctx["doctype"], "read")
+		return native_doctype_capability(ctx["probe"], ctx["doctype"], ctx["ptype"])
 
 	return plant, detect
 
 
-def _grant_write_to_role(doctype, role):
-	"""DATA: grant `role` write on a doctype it must never write — escalation/bypass effect, judged
-	on a CONCRETE doc by native_would_allow (doc mandatory; doc=None would mask row-level escalation)."""
+def _share_doc_write(role, lead_idx):
+	"""DATA (A6/A10): DocShare WRITE a concrete lead to a probe holding `role`. This is the correct
+	would_allow negative control — verified in permissions.py: has_permission on a doc OR-s in a
+	DocShare (layer 6) only when role+controller perm is falsy, and the share bypasses the deny-only
+	layer-4 org_hierarchy hook, so native_would_allow on that concrete doc now returns True. It is the
+	real row-level write ceiling an ignore_permissions bypass path must never exceed.
+
+	NB: a bare role-perm grant (the old detector) does NOT surface here — CRM Lead's layer-4
+	has_lead_permission hook denies an unassigned probe, AND-composed, masking the grant. That mismatch
+	was the false negative this fixes."""
 	def plant():
-		probe = "authz.mut.{0}.w@example.test".format(frappe.scrub(role))
+		probe = "authz.mut.{0}.shw@example.test".format(frappe.scrub(role))
 		if not frappe.db.exists("User", probe):
 			frappe.get_doc({
-				"doctype": "User", "email": probe, "first_name": "mutw-{0}".format(role),
+				"doctype": "User", "email": probe, "first_name": "shw-{0}".format(role),
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
-		frappe.permissions.add_permission(doctype, role, permlevel=0)
-		frappe.permissions.update_permission_property(doctype, role, 0, "write", 1)
-		frappe.permissions.update_permission_property(doctype, role, 0, "read", 1)
-		frappe.clear_cache(doctype=doctype)
-		lead = _lead_in_grain(0)
-		return {"probe": probe, "doctype": doctype, "doc": frappe.get_doc(doctype, lead)}
+		lead = _lead_in_grain(lead_idx)
+		_grant_docshare("CRM Lead", lead, probe, read=1, write=1)
+		return {"probe": probe, "doc": frappe.get_doc("CRM Lead", lead)}
 
 	def detect(ctx):
-		return native_would_allow(ctx["probe"], ctx["doctype"], "write", ctx["doc"])
+		return native_would_allow(ctx["probe"], "CRM Lead", "write", ctx["doc"])
 
 	return plant, detect
 
 
-def _grant_permlevel1_read(role):
-	"""DATA: grant `role` permlevel-1 READ on CRM Lead. The field oracle (permlevel-aware) must now
-	include the grain fields in the role-holder's permitted set — the permlevel field leak (audit C1).
-	This simulates the EFFECT of a render surface that bypasses permlevel: native then allows it."""
+def _grant_permlevel1_read():
+	"""DATA (A7): grant a probe permlevel-1 READ on CRM Lead — custom_vertical / custom_group are
+	permlevel-1 (verified live; custom_current_program is permlevel-0, hence NOT a permlevel target).
+	The field oracle (permlevel-aware get_permitted_fields) must then include them — the permlevel field
+	leak (audit C1), the EFFECT of a render surface that bypasses permlevel.
+
+	The probe holds a THROWAWAY role with ONLY permlevel-0 read, so the pl1 fields are absent at
+	baseline and the grant produces a real delta. A grain Sales User can NOT be the probe: on this site
+	it already holds permlevel-1 read (a Custom DocPerm), so granting it again is a no-op — exactly the
+	wrong-principal mistake that made the old detector a false negative."""
+	PL1_FIELDS = ("custom_vertical", "custom_group")
+	role = "Authz Mut PL0 Probe Role"
+
 	def plant():
-		probe = "authz.mut.{0}.pl1@example.test".format(frappe.scrub(role))
+		if not frappe.db.exists("Role", role):
+			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}
+			               ).insert(ignore_permissions=True)
+		probe = "authz.mut.pl0probe@example.test"
 		if not frappe.db.exists("User", probe):
 			frappe.get_doc({
-				"doctype": "User", "email": probe, "first_name": "mutpl-{0}".format(role),
+				"doctype": "User", "email": probe, "first_name": "pl0probe",
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
-		# Clean baseline FIRST (before the grant) — the grain fields must NOT be present here.
+		# permlevel-0 read only → the doctype is readable but the pl1 grain fields are NOT (clean baseline).
+		frappe.permissions.add_permission("CRM Lead", role, permlevel=0)
+		frappe.permissions.update_permission_property("CRM Lead", role, 0, "read", 1)
+		frappe.clear_cache(doctype="CRM Lead")
 		baseline = native_permitted_fields(probe, "CRM Lead")
+		baseline_had = [f for f in PL1_FIELDS if f in baseline]
+		# the leak: grant permlevel-1 read → the pl1 grain fields must now enter the permitted set.
 		frappe.permissions.add_permission("CRM Lead", role, permlevel=1)
 		frappe.permissions.update_permission_property("CRM Lead", role, 1, "read", 1)
 		frappe.clear_cache(doctype="CRM Lead")
-		return {"probe": probe, "baseline_had": [f for f in PERMLEVEL_FIELDS if f in baseline]}
+		return {"probe": probe, "baseline_had": baseline_had}
 
 	def detect(ctx):
 		fields = native_permitted_fields(ctx["probe"], "CRM Lead")
-		# Detected iff a grain field that was NOT in the clean baseline is now exposed.
-		return any(f in fields and f not in ctx["baseline_had"] for f in PERMLEVEL_FIELDS)
+		# Detected iff a permlevel-1 grain field that was NOT in the clean baseline is now exposed.
+		return any(f in fields and f not in ctx["baseline_had"] for f in PL1_FIELDS)
 
 	return plant, detect
 
@@ -204,7 +234,7 @@ def _remove_field_restriction_effect(role):
 		# passes -> the only thing that could hide it is the restriction. Absent -> it leaks.
 		catalog = {"lead:" + RESTRICTABLE_FIELD: {"grain_vertical": "", "grain_group": "",
 		                                           "grain_program": ""}}
-		resolved = entitlement.resolve_fields(catalog, grains.ALL_GRAINS, [ctx["role"]])
+		resolved = entitlement.resolve_fields(catalog, entitlement.ALL_GRAINS, [ctx["role"]])
 		return ("lead:" + RESTRICTABLE_FIELD) in resolved
 
 	return plant, detect
@@ -255,13 +285,13 @@ def _partner_write_out_of_grain():
 def _build_mutations():
 	a1p, a1d = _share_out_of_grain(3, 0)           # grain_4 user, share a grain_1 lead
 	a2p, a2d = _share_out_of_grain(3, 4)           # grain_4 user, share a grain_5 (shared-program) lead
-	a3p, a3d = _grant_write_to_role("Purchase Master Manager")  # cross-app role gains CRM Lead write
+	a3p, a3d = _open_doctype_to_role("CRM Lead", "Purchase Master Manager", "write")  # cross-app role gains CRM Lead write capability
 	a4p, a4d = _remove_field_restriction_effect("Sales User")
 	a5p, a5d = _share_out_of_grain(0, 3)           # roll-up flavour: a non-report grain leaks in
-	a6p, a6d = _grant_write_to_role("Sales User")  # a write grant the bypass path would honour
-	a7p, a7d = _grant_permlevel1_read("Sales User")
+	a6p, a6d = _share_doc_write("Sales User", 0)   # DocShare write → the would_allow ceiling a bypass path must not exceed
+	a7p, a7d = _grant_permlevel1_read()
 	a8p, a8d = _share_child_parent(3, 0)
-	a10p, a10d = _grant_write_to_role("WhatsApp User")  # wrapped-method ceiling = native_would_allow
+	a10p, a10d = _share_doc_write("WhatsApp User", 0)  # wrapped-method data ceiling = native_would_allow on a shared doc
 	a11p, a11d = _open_doctype_to_role("Contact", "Purchase Master Manager")
 	a12p, a12d = _share_out_of_grain(4, 2)         # DocShare over-grant (the share IS the fence abuse)
 	a13p, a13d = _partner_write_out_of_grain()
@@ -306,8 +336,9 @@ def _build_mutations():
 		 "untestable_without_code_mutation": None},
 
 		{"attack": "A7", "id": "MUT-A7-permlevel1-field-leak",
-		 "english": "Sales User granted permlevel-1 read on CRM Lead -> grain fields enter the "
-		            "permitted-field set (the permlevel field leak, audit C1)",
+		 "english": "a permlevel-0-only probe role granted permlevel-1 read on CRM Lead -> the grain "
+		            "fields enter its permitted-field set (proves the field-read-leak detector to a "
+		            "principal WITHOUT permlevel-1 read is not blind, audit C1)",
 		 "plant": a7p, "detect": a7d, "expected_detector": "oracle.native_permitted_fields",
 		 "untestable_without_code_mutation": None},
 

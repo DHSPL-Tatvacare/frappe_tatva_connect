@@ -20,7 +20,6 @@ the subTest and rolls back to it, never a bare rollback (which would unwind the 
 import frappe
 
 from tatva_connect.lead import detail as lead_detail_mod
-from tatva_connect.smartview import api as smartview_api
 from tatva_connect.tests.authz import generator, grains, roster
 from tatva_connect.tests.authz.base import AuthzTestCase, set_user
 from tatva_connect.tests.authz.oracle import (
@@ -31,8 +30,10 @@ from tatva_connect.tests.authz.oracle import (
 )
 from tatva_connect.tests.authz.registry import cases as registry_cases
 
-# The permlevel-1 grain fields — the A7 leak target and the A4/A7 oracle cross-check anchors.
+# The grain fields — A7 asserts a grain user can READ these but not EDIT a lead out of its grain.
 GRAIN_FIELDNAMES = ("custom_vertical", "custom_group", "custom_current_program")
+# The runtime switch that turns on grain enforcement (off = documented stock exposure).
+_GRAIN_SWITCH = "Lead::CRM Lead::grain"
 
 
 class TestRegistryCases(AuthzTestCase):
@@ -87,30 +88,6 @@ class TestRegistryCases(AuthzTestCase):
 		if c.principal == "Guest":
 			return "Guest"
 		return roster.email(c.principal)
-
-	# ---- field-leak helpers (A4 / A7) -----------------------------------------------------------
-
-	@staticmethod
-	def _rendered_fieldnames_values(payload):
-		"""(set of fieldnames, set of stringified values) rendered by lead_detail's section payload."""
-		names, values = set(), set()
-		for section in payload.get("sections", []):
-			for f in section.get("fields", []):
-				names.add(f.get("fieldname"))
-				if f.get("value") is not None:
-					values.add(str(f.get("value")))
-		return names, values
-
-	def _assert_grain_fields_not_in_oracle(self, c, user):
-		"""The permlevel cross-check: a principal with no permlevel-1 read must NOT have the grain
-		fields in native_permitted_fields (the ONLY sound field-leak oracle)."""
-		permitted = native_permitted_fields(user, c.doctype)
-		leaked = [fn for fn in GRAIN_FIELDNAMES if fn in permitted]
-		self.assertEqual(
-			leaked, [],
-			"ORACLE: {0} natively has permlevel-1 read of {1} — the grain leak premise is void"
-			.format(user, leaked),
-		)
 
 	# ---- A1: horizontal grain leak (list; oracle = visible_names) --------------------------------
 
@@ -205,70 +182,60 @@ class TestRegistryCases(AuthzTestCase):
 				return key
 		return None
 
-	# ---- A7: permlevel field leak (field; oracle = permitted_fields) -----------------------------
+	# ---- A7: grain fields READ-allowed but EDIT-denied for a grain user --------------------------
+	# Intended model (confirmed 2026-06-29): a Sales User SEES which grain a lead is in (read), but
+	# only a manager / the assignment-rule stage may MOVE it (edit). So A7 asserts BOTH: read is
+	# allowed (no false leak alarm), and an out-of-entitlement grain EDIT is rejected.
 
-	def test_A7_permlevel_field_leak(self):
+	def test_A7_grain_field_read_allowed_edit_denied(self):
 		for c in registry_cases.cases_for("A7"):
 			with self.subTest(case=c.id):
-				self._run_a7_case(c)
+				if c.action == "field_read" and c.expected == "allow":
+					self._run_a7_read_allowed(c)
+				elif c.action == "write" and c.expected == "deny":
+					self._run_a7_edit_denied(c)
+				else:
+					self.skipTest("A7 runner: unhandled case shape {0}".format(c.id))
 
-	def _run_a7_case(self, c):
-		if c.surface != "field":
-			self.skipTest("A7 runner only handles surface 'field'; got {0}".format(c.surface))
+	def _run_a7_read_allowed(self, c):
+		"""A grain user CAN natively read its own grain fields — this is intended, not a leak (the
+		protection is on EDIT). Oracle = native_permitted_fields (permlevel-aware): the grain fields
+		must be present for the grain user, who holds permlevel-1 read by design."""
 		user = self._principal_user(c)
-		target = self._resolve_target(c)
-		if target is None:
-			self.skipTest("no seeded {0} target for case {1}".format(c.target, c.id))
-		# 1) Oracle cross-check: the grain fields are permlevel-1 → must NOT be in permitted_fields.
-		self._assert_grain_fields_not_in_oracle(c, user)
-		# 2) Surface check: the permlevel-1 grain field NAMES/VALUES must be absent from the render.
-		grain = self._principal_grain(c.principal)
-		grain_values = {grain["vertical"], grain["group"], grain["program"]} if grain else set()
-		if "leaddetail" in c.id:
-			with set_user(user):
-				payload = lead_detail_mod.lead_detail(target)
-			names, values = self._rendered_fieldnames_values(payload)
-			leaked_names = [fn for fn in GRAIN_FIELDNAMES if fn in names]
-			self.assertEqual(
-				leaked_names, [],
-				"A7: lead_detail exposed permlevel-1 grain field(s) {0} to {1}"
-				.format(leaked_names, user),
-			)
-			leaked_vals = grain_values & values
-			self.assertEqual(
-				leaked_vals, set(),
-				"A7: lead_detail leaked grain VALUE(s) {0} to {1}".format(leaked_vals, user),
-			)
-		elif "smartview" in c.id:
-			self._assert_smartview_no_grain_leak(c, user, grain_values)
-		else:
-			self.skipTest("A7 case {0}: no field surface implemented for this id".format(c.id))
+		permitted = native_permitted_fields(user, c.doctype)
+		missing = [fn for fn in GRAIN_FIELDNAMES if fn not in permitted]
+		self.assertEqual(
+			missing, [],
+			"A7: grain user {0} is missing READ access to its own grain field(s) {1} — read is the "
+			"intended model (Sales User sees their grain)".format(user, missing),
+		)
 
-	def _assert_smartview_no_grain_leak(self, c, user, grain_values):
-		"""get_data must not project permlevel-1 grain fields. Requires a saved Lead Smart View; if
-		none exists for the principal, skip (the surface is user-authored, never seeded — invariant
-		17 — so a fresh DB legitimately has no view to drive this)."""
-		with set_user(user):
-			views = smartview_api.get_smart_views()
-			lead_view = next((v for v in views if v.get("base_object") == "Lead"), None)
-			if lead_view is None:
-				self.skipTest("A7 smartview: no Lead Smart View available to {0} (views are "
-				              "user-authored, never seeded)".format(user))
-			data = smartview_api.get_data(lead_view["name"], page_size=smartview_api.PAGE_MAX)
-		col_fieldnames = {col.get("key") for col in data.get("columns", [])}
-		leaked_cols = [fn for fn in GRAIN_FIELDNAMES if fn in col_fieldnames]
-		self.assertEqual(
-			leaked_cols, [],
-			"A7: Smart View exposed permlevel-1 grain column(s) {0} to {1}".format(leaked_cols, user),
-		)
-		# No grain VALUE may appear in any projected row cell either.
-		leaked = set()
-		for row in data.get("rows", []):
-			leaked |= grain_values & {str(v) for v in row.values() if v is not None}
-		self.assertEqual(
-			leaked, set(),
-			"A7: Smart View leaked grain VALUE(s) {0} to {1}".format(leaked, user),
-		)
+	def _run_a7_edit_denied(self, c):
+		"""A grain user must NOT move a lead OUT of its entitlement by editing a grain field. With the
+		grain switch ON: vertical/group are permlevel-1 (structurally unwritable) and current_program
+		(permlevel-0) is gated by the grain controller, which rejects an out-of-entitlement save.
+		Switch OFF is the documented stock exposure (mirrors the child-visibility switches), so the
+		assertion enables the switch first — exactly the prod-representative state. Mutates shared
+		state, so it runs in a named savepoint per the base.py discipline (never a bare rollback)."""
+		user = self._principal_user(c)
+		own = self._principal_grain(c.principal)
+		lead = self._lead_in_grain(own) if own else None
+		if lead is None:
+			self.skipTest("no seeded in-grain lead for case {0}".format(c.id))
+		out_program = next(g["program"] for g in grains.GRAINS if g["program"] != own["program"])
+		save_point = "authz_a7_{0}".format(c.id.replace("-", "_"))
+		frappe.db.savepoint(save_point)
+		try:
+			frappe.db.set_value("CRM Tatva Automation", _GRAIN_SWITCH, "enabled", 1)
+			frappe.clear_cache()
+			with set_user(user):
+				doc = frappe.get_doc(c.doctype, lead)
+				doc.custom_current_program = out_program  # move to a program outside entitlement
+				with self.assertRaises((frappe.PermissionError, frappe.ValidationError)):
+					doc.save()
+		finally:
+			frappe.db.rollback(save_point=save_point)
+			frappe.clear_cache()
 
 	# ---- A6: bypass-write escalation (oracle = would_allow) --------------------------------------
 

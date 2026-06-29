@@ -62,7 +62,7 @@ from tatva_connect.tests.authz.oracle import native_would_allow
 # --------------------------------------------------------------------------------------------------
 _TIER_A = {
     # access lockdown — role/permission scaffolding, runs in schema setup
-    "access/lockdown.py:88",
+    "access/lockdown.py:89",
     # automation switch + dispatcher (scheduler/queue context; CRM Tatva Automation rows + task writes)
     "automation/dispatcher.py:192",
     "automation/dispatcher.py:205",
@@ -74,7 +74,7 @@ _TIER_A = {
     # client/form script re-seed (after_migrate)
     "client_scripts_seed.py:33",
     "client_scripts_seed.py:45",
-    "form_scripts_seed.py:68",
+    "form_scripts_seed.py:73",
     # intake form/workflow BUILDER — operator authoring tool, not the public submit path
     "intake/builder.py:156",
     "intake/builder.py:166",
@@ -87,12 +87,12 @@ _TIER_A = {
     "patches/rename_push_module_to_notifications.py:21",
     "patches/retire_activity_legacy_columns.py:34",
     "patches/retire_activity_legacy_columns.py:60",
-    "patches/retire_lead_stage_legacy_fields.py:18",
+    "patches/retire_lead_stage_legacy_fields.py:22",
     "patches/retire_location_captures_fields.py:13",
     "patches/retire_tatva_automation_settings.py:18",
     # schema setup (Module Def + Role)
-    "schema_setup.py:89",
-    "schema_setup.py:128",
+    "schema_setup.py:94",
+    "schema_setup.py:133",
     # intrinsic reference seed (side-effect options master)
     "seed_side_effect_options.py:26",
     # smart view writes — separately audited (operator/self-scoped via _is_operator/PermissionError)
@@ -121,12 +121,12 @@ _TIER_B = {
     "api/partner_call.py:290",
     "api/partner_file.py:254",
     # WhatsApp outbound API write (whitelisted, gated)
-    "api/whatsapp.py:293",
+    "api/whatsapp.py:294",
     # intake submission path (public web form -> lead/child writes, validated by the brain)
-    "intake/intake.py:196",
-    "intake/intake.py:271",
-    "intake/intake.py:282",
-    "intake/intake.py:366",
+    "intake/intake.py:188",
+    "intake/intake.py:263",
+    "intake/intake.py:274",
+    "intake/intake.py:358",
     # location capture API (request path; self/lead scoped)
     "location/api.py:166",
     "location/api.py:246",
@@ -143,10 +143,10 @@ _TIER_B = {
     "telephony/bridge.py:106",
     "whatsapp/adapter.py:226",
     "whatsapp/adapter.py:311",
-    "whatsapp/notification.py:78",
-    "whatsapp/notification.py:103",
+    "whatsapp/notification.py:76",
+    "whatsapp/notification.py:101",
     # webhook spine (raw inbound event log)
-    "webhooks/spine.py:97",
+    "webhooks/spine.py:95",
 }
 
 _TIER_C = {

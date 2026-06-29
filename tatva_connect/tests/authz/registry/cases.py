@@ -55,16 +55,22 @@ CASES = [
 	         "though the grain would otherwise show it",
 	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
 
-	# A7 — permlevel field leak (audit C1): grain fields are permlevel-1; a user without permlevel-1
-	# read must not receive custom_vertical/group/program via lead_detail or a Smart View column.
-	CaseSpec("A7-grain1-permlevel-leaddetail", "A7",
-	         "grain_1 (Sales User, no permlevel-1 read) must NOT receive custom_vertical/group/"
-	         "current_program values from the lead_detail render surface",
-	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
-	CaseSpec("A7-grain1-permlevel-smartview", "A7",
-	         "the same permlevel-1 grain fields must NOT render as Smart View column values for "
-	         "grain_1 — get_data must not bypass permlevel",
-	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
+	# A7 — grain fields are READ-allowed but EDIT-denied for a grain user. The intended model (confirmed
+	# 2026-06-29): a Sales User SEES which grain a lead belongs to, but only a manager / the assignment-
+	# rule stage may MOVE it. vertical/group are permlevel-1 (structurally unwritable by a Sales User);
+	# current_program is permlevel-0 but the grain controller rejects an out-of-entitlement save when the
+	# grain switch is ON (switch OFF = the documented stock exposure, like the child-visibility switches).
+	# The field READ-leak to a principal WITHOUT permlevel-1 read is the negative control proven in
+	# mutation.py (a fresh permlevel-0 role), not a case here — no roster persona has Lead read yet lacks
+	# permlevel-1 read.
+	CaseSpec("A7-grain1-reads-own-grain-fields", "A7",
+	         "grain_1 (Sales User) CAN read its own lead's grain fields (vertical/group/program) — "
+	         "intended, NOT a leak; the protection is on EDIT, not read",
+	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "allow"),
+	CaseSpec("A7-grain1-cannot-move-lead-out-of-grain", "A7",
+	         "grain_1 CANNOT move a lead to a program outside its entitlement (grain edit-denied; only a "
+	         "manager / the assignment-rule stage may change grain) — enforced when the grain switch is ON",
+	         "grain_1", "CRM Lead", "write", "field", "in_grain", "deny"),
 
 	# A6 — bypass-write escalation: partner mapped to grain_1 must not write an out-of-grain lead.
 	CaseSpec("A6-partner-out-of-grain-write", "A6",
