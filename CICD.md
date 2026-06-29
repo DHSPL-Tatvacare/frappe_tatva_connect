@@ -13,10 +13,10 @@ Build one image from the env's apps file → bring up boxes → `bench migrate` 
 ## Branches & environments (codified)
 Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`.
 - **local** = the dev bench tracks `develop` (`git checkout develop` — git clone, no image).
-- **UAT / PROD** = image built from the matching apps file, which pins only the fork's branch:
-  `apps.uat.json` (crm `uat`) · `apps.prod.json` (crm `prod`) · `apps.json` = `develop`. Everything else
-  (frappe/whatsapp apps) is identical & pinned. `tatva_connect` stays on `main` until its branches are set up.
-  Build picks the env: `APPS_JSON_BASE64=$(base64 -w0 apps.<env>.json)`.
+- **UAT / PROD** = image built from the matching apps file, which pins **both our repos** per env:
+  `apps.json` (crm + connect `develop`) · `apps.uat.json` (both `uat`) · `apps.prod.json` (both `prod`).
+  Everything else (frappe/whatsapp apps) is identical & pinned. Both repos follow the same
+  `develop → uat → prod` flow; there is no `main`. Build picks the env: `APPS_JSON_BASE64=$(base64 -w0 apps.<env>.json)`.
 - **Promote by fast-forward** when green (`git merge --ff-only`), then rebuild that env's image. Branch name = env.
 - **CI (fork only), purely push-triggered (no cron):** `Frontend CI` (ESLint/Oxlint/Vitest) on every push to all
   three; `Backend CI` (heavy) only on pushes to `uat`/`prod` (i.e. promote/ff-merge). Blocking is enforced by branch
