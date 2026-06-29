@@ -1,4 +1,4 @@
-<!-- AUTHORITATIVE agent constitution. AGENTS.md is a byte-identical mirror — edit BOTH. Updated 2026-06-29. -->
+<!-- AUTHORITATIVE agent constitution. This is a byte-identical mirror of CLAUDE.md — edit BOTH. Updated 2026-06-29. -->
 
 # Working in this repo (read before any change)
 

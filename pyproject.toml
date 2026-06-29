@@ -3,9 +3,10 @@ name = "tatva_connect"
 authors = [
     { name = "TatvaCare", email = "pareekshith.bompally@tatvacare.in"}
 ]
-description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony, CRM overrides"
+description = "Backend for TatvaCare CRM — doctypes, APIs, integrations, and business logic. Part of TatvaCare One."
 requires-python = ">=3.10"
 readme = "README.md"
+license = { file = "license.txt" }
 dynamic = ["version"]
 dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
