@@ -91,7 +91,12 @@ def _load_bytes(data):
 		cfg = _cfg()
 		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
 		# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
-		resp = requests.get(file_url, timeout=cfg["file_download_timeout_seconds"], stream=True)  # nosec B113
+		resp = requests.get(
+			file_url, timeout=cfg["file_download_timeout_seconds"], stream=True,
+			allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
+		)  # nosec B113
+		if 300 <= resp.status_code < 400:
+			frappe.throw(_("file_url must resolve directly, without redirects"))
 		resp.raise_for_status()
 		chunks, total = [], 0
 		for chunk in resp.iter_content(64 * 1024):

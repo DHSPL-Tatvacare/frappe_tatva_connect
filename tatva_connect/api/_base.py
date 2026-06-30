@@ -139,7 +139,7 @@ def find_by_external_id_scoped(doctype, field, external_id, mp, is_sysmgr):
 	for r in frappe.get_all(
 		doctype,
 		filters={field: external_id},
-		fields=["name", "reference_doctype", "reference_docname"],
+		fields=["name", "reference_doctype", "reference_docname", "owner"],
 	):
 		if is_sysmgr:
 			return r.name
@@ -149,6 +149,11 @@ def find_by_external_id_scoped(doctype, field, external_id, mp, is_sysmgr):
 			)
 			if g and g.custom_vertical == mp.vertical and g.custom_group == mp.crm_group:
 				return r.name
+		elif not r.reference_docname and r.owner == frappe.session.user:
+			# No lead to grain-scope through -> an unlinked row is the caller's iff they own it,
+			# so a re-sent external_id updates that same row instead of duplicating (a different
+			# partner can never address it — owner mismatch). Mirrors the grain gate for lead-less rows.
+			return r.name
 	return None
 
 
