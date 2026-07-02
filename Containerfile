@@ -29,8 +29,9 @@ RUN chown -R frappe:frappe /home/frappe/.nvm
 
 USER frappe
 
-# Private apps in apps.json: pass --secret id=gh_pat,env=GH_PAT (token never stored in a layer).
-RUN --mount=type=secret,id=gh_pat,required=false \
+# Private apps in apps.json: CI passes a PAT as a BuildKit secret. Since this build runs as the
+# `frappe` user, mount the secret readable by that uid/gid (1000/1000) so `cat` works.
+RUN --mount=type=secret,id=gh_pat,required=false,uid=1000,gid=1000,mode=0400 \
     if [ -f /run/secrets/gh_pat ]; then \
       GH_PAT="$(cat /run/secrets/gh_pat)" && \
       git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"; \
