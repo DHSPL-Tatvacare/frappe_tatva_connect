@@ -29,6 +29,13 @@ RUN chown -R frappe:frappe /home/frappe/.nvm
 
 USER frappe
 
+# Private apps in apps.json: pass --secret id=gh_pat,env=GH_PAT (token never stored in a layer).
+RUN --mount=type=secret,id=gh_pat,required=false \
+    if [ -f /run/secrets/gh_pat ]; then \
+      GH_PAT="$(cat /run/secrets/gh_pat)" && \
+      git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"; \
+    fi
+
 SHELL ["/bin/bash", "-c"]
 
 RUN export APP_INSTALL_ARGS="" && \
