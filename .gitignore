@@ -68,8 +68,6 @@ scripts/
 .coverage.*
 coverage.xml
 htmlcov/
-# tcsec is local-only sugar (the security cockpit: rich UI, --ai-explain, --pdf, sqlmap DAST).
-# The GATE it runs is tatva_connect/security/static_checks.py (tracked) + the pytest static lane;
-# CI never calls tcsec. Keep the cockpit + its local DAST targets off the repo.
-tatva_connect/security/tcsec.py
+# The security cockpit (tcsec.py) is TRACKED — the local git hooks invoke it as the enforcement gate.
+# Only its local DAST target list (live endpoint URLs) stays OFF the public repo.
 tatva_connect/security/dast-targets.txt
