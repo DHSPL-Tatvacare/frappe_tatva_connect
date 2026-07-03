@@ -6,6 +6,12 @@
 **`tatva_connect`** + the API docs site (`api-docs/`). Strategy/facts live in the Obsidian vault
 (`tatvacare-obsidian/Projects/frappe-crm/`), NOT here. This file is the rule set; obey it exactly.
 
+> **INVARIANT — naming (non-negotiable).** This is **TatvaCare's healthcare CRM**. NEVER call it a
+> "PSP CRM" (or any narrower label) — in code, comments, docs, commits, stakeholder/business-facing
+> material, or conversation. Patient Support Programs are ONE kind of `program` grain among many; they
+> do not define the product. Mislabelling it in a PUBLIC repo or stakeholder doc is a real liability —
+> always say "TatvaCare healthcare CRM" / "the CRM".
+
 ## What Frappe is, and how we use it
 Frappe is an open-source low-code framework: Python backend, Vue/JS frontend, an ORM where every
 table is a **DocType**, a built-in **permission engine**, REST API, background jobs, and the Desk UI.
@@ -86,6 +92,11 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, migration
 - **S.4** No FE DOM hijacks — no `MutationObserver`/`innerHTML`/`eval`/`v-html` into other components.
   Prefer CSS scoping over JS DOM toggles (see C.25).
 - **S.5** Secrets in env vars / Password fields ONLY — this repo is PUBLIC. Never commit a secret.
+- **S.6** Authz/VAPT testing follows ONE philosophy — **differential / metamorphic testing with mutation-based
+  self-validation**: never hardcode the expected verdict; ask Frappe's own engine (the oracle) and assert
+  `actual ⊆ native` (grain may narrow, NEVER widen — the metamorphic relation), then prove the suite isn't
+  blind by planting a known-bad per attack vector and failing the build unless `recall == 1.0`. New coverage
+  EXTENDS this, never bolts a parallel idiom. Full map → `tatva_connect/tests/authz/TESTS.md`.
 
 ## Mechanism (codified — don't rediscover each time)
 - ALL customization registers in `hooks.py` (`doc_events`, `scheduler_events`, `override_*`, `fixtures`,

@@ -141,6 +141,37 @@ class TestAutomationSeam(FrappeTestCase):
 				f"'{path}' appears in more than one row's backs: duplicated coverage",
 			)
 
+	def test_every_switch_is_enforced(self):
+		"""The enforcement mirror of the drift check. Drift proves every hooked path is
+		REGISTERED; this proves every registered key is ENFORCED — its `is_enabled(key)`
+		gate is actually wired in app code. A row nobody checks is a dead switch: the
+		operator flips it and nothing happens (the Observability::Metrics::rollup fake).
+		Every key literal must appear in app source OUTSIDE the registry (where keys are
+		DEFINED) and the test tree (where they appear as fixtures) — i.e. drive real code."""
+		app_dir = frappe.get_app_path("tatva_connect")
+		registry_file = os.path.join("automation", "registry.py")
+		chunks = []
+		for root, _dirs, files in os.walk(app_dir):
+			if os.sep + "tests" in root or "__pycache__" in root:
+				continue
+			for fn in files:
+				if not fn.endswith(".py"):
+					continue
+				full = os.path.join(root, fn)
+				if full.endswith(registry_file):
+					continue
+				with open(full, encoding="utf-8") as fh:
+					chunks.append(fh.read())
+		source = "\n".join(chunks)
+
+		for auto in AUTOMATIONS:
+			self.assertIn(
+				auto.key,
+				source,
+				f"'{auto.key}' is registered but no is_enabled gate references it in app "
+				f"code — a dead switch. Wire is_enabled(\"{auto.key}\") into the code it gates.",
+			)
+
 	def test_cutover_completeness(self):
 		"""Everything ships dormant now; the operator enables what they want at
 		cutover. This guards the cutover enable SQL against a forgotten integration

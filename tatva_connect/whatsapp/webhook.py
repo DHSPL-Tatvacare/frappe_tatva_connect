@@ -79,6 +79,8 @@ def pin_inbound_reference(doc, method=None):
 
 	Flag-gated + Incoming-only: never touches outbound (no flag) or reconcile (db_insert,
 	no validate). Does not alter routing/account logic."""
+	if not wati.is_enabled():
+		return  # WATI messaging kill-switch — the inbound account-matcher is gated too
 	pinned = doc.flags.get("tatva_pinned_lead")
 	if pinned and (doc.type or "") == "Incoming":
 		doc.reference_doctype = "CRM Lead"

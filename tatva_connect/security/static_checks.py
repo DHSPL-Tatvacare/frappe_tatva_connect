@@ -18,7 +18,7 @@ import tomllib
 
 APP = "tatva_connect"
 SEMGREP_RULES = "tatva_connect/security/semgrep-rules"
-SECRETS_BASELINE = "tatva_connect/security/.secrets.baseline"
+SECRETS_BASELINE = "tatva_connect/security/.secrets.baseline"  # pragma: allowlist secret
 # tests/ hold deliberate attack payloads + fake secrets; the baseline holds its own hashes. Both are
 # excluded from the secret + pattern scanners (bandit already excludes tests/ via pyproject). App
 # code is scanned in full.

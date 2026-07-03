@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# FULL offline gate — every push. Exactly what GitHub `static.yml` used to run:
+# lint (ruff) + SAST (bandit) + deps (pip-audit) + secrets (detect-secrets) + semgrep + AST locks.
+# This is now THE enforcement point; CI is manual-only (workflow_dispatch) to avoid Actions cost.
+. "$(dirname "$0")/lib.sh"
+echo "▶ pre-push · tcsec static (full offline gate = the old CI)"
+tcsec_run static

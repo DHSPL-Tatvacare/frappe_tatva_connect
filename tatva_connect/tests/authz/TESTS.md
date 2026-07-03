@@ -1,6 +1,6 @@
 # `authz` — the permission / access / VAPT test framework
 
-> **One sentence:** a data-driven framework that enumerates *who can act* × *how access could break*, turns each crossing into an individually-tracked test, judges it against Frappe's own permission engine, and proves — with planted bugs — that the suite can actually catch an escalation.
+> **One sentence:** **differential / metamorphic authz testing with mutation-based self-validation** — a data-driven framework that enumerates *who can act* × *how access could break*, judges each crossing against Frappe's own permission engine (never a hardcoded answer — assert `actual ⊆ native`, grain may narrow but never widen), and proves — by planting a known-bad per attack vector — that the suite can actually catch an escalation (`recall == 1.0` or the build fails). The differential/metamorphic half is §2; the mutation-based self-validation half is §9.
 
 This document is the **philosophy and the map**. Read it before adding or running anything.
 

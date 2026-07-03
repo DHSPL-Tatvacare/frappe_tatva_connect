@@ -15,6 +15,8 @@ import re
 import frappe
 from frappe import _
 
+from tatva_connect import automation
+
 # The ONLY field every per-form submission table carries, independent of the contract:
 # the hidden back-link the wildcard router reads to resolve the contract. Everything the
 # patient sees is declared in the contract's grid — nothing else is injected (no hardcoding).
@@ -303,6 +305,9 @@ def sync_form(cfg, method=None):
 	Server-internal only — callers are the form's own controller / an operator action,
 	both already System-Manager gated (the builder doctype is System-Manager-only).
 	Returns (doctype_name, web_form_name), or (None, None) when it deliberately skips."""
+	# Operator kill-switch: the whole intake feature (builder + runtime fold) is one switch.
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return None, None
 	# Skip gracefully (never throw on a plain save) if the name can't yield a runtime
 	# DocType (odd/test names): a bad name must not block saving the contract.
 	if not safe_doctype_name_for(cfg):
