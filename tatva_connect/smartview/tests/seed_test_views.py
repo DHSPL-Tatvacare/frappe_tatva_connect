@@ -36,7 +36,7 @@ ACT_VIEW = "TEST Smart View — Order Punch"
 
 def _seed_catalog():
 	for row in _CATALOG:
-		vals = dict(zip(_FIELDS, row))
+		vals = dict(zip(_FIELDS, row, strict=False))
 		name = vals["field_key"]
 		# section_key/target_doctype/fieldname are required by the doctype; fill sane values.
 		if vals["sql_source"] in ("task", "payload"):

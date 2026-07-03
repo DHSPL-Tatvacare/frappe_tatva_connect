@@ -22,7 +22,7 @@ TT = "CRM Task Type"
 
 
 def _composite(vertical, group, program, type_name):
-	return "{0}::{1}::{2}::{3}".format(vertical or "", group or "", program or "", type_name)
+	return "{}::{}::{}::{}".format(vertical or "", group or "", program or "", type_name)
 
 
 def execute():
@@ -38,9 +38,7 @@ def execute():
 			continue  # dormant (no grain) — leave name-keyed; new resolution skips blank-vertical types
 		if len(scope) > 1:
 			frappe.log_error(
-				"CRM Task Type '{0}' has {1} scope rows — needs a manual 1->N composite split (ADR).".format(
-					name, len(scope)
-				),
+				f"CRM Task Type '{name}' has {len(scope)} scope rows — needs a manual 1->N composite split (ADR).",
 				"rekey_task_types_composite",
 			)
 			continue

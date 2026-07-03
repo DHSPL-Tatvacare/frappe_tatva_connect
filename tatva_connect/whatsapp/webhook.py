@@ -23,11 +23,9 @@ depends on a WATI payload field. Setup: vault runbook 02-operations/runbooks/09.
 import frappe
 from frappe.rate_limiter import rate_limit
 
-from tatva_connect.whatsapp import adapter
-from tatva_connect.whatsapp import api as wati
-from tatva_connect.whatsapp import roles
-from tatva_connect.whatsapp import routing
 from tatva_connect.webhooks import spine
+from tatva_connect.whatsapp import adapter, roles, routing
+from tatva_connect.whatsapp import api as wati
 
 
 @frappe.whitelist(allow_guest=True)
@@ -81,6 +79,8 @@ def pin_inbound_reference(doc, method=None):
 
 	Flag-gated + Incoming-only: never touches outbound (no flag) or reconcile (db_insert,
 	no validate). Does not alter routing/account logic."""
+	if not wati.is_enabled():
+		return  # WATI messaging kill-switch — the inbound account-matcher is gated too
 	pinned = doc.flags.get("tatva_pinned_lead")
 	if pinned and (doc.type or "") == "Incoming":
 		doc.reference_doctype = "CRM Lead"

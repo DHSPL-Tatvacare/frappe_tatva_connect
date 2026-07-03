@@ -34,14 +34,14 @@ def _compute_landing(user):
 
 def _reason(apps, default_app, default_workspace):
     if default_workspace:
-        return "pinned to Desk workspace '{0}' by User.default_workspace".format(default_workspace)
+        return f"pinned to Desk workspace '{default_workspace}' by User.default_workspace"
     if default_app:
-        return "pinned to '{0}' by User.default_app".format(default_app)
+        return f"pinned to '{default_app}' by User.default_app"
     if not apps:
         return "no web apps visible -> Desk (/app)"
     if len(apps) == 1:
-        return "single app -> {0}".format(apps[0])
-    return "multiple apps {0} -> /apps (app switcher)".format(apps)
+        return f"single app -> {apps[0]}"
+    return f"multiple apps {apps} -> /apps (app switcher)"
 
 
 @frappe.whitelist()

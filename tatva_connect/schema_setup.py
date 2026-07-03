@@ -84,7 +84,7 @@ def _ensure_new_modules():
 
 		app_path = frappe.get_app_path("tatva_connect")
 		modules = [m.strip() for m in (frappe.get_module_list("tatva_connect") or []) if m.strip()]
-		tables = set(frappe.db.get_tables())
+		_tables = set(frappe.db.get_tables())
 		for module in modules:
 			if frappe.db.exists("Module Def", module):
 				continue

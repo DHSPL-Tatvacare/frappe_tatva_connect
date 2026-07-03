@@ -78,6 +78,6 @@ def assert_no_escalation(test, user, doctype, ptype, doc, actually_allowed):
 	For READ-row and FIELD cases use native_can_read_row / native_permitted_fields, not this."""
 	if actually_allowed and not native_would_allow(user, doctype, ptype, doc):
 		test.fail(
-			"ESCALATION: {0} could {1} {2}/{3} via a grain/bypass path, but the native "
+			"ESCALATION: {} could {} {}/{} via a grain/bypass path, but the native "
 			"permission stack denies it".format(user, ptype, doctype, getattr(doc, "name", doc))
 		)

@@ -62,7 +62,7 @@ from tatva_connect.tests.authz.oracle import native_would_allow
 # --------------------------------------------------------------------------------------------------
 _TIER_A = {
     # access lockdown — role/permission scaffolding, runs in schema setup
-    "access/lockdown.py:88",
+    "access/lockdown.py:89",
     # automation switch + dispatcher (scheduler/queue context; CRM Tatva Automation rows + task writes)
     "automation/dispatcher.py:192",
     "automation/dispatcher.py:205",
@@ -74,7 +74,7 @@ _TIER_A = {
     # client/form script re-seed (after_migrate)
     "client_scripts_seed.py:33",
     "client_scripts_seed.py:45",
-    "form_scripts_seed.py:68",
+    "form_scripts_seed.py:73",
     # intake form/workflow BUILDER — operator authoring tool, not the public submit path
     "intake/builder.py:156",
     "intake/builder.py:166",
@@ -87,17 +87,17 @@ _TIER_A = {
     "patches/rename_push_module_to_notifications.py:21",
     "patches/retire_activity_legacy_columns.py:34",
     "patches/retire_activity_legacy_columns.py:60",
-    "patches/retire_lead_stage_legacy_fields.py:18",
+    "patches/retire_lead_stage_legacy_fields.py:22",
     "patches/retire_location_captures_fields.py:13",
     "patches/retire_tatva_automation_settings.py:18",
     # schema setup (Module Def + Role)
-    "schema_setup.py:89",
-    "schema_setup.py:128",
+    "schema_setup.py:94",
+    "schema_setup.py:133",
     # intrinsic reference seed (side-effect options master)
     "seed_side_effect_options.py:26",
     # smart view writes — separately audited (operator/self-scoped via _is_operator/PermissionError)
-    "smartview/api.py:686",
-    "smartview/api.py:699",
+    "smartview/api.py:684",
+    "smartview/api.py:697",
     # notification fan-out cleanup (scheduler context, prunes dead device tokens)
     "notifications/sender.py:115",
     "notifications/presence.py:80",  # read (get_all) — pruning helper, no row write
@@ -121,16 +121,16 @@ _TIER_B = {
     "api/partner_call.py:290",
     "api/partner_file.py:254",
     # WhatsApp outbound API write (whitelisted, gated)
-    "api/whatsapp.py:293",
+    "api/whatsapp.py:294",
     # intake submission path (public web form -> lead/child writes, validated by the brain)
-    "intake/intake.py:196",
-    "intake/intake.py:271",
-    "intake/intake.py:282",
-    "intake/intake.py:366",
+    "intake/intake.py:188",
+    "intake/intake.py:263",
+    "intake/intake.py:274",
+    "intake/intake.py:358",
     # location capture API (request path; self/lead scoped)
-    "location/api.py:166",
-    "location/api.py:246",
-    "location/api.py:267",
+    "location/api.py:165",
+    "location/api.py:245",
+    "location/api.py:266",
     # storage file manager (attachment writes on the request path)
     "storage/file_manager.py:45",
     "storage/file_manager.py:58",
@@ -140,13 +140,13 @@ _TIER_B = {
     # telephony + WhatsApp INBOUND adapters (webhook ingestion — attach to matched lead only)
     "telephony/adapter.py:149",
     "telephony/adapter.py:158",
-    "telephony/bridge.py:106",
+    "telephony/bridge.py:105",
     "whatsapp/adapter.py:226",
     "whatsapp/adapter.py:311",
-    "whatsapp/notification.py:78",
-    "whatsapp/notification.py:103",
+    "whatsapp/notification.py:76",
+    "whatsapp/notification.py:101",
     # webhook spine (raw inbound event log)
-    "webhooks/spine.py:97",
+    "webhooks/spine.py:95",
 }
 
 _TIER_C = {
@@ -176,7 +176,7 @@ def _scan_bypass_sites():
     )
     # grep exits 1 when there are no matches; treat that as empty, anything else as a real error.
     if proc.returncode not in (0, 1):
-        raise RuntimeError("grep failed scanning for bypass sites: {0}".format(proc.stderr))
+        raise RuntimeError(f"grep failed scanning for bypass sites: {proc.stderr}")
     sites = set()
     for raw in proc.stdout.splitlines():
         # format: <abspath>:<lineno>:<code>
@@ -187,7 +187,7 @@ def _scan_bypass_sites():
         # matching test_no_perm_bypass.py's "os.sep + 'tests'" directory exclusion.
         if "tests" in rel.split(os.sep)[:-1]:
             continue
-        sites.add("{0}:{1}".format(rel, lineno))
+        sites.add(f"{rel}:{lineno}")
     return sites
 
 
@@ -202,11 +202,11 @@ class TestBypassEnumerationAudit(AuthzTestCase):
         if unlisted:
             print("\nNEW un-reviewed ignore_permissions bypass site(s):")
             for s in unlisted:
-                print("  {0}".format(s))
+                print(f"  {s}")
         self.assertFalse(
             unlisted,
-            "{0} NEW ignore_permissions bypass site(s) are not in the reviewed GATED_BYPASSES "
-            "allowlist — review each, classify its tier, and add it (or remove the bypass):\n  {1}"
+            "{} NEW ignore_permissions bypass site(s) are not in the reviewed GATED_BYPASSES "
+            "allowlist — review each, classify its tier, and add it (or remove the bypass):\n  {}"
             .format(len(unlisted), "\n  ".join(unlisted)),
         )
 
@@ -215,8 +215,8 @@ class TestBypassEnumerationAudit(AuthzTestCase):
         stale = sorted(GATED_BYPASSES - found)
         self.assertFalse(
             stale,
-            "{0} allowlisted bypass site(s) no longer exist in source (line moved or removed) — "
-            "re-review and update GATED_BYPASSES:\n  {1}".format(len(stale), "\n  ".join(stale)),
+            "{} allowlisted bypass site(s) no longer exist in source (line moved or removed) — "
+            "re-review and update GATED_BYPASSES:\n  {}".format(len(stale), "\n  ".join(stale)),
         )
 
 
@@ -250,7 +250,7 @@ class TestBypassWrites(AuthzTestCase):
         frappe.db.savepoint(savepoint)
         status = frappe.get_all("CRM Lead Status", pluck="name", limit=1)[0]
         doc = frappe.get_doc({
-            "doctype": "CRM Lead", "first_name": "bypass-{0}".format(savepoint),
+            "doctype": "CRM Lead", "first_name": f"bypass-{savepoint}",
             "status": status, "mobile_no": mobile,
             "custom_vertical": g["vertical"], "custom_group": g["group"],
             "custom_current_program": g["program"],
@@ -272,7 +272,7 @@ class TestBypassWrites(AuthzTestCase):
         frappe.db.savepoint("bypass_create")
         try:
             with set_user(self.partner_user):
-                doc, action = partner._upsert_one(
+                doc, _action = partner._upsert_one(
                     {
                         "mobile_no": "9990000001", "first_name": "evil",
                         # attacker tries to aim the lead at a foreign line:
@@ -298,7 +298,7 @@ class TestBypassWrites(AuthzTestCase):
         """Seed a lead on a FOREIGN line, then attempt update + delete as the partner. The grain
         check in _update_one/_delete_one raises the deliberately-generic not-found (DoesNotExistError)
         BEFORE the ignore_permissions save — so the bypass is never reached for a foreign lead."""
-        user, mp, is_sysmgr, parent_fields, child_allow = self._partner_caller_fields()
+        _user, mp, is_sysmgr, parent_fields, child_allow = self._partner_caller_fields()
         # generic-but-defensive: confirm the real type by reading the code (it's DoesNotExistError),
         # widen the catch so a path change can't turn a refusal into a false pass.
         refusals = (frappe.DoesNotExistError, frappe.ValidationError, frappe.PermissionError)
@@ -313,8 +313,8 @@ class TestBypassWrites(AuthzTestCase):
                 with self.subTest(endpoint=label):
                     with set_user(self.partner_user):
                         with self.assertRaises(refusals,
-                                               msg="ESCALATION: partner {0} reached a foreign-line "
-                                                   "lead via the ignore_permissions path".format(label)):
+                                               msg=f"ESCALATION: partner {label} reached a foreign-line "
+                                                   "lead via the ignore_permissions path"):
                             call()
             # the foreign lead is untouched + still present (delete never fired)
             frappe.set_user("Administrator")
@@ -368,9 +368,9 @@ class TestBypassWrites(AuthzTestCase):
             self.assertFalse(
                 native_create or native_write,
                 "UNEXPECTED: the role-less partner has a NATIVE create/write grant on CRM Lead "
-                "(create={0}, write={1}) — the ignore_permissions API is meant to be their ONLY "
+                f"(create={native_create}, write={native_write}) — the ignore_permissions API is meant to be their ONLY "
                 "write door; a second native door is a wider attack surface than audited."
-                .format(native_create, native_write),
+                ,
             )
         finally:
             frappe.db.rollback(save_point="bypass_in_grain")

@@ -55,16 +55,22 @@ CASES = [
 	         "though the grain would otherwise show it",
 	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
 
-	# A7 — permlevel field leak (audit C1): grain fields are permlevel-1; a user without permlevel-1
-	# read must not receive custom_vertical/group/program via lead_detail or a Smart View column.
-	CaseSpec("A7-grain1-permlevel-leaddetail", "A7",
-	         "grain_1 (Sales User, no permlevel-1 read) must NOT receive custom_vertical/group/"
-	         "current_program values from the lead_detail render surface",
-	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
-	CaseSpec("A7-grain1-permlevel-smartview", "A7",
-	         "the same permlevel-1 grain fields must NOT render as Smart View column values for "
-	         "grain_1 — get_data must not bypass permlevel",
-	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "deny"),
+	# A7 — grain fields are READ-allowed but EDIT-denied for a grain user. The intended model (confirmed
+	# 2026-06-29): a Sales User SEES which grain a lead belongs to, but only a manager / the assignment-
+	# rule stage may MOVE it. vertical/group are permlevel-1 (structurally unwritable by a Sales User);
+	# current_program is permlevel-0 but the grain controller rejects an out-of-entitlement save when the
+	# grain switch is ON (switch OFF = the documented stock exposure, like the child-visibility switches).
+	# The field READ-leak to a principal WITHOUT permlevel-1 read is the negative control proven in
+	# mutation.py (a fresh permlevel-0 role), not a case here — no roster persona has Lead read yet lacks
+	# permlevel-1 read.
+	CaseSpec("A7-grain1-reads-own-grain-fields", "A7",
+	         "grain_1 (Sales User) CAN read its own lead's grain fields (vertical/group/program) — "
+	         "intended, NOT a leak; the protection is on EDIT, not read",
+	         "grain_1", "CRM Lead", "field_read", "field", "in_grain", "allow"),
+	CaseSpec("A7-grain1-cannot-move-lead-out-of-grain", "A7",
+	         "grain_1 CANNOT move a lead to a program outside its entitlement (grain edit-denied; only a "
+	         "manager / the assignment-rule stage may change grain) — enforced when the grain switch is ON",
+	         "grain_1", "CRM Lead", "write", "field", "in_grain", "deny"),
 
 	# A6 — bypass-write escalation: partner mapped to grain_1 must not write an out-of-grain lead.
 	CaseSpec("A6-partner-out-of-grain-write", "A6",
@@ -122,6 +128,54 @@ CASES = [
 	         "with its CRM Lead API Mapping disabled, the partner is denied all access (no "
 	         "wrong-tenant attribution, invariant 16)",
 	         "partner", "CRM Lead", "read", "bypass_write", "in_grain", "deny"),
+	# A13 — partner CALL/ACTIVITY create against an OUT-OF-GRAIN lead: resolve_lead's forced grain
+	# filter raises (DoesNotExistError) BEFORE the ignore_permissions save, so the partner (grain_1)
+	# can never plant a child on a grain_3 lead.
+	CaseSpec("A13-partner-callog-out-of-grain-create", "A13",
+	         "partner (grain_1) creating a CRM Call Log against a grain_3 lead is rejected by "
+	         "resolve_lead's forced grain filter before the ignore_permissions save",
+	         "partner", "CRM Call Log", "create", "bypass_write", "out_of_grain", "deny"),
+	CaseSpec("A13-partner-activity-out-of-grain-create", "A13",
+	         "partner (grain_1) creating a CRM Task (activity) against a grain_3 lead is rejected by "
+	         "resolve_lead's forced grain filter before the ignore_permissions save",
+	         "partner", "CRM Task", "create", "bypass_write", "out_of_grain", "deny"),
+	# A13 — external_id is a PER-PARTNER namespace, not global: a colliding external_id already on a
+	# grain_3 lead's row must NOT resolve/overwrite that row for the grain_1 partner (the cross-tenant fix).
+	CaseSpec("A13-partner-extid-collision-no-cross-tenant", "A13",
+	         "partner (grain_1) sending an external_id that already exists on a grain_3 lead's CRM "
+	         "Call Log must NOT resolve that row — find_by_external_id_scoped returns None (grain-scoped "
+	         "via the linked lead), so a colliding id can never overwrite another tenant's row",
+	         "partner", "CRM Call Log", "create", "bypass_write", "out_of_grain", "deny"),
+
+	# A14 — public-intake guest abuse: an anonymous web-form submit must not escape the form's grain.
+	CaseSpec("A14-guest-routing-forced", "A14",
+	         "a Guest submission carrying foreign custom_vertical/group/program lands on the FORM's "
+	         "grain (forced routing), never the smuggled one — is_sysmgr=False+mp drops submitter routing",
+	         "Guest", "CRM Lead", "write", "bypass_write", "out_of_grain", "deny"),
+	CaseSpec("A14-guest-no-master-growth", "A14",
+	         "a Guest manual-field submit into a GROWABLE master (CRM Side Effect Option — not "
+	         "pick-only, not grain-scoped) returns canonical text and grows NO row, while the SAME "
+	         "_ensure_master call as an authed user grows it by 1 — the differential proves the block "
+	         "is the Guest guard (intake.py:355), not a universal/pick-only one",
+	         "Guest", "CRM Side Effect Option", "create", "bypass_write", "na", "deny"),
+	CaseSpec("A14-guest-note-scope", "A14",
+	         "a Guest fold writes its FCRM Note ONLY against the form's own resolved lead "
+	         "(reference_docname == the fold's lead) — never another lead",
+	         "Guest", "FCRM Note", "create", "bypass_write", "in_grain", "allow"),
+
+	# A7 (Smart View column leak): a grain user authoring a Smart View cannot project a column outside
+	# the view's grain catalog — _validate_columns is a fail-closed allowlist (any non-catalog key throws).
+	CaseSpec("A7-grain1-smartview-out-of-grain-column", "A7",
+	         "grain_1 (Sales User) calling upsert_view with a column that is not in its grain's catalog "
+	         "is rejected by _validate_columns (fail-closed allowlist) before the view is saved",
+	         "grain_1", "CRM Smart View", "create", "smartview", "out_of_grain", "deny"),
+
+	# A12 (Smart View grain clamp): a grain user cannot author a view scoped to a grain it isn't entitled
+	# to — _grains_from_axes clamps explicit axes to entitlement and raises PermissionError fail-closed.
+	CaseSpec("A12-grain1-smartview-grain-clamp", "A12",
+	         "grain_1 (Sales User) calling upsert_view with an out-of-grain (vertical,group,program) "
+	         "axis is rejected by _grains_from_axes (the cross-tenant write clamp) with PermissionError",
+	         "grain_1", "CRM Smart View", "create", "smartview", "out_of_grain", "deny"),
 ]
 
 

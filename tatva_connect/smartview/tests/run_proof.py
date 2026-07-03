@@ -58,8 +58,8 @@ def _make_lead(first):
 	# TAG lives in first_name (a catalog-searchable projected field) so the proof can
 	# isolate its leads via the composer's own search path.
 	doc = frappe.get_doc({
-		"doctype": "CRM Lead", "first_name": "{0} {1}".format(first, TAG),
-		"lead_name": "{0} {1}".format(first, TAG), "status": "New",
+		"doctype": "CRM Lead", "first_name": f"{first} {TAG}",
+		"lead_name": f"{first} {TAG}", "status": "New",
 	}).insert(ignore_permissions=True)
 	return doc.name
 
@@ -68,13 +68,13 @@ def _make_task(lead, owner, outcome, order_id, units, shipped_by):
 	# The unified model: outcome/order_id/shipped_by land in promoted columns; the type-specific
 	# leftover (cycle_category) lands in the display-only JSON payload.
 	t = frappe.get_doc({
-		"doctype": "CRM Task", "title": "{0} {1}".format(order_id, TAG),
+		"doctype": "CRM Task", "title": f"{order_id} {TAG}",
 		"custom_task_type": TYPE, "status": "Todo",
 		"reference_doctype": "CRM Lead", "reference_docname": lead,
 		"custom_outcome": outcome,
 		"custom_reference": order_id,
 		"custom_scheduled_at": shipped_by,
-		"custom_activity_payload": frappe.as_json({"cycle_category": "Cycle-{0}".format(units)}),
+		"custom_activity_payload": frappe.as_json({"cycle_category": f"Cycle-{units}"}),
 	})
 	t.insert(ignore_permissions=True)
 	# stamp owner explicitly (PQC keys off owner/assigned_to)
@@ -95,7 +95,7 @@ def _seed_proof_data(agent):
 
 def _check(label, cond):
 	status = "PASS" if cond else "FAIL"
-	print("  [{0}] {1}".format(status, label))
+	print(f"  [{status}] {label}")
 	return cond
 
 
@@ -156,11 +156,11 @@ def run():
 	finally:
 		frappe.set_user("Administrator")
 		automation.is_enabled = orig
-	print("    admin total={0}  agent total={1}".format(admin_total, agent_total))
+	print(f"    admin total={admin_total}  agent total={agent_total}")
 	results.append(_check("agent (non-privileged) sees FEWER rows than admin", agent_total < admin_total))
 	results.append(_check("agent count == agent rows (count is PQC-scoped)", agent_total == len(agent_data["rows"])))
 
 	ok = all(results)
-	print("\n==== PROOF {0} ({1}/{2} checks passed) ====".format(
+	print("\n==== PROOF {} ({}/{} checks passed) ====".format(
 		"PASSED" if ok else "FAILED", sum(1 for r in results if r), len(results)))
 	return ok

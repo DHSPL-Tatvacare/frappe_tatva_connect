@@ -41,6 +41,9 @@ ATTACKS = {
 	        "desc": "a fence or share grants more than intended"},
 	"A13": {"title": "Partner-mapping abuse", "oracle": "would_allow",
 	        "desc": "disabled / multi-mapping / wrong-tenant attribution (invariant 16)"},
+	"A14": {"title": "Public-intake guest abuse", "oracle": "would_allow",
+	        "desc": "an anonymous web-form submit forces routing across grain, grows a master, or "
+	                "writes outside the form's configured lead scope (the intake-specialised sibling of A6)."},
 }
 
 

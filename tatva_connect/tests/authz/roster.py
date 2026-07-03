@@ -12,14 +12,14 @@ DOMAIN = "example.test"
 
 
 def _email(slug):
-	return "authz.{0}@{1}".format(slug, DOMAIN)
+	return f"authz.{slug}@{DOMAIN}"
 
 
 # One Sales User per grain — the primary horizontal-isolation principals.
 _grain_personas = [
 	{
-		"persona": "grain_{0}".format(i + 1),
-		"email": _email("grain{0}".format(i + 1)),
+		"persona": f"grain_{i + 1}",
+		"email": _email(f"grain{i + 1}"),
 		"password": PASSWORD,
 		"roles": ["Sales User"],
 		"grain_key": g["key"],
@@ -53,8 +53,16 @@ _role_personas = [
 
 PERSONAS = _grain_personas + _role_personas
 
+# The Frappe built-in anonymous principal. A thin, NON-provisioned marker so intake (A14) cases can
+# reference the guest the same way they reference any persona — but it is deliberately NOT in
+# PERSONAS, so generator.seed() never creates it and teardown() never deletes the real Guest user.
+GUEST = "Guest"
+_GUEST_MARKER = {"persona": "guest", "email": GUEST, "password": None, "roles": [], "grain_key": None}
+
 
 def by_persona(name):
+	if name in ("guest", GUEST):
+		return _GUEST_MARKER
 	return next(p for p in PERSONAS if p["persona"] == name)
 
 

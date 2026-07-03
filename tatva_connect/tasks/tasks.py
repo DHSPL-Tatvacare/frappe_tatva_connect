@@ -153,6 +153,10 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	# follow-up lands assigned even where the child docperm is narrower than lead access (one gate).
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 
+	# Valid enabled assignee only (a task's assignee can see its lead reference) — never Guest/disabled.
+	if assigned_to and (assigned_to == "Guest" or not frappe.db.get_value("User", {"name": assigned_to, "enabled": 1})):
+		frappe.throw(_("Invalid assignee: {0}").format(assigned_to))
+
 	# Lock the lead row so the check-then-insert below is serialized per lead (no duplicate task).
 	frappe.db.get_value("CRM Lead", lead, "name", for_update=True)
 

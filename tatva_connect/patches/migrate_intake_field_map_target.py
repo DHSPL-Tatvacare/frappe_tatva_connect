@@ -27,20 +27,20 @@ def execute():
 	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_table"):
 		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
-		frappe.db.sql_ddl("ALTER TABLE `{0}` ADD COLUMN `target_table` varchar(140)".format(_TABLE))
+		frappe.db.sql_ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_table` varchar(140)")
 	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_field"):
 		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
-		frappe.db.sql_ddl("ALTER TABLE `{0}` ADD COLUMN `target_field` varchar(140)".format(_TABLE))
+		frappe.db.sql_ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_field` varchar(140)")
 
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT name, `target`
-		FROM `{0}`
+		FROM `{_TABLE}`
 		WHERE `target` IS NOT NULL AND `target` != ''
 		  AND COALESCE(target_table, '') = ''
 		  AND COALESCE(target_field, '') = ''
-		""".format(_TABLE),
+		""",
 		as_dict=True,
 	)
 	for r in rows:

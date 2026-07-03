@@ -43,13 +43,13 @@ class TestSelfValidation(AuthzTestCase):
 		for m in mutation.testable():
 			cell = self._run_one(m, conf)
 			if cell == FN:
-				false_negatives.append("{0} [{1}] — {2} (expected detector: {3})".format(
+				false_negatives.append("{} [{}] — {} (expected detector: {})".format(
 					m["id"], m["attack"], m["english"], m["expected_detector"]))
 
 		# Surface the untestable-without-code-mutation vectors as build-visible warnings — never
 		# silently skipped (audit M2: recall must not be gamed by excluding hard vectors).
 		warnings = [
-			"  {0} [{1}]: {2}".format(u["id"], u["attack"], u["untestable_without_code_mutation"])
+			"  {} [{}]: {}".format(u["id"], u["attack"], u["untestable_without_code_mutation"])
 			for u in mutation.untestable()
 		]
 		if warnings:
@@ -64,8 +64,8 @@ class TestSelfValidation(AuthzTestCase):
 			+ "\n".join(false_negatives) + "\n" + conf.summary())
 		self.assertEqual(
 			conf.recall, 1.0,
-			"recall < 1.0 on the mutation set — {0}. A planted bug went undetected; "
-			"fix the detector before trusting this suite for VAPT.".format(conf.summary()))
+			f"recall < 1.0 on the mutation set — {conf.summary()}. A planted bug went undetected; "
+			"fix the detector before trusting this suite for VAPT.")
 		# A real run must have positives (else recall==1.0 is vacuous).
 		self.assertGreater(conf.positives, 0, "no positives scored — mutation set is empty/broken")
 
@@ -73,13 +73,13 @@ class TestSelfValidation(AuthzTestCase):
 		"""Plant mutation `m` in its own savepoint, run its detector, score, roll back. Returns the
 		confusion cell label. A plant/detect that ERRORS is itself a False Negative (the suite could
 		not even exercise the bug), recorded as suite_flagged=False — never swallowed."""
-		save_point = "authz_mut_{0}".format(m["id"].replace("-", "_"))
+		save_point = "authz_mut_{}".format(m["id"].replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
 			ctx = m["plant"]()
 			flagged = bool(m["detect"](ctx))
 		except Exception as exc:  # a broken plant/detect is a blind spot, not a pass
-			frappe.logger().error("authz mutation {0} raised: {1}".format(m["id"], exc))
+			frappe.logger().error("authz mutation {} raised: {}".format(m["id"], exc))
 			flagged = False
 		finally:
 			frappe.db.rollback(save_point=save_point)
@@ -95,8 +95,7 @@ class TestSelfValidation(AuthzTestCase):
 		missing = [k for k in ATTACKS if k not in by_attack]
 		self.assertFalse(
 			missing,
-			"attack vector(s) with NO planted mutation — recall==1.0 would be a lie: {0}".format(
-				missing))
+			f"attack vector(s) with NO planted mutation — recall==1.0 would be a lie: {missing}")
 
 	def test_every_attack_has_a_testable_or_declared_mutation(self):
 		"""Each vector must have a TESTABLE mutation (real plant+detect) OR every one of its mutations
@@ -114,10 +113,10 @@ class TestSelfValidation(AuthzTestCase):
 		self.assertFalse(
 			gaps,
 			"attack vector(s) with neither a testable plant nor an untestable-reason declaration "
-			"(a silent coverage gap): {0}".format(gaps))
+			f"(a silent coverage gap): {gaps}")
 
 	def test_every_attack_has_a_registry_case(self):
 		uncovered = cases.attacks_without_cases()
 		self.assertFalse(
 			uncovered,
-			"attack vector(s) with NO registry case in cases.py: {0}".format(uncovered))
+			f"attack vector(s) with NO registry case in cases.py: {uncovered}")

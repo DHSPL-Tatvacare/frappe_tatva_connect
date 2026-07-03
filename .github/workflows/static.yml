@@ -1,0 +1,38 @@
+# Static quality + security gate. NO deploy — Azure owns deploy; GitHub is code-mirror + checks only.
+# MANUAL-ONLY (workflow_dispatch): enforcement moved to LOCAL git hooks (see hooks/) to avoid Actions
+# cost. The hooks run the SAME gate (`tcsec` → static_checks.py), so nothing is lost. Trigger by hand
+# from the Actions tab for a clean-room CI run. Single-developer, push-only (no PRs). NO Frappe bench.
+#
+# ONE umbrella: the whole gate is `pytest tatva_connect/tests/static` — lint (ruff) + SAST (bandit) +
+# deps (pip-audit) + secrets (detect-secrets) + semgrep + the AST source-locks. The exact same checks
+# `tcsec static` runs locally, because both read ONE definition: tatva_connect/security/static_checks.py.
+# So local and CI can never drift. (The bench test suite — behaviour + authz — is a separate lane the
+# developer runs locally; it is not wired here yet.)
+name: Static checks
+
+on:
+  workflow_dispatch:   # manual only — no push trigger = no auto Actions cost (gate runs locally via hooks/)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static gate (pytest tatva_connect/tests/static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned tool versions — the SAME single source `tcsec` installs (tatva_connect/security/requirements.txt),
+      # so the gate is byte-for-byte reproducible between a developer's machine and CI.
+      - name: Install pinned scanners
+        run: pip install -r tatva_connect/security/requirements.txt
+      # lint + sast + deps + secrets + semgrep + AST locks, defined once in static_checks.py.
+      - name: Static gate
+        run: pytest tatva_connect/tests/static -q

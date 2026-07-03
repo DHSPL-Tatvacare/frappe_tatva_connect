@@ -48,13 +48,13 @@ def _make_lead(first, status, owner):
 	# lead_owner = the proof user, so the leads are visible to them under the lead PQC
 	# (the very scope the subquery fix exercises).
 	return frappe.get_doc({
-		"doctype": "CRM Lead", "first_name": "{0} {1}".format(first, TAG),
-		"lead_name": "{0} {1}".format(first, TAG), "status": status, "lead_owner": owner,
+		"doctype": "CRM Lead", "first_name": f"{first} {TAG}",
+		"lead_name": f"{first} {TAG}", "status": status, "lead_owner": owner,
 	}).insert(ignore_permissions=True).name
 
 
 def _check(label, cond):
-	print("  [{0}] {1}".format("PASS" if cond else "FAIL", label))
+	print("  [{}] {}".format("PASS" if cond else "FAIL", label))
 	return cond
 
 
@@ -62,10 +62,10 @@ def _throws(label, fn):
 	"""PASS iff fn() raises (a fail-closed rejection)."""
 	try:
 		fn()
-		print("  [FAIL] {0} (no error raised)".format(label))
+		print(f"  [FAIL] {label} (no error raised)")
 		return False
 	except Exception as e:
-		print("  [PASS] {0} -> {1}".format(label, type(e).__name__))
+		print(f"  [PASS] {label} -> {type(e).__name__}")
 		return True
 
 
@@ -107,7 +107,7 @@ def run():
 		print("\n== Predicate round-trips through get_data (narrows the rows) ==")
 		data = api.get_data(vname, search=TAG)
 		got = [r.get(text_key) for r in data["rows"]]
-		results.append(_check("saved predicate '{0} like Alpha' -> only Alpha rows".format(text_key),
+		results.append(_check(f"saved predicate '{text_key} like Alpha' -> only Alpha rows",
 							 bool(got) and all("Alpha" in str(v) for v in got)))
 
 		print("\n== Interactive columns override (catalog-bounded) ==")
@@ -151,7 +151,7 @@ def run():
 		# A already owns a few; top up to the cap then prove the (cap+1)th is refused.
 		owned = frappe.db.count("CRM Smart View", {"owner_user": a, "is_standard": 0})
 		for i in range(owned, api.OWNER_VIEW_CAP):
-			api.upsert_view({"label": "Cap{0} {1}".format(i, TAG), "base_object": "Lead"})
+			api.upsert_view({"label": f"Cap{i} {TAG}", "base_object": "Lead"})
 		results.append(_check("A now owns exactly the cap",
 							 frappe.db.count("CRM Smart View", {"owner_user": a, "is_standard": 0}) == api.OWNER_VIEW_CAP))
 		results.append(_throws("creating one past the cap throws",
@@ -165,6 +165,6 @@ def run():
 		_reset()
 
 	ok = all(results)
-	print("\n==== P2 PROOF {0} ({1}/{2} checks passed) ====".format(
+	print("\n==== P2 PROOF {} ({}/{} checks passed) ====".format(
 		"PASSED" if ok else "FAILED", sum(1 for r in results if r), len(results)))
 	return ok

@@ -11,6 +11,6 @@ def execute():
 	if frappe.db.has_column(DT, "target"):
 		# Both present (an interrupted run): drop the legacy column, keep target.
 		# ALLOWLIST: raw DROP COLUMN DDL — no Frappe helper
-		frappe.db.sql_ddl("ALTER TABLE `{0}` DROP COLUMN `first_class_target`".format(TABLE))
+		frappe.db.sql_ddl(f"ALTER TABLE `{TABLE}` DROP COLUMN `first_class_target`")
 		return
 	frappe.db.rename_column(DT, "first_class_target", "target")

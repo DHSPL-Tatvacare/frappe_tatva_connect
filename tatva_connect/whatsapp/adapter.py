@@ -46,7 +46,7 @@ OUTBOUND_SENT_EVENTS = {"sessionMessageSent_v2", "templateMessageSent_v2"}
 # WATI's history (getMessages) reports the live status as a string, not an eventType.
 _STATUS_BY_STRING = {"SENT": "sent", "DELIVERED": "delivered", "READ": "read", "REPLIED": "read"}
 
-_FALSY = {False, "false", "False", 0, "0", None, ""}
+_FALSY = {False, "false", "False", "0", None, ""}
 
 
 def _falsy(v):

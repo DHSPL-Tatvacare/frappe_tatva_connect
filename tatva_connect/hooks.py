@@ -3,9 +3,9 @@ from tatva_connect.whatsapp import roles as whatsapp_roles
 app_name = "tatva_connect"
 app_title = "Tatva Connect"
 app_publisher = "TatvaCare"
-app_description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony, CRM overrides"
+app_description = "Backend for TatvaCare CRM — doctypes, APIs, integrations, and business logic. Part of TatvaCare One."
 app_email = "pareekshith.bompally@tatvacare.in"
-app_license = "mit"
+app_license = "AGPLv3"
 
 # App logo (desk switcher header + /apps tile); ships as a committed asset, republished by `bench build` each deploy.
 app_logo_url = "/assets/tatva_connect/images/tatva-connect.png"

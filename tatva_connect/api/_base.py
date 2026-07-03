@@ -127,6 +127,36 @@ def resolve_lead(mp, is_sysmgr, data):
 	return lead_name
 
 
+def find_by_external_id_scoped(doctype, field, external_id, mp, is_sysmgr):
+	"""Resolve a partner `external_id` (stored in `field` — `custom_external_id` for calls,
+	`custom_lsq_activity_id` for activities) to ONE `doctype` row, but ONLY within the caller's grain
+	— the SAME scoping resolve_lead applies to leads. external_id is a PER-PARTNER namespace, not a
+	global one: a row is returned only when its linked CRM Lead is on the caller's (vertical, group),
+	so a partner can never address (overwrite / re-parent / read) another tenant's row by colliding an
+	external_id. System Manager (no mapping) is unscoped. Returns the row name or None."""
+	if not external_id:
+		return None
+	for r in frappe.get_all(
+		doctype,
+		filters={field: external_id},
+		fields=["name", "reference_doctype", "reference_docname", "owner"],
+	):
+		if is_sysmgr:
+			return r.name
+		if r.reference_doctype == "CRM Lead" and r.reference_docname:
+			g = frappe.db.get_value(
+				"CRM Lead", r.reference_docname, ["custom_vertical", "custom_group"], as_dict=True
+			)
+			if g and g.custom_vertical == mp.vertical and g.custom_group == mp.crm_group:
+				return r.name
+		elif not r.reference_docname and r.owner == frappe.session.user:
+			# No lead to grain-scope through -> an unlinked row is the caller's iff they own it,
+			# so a re-sent external_id updates that same row instead of duplicating (a different
+			# partner can never address it — owner mismatch). Mirrors the grain gate for lead-less rows.
+			return r.name
+	return None
+
+
 # -- request-arg helpers -----------------------------------------------------
 
 def _read_list(data, key):
@@ -198,7 +228,7 @@ def _classify(e, fn_name):
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
 			return code, http, (str(e) or _("Request failed")), getattr(e, "fields", None)
-	frappe.log_error(title="Partner API error: {0}".format(fn_name))
+	frappe.log_error(title=f"Partner API error: {fn_name}")
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
 
@@ -249,7 +279,7 @@ def _run_bucket(name, rate, burst, window, cost):
 		return True, 0, burst
 	import redis as _redis
 
-	key = frappe.cache.make_key("partner_rl:{0}".format(name))
+	key = frappe.cache.make_key(f"partner_rl:{name}")
 	args = [rate, window, burst, cost, int(time.time())]
 	try:
 		if _RL_SHA is None:
@@ -281,7 +311,7 @@ def _rate_check(cost, mapping):
 			"global", cfg["global_rate"], cfg["global_burst"], window, cost
 		)
 		t_ok, t_retry, t_rem = _run_bucket(
-			"tok:{0}".format(frappe.session.user), cfg["per_token_rate"], cfg["per_token_burst"], window, cost
+			f"tok:{frappe.session.user}", cfg["per_token_rate"], cfg["per_token_burst"], window, cost
 		)
 	except Exception:
 		frappe.log_error(title="Partner API rate limiter failed (allowed)")
@@ -375,7 +405,7 @@ def _run_bulk(items, fn):
 				)
 	results, ok = [], 0
 	for i, item in enumerate(items):
-		sp = "tc_bulk_{0}".format(i)
+		sp = f"tc_bulk_{i}"
 		frappe.db.savepoint(sp)
 		try:
 			results.append(fn(i, item))

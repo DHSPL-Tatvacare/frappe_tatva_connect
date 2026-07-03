@@ -55,15 +55,15 @@ class TestStageLeakage(AuthzTestCase):
 			lead = self._lead_for_program(program)
 			with self.subTest(program=program):
 				if not lead:
-					self.skipTest("no seeded lead for program {0}".format(program))
+					self.skipTest(f"no seeded lead for program {program}")
 				returned = lead_stages(lead)
 				if not returned:
-					self.skipTest("program {0} has no selectable stages on this DB".format(program))
+					self.skipTest(f"program {program} has no selectable stages on this DB")
 				for s in returned:
 					prog = frappe.db.get_value("CRM Lead Stage", s["name"], "program")
 					self.assertIn(
 						prog, (program, "", None),
-						"stage {0} (program {1}) leaked into a {2} lead's picker".format(
+						"stage {} (program {}) leaked into a {} lead's picker".format(
 							s["name"], prog, program),
 					)
 
@@ -75,11 +75,11 @@ class TestStageLeakage(AuthzTestCase):
 				lead = self._lead_for_program(own)
 				foreign_stage = self._selectable_stage(foreign)
 				if not lead or not foreign_stage:
-					self.skipTest("need a {0} lead and a {1} selectable stage".format(own, foreign))
+					self.skipTest(f"need a {own} lead and a {foreign} selectable stage")
 				names = {s["name"] for s in lead_stages(lead)}
 				self.assertNotIn(
 					foreign_stage, names,
-					"{0} stage {1} leaked into a {2} lead's picker".format(foreign, foreign_stage, own),
+					f"{foreign} stage {foreign_stage} leaked into a {own} lead's picker",
 				)
 
 	def test_same_program_grains_share_stages_by_design(self):
@@ -145,5 +145,5 @@ class TestStageLeakage(AuthzTestCase):
 		blanks = frappe.get_all("CRM Lead Stage", filters={"program": ["in", ["", None]]}, pluck="name")
 		self.assertEqual(
 			blanks, [],
-			"blank-program (wildcard) stages exist and leak into every grain's picker: {0}".format(blanks),
+			f"blank-program (wildcard) stages exist and leak into every grain's picker: {blanks}",
 		)

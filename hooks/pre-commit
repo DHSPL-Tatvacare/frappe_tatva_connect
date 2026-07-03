@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# FAST gate — every commit. The offline AST source-locks only (SQLi guard, public-endpoint
+# allowlist, no-perm-bypass). No scanners, ~instant. The full gate runs on push. See hooks/README.md.
+. "$(dirname "$0")/lib.sh"
+echo "▶ pre-commit · tcsec locks (AST source-locks)"
+tcsec_run locks

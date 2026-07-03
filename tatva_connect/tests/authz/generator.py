@@ -52,12 +52,12 @@ def _ensure_user(p):
 # ---- grain plumbing ------------------------------------------------------------------------------
 
 def _ensure_assignment_rule(g, user_email):
-	name = "{0}::{1}".format(TAG, g["key"])
+	name = "{}::{}".format(TAG, g["key"])
 	if frappe.db.exists("Assignment Rule", name):
 		return name
 	frappe.get_doc({
 		"doctype": "Assignment Rule", "name": name, "document_type": "CRM Lead",
-		"description": "authz test rule for {0}".format(g["key"]),
+		"description": "authz test rule for {}".format(g["key"]),
 		"assign_condition": "1", "rule": "Round Robin", "priority": 0, "disabled": 0,
 		"grain_vertical": g["vertical"], "grain_group": g["group"], "grain_program": g["program"],
 		"users": [{"user": user_email}],
@@ -82,8 +82,8 @@ def _seed_leads_and_tasks():
 	leads = 0
 	for i in range(100):
 		g = grains.GRAINS[i % len(grains.GRAINS)]
-		lead_name = "{0}-lead-{1:03d}".format(TAG, i)
-		task_title = "{0}-task-{1:03d}".format(TAG, i)
+		lead_name = f"{TAG}-lead-{i:03d}"
+		task_title = f"{TAG}-task-{i:03d}"
 		leads += 1
 		# Idempotency is per-record, not coupled: a run that died between the two inserts (commit
 		# mode) must still complete the task on the next run.
@@ -91,7 +91,7 @@ def _seed_leads_and_tasks():
 		if not lead_id:
 			lead = frappe.get_doc({
 				"doctype": "CRM Lead", "first_name": lead_name, "lead_name": lead_name,
-				"status": status, "mobile_no": "9{0:09d}".format(i),
+				"status": status, "mobile_no": f"9{i:09d}",
 				"custom_vertical": g["vertical"], "custom_group": g["group"],
 				"custom_current_program": g["program"],
 			})

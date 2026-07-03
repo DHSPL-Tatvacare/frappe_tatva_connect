@@ -112,7 +112,7 @@ def _seed_view(label, columns):
 
 
 def _check(label, cond):
-	print("  [{0}] {1}".format("PASS" if cond else "FAIL", label))
+	print("  [{}] {}".format("PASS" if cond else "FAIL", label))
 	return cond
 
 
@@ -149,6 +149,6 @@ def run():
 	r.append(_check("latest_by picked the NEWEST value (ZZZ>AAA desc)", row1.get(CHILD_LATEST_KEY) == NEW_VAL))
 
 	ok = all(r)
-	print("\n==== CHILD-FLATTEN PROOF {0} ({1}/{2} checks passed) ====".format(
+	print("\n==== CHILD-FLATTEN PROOF {} ({}/{} checks passed) ====".format(
 		"PASSED" if ok else "FAILED", sum(1 for x in r if x), len(r)))
 	return ok

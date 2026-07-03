@@ -18,6 +18,7 @@ import datetime as dt
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from tatva_connect import automation
 from tatva_connect.observability.constants import HISTOGRAM_COLS, histogram_sql
 
 _LOCK = "tc_obs_rollup"
@@ -56,6 +57,8 @@ _AGG_SELECT = ", ".join([
 
 def run():
 	"""Scheduler entrypoint. Idempotent; safe to run as often as you like."""
+	if not automation.is_enabled("Observability::Metrics::rollup"):
+		return  # operator kill-switch — ships dormant (invariant A.6), like every automation
 	if frappe.db.sql(f"SELECT GET_LOCK('{_LOCK}', 0)")[0][0] != 1:  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		return  # another worker holds the lock — skip this tick
 	try:
@@ -68,7 +71,11 @@ def run():
 		to = to - dt.timedelta(minutes=to.minute % 5)
 
 		# 'from' = last watermark, else oldest surviving raw row, else 7 days back.
+		# A zero/pre-epoch watermark ("0001-01-01") is truthy but breaks the coarse-tier
+		# UNIX_TIMESTAMP() aggregation (NULL -> zero hour/day rows), so treat it as unset.
 		frm = frappe.db.get_single_value(SETTINGS, "last_rolled_until")
+		if frm and get_datetime(frm).year < 1970:
+			frm = None
 		if not frm:
 			frm = frappe.db.sql(f"SELECT MIN(request_time) FROM `{RAW}`")[0][0]  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		frm = get_datetime(frm) if frm else (now_datetime() - dt.timedelta(days=7))

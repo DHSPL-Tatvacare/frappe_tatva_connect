@@ -40,5 +40,5 @@ def assert_comms_off():
 	if live:
 		raise CommsLiveError(
 			"COMMS ARE LIVE — refusing to run authz tests (risk of a real WhatsApp/call). "
-			"Disable these CRM Tatva Automation switches first: {0}".format(", ".join(live))
+			"Disable these CRM Tatva Automation switches first: {}".format(", ".join(live))
 		)

@@ -32,7 +32,7 @@ from frappe import _
 from frappe.utils import cint, cstr
 
 from tatva_connect import automation
-from tatva_connect.api._base import (  # noqa: F401  (re-exported for hooks + observability/capture.py)
+from tatva_connect.api._base import (
 	_PARTNER_PATH,
 	_api,
 	_cfg,
@@ -151,7 +151,7 @@ def catalog_label(key):
 	doctype = cat["section_doctype"].get(section)
 	f = frappe.get_meta(doctype).get_field(fieldname) if doctype else None
 	label = f.label if f else fieldname
-	return "{0} — {1}".format(cat["section_title"].get(section, section), label)
+	return "{} — {}".format(cat["section_title"].get(section, section), label)
 
 
 def catalog_section_title(child_fieldname):
@@ -503,7 +503,7 @@ def _delete_one(name, mp):
 def lead_schema(**kwargs):
 	"""Discovery: the fields THIS caller may send/read + their routing mode.
 	Two partners hitting this get different field lists — driven by their grid."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 
 	def describe(doctype, fields, required_override=None):
 		"""Field dicts for a section. `required_override` ({fieldname: bool}) reports the API's
@@ -555,7 +555,7 @@ def lead_schema(**kwargs):
 		         "patient updates that lead. Program is NOT part of identity: sending the same "
 		         "patient with a different program transitions the SAME lead, never a new one.",
 		"bulk": {"max_per_call": _cfg()["bulk_max_records"], "list_page_max": _cfg()["list_max_page"],
-		         "list_filters": list(LIST_FILTERS.keys()) + ["mobile_no"]},
+		         "list_filters": [*list(LIST_FILTERS.keys()), "mobile_no"]},
 	}
 	if mp and not mp.program:
 		# Open-program key: line + group forced; program mode is LIST if the key has an
@@ -592,7 +592,7 @@ def lead_schema(**kwargs):
 def lead_get(**kwargs):
 	"""Read one lead by `name` or `mobile_no`. A partner only sees leads on their
 	line, and only their allowed fields."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	filters = {}
 	if data.get("name"):
@@ -625,7 +625,7 @@ def lead_create(**kwargs):
 @_api
 def lead_update(**kwargs):
 	"""Update a lead by CRM `name`. Partner scope-checked; can't move it to another line."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow)
 	return _result(doc, action)
 
@@ -635,7 +635,7 @@ def lead_update(**kwargs):
 def lead_delete(**kwargs):
 	"""Delete a lead by CRM `name`. Partner scope-checked (own line only). A lead with
 	linked activity raises LinkExistsError — so a partner can't nuke a worked lead."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	name = frappe.form_dict.get("name")
 	_delete_one(name, mp)
 	_ok(action="deleted", data={"name": name})
@@ -662,7 +662,7 @@ def lead_create_bulk(**kwargs):
 @_api
 def lead_update_bulk(**kwargs):
 	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	updates = _read_list(frappe.form_dict, "updates") or []
 
 	def one(i, item):
@@ -676,7 +676,7 @@ def lead_update_bulk(**kwargs):
 @_api
 def lead_delete_bulk(**kwargs):
 	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	names = _read_list(frappe.form_dict, "names") or []
 
 	def one(i, name):
@@ -690,7 +690,7 @@ def lead_delete_bulk(**kwargs):
 @_api
 def lead_get_bulk(**kwargs):
 	"""Read many leads by `names` OR `mobile_nos` (<= 100). Out-of-scope ids omitted."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	names = _read_list(data, "names")
 	mobiles = _read_list(data, "mobile_nos")
@@ -732,7 +732,7 @@ def lead_list(**kwargs):
 	"""List leads on the caller's line, filtered + paginated. Curated fields only, no
 	children (use lead_get for the full record). Filters: status, created/updated date
 	ranges, exact mobile_no — never arbitrary fields."""
-	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	_user, mp, _is_sysmgr, parent_fields, _child_allow = _caller_fields()
 	data = frappe.form_dict
 
 	filters = []
@@ -750,7 +750,7 @@ def lead_list(**kwargs):
 	offset = cint(data.get("offset") or data.get("limit_start"))
 
 	fields = list(dict.fromkeys(
-		parent_fields + ["name", "source", "custom_vertical", "custom_group", "custom_current_program"]
+		[*parent_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]
 	))
 	total = frappe.db.count("CRM Lead", filters)
 	leads = frappe.get_all(

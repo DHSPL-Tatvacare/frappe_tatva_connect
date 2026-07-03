@@ -86,7 +86,5 @@ class Confusion:
 	def summary(self):
 		"""One-line human summary for the console."""
 		return (
-			"confusion: TP={0} FP={1} FN={2} TN={3} | precision={4:.3f} recall={5:.3f}".format(
-				self.tp, self.fp, self.fn, self.tn, self.precision, self.recall
-			)
+			f"confusion: TP={self.tp} FP={self.fp} FN={self.fn} TN={self.tn} | precision={self.precision:.3f} recall={self.recall:.3f}"
 		)

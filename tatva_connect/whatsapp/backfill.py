@@ -29,8 +29,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.whatsapp import api as wati
-from tatva_connect.whatsapp import routing
-from tatva_connect.whatsapp import webhook
+from tatva_connect.whatsapp import routing, webhook
 
 
 def _history_item_to_event(item: dict, number: str) -> dict:

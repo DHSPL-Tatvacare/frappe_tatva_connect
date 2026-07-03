@@ -75,8 +75,6 @@ class TestSurfaceAudit(AuthzTestCase):
         widened = sorted(current - approved)
         self.assertFalse(
             widened,
-            "SURFACE DRIFT: {0} unapproved (role, doctype) grant(s) appeared beyond allowlist.json "
-            "— a new app/migration/fixture widened the permission surface: {1}".format(
-                len(widened), widened
-            ),
+            f"SURFACE DRIFT: {len(widened)} unapproved (role, doctype) grant(s) appeared beyond allowlist.json "
+            f"— a new app/migration/fixture widened the permission surface: {widened}",
         )

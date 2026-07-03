@@ -62,3 +62,12 @@ deploy/
 scripts/
 # local Claude Code settings/state
 .claude/
+# Coverage is LOCAL-only (the bench lane: `bench run-tests --app tatva_connect --coverage`). Our CI
+# runs NO coverage and NO codecov — data never leaves the machine. Keep the artifacts out of git too.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+# The security cockpit (tcsec.py) is TRACKED — the local git hooks invoke it as the enforcement gate.
+# Only its local DAST target list (live endpoint URLs) stays OFF the public repo.
+tatva_connect/security/dast-targets.txt

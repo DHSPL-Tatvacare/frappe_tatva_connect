@@ -3,9 +3,10 @@ name = "tatva_connect"
 authors = [
     { name = "TatvaCare", email = "pareekshith.bompally@tatvacare.in"}
 ]
-description = "TatvaCare custom Frappe app: WATI WhatsApp, Acefone telephony, CRM overrides"
+description = "Backend for TatvaCare CRM — doctypes, APIs, integrations, and business logic. Part of TatvaCare One."
 requires-python = ">=3.10"
 readme = "README.md"
+license = { file = "license.txt" }
 dynamic = ["version"]
 dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
@@ -29,6 +30,9 @@ packages = []
 [tool.ruff]
 line-length = 110
 target-version = "py310"
+# tatva_connect/security/ is the gate's own tooling (tcsec + static_checks), not shipped app code —
+# excluded from the app lint scope, same posture as bandit/semgrep below.
+extend-exclude = ["tatva_connect/security"]
 
 [tool.ruff.lint]
 select = [
@@ -54,6 +58,9 @@ ignore = [
     "F405", # can't detect undefined names from * import
     "F722", # syntax error in forward type annotation
     "W191", # indentation contains tabs
+    "RUF002", # docstrings use deliberate math/set notation (union, cross, minus signs); the
+              # ambiguous-look-alike rule is noise for intentional symbols (ascii-izing corrupts meaning)
+    "RUF003", # same, in comments
 ]
 typing-modules = ["frappe.types.DF"]
 
@@ -62,19 +69,52 @@ quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
 
-# ── Security / test harness (driven by `security/tcsec.py`; see security/README.md) ──
+# ── Security / test harness. The static gate is `pytest tatva_connect/tests/static`, defined once in
+#    tatva_connect/security/static_checks.py; `tatva_connect/security/tcsec.py` is the local cockpit. ──
 
 [tool.bandit]
 # SAST over the shipped app code. Excludes are NOT app attack surface:
 #   tests      — payload corpora (deliberate injection strings) + asserts; covered by the AST locks
+#   security   — the gate's own tooling (tcsec + static_checks); uses subprocess by design, not app surface
 #   .devbench  — local docker bench clone (never shipped)
 #   archive    — dead/legacy code, out of active use
 #   node_modules / scripts — vendored JS / local-only migration utilities
-exclude_dirs = ["tests", ".devbench", "archive", "node_modules", "scripts"]
+exclude_dirs = ["tests", "security", ".devbench", "archive", "node_modules", "scripts"]
+# Two whole-test-ID skips, each because a DEDICATED, stronger gate owns that surface (one brain,
+# not two overlapping noisy ones — repo invariant A.8 / S.2). Reviewed line-by-line before skipping;
+# everything else (and per-line one-offs) stays in scope and is annotated with `# nosec <ID>: reason`.
+#   B608 (SQL injection via string-built query) — owned by `tatva_connect/tests/static/test_no_sql_injection.py`,
+#         a request-surface-aware AST lock that runs in CI (the static gate) and DEMANDS a `# sqli-ok:`
+#         marker on every deliberate raw fragment. bandit B608 here only re-flags those already-marked
+#         constant-identifier queries (observability/*), operator-run migration DDL (patches/*, no HTTP
+#         input), and the engine-built permission subquery (access/visibility.py — Frappe's own escaped
+#         match-conditions over a code-owned doctype name). All 14 verified parameterised/identifier-safe.
+#   B105 (hardcoded password string) — owned by detect-secrets (in the static gate, entropy + keyword scan
+#         vs a reviewed baseline). bandit B105 here only matches Frappe field-name / cache-key / config
+#         string literals ('push_fcm_access_token', '1200', 'custom_webhook_token', 'True'/'False'). All
+#         7 verified to be identifiers, never credentials.
+skips = ["B608", "B105"]
 
 [tool.pytest.ini_options]
-# `tcsec locks` invokes pytest with an EXPLICIT file allowlist (the decoupled AST scanners),
-# so it never collects the frappe-dependent runtime tests. These defaults just keep a bare
-# `pytest` run from wandering into the vendored/bench trees.
+# The static (no-bench) gate IS `pytest tatva_connect/tests/static`: the scanner wrappers (which
+# read tatva_connect/security/static_checks.py) + the AST source-locks. Path-scoped, so it never
+# collects the frappe-dependent bench tests. norecursedirs keeps a bare `pytest` out of vendored trees.
 norecursedirs = [".devbench", "archive", "node_modules", "dist", ".zudoku"]
-markers = ["static: pure-AST source lock, runnable without a bench"]
+markers = ["static: a no-bench static-gate check (scanner wrapper or AST source-lock); run via `pytest tatva_connect/tests/static`"]
+
+[tool.coverage.report]
+# Coverage is collected LOCALLY by `bench run-tests --app tatva_connect --coverage` (Frappe scopes the
+# source to the app; it does NOT exclude our tests/tooling for a non-frappe app, and it does NOT upload
+# anywhere — there is no codecov step in our CI). This scopes the REPORT to shipped app code so the %
+# is meaningful. View locally: `coverage report` / `coverage html` (reads this), then open htmlcov/.
+omit = [
+    "*/tests/*",       # the tests themselves are not "covered code"
+    "*/security/*",    # the gate's own tooling (tcsec + static_checks)
+    "*/patches/*",     # operator-run migrations
+    "*/archive/*",     # dead/legacy
+    "*/node_modules/*",
+    "*/.devbench/*",
+]
+exclude_lines = ["pragma: no cover", "raise NotImplementedError", "if TYPE_CHECKING:"]
+show_missing = true
+precision = 1

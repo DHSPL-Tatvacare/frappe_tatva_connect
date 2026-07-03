@@ -16,8 +16,8 @@ Self-seeds isolated test data keyed off a ZGRAIN tag and reuses real grain maste
 """
 import frappe
 
-from tatva_connect.smartview import api
 from tatva_connect.access import entitlement
+from tatva_connect.smartview import api
 
 TAG = "ZGRAIN_PROOF"
 USER = "zgrain-proof-agent@example.com"
@@ -82,7 +82,7 @@ def _seed_rule(v, g, p):
 
 
 def _check(label, cond):
-	print("  [{0}] {1}".format("PASS" if cond else "FAIL", label))
+	print("  [{}] {}".format("PASS" if cond else "FAIL", label))
 	return cond
 
 
@@ -173,6 +173,6 @@ def run():
 	r.append(_check("no-mapping caller -> full catalog (unchanged)", len(allowed_empty) == full))
 
 	ok = all(r)
-	print("\n==== GRAIN PROOF {0} ({1}/{2} checks passed) ====".format(
+	print("\n==== GRAIN PROOF {} ({}/{} checks passed) ====".format(
 		"PASSED" if ok else "FAILED", sum(1 for x in r if x), len(r)))
 	return ok

@@ -22,10 +22,10 @@ def _grain_clause(grain):
 	"""SQL for one grain tuple: each axis matches the grain value OR is blank (wildcard).
 	Axis values are quoted via frappe.db.escape — never string-interpolated raw."""
 	parts = []
-	for col, val in zip(_AXES, grain):
-		col = "`tabCRM Picklist Value`.`{0}`".format(col)
+	for col, val in zip(_AXES, grain, strict=False):
+		col = f"`tabCRM Picklist Value`.`{col}`"
 		if val:
-			parts.append("({0} = {1} OR {0} = '' OR {0} IS NULL)".format(col, frappe.db.escape(val)))
+			parts.append(f"({col} = {frappe.db.escape(val)} OR {col} = '' OR {col} IS NULL)")
 		else:
 			# entitlement to a blank (wildcard) axis covers any value on that axis.
 			pass
@@ -41,6 +41,6 @@ def get_picklist_value_permission_query_conditions(user=None):
 		return ""
 	if not grains:
 		# Fail-closed floor: only globally-scoped (all-axes-blank) options.
-		cols = ["`tabCRM Picklist Value`.`{0}`".format(c) for c in _AXES]
-		return " AND ".join("({0} = '' OR {0} IS NULL)".format(c) for c in cols)
+		cols = [f"`tabCRM Picklist Value`.`{c}`" for c in _AXES]
+		return " AND ".join(f"({c} = '' OR {c} IS NULL)" for c in cols)
 	return " OR ".join(_grain_clause(g) for g in grains)

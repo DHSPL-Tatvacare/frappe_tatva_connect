@@ -15,6 +15,8 @@ import re
 import frappe
 from frappe import _
 
+from tatva_connect import automation
+
 # The ONLY field every per-form submission table carries, independent of the contract:
 # the hidden back-link the wildcard router reads to resolve the contract. Everything the
 # patient sees is declared in the contract's grid — nothing else is injected (no hardcoding).
@@ -175,17 +177,17 @@ def _depends_on(field: str, op: str, value: str) -> str | None:
 	if not field or not op:
 		return None
 	if op == "is_checked":
-		return "eval:doc.{0}".format(field)
+		return f"eval:doc.{field}"
 	if op == "is_not_checked":
-		return "eval:!doc.{0}".format(field)
+		return f"eval:!doc.{field}"
 	if op == "is_empty":
-		return "eval:!doc.{0}".format(field)
+		return f"eval:!doc.{field}"
 	if op == "is_not_empty":
-		return "eval:doc.{0}".format(field)
+		return f"eval:doc.{field}"
 	if op == "equals":
 		# frappe.as_json gives a safely-quoted JS string literal (escapes quotes/backslashes)
 		# — the comparison value never reaches the expression as raw text.
-		return "eval:doc.{0}=={1}".format(field, frappe.as_json(value or ""))
+		return "eval:doc.{}=={}".format(field, frappe.as_json(value or ""))
 	return None
 
 
@@ -303,6 +305,9 @@ def sync_form(cfg, method=None):
 	Server-internal only — callers are the form's own controller / an operator action,
 	both already System-Manager gated (the builder doctype is System-Manager-only).
 	Returns (doctype_name, web_form_name), or (None, None) when it deliberately skips."""
+	# Operator kill-switch: the whole intake feature (builder + runtime fold) is one switch.
+	if not automation.is_enabled("Lead::Enrolment::intake"):
+		return None, None
 	# Skip gracefully (never throw on a plain save) if the name can't yield a runtime
 	# DocType (odd/test names): a bad name must not block saving the contract.
 	if not safe_doctype_name_for(cfg):

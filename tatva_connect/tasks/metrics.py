@@ -80,7 +80,7 @@ def _metric_field(task_type):
 	field = TASK_TYPE_TO_METRIC.get(task_type)
 	if field is None:
 		return None
-	assert field in TASK_TYPE_TO_METRIC.values()  # field name is code-owned, never external
+	assert field in TASK_TYPE_TO_METRIC.values()  # field is code-owned, not user input  # nosec B101
 	return field
 
 
