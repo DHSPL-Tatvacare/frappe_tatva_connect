@@ -1,16 +1,15 @@
 # `tcsec` — security + test harness
 
 One flag-driven CLI that runs every static security scan **and** the runtime Frappe test suite
-for this repo, from a single isolated pyenv venv. SAST (bandit) is the headline; the harness also
+for this repo, from a single isolated uv venv. SAST (bandit) is the headline; the harness also
 covers dependency CVEs, secret leakage (this repo is **public**), Frappe-aware semgrep rules, the
 AST source-locks, the bench `run-tests` suite, and a gated sqlmap DAST lane.
 
 ## Install (once)
 
 ```bash
-pyenv virtualenv 3.12.12 venv-python-frappe-sec
-pyenv activate venv-python-frappe-sec
-pip install -r security/requirements.txt
+uv venv "$HOME/.venvs/venv-python-frappe-sec" --python 3.12
+uv pip install --python "$HOME/.venvs/venv-python-frappe-sec/bin/python" -r tatva_connect/security/requirements.txt
 ```
 
 Run either with the venv activated (`tcsec` tools on PATH) or via the venv python directly:
@@ -18,7 +17,7 @@ Run either with the venv activated (`tcsec` tools on PATH) or via the venv pytho
 ```bash
 python security/tcsec.py <command> [flags]
 # or, fully-qualified without activating:
-~/.pyenv/versions/venv-python-frappe-sec/bin/python security/tcsec.py <command>
+~/.venvs/venv-python-frappe-sec/bin/python security/tcsec.py <command>
 ```
 
 ## Commands

@@ -1,8 +1,7 @@
 # Security + test harness deps for `tcsec` (see security/README.md).
-# Install into an ISOLATED pyenv venv, never the bench env:
-#   pyenv virtualenv 3.12.12 venv-python-frappe-sec
-#   pyenv activate venv-python-frappe-sec
-#   pip install -r security/requirements.txt
+# Install into an ISOLATED uv venv, never the bench env:
+#   uv venv "$HOME/.venvs/venv-python-frappe-sec" --python 3.12
+#   uv pip install --python "$HOME/.venvs/venv-python-frappe-sec/bin/python" -r tatva_connect/security/requirements.txt
 #
 # Pinned because this repo is public and CI must be reproducible. Bump deliberately.
 

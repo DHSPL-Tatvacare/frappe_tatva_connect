@@ -16,10 +16,11 @@ hook — run it manually when you touch access/permission code.
 ```bash
 git config core.hooksPath hooks
 ```
-Requires the security venv (the hook tells you if it's missing):
+Requires the security venv (the hook tells you if it's missing) — create it with uv (override the
+location with `TCSEC_VENV`):
 ```bash
-pyenv virtualenv 3.12.12 venv-python-frappe-sec && pyenv activate venv-python-frappe-sec
-pip install -r tatva_connect/security/requirements.txt
+uv venv "$HOME/.venvs/venv-python-frappe-sec" --python 3.12
+uv pip install --python "$HOME/.venvs/venv-python-frappe-sec/bin/python" -r tatva_connect/security/requirements.txt
 ```
 
 ## Notes
