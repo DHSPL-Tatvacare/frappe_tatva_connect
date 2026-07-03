@@ -1,6 +1,7 @@
 # Validated image recipe (proven green building tatva-frappe:v16-rehearsal).
-# Build:
-#   export APPS_JSON_BASE64=$(base64 < apps.json | tr -d '\n')
+# Build (pick the manifest for your lane — apps.uat.json / apps.develop.json / apps.prod.json):
+#   APPS_FILE=apps.uat.json
+#   export APPS_JSON_BASE64=$(base64 < "$APPS_FILE" | tr -d '\n')
 #   docker build \
 #     --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
 #     --build-arg=FRAPPE_BRANCH=version-16 --build-arg=FRAPPE_CORE_REF=v16.22.0 \
@@ -29,7 +30,7 @@ RUN chown -R frappe:frappe /home/frappe/.nvm
 
 USER frappe
 
-# Private apps in apps.json: CI passes a PAT as a BuildKit secret. Since this build runs as the
+# Private apps in apps.<lane>.json: CI passes a PAT as a BuildKit secret. Since this build runs as the
 # `frappe` user, mount the secret readable by that uid/gid (1000/1000) so `cat` works.
 RUN --mount=type=secret,id=gh_pat,required=false,uid=1000,gid=1000,mode=0400 \
     if [ -f /run/secrets/gh_pat ]; then \
@@ -53,9 +54,16 @@ RUN export APP_INSTALL_ARGS="" && \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+  . "$NVM_DIR/nvm.sh" && nvm use 24 && \
+  bench build --production
 
 FROM frappe/base:${FRAPPE_BRANCH} AS backend
+
+USER root
+
+COPY docker/entrypoint.sh docker/start.sh /usr/local/bin/
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/start.sh
 
 USER frappe
 
@@ -63,21 +71,15 @@ COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe
 
 WORKDIR /home/frappe/frappe-bench
 
+# Bake assets into the image layer; entrypoint symlinks sites/assets → assets at container start.
+RUN cp -r /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/assets && \
+  rm -rf /home/frappe/frappe-bench/sites/assets
+
+# Do NOT declare sites/assets as a separate VOLUME — entrypoint links to baked assets instead.
 VOLUME [ \
   "/home/frappe/frappe-bench/sites", \
-  "/home/frappe/frappe-bench/sites/assets", \
   "/home/frappe/frappe-bench/logs" \
 ]
 
-CMD [ \
-  "/home/frappe/frappe-bench/env/bin/gunicorn", \
-  "--chdir=/home/frappe/frappe-bench/sites", \
-  "--bind=0.0.0.0:8000", \
-  "--threads=4", \
-  "--workers=4", \
-  "--worker-class=gthread", \
-  "--worker-tmp-dir=/dev/shm", \
-  "--timeout=120", \
-  "--preload", \
-  "frappe.app:application" \
-]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/local/bin/start.sh"]

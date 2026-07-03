@@ -15,7 +15,7 @@ x-bench: &bench
   depends_on:
     configurator:
       condition: service_completed_successfully
-  volumes:
+  volumes: &frappe_volumes
     - sites:/home/frappe/frappe-bench/sites
 
 services:
@@ -43,7 +43,7 @@ services:
   backend:
     <<: *bench
     environment:
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-8}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-9}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
       GUNICORN_TIMEOUT: 120
 
@@ -53,8 +53,7 @@ services:
       configurator:
         condition: service_completed_successfully
     command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
+    volumes: *frappe_volumes
 
   queue-short:
     <<: *bench
@@ -107,8 +106,7 @@ services:
       UPSTREAM_REAL_IP_RECURSIVE: "off"
       PROXY_READ_TIMEOUT: 120
       CLIENT_MAX_BODY_SIZE: 50m
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
+    volumes: *frappe_volumes
     ports:
       - "${APP_PUBLISH:-8080}:8080"   # your edge/LB terminates 443 and forwards here
 
