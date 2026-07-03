@@ -117,25 +117,19 @@ def _repoint_attachment_comment(doc, old_url, new_url):
 			)
 
 
-def _is_compose_draft(doc) -> bool:
-	"""Files staged by the composer before the mail is sent — defer their offload until
-	send (add_attachments then makes a Home/Attachments / Communication-scoped File we DO
-	offload). Two cases: device uploads we stage UNATTACHED in "Home/Email Drafts", and any
-	legacy composer upload that landed attached in folder "Home" (frappe-ui's default)."""
-	if doc.folder == "Home/Email Drafts":
-		return True
-	return bool(doc.attached_to_doctype) and doc.folder == "Home"
-
-
 def after_insert(doc, method=None):
 	# Offload SYNCHRONOUSLY on the in-memory doc so file_url flips to the proxy before the insert
 	# returns — every consumer then captures the proxy URL, never a local one (root-cause fix). The
 	# row + the core Attachment comment already exist here (File.after_insert runs before this hook).
+	# UNCONDITIONAL: every real file offloads — no folder/draft special-case (that was a per-uploader
+	# lottery on frappe's default "Home" folder). A discarded draft or any delete is reclaimed by
+	# on_trash (ref-counted, drops the blob on the last reference); reads resolve through
+	# FileOverride.get_content, so offloaded bytes serve transparently — including the email SMTP
+	# attach path, which reads attachment content via File.get_content.
 	if (
 		blob_store.is_enabled()
 		and not doc.is_folder
 		and blob_store.is_local_url(doc.file_url)
-		and not _is_compose_draft(doc)
 	):
 		try:
 			offload(doc)
@@ -149,13 +143,14 @@ def after_insert(doc, method=None):
 
 
 def on_trash(doc, method=None):
-	"""Delete the Azure blob when its File row is deleted. Cleanup keys off whether THIS
-	file was offloaded (custom_uploaded_to_azure) — NOT the feature toggle: disabling the
-	integration must stop new offloads, never strand already-offloaded blobs. The blob
-	delete is idempotent (already-gone = success) and any remaining Azure error is logged,
-	never raised — orphan-and-log beats wedging the File (and any parent-cascade) delete."""
-	if not doc.custom_uploaded_to_azure:
-		return
+	"""Reclaim the Azure blob when the LAST File referencing it is deleted. Keyed on the
+	file_url being an Azure proxy (blob_key_from_url yields a key) — NOT the
+	custom_uploaded_to_azure flag and NOT the feature toggle. Any row pointing at a blob is a
+	reference, including frappe core's add_attachments copies (sent-mail/comment attachments)
+	that never carry our flag; gating on the flag would strand their bytes as orphans. A local
+	(non-proxy) url yields no key -> no-op, so disabling offload never touches anything. The
+	delete is idempotent (already-gone = success) and any Azure error is logged, never raised —
+	orphan-and-log beats wedging the File (and any parent-cascade) delete."""
 	key = blob_store.blob_key_from_url(doc.file_url)
 	if not key:
 		return
