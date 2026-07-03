@@ -53,7 +53,7 @@ RUN export APP_INSTALL_ARGS="" && \
     --skip-redis-config-generation \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
-  echo "{}" > sites/common_site_config.json && \
+  bench set-config -gp socketio_port 9000 && \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
   . "$NVM_DIR/nvm.sh" && nvm use 24 && \
   bench build --production
