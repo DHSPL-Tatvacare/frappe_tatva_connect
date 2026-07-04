@@ -17,6 +17,8 @@ A surface with no implementation yet skipTest()s with a reason — never a silen
 MUTATION discipline (base.py): only A4 mutates shared state; it isolates with a named savepoint in
 the subTest and rolls back to it, never a bare rollback (which would unwind the class seed floor).
 """
+import re
+
 import frappe
 
 from tatva_connect.lead import detail as lead_detail_mod
@@ -37,9 +39,30 @@ _GRAIN_SWITCH = "Lead::CRM Lead::grain"
 
 
 class TestRegistryCases(AuthzTestCase):
+	# A shared per-form-style submission sink for A14. Created ONCE (DDL) so a per-case scaffold's
+	# implicit commit can't destroy each case's savepoint (intake is per-form now; there is no shared
+	# staging doctype to borrow). Fields = the union the A14 cases stage; phone is Data so the fold's
+	# own normaliser handles the raw value (no native Phone country-code gate in a fixture).
+	A14_SINK = "Intake Authz A14 Sink"
+
+	@classmethod
+	def _ensure_a14_sink(cls):
+		if not frappe.db.exists("DocType", cls.A14_SINK):
+			frappe.get_doc({
+				"doctype": "DocType", "name": cls.A14_SINK, "module": "Intake", "custom": 1,
+				"autoname": "hash",
+				"fields": [{"fieldname": f, "fieldtype": ft, "label": f} for f, ft in [
+					("intake_form", "Data"), ("phone", "Data"), ("patient_name", "Data"),
+					("state_manual", "Data"), ("doctor", "Data"), ("doctor_manual", "Data"),
+					("remarks", "Small Text")]],
+				"permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}],
+			}).insert(ignore_permissions=True)
+			frappe.db.commit()  # DDL already committed implicitly; make the DocType row durable too
+
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # comms-off interlock + class commit floor (rolled back per class)
+		cls._ensure_a14_sink()  # DDL BEFORE the (uncommitted) seed so its implicit commit can't leak it
 		# Provisions roster + grain rules + partner mapping + 100 leads/tasks across the 5 grains.
 		# commit=False: IntegrationTestCase rolls it all back per class. seed() fails LOUD
 		# (assert_masters_exist throws) when a grain's CRM Vertical/Group/Program master is unseeded.
@@ -410,10 +433,10 @@ class TestRegistryCases(AuthzTestCase):
 
 	def _a14_intake_form(self, g, mappings):
 		"""A forced-routing CRM Intake Form on grain `g` with the given field mappings, built
-		IN-MEMORY and NOT inserted: its on_update runs builder.sync_form, which scaffolds a per-form
-		DocType (DDL a savepoint cannot roll back). The fold reads cfg's attributes + .mappings
-		directly (we pass the object), so an un-inserted contract is a complete substitute. `source`
-		is left blank so no CRM Lead Source master is needed (a blank routing axis is not forced)."""
+		IN-MEMORY and NOT inserted: the test calls _fold_submission_to_lead(sub, cfg) directly, which
+		reads cfg's attributes + .mappings off the object — so an un-inserted contract is a complete
+		substitute and no DDL touches the per-case savepoint. `source` is blank so no CRM Lead Source
+		master is needed (a blank routing axis is not forced)."""
 		doc = frappe.get_doc({
 			"doctype": "CRM Intake Form",
 			"form_name": f"authz-test-a14-{frappe.generate_hash(length=6)}",
@@ -423,18 +446,23 @@ class TestRegistryCases(AuthzTestCase):
 			"custom_current_program": g["program"],
 			"mappings": mappings,
 		})
-		doc.name = doc.form_name  # cosmetic: the fold stamps "Intake form: {cfg.name}" as provenance
+		doc.name = doc.form_name  # the fold stamps "Intake form: {cfg.name}" as provenance
 		return doc
 
-	def _a14_submission(self, values):
-		"""A CRM Enrolment Submission staging row carrying only the fields the mappings read. The
-		intake switch is OFF in this suite, so the after_insert processor is inert — the test drives
-		the fold explicitly. `intake_form` is left blank (the contract is the in-memory cfg we pass to
-		the fold, not a real row, so a Link to it would fail). ignore_mandatory keeps the fixture
-		minimal — the doctype has many reqd fields (incl. a `city` Link) we don't need to seed."""
-		doc = frappe.get_doc({"doctype": "CRM Enrolment Submission", **values})
+	def _a14_submission(self, cfg, values):
+		"""A submission row on the shared A14 sink carrying only the fields the mappings read. The fold
+		is driven explicitly with the in-memory cfg, so the sink is just a value carrier (DML inside
+		the savepoint, no DDL). ignore_mandatory keeps the fixture minimal."""
+		doc = frappe.get_doc({"doctype": self.A14_SINK, "intake_form": cfg.name, **values})
 		doc.insert(ignore_permissions=True, ignore_mandatory=True)
 		return doc
+
+	def _a14_lead_for(self, phone):
+		"""Find the lead the fold created/routed, by its phone (per-form sinks carry no `lead` field,
+		so we can't read it back off the submission row)."""
+		digits = re.sub(r"\D", "", phone)[-10:]
+		name = frappe.db.get_value("CRM Lead", {"mobile_no": ["like", f"%{digits}%"]}, "name")
+		return frappe.get_doc("CRM Lead", name) if name else None
 
 	def _run_a14_guest_intake(self, c):
 		from tatva_connect.intake import intake as intake_mod
@@ -455,14 +483,13 @@ class TestRegistryCases(AuthzTestCase):
 					{"source_field": "state_manual", "target_table": "lead", "target_field": "custom_group"},
 					{"source_field": "doctor_manual", "target_table": "lead", "target_field": "custom_current_program"},
 				])
-				sub = self._a14_submission({
+				sub = self._a14_submission(cfg, {
 					"phone": "+91 9990077001", "patient_name": foreign["vertical"],
 					"state_manual": foreign["group"], "doctor_manual": foreign["program"],
 				})
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
-				sub.reload()
-				lead = frappe.get_doc("CRM Lead", sub.lead)
+				lead = self._a14_lead_for("+91 9990077001")
 				self.assertEqual(lead.custom_vertical, g["vertical"],
 				                 f"A14: Guest smuggled vertical {foreign['vertical']} stuck on the lead")
 				self.assertEqual(lead.custom_group, g["group"],
@@ -486,7 +513,7 @@ class TestRegistryCases(AuthzTestCase):
 				])
 				typed = "Authz Guest Side Effect"
 				canonical = normalize_display(typed)
-				sub = self._a14_submission({"phone": "+91 9990077002", "doctor_manual": typed})
+				sub = self._a14_submission(cfg, {"phone": "+91 9990077002", "doctor_manual": typed})
 				before = frappe.db.count(master)
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
@@ -494,10 +521,10 @@ class TestRegistryCases(AuthzTestCase):
 				self.assertEqual(
 					frappe.db.count(master), before,
 					f"A14 MASTER GROWTH: a Guest submit grew {master} — the Guest guard (intake.py:355) is gone")
-				sub.reload()
+				lead = self._a14_lead_for("+91 9990077002")
 				note = frappe.db.get_value(
 					"FCRM Note",
-					{"reference_doctype": "CRM Lead", "reference_docname": sub.lead, "title": "option_name"},
+					{"reference_doctype": "CRM Lead", "reference_docname": lead.name, "title": "option_name"},
 					"content")
 				self.assertEqual(note, canonical,
 				                 f"A14: the typed value was not recorded as canonical text on the lead (note={note})")
@@ -519,17 +546,17 @@ class TestRegistryCases(AuthzTestCase):
 					 "target_table": "lead", "target_field": "mobile_no"},
 					{"source_field": "remarks", "target_table": "note", "target_field": "Enrolment Remarks"},
 				])
-				sub = self._a14_submission({"phone": "+91 9990077003", "remarks": "guest note body"})
+				sub = self._a14_submission(cfg, {"phone": "+91 9990077003", "remarks": "guest note body"})
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
-				sub.reload()
+				lead = self._a14_lead_for("+91 9990077003")
 				refs = frappe.get_all(
 					"FCRM Note", filters={"title": "Enrolment Remarks", "content": "guest note body"},
 					pluck="reference_docname")
 				self.assertTrue(refs, "A14: the Guest fold did not write its FCRM Note")
 				self.assertTrue(
-					all(r == sub.lead for r in refs),
-					f"A14 NOTE SCOPE: a Guest note referenced a lead other than the fold's own {sub.lead}: {refs}")
+					all(r == lead.name for r in refs),
+					f"A14 NOTE SCOPE: a Guest note referenced a lead other than the fold's own {lead.name}: {refs}")
 			else:
 				self.skipTest(f"A14 runner: unhandled case {c.id}")
 		finally:

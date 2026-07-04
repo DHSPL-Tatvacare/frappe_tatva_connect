@@ -1,15 +1,14 @@
 """Generic web-intake processor — config-driven, reused by every enrolment form.
 
-A Web Form lands a row in a staging doctype (e.g. CRM Enrolment Submission). On
-insert, this turns that row into a routed, deduped CRM Lead using the linked
-`CRM Intake Form` config: fixed routing + a field map. Adding a future form needs
-only a new Web Form + a new CRM Intake Form row — no new Python.
+Each intake form has its OWN per-form runtime submission DocType (scaffolded by the builder from a
+`CRM Intake Form` contract). A single wildcard after_insert (`route_submission`) turns a submitted
+row into a routed, deduped CRM Lead using that contract: forced grain + a field map. Adding a form
+needs only a new `CRM Intake Form` row — the builder makes its DocType + Web Form, no new Python.
 """
 import frappe
 from frappe import _
 
 from tatva_connect import automation
-from tatva_connect.whatsapp.phone import to_e164
 
 _TABLE = {
 	"plan": "custom_plan_profile",
@@ -19,8 +18,6 @@ _TABLE = {
 	# Its absence here is the live data-loss bug — a `drug:*` mapping had nowhere to land.
 	"drug": "custom_drug_program_profile",
 }
-_ROUTING = ("source", "custom_vertical", "custom_group", "custom_current_program", "custom_origin_vertical")
-
 # The back-link the per-form submission row carries to its contract (set by the builder).
 _INTAKE_FORM_FIELD = "intake_form"
 
@@ -76,7 +73,7 @@ def route_submission(doc, method=None):
 	sink. Fires site-wide, so it early-returns cheaply for any doctype that is not an
 	enabled intake form's submission table (a single cached set membership test). Runtime
 	per-form doctypes can't carry their own code hooks; the wildcard is the native,
-	single-brain way to process them. On a hit it runs the same fold as process_submission."""
+	single-brain way to process them. On a hit it runs the fold below."""
 	if doc.doctype not in _intake_doctypes():
 		return
 	if not automation.is_enabled("Lead::Enrolment::intake"):
@@ -89,27 +86,9 @@ def route_submission(doc, method=None):
 	_fold_submission_to_lead(doc, cfg)
 
 
-def process_submission(doc, method=None):
-	"""after_insert on the CRM Enrolment Submission staging doctype -> upsert the lead.
-
-	The legacy shared-staging path. Resolves the contract then hands off to the ONE fold
-	(_fold_submission_to_lead) — the SAME body the wildcard router runs, so there is one
-	implementation, never a copy.
-	"""
-	if not automation.is_enabled("Lead::Enrolment::intake"):
-		return
-	if doc.processed or not doc.intake_form:
-		return
-	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)
-	if not cfg.enabled:
-		return
-	_fold_submission_to_lead(doc, cfg)
-
-
 def _fold_submission_to_lead(doc, cfg):
-	"""The ONE fold: a resolved submission row + its contract -> a routed CRM Lead via the
-	partner brain. Shared by BOTH process_submission (CRM Enrolment Submission) and the
-	wildcard route_submission (per-form runtime doctypes) — one implementation, no copy.
+	"""The ONE fold: a resolved per-form submission row + its contract -> a routed CRM Lead via the
+	partner brain. The single implementation the wildcard route_submission runs for every form.
 
 	Intake is a SECOND SOURCE feeding the ONE lead-create brain (partner._upsert_one):
 	the form is resolved into a partner-shaped payload + a grain descriptor, then handed
@@ -190,93 +169,13 @@ def _fold_submission_to_lead(doc, cfg):
 	_attach_files(doc, doc_lead.name)
 
 	# Stamp the result back on the submission — but only on a doctype that carries these
-	# result fields (the CRM Enrolment Submission staging table). A per-form runtime sink
-	# may not, so guard each set on field existence (no stamp != failed processing).
+	# result fields. A per-form runtime sink may not declare lead/processed, so guard each set
+	# on field existence (no stamp != failed processing).
 	meta = doc.meta
 	if meta.has_field("lead"):
 		doc.db_set("lead", doc_lead.name, update_modified=False)
 	if meta.has_field("processed"):
 		doc.db_set("processed", 1, update_modified=False)
-
-
-def _process_submission_legacy(doc, method=None):
-	"""after_insert on the staging doctype -> upsert the CRM Lead.
-
-	LEGACY (Phase 0 spike): the pre-fold processor, kept verbatim for the parity test
-	(test_intake_brain_parity) to byte-compare against the new partner-brain path.
-	Deleted in Phase 0 finalize once parity is GREEN.
-	"""
-	if not automation.is_enabled("Lead::Enrolment::intake"):
-		return
-	if doc.processed or not doc.intake_form:
-		return
-	cfg = frappe.get_cached_doc("CRM Intake Form", doc.intake_form)
-	if not cfg.enabled:
-		return
-
-	# Public form: never surface internal notices (e.g. assignment's "Shared with
-	# … Read access") to the patient. Request-scoped; auto-resets next request.
-	frappe.flags.mute_messages = True
-
-	mobile = to_e164(doc.get("phone"))
-
-	# M-3: resolve on the canonical lead grain — mobile + vertical + group — using the
-	# form's FORCED routing (cfg). A find-or-create on phone ALONE would hijack an
-	# existing lead on a different (line, group); instead, a different trio yields a
-	# SECOND lead and the existing lead's routing is never overwritten.
-	name = frappe.db.get_value(
-		"CRM Lead",
-		{
-			"mobile_no": mobile,
-			"custom_vertical": cfg.get("custom_vertical"),
-			"custom_group": cfg.get("custom_group"),
-		},
-		"name",
-	)
-	lead = frappe.get_doc("CRM Lead", name) if name else frappe.new_doc("CRM Lead")
-	lead.mobile_no = mobile
-	lead.status = lead.status or "New"
-
-	# Routing is set on CREATE only. On a matched lead we must NEVER rewrite its
-	# vertical/group/program — finding by the trio already guarantees vertical+group
-	# match; program is a mutable attribute transitioned deliberately, not by a form.
-	if not name:
-		for f in _ROUTING:
-			if cfg.get(f):
-				lead.set(f, cfg.get(f))
-		# Provenance (hygiene rule 8): stamp which intake form created this lead.
-		if not (lead.get("custom_source_origin") or "").strip():
-			lead.custom_source_origin = f"Intake form: {cfg.name}"
-
-	notes = []
-	for m in cfg.mappings:
-		val = _resolve_value(doc, m)
-		if not val:
-			continue
-		note = _apply_target(lead, m.target_table, m.target_field, val)
-		if note:
-			notes.append(note)
-
-	if not (lead.first_name or "").strip():
-		lead.first_name = "(no name)"
-
-	lead.save(ignore_permissions=True) if name else lead.insert(ignore_permissions=True)
-
-	for title, content in notes:
-		frappe.get_doc(
-			{
-				"doctype": "FCRM Note",
-				"title": title,
-				"content": content,
-				"reference_doctype": "CRM Lead",
-				"reference_docname": lead.name,
-			}
-		).insert(ignore_permissions=True)
-
-	_attach_files(doc, lead.name)
-
-	doc.db_set("lead", lead.name, update_modified=False)
-	doc.db_set("processed", 1, update_modified=False)
 
 
 # Pick-only reference masters — NEVER auto-created from a form. The form PICKS from the
@@ -291,8 +190,10 @@ def _resolve_value(doc, m):
 	"""Pick value, else the manual companion. If manual is used and a master is
 	configured, auto-add that master (normalized, match-or-create) so it joins the
 	pick-list next time — unless it's a pick-only master (City)."""
-	picked = (doc.get(m.source_field) or "").strip()
-	manual = (doc.get(m.manual_field) or "").strip() if m.manual_field else ""
+	# cstr() so a checkbox/number/date value (non-string) never AttributeErrors on .strip();
+	# the `or ""` keeps falsy values (unchecked box = 0, empty) skippable exactly as before.
+	picked = frappe.cstr(doc.get(m.source_field) or "").strip()
+	manual = frappe.cstr(doc.get(m.manual_field) or "").strip() if m.manual_field else ""
 
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
 	if manual and (not picked or picked == "Others" or picked == "Other"):
@@ -362,24 +263,6 @@ def _ensure_master(doctype, display_field, value):
 		d.set("review_pending", 1)
 	d.insert(ignore_permissions=True)
 	return d.get(display_field)
-
-
-def _apply_target(lead, table, field, val):
-	"""Structured target: table in (lead|plan|care|lab|drug|note), field = the destination
-	fieldname (or the Note title for `note`). Returns (title, content) for note targets
-	(created after the lead is saved). Legacy comparator path only — the live fold inlines
-	this same dispatch (one representation, read both places)."""
-	table = (table or "").strip()
-	field = (field or "").strip()
-	if table == "lead":
-		lead.set(field, val)
-	elif table in _TABLE:
-		rows = lead.get(_TABLE[table])
-		row = rows[0] if rows else lead.append(_TABLE[table], {})
-		row.set(field, val)
-	elif table == "note":
-		return (field or "Note", val)
-	return None
 
 
 def _attach_files(doc, lead_name):

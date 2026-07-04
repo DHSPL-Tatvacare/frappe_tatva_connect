@@ -348,7 +348,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Lead::Enrolment::intake",
 		fires_on="Doc Event",
-		trigger_detail="CRM Enrolment Submission · after_insert · ANY per-form sink · after_insert (*)",
+		trigger_detail="ANY per-form intake sink · after_insert (*)",
 		purpose=(
 			"Turns a submitted enrolment/intake form into a fully-populated lead, mapping each "
 			"answer to the right field and creating masters as needed. Each intake form has its own "
@@ -357,11 +357,10 @@ AUTOMATIONS = [
 			"Example: a patient submits the enrolment web form; a new lead is created with their "
 			"details, program, and attachments already filled in."
 		),
-		# process_submission = the legacy shared-staging sink; route_submission = the wildcard
-		# brain for per-form sinks; bust_intake_doctype_cache = the guard-set cache invalidator
-		# (a CRM Intake Form on_update/on_trash doc_event, hence backed here too).
+		# route_submission = the wildcard brain for per-form sinks; bust_intake_doctype_cache = the
+		# guard-set cache invalidator (a CRM Intake Form on_update/on_trash doc_event, hence backed
+		# here too). Every intake form has its OWN per-form runtime sink — no shared legacy staging.
 		backs=[
-			"tatva_connect.intake.intake.process_submission",
 			"tatva_connect.intake.intake.route_submission",
 			"tatva_connect.intake.intake.bust_intake_doctype_cache",
 			# CRM Intake Form on_update -> scaffold/sync the per-form DocType + Web Form.

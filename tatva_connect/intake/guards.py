@@ -27,8 +27,16 @@ from frappe import _
 
 from tatva_connect import automation
 
-_SUBMISSION = "CRM Enrolment Submission"
 _ACCEPT_CMD = "frappe.website.doctype.web_form.web_form.accept"
+
+
+def _intake_sinks():
+	"""The intake submission doctypes to guard — the ONE brain the wildcard router uses
+	(intake._intake_doctypes): every enabled form's per-form runtime sink. Screening + throttling
+	cover them all, keyed off the same set the router routes on. Lazy import avoids a load cycle."""
+	from tatva_connect.intake.intake import _intake_doctypes
+
+	return _intake_doctypes()
 
 # Blank Single fields fall back here (Invariant A.4 — no baked form values).
 DEFAULTS = {
@@ -62,9 +70,12 @@ def _int_cfg(field):
 
 
 def _is_enrolment_webform():
-	"""accept() carries the web_form name; only act on forms whose doctype is ours."""
+	"""accept() carries the web_form name; only act on forms whose doctype is a live intake sink."""
 	name = frappe.form_dict.get("web_form")
-	return bool(name) and frappe.db.get_value("Web Form", name, "doc_type") == _SUBMISSION
+	if not name:
+		return False
+	dt = frappe.db.get_value("Web Form", name, "doc_type")
+	return bool(dt) and dt in _intake_sinks()
 
 
 # -- File screening (File before_insert) -------------------------------------
@@ -73,7 +84,7 @@ def guard_file(doc, method=None):
 	"""Scoped to enrolment-submission attachments. Magic-byte sniff + ClamAV scan. Size,
 	extension, unsafe-PDF and privacy are native (see module docstring) and untouched.
 	Dormant until `Intake::File::screening` is enabled."""
-	if doc.attached_to_doctype != _SUBMISSION:
+	if doc.attached_to_doctype not in _intake_sinks():
 		return
 	if not automation.is_enabled("Intake::File::screening"):
 		return

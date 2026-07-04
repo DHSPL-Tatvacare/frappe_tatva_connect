@@ -102,6 +102,11 @@ tatva_connect.patches.retire_activity_legacy_columns
 # keeps working; the full re-platform is a manual runbook step). Idempotent; no-op once fixed /
 # on a fresh install. See docs/plans/intake-form-builder-runbook.md.
 tatva_connect.patches.fix_nivolumab_drug_mapping
+# Retire the legacy shared intake staging doctype `CRM Enrolment Submission`. Intake is now 100%
+# per-form (each CRM Intake Form scaffolds its own runtime sink; the wildcard route_submission
+# processes it). Drops the orphan doctype + any Web Form still bound to it. Idempotent; nothing
+# shipped to production on it.
+tatva_connect.patches.retire_crm_enrolment_submission
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field

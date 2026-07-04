@@ -132,10 +132,6 @@ doc_events = {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
-	# Generic web-intake: a Web Form lands a submission row -> upsert a routed lead.
-	"CRM Enrolment Submission": {
-		"after_insert": "tatva_connect.intake.intake.process_submission",
-	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	"*": {
 		"after_insert": "tatva_connect.intake.intake.route_submission",
