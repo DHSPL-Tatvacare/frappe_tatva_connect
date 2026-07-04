@@ -14,6 +14,7 @@ generic resource API. The Link stores the row PK; the intake processor resolves 
 name (see intake._link_label) before it lands on the lead.
 """
 import frappe
+from frappe import _
 from frappe.utils import cint
 
 _CAP = 50
@@ -54,16 +55,28 @@ def city_query(doctype, txt, searchfield, start, page_len, filters):
 	return _scoped("CRM City", "city_name", txt, {"state": (f.state or "").strip()}, page_len)
 
 
+def _grain_from_form(filters):
+	"""Derive the grain from the intake FORM the caller names — NEVER from client-supplied grain
+	values. Mirrors frappe's web_form.get_link_options: the named form must exist AND be enabled
+	(published), else PermissionError. The browser can only name a form; the SERVER owns the grain,
+	read straight from the CRM Intake Form config. This is what stops cross-grain enumeration: the
+	`program`/`group`/`vertical` a scraper sends is simply never read."""
+	form = (_filters(filters).get("intake_form") or "").strip()
+	cfg = frappe.db.get_value(
+		"CRM Intake Form", form,
+		["enabled", "custom_vertical", "custom_group", "custom_current_program"], as_dict=True
+	) if form else None
+	if not cfg or not cfg.enabled:
+		frappe.throw(_("This form is not available."), frappe.PermissionError)
+	return {"vertical": cfg.custom_vertical, "group": cfg.custom_group, "program": cfg.custom_current_program}
+
+
 @frappe.whitelist(allow_guest=True)
 def hospital_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Hospitals within the form's grain. filters: {vertical, group, program}."""
-	f = _filters(filters)
-	scope = {
-		"vertical": (f.vertical or "").strip(),
-		"group": (f.group or "").strip(),
-		"program": (f.program or "").strip(),
-	}
-	return _scoped("CRM Hospital", "hospital_name", txt, scope, page_len)
+	"""Hospitals within the FORM's grain. filters: {intake_form}. The grain is looked up from the
+	named CRM Intake Form server-side (frappe's web-form pattern) — any grain values a browser sends
+	are ignored, so a guest cannot enumerate another grain by tampering with the filters."""
+	return _scoped("CRM Hospital", "hospital_name", txt, _grain_from_form(filters), page_len)
 
 
 @frappe.whitelist(allow_guest=True)
