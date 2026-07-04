@@ -183,6 +183,10 @@ def refresh_calls(hours=24, dry_run=1, create_missing=0):
 
 	dry_run=1 logs only; create_missing=0 backfills existing rows but never inserts.
 	"""
+	# Manual operator tool: reconciles a telephony account against its provider API. Gate on read of
+	# CRM Telephony Account (manager/admin-only) — blocks reps/no-role from driving the external API.
+	# Gate lives on this manual wrapper only; reconcile_window (webhook/scheduler path) stays ungated.
+	frappe.has_permission("CRM Telephony Account", "read", throw=True)
 	now = now_datetime()
 	from_date = add_to_date(now, hours=-int(hours)).strftime("%Y-%m-%d %H:%M:%S")
 	return reconcile_window(

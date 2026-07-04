@@ -71,3 +71,6 @@ htmlcov/
 # The security cockpit (tcsec.py) is TRACKED — the local git hooks invoke it as the enforcement gate.
 # Only its local DAST target list (live endpoint URLs) stays OFF the public repo.
 tatva_connect/security/dast-targets.txt
+
+# local audit-triage spikes + dashboard (internal security testing)
+tatva_connect/tests/authz/spikes/

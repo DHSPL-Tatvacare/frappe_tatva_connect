@@ -30,8 +30,11 @@ def creds_path():
 
 
 def _valid_lead_status():
-	"""A real CRM Lead Status name (reqd Link on CRM Lead) — resolved live, never hardcoded."""
-	status = frappe.get_all("CRM Lead Status", pluck="name", limit=1)
+	"""A real CRM Lead Status name (reqd Link on CRM Lead) — resolved live, never hardcoded.
+	Prefer a NON-Lost status: a Lost-typed status makes the CRM fork demand a lost_reason on insert
+	(get_all order isn't guaranteed, so an unfiltered limit=1 can land on Junk/Unqualified)."""
+	status = (frappe.get_all("CRM Lead Status", filters={"type": ["!=", "Lost"]}, pluck="name", limit=1)
+		or frappe.get_all("CRM Lead Status", pluck="name", limit=1))
 	if not status:
 		frappe.throw("No CRM Lead Status records exist — cannot seed leads.")
 	return status[0]

@@ -83,6 +83,9 @@ def series(metric, granularity, frm, to, filters=None):
 # ── Custom Number Cards (rolling window over hourly rows) ─────────────────────────────
 
 def _card(metric, filters, hours, fieldtype):
+	# One gate for all four number-card endpoints (they all funnel here): reads CRM API Metric, so
+	# require read on it — matches the doctype matrix (Sales Manager / System Manager).
+	frappe.has_permission("CRM API Metric", "read", throw=True)
 	conds, params = _where("hour", frappe.parse_json(filters) if isinstance(filters, str) else filters)
 	params["frm"] = add_to_date(now_datetime(), hours=-hours)
 	row = frappe.db.sql(  # sqli-ok: constant AGG table + _SUMS/DIMENSIONS identifiers; filter values bound via %()s
