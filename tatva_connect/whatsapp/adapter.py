@@ -19,6 +19,7 @@ id; inbound names on whatsappMessageId, outbound de-dupes on custom_provider_mes
 never collide). No Meta anywhere.
 """
 import frappe
+from frappe import _
 
 from tatva_connect.whatsapp import api as wati
 from tatva_connect.whatsapp import media as media_module
@@ -219,6 +220,10 @@ def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=N
 		doc.content_type = mtype
 		doc.attach = filedoc.file_url          # proxy URL → bubble renders; linker skips it (contract C)
 		doc.message = text if mtype == "image" else (doc.message or "")
+	elif event.get("type") in media_module._MEDIA_TYPES and event.get("data") and not (doc.message or "").strip():
+		# Media message whose download failed and had no caption → placeholder, not a blank bubble.
+		doc.content_type = "text"
+		doc.message = _("📎 Media unavailable")
 	if name:
 		doc.name = name
 		doc.flags.name_set = True

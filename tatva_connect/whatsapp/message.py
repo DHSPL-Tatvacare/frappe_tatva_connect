@@ -229,6 +229,15 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		r = adapter.classify_send_response(resp)
 		if r.failed:
 			self.status = "failed"
+			# The throw rolls back this insert, so audit the failure to Error Log out-of-band
+			# (defer_insert survives the rollback) — native capture, no hand-rolled audit row.
+			frappe.log_error(
+				title="WATI manual send failed",
+				message=r.reason or "message could not be sent",
+				reference_doctype=self.reference_doctype,
+				reference_name=self.reference_name,
+				defer_insert=True,
+			)
 			frappe.throw(
 				_("WATI send failed: {0}").format(r.reason or _("message could not be sent")),
 				title=_("WATI Error"),
