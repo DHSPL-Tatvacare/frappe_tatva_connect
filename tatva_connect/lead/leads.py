@@ -218,8 +218,9 @@ def sync_headline_metrics(doc, method=None):
 		doc.set(parent_field, row.get(lab_field))
 
 
-# lead_section_gate() RETIRED — the Data-tab drug-vs-metabolic section gate is now resolved
-# server-side inside the projection (tatva_connect.lead.detail: the program "world" via
-# CRM Program.custom_is_drug_program), and rendered by the native fork panel (tatva/DetailPanel.vue).
-# Its only caller (lead/form_scripts/data_tab_gate.js) is archived to
+# lead_section_gate() RETIRED — the Data tab is now a clean server-side projection
+# (tatva_connect.lead.detail) rendered by the native fork panel (tatva/DetailPanel.vue). The
+# drug-vs-metabolic "world" split was itself retired too: the field CATALOG (CRM Lead API Field)
+# is the SOLE authority — every catalogued field for the grain surfaces, empties hidden in the UI.
+# The old DOM caller (lead/form_scripts/data_tab_gate.js) is archived to
 # archive/lead-detail-native-promotion/. No DOM section-hiding hack remains.

@@ -12,7 +12,8 @@ The security-critical guarantees proven here:
   2. READ-ONLY DENY   — a Property-Setter read-only field is never writable, even for a manager.
   3. PERM GATE        — read/write throw on a lead the caller cannot access.
   4. NO RAW SQL       — the module builds no string SQL; values come via the doc API (static check).
-  5. APPLICABILITY    — drug-world sections show only for a drug-program lead; metabolic the reverse.
+  5. CATALOG-DRIVEN   — the catalog is the sole authority; every catalogued field for the grain
+     surfaces (no drug/metabolic world-split; sections are display groups only).
   6. DEDUP            — duplicate catalog rows (partner vs curated) collapse to one per field.
 
 Run:
@@ -27,23 +28,12 @@ from tatva_connect.lead import detail
 
 # ----------------------------- pure helpers (no DB) -----------------------------
 class TestDetailPureLogic(FrappeTestCase):
-	def test_neutral_section_always_applies(self):
-		self.assertTrue(detail.section_applies("lead", is_drug=True))
-		self.assertTrue(detail.section_applies("lead", is_drug=False))
-		self.assertTrue(detail.section_applies("acq", is_drug=True))
-
-	def test_drug_section_only_in_drug_world(self):
-		self.assertTrue(detail.section_applies("drug_program", is_drug=True))
-		self.assertFalse(detail.section_applies("drug_program", is_drug=False))
-
-	def test_metabolic_section_hidden_in_drug_world(self):
-		self.assertFalse(detail.section_applies("lab", is_drug=True))
-		self.assertTrue(detail.section_applies("lab", is_drug=False))
-
-	def test_unknown_section_buckets_to_lead_and_always_applies(self):
-		# A new section_key never silently vanishes — it buckets to neutral "Lead Details".
-		self.assertTrue(detail.section_applies("brand_new_section", is_drug=True))
-		self.assertTrue(detail.section_applies("brand_new_section", is_drug=False))
+	def test_section_meta_groups_without_world_gate(self):
+		# Sections are display groups only — the drug/metabolic world gate is retired. A known key
+		# returns its (label, order); an unknown key buckets to the default group and never vanishes.
+		self.assertEqual(detail._section_meta("drug_program")[0], "Drug Program")
+		self.assertEqual(detail._section_meta("care")[0], "Care & Providers")
+		self.assertEqual(detail._section_meta("brand_new_section"), detail._DEFAULT_SECTION)
 
 	def test_activity_rows_are_not_profile_rows(self):
 		# Rows scoped to an activity surface (order/clinical → CRM Task) are excluded.

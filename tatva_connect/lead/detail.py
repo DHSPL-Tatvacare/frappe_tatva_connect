@@ -8,41 +8,41 @@ replaces that with a clean, server-resolved projection driven by the EXISTING fi
 (`CRM Lead API Field`) and the SAME grain-entitlement brain Smart Views uses — no new field
 meanings, no DOM, no client field enumeration.
 
-Two independent axes, kept separate on purpose:
-  * ENTITLEMENT (viewer)  — may this principal see the field at all?
+The CATALOG is the single authority. One viewer gate only:
+  * ENTITLEMENT (viewer) — may this principal see the field at all?
       access.entitlement.resolve_fields (grain brain + role restriction + universal floor).
-  * APPLICABILITY (record) — does this section apply to THIS lead?
-      the program "world" (CRM Program.custom_is_drug_program). A world is a SET of programs,
-      which a single grain axis cannot express, so applicability uses the config flag — this
-      relocates the retired lead_section_gate decision server-side, cleanly.
+Every catalogued profile field for the viewer's grain surfaces, grouped into its section.
+Sections are DISPLAY GROUPS only; the frontend's "hide empty fields" toggle keeps the tab neat.
+(The former drug/metabolic "world" split — CRM Program.custom_is_drug_program — was RETIRED: it
+was a second gate that hid catalogued fields, i.e. a parallel path. The catalog now decides.)
 
 Security:
   * Read is permission-gated; values are resolved server-side (no client SQL, no field
     enumeration) — there is NO string-built SQL in this module; everything flows through the
     frappe doc API.
-  * Write goes through a SERVER-BUILT allowlist (entitled ∧ applicable ∧ not read-only ∧ not a
-    protected routing field). A field_key outside it is rejected — a crafted payload can never
-    reach routing/owner/out-of-grain/read-only fields (no mass-assignment).
+  * Write goes through a SERVER-BUILT allowlist (entitled ∧ not read-only ∧ not a protected
+    routing field). A field_key outside it is rejected — a crafted payload can never reach
+    routing/owner/out-of-grain/read-only fields (no mass-assignment).
 """
 import frappe
 from frappe import _
 
 from tatva_connect.access import entitlement
 
-# section_key -> (display label, sort order, world). world ∈ {"neutral","drug","metabolic"}.
-# Mirrors the retired lead_section_gate split so existing behaviour is preserved, delivered
-# cleanly. `drug` and `drug_program` share one display group ("Drug Program").
+# section_key -> (display label, sort order). Sections are DISPLAY GROUPS only — the catalog
+# decides which fields exist for a grain; there is no world/applicability gate. `drug` and
+# `drug_program` share one display group ("Drug Program").
 SECTION_REGISTRY = {
-	"lead":         ("Lead Details",     10, "neutral"),
-	"acq":          ("Acquisition",      20, "neutral"),
-	"plan":         ("Plan",             30, "metabolic"),
-	"lab":          ("Lab",              40, "metabolic"),
-	"clinical":     ("Health Snapshot",  50, "metabolic"),
-	"care":         ("Care & Providers", 60, "metabolic"),
-	"drug":         ("Drug Program",     70, "drug"),
-	"drug_program": ("Drug Program",     70, "drug"),
+	"lead":         ("Lead Details",     10),
+	"acq":          ("Acquisition",      20),
+	"plan":         ("Plan",             30),
+	"lab":          ("Lab",              40),
+	"clinical":     ("Health Snapshot",  50),
+	"care":         ("Care & Providers", 60),
+	"drug":         ("Drug Program",     70),
+	"drug_program": ("Drug Program",     70),
 }
-_DEFAULT_SECTION = ("Lead Details", 10, "neutral")
+_DEFAULT_SECTION = ("Lead Details", 10)
 
 # Fields that live on CRM Task (activity surfaces) — never part of the lead profile.
 _ACTIVITY_DOCTYPES = ("CRM Task",)
@@ -62,17 +62,6 @@ _CATALOG_FIELDS = [
 # ------------------------------- pure helpers (no DB) -------------------------------
 def _section_meta(section_key):
 	return SECTION_REGISTRY.get(section_key or "", _DEFAULT_SECTION)
-
-
-def section_applies(section_key, is_drug):
-	"""Does this section apply to a lead in (drug) / out of (metabolic) the drug world? Pure.
-	A neutral section always applies; an unknown section_key buckets to neutral (never hidden)."""
-	world = _section_meta(section_key)[2]
-	if world == "drug":
-		return bool(is_drug)
-	if world == "metabolic":
-		return not is_drug
-	return True
 
 
 def is_profile_row(row):
@@ -126,10 +115,6 @@ def _catalog_rows():
 	return {r["field_key"]: r for r in rows}
 
 
-def _is_drug_lead(program):
-	return bool(program) and bool(frappe.db.get_value("CRM Program", program, "custom_is_drug_program"))
-
-
 def _docfield(target_doctype, fieldname):
 	try:
 		return frappe.get_meta(target_doctype).get_field(fieldname)
@@ -147,13 +132,17 @@ def _is_readonly(target_doctype, fieldname):
 
 
 def _select(doc):
-	"""The entitled (viewer) ∧ applicable (this lead's world) ∧ deduped {field_key: row}.
-	AXIS 1 entitlement → entitlement.resolve_fields; AXIS 2 applicability → section_applies."""
+	"""The entitled (VIEWER's grains) ∧ applicable (THIS LEAD's grain) ∧ deduped {field_key: row}.
+	Two grain axes, ONE brain (entitlement.field_in_grains): a field shows only if the VIEWER may see
+	it AND it belongs to the LEAD's grain — so an Anaya lead never shows TatvaPractice fields even for
+	an admin entitled to every grain. Universal keys always pass. (Sections are display groups; the
+	frontend hides empties.)"""
 	catalog = {k: r for k, r in _catalog_rows().items() if is_profile_row(r)}
 	visible = entitlement.resolve_fields(catalog, entitlement.entitled_grains(), frappe.get_roles())
-	is_drug = _is_drug_lead(doc.get("custom_current_program"))
+	lead_grain = (doc.get("custom_vertical") or "", doc.get("custom_group") or "",
+	              doc.get("custom_current_program") or "")
 	applicable = {k: r for k, r in visible.items()
-	              if section_applies(r.get("section_key"), is_drug) or k in entitlement.UNIVERSAL_KEYS}
+	              if k in entitlement.UNIVERSAL_KEYS or entitlement.field_in_grains(r, [lead_grain])}
 	deduped = dedup_rows(list(applicable.values()))
 	return {r["field_key"]: r for r in deduped}
 
@@ -182,6 +171,20 @@ def _value(doc, row):
 	return doc.get(row.get("fieldname"))
 
 
+def _display_label(df, value):
+	"""Clean label for a Link value = the target doctype's title_field (e.g. `display_label`), so the
+	grain-scoped `::` composite PK never reaches the UI — the SAME source as the header stage pill
+	(TatvaStagePill's `clean = s.display_label || …`). Returns None for non-Link fields (the panel
+	then shows the raw value) and falls back to the raw value if no title_field / label resolves."""
+	if df and df.fieldtype == "Link" and df.options and value:
+		try:
+			tf = frappe.get_meta(df.options).title_field
+			return (frappe.db.get_value(df.options, value, tf) or value) if tf else None
+		except Exception:
+			return None
+	return None
+
+
 def _group_key(section_key):
 	if section_key in ("drug", "drug_program"):
 		return "drug"
@@ -197,7 +200,7 @@ def lead_detail(lead):
 	buckets = {}
 	for fk, row in _select(doc).items():
 		sk = row.get("section_key") or ""
-		label, order, _ = _section_meta(sk)
+		label, order = _section_meta(sk)
 		gk = _group_key(sk)
 		bucket = buckets.setdefault(gk, {"key": gk, "label": label, "order": order, "fields": []})
 		df = _docfield(row.get("target_doctype"), row.get("fieldname"))
@@ -209,6 +212,7 @@ def lead_detail(lead):
 			"fieldtype": df.fieldtype if df else "Data",
 			"options": (df.options or "") if df else "",
 			"value": value,
+			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
 			"empty": _is_empty(value),
 			"read_only": _is_readonly(row.get("target_doctype"), row.get("fieldname")),
 			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
@@ -235,8 +239,8 @@ def _stage_write(doc, row, value):
 @frappe.whitelist()
 def update_lead_detail(lead, changes):
 	"""Write path. `changes` is {field_key: value}. Only field_keys in the SERVER-BUILT writable
-	projection (entitled ∧ applicable ∧ not read-only ∧ not protected) are accepted; anything else
-	is rejected. Persists via doc.save() so field perms, validate and doc_events all re-fire."""
+	projection (entitled ∧ not read-only ∧ not protected) are accepted; anything else is rejected.
+	Persists via doc.save() so field perms, validate and doc_events all re-fire."""
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	changes = frappe.parse_json(changes) if isinstance(changes, str) else (changes or {})
 	if not isinstance(changes, dict):
