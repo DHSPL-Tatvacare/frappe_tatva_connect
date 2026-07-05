@@ -95,7 +95,14 @@ def _resolve_caller():
 		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
 		["source", "vertical", "crm_group", "program"], as_dict=True,
 	)
-	is_sysmgr = "System Manager" in frappe.get_roles(user)
+	roles = frappe.get_roles(user)
+	is_sysmgr = "System Manager" in roles
+	# Defense-in-depth (2nd independent gate): an EXTERNAL partner must carry the marker
+	# `Partner API User` role — a grant-nothing role (no DocPerm), so it can't re-open
+	# /api/resource. The mapping alone is not enough; a user without the role is refused
+	# even if a mapping row exists. (System Manager = trusted internal caller, exempt.)
+	if mp and not is_sysmgr and "Partner API User" not in roles:
+		frappe.throw(_("Not authorised: {0} lacks the Partner API User role").format(user), frappe.PermissionError)
 	if not mp and not is_sysmgr:
 		frappe.throw(_("Not authorised: no CRM Lead API Mapping for {0}").format(user), frappe.PermissionError)
 	return user, mp, is_sysmgr

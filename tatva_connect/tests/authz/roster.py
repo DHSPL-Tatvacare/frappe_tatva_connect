@@ -38,9 +38,11 @@ _role_personas = [
 	# role-combo: probes vertical escalation (does holding two roles leak either's perms wrongly?)
 	{"persona": "combo_sales_wa", "email": _email("combo"), "password": PASSWORD,
 	 "roles": ["Sales User", "WhatsApp User"], "grain_key": None},
-	# partner: NO desk role — grain comes from CRM Lead API Mapping, set in generator
+	# partner: the marker `Partner API User` role ONLY (grants nothing — verified by the Tier-1
+	# all-roles deny sweep). The partner-API gate now REQUIRES this role (defense-in-depth);
+	# grain still comes from the CRM Lead API Mapping (set in generator).
 	{"persona": "partner", "email": _email("partner"), "password": PASSWORD,
-	 "roles": [], "grain_key": None},
+	 "roles": ["Partner API User"], "grain_key": None},
 	# no-role authenticated user: the catastrophe baseline (must be denied almost everything)
 	{"persona": "no_role", "email": _email("norole"), "password": PASSWORD,
 	 "roles": [], "grain_key": None},

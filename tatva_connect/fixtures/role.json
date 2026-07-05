@@ -14,5 +14,13 @@
   "desk_access": 0,
   "disabled": 0,
   "is_custom": 1
+ },
+ {
+  "doctype": "Role",
+  "name": "Partner API User",
+  "role_name": "Partner API User",
+  "desk_access": 0,
+  "disabled": 0,
+  "is_custom": 1
  }
 ]
