@@ -21,8 +21,15 @@ SCRIPTS = [
 	# tatva_connect.lead.detail.lead_detail). Drug-vs-metabolic section applicability is resolved
 	# server-side in the projection (the program "world"), so the DOM section-hiding hack is gone.
 	# Archived to archive/lead-detail-native-promotion/. Disabled idempotently via RETIRED below.
-	("Email Attach (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/email_attach.js"),
-	("Delete Modal Fit (CRM Lead)", "CRM Lead", "Form", "lead/form_scripts/delete_modal_fit.js"),
+	# "Email Attach (CRM Lead)" (email_attach.js) RETIRED — the composer attach (device-staged upload +
+	#   attach-from-CRM picker) is now native in the CRM fork (frontend/src/tatva/TatvaAttachMenu.vue, wired
+	#   into EmailEditor.vue + CommentBox.vue). Backend tatva_connect.api.email (list_attachable_files /
+	#   stage_crm_file, Azure blob-sharing) unchanged. The document-level click interception + localStorage
+	#   hack are gone. Archived to archive/lead-form-scripts-native/. Disabled idempotently via RETIRED below.
+	# "Delete Modal Fit (CRM Lead)" (delete_modal_fit.js) RETIRED — the "delete/unlink linked documents"
+	#   modal now fits natively (fork DeleteLinkedDocModal.vue -> ResponsiveDialog + internal-scroll body,
+	#   commit b803871); the DOM/MutationObserver height hijack is gone. Archived to archive/lead-form-scripts-native/.
+	#   Disabled idempotently via RETIRED below.
 	# "Log Activity (CRM Lead)" (activity_log.js) RETIRED in Phase 2 — the ad-hoc punch is now native in
 	# the CRM fork (TatvaTasks owns window.__tcLogActivity → TatvaTaskModal create mode). Archived to
 	# archive/phase2-retired-adhoc-punch/. Disabled idempotently via RETIRED below.
@@ -54,6 +61,8 @@ RETIRED = [
 	"Data Tab Program Gate (CRM Lead)",  # -> native Data tab (fork tatva/DetailPanel.vue) + tatva_connect/lead/detail.py; applicability resolved server-side
 	"Task Modal Fit (CRM Task)",  # -> native TaskModal contained body + internal scroll (fork tatva/TaskModal.vue); DOM height hijack gone
 	"Activity Complete (CRM Task)",  # -> native TaskModal activity flow (grain-scoped type -> schema -> save_activity/compute_activity_fields); enforce_* backstops kept
+	"Email Attach (CRM Lead)",  # -> native tatva/TatvaAttachMenu.vue in the fork (device-staged + attach-from-CRM); backend + Azure unchanged
+	"Delete Modal Fit (CRM Lead)",  # -> native DeleteLinkedDocModal.vue (ResponsiveDialog + internal scroll, fork b803871); DOM/MutationObserver hijack gone
 ]
 
 
