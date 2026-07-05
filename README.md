@@ -57,7 +57,7 @@ object storage for files · WhatsApp and telephony integrations · push notifica
 
 1. **Automated:** build one image from `apps.json` → install apps → `bench migrate` (applies all
    doctypes, fixtures, patches, and the `after_migrate` orchestration) → `enable-scheduler`.
-2. **Manual (operator):** run `db-seeds` → publish the handbook → fill Settings forms and flip the
+2. **Manual (operator):** run `docs/go-live/3-seed/db-seeds` → publish the handbook → fill Settings forms and flip the
    automation toggles → run the data migration.
 
 Everything ships **dormant** — nothing fires until an operator switches it on. Full posture in

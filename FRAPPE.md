@@ -110,7 +110,7 @@ hard-won lessons. Use as a checklist for new work and code review.
   # By name for dashboards
   {"dt": "Dashboard Chart", "filters": [["name", "in", ["Chart A", "Chart B"]]]},
   ```
-- **Business/config data is NEVER a fixture** — it goes in `db-seeds/` (gitignored, operator-run SQL)
+- **Business/config data is NEVER a fixture** — it goes in `docs/go-live/3-seed/db-seeds/` (gitignored, operator-run SQL)
   or is entered by the operator through Settings forms.
 - **Workspaces ship as standard files**: `<module>/workspace/<slug>/<slug>.json` and
   `workspace_sidebar/<name>.json`. Frappe's `remove_orphan_entities()` prunes fixture-only
@@ -162,7 +162,7 @@ hard-won lessons. Use as a checklist for new work and code review.
 | Backfill data AFTER new columns exist | `[post_model_sync]` patch | Columns must already exist |
 | Drop obsolete columns | `schema_setup.py` + `patches.txt` | Idempotent, safe on fresh DB |
 | Seed intrinsic reference data | `seeds.py` (on after_migrate) | Identical in every deployment |
-| Seed business/master data | `db-seeds/` SQL (operator runs) | Differs per deployment |
+| Seed business/master data | `docs/go-live/3-seed/db-seeds/` SQL (operator runs) | Differs per deployment |
 
 ---
 
@@ -434,7 +434,7 @@ frappe.call({doc: frm.doc, method: "my_method", args: {arg: value}})
 - [ ] Structural-only change → patch + `schema_setup.py` double-coverage
 - [ ] Data migration → `[post_model_sync]` patch, idempotent
 - [ ] Intrinsic seed → `seeds.py` (identical in every deployment)
-- [ ] Business seed → `db-seeds/` SQL (NOT auto-seeded)
+- [ ] Business seed → `docs/go-live/3-seed/db-seeds/` SQL (NOT auto-seeded)
 - [ ] All `@frappe.whitelist()` methods check permissions
 - [ ] Guest endpoints have `allow_guest=True` + own auth
 - [ ] Secrets in Password field or env var (never committed)

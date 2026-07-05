@@ -4,11 +4,11 @@
 
 How `tatva_connect` + the CRM fork reach UAT/prod. This is the finalized posture: **greenfield Frappe
 v16, split DB (app box and DB box on one private VNet), no data carried — real data arrives via the LSQ
-migration after**. Step-by-step runbook: `docs/prod-deploy/DEPLOY.md`. Seed details: `db-seeds/INDEX.md`.
+migration after**. Step-by-step runbook: `docs/prod-deploy/DEPLOY.md`. Seed details: `docs/go-live/3-seed/db-seeds/INDEX.md`.
 
 ## The posture in one line
 Build one image from the env's apps file → bring up boxes → `bench migrate` (applies ALL schema-as-code) →
-`enable-scheduler` → operator runs `db-seeds` → publish handbook → enable config → LSQ migration → cutover.
+`enable-scheduler` → operator runs `docs/go-live/3-seed/db-seeds` → publish handbook → enable config → LSQ migration → cutover.
 
 ## Branches & environments (codified)
 Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`.
@@ -37,7 +37,7 @@ Solo flow, **no PRs**: in the CRM fork, `develop` (default) → `uat` → `prod`
 
 | | Lane 1 — AUTOMATED (CI + `bench migrate`) | Lane 2 — MANUAL (operator) |
 |---|---|---|
-| Runs | image build/push, install apps, `migrate`, `enable-scheduler` | `db-seeds`, handbook publish, config enablement, LSQ migration |
+| Runs | image build/push, install apps, `migrate`, `enable-scheduler` | `docs/go-live/3-seed/db-seeds`, handbook publish, config enablement, LSQ migration |
 | Carries | code, structure, schema (doctypes, fields, patches) — **no business values** | business/master data, secrets, on/off switches |
 | Why manual | because these are **per-deployment choices** (which grains, which secrets, what to switch on) — baking them in would violate "code ships dormant / no hardcoding" | |
 | Idempotent | yes (`migrate` re-runs cleanly) | yes (every seed is `INSERT IGNORE`/`ON DUPLICATE`) |
@@ -63,31 +63,31 @@ Both lanes must finish for "deploy = done." Lane 1 alone gives a working but **i
    run-log sweep, draft purge) never fire.
 
 ## Lane 2 — operator, post-migrate (in order)
-1. **Seeds:** `cd db-seeds && ./apply-seeds.sh <site> <backend-container>` — runs `seeds.manifest` in
-   dependency order (masters before rows). See `db-seeds/INDEX.md`.
+1. **Seeds:** `cd docs/go-live/3-seed/db-seeds && ./apply-seeds.sh <site> <backend-container>` — runs `seeds.manifest` in
+   dependency order (masters before rows). See `docs/go-live/3-seed/db-seeds/INDEX.md`.
 2. **Handbook → Wiki:** run `publish.py` (greenfield Wiki starts empty). DEPLOY.md §2b.
 3. **Enable config** (below).
-4. **LSQ data migration:** real leads/activities (`docs/migration/MIGRATION.md`), last.
+4. **LSQ data migration:** real leads/activities (`docs/go-live/7-migrate-data/MIGRATION.md`), last.
 5. **Cutover:** point the edge/LB at the app box, smoke-test, decommission old prod.
 
 ## Config enablement — two moves per feature
 Everything ships DORMANT. To turn a feature on: **(a) fill its Settings form** (secrets from the vault,
 never the repo) **then (b) flip its `CRM Tatva Automation` toggle**. A filled form with the toggle OFF
 does nothing. The 30 toggles are auto-seeded dormant; the full feature→form→toggle map is in
-`db-seeds/INDEX.md` (Part 3). Examples: WhatsApp → CRM WhatsApp Settings + `WhatsApp::WATI::messaging`;
+`docs/go-live/3-seed/db-seeds/INDEX.md` (Part 3). Examples: WhatsApp → CRM WhatsApp Settings + `WhatsApp::WATI::messaging`;
 Telephony → CRM Telephony Settings + `Telephony::Acefone::calls`; Azure files → CRM Azure Storage Settings
 + `Storage::Azure::offload`; enrolment form → CRM Intake Settings + `Lead::Enrolment::intake`.
 
 ## Deploy invariants (non-negotiable — mirror of CLAUDE.md A/S)
 - **No config in code.** Connection/env values, secrets, business names, thresholds, specific records are
   NEVER baked in (no field default, no fixture, no seed). They are operator-entered. (CLAUDE.md A.4.)
-- **No business data auto-seeds.** Master/business data is operator-run `db-seeds/` SQL only; just
+- **No business data auto-seeds.** Master/business data is operator-run `docs/go-live/3-seed/db-seeds/` SQL only; just
   deployment-identical reference data (India cities) auto-seeds. (A.5.) **Never stuff data into `seeds.py`.**
 - **Code ships dormant** — every integration/switch defaults OFF; a blank setting reads as disabled. (A.6.)
 - **Smart Views and automation Rules are user-built — never seeded.** Fresh DB starts empty. (A.17.)
 - **Secrets in env/Password fields only** — the repo is PUBLIC. (S.5.)
 - **Dev-first.** Prove on the `.devbench` before prod; never experiment on prod.
-- **Dev litter never promotes.** Only the committed repo + the explicit `db-seeds/` SQL + cutover plan go
+- **Dev litter never promotes.** Only the committed repo + the explicit `docs/go-live/3-seed/db-seeds/` SQL + cutover plan go
   to prod. If it works on dev but isn't in the repo or the plan, re-create it cleanly — never copy the bench.
 - **Docs ship on a separate lane** (`api-docs/` → `deploy-docs.sh`), never on the image rebuild.
 - **Image by `$GIT_SHA`, never `latest`.** App and DB on the same private VNet; DB on its own SSD, no public IP.
@@ -101,5 +101,5 @@ Telephony → CRM Telephony Settings + `Telephony::Acefone::calls`; Azure files 
   secret), lifecycle retention + GRS. A backup must live on different hardware than the DB. DEPLOY.md §10.
 
 ## Index
-`CLAUDE.md` / `AGENTS.md` (rules) · `docs/prod-deploy/DEPLOY.md` (runbook) · `db-seeds/INDEX.md` (seeds +
+`CLAUDE.md` / `AGENTS.md` (rules) · `docs/prod-deploy/DEPLOY.md` (runbook) · `docs/go-live/3-seed/db-seeds/INDEX.md` (seeds +
 config map) · `docs/INVENTORY.md` (what the app adds) · `tatva_connect/patches.txt` (migration order).

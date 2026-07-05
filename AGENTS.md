@@ -42,8 +42,8 @@ masters use composite `::` primary keys, never `hash`.
 ## Repo layout (do not reinvent)
 `tatva_connect/` = the app: `hooks.py` (★ all customization registers here), `modules.txt patches.txt`,
 `schema_setup.py seeds.py` (after_migrate), `fixtures/` (schema-as-code), `<module>/doctype/<dt>/`,
-`api/` (@frappe.whitelist), `public/{js,css} tests/`. `db-seeds/` ★gitignored (operator SQL + INDEX.md +
-seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, migration/). `archive/` ★gitignored.
+`api/` (@frappe.whitelist), `public/{js,css} tests/`. `docs/go-live/3-seed/db-seeds/` ★gitignored (operator SQL + INDEX.md +
+seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, go-live/ [★consolidated: 3-seed/db-seeds, 4-handbook/handbook, 7-migrate-data]). `archive/` ★gitignored.
 `api-docs/` (Zudoku → /docs). `pyproject.toml` (NOT setup.py).
 
 ## A. Architecture invariants (non-negotiable)
@@ -57,7 +57,7 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, migration
   `after_migrate` only when it genuinely can't (upstream doctype, or merge-not-clobber a stock Select).
 - **A.4** No prefill/seed unless structurally intrinsic. Litmus: "would two deployments set this
   differently?" → yes ⇒ no default. Behaviour lives in a code fallback (`value or DEFAULT`).
-- **A.5** Business/master DATA never auto-seeds — ships as operator-run `db-seeds/` SQL (idempotent).
+- **A.5** Business/master DATA never auto-seeds — ships as operator-run `docs/go-live/3-seed/db-seeds/` SQL (idempotent).
   Only deployment-identical reference data (India cities) auto-seeds via `after_migrate`.
 - **A.6** Code ships DORMANT — every integration/switch defaults OFF; a blank setting reads as disabled.
 - **A.7** Composite `::` PKs for grain-scoped masters, never `hash`.
@@ -103,23 +103,23 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, migration
   `after_migrate`, `before/after_request`).
 - **Three data tiers, never mixed:** (1) schema-as-code (doctype JSON + fixtures) — auto on `bench migrate`;
   (2) intrinsic reference data (India cities) — `after_migrate` seeds; (3) business/master data —
-  operator-run `db-seeds/` SQL. **Config values & secrets are operator-entered in Settings forms — never
+  operator-run `docs/go-live/3-seed/db-seeds/` SQL. **Config values & secrets are operator-entered in Settings forms — never
   seeded, never hardcoded. NEVER stuff schema or data into `seeds.py`.**
 - `patches.txt` = pre/post model-sync migrations. `install-app` BASELINES it WITHOUT running it, so
   structural patches ALSO re-run idempotently on `after_migrate` (`schema_setup`).
 - `after_migrate` is a 10-step ORCHESTRATION with **3 gates that ABORT the migrate on registry drift**
   (automation drift · notification drift · lockdown). A migrate failure there = a missing registry row
   (code), not a flaky deploy. The automation engine = 30 `CRM Tatva Automation` toggles (auto-seeded
-  DORMANT); rules are user-built. Full detail → `CICD.md` and `db-seeds/INDEX.md`.
+  DORMANT); rules are user-built. Full detail → `CICD.md` and `docs/go-live/3-seed/db-seeds/INDEX.md`.
 
 ## Deploy posture (two lanes — full detail in CICD.md)
 - **Lane 1 — automatic:** build image (per-env apps file — `apps.uat.json`/`apps.prod.json` pin the fork's
   branch `uat`/`prod`; `apps.json` = `develop`; 9 apps + fork) → install → `bench migrate` (applies
   doctypes/fixtures/patches/`after_migrate`) → `enable-scheduler`. Code carries NO business values.
-- **Lane 2 — manual operator:** run `db-seeds` (ordered, idempotent) → publish handbook → fill Settings
+- **Lane 2 — manual operator:** run `docs/go-live/3-seed/db-seeds` (ordered, idempotent) → publish handbook → fill Settings
   forms + flip `CRM Tatva Automation` toggles → LSQ data migration. Nothing fires until toggled.
 - Dev-first always; prove on `.devbench` before prod. Docs (`api-docs/`) ship separately (`deploy-docs.sh`),
-  never on the image. Dev litter NEVER promotes — only the committed repo + `db-seeds/` SQL.
+  never on the image. Dev litter NEVER promotes — only the committed repo + `docs/go-live/3-seed/db-seeds/` SQL.
 
 ## B. How to work with me
 - Do EXACTLY the narrow ask — never extrapolate to adjacent changes. STOP AND ASK before destructive/
@@ -201,7 +201,7 @@ MUST be updated in the same change whenever code touches their content.** Stale 
 | Every doctype, override, hook, endpoint | `docs/INVENTORY.md` |
 | Deploy posture — lanes, automated vs manual, why | `CICD.md` |
 | Step-by-step prod runbook | `docs/prod-deploy/DEPLOY.md` |
-| Seed order, feature map, config activation | `db-seeds/INDEX.md` |
+| Seed order, feature map, config activation | `docs/go-live/3-seed/db-seeds/INDEX.md` |
 | Migration order | `tatva_connect/patches.txt` |
 | The CRM fork + its divergence | `DHSPL-Tatvacare/frappe_tatva_crm` (branches `develop`/`uat`/`prod`) → `CUSTOMIZATIONS.md` |
 | Strategy, decisions, live state | vault `tatvacare-obsidian/Projects/frappe-crm/` |
