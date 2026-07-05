@@ -12,6 +12,13 @@ so a bucket merges across time by SUM/MIN/MAX and a re-run over the same closed 
 produces identical rows. Correctness does NOT depend on the advisory lock — the lock only
 stops two workers duplicating work. The latency bands come from constants.LATENCY_BANDS
 (single source of truth), not retyped here.
+
+Windows are WHOLE-HOUR aligned on both ends: the run only finalizes complete hours ('to'
+floors to the hour) and the purge drops whole hours ('_purge_5min' cuts on the hour). So an
+hour's 5-min rows are all-present or all-gone — never partial — which means a coarse bucket
+is only ever (re)built from a COMPLETE set of finer rows. A backfill can therefore never
+overwrite an immortal hour/day with an undercount. Cost: the newest partial hour isn't
+visible until it closes (accepted).
 """
 import datetime as dt
 
@@ -65,10 +72,11 @@ def run():
 		lag = int(frappe.db.get_single_value(SETTINGS, "lag_seconds") or 300)
 		retention = int(frappe.db.get_single_value(SETTINGS, "fine_grain_retention_days") or 90)
 
-		# 'to' = floor(now - lag) to a 5-min boundary -> never finalize an in-flight bucket.
+		# 'to' = floor(now - lag) to a WHOLE-HOUR boundary -> only ever finalize complete hours,
+		# so no bucket is built (or rebuilt) from a partial set of finer rows. The lag still holds
+		# finalisation back a touch past the hour close for late-arriving rows.
 		to = now_datetime() - dt.timedelta(seconds=lag)
-		to = to.replace(second=0, microsecond=0)
-		to = to - dt.timedelta(minutes=to.minute % 5)
+		to = to.replace(minute=0, second=0, microsecond=0)
 
 		# 'from' = last watermark, else oldest surviving raw row, else 7 days back.
 		# A zero/pre-epoch watermark ("0001-01-01") is truthy but breaks the coarse-tier
@@ -162,8 +170,11 @@ def _rollup_metric(src_gran, dst_gran, secs, frm, to):
 
 
 def _purge_5min(days):
-	"""Drop fine-grain rows past the retention window. Hourly/daily are immortal."""
-	cutoff = now_datetime() - dt.timedelta(days=int(days))
+	"""Drop fine-grain rows past the retention window, on a WHOLE-HOUR boundary so an hour's
+	5-min rows are always all-present or all-gone — never partial. A coarse (hour/day) bucket
+	can then only ever be rebuilt from a COMPLETE set of finer rows, so a backfill can never
+	overwrite an immortal bucket with an undercount. Hourly/daily are immortal."""
+	cutoff = (now_datetime() - dt.timedelta(days=int(days))).replace(minute=0, second=0, microsecond=0)
 	frappe.db.sql(  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		f"DELETE FROM `{AGG}` WHERE granularity = '5min' AND bucket_start < %(c)s",
 		{"c": cutoff},
