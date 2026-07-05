@@ -38,6 +38,7 @@ from tatva_connect.api._base import (
 	_cfg,
 	_classify,
 	_fail,
+	_meter_volume,
 	_norm_phone,
 	_ok,
 	_read_list,
@@ -640,7 +641,7 @@ def lead_delete(**kwargs):
 # -- bulk / query endpoints --------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-@_api
+@_api(bulk=True)
 def lead_create_bulk(**kwargs):
 	"""Create-or-upsert many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
@@ -655,7 +656,7 @@ def lead_create_bulk(**kwargs):
 
 
 @frappe.whitelist(methods=["PUT"])
-@_api
+@_api(bulk=True)
 def lead_update_bulk(**kwargs):
 	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
@@ -669,7 +670,7 @@ def lead_update_bulk(**kwargs):
 
 
 @frappe.whitelist(methods=["DELETE"])
-@_api
+@_api(bulk=True)
 def lead_delete_bulk(**kwargs):
 	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
@@ -683,7 +684,7 @@ def lead_delete_bulk(**kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
-@_api
+@_api(bulk=True)
 def lead_get_bulk(**kwargs):
 	"""Read many leads by `names` OR `mobile_nos` (<= 100). Out-of-scope ids omitted."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
@@ -699,6 +700,9 @@ def lead_get_bulk(**kwargs):
 	bulk_max = _cfg()["bulk_max_records"]
 	if len(requested) > bulk_max:
 		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(bulk_max, len(requested)))
+	denied = _meter_volume(len(requested), "read")  # read volume = rows requested
+	if denied is not None:
+		return denied
 
 	filters = {by: ["in", requested]}
 	if mp:
@@ -723,7 +727,7 @@ def lead_get_bulk(**kwargs):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(bulk=True)
 def lead_list(**kwargs):
 	"""List leads on the caller's line, filtered + paginated. Curated fields only, no
 	children (use lead_get for the full record). Filters: status, created/updated date
@@ -744,6 +748,9 @@ def lead_list(**kwargs):
 	cfg = _cfg()
 	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
+	denied = _meter_volume(limit, "read")  # read volume = the requested page size
+	if denied is not None:
+		return denied
 
 	fields = list(dict.fromkeys(
 		[*parent_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]

@@ -49,9 +49,20 @@ DEFAULTS = {
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
 	"file_download_max_mb": 25,
+	# Volume dimension — rows/window, read + write, per-token + global (global = 5x per-token,
+	# mirroring the call rate's 6000:1200). Single + bulk both charge their row count here.
+	"records_window_seconds": 86400,
+	"per_token_read_records": 25000,
+	"global_read_records": 125000,
+	"per_token_write_records": 25000,
+	"global_write_records": 125000,
 }
-# Rate/burst fields treat 0 as "unlimited"; everything else is a cap where 0 is rejected.
-_RATE_FIELDS = ("per_token_rate", "per_token_burst", "global_rate", "global_burst")
+# These treat 0 as "unlimited"; every other numeric field is a cap where 0 falls back to its DEFAULT.
+_UNLIMITED_WHEN_ZERO = (
+	"per_token_rate", "per_token_burst", "global_rate", "global_burst",
+	"per_token_read_records", "global_read_records",
+	"per_token_write_records", "global_write_records",
+)
 
 
 def _cfg():
@@ -69,7 +80,7 @@ def _cfg():
 	for field, default in DEFAULTS.items():
 		val = row.get(field)
 		val = default if val in (None, "") else int(val)
-		if field not in _RATE_FIELDS and val == 0:
+		if field not in _UNLIMITED_WHEN_ZERO and val == 0:
 			val = default          # cap field: 0 is a footgun -> fall back to the default
 		cfg[field] = val
 	return cfg
@@ -299,36 +310,85 @@ def _run_bucket(name, rate, burst, window, cost):
 	return bool(allowed), retry_after, remaining
 
 
-def _rate_check(cost, mapping):
-	"""Charge `cost` records against the buckets. Partner (has a mapping) -> the shared
-	`global` bucket THEN their own `tok:{partner}` bucket; throttled if EITHER denies.
-	System Manager with no mapping -> EXEMPT (returns None). Returns (retry_after,
-	remaining): retry_after is None on allow, the wait in seconds on a 429; remaining is
-	the per-token budget. Fail-open: ANY Redis/Lua error is logged and the request is
-	ALLOWED (returns None).
-
-	The per-token key is the session user — each partner is one User (the mapping row's
-	name == partner_user == their API key owner), so this is the per-partner bucket."""
+def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, window):
+	"""Charge `cost` against a (global, per-token) token-bucket pair — throttled if EITHER denies.
+	The ONE brain both the rate (calls) and volume (rows) dimensions run through. Returns None
+	(exempt: no mapping) or (retry_after | None, per_token_remaining). Fail-open: ANY Redis/Lua
+	error is logged and the request is ALLOWED (returns None). The per-token key is the session
+	user — each partner is one User (mapping name == partner_user), so this is the per-partner bucket."""
 	if not mapping:
 		return None
-	cfg = _cfg()
-	window = cfg["window_seconds"] or DEFAULTS["window_seconds"]
 	try:
-		g_ok, g_retry, _g_rem = _run_bucket(
-			"global", cfg["global_rate"], cfg["global_burst"], window, cost
-		)
-		t_ok, t_retry, t_rem = _run_bucket(
-			f"tok:{frappe.session.user}", cfg["per_token_rate"], cfg["per_token_burst"], window, cost
-		)
+		g_ok, g_retry, _g = _run_bucket(gname, grate, gburst, window, cost)
+		t_ok, t_retry, t_rem = _run_bucket(tname, trate, tburst, window, cost)
 	except Exception:
-		frappe.log_error(title="Partner API rate limiter failed (allowed)")
+		frappe.log_error(title="Partner API limiter failed (allowed)")
 		return None
-	# remaining is always the per-token budget (what RateLimit-Limit = per_token_rate
-	# pairs with — the partner's own ceiling), surfaced on both allow and 429.
 	if g_ok and t_ok:
 		return None, t_rem
 	# Denied: report the longer of the two waits.
 	return max(g_retry if not g_ok else 0, t_retry if not t_ok else 0), t_rem
+
+
+def _rate_check(cost, mapping):
+	"""RATE dimension — `cost` calls into the global + per-token call buckets (window_seconds)."""
+	cfg = _cfg()
+	window = cfg["window_seconds"] or DEFAULTS["window_seconds"]
+	return _bucket_pair(
+		mapping, cost,
+		"global", cfg["global_rate"], cfg["global_burst"],
+		f"tok:{frappe.session.user}", cfg["per_token_rate"], cfg["per_token_burst"], window,
+	)
+
+
+def _volume_check(rows, direction, mapping):
+	"""VOLUME dimension — `rows` into the read|write daily buckets (global + per-token). Burst =
+	the ceiling, so a partner may spend a whole day's budget in one bulk load. `direction` is
+	'read' or 'write'; single + bulk endpoints both meter their row count here."""
+	cfg = _cfg()
+	window = cfg["records_window_seconds"] or DEFAULTS["records_window_seconds"]
+	g = cfg[f"global_{direction}_records"]
+	t = cfg[f"per_token_{direction}_records"]
+	return _bucket_pair(
+		mapping, rows,
+		f"vol:{direction}:global", g, g,
+		f"vol:{direction}:tok:{frappe.session.user}", t, t, window,
+	)
+
+
+def _throttle_response(check, mapping, reason=None):
+	"""Given a `_bucket_pair` result, set the RateLimit-* headers + return the 429 `_fail` response
+	when denied, else None. One place both dimensions funnel their throttle response through."""
+	if check is None:
+		return None
+	retry_after, remaining = check
+	if retry_after is None:
+		return None
+	_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
+	return _fail(
+		"rate_limited",
+		_("{0}. Retry in {1}s.").format(reason or _("Rate limit exceeded"), retry_after),
+		429, retry_after=retry_after,
+	)
+
+
+def _direction():
+	"""Single-endpoint volume direction: read on a GET, write otherwise. (Bulk endpoints pass
+	their own direction explicitly — lead_get_bulk is a READ over POST, so method is unreliable there.)"""
+	return "read" if (getattr(getattr(frappe, "request", None), "method", "GET") or "GET").upper() == "GET" else "write"
+
+
+def _meter_volume(rows, direction):
+	"""Charge `rows` against the volume buckets (only when the enforcement switch is ON). Returns a
+	429 `_fail` response if the daily budget is exhausted, else None. Exempt callers pass. Bulk
+	endpoints call this with their exact row count (writes via _run_bulk, reads inline)."""
+	if not automation.is_enabled(_RATE_ENFORCEMENT):
+		return None
+	_u, mapping, _s = _resolve_caller()
+	return _throttle_response(
+		_volume_check(rows, direction, mapping), mapping,
+		reason=_("Daily {0} record quota exceeded").format(direction),
+	)
 
 
 def _ratelimit_headers(mapping, remaining=None, retry_after=None):
@@ -351,12 +411,15 @@ def _ratelimit_headers(mapping, remaining=None, retry_after=None):
 		frappe.log_error(title="Partner API ratelimit headers failed (ignored)")
 
 
-def _api(fn):
-	"""Wrap an endpoint: enforce the rate limit (when the automation switch is ON), run
-	it, and emit the unified contract on any failure (never a traceback). The endpoint
-	writes its success body via _ok() and returns None — so the response is always
-	top-level. A single endpoint costs 1 record; bulk endpoints add len(items) via
-	_run_bulk. Sysmgr/no-mapping callers are exempt."""
+def _api(fn=None, *, bulk=False):
+	"""Wrap an endpoint: enforce the rate + volume limits (when the switch is ON), run it, and
+	emit the unified contract on any failure (never a traceback). RATE = 1 call per request.
+	VOLUME = 1 row for a single endpoint (read on GET, write otherwise); a bulk endpoint
+	(`@_api(bulk=True)`) charges its own row count via _run_bulk (writes) or _meter_volume (reads).
+	Sysmgr/no-mapping callers are exempt. The endpoint writes its body via _ok() and returns None."""
+	if fn is None:
+		return functools.partial(_api, bulk=bulk)
+
 	@functools.wraps(fn)
 	def wrapper(*args, **kwargs):
 		try:
@@ -364,16 +427,15 @@ def _api(fn):
 			remaining = None
 			if automation.is_enabled(_RATE_ENFORCEMENT):
 				_user, mapping, _is_sysmgr = _resolve_caller()
-				check = _rate_check(1, mapping)
-				if check is not None:
-					retry_after, remaining = check
-					if retry_after is not None:
-						_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
-						return _fail(
-							"rate_limited",
-							_("Rate limit exceeded. Retry in {0}s.").format(retry_after),
-							429, retry_after=retry_after,
-						)
+				rate = _rate_check(1, mapping)
+				denied = _throttle_response(rate, mapping)
+				if denied is not None:
+					return denied
+				remaining = rate[1] if rate else None
+				if not bulk:
+					denied = _meter_volume(1, _direction())
+					if denied is not None:
+						return denied
 			result = fn(*args, **kwargs)
 			if mapping is not None:
 				_ratelimit_headers(mapping, remaining=remaining)
@@ -388,28 +450,17 @@ def _api(fn):
 
 
 def _run_bulk(items, fn):
-	"""Run `fn(index, item)` per record in its own savepoint -> partial success.
-	A failing record is rolled back and reported; the rest still commit. Cost = records:
-	the whole batch is charged len(items) against the rate buckets (when enforcement is
-	ON), so a 100-record bulk consumes like 100 singles, never like one request."""
+	"""Run `fn(index, item)` per record in its own savepoint -> partial success. A failing record
+	is rolled back and reported; the rest still commit. Charges VOLUME = len(items) write-rows (the
+	batch drains the write budget like N singles); the 1-call RATE cost was charged by @_api(bulk=True)."""
 	if not isinstance(items, list):
 		frappe.throw(_("Expected a JSON array"))
-	cfg = _cfg()
-	bulk_max = cfg["bulk_max_records"]
+	bulk_max = _cfg()["bulk_max_records"]
 	if len(items) > bulk_max:
 		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(bulk_max, len(items)))
-	if automation.is_enabled(_RATE_ENFORCEMENT):
-		_user, mapping, _is_sysmgr = _resolve_caller()
-		check = _rate_check(len(items), mapping)
-		if check is not None:
-			retry_after, remaining = check
-			if retry_after is not None:
-				_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
-				return _fail(
-					"rate_limited",
-					_("Rate limit exceeded. Retry in {0}s.").format(retry_after),
-					429, retry_after=retry_after,
-				)
+	denied = _meter_volume(len(items), "write")
+	if denied is not None:
+		return denied
 	results, ok = [], 0
 	for i, item in enumerate(items):
 		sp = f"tc_bulk_{i}"
