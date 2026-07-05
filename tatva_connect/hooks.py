@@ -174,6 +174,8 @@ scheduler_events = {
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 		# Daily: prune automation Run Log rows past the retention window.
 		"0 3 * * *": ["tatva_connect.automation.dispatcher.sweep_run_log"],
+		# Daily: drop expired partner-API idempotency records.
+		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
 	},
 }
 

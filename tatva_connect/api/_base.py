@@ -21,10 +21,12 @@ Holds (moved verbatim from partner.py, behaviour-preserving):
   * `resolve_lead`     — the ONE grain-scoped lead resolver every entity API calls
 """
 import functools
+import hashlib
 import time
 
 import frappe
 from frappe import _
+from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
@@ -56,6 +58,8 @@ DEFAULTS = {
 	"global_read_records": 125000,
 	"per_token_write_records": 25000,
 	"global_write_records": 125000,
+	# Idempotency (opt-in write-dedup): how long a stored key/response is honoured for replay.
+	"idempotency_window_hours": 24,
 }
 # These treat 0 as "unlimited"; every other numeric field is a cap where 0 falls back to its DEFAULT.
 _UNLIMITED_WHEN_ZERO = (
@@ -411,6 +415,110 @@ def _ratelimit_headers(mapping, remaining=None, retry_after=None):
 		frappe.log_error(title="Partner API ratelimit headers failed (ignored)")
 
 
+# -- idempotency (opt-in): make partner WRITE retries safe -------------------
+# A client MAY send an Idempotency-Key on a POST/PUT/DELETE. First sight -> we claim it (the doc-name
+# PK insert IS the lock), run the endpoint, store the response. A retry with the SAME key + args ->
+# replay the stored response (no duplicate). Same key + DIFFERENT args -> 422. Key still in flight ->
+# 409. No key -> behaves exactly as before (fully opt-in). Only 2xx responses are cached.
+_IDEM_DT = "CRM Partner API Idempotency"
+_IDEM_HEADER = "Idempotency-Key"
+_IDEM_CLEANUP = "Partner::Idempotency::cleanup"
+_IDEM_STALE_SECONDS = 60  # a 'pending' claim older than this = a crashed run -> reclaimable
+
+
+def _idem_key():
+	"""The client's key: the Idempotency-Key header first, then a body arg fallback."""
+	req = getattr(frappe, "request", None)
+	hdr = req.headers.get(_IDEM_HEADER) if req is not None else None
+	return (hdr or frappe.form_dict.get("idempotency_key") or "").strip()
+
+
+def _is_write():
+	"""Writes carry idempotency; GETs are already idempotent."""
+	m = (getattr(getattr(frappe, "request", None), "method", "GET") or "GET").upper()
+	return m in ("POST", "PUT", "DELETE")
+
+
+def _idem_name(user, key):
+	return hashlib.sha256(f"{user}:{key}".encode()).hexdigest()  # not SQL — a deterministic doc name
+
+
+def _fingerprint(fn_name):
+	"""Stable hash of the logical request (endpoint + request args, minus framework/idempotency noise),
+	so a retry with the same body replays and a reuse with a different body is rejected."""
+	data = {k: v for k, v in (frappe.form_dict or {}).items()
+	        if k not in ("cmd", "csrf_token", "idempotency_key")}
+	return hashlib.sha256((fn_name + "|" + frappe.as_json(data)).encode()).hexdigest()  # not SQL — a fingerprint
+
+
+def _idempotency_begin(user, key, fn_name):
+	"""Claim the key, or short-circuit. Returns ('run', name) | ('replay', None) | ('conflict', None).
+	On 'replay' the stored response is set; on 'conflict' a 409/422 _fail is set — caller just returns."""
+	name = _idem_name(user, key)
+	fp = _fingerprint(fn_name)
+	row = frappe.db.get_value(
+		_IDEM_DT, name, ["state", "request_fingerprint", "response_body", "creation"], as_dict=True
+	)
+	if row:
+		if row.state == "pending":
+			if (now_datetime() - get_datetime(row.creation)).total_seconds() <= _IDEM_STALE_SECONDS:
+				_fail("conflict", _("A request with this Idempotency-Key is already in progress."), 409)
+				return "conflict", None
+			# stale claim (a run that crashed mid-flight) -> reclaim it
+			frappe.db.set_value(_IDEM_DT, name, {"request_fingerprint": fp, "creation": now_datetime()})
+			frappe.db.commit()
+			return "run", name
+		if row.request_fingerprint != fp:
+			_fail("conflict", _("Idempotency-Key reused with different parameters."), 422)
+			return "conflict", None
+		frappe.local.response.update(frappe.parse_json(row.response_body or "{}"))  # replay
+		return "replay", None
+	# first sight -> claim (a duplicate insert on the sha256 PK is the concurrency lock)
+	try:
+		doc = frappe.new_doc(_IDEM_DT)
+		doc.name = name
+		doc.flags.name_set = True
+		doc.update({"idempotency_key": key, "partner": user, "request_fingerprint": fp, "state": "pending"})
+		doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+		return "run", name
+	except frappe.DuplicateEntryError:
+		frappe.db.rollback()
+		_fail("conflict", _("A request with this Idempotency-Key is already in progress."), 409)
+		return "conflict", None
+
+
+def _idempotency_store(name):
+	"""After the endpoint ran: cache the response for replay — but ONLY a success. A 4xx/5xx (a _fail
+	returned without raising, e.g. a 429 from a bulk volume check) releases the claim so a retry re-runs."""
+	if frappe.local.response.get("http_status_code", 200) >= 400:
+		_idempotency_release(name)
+		return
+	frappe.db.set_value(
+		_IDEM_DT, name,
+		{"state": "done", "response_body": frappe.as_json(dict(frappe.local.response)),
+		 "status_code": frappe.local.response.get("http_status_code", 200)},
+		update_modified=False,
+	)
+
+
+def _idempotency_release(name):
+	"""Drop the claim so a retry actually re-runs (we never cache a failed write)."""
+	try:
+		frappe.db.delete(_IDEM_DT, {"name": name})
+	except Exception:
+		frappe.log_error(title="Idempotency release failed")
+
+
+def purge_idempotency_keys():
+	"""Daily: drop idempotency records past the retention window (scheduler; gated, ships dormant)."""
+	if not automation.is_enabled(_IDEM_CLEANUP):
+		return
+	cutoff = add_to_date(now_datetime(), hours=-_cfg()["idempotency_window_hours"])
+	frappe.db.delete(_IDEM_DT, {"creation": ["<", cutoff]})
+	frappe.db.commit()
+
+
 def _api(fn=None, *, bulk=False):
 	"""Wrap an endpoint: enforce the rate + volume limits (when the switch is ON), run it, and
 	emit the unified contract on any failure (never a traceback). RATE = 1 call per request.
@@ -422,7 +530,13 @@ def _api(fn=None, *, bulk=False):
 
 	@functools.wraps(fn)
 	def wrapper(*args, **kwargs):
+		idem = None
 		try:
+			key = _idem_key()
+			if key and _is_write():
+				action, idem = _idempotency_begin(frappe.session.user, key, fn.__name__)
+				if action != "run":
+					return  # replay / conflict response already set
 			mapping = None
 			remaining = None
 			if automation.is_enabled(_RATE_ENFORCEMENT):
@@ -430,15 +544,21 @@ def _api(fn=None, *, bulk=False):
 				rate = _rate_check(1, mapping)
 				denied = _throttle_response(rate, mapping)
 				if denied is not None:
+					if idem:
+						_idempotency_release(idem)
 					return denied
 				remaining = rate[1] if rate else None
 				if not bulk:
 					denied = _meter_volume(1, _direction())
 					if denied is not None:
+						if idem:
+							_idempotency_release(idem)
 						return denied
 			result = fn(*args, **kwargs)
 			if mapping is not None:
 				_ratelimit_headers(mapping, remaining=remaining)
+			if idem:
+				_idempotency_store(idem)
 			return result
 		except Exception as e:
 			code, http, message, fields = _classify(e, fn.__name__)
@@ -446,6 +566,8 @@ def _api(fn=None, *, bulk=False):
 				_fail(code, message, http, fields=fields)
 			else:
 				_fail(code, message, http)
+			if idem:
+				_idempotency_release(idem)
 	return wrapper
 
 

@@ -146,6 +146,17 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api.email.purge_draft_attachments"],
 	),
 	Auto(
+		key="Partner::Idempotency::cleanup",
+		fires_on="Schedule",
+		trigger_detail="daily 04:00",
+		purpose=(
+			"Each night, drops expired partner-API idempotency records (the opt-in write-dedup store) "
+			"past the retention window so they don't accumulate.\n"
+			"Example: a partner's retry-safety keys from yesterday are cleared at 04:00."
+		),
+		backs=["tatva_connect.api._base.purge_idempotency_keys"],
+	),
+	Auto(
 		key="Notify::Lead::assigned",
 		fires_on="Doc Event",
 		trigger_detail="ToDo · after_insert",
