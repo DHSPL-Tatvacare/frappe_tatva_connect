@@ -36,26 +36,28 @@ reuse `api.partner._PARTNER_PATH` and are derived from the webhook handler modul
 To log a new external endpoint, add a `(prefix, channel, source)` row to `_WATCH` — the
 prefix being a reused constant or `_method_prefix(<that module>)`, never a literal.
 
-## Raw retention (90 days) — automatic, shipped as code
+## Raw retention (90 days) — owned by the logging toggle
 
-Retention is a **deployment-identical policy** (90 days everywhere), so per A.3 it lives in code,
-not an operator step. Two pieces make it work:
+Retention is tied to the `Observability::Requests::logging` toggle, so nothing lingers when logging
+is off. Two pieces make it work:
 
-1. **`hooks.py`** declares `default_log_clearing_doctypes = {"CRM API Request Log": 90}`. Frappe's
-   daily cleanup job (`run_log_clean_up`, in the `daily_maintenance` scheduler group) merges this
-   into **Log Settings → Logs to Clear** on its next run and then trims the table at 90 days.
+1. **The activator** (`capture.apply_logging`, bound in the automation registry) registers the
+   `CRM API Request Log` entry in **Log Settings → Logs to Clear** (90 days) when logging is turned
+   on, and removes it when turned off. Reconciled on flip (`CRM Tatva Automation.on_update`) and on
+   deploy (`automation.seed.reconcile_activations`).
 2. **The controller** (`crm_api_request_log.py`) implements `clear_old_logs(days)` — the `LogType`
-   contract. Without it, Log Settings' `remove_unsupported_doctypes()` would **prune the entry** on
-   every run (it drops any log doctype it can't clear). With it, the entry self-registers and sticks.
+   contract. Without it, Log Settings' `remove_unsupported_doctypes()` would prune the entry on every
+   run. With it, the registered entry sticks and the daily cleanup trims the table at 90 days.
 
-**Operator action: none** — just the scheduler enabled. It shows up in the Log Settings UI on its own.
-The aggregate `CRM API Metric` is unaffected: the rollup runs every 6h and reads raw rows long before
-90 days, so trimming never loses history.
+Logging **off** → no entry, and any residual rows drain then stay empty. Logging **on** → trimmed at
+90 days. The aggregate `CRM API Metric` is unaffected: the rollup reads raw rows long before 90 days.
 
 ## The rollup job
 
-`tatva_connect.observability.rollup.run`, scheduled at `0 */6 * * *` (alongside WATI sync).
-Each run, under a `GET_LOCK` advisory lock:
+`tatva_connect.observability.rollup.run`, scheduled at `0 */6 * * *` (alongside WATI sync). The
+`Observability::Metrics::rollup` toggle owns its `Scheduled Job Type.stopped` flag (via
+`rollup.apply_rollup`), so when off the scheduler never enqueues it — no idle tick. It `requires`
+`Observability::Requests::logging` (enable logging first). Each run, under a `GET_LOCK` advisory lock:
 
 1. raw → 5-min buckets (closed buckets only, floored by `lag_seconds`)
 2. 5-min → hourly, hourly → daily (additive re-aggregation)

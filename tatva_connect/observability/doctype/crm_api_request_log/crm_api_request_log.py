@@ -11,11 +11,10 @@ class CRMAPIRequestLog(Document):
 	"""Raw request-level log. Pure data — written by observability.capture, read by
 	observability.rollup. Kept light on the insert hot path.
 
-	Retention is owned by Frappe's Log Settings: this doctype is registered at 90 days via
-	the `default_log_clearing_doctypes` hook, and the daily cleanup job calls `clear_old_logs`
-	below. Implementing it (the `LogType` contract) is what makes Log Settings accept and KEEP
-	the entry — without it, Log Settings prunes any row it can't clear. The rollup reads these
-	rows into CRM API Metric long before 90 days, so trimming never loses aggregated history."""
+	The Observability::Requests::logging toggle registers/deregisters this doctype with Log
+	Settings (see capture.apply_logging). `clear_old_logs` (the LogType contract) is what makes
+	Log Settings accept and KEEP that entry — without it the daily cleanup prunes any row it
+	can't clear. The rollup reads these rows into CRM API Metric long before 90 days."""
 
 	@staticmethod
 	def clear_old_logs(days=90):

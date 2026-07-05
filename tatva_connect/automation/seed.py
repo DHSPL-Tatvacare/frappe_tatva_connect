@@ -10,6 +10,7 @@ no-op behaviourally. No one-off patch is ever needed to retire an automation.
 import frappe
 
 from tatva_connect.automation.registry import AUTOMATIONS
+from tatva_connect.automation.settings import is_enabled
 
 
 def _scheduled_job(auto):
@@ -50,3 +51,11 @@ def sync_catalog():
 	for name in frappe.get_all("CRM Tatva Automation", pluck="name"):
 		if name not in live:
 			frappe.delete_doc("CRM Tatva Automation", name, ignore_permissions=True, force=True)
+
+
+def reconcile_activations():
+	# Deploy-time authoritative sync: set each toggle-owned infrastructure to match its current
+	# enabled state (runtime flips are handled by CRM Tatva Automation.on_update).
+	for auto in AUTOMATIONS:
+		if auto.activator:
+			frappe.get_attr(auto.activator)(is_enabled(auto.key))

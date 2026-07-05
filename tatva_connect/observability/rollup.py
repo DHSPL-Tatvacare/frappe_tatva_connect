@@ -32,6 +32,7 @@ _LOCK = "tc_obs_rollup"
 RAW = "tabCRM API Request Log"
 AGG = "tabCRM API Metric"
 SETTINGS = "CRM API Metric Settings"
+_JOB_METHOD = "tatva_connect.observability.rollup.run"
 
 # Non-histogram additive columns, then the histogram bands. Order == every SELECT below.
 _BASE_COLS = (
@@ -180,3 +181,11 @@ def _purge_5min(days):
 		{"c": cutoff},
 	)
 	return frappe.db.sql("SELECT ROW_COUNT()")[0][0]  # sqli-ok: constant query, no input — reads the DELETE's affected-row count (no frappe rowcount API).
+
+
+def apply_rollup(enabled):
+	"""Activate/deactivate the scheduled job by its Scheduled Job Type `stopped` flag, so a
+	disabled rollup is never enqueued. Activator for Observability::Metrics::rollup."""
+	name = frappe.db.get_value("Scheduled Job Type", {"method": _JOB_METHOD}, "name")
+	if name:
+		frappe.db.set_value("Scheduled Job Type", name, "stopped", 0 if enabled else 1)

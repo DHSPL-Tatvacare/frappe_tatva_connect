@@ -23,6 +23,7 @@ class Auto:
 	purpose: str = ""
 	backs: list = field(default_factory=list)
 	requires: str = ""
+	activator: str = ""
 
 
 AUTOMATIONS = [
@@ -437,6 +438,18 @@ AUTOMATIONS = [
 		backs=["tatva_connect.tasks.metrics.refresh_for_lead"],
 	),
 	Auto(
+		key="Observability::Requests::logging",
+		fires_on="Provider call",
+		trigger_detail="after_request · partner-API + inbound-webhook endpoints",
+		purpose=(
+			"Logs each partner-API and inbound-webhook request into CRM API Request Log to feed "
+			"the observability dashboard; off = nothing is captured.\n"
+			"Example: a partner lead_create call records its endpoint, status and latency."
+		),
+		backs=["tatva_connect.observability.capture.log_request"],
+		activator="tatva_connect.observability.capture.apply_logging",
+	),
+	Auto(
 		key="Observability::Metrics::rollup",
 		fires_on="Schedule",
 		trigger_detail="every 6h",
@@ -447,5 +460,14 @@ AUTOMATIONS = [
 			"this schedule."
 		),
 		backs=["tatva_connect.observability.rollup.run"],
+		requires="Observability::Requests::logging",
+		activator="tatva_connect.observability.rollup.apply_rollup",
 	),
 ]
+
+
+def activator_for(key):
+	for auto in AUTOMATIONS:
+		if auto.key == key:
+			return auto.activator
+	return ""

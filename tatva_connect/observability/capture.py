@@ -20,10 +20,15 @@ import time
 import frappe
 from frappe.utils import now_datetime
 
+from tatva_connect import automation
 from tatva_connect.api.partner import _PARTNER_PATH
 from tatva_connect.telephony import handler as _telephony_handler
 from tatva_connect.telephony.adapter import TELEPHONY_MEDIUM
 from tatva_connect.whatsapp import webhook as _whatsapp_webhook
+
+_LOGGING_KEY = "Observability::Requests::logging"
+_RAW_LOG = "CRM API Request Log"
+_RETENTION_DAYS = 90
 
 
 def _method_prefix(module):
@@ -55,6 +60,8 @@ def log_request(response=None, request=None):
 		match = next(((ch, src) for prefix, ch, src in _WATCH if path.startswith(prefix)), None)
 		if match is None:
 			return
+		if not automation.is_enabled(_LOGGING_KEY):
+			return
 		channel, source = match
 		if source is None:  # Partner API: identify by the authenticated caller
 			source = getattr(getattr(frappe, "session", None), "user", None) or "Unknown"
@@ -84,3 +91,16 @@ def log_request(response=None, request=None):
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "observability.log_request")
+
+
+def apply_logging(enabled):
+	"""Register/deregister the raw log with Log Settings so its daily cleanup trims it at 90
+	days only while logging is on. Activator for Observability::Requests::logging."""
+	settings = frappe.get_doc("Log Settings")
+	row = next((r for r in settings.logs_to_clear if r.ref_doctype == _RAW_LOG), None)
+	if enabled and not row:
+		settings.append("logs_to_clear", {"ref_doctype": _RAW_LOG, "days": _RETENTION_DAYS})
+		settings.save(ignore_permissions=True)
+	elif not enabled and row:
+		settings.remove(row)
+		settings.save(ignore_permissions=True)

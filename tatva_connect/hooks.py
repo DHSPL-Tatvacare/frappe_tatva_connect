@@ -177,13 +177,6 @@ scheduler_events = {
 	},
 }
 
-# Register the raw request log with Frappe's Log Settings so its daily cleanup trims it at
-# 90 days (like Error Log / API Request Log). Self-registers on the next cleanup run — no
-# operator step. The doctype implements clear_old_logs (the LogType contract) so Log Settings
-# accepts and keeps it. The aggregate CRM API Metric is unaffected (rollup reads raw well
-# before 90d). Deployment-identical policy, so it lives in code (A.3), not a db-seed.
-default_log_clearing_doctypes = {"CRM API Request Log": 90}
-
 # Ship the CRM Form Scripts from their .js source files on every migrate — keeps them version-controlled and in sync.
 after_migrate = [
 	# Structural patches (indexes/Select options/custom fields); install-app baselines patches.txt WITHOUT running it, so re-run them here (idempotent). Schema before data.
@@ -194,6 +187,8 @@ after_migrate = [
 	"tatva_connect.seeds.seed_master_data",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
+	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
+	"tatva_connect.automation.seed.reconcile_activations",
 	"tatva_connect.automation.drift.assert_registered",
 	# Every notification grain must point at a real automation row (the ONE global gate); a drifting catalog fails the migrate.
 	"tatva_connect.notifications.drift.assert_registered",
