@@ -347,38 +347,31 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	driving_tbl = f"tab{driving_name}"
 
 	def apply(query):
-		for alias, (child_tbl, pick, child_dt) in join_specs.items():
-			if pick.startswith("latest_by:"):
-				order_field = pick.split(":", 1)[1]
-				inner = DocType(child_dt)
-				# ONE row per parent — the newest by `order_field` (name as a deterministic
-				# tiebreaker). ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …) then keep rn=1;
-				# a bare ORDER-BY subquery would join EVERY child row and duplicate the parent.
-				rn = (
-					RowNumber()
-					.over(inner.parent)
-					.orderby(inner[order_field], order=frappe.qb.desc)
-					.orderby(inner.name, order=frappe.qb.desc)
-				)
-				ranked = (
-					frappe.qb.from_(inner)
-					.select(inner.star, rn.as_("_tc_rn"))
-					.where(inner.parenttype == driving_name)
-				)
-				sub = (
-					frappe.qb.from_(ranked)
-					.select(PseudoColumn("*"))
-					.where(PseudoColumn("`_tc_rn` = 1"))
-				).as_(alias)
-				query = query.left_join(sub).on(
-					PseudoColumn(f"`{alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
-				)
-			else:
-				query = query.left_join(child_tbl).on(
-					PseudoColumn(  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
-						f"`{alias}`.`parent` = `{driving_tbl}`.`name` AND `{alias}`.`parenttype` = '{driving_name}'"
-					)
-				)
+		# Every child join yields ONE row per parent — the newest by the pick's order field
+		# (`single` -> creation). ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
+		# a plain join would multiply the parent for a multi-row child, inflating rows AND the count.
+		for alias, (_child_tbl, pick, child_dt) in join_specs.items():
+			order_field = pick.split(":", 1)[1] if pick.startswith("latest_by:") else "creation"
+			inner = DocType(child_dt)
+			rn = (
+				RowNumber()
+				.over(inner.parent)
+				.orderby(inner[order_field], order=frappe.qb.desc)
+				.orderby(inner.name, order=frappe.qb.desc)
+			)
+			ranked = (
+				frappe.qb.from_(inner)
+				.select(inner.star, rn.as_("_tc_rn"))
+				.where(inner.parenttype == driving_name)
+			)
+			sub = (
+				frappe.qb.from_(ranked)
+				.select(PseudoColumn("*"))
+				.where(PseudoColumn("`_tc_rn` = 1"))
+			).as_(alias)
+			query = query.left_join(sub).on(
+				PseudoColumn(f"`{alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
+			)
 		return query
 
 	return apply, field_terms

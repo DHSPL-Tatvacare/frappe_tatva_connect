@@ -106,19 +106,33 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 	if not rules.criteria_match(rule.criteria, context, field_types):
 		return  # not a fire — no log (only fires are audited)
 
+	# A rule is all-or-nothing: run every action inside a savepoint; if ANY action fails, roll the
+	# whole rule back so no lead is left half-processed. Deferred side-effects (webhooks) fire only
+	# after a clean commit. Native savepoint API — no hand-rolled transaction handling.
 	success = 0
 	errors = []
 	details = []
-	for i, action in enumerate(rule.actions, 1):
-		label = _action_label(action)
-		try:
-			_run_action(action, lead, context, axes, trigger_doc)
-			success += 1
-			details.append(f"{i}. {label}: ok")
-		except Exception as e:
-			errors.append(f"{action.action_type}: {e}")
-			details.append(f"{i}. {label}: FAILED — {e}")
-			_log_error(rule.name, action.action_type, grain, e)
+	deferred = []
+	i, action = 0, None
+	save_point = f"tc_auto_rule_{frappe.generate_hash(length=8)}"
+	frappe.db.savepoint(save_point)
+	try:
+		for i, action in enumerate(rule.actions, 1):
+			thunk = _run_action(action, lead, context, axes, trigger_doc)
+			if thunk:
+				deferred.append(thunk)
+			details.append(f"{i}. {_action_label(action)}: ok")
+		frappe.db.release_savepoint(save_point)
+		success = len(rule.actions)
+	except Exception as e:
+		frappe.db.rollback(save_point=save_point)
+		deferred = []
+		errors.append(f"{action.action_type}: {e}")
+		details.append(f"{i}. {_action_label(action)}: FAILED — {e} · rule rolled back (all actions undone)")
+		_log_error(rule.name, action.action_type, grain, e)
+
+	for run_deferred in deferred:
+		run_deferred()
 
 	duration_ms = int((time.monotonic() - started) * 1000)
 	_write_run_log(rule, lead, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
@@ -152,7 +166,9 @@ def _run_action(action, lead, context, axes, trigger_doc):
 	}.get(action.action_type)
 	if handler is None:
 		raise ValueError(f"unknown action type {action.action_type!r}")
-	handler(action, lead, context, axes, trigger_doc)
+	# A handler may return a deferred side-effect (a thunk) that must fire only if the whole rule
+	# commits — the caller runs it after the savepoint is released. DB actions return None.
+	return handler(action, lead, context, axes, trigger_doc)
 
 
 def _action_create_task(action, lead, context, axes, trigger_doc):
@@ -238,7 +254,9 @@ def _action_call_webhook(action, lead, context, axes, trigger_doc):
 	if not frappe.db.exists("Webhook", action.webhook_endpoint):
 		raise ValueError(f"Webhook endpoint {action.webhook_endpoint!r} does not exist")
 	lead_doc = frappe.get_doc("CRM Lead", lead)
-	frappe.enqueue(
+	# Deferred: return the enqueue as a thunk so it fires only if the rule commits (a rolled-back
+	# rule must not send its webhook — a savepoint rollback would not clear an after_commit hook).
+	return lambda: frappe.enqueue(
 		"frappe.integrations.doctype.webhook.webhook.enqueue_webhook",
 		doc=lead_doc,
 		webhook={"name": action.webhook_endpoint},
