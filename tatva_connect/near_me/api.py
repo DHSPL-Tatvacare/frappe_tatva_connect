@@ -11,14 +11,12 @@ CROSS-GRAIN territory read: every doctor lead with a pinned clinic, across all b
 the user's explicit choice. The role+switch IS the boundary; `_assert_access` enforces it
 server-side (fail-closed) before any data leaves, so the client can never widen scope.
 """
-import math
-
 import frappe
 from frappe import _
 from frappe.utils import flt
 
 from tatva_connect import automation
-from tatva_connect.location.api import haversine
+from tatva_connect.location.api import leads_within_radius
 
 SWITCH = "Location::NearMe::directory"
 ROLE = "Field Map User"
@@ -53,36 +51,28 @@ def doctors_in_territory(lat, lng, radius_km=DEFAULT_RADIUS_KM):
 	then haversine refines to a true circle. `frappe.get_all` (NOT get_list) is deliberate: the
 	territory view bypasses per-lead read scope — access is owned by `_assert_access` above."""
 	_assert_access()
-	lat, lng, radius_km = flt(lat), flt(lng), flt(radius_km) or DEFAULT_RADIUS_KM
-	dlat = radius_km / 111.0
-	dlng = radius_km / (111.0 * max(0.15, math.cos(math.radians(lat))))
-	rows = frappe.get_all(
-		"CRM Lead",
-		filters={
-			"custom_clinic_latitude": ["between", [lat - dlat, lat + dlat]],
-			"custom_clinic_longitude": ["between", [lng - dlng, lng + dlng]],
-		},
+	# get_all (not get_list): the territory view deliberately bypasses per-lead read scope — access
+	# is owned by _assert_access above. Box+haversine math is the shared location.leads_within_radius.
+	near = leads_within_radius(
+		lat, lng, flt(radius_km) or DEFAULT_RADIUS_KM,
 		fields=["name", "lead_name", "mobile_no", "image", "source",
 				"custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
 				"custom_stage", "status", "custom_vertical"],
-		limit_page_length=0,
+		query=frappe.get_all,
 	)
-	out = []
-	for r in rows:
-		d = haversine(lat, lng, r.custom_clinic_latitude, r.custom_clinic_longitude)
-		if d <= radius_km * 1000:
-			out.append({
-				"name": r.name,
-				"title": r.lead_name or r.name,
-				"mobile_no": r.mobile_no or "",
-				"image": r.image or "",
-				"lat": r.custom_clinic_latitude,
-				"lng": r.custom_clinic_longitude,
-				"address": r.custom_clinic_address or "",
-				"stage": r.custom_stage or r.status or "",
-				"source": r.source or "",
-				"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
-				"distance_m": round(d),
-			})
-	out.sort(key=lambda x: x["distance_m"])
-	return out
+	return [
+		{
+			"name": r.name,
+			"title": r.lead_name or r.name,
+			"mobile_no": r.mobile_no or "",
+			"image": r.image or "",
+			"lat": r.custom_clinic_latitude,
+			"lng": r.custom_clinic_longitude,
+			"address": r.custom_clinic_address or "",
+			"stage": r.custom_stage or r.status or "",
+			"source": r.source or "",
+			"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
+			"distance_m": dist,
+		}
+		for r, dist in near
+	]

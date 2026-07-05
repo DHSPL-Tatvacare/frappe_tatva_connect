@@ -147,14 +147,7 @@ LIST_FILTERS = {
 }
 
 
-def catalog_label(key):
-	"""Readable label for a catalog key, e.g. 'lab:hba1c' -> 'Lab — HbA1c'."""
-	cat = _catalog()
-	section, _, fieldname = key.partition(":")
-	doctype = cat["section_doctype"].get(section)
-	f = frappe.get_meta(doctype).get_field(fieldname) if doctype else None
-	label = f.label if f else fieldname
-	return "{} — {}".format(cat["section_title"].get(section, section), label)
+# TATVA: removed unused `catalog_label(key)` — dead code with no caller anywhere (audit #32, A.14).
 
 
 def catalog_section_title(child_fieldname):

@@ -129,6 +129,34 @@ def haversine(lat1, lng1, lat2, lng2):
 	return 2 * r * math.asin(math.sqrt(a))
 
 
+def leads_within_radius(lat, lng, radius_km, fields, query=None):
+	"""CRM Leads whose clinic anchor is within `radius_km` of (lat,lng), nearest first — the ONE
+	box+haversine brain both map surfaces share. An indexed bounding-box prefilter narrows the set,
+	then haversine refines to a true circle. `query` picks the scope: frappe.get_list (default,
+	permission-scoped to the caller's own leads) or frappe.get_all (deliberate cross-grain). `fields`
+	MUST include the clinic lat/lng. Returns [(row, distance_m), …] sorted nearest-first."""
+	query = query or frappe.get_list
+	lat, lng, radius_km = flt(lat), flt(lng), flt(radius_km)
+	dlat = radius_km / 111.0
+	dlng = radius_km / (111.0 * max(0.15, math.cos(math.radians(lat))))
+	rows = query(
+		"CRM Lead",
+		filters={
+			"custom_clinic_latitude": ["between", [lat - dlat, lat + dlat]],
+			"custom_clinic_longitude": ["between", [lng - dlng, lng + dlng]],
+		},
+		fields=fields,
+		limit_page_length=0,
+	)
+	near = [
+		(r, round(d))
+		for r in rows
+		if (d := haversine(lat, lng, r.custom_clinic_latitude, r.custom_clinic_longitude)) <= radius_km * 1000
+	]
+	near.sort(key=lambda t: t[1])
+	return near
+
+
 def _geojson_point(lat, lng):
 	"""A GeoJSON FeatureCollection holding one Point — what Frappe's native Geolocation field
 	renders as a read-only Leaflet marker (no API key, no proxy)."""
@@ -442,35 +470,24 @@ def leads_near(lat, lng, radius_km=15):
 	map source. Permission-scoped — frappe.get_list applies the user's read scope, so a rep sees only
 	their own leads. A bounding-box SQL prefilter (indexed on the clinic lat/lng) narrows the set, then
 	haversine refines to a true circle. No grain hardcoded; works for every product's leads."""
-	lat, lng, radius_km = flt(lat), flt(lng), flt(radius_km) or 15.0
-	dlat = radius_km / 111.0
-	dlng = radius_km / (111.0 * max(0.15, math.cos(math.radians(lat))))
-	rows = frappe.get_list(
-		"CRM Lead",
-		filters={
-			"custom_clinic_latitude": ["between", [lat - dlat, lat + dlat]],
-			"custom_clinic_longitude": ["between", [lng - dlng, lng + dlng]],
-		},
+	near = leads_within_radius(
+		lat, lng, flt(radius_km) or 15.0,
 		fields=["name", "lead_name", "mobile_no", "custom_clinic_latitude", "custom_clinic_longitude",
 				"custom_clinic_address", "custom_stage", "status"],
-		limit_page_length=0,
 	)
-	out = []
-	for r in rows:
-		d = haversine(lat, lng, r.custom_clinic_latitude, r.custom_clinic_longitude)
-		if d <= radius_km * 1000:
-			out.append({
-				"name": r.name,
-				"title": r.lead_name or r.name,
-				"mobile_no": r.mobile_no or "",
-				"lat": r.custom_clinic_latitude,
-				"lng": r.custom_clinic_longitude,
-				"address": r.custom_clinic_address or "",
-				"stage": r.custom_stage or r.status or "",
-				"distance_m": round(d),
-			})
-	out.sort(key=lambda x: x["distance_m"])
-	return out
+	return [
+		{
+			"name": r.name,
+			"title": r.lead_name or r.name,
+			"mobile_no": r.mobile_no or "",
+			"lat": r.custom_clinic_latitude,
+			"lng": r.custom_clinic_longitude,
+			"address": r.custom_clinic_address or "",
+			"stage": r.custom_stage or r.status or "",
+			"distance_m": dist,
+		}
+		for r, dist in near
+	]
 
 
 @frappe.whitelist()
