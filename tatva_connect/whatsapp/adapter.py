@@ -223,7 +223,7 @@ def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=N
 	elif event.get("type") in media_module._MEDIA_TYPES and event.get("data") and not (doc.message or "").strip():
 		# Media message whose download failed and had no caption → placeholder, not a blank bubble.
 		doc.content_type = "text"
-		doc.message = _("📎 Media unavailable")
+		doc.message = _("Media unavailable")
 	if name:
 		doc.name = name
 		doc.flags.name_set = True
