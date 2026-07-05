@@ -177,6 +177,13 @@ scheduler_events = {
 	},
 }
 
+# Register the raw request log with Frappe's Log Settings so its daily cleanup trims it at
+# 90 days (like Error Log / API Request Log). Self-registers on the next cleanup run — no
+# operator step. The doctype implements clear_old_logs (the LogType contract) so Log Settings
+# accepts and keeps it. The aggregate CRM API Metric is unaffected (rollup reads raw well
+# before 90d). Deployment-identical policy, so it lives in code (A.3), not a db-seed.
+default_log_clearing_doctypes = {"CRM API Request Log": 90}
+
 # Ship the CRM Form Scripts from their .js source files on every migrate — keeps them version-controlled and in sync.
 after_migrate = [
 	# Structural patches (indexes/Select options/custom fields); install-app baselines patches.txt WITHOUT running it, so re-run them here (idempotent). Schema before data.

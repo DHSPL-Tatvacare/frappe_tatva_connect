@@ -36,28 +36,21 @@ reuse `api.partner._PARTNER_PATH` and are derived from the webhook handler modul
 To log a new external endpoint, add a `(prefix, channel, source)` row to `_WATCH` — the
 prefix being a reused constant or `_method_prefix(<that module>)`, never a literal.
 
-## The 7-day raw retention is UI config — NOT shipped as code
+## Raw retention (90 days) — automatic, shipped as code
 
-Retention policy is operator config, so (per our "no config in code" rule) it is **not**
-declared via the `default_log_clearing_doctypes` hook. The raw table grows until you set
-this **once per site** after the first deploy. Two equivalent ways:
+Retention is a **deployment-identical policy** (90 days everywhere), so per A.3 it lives in code,
+not an operator step. Two pieces make it work:
 
-**UI (preferred):** Desk → search **Log Settings** → *Logs to Clear* → add a row:
-`Document Type = CRM API Request Log`, `Days = 7` → Save. Frappe's daily cleanup job
-then trims it automatically.
+1. **`hooks.py`** declares `default_log_clearing_doctypes = {"CRM API Request Log": 90}`. Frappe's
+   daily cleanup job (`run_log_clean_up`, in the `daily_maintenance` scheduler group) merges this
+   into **Log Settings → Logs to Clear** on its next run and then trims the table at 90 days.
+2. **The controller** (`crm_api_request_log.py`) implements `clear_old_logs(days)` — the `LogType`
+   contract. Without it, Log Settings' `remove_unsupported_doctypes()` would **prune the entry** on
+   every run (it drops any log doctype it can't clear). With it, the entry self-registers and sticks.
 
-**Console (same effect, scriptable):**
-```python
-# bench --site <site> console
-import frappe
-ls = frappe.get_doc("Log Settings")
-ls.append("logs_to_clear", {"ref_doctype": "CRM API Request Log", "days": 7})
-ls.save()
-frappe.db.commit()
-```
-
-> Until this is set, `CRM API Request Log` is never purged. The aggregate `CRM API Metric`
-> is unaffected either way — the rollup runs every 6h and reads raw rows long before 7 days.
+**Operator action: none** — just the scheduler enabled. It shows up in the Log Settings UI on its own.
+The aggregate `CRM API Metric` is unaffected: the rollup runs every 6h and reads raw rows long before
+90 days, so trimming never loses history.
 
 ## The rollup job
 
