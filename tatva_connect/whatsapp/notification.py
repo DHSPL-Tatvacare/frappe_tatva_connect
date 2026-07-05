@@ -65,7 +65,6 @@ class WATINotification(WhatsAppNotification):
 				"to": data.get("to"),
 				"message_type": "Template",
 				"message_id": message_id,
-				"status": "sent",
 				"content_type": self.content_type,
 				"use_template": 1,
 				"template": self.template,
@@ -74,12 +73,7 @@ class WATINotification(WhatsAppNotification):
 			}
 			if doc_data:
 				new_doc.update({"reference_doctype": doc_data.doctype, "reference_name": doc_data.name})
-			# We ALREADY sent above via the adapter; this row only MIRRORS that send. Mark it
-			# ingested so send_outgoing never re-sends — WATI's /sendTemplateMessage returns no
-			# message_id, so the id-based re-send guard alone would fire a duplicate send.
-			mirror = frappe.get_doc(new_doc)
-			mirror.flags.tatva_ingested = True
-			mirror.save(ignore_permissions=True)
+			frappe.get_doc(new_doc).save(ignore_permissions=True)
 
 			# Preserve upstream's set-property-after-alert behaviour.
 			if doc_data and self.set_property_after_alert and self.property_value:
