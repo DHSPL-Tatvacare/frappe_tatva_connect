@@ -36,7 +36,7 @@ GRAINS = [
 	_g("GoodFlip Care", "Anaya", "Tukavo"),
 	_g("TatvaPractice", "India", "FieldSales"),
 	_g("TatvaPractice", "India", "InsideSales"),
-	_g("GoodFlip", "B2C", "InsideSales"),
+	_g("GoodFlip", "India", "InsideSales"),
 ]
 
 WILDCARD = _g("", "", "")  # blank axes = universal (visible to everyone) — for over-show checks
