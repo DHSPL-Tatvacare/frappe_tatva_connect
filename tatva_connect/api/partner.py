@@ -58,6 +58,9 @@ from tatva_connect.api._base import (
 # treated as a parent (CRM Lead) field.
 # ---------------------------------------------------------------------------
 _CATALOG_CACHE_KEY = "tatva_connect:lead_api_catalog"
+# Backstop TTL: the Partner::Catalog::cache toggle evicts instantly on edit when ON; this bounds
+# staleness to 60 min even if that hook never fires (toggle off, or a missed event) — self-heals.
+_CATALOG_CACHE_TTL_SEC = 60 * 60
 PARENT_SECTION = "lead"
 
 
@@ -108,7 +111,7 @@ def _catalog():
 	cached = frappe.cache().get_value(_CATALOG_CACHE_KEY)
 	if cached is None:
 		cached = _build_catalog()
-		frappe.cache().set_value(_CATALOG_CACHE_KEY, cached)
+		frappe.cache().set_value(_CATALOG_CACHE_KEY, cached, expires_in_sec=_CATALOG_CACHE_TTL_SEC)
 	return cached
 
 
