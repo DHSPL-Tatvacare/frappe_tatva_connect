@@ -131,3 +131,142 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 		limit=min(cint(page_len) or 20, _CAP),
 		as_list=True,
 	)
+
+
+# --------------------------------------------------------------------------------------------
+# Ingestion + discovery seam (used by the partner API lead_schema AND the CRM Lead before_validate
+# resolver). BOTH ride the SAME master + the SAME grain rule (_grain_filters) as picklist_query
+# above — so the values the API ADVERTISES are exactly the values the resolver ACCEPTS: discovery
+# and ingestion can never drift. Grain is (vertical, group, program); an axis matches the grain
+# value OR is blank/global. These take an already-resolved grain tuple (no entitlement clamp): the
+# callers derive grain from the lead's own stamped routing / the partner's forced mapping, so the
+# grain is trusted server-state, not a client input.
+# --------------------------------------------------------------------------------------------
+def category_of(fieldname):
+	"""The picklist `category` a field reads from: the fieldname minus a leading `custom_`
+	(the convention the seeds + migration.resolve._category use). e.g. custom_nivo_indication
+	-> nivo_indication."""
+	fn = fieldname or ""
+	return fn[len("custom_"):] if fn.startswith("custom_") else fn
+
+
+def allowed_values(category, grain):
+	"""The pickable human values of `category` visible to this grain — the controlled vocabulary
+	a caller may send for a Link -> CRM Picklist Value field. Read-only; same grain rule as the
+	Link query. Returns [value, ...] ordered as the picker shows them."""
+	if not category:
+		return []
+	conds = {"category": category}
+	conds.update(_grain_filters(grain))
+	rows = frappe.get_all(
+		"CRM Picklist Value", filters=conds, fields=["value"], order_by="position asc, value asc"
+	)
+	# de-dupe (a grain-specific + a global row can share a value) preserving order
+	seen, out = set(), []
+	for r in rows:
+		if r.value not in seen:
+			seen.add(r.value)
+			out.append(r.value)
+	return out
+
+
+def resolve_to_pk(category, value, grain):
+	"""A human `value` -> the CRM Picklist Value composite PK for `category` in this grain, or
+	None if unmatched. The write-side twin of allowed_values (same master, same grain rule). When
+	both a grain-specific and a global row share the value, the grain-specific one wins."""
+	v = (value or "").strip()
+	if not v or not category:
+		return None
+	conds = {"category": category, "value": v}
+	conds.update(_grain_filters(grain))
+	rows = frappe.get_all(
+		"CRM Picklist Value", filters=conds, fields=["name", "vertical", "group", "program"]
+	)
+	if not rows:
+		return None
+	# Prefer the most grain-specific match (fewest blank/wildcard axes) when a grain-scoped and a
+	# global row share the value. (Sorted in Python — Frappe rejects backticks in order_by, and
+	# `group` is a reserved word.)
+	rows.sort(key=lambda r: sum(1 for a in (r.vertical, r.get("group"), r.program) if not a))
+	return rows[0].name
+
+
+# --------------------------------------------------------------------------------------------
+# GENERIC composite-PK Link seam. Every grain-scoped master whose PK is a composite `::` string
+# (so a Link stores the PK, but callers think in the human value) registers ONE resolver + ONE
+# value-lister here. resolve_row_links (ingestion) and the partner lead_schema (discovery) both
+# dispatch through this registry — so adding a master = adding one entry, never a new code path,
+# and discovery/ingestion for that master can't drift. Scope is bounded: only masters actually
+# WRITABLE via ingestion need an entry (today: CRM Picklist Value + CRM Lead Stage; CRM City and
+# the automation masters have no ingestion-writable Link, so they're intentionally absent).
+# --------------------------------------------------------------------------------------------
+def _stage_to_pk(value, grain, fieldname):
+	"""A human stage ('New Lead') -> CRM Lead Stage PK 'program::stage', scoped to the lead's
+	program (grain[2]). Stage names are unique per program, so program+stage is exact. None if no
+	program or unmatched. (Selectability is NOT filtered here — validate_stage enforces that a
+	pickable leaf was chosen; this only translates the value to its ID.)"""
+	program = grain[2] if len(grain) > 2 else ""
+	v = (value or "").strip()
+	if not program or not v:
+		return None
+	return frappe.db.get_value("CRM Lead Stage", {"program": program, "stage": v}, "name")
+
+
+def _stage_values(grain, fieldname):
+	"""The selectable stage values for the lead's program — the controlled vocabulary a caller may
+	send for a CRM Lead Stage Link."""
+	program = grain[2] if len(grain) > 2 else ""
+	if not program:
+		return []
+	rows = frappe.get_all(
+		"CRM Lead Stage", filters={"program": program, "selectable": 1},
+		fields=["stage"], order_by="position asc, stage asc",
+	)
+	return [r.stage for r in rows]
+
+
+# master doctype -> (resolve value->PK, list allowed values). fieldname is passed so a resolver can
+# derive per-field context (picklist category); grain is (vertical, group, program).
+_COMPOSITE_PK_MASTERS = {
+	"CRM Picklist Value": (
+		lambda value, grain, fieldname: resolve_to_pk(category_of(fieldname), value, grain),
+		lambda grain, fieldname: allowed_values(category_of(fieldname), grain),
+	),
+	"CRM Lead Stage": (_stage_to_pk, _stage_values),
+}
+
+
+def values_for(master, grain, fieldname):
+	"""Discovery: the human values a caller may send for a Link at `master`, grain-scoped. [] for a
+	master with no registered vocabulary (so callers can loop over every Link field blindly)."""
+	entry = _COMPOSITE_PK_MASTERS.get(master)
+	return entry[1](grain, fieldname) if entry else []
+
+
+def resolve_row_links(doctype, row, grain):
+	"""Return a copy of `row` (a fieldname->value dict) with every Link at a GRAIN-SCOPED COMPOSITE-PK
+	master (registry above) translated from its human value to the composite PK. This is the INGESTION
+	seam: the partner API and the intake fold both call it (via _upsert_one) BEFORE building the doc —
+	resolution must happen here, not in a doc_event, because Frappe runs _validate_links() BEFORE any
+	before_validate hook on insert/save. Mirrors migration.resolve.resolve_links — the one rule.
+
+	  * a value already a valid PK is kept (idempotent — the Desk UI / a re-send stores PKs);
+	  * an unmatched value is DROPPED (omitted) + logged, never written as an invalid Link (so one
+	    bad value can't 500 the whole create — same fail-open-on-that-field policy as migration);
+	  * Links at a non-registered master, non-strings, and blanks pass through unchanged."""
+	meta = frappe.get_meta(doctype)
+	out = {}
+	for fn, val in row.items():
+		f = meta.get_field(fn)
+		entry = _COMPOSITE_PK_MASTERS.get(f.options) if (f and f.fieldtype == "Link") else None
+		if not entry or not isinstance(val, str) or not val.strip() or frappe.db.exists(f.options, val):
+			out[fn] = val  # pass through (non-composite-PK Link / blank / already a PK)
+			continue
+		pk = entry[0](val, grain, fn)
+		if pk:
+			out[fn] = pk
+		else:
+			frappe.logger("tatva_picklist").info(
+				f"dropped unmatched {f.options} {doctype}.{fn}={val!r} for grain {grain}"
+			)  # omit -> the field is left unset rather than an invalid Link
+	return out

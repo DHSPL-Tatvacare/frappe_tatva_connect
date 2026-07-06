@@ -281,6 +281,24 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 	return parent, children
 
 
+def _resolve_picklists(parent, children, grain):
+	"""Translate human picklist VALUES -> grain-scoped composite PKs on the collected parent + child
+	dicts BEFORE they reach the doc. This is the ONE correct place: Frappe runs _validate_links()
+	before any before_validate hook on insert/save, so a doc_event can't fix a Link — the ingestion
+	path must resolve first. Rides the SAME taxonomy.picklist brain the lead_schema discovery
+	advertises, so what a partner is TOLD they may send is exactly what is ACCEPTED. Shared by
+	create + update."""
+	from tatva_connect.taxonomy import picklist
+
+	cm = frappe.get_meta("CRM Lead")
+	parent = picklist.resolve_row_links("CRM Lead", parent, grain)
+	children = {
+		cf: [picklist.resolve_row_links(cm.get_field(cf).options, r, grain) for r in rows]
+		for cf, rows in children.items()
+	}
+	return parent, children
+
+
 def _child_error(message, field):
 	"""Raise a ValidationError that carries the offending field so the unified error
 	contract can emit `error.fields` (frappe.throw alone only carries a message)."""
@@ -431,6 +449,11 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 
 	anchor_vertical = mp.vertical if mp else item.get("custom_vertical")
 	anchor_group = mp.crm_group if mp else item.get("custom_group")
+	# Resolve human picklist VALUES -> grain composite PKs now the grain is known, before the doc
+	# is built (Frappe validates Links before any hook). Covers the partner API AND the intake fold.
+	parent, children = _resolve_picklists(
+		parent, children, (anchor_vertical or "", anchor_group or "", program or "")
+	)
 	existing = frappe.db.get_value(
 		"CRM Lead",
 		{"mobile_no": mobile, "custom_vertical": anchor_vertical, "custom_group": anchor_group},
@@ -471,6 +494,12 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
 	if mp and (doc.custom_vertical != mp.vertical or doc.custom_group != mp.crm_group):
 		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
+	grain = (
+		(mp.vertical if mp else doc.custom_vertical) or "",
+		(mp.crm_group if mp else doc.custom_group) or "",
+		(doc.custom_current_program or ""),
+	)
+	parent, children = _resolve_picklists(parent, children, grain)
 	doc.update(parent)
 	_apply_children(doc, children)
 	if mp:
@@ -513,11 +542,23 @@ def lead_schema(**kwargs):
 			f = m.get_field(fn)
 			if not f:
 				continue
-			out.append({
+			entry = {
 				"fieldname": fn, "label": f.label, "type": f.fieldtype,
 				"required": required_override.get(fn, bool(f.reqd)),
 				"options": (f.options or None) if f.fieldtype in ("Link", "Select") else None,
-			})
+			}
+			# Controlled vocabulary for any grain-scoped composite-PK Link (picklist, stage, ...):
+			# advertise the exact human values this caller may send — the SAME registry the ingestion
+			# resolver (taxonomy.picklist.resolve_row_links) dispatches through, so discovery ==
+			# ingestion, always. Only when the grain is fixed (a partner mapping); a trusted caller
+			# supplies its own grain, so there's no single value list.
+			if mp and f.fieldtype == "Link":
+				from tatva_connect.taxonomy import picklist
+
+				vals = picklist.values_for(f.options, (mp.vertical, mp.crm_group, mp.program or ""), fn)
+				if vals:
+					entry["allowed_values"] = vals
+			out.append(entry)
 		return out
 
 	cat = _catalog()

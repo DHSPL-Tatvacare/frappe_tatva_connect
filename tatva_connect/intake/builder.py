@@ -122,7 +122,24 @@ def _docfields(cfg) -> list[dict]:
 			"hidden": 1,
 			"read_only": 1,
 			"default": cfg.name,
-		}
+		},
+		# Result back-links (read-only, stamped by the fold): the CRM Lead this submission
+		# produced + a processed flag. Not web-form fields (only _row_fields/mappings render
+		# there) — so the rep can trace a submission to its lead, and re-runs are visible.
+		{
+			"fieldname": "lead",
+			"label": "Lead",
+			"fieldtype": "Link",
+			"options": "CRM Lead",
+			"read_only": 1,
+		},
+		{
+			"fieldname": "processed",
+			"label": "Processed",
+			"fieldtype": "Check",
+			"read_only": 1,
+			"default": 0,
+		},
 	]
 	for r in _row_fields(cfg):
 		if r["fieldtype"] in _LAYOUT_FIELDTYPES:

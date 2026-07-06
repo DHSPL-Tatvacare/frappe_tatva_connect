@@ -132,9 +132,8 @@ def _fold_submission_to_lead(doc, cfg):
 	# Provenance (latest-source-wins): stamp which intake form sourced this lead. Sent on
 	# every upsert; the brain's doc.update(parent) applies it on update too — so the lead
 	# always reflects its most recent source (see Phase 0 §provenance decision).
-	if cfg.get("custom_origin_vertical"):
-		item["custom_origin_vertical"] = cfg.get("custom_origin_vertical")
-		parent_fields.append("custom_origin_vertical")
+	# (custom_origin_vertical lives on CRM Lead and is set from the forced grain via routing —
+	# never a form field; a former cfg.get("custom_origin_vertical") read here was dead and removed.)
 	item["custom_source_origin"] = f"Intake form: {cfg.name}"
 	parent_fields.append("custom_source_origin")
 
@@ -198,9 +197,11 @@ def _resolve_value(doc, m):
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
 	if manual and (not picked or picked == "Others" or picked == "Other"):
 		if m.master_doctype:
-			# The display field the value lands in is the mapping's target_field
-			# (e.g. care / doctor_name). Read from the structured target.
-			display_field = (m.target_field or "").strip() or None
+			# Look the master up / create it on the MASTER's OWN title_field (its display column) —
+			# NOT the mapping's target_field, which is the CHILD-PROFILE column and can differ
+			# (CRM Doctor.doctor_name vs the care profile's custom_doctor_name). The caller
+			# (_fold_submission_to_lead) writes the returned canonical label to target_field.
+			display_field = frappe.get_meta(m.master_doctype).get("title_field") or "name"
 			canonical = _ensure_master(m.master_doctype, display_field, manual)
 			return canonical or manual
 		return manual
