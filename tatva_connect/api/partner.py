@@ -89,6 +89,12 @@ def _build_catalog():
 		# legacy partner-only rows stay.
 		if r.sql_source in ("task", "payload"):
 			continue
+		# Grain routing fields (source / vertical / group / program) are FORCED from entitlement,
+		# never partner-suppliable (see ROUTING_FIELDS). They ARE Smart-View catalog rows (so the
+		# composer can filter/column by Product Line / Group / Program) but must never enter a
+		# partner's writable lead_schema — skip them here. The Smart View path reads them directly.
+		if r.fieldname in ROUTING_FIELDS:
+			continue
 		keys.append(r.field_key)
 		section = r.section_key
 		section_doctype[section] = r.target_doctype
@@ -122,7 +128,9 @@ def clear_catalog_cache(doc=None, method=None):
 		return
 	frappe.cache().delete_value(_CATALOG_CACHE_KEY)
 
-# Forced for partners, accepted from a trusted System Manager. Never a catalog field.
+# Forced from entitlement for partners, accepted from a trusted System Manager. Never a
+# partner-WRITABLE field — _build_catalog skips these so they can be Smart-View catalog rows
+# (read/filter/column on Product Line / Group / Program) without entering a partner's lead_schema.
 ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_program")
 
 # All numeric caps (bulk size, list page sizes) live on the CRM Partner API Settings

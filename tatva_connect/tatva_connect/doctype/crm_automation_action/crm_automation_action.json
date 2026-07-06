@@ -81,6 +81,7 @@
    "description": "The literal value to write.",
    "fieldname": "value",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Value"
   },
   {
@@ -96,7 +97,6 @@
    "description": "CRM Lead child-table fieldname to write into, e.g. custom_lab_profile.",
    "fieldname": "child_table",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Child Table"
   },
   {
