@@ -55,6 +55,16 @@ def _descriptor(key, label, fieldtype, raw_options):
 	}
 
 
+_STRUCTURAL_FIELDTYPES = ("Column Break", "Section Break", "HTML", "Button", "Fold")
+
+
+def _meta_fields(doctype):
+	"""THE meta-walking brain: real, non-structural fields of a doctype's meta, in form order. Every
+	describe resolver that reads a DocType meta (Field-Changed vocabulary, the v2 typed catalog) walks
+	through here - one reader, no parallel `frappe.get_meta` loop (A.8)."""
+	return [df for df in frappe.get_meta(doctype).fields if df.fieldtype not in _STRUCTURAL_FIELDTYPES]
+
+
 def fields_for_task_type(task_type):
 	"""THE resolver for 'what fields does this task type's activity form have'. Used by both the
 	describe endpoint and the rule controller's validation - one brain, no parallel query."""
@@ -79,12 +89,50 @@ def fields_for_doctype(doctype):
 	genuine sources, one describe contract so the builder + validator + dispatcher never drift."""
 	if not doctype:
 		return []
-	meta = frappe.get_meta(doctype)
+	return [_descriptor(df.fieldname, df.label, df.fieldtype, df.options) for df in _meta_fields(doctype)]
+
+
+def _pick_for(fieldtype, raw_options):
+	"""The typed pick-source for a v2 catalog entry: Link -> its target doctype; Select -> its option
+	lines; else None (plain typed field, no picker)."""
+	if fieldtype == "Link":
+		target = (raw_options or "").strip()
+		return {"kind": "link", "target": target} if target else None
+	if fieldtype == "Select":
+		options = [o.strip() for o in (raw_options or "").split("\n") if o.strip()]
+		return {"kind": "select", "options": options} if options else None
+	return None
+
+
+def field_catalog(doctype):
+	"""The v2 predicate builder's typed, pick-aware field catalog: every real field of `doctype`,
+	plus one level of child-table fields under a dotted `table.field` key - so the builder renders a
+	real control (Link search / Select options) instead of free text, and the server can re-validate
+	off the same catalog. Shares `_meta_fields` (the one meta-walking brain) with fields_for_doctype;
+	recursion is capped at one level - a nested Table field is listed but not walked into, so a
+	Table-in-Table can never loop."""
+	if not doctype:
+		return []
 	out = []
-	for df in meta.fields:
-		if df.fieldtype in ("Column Break", "Section Break", "HTML", "Button", "Fold"):
+	for df in _meta_fields(doctype):
+		if df.fieldtype == "Table":
+			for cf in _meta_fields(df.options) if df.options else []:
+				if cf.fieldtype == "Table":
+					continue
+				path = f"{df.fieldname}.{cf.fieldname}"
+				out.append({
+					"key": path,
+					"label": cf.label or cf.fieldname,
+					"type": cf.fieldtype,
+					"pick": {"kind": "child", "path": path},
+				})
 			continue
-		out.append(_descriptor(df.fieldname, df.label, df.fieldtype, df.options))
+		out.append({
+			"key": df.fieldname,
+			"label": df.label or df.fieldname,
+			"type": df.fieldtype,
+			"pick": _pick_for(df.fieldtype, df.options),
+		})
 	return out
 
 
