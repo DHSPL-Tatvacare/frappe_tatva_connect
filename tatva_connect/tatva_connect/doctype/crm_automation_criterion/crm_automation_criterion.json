@@ -5,40 +5,50 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": [
-  "field",
-  "operator",
-  "value"
- ],
- "fields": [
-  {
-   "columns": 3,
-   "description": "Activity-form field to test. Options are filled in from the chosen task type's schema by the builder.",
-   "fieldname": "field",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Field",
-   "reqd": 1
-  },
-  {
-   "columns": 3,
-   "description": "Comparison operator (Frappe native filter set). ALL criteria on a rule must match.",
-   "fieldname": "operator",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Operator",
-   "options": "=\n!=\n<\n>\n<=\n>=\nlike\nnot like\nin\nnot in\nis set\nis unset\nbetween",
-   "reqd": 1
-  },
-  {
-   "columns": 3,
-   "description": "The value to compare against. Blank for the is set / is unset operators.",
-   "fieldname": "value",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Value"
-  }
- ],
+  "field_order": [
+   "field",
+   "operator",
+   "from_value",
+   "value"
+  ],
+  "fields": [
+   {
+    "columns": 3,
+    "description": "The on_doctype's field to test. Options are filled in from the typed field catalog by the builder.",
+    "fieldname": "field",
+    "fieldtype": "Select",
+    "in_list_view": 1,
+    "label": "Field",
+    "reqd": 1
+   },
+   {
+    "columns": 2,
+    "description": "Comparison operator — the frozen v2 word-operator set. The two `changed…` operators are valid only when the rule's event is Updated.",
+    "fieldname": "operator",
+    "fieldtype": "Select",
+    "in_list_view": 1,
+    "label": "Operator",
+    "options": "is\nis not\ngreater than\nless than\nat least\nat most\nis one of\nis not one of\ncontains\ndoes not contain\nis set\nis not set\nis between\nchanged to\nchanged from…to",
+    "reqd": 1
+   },
+   {
+    "columns": 3,
+    "depends_on": "eval:doc.operator==\"changed from…to\"",
+    "description": "Old value required for the transition to match (paired with Value as the new value). Only valid when the rule's event is Updated.",
+    "fieldname": "from_value",
+    "fieldtype": "Data",
+    "in_list_view": 1,
+    "label": "From Value"
+   },
+   {
+    "columns": 3,
+    "description": "The value to compare against (the NEW value for `changed to` / `changed from…to`). Blank for the is set / is not set operators.",
+    "fieldname": "value",
+    "fieldtype": "Data",
+    "in_list_view": 1,
+    "label": "Value"
+   }
+  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,

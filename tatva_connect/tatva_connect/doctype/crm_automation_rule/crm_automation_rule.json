@@ -7,14 +7,14 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": [
-  "rule_name",
-  "enabled",
-  "priority",
-  "trigger_section",
-  "trigger_type",
-  "task_type",
-  "when_section",
+  "field_order": [
+   "rule_name",
+   "enabled",
+   "priority",
+   "trigger_section",
+   "on_doctype",
+   "event",
+   "when_section",
   "vertical",
   "group",
   "program",
@@ -54,22 +54,22 @@
    "label": "Trigger"
   },
   {
-   "default": "Task Completed",
-   "description": "The event that fires this rule. v1: a CRM Task marked Done.",
-   "fieldname": "trigger_type",
-   "fieldtype": "Select",
+   "description": "The doctype this rule triggers on. Rule-derived activation: a doctype is 'live' for automation only if an enabled rule names it. v1 (Task 1): CRM Lead or CRM Task - both are grain-resolvable subjects.",
+   "fieldname": "on_doctype",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Trigger Type",
-   "options": "Task Completed",
+   "label": "On DocType",
+   "options": "DocType",
    "reqd": 1
   },
   {
-   "description": "The activity type whose completion fires this rule. Must exist as a CRM Task Type.",
-   "fieldname": "task_type",
-   "fieldtype": "Link",
+   "default": "Updated",
+   "description": "The lifecycle event that fires this rule. Created has no before-state (change operators invalid). Updated carries {field}__before for every criteria-referenced field. Deleted fires from on_trash, before the row is removed.",
+   "fieldname": "event",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Task Type",
-   "options": "CRM Task Type",
+   "label": "Event",
+   "options": "Created\nUpdated\nDeleted",
    "reqd": 1
   },
   {
@@ -99,7 +99,7 @@
    "options": "CRM Program"
   },
   {
-   "description": "Structured conditions on the completed task's activity context — ALL must match. No rows = the rule matches on grain + trigger alone.",
+   "description": "Structured conditions on the trigger's context — ALL must match. No rows = grain + trigger alone.",
    "fieldname": "criteria",
    "fieldtype": "Table",
    "label": "Criteria",
