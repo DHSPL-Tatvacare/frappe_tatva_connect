@@ -6,15 +6,14 @@ ALL-MATCH — every rule whose specified axes equal the lead's, NOT resolve_scop
 and whether a rule's criteria all match the trigger context. No side effects, no saves.
 
 One brain: grain axes are read through the same accessor the activity engine uses
-(activity.api._lead_axes); criteria reuse Frappe's native filter comparator (frappe.utils.data.compare)
-so authoring matches list-view operator semantics. Nothing here is reimplemented.
+(activity.api._lead_axes). Criteria cast through the ONE shared typed caster (`_cast`, built on
+`frappe.utils.cast` - Date->getdate, Datetime->get_datetime, Float/Currency->flt, Int->cint, else
+str) - every operator family (equality, ordering, membership, between, the change operators) routes
+through it. No second casting path (A.8).
 """
-import frappe
-from frappe.utils import compare
+import operator as _operator
 
-# Operators the native comparator handles directly (left op right). The list operators and the
-# presence/range operators are handled locally below (they shape their operands first).
-_NATIVE_OPS = {"=", "!=", "<", ">", "<=", ">=", "like", "not like"}
+import frappe
 
 
 def grain_matches(row, vertical, group, program):
@@ -97,46 +96,47 @@ def criteria_match(criteria, context, field_types=None):
 	return True
 
 
+# The frozen v2 word-operator set (plan Part A), grouped by family so `_one_match` dispatches with a
+# handful of dict lookups instead of a long if/elif ladder (A.12). Each family's compare logic lives
+# in its own small helper below, all routed through the ONE shared caster `_cast` (A.8).
+_EQUALITY_OPS = {"is": True, "is not": False}
+_ORDER_OPS = {
+	"greater than": _operator.gt,
+	"less than": _operator.lt,
+	"at least": _operator.ge,
+	"at most": _operator.le,
+}
+_MEMBERSHIP_OPS = {"is one of": True, "is not one of": False}
+_TEXT_OPS = {"contains": True, "does not contain": False}
+_PRESENCE_OPS = {"is set": True, "is not set": False}
+_CHANGE_OPS = {"changed to", "changed from…to"}
+
+
 def _one_match(c, context, ftype=None):
-	"""Evaluate a single criterion against the context, type-aware (frappe casts both sides by the
-	field's type: Datetime->get_datetime, Check->cint, numeric->flt) so a raw datetime/int from the
-	activity form matches the typed criterion instead of silently failing. `changed_from_to` reads
-	the watched field's `__before` context key (populated only by the Field-Changed dispatcher) -
-	a missing `__before` is a non-match, not a raise (fail-soft parity with the other operators)."""
+	"""Evaluate a single criterion against the context, type-aware (every comparison casts through
+	`_cast`/`_eq_typed` by the field's type, so a raw datetime/int from the trigger matches the typed
+	criterion instead of silently failing). The two `changed…` operators read the watched field's
+	`__before` context key (populated only on event=Updated) - a missing `__before` is a non-match,
+	not a raise (fail-soft parity with every other operator). A comparison BUG (not a missing key) is
+	logged (countable) then treated as a non-match - it must never masquerade as a clean pass."""
 	left = context.get(c.field)
 	op = c.operator
-	if op == "is set":
-		return left not in (None, "")
-	if op == "is unset":
-		return left in (None, "")
-	if op == "changed_from_to":
-		# Only the Field-Changed dispatcher populates `{field}__before`. A MISSING key (a stale
-		# context, a Task-Completed fire, a direct call) is a clean non-match - never a raise.
-		# A key PRESENT with a None value is a legitimate blank->value transition - cast and compare.
-		before_key = f"{c.field}__before"
-		if before_key not in context:
-			return False
-		before = context.get(before_key)
-		try:
-			return _eq_typed(before, c.from_value, ftype) and _eq_typed(left, c.value, ftype)
-		except Exception as e:
-			frappe.log_error(
-				title="automation: changed_from_to eval failed",
-				message=f"field={c.field} :: {e}",
-			)
-			return False
 	try:
-		if op in ("in", "not in"):
-			items = [v.strip() for v in str(c.value or "").split(",")]
-			return compare(str(left or ""), op, items)
-		if op == "between":
-			lo, hi = ([*str(c.value or "").split(","), "", ""])[:2]
-			return _between(left, lo.strip(), hi.strip(), ftype)
-		if op in _NATIVE_OPS:
-			return compare(left, op, c.value, ftype)
+		if op in _PRESENCE_OPS:
+			return (left not in (None, "")) == _PRESENCE_OPS[op]
+		if op in _EQUALITY_OPS:
+			return _eq_typed(left, c.value, ftype) == _EQUALITY_OPS[op]
+		if op in _ORDER_OPS:
+			return _ordered(left, c.value, ftype, _ORDER_OPS[op])
+		if op in _MEMBERSHIP_OPS:
+			return _in_list(left, c.value, ftype) == _MEMBERSHIP_OPS[op]
+		if op in _TEXT_OPS:
+			return _contains(left, c.value) == _TEXT_OPS[op]
+		if op == "is between":
+			return _between(left, c.from_value, c.value, ftype)
+		if op in _CHANGE_OPS:
+			return _changed_match(op, c, context, left, ftype)
 	except Exception as e:
-		# A comparison BUG must not masquerade as a clean non-match (which would silently kill the
-		# rule with no trace). Log it (countable), then treat as non-match.
 		frappe.log_error(
 			title="automation: criterion eval failed",
 			message=f"field={c.field} op={op} :: {e}",
@@ -145,31 +145,75 @@ def _one_match(c, context, ftype=None):
 	return False
 
 
+def _cast(value, ftype):
+	"""The ONE typed caster every operator family routes through (Date->getdate, Datetime->
+	get_datetime, Float/Currency->flt, Int->cint, else str - frappe.utils.cast). An uncastable value
+	falls back to itself unchanged so the caller's own comparison decides the (fail-soft) verdict."""
+	if not ftype:
+		return value
+	try:
+		return frappe.utils.cast(ftype, value)
+	except Exception:  # nosec B110 - fall through to an unconverted compare rather than raise
+		return value
+
+
 def _eq_typed(left, right, ftype=None):
-	"""Type-aware equality for `changed_from_to` - casts both sides by the watched field's type so
-	a stored Date matches a date literal and 7=='7'==7.0. Reuses frappe.utils.cast, the same cast
-	the _diff_watched_fields comparator in watch.py uses, so before/after semantics never drift."""
+	"""Type-aware equality - the shared comparator for `is`/`is not`, membership, and the change
+	operators. Casts both sides via `_cast` so a stored Date matches a date literal and 7=='7'==7.0."""
 	if ftype:
-		try:
-			return frappe.utils.cast(ftype, left) == frappe.utils.cast(ftype, right)
-		except Exception:  # nosec B110 - an uncastable value falls through to None-safe equality
-			pass
+		return _cast(left, ftype) == _cast(right, ftype)
 	return (left if left is not None else "") == (right if right is not None else "")
 
 
-def _between(left, lo, hi, ftype=None):
-	"""Inclusive range. Dates/datetimes are cast via get_datetime (a date literal vs a stored datetime
-	would otherwise float()-fail then compare lexically); numbers via float; else string."""
+def _ordered(left, right, ftype, fn):
+	"""`greater than`/`less than`/`at least`/`at most` - both sides cast via the shared `_cast`, then
+	compared with the family's operator function. A blank operand or an incomparable cast (e.g. a
+	string that didn't cast to a date) is a non-match, never a raise."""
+	if left in (None, "") or right in (None, ""):
+		return False
+	try:
+		return fn(_cast(left, ftype), _cast(right, ftype))
+	except TypeError:
+		return False
+
+
+def _split_list(value):
+	"""`is one of`/`is not one of` operand shaping - comma OR newline separated, blank items dropped."""
+	return [v.strip() for v in str(value or "").replace("\n", ",").split(",") if v.strip()]
+
+
+def _in_list(left, value, ftype):
+	"""Membership via the shared `_eq_typed` per item - one cast path, no parallel list-compare."""
 	if left in (None, ""):
 		return False
-	if ftype in ("Datetime", "Date"):
-		from frappe.utils import get_datetime
+	return any(_eq_typed(left, item, ftype) for item in _split_list(value))
 
-		try:
-			return get_datetime(lo) <= get_datetime(left) <= get_datetime(hi)
-		except Exception:
-			return False
+
+def _contains(left, value):
+	"""`contains`/`does not contain` - case-insensitive substring on text; no type cast (text fields
+	only per Part A)."""
+	return str(value or "").lower() in str(left or "").lower()
+
+
+def _between(left, lo, hi, ftype=None):
+	"""`is between` - inclusive range, both bounds cast via the shared `_cast` (Date/Datetime/numeric)."""
+	if left in (None, "") or lo in (None, "") or hi in (None, ""):
+		return False
 	try:
-		return float(lo) <= float(left) <= float(hi)
-	except (ValueError, TypeError):
-		return str(lo) <= str(left) <= str(hi)
+		return _cast(lo, ftype) <= _cast(left, ftype) <= _cast(hi, ftype)
+	except TypeError:
+		return False
+
+
+def _changed_match(op, c, context, left, ftype):
+	"""`changed to` / `changed from…to` - both read the watched field's `__before` context key,
+	populated only on event=Updated. A MISSING key (Created fire, stale/direct call) is a clean
+	non-match, never a raise. `changed to` additionally requires the value actually moved (before !=
+	after) so a same-value re-save doesn't falsely fire."""
+	before_key = f"{c.field}__before"
+	if before_key not in context:
+		return False
+	before = context.get(before_key)
+	if op == "changed to":
+		return not _eq_typed(before, left, ftype) and _eq_typed(left, c.value, ftype)
+	return _eq_typed(before, c.from_value, ftype) and _eq_typed(left, c.value, ftype)

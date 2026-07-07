@@ -32,27 +32,30 @@ def _criterion(field, operator, from_value=None, value=None):
 
 
 class TestChangedFromToEvaluator(FrappeTestCase):
-	"""The evaluator (rules._one_match). Fail-soft parity: a missing `__before` is a non-match, not a raise."""
+	"""The evaluator (rules._one_match). Fail-soft parity: a missing `__before` is a non-match, not a raise.
+
+	TATVA v2 (Task 3): the operator string is the frozen word operator "changed from…to" - Task 1
+	already renamed it in the criterion doctype's `operator` options (no symbol left to accept, A.8)."""
 
 	# (a) a clean A->B transition matches from_value=A, value=B.
 	def test_match_on_clean_transition(self):
 		ctx = {"stage": "B", "stage__before": "A"}
-		self.assertTrue(rules._one_match(_criterion("stage", "changed_from_to", "A", "B"), ctx, "Select"))
+		self.assertTrue(rules._one_match(_criterion("stage", "changed from…to", "A", "B"), ctx, "Select"))
 
 	# (b) from_value mismatch -> non-match.
 	def test_no_match_when_from_value_wrong(self):
 		ctx = {"stage": "B", "stage__before": "A"}
-		self.assertFalse(rules._one_match(_criterion("stage", "changed_from_to", "X", "B"), ctx, "Select"))
+		self.assertFalse(rules._one_match(_criterion("stage", "changed from…to", "X", "B"), ctx, "Select"))
 
 	# (c) value (new) mismatch -> non-match.
 	def test_no_match_when_new_value_wrong(self):
 		ctx = {"stage": "B", "stage__before": "A"}
-		self.assertFalse(rules._one_match(_criterion("stage", "changed_from_to", "A", "Y"), ctx, "Select"))
+		self.assertFalse(rules._one_match(_criterion("stage", "changed from…to", "A", "Y"), ctx, "Select"))
 
 	# (d) missing `__before` key -> non-match, NO raise (fail-soft parity with the existing operators).
 	def test_missing_before_key_is_non_match_not_raise(self):
 		ctx = {"stage": "B"}  # no stage__before
-		self.assertFalse(rules._one_match(_criterion("stage", "changed_from_to", "A", "B"), ctx, "Select"))
+		self.assertFalse(rules._one_match(_criterion("stage", "changed from…to", "A", "B"), ctx, "Select"))
 
 
 class TestChangedFromToAuthoring(FrappeTestCase):
