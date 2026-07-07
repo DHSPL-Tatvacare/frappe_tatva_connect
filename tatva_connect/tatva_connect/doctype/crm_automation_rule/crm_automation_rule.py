@@ -270,6 +270,20 @@ class CRMAutomationRule(Document):
 			if not frappe.db.exists("Webhook", a.webhook_endpoint):
 				frappe.throw(_("Webhook endpoint {0} does not exist.").format(frappe.bold(a.webhook_endpoint)), title=_("Unknown endpoint"))
 
+	def on_change(self):
+		"""TATVA v2 (Task 4): the wildcard router's `live_doctypes()` guard set is derived from every
+		ENABLED rule's on_doctype and cached - the ONE clear point, so an enable/disable/on_doctype
+		edit takes effect at once (no per-doctype hook to keep in sync, A.8)."""
+		from tatva_connect.automation import router
+
+		router.clear_live_doctypes_cache()
+
+	def on_trash(self):
+		"""Same cache-clear as on_change - a deleted rule must drop out of live_doctypes() too."""
+		from tatva_connect.automation import router
+
+		router.clear_live_doctypes_cache()
+
 def _parse_json(raw, label):
 	"""Parse a child-row JSON map; throw a clear authoring error if it's not a JSON object."""
 	if not (raw or "").strip():

@@ -96,12 +96,6 @@ doc_events = {
 			# mirror the latest lab row's headline metrics up to the core Lead fields
 			"tatva_connect.lead.leads.sync_headline_metrics",
 		],
-		# Automation engine (Field-Changed trigger): on any watched-field change, enqueue (after commit)
-		# every matching enabled Field-Changed rule (gated, fail-closed, non-re-entrant). Same backbone
-		# as the Task-Completed trigger; Frappe concatenates the list - both fire independently.
-		"on_update": [
-			"tatva_connect.automation.watch.fire_field_change_rules",
-		],
 	},
 	"CRM Task": {
 		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
@@ -112,12 +106,9 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
-		# Automation engine (Task-Completed trigger): on the first Done flip of a lead-linked task, enqueue (after commit) every matching enabled rule (gated, fail-closed, non-re-entrant).
-		# Automation engine (Field-Changed trigger): on any watched-field change on a Task, enqueue (after commit) every matching enabled Field-Changed rule (same backbone).
 		# Metrics rollup: recompute the lead's count for this task's type (absolute, self-healing, gated, injection-safe).
+		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
 		"on_update": [
-			"tatva_connect.automation.dispatcher.fire_rules",
-			"tatva_connect.automation.watch.fire_field_change_rules",
 			"tatva_connect.tasks.metrics.refresh_for_lead",
 		],
 		"on_submit": [
@@ -145,8 +136,15 @@ doc_events = {
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
+	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
 	"*": {
-		"after_insert": "tatva_connect.intake.intake.route_submission",
+		"after_insert": [
+			"tatva_connect.intake.intake.route_submission",
+			"tatva_connect.automation.router.on_created",
+		],
+		"on_update": [
+			"tatva_connect.automation.router.on_updated",
+		],
 	},
 	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache on any form add/toggle/remove so it never serves a stale set.
 	"CRM Intake Form": {
