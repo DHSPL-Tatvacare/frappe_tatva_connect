@@ -63,18 +63,21 @@ def _file_view(doc):
 
 
 def _resolve_target(data, lead_name):
-	"""(attached_to_doctype, attached_to_name) for an attach. Defaults to the lead; if an
-	`activity` (CRM Task name) is given, attach to that task — but ONLY after scope-checking
-	the task actually belongs to THIS lead (else the same generic not-found, no probing)."""
-	activity = data.get("activity")
-	if not activity:
-		return "CRM Lead", lead_name
-	ref = frappe.db.get_value(
-		"CRM Task", activity, ["reference_doctype", "reference_docname"], as_dict=True
-	)
-	if not ref or ref.reference_doctype != "CRM Lead" or ref.reference_docname != lead_name:
-		frappe.throw(_("Activity not found"), frappe.DoesNotExistError)
-	return "CRM Task", activity
+	"""(attached_to_doctype, attached_to_name) for an attach. Defaults to the lead. `activity` (a CRM
+	Task name) homes the file on that task; `note` (an FCRM Note name) homes it on that note — each ONLY
+	after scope-checking the record belongs to THIS lead (else the same generic not-found, no probing).
+	This is how a note's attachment lands on the note and an activity's document lands on its task."""
+	for key, doctype in (("activity", "CRM Task"), ("note", "FCRM Note")):
+		name = data.get(key)
+		if not name:
+			continue
+		ref = frappe.db.get_value(
+			doctype, name, ["reference_doctype", "reference_docname"], as_dict=True
+		)
+		if not ref or ref.reference_doctype != "CRM Lead" or ref.reference_docname != lead_name:
+			frappe.throw(_("{0} not found").format(doctype), frappe.DoesNotExistError)
+		return doctype, name
+	return "CRM Lead", lead_name
 
 
 def _load_bytes(data):
