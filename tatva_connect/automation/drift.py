@@ -50,10 +50,8 @@ def assert_registered():
 	Two checks:
 	1. Every dotted path wired in hooks.doc_events + scheduler_events MUST be covered by a
 	   registry `backs` entry (a handler added to hooks without a registry row fails migrate).
-	2. Every SUBJECT doctype (automation.subjects.SUBJECTS) MUST have a
-	   hooks.doc_events[doctype]["on_update"] entry containing
-	   `tatva_connect.automation.watch.fire_field_change_rules` - so a watchable doctype can never
-	   be left without its dispatch hook (a rule would silently never fire).
+	2. The wildcard automation router (`router.on_created`/`on_updated`) MUST be wired on
+	   `hooks.doc_events["*"]` for after_insert/on_update - see `_assert_router_wired`.
 
 	Walks ONLY doc_events + scheduler_events - override_whitelisted_methods,
 	override_doctype_class, permission_query_conditions, has_permission, after_migrate
@@ -67,23 +65,27 @@ def assert_registered():
 				f"CRM Tatva Automation registry row. Add a `backs` entry in "
 				f"tatva_connect/automation/registry.py."
 			)
-	_assert_subjects_hooked()
+	_assert_router_wired()
 
 
-def _assert_subjects_hooked():
-	"""Every SUBJECT doctype MUST be wired with the Field-Changed dispatch hook in hooks.py - else a
-	rule watching it would silently never fire. SUBJECTS (automation.subjects) is the source of truth
-	for which doctypes participate; a can_watch allowlist row must name a subject (its own validate),
-	so gating on the map, not on table state, is both tighter and DB-independent."""
-	from tatva_connect.automation import subjects
-
-	for dt in subjects.subject_doctypes():
-		handlers = hooks.doc_events.get(dt, {}).get("on_update", [])
-		if isinstance(handlers, str):
-			handlers = [handlers]
-		if "tatva_connect.automation.watch.fire_field_change_rules" not in handlers:
-			frappe.throw(
-				f"Automation drift: subject doctype '{dt}' has no on_update hook for "
-				f"tatva_connect.automation.watch.fire_field_change_rules in hooks.py. Add it to "
-				f"doc_events[\"{dt}\"][\"on_update\"] or remove it from automation.subjects.SUBJECTS."
-			)
+def _assert_router_wired():
+	"""TATVA v2 (Task 4): the engine has no per-doctype hook any more - EVERY grain-resolvable
+	subject is covered by the wildcard router (`router.on_created`/`on_updated` on
+	`doc_events["*"]`), and a doctype only fires because an ENABLED rule names it
+	(`router.live_doctypes`, self-healing). So the one thing that can silently break automation for
+	EVERY doctype at once is the wildcard registration itself - assert it directly, rather than
+	per-subject (there is no longer a per-subject hook to check)."""
+	created = hooks.doc_events.get("*", {}).get("after_insert", [])
+	updated = hooks.doc_events.get("*", {}).get("on_update", [])
+	created = [created] if isinstance(created, str) else created
+	updated = [updated] if isinstance(updated, str) else updated
+	if "tatva_connect.automation.router.on_created" not in created:
+		frappe.throw(
+			"Automation drift: the wildcard router's on_created is not wired in "
+			'hooks.doc_events["*"]["after_insert"].'
+		)
+	if "tatva_connect.automation.router.on_updated" not in updated:
+		frappe.throw(
+			"Automation drift: the wildcard router's on_updated is not wired in "
+			'hooks.doc_events["*"]["on_update"].'
+		)

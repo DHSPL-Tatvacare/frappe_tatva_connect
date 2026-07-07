@@ -312,19 +312,20 @@ AUTOMATIONS = [
 	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
-		trigger_detail="CRM Task · on_update (Task-Completed) + CRM Lead/Task · on_update (Field-Changed)",
+		trigger_detail='wildcard "*" · after_insert (Created) + on_update (Updated)',
 		purpose=(
 			"The automation engine: runs every enabled grain-matching rule when its trigger fires. "
-			"Two triggers share one backbone (one toggle, one dispatch executor): Task-Completed fires "
-			"when a lead-linked activity task is first marked Done; Field-Changed fires when a watched "
-			"field on a CRM Lead or CRM Task changes value. Each rule checks its criteria, then fires "
-			"its actions (create a task, set a field, add a comment) in order.\n"
-			"Example: completing a 'First Consult' task whose outcome is 'Enrolled' creates a 'Welcome "
+			"ONE wildcard router (on_doctype x event) replaces the old Task-Completed/Field-Changed "
+			"split - a doctype fires only because an enabled rule names it, no per-doctype code push. "
+			"'Task completed' is now an Updated rule whose criteria include 'status changed to Done'. "
+			"Each rule checks its criteria, then fires its actions (create a task, set a field, add a "
+			"comment) in order.\n"
+			"Example: a Task's status changing to Done with outcome 'Enrolled' creates a 'Welcome "
 			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment."
 		),
 		backs=[
-			"tatva_connect.automation.dispatcher.fire_rules",
-			"tatva_connect.automation.watch.fire_field_change_rules",
+			"tatva_connect.automation.router.on_created",
+			"tatva_connect.automation.router.on_updated",
 		],
 	),
 	Auto(

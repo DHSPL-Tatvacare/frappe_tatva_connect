@@ -1,18 +1,16 @@
-"""The automation engine dispatcher — trigger → (after commit) grain fan-out → guarded executor → run log.
+"""The automation engine's guarded executor — grain-matched rule → per-action run → Run Log.
 
-`fire_rules` is the v1 trigger (CRM Task on_update). It runs in the user's save and does only the
-cheap, must-be-synchronous decision: is this the FIRST Done-flip of a lead-linked task (the
-idempotency guard needs get_doc_before_save, which only exists during the save)? If so it ENQUEUES
-`run_for_task` to run AFTER the task save COMMITS, in its own transaction. So a rule — however
-malformed, slow, or deadlock-prone — can never add latency to, block, or roll back the user's task
-save (spec §5.2). A DB abort in an action rolls back only the background job, never the rep's "Done".
+TATVA v2 (Task 4): the two v1 triggers (`fire_rules` — CRM Task on_update, Task-Completed; and
+`watch.fire_field_change_rules` — CRM Lead/Task on_update, Field-Changed) are RETIRED into the ONE
+wildcard event router (`automation/router.py`, keyed on `(on_doctype, event)`). This module now owns
+only what's downstream of a trigger decision: `_run_rule` (per-rule savepoint executor) and every
+action handler — the router calls `_run_rule` exactly as both old dispatchers did (same guarded
+executor, same Run Log, same allowlist recheck; no parallel brain, A.8).
 
-`run_for_task` rebuilds the activity context (reconstruct_values — one brain), fans out to every
-enabled rule whose grain AND trigger task type match the lead (ALL-MATCH), and runs each matched
-rule's actions in a guarded executor: one action (or rule) failing never blocks siblings; every fire
-writes one Run Log row; every failure also hits the common error factory. Recursion is blocked by a
-request-scoped `frappe.flags.in_automation` set for the whole dispatch. Grain, context, task
-creation, and the allowlist all reuse existing brains — nothing here is reimplemented.
+`_run_rule` runs a matched rule's actions in a guarded executor: one action (or rule) failing never
+blocks siblings; every fire writes one Run Log row; every failure also hits the common error
+factory. The caller (router.run_for_event) sets the request-scoped `frappe.flags.in_automation`
+re-entrancy guard for the whole dispatch.
 """
 import json
 import time
@@ -20,83 +18,11 @@ import time
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.activity.automation import reconstruct_values
 from tatva_connect.automation import fields, rules
 
-KILL_SWITCH = "Task::Automation::rules"
 SWEEP_SWITCH = "Task::Automation::run-log-sweep"
 RUN_LOG = "CRM Automation Run Log"
 DEFAULT_RETENTION_DAYS = 90  # code fallback (no baked form value) — v1 has no operator field.
-
-
-def fire_rules(doc, method=None):
-	"""CRM Task on_update (sync): if this is the first Done-flip of a lead-linked task, enqueue the
-	dispatch to run after the save commits. Dormant + fail-closed, idempotent, non-re-entrant."""
-	if frappe.flags.get("in_automation"):
-		return  # re-entrancy guard (request-scoped): a write the engine made must not re-enter it
-	if not automation.is_enabled(KILL_SWITCH):
-		return
-	if doc.status != "Done":
-		return
-	before = doc.get_doc_before_save()
-	if before and before.status == "Done":
-		return  # already Done before this save — don't re-fire (idempotency)
-	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
-		return
-	frappe.enqueue(
-		"tatva_connect.automation.dispatcher.run_for_task",
-		queue="short",
-		enqueue_after_commit=True,
-		now=bool(frappe.flags.get("in_test")),
-		job_id=f"automation-run-for-task::{doc.name}",
-		deduplicate=True,  # a job already queued/running for this task is not re-queued (no double-fire)
-		task_name=doc.name,
-	)
-
-
-def run_for_task(task_name):
-	"""Background entry (after the task save commits): rebuild context + dispatch, in our own txn.
-	A deadlock/abort here can only roll back THIS job — never the user's already-committed save."""
-	frappe.flags.in_automation = True
-	try:
-		doc = frappe.get_doc("CRM Task", task_name)
-		if doc.status != "Done" or doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
-			return
-		_dispatch(doc)
-	except Exception:
-		frappe.log_error(title="automation: dispatch failed", message=frappe.get_traceback())
-	finally:
-		frappe.flags.in_automation = False
-
-
-def _dispatch(doc):
-	"""Resolve the lead's grain, fan out to matching rules, run each (per-rule guarded)."""
-	lead = doc.reference_docname
-	axes = rules.lead_axes(lead)
-	matched = rules.matching_rules(axes[0], axes[1], axes[2], doc.custom_task_type)
-	if not matched:
-		return
-	context = build_context(doc)
-	field_types = _field_types(doc.custom_task_type)
-	grain = _grain_tag(*axes)
-	for r in matched:
-		try:
-			_run_rule(r, lead, context, doc, axes, grain, field_types)
-		except Exception as e:
-			_log_error(r.name, "(rule)", grain, e)
-
-
-def _field_types(task_type):
-	"""{fieldname: schema type} for the trigger task type — so criteria evaluate type-aware. Reuses
-	the same describe resolver the builder + validator use (one brain, no parallel schema read)."""
-	from tatva_connect.automation.describe import fields_for_task_type
-
-	return {f["key"]: f["type"] for f in fields_for_task_type(task_type)}
-
-
-def build_context(doc):
-	"""The value-source seam (spec §3.1): the v1 provider IS reconstruct_values. Imported, never copied."""
-	return reconstruct_values(doc)
 
 
 def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):

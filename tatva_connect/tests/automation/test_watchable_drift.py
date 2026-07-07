@@ -1,6 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Leg H sign-off - the Watchable-doctype drift gate (one more assertion in assert_registered).
+"""Leg H sign-off - the wildcard-router drift gate (one more assertion in assert_registered).
+
+TATVA v2 (Task 4): the engine has no per-doctype hook any more - EVERY grain-resolvable subject is
+covered by the wildcard router (router.on_created/on_updated on doc_events["*"]). The old "every
+SUBJECT doctype must be hooked" check is retired with it (there is no longer a per-subject hook to
+check) - the one thing that CAN silently break automation for every doctype at once is the wildcard
+registration itself, so that's what this gate now asserts.
 
 Also re-runs the existing seam suite's regression assertions to prove the new gate didn't break
 the existing path-coverage / one-owner / enforced-mirror checks.
@@ -11,32 +17,33 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect import hooks
-from tatva_connect.automation import drift, seed, subjects
+from tatva_connect.automation import drift, seed
 from tatva_connect.automation.registry import AUTOMATIONS
 
 
-class TestSubjectDrift(FrappeTestCase):
-	"""The subject-drift gate: every SUBJECTS doctype must be hooked with fire_field_change_rules.
-	The gate now rides automation.subjects (the source of truth), not a table."""
+class TestRouterDrift(FrappeTestCase):
+	"""The wildcard-router drift gate: router.on_created/on_updated MUST be wired on doc_events["*"]."""
 
 	def setUp(self):
 		seed.sync_catalog()
 
-	# (a) the default SUBJECTS (CRM Lead + CRM Task, both hooked) pass assert_registered.
-	def test_hooked_subjects_pass(self):
+	# (a) the default wildcard registration (router.on_created/on_updated, both hooked) passes.
+	def test_wired_router_passes(self):
 		drift.assert_registered()  # no throw
 
-	# (b) a SUBJECT without the on_update hook -> assert_registered throws (simulates a doctype added
-	# to SUBJECTS after its hook was forgotten). Restore the map after.
-	def test_unhooked_subject_throws(self):
-		orig = dict(subjects.SUBJECTS)
-		subjects.SUBJECTS["Customer"] = {"link": "x"}  # a subject with no on_update hook
+	# (b) the wildcard router's on_updated hook missing -> assert_registered throws (simulates the one
+	# hook that can silently break automation for EVERY doctype at once being dropped). Restore after.
+	def test_missing_wildcard_router_hook_throws(self):
+		patched = dict(hooks.doc_events)
+		patched["*"] = dict(patched.get("*", {}))
+		patched["*"]["on_update"] = []
+		orig = hooks.doc_events
+		hooks.doc_events = patched
 		try:
 			with self.assertRaises(frappe.exceptions.ValidationError):
 				drift.assert_registered()
 		finally:
-			subjects.SUBJECTS.clear()
-			subjects.SUBJECTS.update(orig)
+			hooks.doc_events = orig
 
 
 class TestSeamRegressions(FrappeTestCase):
@@ -54,7 +61,7 @@ class TestSeamRegressions(FrappeTestCase):
 			self.assertEqual(len(owners), 1, f"'{path}' must be backed by exactly one row, got {owners}")
 			self.assertEqual(all_backs.count(path), 1, f"'{path}' duplicated across rows' backs")
 
-	# (d) REGRESSION: the Task::Automation::rules key is still enforced in app source (watch.py
+	# (d) REGRESSION: the Task::Automation::rules key is still enforced in app source (router.py
 	# references it via is_enabled - the new entry point made the toggle drive real new code).
 	def test_task_automation_rules_is_enforced(self):
 		app_dir = frappe.get_app_path("tatva_connect")
