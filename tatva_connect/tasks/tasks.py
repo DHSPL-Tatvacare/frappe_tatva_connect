@@ -174,10 +174,13 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 		return existing
 
 	due_date = due_at or add_to_date(now_datetime(), hours=cint(due_in_hours))
+	# Title defaults to the CLEAN activity name (type_name), never the grain-composite `::` PK — a
+	# task_type is keyed vertical::group::program::type_name (A.7), and that key must never leak into
+	# a user-facing title. Falls back to the raw value only if the type row is somehow missing.
 	task = frappe.get_doc(
 		{
 			"doctype": "CRM Task",
-			"title": title or task_type,
+			"title": title or frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type,
 			"custom_task_type": task_type,
 			"status": "Todo",
 			"due_date": due_date,

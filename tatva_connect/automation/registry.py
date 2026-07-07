@@ -312,15 +312,20 @@ AUTOMATIONS = [
 	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
-		trigger_detail="CRM Task · on_update",
+		trigger_detail="CRM Task · on_update (Task-Completed) + CRM Lead/Task · on_update (Field-Changed)",
 		purpose=(
-			"The automation engine: when an activity task is marked Done, runs every enabled "
-			"rule whose grain matches the lead — checking its criteria, then firing its actions "
-			"(create a task, set a field) in order.\n"
-			"Example: an operator builds a rule for the Diabetes program so that completing a "
-			"'First Consult' task whose outcome is 'Enrolled' creates a 'Welcome Call' task."
+			"The automation engine: runs every enabled grain-matching rule when its trigger fires. "
+			"Two triggers share one backbone (one toggle, one dispatch executor): Task-Completed fires "
+			"when a lead-linked activity task is first marked Done; Field-Changed fires when a watched "
+			"field on a CRM Lead or CRM Task changes value. Each rule checks its criteria, then fires "
+			"its actions (create a task, set a field, add a comment) in order.\n"
+			"Example: completing a 'First Consult' task whose outcome is 'Enrolled' creates a 'Welcome "
+			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment."
 		),
-		backs=["tatva_connect.automation.dispatcher.fire_rules"],
+		backs=[
+			"tatva_connect.automation.dispatcher.fire_rules",
+			"tatva_connect.automation.watch.fire_field_change_rules",
+		],
 	),
 	Auto(
 		key="Task::Automation::run-log-sweep",

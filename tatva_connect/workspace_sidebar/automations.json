@@ -109,8 +109,8 @@
    "icon": "settings-2",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Automatable Fields",
-   "link_to": "CRM Automatable Field",
+   "label": "Automation Fields",
+   "link_to": "CRM Automation Field",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"

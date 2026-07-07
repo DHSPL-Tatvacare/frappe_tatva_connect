@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:{doctype_name}::{child_table_field}::{fieldname}::{vertical}::{group}::{program}",
+ "creation": "2026-07-07 00:00:00.000000",
+ "description": "Fail-closed field allowlist for the Automation engine (read + write in one table). can_watch = a change may fire a rule; can_set = an action may write it (grain-scoped). Ships EMPTY - a field not listed here can neither be watched nor set. System Manager curates; ops author rules within it.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "doctype_name",
+  "fieldname",
+  "can_watch",
+  "can_set",
+  "child_table_field",
+  "is_row_key",
+  "vertical",
+  "group",
+  "program",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "fieldname": "doctype_name",
+   "fieldtype": "Link",
+   "label": "DocType Name",
+   "options": "DocType",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The doctype the field lives on."
+  },
+  {
+   "fieldname": "fieldname",
+   "fieldtype": "Data",
+   "label": "Fieldname",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The field."
+  },
+  {
+   "fieldname": "can_watch",
+   "fieldtype": "Check",
+   "label": "Can Watch",
+   "in_list_view": 1,
+   "description": "A change to this field may fire a Field-Changed rule. Watch doctypes: CRM Lead / CRM Task."
+  },
+  {
+   "fieldname": "can_set",
+   "fieldtype": "Check",
+   "label": "Can Set",
+   "in_list_view": 1,
+   "description": "This field may be written by a Set Field / child-row action."
+  },
+  {
+   "fieldname": "child_table_field",
+   "fieldtype": "Data",
+   "label": "Child Table Field",
+   "depends_on": "eval:doc.can_set",
+   "description": "Set-only: the parent's child-table field to write into. Blank = a parent field."
+  },
+  {
+   "fieldname": "is_row_key",
+   "fieldtype": "Check",
+   "label": "Is Row Key",
+   "depends_on": "eval:doc.can_set && doc.child_table_field",
+   "description": "Set-only: this child field is the upsert match key."
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "options": "CRM Vertical",
+   "label": "Vertical",
+   "depends_on": "eval:doc.can_set",
+   "description": "Set-only grain scope. Blank = wildcard."
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "options": "CRM Group",
+   "label": "Group",
+   "depends_on": "eval:doc.can_set",
+   "description": "Set-only grain scope. Blank = wildcard."
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "options": "CRM Program",
+   "label": "Program",
+   "depends_on": "eval:doc.can_set",
+   "description": "Set-only grain scope. Blank = wildcard."
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "in_list_view": 1,
+   "description": "Fail-closed: active only while ticked."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Automation Field",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

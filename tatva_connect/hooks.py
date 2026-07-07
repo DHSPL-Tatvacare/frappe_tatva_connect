@@ -96,6 +96,12 @@ doc_events = {
 			# mirror the latest lab row's headline metrics up to the core Lead fields
 			"tatva_connect.lead.leads.sync_headline_metrics",
 		],
+		# Automation engine (Field-Changed trigger): on any watched-field change, enqueue (after commit)
+		# every matching enabled Field-Changed rule (gated, fail-closed, non-re-entrant). Same backbone
+		# as the Task-Completed trigger; Frappe concatenates the list - both fire independently.
+		"on_update": [
+			"tatva_connect.automation.watch.fire_field_change_rules",
+		],
 	},
 	"CRM Task": {
 		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
@@ -106,10 +112,12 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
-		# Automation engine: on the first Done flip of a lead-linked task, enqueue (after commit) every matching enabled rule (gated, fail-closed, non-re-entrant).
+		# Automation engine (Task-Completed trigger): on the first Done flip of a lead-linked task, enqueue (after commit) every matching enabled rule (gated, fail-closed, non-re-entrant).
+		# Automation engine (Field-Changed trigger): on any watched-field change on a Task, enqueue (after commit) every matching enabled Field-Changed rule (same backbone).
 		# Metrics rollup: recompute the lead's count for this task's type (absolute, self-healing, gated, injection-safe).
 		"on_update": [
 			"tatva_connect.automation.dispatcher.fire_rules",
+			"tatva_connect.automation.watch.fire_field_change_rules",
 			"tatva_connect.tasks.metrics.refresh_for_lead",
 		],
 		"on_submit": [

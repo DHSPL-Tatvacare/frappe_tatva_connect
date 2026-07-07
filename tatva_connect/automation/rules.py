@@ -39,7 +39,7 @@ def matching_rules(vertical, group, program, task_type):
 	"""Every ENABLED rule for this completed task's TYPE whose specified grain axes equal the lead's
 	(blank axis = wildcard).
 
-	ALL-MATCH fan-out (spec §5.1) — deliberately NOT resolve_scoped's pick-one. The trigger task type
+	ALL-MATCH fan-out (spec §5.1) - deliberately NOT resolve_scoped's pick-one. The trigger task type
 	must match (a rule fires only for the activity type it was authored against). A rule with zero
 	grain axes is rejected at author-time, so the query can never widen to a global default. Ordered
 	by priority then creation so the executor fires them deterministically."""
@@ -60,6 +60,31 @@ def matching_rules(vertical, group, program, task_type):
 	)
 
 
+def matching_rules_for_field_change(vertical, group, program, watch_doctype, changed_fields):
+	"""Every ENABLED Field-Changed rule whose watched doctype matches, whose watched field is in
+	the changed set, and whose specified grain axes equal the lead's (blank axis = wildcard).
+	Sibling to matching_rules - same ALL-MATCH fan-out, same grain-wildcard idiom, same ORDER BY;
+	differs only in that it filters on trigger_type + watch_doctype + watch_field (not task_type).
+	A rule with zero grain axes is rejected at author-time, so the query can never widen to a
+	global default."""
+	if not changed_fields:
+		return []
+	return frappe.get_all(
+		"CRM Automation Rule",
+		filters={
+			"enabled": 1,
+			"trigger_type": "Field Changed",
+			"watch_doctype": watch_doctype,
+			"watch_field": ["in", changed_fields],
+			"vertical": ["in", ["", None, vertical or ""]],
+			"group": ["in", ["", None, group or ""]],
+			"program": ["in", ["", None, program or ""]],
+		},
+		fields=["name", "vertical", "group", "program", "watch_doctype", "watch_field", "priority"],
+		order_by="priority asc, creation asc",
+	)
+
+
 def criteria_match(criteria, context, field_types=None):
 	"""True if EVERY criterion matches the context (spec §4). A rule with no criteria matches on
 	grain + trigger alone. `field_types` maps fieldname -> schema type so comparisons evaluate
@@ -75,13 +100,31 @@ def criteria_match(criteria, context, field_types=None):
 def _one_match(c, context, ftype=None):
 	"""Evaluate a single criterion against the context, type-aware (frappe casts both sides by the
 	field's type: Datetime->get_datetime, Check->cint, numeric->flt) so a raw datetime/int from the
-	activity form matches the typed criterion instead of silently failing."""
+	activity form matches the typed criterion instead of silently failing. `changed_from_to` reads
+	the watched field's `__before` context key (populated only by the Field-Changed dispatcher) -
+	a missing `__before` is a non-match, not a raise (fail-soft parity with the other operators)."""
 	left = context.get(c.field)
 	op = c.operator
 	if op == "is set":
 		return left not in (None, "")
 	if op == "is unset":
 		return left in (None, "")
+	if op == "changed_from_to":
+		# Only the Field-Changed dispatcher populates `{field}__before`. A MISSING key (a stale
+		# context, a Task-Completed fire, a direct call) is a clean non-match - never a raise.
+		# A key PRESENT with a None value is a legitimate blank->value transition - cast and compare.
+		before_key = f"{c.field}__before"
+		if before_key not in context:
+			return False
+		before = context.get(before_key)
+		try:
+			return _eq_typed(before, c.from_value, ftype) and _eq_typed(left, c.value, ftype)
+		except Exception as e:
+			frappe.log_error(
+				title="automation: changed_from_to eval failed",
+				message=f"field={c.field} :: {e}",
+			)
+			return False
 	try:
 		if op in ("in", "not in"):
 			items = [v.strip() for v in str(c.value or "").split(",")]
@@ -100,6 +143,18 @@ def _one_match(c, context, ftype=None):
 		)
 		return False
 	return False
+
+
+def _eq_typed(left, right, ftype=None):
+	"""Type-aware equality for `changed_from_to` - casts both sides by the watched field's type so
+	a stored Date matches a date literal and 7=='7'==7.0. Reuses frappe.utils.cast, the same cast
+	the _diff_watched_fields comparator in watch.py uses, so before/after semantics never drift."""
+	if ftype:
+		try:
+			return frappe.utils.cast(ftype, left) == frappe.utils.cast(ftype, right)
+		except Exception:  # nosec B110 - an uncastable value falls through to None-safe equality
+			pass
+	return (left if left is not None else "") == (right if right is not None else "")
 
 
 def _between(left, lo, hi, ftype=None):

@@ -21,7 +21,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.activity.automation import reconstruct_values
-from tatva_connect.automation import rules
+from tatva_connect.automation import fields, rules
 
 KILL_SWITCH = "Task::Automation::rules"
 SWEEP_SWITCH = "Task::Automation::run-log-sweep"
@@ -142,12 +142,14 @@ def _action_label(a):
 	"""Short human label of an action for the per-action audit trail in the run log."""
 	if a.action_type == "Create Task":
 		return "Create Task {}".format(a.task_type or "?")
-	if a.action_type == "Set Field":
-		return "Set Field {}".format(a.fieldname or "?")
+	if a.action_type == "Update Field":
+		return "Update Field {}".format(a.fieldname or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):
 		return "{} {}".format(a.action_type, a.child_table or "?")
 	if a.action_type == "Call Webhook":
 		return "Call Webhook {}".format(a.webhook_endpoint or "?")
+	if a.action_type == "Create Note":
+		return "Create Note"
 	return a.action_type or "?"
 
 
@@ -156,13 +158,21 @@ def _action_label(a):
 
 def _run_action(action, lead, context, axes, trigger_doc):
 	"""Dispatch one action by type (spec §4). Raises on failure so the caller's per-action guard
-	records it — one failure never touches siblings."""
+	records it — one failure never touches siblings.
+
+	# TATVA v2 (Task 1): keys renamed to the frozen verb set (Set Field -> Update Field, Add
+	# Comment -> Create Note) to match the reshaped crm_automation_action.json action_type Select —
+	# a direct consequence of that schema change, not a behavior rewrite. Append/Upsert Child Row are
+	# dropped from the v2 verb set (Part A) but their handlers stay wired here (unreachable via the
+	# new Select, not pruned) until Task 6 formally retires them into actions.py. Task 5/6 own moving
+	# every handler below into actions.py under the two-lane (guard/effect) executor."""
 	handler = {
 		"Create Task": _action_create_task,
-		"Set Field": _action_set_field,
+		"Update Field": _action_set_field,
 		"Append Child Row": _action_append_child,
 		"Upsert Child Row": _action_upsert_child,
 		"Call Webhook": _action_call_webhook,
+		"Create Note": _action_add_comment,
 	}.get(action.action_type)
 	if handler is None:
 		raise ValueError(f"unknown action type {action.action_type!r}")
@@ -173,9 +183,11 @@ def _run_action(action, lead, context, axes, trigger_doc):
 
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
-	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type."""
+	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
+	The due date resolves from a context field (From Context) or an expression (Expression)."""
 	from tatva_connect.activity.api import _scope_applies
 	from tatva_connect.tasks.tasks import create_followup_task
+	from tatva_connect.automation import expr
 
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
 	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
@@ -191,21 +203,66 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 
 
 def _action_set_field(action, lead, context, axes, trigger_doc):
-	"""SET_FIELD via the UNIFIED write path (spec §4.1): load the doc, set the field, save — NEVER
-	frappe.db.set_value (which skips validate/hook re-mirroring). Re-checked against the enabled
-	allowlist at runtime (defense in depth, spec §5.3)."""
+	"""SET_FIELD via the UNIFIED write path: load the target doc, set the field, save — NEVER
+	frappe.db.set_value (skips validate/hook re-mirroring). The target is the rule's scope — the Lead,
+	or the triggering doc itself (a Field-Changed rule on a Task may set a field on that Task). Gated by
+	the enabled can_set allowlist at runtime (defense in depth). The write runs inside the rule's
+	savepoint, so a later action's failure rolls this back too (group atomicity)."""
 	if not (action.target_doctype and action.fieldname):
 		raise ValueError("Set Field action missing target doctype or fieldname")
-	if not _allowlisted(action.target_doctype, action.fieldname, axes):
+	if not fields.is_settable(action.target_doctype, action.fieldname, axes):
 		raise PermissionError(
-			f"{action.fieldname} on {action.target_doctype} not in the enabled Automatable-Field allowlist"
+			f"{action.fieldname} on {action.target_doctype} not in the enabled Automation-Field allowlist"
 		)
-	value = context.get(action.context_field) if action.value_mode == "From Context" else action.value
-	if action.target_doctype != "CRM Lead":
-		raise ValueError(f"Set Field target {action.target_doctype} is not supported (lead only)")
-	tdoc = frappe.get_doc("CRM Lead", lead)
-	tdoc.set(action.fieldname, value)
+	tdoc = _resolve_write_target(action, lead, trigger_doc)
+	tdoc.set(action.fieldname, _resolve_set_field_value(action, context))
 	tdoc.save(ignore_permissions=True)
+
+
+def _resolve_write_target(action, lead_name, trigger_doc):
+	"""The record a Set Field writes to. A rule's write scope is {the Lead} ∪ {the triggering doc}:
+	target the Lead, or the trigger doc itself (Field-Changed on a Task → set a field on that Task).
+	Any other doctype is out of scope — raise loudly rather than misfire on a name that isn't its."""
+	if action.target_doctype == "CRM Lead":
+		return frappe.get_doc("CRM Lead", lead_name)
+	if trigger_doc is not None and action.target_doctype == trigger_doc.doctype:
+		return frappe.get_doc(trigger_doc.doctype, trigger_doc.name)  # fresh load, same txn
+	raise ValueError(
+		f"Set Field target {action.target_doctype} is not in this rule's scope "
+		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
+	)
+
+
+def _resolve_set_field_value(action, context):
+	"""One seam for the three Set Field value modes. Literal = the field as typed; From Context =
+	the named context key; Expression = safe_eval against ctx (raises on a bad/missing ref so the
+	rule's savepoint rolls back — no partial write)."""
+	from tatva_connect.automation import expr
+
+	if action.value_mode == "Expression":
+		return expr.resolve_expression(action.expression, context)
+	if action.value_mode == "From Context":
+		return context.get(action.context_field)
+	return action.value
+
+
+def _action_add_comment(action, lead, context, axes, trigger_doc):
+	"""ADD_COMMENT — a native `doc.add_comment()` on the rule's SUBJECT record (always the lead:
+	a Lead trigger's subject is itself; a Task trigger's subject is its parent Lead, resolved by
+	watch._subject). `add_comment` inserts a Comment row without re-saving the subject, so it cannot
+	re-fire the Field-Changed dispatcher on that doc (no new re-entrancy surface)."""
+	from tatva_connect.automation import expr
+
+	if action.comment_mode == "Expression":
+		text = expr.resolve_expression(action.comment_expression, context)
+		if not isinstance(text, str):
+			raise ValueError("Add Comment expression did not evaluate to a string")
+	else:
+		text = action.comment_text or ""
+	if not text:
+		raise ValueError("Add Comment resolved to an empty string — nothing to log")
+	subject_doc = frappe.get_doc("CRM Lead", lead)
+	subject_doc.add_comment("Comment", text)
 
 
 def _action_append_child(action, lead, context, axes, trigger_doc):
@@ -272,12 +329,17 @@ def _blank(v):
 
 
 def _due_at(action, context):
-	"""Resolve a Create Task due date from a context field, coercing defensively: a non-datetime
-	value degrades to None (create_followup_task then applies its default lead time) rather than
-	dropping the task."""
-	if not action.due_from:
-		return None
-	raw = context.get(action.due_from)
+	"""Resolve a Create Task due date, coercing defensively: a non-datetime value degrades to None
+	(create_followup_task then applies its default lead time) rather than dropping the task. Two
+	modes — From Context (read a context key) and Expression (safe_eval against ctx)."""
+	from tatva_connect.automation import expr
+
+	if action.due_mode == "Expression":
+		raw = expr.resolve_expression(action.due_expression, context)
+	else:  # From Context (the v1 default; also the pre-Expression behavior)
+		if not action.due_from:
+			return None
+		raw = context.get(action.due_from)
 	if raw is None:
 		return None
 	try:
@@ -328,39 +390,24 @@ def _find_child_row(rows, match, child_dt):
 
 
 def _eq(a, b, df):
-	"""Type-aware equality for a match key — cast both sides by the field's fieldtype (Date->getdate,
-	Datetime->get_datetime, Float/Currency->flt, Int->cint, ...). Falls back to None-safe equality."""
-	if df is not None:
-		try:
-			return frappe.utils.cast(df.fieldtype, a) == frappe.utils.cast(df.fieldtype, b)
-		# an uncastable value falls through to the None-safe equality below; never swallows a real error path.
-		except Exception:  # nosec B110
-			pass
-	return (a if a is not None else "") == (b if b is not None else "")
+	"""Type-aware equality for a match key - delegates to the ONE shared comparator
+	(rules._eq_typed) so before/after diff semantics (watch._diff_watched_fields) and
+	changed_from_to (rules._one_match) and upsert row-matching all share one brain. Casts both
+	sides by the field's fieldtype (Date->getdate, Datetime->get_datetime, Float/Currency->flt,
+	Int->cint, ...). Falls back to None-safe equality on an uncastable value."""
+	from tatva_connect.automation.rules import _eq_typed
+	return _eq_typed(a, b, df.fieldtype if df is not None else None)
 
 
-def _assert_child_allowlisted(child_dt, child_table, fields, axes, keys=None):
-	"""Every set/match field must be in the enabled allowlist for the child table at the lead's grain;
-	match keys must additionally be marked is_row_key. Fail-closed (spec §5.3)."""
+def _assert_child_allowlisted(child_dt, child_table, fieldnames, axes, keys=None):
+	"""Every set/match field must be an enabled can_set row for the child table at the lead's grain;
+	match keys must additionally be is_row_key. Fail-closed. One allowlist brain (fields.is_settable)."""
 	keys = keys or set()
-	for f in fields:
-		if not _allowlisted(child_dt, f, axes, child_table=child_table, require_row_key=(f in keys)):
+	for f in fieldnames:
+		if not fields.is_settable(child_dt, f, axes, child_table_field=child_table, require_row_key=(f in keys)):
 			raise PermissionError(
-				f"{f} on {child_dt} ({child_table}) is not in the enabled Automatable-Field allowlist"
+				f"{f} on {child_dt} ({child_table}) is not in the enabled Automation-Field allowlist"
 			)
-
-
-def _allowlisted(target_doctype, fieldname, axes, child_table=None, require_row_key=False):
-	"""Runtime re-check of the fail-closed write allowlist (mirrors the rule controller), by grain.
-	An enabled row whose set axes equal the lead's grain (blank axis = wildcard) authorizes the write.
-	For child-row writes the row must also match the child table (and be a row-key when required)."""
-	filters = {"target_doctype": target_doctype, "fieldname": fieldname, "enabled": 1}
-	if child_table is not None:
-		filters["child_table_field"] = child_table
-	if require_row_key:
-		filters["is_row_key"] = 1
-	rows = frappe.get_all("CRM Automatable Field", filters=filters, fields=["vertical", "group", "program"])
-	return any(rules.grain_matches(row, axes[0], axes[1], axes[2]) for row in rows)
 
 
 # -- logging -----------------------------------------------------------------

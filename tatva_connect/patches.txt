@@ -113,6 +113,12 @@ tatva_connect.patches.fix_nivolumab_drug_mapping
 # processes it). Drops the orphan doctype + any Web Form still bound to it. Idempotent; nothing
 # shipped to production on it.
 tatva_connect.patches.retire_crm_enrolment_submission
+# Merge the two automation field allowlists — CRM Automatable Field (write) + CRM Automation Watchable
+# Field (read) -> one CRM Automation Field with can_set/can_watch flags. Carries any dev/staging rows,
+# then retires both old doctypes (delete_doc + DROP TABLE IF EXISTS). Idempotent; no-op on a fresh
+# install (old doctypes archived, never sync). See docs/plans/2026-07-07-automation-spine-merge-and-subjects.md.
+tatva_connect.patches.merge_automation_field_allowlists
+tatva_connect.patches.widen_lsq_attachment_id           # post — File.custom_lsq_attachment_id varchar(140)->500 (long S3 paths failed the migration File save)
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field
