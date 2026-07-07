@@ -17,6 +17,10 @@ dist/
 __pycache__/
 *.pyc
 
+# local dev virtualenv (uv-managed, local IDE/lint only — never committed; uv.lock is the
+# reproducibility source of truth, not the venv). Not what runs in the container or UAT/prod.
+.venv/
+
 # secrets / local env
 .env
 .secrets
@@ -62,6 +66,10 @@ deploy/
 scripts/
 # local Claude Code settings/state
 .claude/
+# JetBrains IDE (PyCharm) project files — local only
+.idea/
+# Superpowers SDD scratch (task briefs, reports, progress ledger) — local only
+.superpowers/
 # Coverage is LOCAL-only (the bench lane: `bench run-tests --app tatva_connect --coverage`). Our CI
 # runs NO coverage and NO codecov — data never leaves the machine. Keep the artifacts out of git too.
 .coverage

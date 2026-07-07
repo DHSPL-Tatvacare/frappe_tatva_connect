@@ -13,6 +13,8 @@ dependencies = [
     "azure-storage-blob~=12.20",  # Azure Blob file offload (tatva_connect/storage)
     "google-auth~=2.40",  # FCM HTTP v1 OAuth token mint (tatva_connect/push_notifications)
     "clamd~=1.0",  # ClamAV INSTREAM virus scan for intake uploads (tatva_connect/intake/guards)
+    "ruff>=0.15.20",
+    "pyrefly>=0.60.0",
 ]
 
 [build-system]
