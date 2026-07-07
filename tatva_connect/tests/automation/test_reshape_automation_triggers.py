@@ -25,6 +25,18 @@ _GRAIN = GRAINS[0]
 _OLD_COLUMNS = ("trigger_type", "task_type", "watch_doctype", "watch_field")
 
 
+def _make_task_type(name):
+	"""A throwaway grain-keyed CRM Task Type for the "task completed" task_type-scoping regression
+	(A.7 - the composite `::` value the migration must carry over verbatim into the criterion)."""
+	tt = f"{_GRAIN['vertical']}::{_GRAIN['group']}::{_GRAIN['program']}::{name}"
+	if not frappe.db.exists("CRM Task Type", tt):
+		frappe.get_doc({
+			"doctype": "CRM Task Type", "type_name": name,
+			"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+		}).insert(ignore_permissions=True)
+	return tt
+
+
 def _add_old_columns():
 	for col in _OLD_COLUMNS:
 		if not patch._column_exists(_RULE_TABLE, col):
@@ -73,13 +85,20 @@ class TestReshapeAutomationTriggers(FrappeTestCase):
 		_add_old_columns()
 
 	def tearDown(self):
+		# db.delete on the parent doesn't cascade to the child table (raw SQL, no Document.delete()) -
+		# purge orphaned criterion rows too, or a leftover row skews a LATER run's idempotency check.
+		frappe.db.delete(_CRITERION, {"parent": ("like", "ReshapeProbe-%"), "parenttype": _RULE})
 		frappe.db.delete(_RULE, {"rule_name": ("like", "ReshapeProbe-%")})
+		frappe.db.delete("CRM Task Type", {"name": ("like", f"{_GRAIN['vertical']}::{_GRAIN['group']}::{_GRAIN['program']}::ReshapeProbe%")})
 		_drop_old_columns()
 
-	# (a) Task Completed -> on_doctype=CRM Task, event=Updated, PREPEND `status changed to Done`.
+	# (a) Task Completed -> on_doctype=CRM Task, event=Updated, PREPEND `status changed to Done`
+	# AND `custom_task_type is <task_type>` (the OLD engine's per-task-type scoping, A.7: the
+	# composite `::` value is carried over verbatim into the criterion's value).
 	def test_task_completed_migrates_and_prepends_criterion(self):
+		tt = _make_task_type("ReshapeProbeTaskType")
 		rule = _make_v2_rule("ReshapeProbe-tc")
-		_revert_to_old_shape(rule.name, trigger_type="Task Completed", task_type="dummy")
+		_revert_to_old_shape(rule.name, trigger_type="Task Completed", task_type=tt)
 		patch.execute()
 		row = frappe.db.get_value(_RULE, rule.name, ["on_doctype", "event"], as_dict=True)
 		self.assertEqual(row.on_doctype, "CRM Task")
@@ -88,10 +107,26 @@ class TestReshapeAutomationTriggers(FrappeTestCase):
 			_CRITERION, filters={"parent": rule.name, "parenttype": _RULE},
 			fields=["field", "operator", "value", "idx"], order_by="idx asc",
 		)
-		self.assertTrue(criteria, "no criterion prepended")
+		self.assertEqual(len(criteria), 2, "expected both the status and the custom_task_type criterion")
 		self.assertEqual(criteria[0].field, "status")
 		self.assertEqual(criteria[0].operator, "changed to")
 		self.assertEqual(criteria[0].value, "Done")
+		self.assertEqual(criteria[1].field, "custom_task_type")
+		self.assertEqual(criteria[1].operator, "is")
+		self.assertEqual(criteria[1].value, tt, "the composite task_type value must be carried over verbatim (A.7)")
+
+	# (a2) KNOWN-BAD PLANT (S.6 recall): a Task Completed rule with a BLANK task_type gets only the
+	# status criterion — no custom_task_type criterion manufactured out of an empty value.
+	def test_task_completed_blank_task_type_no_scoping_criterion(self):
+		rule = _make_v2_rule("ReshapeProbe-tcblank")
+		_revert_to_old_shape(rule.name, trigger_type="Task Completed", task_type="")
+		patch.execute()
+		criteria = frappe.get_all(
+			_CRITERION, filters={"parent": rule.name, "parenttype": _RULE},
+			fields=["field", "operator", "value"],
+		)
+		self.assertEqual(len(criteria), 1, "a blank task_type must not manufacture a custom_task_type criterion")
+		self.assertEqual(criteria[0].field, "status")
 
 	# (b) Field Changed -> on_doctype=<watch_doctype>, event=Updated. No criterion prepended.
 	def test_field_changed_migrates_on_doctype(self):
@@ -104,14 +139,17 @@ class TestReshapeAutomationTriggers(FrappeTestCase):
 		criteria = frappe.get_all(_CRITERION, filters={"parent": rule.name, "parenttype": _RULE})
 		self.assertEqual(len(criteria), 0, "Field Changed migration must not prepend a criterion")
 
-	# (c) IDEMPOTENT: a second run does not duplicate the prepended criterion or re-touch the row.
+	# (c) IDEMPOTENT: a second run does not duplicate either prepended criterion or re-touch the row.
 	def test_second_run_is_idempotent(self):
+		tt = _make_task_type("ReshapeProbeIdemTaskType")
 		rule = _make_v2_rule("ReshapeProbe-idem")
-		_revert_to_old_shape(rule.name, trigger_type="Task Completed", task_type="dummy")
+		_revert_to_old_shape(rule.name, trigger_type="Task Completed", task_type=tt)
 		patch.execute()
 		patch.execute()  # second run - old columns still present (this test doesn't drop them mid-test)
-		criteria = frappe.get_all(_CRITERION, filters={"parent": rule.name, "parenttype": _RULE, "field": "status", "operator": "changed to", "value": "Done"})
-		self.assertEqual(len(criteria), 1, "idempotency broken - the prepended criterion duplicated")
+		status_criteria = frappe.get_all(_CRITERION, filters={"parent": rule.name, "parenttype": _RULE, "field": "status", "operator": "changed to", "value": "Done"})
+		self.assertEqual(len(status_criteria), 1, "idempotency broken - the status criterion duplicated")
+		task_type_criteria = frappe.get_all(_CRITERION, filters={"parent": rule.name, "parenttype": _RULE, "field": "custom_task_type", "operator": "is", "value": tt})
+		self.assertEqual(len(task_type_criteria), 1, "idempotency broken - the custom_task_type criterion duplicated")
 
 	# (d) ROW COUNT RECONCILED: the patch never changes the total row count.
 	def test_row_count_reconciled(self):
@@ -144,6 +182,7 @@ class TestReshapeCriterionOperators(FrappeTestCase):
 		assert_masters_exist()
 
 	def tearDown(self):
+		frappe.db.delete(_CRITERION, {"parent": ("like", "ReshapeProbe-%"), "parenttype": _RULE})
 		frappe.db.delete(_RULE, {"rule_name": ("like", "ReshapeProbe-%")})
 
 	# (f) old operator SYMBOLS remap to the frozen v2 WORD operators.

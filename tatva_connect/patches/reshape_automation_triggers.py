@@ -8,7 +8,12 @@ still-old-symbol sibling criterion can't trip the (already-reshaped) validate() 
 Mapping (plan Part C / Task 1):
   trigger_type=="Task Completed" -> on_doctype="CRM Task", event="Updated", PREPEND a criterion
     `status changed to Done` (idx 0) - this is the exact "task completed" grammar the plan's no-
-    sugar-labels rule spells out (Part A/Global Constraints).
+    sugar-labels rule spells out (Part A/Global Constraints). If the old row also carried a
+    non-empty `task_type` (the OLD engine only fired a Task-Completed rule when the completed
+    task's type matched it - dispatcher matched `doc.custom_task_type == rule.task_type`), ALSO
+    prepend `custom_task_type is <task_type>` so the v2 rule keeps that scoping (invariant A.7 -
+    the composite `::` value is carried over verbatim, never stripped). Without this a migrated
+    Task-Completed rule would fire on ANY CRM Task completing, not just its original task type.
   trigger_type=="Field Changed" -> on_doctype=<old watch_doctype>, event="Updated".
 
 Also remaps CRM Automation Criterion's old operator SYMBOLS (=, !=, <, >, <=, >=, like, not like, in,
@@ -80,7 +85,11 @@ def _migrate_rules():
 	for r in rows:
 		if r.trigger_type == "Task Completed":
 			frappe.db.set_value(_RULE, r.name, {"on_doctype": "CRM Task", "event": "Updated"}, update_modified=False)
-			_prepend_status_done_criterion(r.name)
+			if r.task_type:
+				# A.7: store the composite `::` task-type value verbatim - never stripped. Prepended
+				# first so it lands under `status` (inserted second, below) once both are at idx 0/1.
+				_prepend_criterion(r.name, "custom_task_type", "is", r.task_type)
+			_prepend_criterion(r.name, "status", "changed to", "Done")
 		elif r.trigger_type == "Field Changed":
 			frappe.db.set_value(
 				_RULE, r.name, {"on_doctype": r.watch_doctype, "event": "Updated"}, update_modified=False
@@ -97,12 +106,15 @@ def _migrate_rules():
 		)
 
 
-def _prepend_status_done_criterion(rule_name):
-	"""The no-sugar-labels grammar for the old "Task Completed" trigger (plan Global Constraints):
-	`On CRM Task Updated · If status changed to Done`. Raw SQL, not Document.save() — a sibling
-	criterion still holding an old operator SYMBOL (not yet remapped by _migrate_criteria_operators)
-	would trip the already-reshaped CRMAutomationRule.validate() mid-migration."""
-	if frappe.db.exists(_CRITERION, {"parent": rule_name, "parenttype": _RULE, "field": "status", "operator": "changed to", "value": "Done"}):
+def _prepend_criterion(rule_name, field, operator, value):
+	"""One insert brain (invariant A.8) for every criterion this patch prepends onto a migrated
+	rule — e.g. the no-sugar-labels grammar for the old "Task Completed" trigger (plan Global
+	Constraints): `On CRM Task Updated · If status changed to Done`, and (also Task Completed, when
+	the old row carried a task_type) `If custom_task_type is <task_type>` to preserve the OLD
+	engine's per-task-type scoping. Raw SQL, not Document.save() — a sibling criterion still holding
+	an old operator SYMBOL (not yet remapped by _migrate_criteria_operators) would trip the already-
+	reshaped CRMAutomationRule.validate() mid-migration. Inserts at idx 0, shifting the rest."""
+	if frappe.db.exists(_CRITERION, {"parent": rule_name, "parenttype": _RULE, "field": field, "operator": operator, "value": value}):
 		return  # idempotent — already prepended by an earlier run of this patch
 	frappe.db.sql(
 		f"UPDATE `{_CRITERION_TABLE}` SET idx = idx + 1 WHERE parent = %(parent)s AND parenttype = %(parenttype)s",
@@ -113,9 +125,12 @@ def _prepend_status_done_criterion(rule_name):
 		f"""INSERT INTO `{_CRITERION_TABLE}`
 		    (name, parent, parenttype, parentfield, idx, field, operator, `value`, from_value,
 		     creation, modified, modified_by, owner, docstatus)
-		    VALUES (%(name)s, %(parent)s, %(parenttype)s, 'criteria', 0, 'status', 'changed to', 'Done', '',
+		    VALUES (%(name)s, %(parent)s, %(parenttype)s, 'criteria', 0, %(field)s, %(operator)s, %(value)s, '',
 		            %(now)s, %(now)s, 'Administrator', 'Administrator', 0)""",
-		{"name": frappe.generate_hash(length=10), "parent": rule_name, "parenttype": _RULE, "now": now},
+		{
+			"name": frappe.generate_hash(length=10), "parent": rule_name, "parenttype": _RULE,
+			"field": field, "operator": operator, "value": value, "now": now,
+		},
 	)
 
 
