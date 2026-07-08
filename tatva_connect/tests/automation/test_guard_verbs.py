@@ -228,19 +228,28 @@ class TestRequireLocationGeofence(_GuardVerbBase):
 
 
 class TestUnregisteredVerbRejectedAtAuthorTime(FrappeTestCase):
-	"""Planted-bad: 'Wait' sits in the action_type Select (frozen v2 vocabulary) but has no
-	`_ACTION_LANES` handler yet (Task 9) — a rule using it must fail LOUD at save, not silently at
-	fire time."""
+	"""validate() must reject a rule whose action verb has no `_ACTION_LANES` handler — defense in
+	depth so a Select option added without a handler fails LOUD at save, not silently at fire time.
+	Every shipped v2 verb now HAS a handler, so we simulate the gap by temporarily de-registering one
+	(patch.dict on the ONE registry) and prove the guard bites — a stable test that won't rot as the
+	verb set changes (unlike the old 'Wait' planted-bad, which Task 9 made valid)."""
 
-	def test_wait_verb_raises_on_rule_save(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			frappe.get_doc({
-				"doctype": _DT, "rule_name": "GV-unregistered-verb", "enabled": 1,
-				"on_doctype": "CRM Task", "event": "Updated",
-				"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
-				"criteria": [],
-				"actions": [{"action_type": "Wait", "wait_expression": "add_days(now(), 1)"}],
-			}).insert(ignore_permissions=True)
+	def test_unregistered_verb_raises_on_rule_save(self):
+		from unittest.mock import patch
+
+		from tatva_connect.automation import actions
+
+		lanes = dict(actions._ACTION_LANES)
+		lanes.pop("Create Note")  # a valid Select option, temporarily without a handler
+		with patch.object(actions, "_ACTION_LANES", lanes):
+			with self.assertRaisesRegex(frappe.exceptions.ValidationError, "no registered handler"):
+				frappe.get_doc({
+					"doctype": _DT, "rule_name": "GV-unregistered-verb", "enabled": 1,
+					"on_doctype": "CRM Task", "event": "Updated",
+					"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+					"criteria": [],
+					"actions": [{"action_type": "Create Note", "comment_text": "x"}],
+				}).insert(ignore_permissions=True)
 		self.assertFalse(
 			frappe.db.exists(_DT, {"rule_name": "GV-unregistered-verb"}),
 			"a rule with an unregistered verb was persisted despite validate() raising",
