@@ -11,7 +11,10 @@
 // into other components (S.4), Criteria + Then stay hidden until On DocType + Event are both set.
 
 frappe.ui.form.on("CRM Automation Rule", {
-	refresh: reload_describe,
+	refresh(frm) {
+		reload_describe(frm);
+		add_simulate_button(frm);
+	},
 	on_doctype: reload_describe,
 	event: reload_describe,
 	vertical: reload_describe,
@@ -266,4 +269,77 @@ function render_preview(frm) {
 		</div>`;
 	frm.dashboard.clear_headline();
 	frm.dashboard.set_headline(html);
+}
+
+// -- Simulate (Task 15) -------------------------------------------------------
+//
+// "Test before you enable": a Dialog that asks for one sample record of the rule's own On DocType
+// (a native Link control, scoped by the dialog's own `options`, so the picker only offers records of
+// the right type) and previews `automation.simulate.dry_run` — the SERVER is the tested core; this is
+// UX only. Result rendering reuses the native HTML-field seam (`set_df_property("options", html)` +
+// its own `refresh()`, the same mechanism `frm.dashboard.set_headline` already wraps above) into a
+// panel this dialog owns - never `.$wrapper.html()` on someone else's component (S.4).
+
+function add_simulate_button(frm) {
+	if (frm.is_new() || !has_trigger(frm)) return;
+	frm.add_custom_button("Simulate", () => open_simulate_dialog(frm));
+}
+
+function open_simulate_dialog(frm) {
+	const dialog = new frappe.ui.Dialog({
+		title: `Simulate — ${frappe.utils.escape_html(frm.doc.rule_name || frm.doc.name)}`,
+		fields: [
+			{
+				fieldname: "sample_name",
+				fieldtype: "Link",
+				label: `Sample ${frm.doc.on_doctype}`,
+				options: frm.doc.on_doctype,
+				reqd: 1,
+				description: "Pick a real record to preview this rule's criteria + actions against. Nothing is written.",
+			},
+			{ fieldname: "result_panel", fieldtype: "HTML" },
+		],
+		primary_action_label: "Run",
+		primary_action: () => run_simulation(frm, dialog),
+	});
+	dialog.show();
+}
+
+function run_simulation(frm, dialog) {
+	const sample_name = dialog.get_value("sample_name");
+	if (!sample_name) return;
+	set_simulate_panel(dialog, `<div style="color:var(--text-muted)">Running…</div>`);
+	frappe
+		.call({
+			method: "tatva_connect.automation.simulate.dry_run",
+			args: { rule_name: frm.doc.name, sample_doctype: frm.doc.on_doctype, sample_name },
+		})
+		.then((r) => render_simulate_result(dialog, r.message))
+		.catch(() => {
+			set_simulate_panel(dialog, `<div style="color:var(--text-danger)">Simulation failed — see the Error Log.</div>`);
+		});
+}
+
+function set_simulate_panel(dialog, html) {
+	dialog.set_df_property("result_panel", "options", html);
+}
+
+function simulate_action_list(rows) {
+	if (!rows.length) return `<div style="color:var(--text-muted)">(none)</div>`;
+	return `<ul style="margin:4px 0 0 16px;">${rows
+		.map((r) => `<li><b>${frappe.utils.escape_html(r.verb)}</b> — ${frappe.utils.escape_html(r.would)}</li>`)
+		.join("")}</ul>`;
+}
+
+function render_simulate_result(dialog, result) {
+	const badge = result.matched
+		? `<span style="color:var(--text-success)">MATCHED</span>`
+		: `<span style="color:var(--text-muted)">not matched</span>`;
+	const html = `
+		<div style="padding:4px 0;">
+			<div><b>Criteria:</b> ${badge}</div>
+			<div style="margin-top:8px;"><b>Guards</b> ${simulate_action_list(result.guards)}</div>
+			<div style="margin-top:8px;"><b>Effects</b> ${simulate_action_list(result.effects)}</div>
+		</div>`;
+	set_simulate_panel(dialog, html);
 }
