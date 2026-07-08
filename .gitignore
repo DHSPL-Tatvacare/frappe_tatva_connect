@@ -82,3 +82,6 @@ tatva_connect/security/dast-targets.txt
 
 # local audit-triage spikes + dashboard (internal security testing)
 tatva_connect/tests/authz/spikes/
+
+# PyCharm inspection exports (per-file problem triage) — LOCAL only, never committed
+inspections/
