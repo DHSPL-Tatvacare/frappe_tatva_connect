@@ -133,5 +133,27 @@
   "color": "#E24C4C",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Automation Active Grains",
+  "label": "Automation \u00b7 Active Grains",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Custom",
+  "method": "tatva_connect.automation.report.active_grains_card",
+  "color": "#449CF0"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Automation Failure Rate (7d)",
+  "label": "Automation \u00b7 Failure Rate % (7d)",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "type": "Custom",
+  "method": "tatva_connect.automation.report.failure_rate_card",
+  "color": "#E24C4C"
  }
 ]

@@ -8,13 +8,35 @@ IMPORTANT — the Run Log is fire-ONLY: a rule that evaluated but didn't match i
 row at all. So every count this report returns (`fired`, per-rule totals) counts FIRES, not
 evaluations. A doctype with zero rows for a day may mean "nothing matched" or "nothing happened" —
 this report cannot distinguish the two, by design (matching the log it reads).
+
+Workspace-P2: grain-sliced aggregation for the custom Automations/Observability widgets
+(`grain_health`, `grain_log_matrix`) + two Custom-Number-Card methods (`active_grains_card`,
+`failure_rate_card`). Same posture as `daily_summary` throughout: `has_permission` FIRST (fail-closed,
+no separate hole), native `frappe.get_all` with parameterised filters, pure-Python grouping. `grain`
+on Run Log is the dispatcher's own denormalized `vertical::group::program` tag
+(`dispatcher._grain_tag`, stamped at fire time) — reused here, not re-derived (A.8), so these reports
+never touch CRM Lead's permlevel-1 `custom_vertical/group/program` fields at all (Phase 1's open
+item): the aggregate is already grain-safe without `ignore_permissions` anywhere in this module.
 """
 import frappe
-from frappe.utils import add_days, getdate
+from frappe.utils import add_days, cint, getdate
 
-from tatva_connect.automation.dispatcher import RUN_LOG
+from tatva_connect.automation.dispatcher import RUN_LOG, _grain_tag
 
 OUTCOMES = ("Success", "Partial", "Failed")
+NO_GRAIN = "(no grain)"
+
+# `grain_log_matrix`'s log SOURCES. Only `automation` (CRM Automation Run Log) carries a real
+# `grain` field — that column is a true per-grain split. `partner`/`telephony`/`error` read the core
+# Error Log, which has NO grain field at all; fabricating one would violate A.13/A.16, so every
+# Error Log row lands in the single shared `NO_GRAIN` bucket instead, classified by title prefix
+# (kept in sync with this app's actual `frappe.log_error(title=...)` call sites — see
+# `telephony/adapter.py`, `telephony/reconcile.py`, `api/telephony.py`, `api/_base.py`). Anything
+# that matches neither prefix tuple falls into the generic `error` column.
+LOG_SOURCES = ("automation", "partner", "telephony", "error")
+_TELEPHONY_TITLE_PREFIXES = ("telephony:", "Acefone")
+_PARTNER_TITLE_PREFIXES = ("Partner API", "Idempotency release failed", "normalise_partner_response")
+DEFAULT_WINDOW_DAYS = 7
 
 
 @frappe.whitelist()
@@ -68,3 +90,133 @@ def _summarize(doctype, day, rows):
 		"failed": totals["Failed"],
 		"rules": rules,
 	}
+
+
+def _window(days):
+	"""[start, end) over the trailing `days` CALENDAR days, inclusive of today — the one window
+	both `grain_health` and `grain_log_matrix` (and the two KPI cards) resolve through, so "7d"
+	means the same 7 days everywhere on the dashboard (A.8)."""
+	days = cint(days) or DEFAULT_WINDOW_DAYS
+	end_day = getdate()
+	start_day = add_days(end_day, -(days - 1))
+	return f"{start_day} 00:00:00", f"{add_days(end_day, 1)} 00:00:00"
+
+
+@frappe.whitelist()
+def grain_health(days=None):
+	"""Per-grain Run Log outcome counts over the trailing `days` window (default 7) — the source
+	for the stacked health-by-grain bar. Same fire-only caveat as `daily_summary` (module
+	docstring): a grain with zero rows may mean nothing matched, not nothing happened."""
+	frappe.has_permission(RUN_LOG, "read", throw=True)
+	start, end = _window(days)
+	rows = frappe.get_all(
+		RUN_LOG,
+		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
+		fields=["grain", "outcome"],
+	)
+	return _grain_totals(rows)
+
+
+def _grain_totals(rows):
+	"""Pure grouping over already-fetched rows, mirroring `_summarize` (kept parameter-safe,
+	unit-testable in isolation)."""
+	by_grain = {}
+	for row in rows:
+		grain = row["grain"] or NO_GRAIN
+		bucket = by_grain.setdefault(grain, {"grain": grain, "success": 0, "partial": 0, "failed": 0})
+		bucket[row["outcome"].lower()] += 1
+	for bucket in by_grain.values():
+		bucket["total"] = bucket["success"] + bucket["partial"] + bucket["failed"]
+	return sorted(by_grain.values(), key=lambda b: b["total"], reverse=True)
+
+
+def _classify_error_title(title):
+	"""Bucket one Error Log title into `partner`/`telephony`/`error` — see the LOG_SOURCES
+	docstring above for the prefix source list. Never returns `automation`: that column is Run
+	Log's real per-grain count, not derived from Error Log at all."""
+	if (title or "").startswith(_TELEPHONY_TITLE_PREFIXES):
+		return "telephony"
+	if (title or "").startswith(_PARTNER_TITLE_PREFIXES):
+		return "partner"
+	return "error"
+
+
+@frappe.whitelist()
+def grain_log_matrix(days=None):
+	"""Per-grain counts by log SOURCE over the trailing `days` window (default 7) — the source for
+	the grain x log-type heatmap. See the LOG_SOURCES module docstring for exactly which sources
+	contribute and why only `automation` is grain-real.
+
+	Fail-closed on Run Log (same gate as `grain_health`/`daily_summary`). Error Log itself is a
+	core doctype with NO custom permission rows (System Manager only on this bench) — rather than
+	throw for a Sales Manager who can read Run Log but not Error Log, this degrades: the
+	`partner`/`telephony`/`error` columns read 0 and `error_log_readable: False` tells the caller
+	why, so the widget can render a note instead of a hard error (partial data over a denial, the
+	same posture the KPI/report surface already takes elsewhere)."""
+	frappe.has_permission(RUN_LOG, "read", throw=True)
+	start, end = _window(days)
+
+	run_rows = frappe.get_all(
+		RUN_LOG,
+		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
+		fields=["grain"],
+	)
+	matrix = {}
+	for row in run_rows:
+		grain = row["grain"] or NO_GRAIN
+		bucket = matrix.setdefault(grain, dict.fromkeys(LOG_SOURCES, 0))
+		bucket["automation"] += 1
+
+	error_log_readable = bool(frappe.has_permission("Error Log", "read"))
+	if error_log_readable:
+		# authz-ok: Error Log is read here ONLY behind the has_permission("Error Log","read") gate
+		# on the line above (never unconditionally) — a caller without native Error Log read gets
+		# error_log_readable=False and no rows are fetched, so this is a permission-respecting read
+		# gated by an explicit check, not a bypass.
+		err_rows = frappe.get_all(
+			"Error Log",
+			filters=[["creation", ">=", start], ["creation", "<", end]],
+			fields=["method"],
+		)
+		no_grain = matrix.setdefault(NO_GRAIN, dict.fromkeys(LOG_SOURCES, 0))
+		for row in err_rows:
+			no_grain[_classify_error_title(row["method"])] += 1
+
+	return {
+		"sources": list(LOG_SOURCES),
+		"rows": [{"grain": grain, **counts} for grain, counts in sorted(matrix.items())],
+		"error_log_readable": error_log_readable,
+	}
+
+
+@frappe.whitelist()
+def active_grains_card(filters=None):
+	"""Custom Number Card: distinct grain across ENABLED automation rules (not fired grains — a
+	rule can be enabled with zero fires yet). Reuses the dispatcher's own grain-tag formatter
+	(A.8) so this always agrees with what Run Log rows actually carry."""
+	frappe.has_permission("CRM Automation Rule", "read", throw=True)
+	rows = frappe.get_all(
+		"CRM Automation Rule",
+		filters=[["enabled", "=", 1]],
+		fields=["vertical", "group", "program"],
+	)
+	grains = {_grain_tag(r["vertical"], r["group"], r["program"]) for r in rows}
+	return {"value": len(grains), "fieldtype": "Int"}
+
+
+@frappe.whitelist()
+def failure_rate_card(filters=None, days=None):
+	"""Custom Number Card: Failed / total Run Log fires over the trailing `days` window (default
+	7) — labelled "Failure Rate % (7d)" on the workspace. Same fire-only caveat as `daily_summary`:
+	a zero-fire window reads as 0%, not "no automation activity"."""
+	frappe.has_permission(RUN_LOG, "read", throw=True)
+	start, end = _window(days)
+	rows = frappe.get_all(
+		RUN_LOG,
+		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
+		fields=["outcome"],
+	)
+	total = len(rows)
+	failed = sum(1 for r in rows if r["outcome"] == "Failed")
+	pct = round(failed / total * 100, 2) if total else 0
+	return {"value": pct, "fieldtype": "Percent"}

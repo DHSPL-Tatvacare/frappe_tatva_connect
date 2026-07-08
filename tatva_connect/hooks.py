@@ -242,6 +242,15 @@ fixtures = [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
 		"Automation Fires Today", "Automation Enabled Rules", "Automation Failed Fires (7d)",
 		"Partner API Requests (24h)", "Partner API Errors (24h)",
+		"Automation Active Grains", "Automation Failure Rate (7d)",
+	]]]},
+	# Workspace-P2: custom widgets native Dashboard Chart can't do (stacked-by-outcome bar, grain x
+	# log-source heatmap) — a Custom HTML Block that frappe.calls automation.report.grain_health /
+	# grain_log_matrix and draws with the globally-loaded frappe-charts (or a hand-rolled table for the
+	# heatmap); embedded via the Workspace `custom_blocks` table + `content` JSON below, same
+	# name-scoped-fixture posture as Dashboard Chart/Number Card above.
+	{"dt": "Custom HTML Block", "filters": [["name", "in", [
+		"Automation Health by Grain", "Grain x Log Source Heatmap",
 	]]]},
 	{
 		"dt": "Custom Field",
