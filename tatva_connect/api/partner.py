@@ -531,7 +531,7 @@ def _delete_one(name, mp):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def lead_schema(**kwargs):
+def lead_schema(**_kwargs):
 	"""Discovery: the fields THIS caller may send/read + their routing mode.
 	Two partners hitting this get different field lists — driven by their grid."""
 	user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
@@ -632,7 +632,7 @@ def lead_schema(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def lead_get(**kwargs):
+def lead_get(**_kwargs):
 	"""Read one lead by `name` or `mobile_no`. A partner only sees leads on their
 	line, and only their allowed fields."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
@@ -656,7 +656,7 @@ def lead_get(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def lead_create(**kwargs):
+def lead_create(**_kwargs):
 	"""Create-or-upsert a lead by phone. Returns the CRM `name` to PUT back to."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
@@ -666,7 +666,7 @@ def lead_create(**kwargs):
 
 @frappe.whitelist(methods=["PUT"])
 @_api
-def lead_update(**kwargs):
+def lead_update(**_kwargs):
 	"""Update a lead by CRM `name`. Partner scope-checked; can't move it to another line."""
 	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow)
@@ -675,7 +675,7 @@ def lead_update(**kwargs):
 
 @frappe.whitelist(methods=["DELETE"])
 @_api
-def lead_delete(**kwargs):
+def lead_delete(**_kwargs):
 	"""Delete a lead by CRM `name`. Partner scope-checked (own line only). A lead with
 	linked activity raises LinkExistsError — so a partner can't nuke a worked lead."""
 	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
@@ -688,7 +688,7 @@ def lead_delete(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
-def lead_create_bulk(**kwargs):
+def lead_create_bulk(**_kwargs):
 	"""Create-or-upsert many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
@@ -703,7 +703,7 @@ def lead_create_bulk(**kwargs):
 
 @frappe.whitelist(methods=["PUT"])
 @_api(bulk=True)
-def lead_update_bulk(**kwargs):
+def lead_update_bulk(**_kwargs):
 	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	updates = _read_list(frappe.form_dict, "updates") or []
@@ -717,7 +717,7 @@ def lead_update_bulk(**kwargs):
 
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
-def lead_delete_bulk(**kwargs):
+def lead_delete_bulk(**_kwargs):
 	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	names = _read_list(frappe.form_dict, "names") or []
@@ -731,7 +731,7 @@ def lead_delete_bulk(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
-def lead_get_bulk(**kwargs):
+def lead_get_bulk(**_kwargs):
 	"""Read many leads by `names` OR `mobile_nos` (<= 100). Out-of-scope ids omitted."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
@@ -774,7 +774,7 @@ def lead_get_bulk(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api(bulk=True)
-def lead_list(**kwargs):
+def lead_list(**_kwargs):
 	"""List leads on the caller's line, filtered + paginated. Curated fields only, no
 	children (use lead_get for the full record). Filters: status, created/updated date
 	ranges, exact mobile_no — never arbitrary fields."""
