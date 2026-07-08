@@ -229,13 +229,19 @@ fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# "Automation Run Log by Outcome" is the automation engine's Run Log chart (Task 12, A.17 — the LAYOUT ships here, rows never seeded).
+	# Workspace-P1: native grain lens (Run Log grain/outcome/trigger_doctype/rule) + Partner API leads-by-vertical
+	# + Observability's Error Log group-by, embedded in the Automations/Partner API/Observability workspace content.
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
 		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
 		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
-		"Automation Run Log by Outcome",
+		"Automation Run Log by Outcome", "Automation Fires by Grain", "Automation Fires by Doctype",
+		"Automation Top Rules", "Automation Fires (Daily)", "Partner Leads by Vertical",
+		"Errors by Reference Doctype",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
+		"Automation Fires Today", "Automation Enabled Rules", "Automation Failed Fires (7d)",
+		"Partner API Requests (24h)", "Partner API Errors (24h)",
 	]]]},
 	{
 		"dt": "Custom Field",

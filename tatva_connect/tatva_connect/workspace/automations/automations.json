@@ -4,9 +4,25 @@
   {
    "chart_name": "Automation Run Log by Outcome",
    "label": "Automation Run Log by Outcome"
+  },
+  {
+   "chart_name": "Automation Fires by Grain",
+   "label": "Automation Fires by Grain"
+  },
+  {
+   "chart_name": "Automation Fires by Doctype",
+   "label": "Automation Fires by Doctype"
+  },
+  {
+   "chart_name": "Automation Top Rules",
+   "label": "Automation Top Rules"
+  },
+  {
+   "chart_name": "Automation Fires (Daily)",
+   "label": "Automation Fires (Daily)"
   }
  ],
- "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Automation Rules\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Run Log\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Control Panel\", \"col\": 4}}, {\"id\": \"ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Run Log by Outcome\", \"col\": 12}}]",
+ "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine\", \"col\": 4}}, {\"id\": \"sp1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Fires Today\", \"col\": 4}}, {\"id\": \"nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Enabled Rules\", \"col\": 4}}, {\"id\": \"nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Failed Fires (7d)\", \"col\": 4}}, {\"id\": \"ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Run Log by Outcome\", \"col\": 6}}, {\"id\": \"ch2\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Grain\", \"col\": 6}}, {\"id\": \"ch3\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Doctype\", \"col\": 6}}, {\"id\": \"ch4\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Top Rules\", \"col\": 6}}, {\"id\": \"ch5\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires (Daily)\", \"col\": 12}}, {\"id\": \"sp2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Set up\", \"col\": 6}}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Monitor\", \"col\": 6}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -17,12 +33,75 @@
  "idx": 2,
  "is_hidden": 0,
  "label": "Automations",
- "links": [],
- "modified": "2026-07-08 00:00:00.000000",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Set up",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Field Allowlist",
+   "link_count": 0,
+   "link_to": "CRM Automation Field",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Automation Rules",
+   "link_count": 0,
+   "link_to": "CRM Automation Rule",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Monitor",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Run Log",
+   "link_count": 0,
+   "link_to": "CRM Automation Run Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Automation \u00b7 Fires Today",
+   "number_card_name": "Automation Fires Today"
+  },
+  {
+   "label": "Automation \u00b7 Enabled Rules",
+   "number_card_name": "Automation Enabled Rules"
+  },
+  {
+   "label": "Automation \u00b7 Failed Fires (7d)",
+   "number_card_name": "Automation Failed Fires (7d)"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -41,22 +120,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Automation Rules",
-   "link_to": "CRM Automation Rule",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "label": "Run Log",
-   "link_to": "CRM Automation Run Log",
-   "stats_filter": "[]",
-   "type": "Report"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "Control Panel",
+   "label": "Engine",
    "link_to": "CRM Tatva Automation",
    "stats_filter": "[]",
    "type": "DocType"

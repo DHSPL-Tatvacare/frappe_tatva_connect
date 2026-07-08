@@ -9,6 +9,18 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "sliders-horizontal",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Engine",
+   "link_to": "CRM Tatva Automation",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "layout-dashboard",
    "indent": 0,
    "keep_closed": 0,
@@ -20,6 +32,29 @@
   },
   {
    "child": 0,
+   "collapsible": 1,
+   "icon": "list-todo",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Set up",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "settings-2",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Field Allowlist",
+   "link_to": "CRM Automation Field",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
    "collapsible": 1,
    "icon": "list-checks",
    "indent": 0,
@@ -38,47 +73,12 @@
    "keep_closed": 0,
    "label": "Run Log",
    "link_to": "CRM Automation Run Log",
-   "link_type": "Report",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 0,
-   "collapsible": 1,
-   "icon": "settings",
-   "indent": 1,
-   "keep_closed": 1,
-   "label": "Settings",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Section Break"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "sliders-horizontal",
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Engine",
-   "link_to": "CRM Tatva Automation",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "settings-2",
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Field Allowlist",
-   "link_to": "CRM Automation Field",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
   }
  ],
- "modified": "2026-07-08 00:00:00.000000",
+ "modified": "2026-07-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",
