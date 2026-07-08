@@ -20,16 +20,15 @@
   {
    "chart_name": "Automation Fires (Daily)",
    "label": "Automation Fires (Daily)"
-  }
- ],
- "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine\", \"col\": 4}}, {\"id\": \"sp1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Fires Today\", \"col\": 4}}, {\"id\": \"nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Enabled Rules\", \"col\": 4}}, {\"id\": \"nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Failed Fires (7d)\", \"col\": 4}}, {\"id\": \"nc4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Active Grains\", \"col\": 4}}, {\"id\": \"nc5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Failure Rate (7d)\", \"col\": 4}}, {\"id\": \"ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Run Log by Outcome\", \"col\": 6}}, {\"id\": \"ch2\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Grain\", \"col\": 6}}, {\"id\": \"ch3\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Doctype\", \"col\": 6}}, {\"id\": \"ch4\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Top Rules\", \"col\": 6}}, {\"id\": \"ch5\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires (Daily)\", \"col\": 12}}, {\"id\": \"cb1\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"Automation Health by Grain\", \"col\": 12}}, {\"id\": \"sp2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Setup\", \"col\": 6}}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Monitor\", \"col\": 6}}]",
- "creation": "2026-06-18 23:00:00.000000",
- "custom_blocks": [
+  },
   {
-   "custom_block_name": "Automation Health by Grain",
+   "chart_name": "Automation Health by Grain",
    "label": "Automation Health by Grain"
   }
  ],
+ "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine\", \"col\": 4}}, {\"id\": \"sp1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Fires Today\", \"col\": 4}}, {\"id\": \"nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Enabled Rules\", \"col\": 4}}, {\"id\": \"nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Failed Fires (7d)\", \"col\": 4}}, {\"id\": \"nc4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Active Grains\", \"col\": 4}}, {\"id\": \"nc5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Automation Failure Rate (7d)\", \"col\": 4}}, {\"id\": \"ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Run Log by Outcome\", \"col\": 6}}, {\"id\": \"ch2\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Grain\", \"col\": 6}}, {\"id\": \"ch3\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires by Doctype\", \"col\": 6}}, {\"id\": \"ch4\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Top Rules\", \"col\": 6}}, {\"id\": \"ch5\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Fires (Daily)\", \"col\": 12}}, {\"id\": \"ch6\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Health by Grain\", \"col\": 12}}, {\"id\": \"sp2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"card1\", \"type\": \"card\", \"data\": {\"card_name\": \"Setup\", \"col\": 6}}, {\"id\": \"card2\", \"type\": \"card\", \"data\": {\"card_name\": \"Monitor\", \"col\": 6}}]",
+ "creation": "2026-06-18 23:00:00.000000",
+ "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
  "for_user": "",
@@ -89,7 +88,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-09 12:00:00.000000",
+ "modified": "2026-07-09 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",

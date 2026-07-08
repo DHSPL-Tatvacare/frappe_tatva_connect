@@ -1,14 +1,6 @@
 [
  {
   "doctype": "Custom HTML Block",
-  "name": "Automation Health by Grain",
-  "private": 0,
-  "html": "<div class=\"tc-grain-widget\">\n  <div class=\"tc-grain-widget-title\">Automation Health by Grain <span class=\"tc-grain-widget-sub\">(fires, last 7 days)</span></div>\n  <div id=\"tc-health-chart\"></div>\n  <div class=\"tc-grain-widget-empty\" style=\"display:none;\">No automation fires in the last 7 days.</div>\n</div>\n",
-  "style": ".tc-grain-widget { padding: 12px 16px 4px; }\n.tc-grain-widget-title { font-size: var(--text-lg, 14px); font-weight: 600; color: var(--text-color); margin-bottom: 8px; }\n.tc-grain-widget-sub { font-weight: 400; color: var(--text-muted); font-size: var(--text-sm, 12px); }\n.tc-grain-widget-empty { color: var(--text-muted); font-size: var(--text-sm, 12px); padding: 24px 0; text-align: center; }\n",
-  "script": "(function () {\n\tfunction render(rows) {\n\t\tvar chartEl = root_element.querySelector(\"#tc-health-chart\");\n\t\tvar emptyEl = root_element.querySelector(\".tc-grain-widget-empty\");\n\t\tif (!rows || !rows.length) {\n\t\t\temptyEl.style.display = \"block\";\n\t\t\treturn;\n\t\t}\n\t\tnew frappe.Chart(chartEl, {\n\t\t\tdata: {\n\t\t\t\tlabels: rows.map(function (r) { return r.grain; }),\n\t\t\t\tdatasets: [\n\t\t\t\t\t{ name: \"Success\", chartType: \"bar\", values: rows.map(function (r) { return r.success; }) },\n\t\t\t\t\t{ name: \"Partial\", chartType: \"bar\", values: rows.map(function (r) { return r.partial; }) },\n\t\t\t\t\t{ name: \"Failed\", chartType: \"bar\", values: rows.map(function (r) { return r.failed; }) }\n\t\t\t\t]\n\t\t\t},\n\t\t\ttype: \"bar\",\n\t\t\theight: 260,\n\t\t\tcolors: [\"green\", \"orange\", \"red\"],\n\t\t\tbarOptions: { stacked: 1, spaceRatio: 0.4 },\n\t\t\taxisOptions: { xAxisMode: \"tick\", xIsSeries: false }\n\t\t});\n\t}\n\n\tfrappe.call({\n\t\tmethod: \"tatva_connect.automation.report.grain_health\",\n\t\targs: { days: 7 },\n\t\tcallback: function (r) { render(r.message || []); }\n\t});\n})();\n"
- },
- {
-  "doctype": "Custom HTML Block",
   "name": "Grain x Log Source Heatmap",
   "private": 0,
   "html": "<div class=\"tc-grain-widget\">\n  <div class=\"tc-grain-widget-title\">Grain × Log Source <span class=\"tc-grain-widget-sub\">(fires/entries, last 7 days)</span></div>\n  <div id=\"tc-heatmap\"></div>\n  <div class=\"tc-grain-widget-empty\" style=\"display:none;\">No automation fires in the last 7 days.</div>\n  <div class=\"tc-heatmap-note\" style=\"display:none;\">Partner / Telephony / Error columns need Error Log read (System Manager) — showing 0 for this session.</div>\n</div>\n",

@@ -235,8 +235,8 @@ fixtures = [
 		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
 		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
 		"Automation Run Log by Outcome", "Automation Fires by Grain", "Automation Fires by Doctype",
-		"Automation Top Rules", "Automation Fires (Daily)", "Partner Leads by Vertical",
-		"Errors by Reference Doctype",
+		"Automation Top Rules", "Automation Fires (Daily)", "Automation Health by Grain",
+		"Partner Leads by Vertical", "Errors by Reference Doctype",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
@@ -244,13 +244,15 @@ fixtures = [
 		"Partner API Requests (24h)", "Partner API Errors (24h)",
 		"Automation Active Grains", "Automation Failure Rate (7d)",
 	]]]},
-	# Workspace-P2: custom widgets native Dashboard Chart can't do (stacked-by-outcome bar, grain x
-	# log-source heatmap) — a Custom HTML Block that frappe.calls automation.report.grain_health /
-	# grain_log_matrix and draws with the globally-loaded frappe-charts (or a hand-rolled table for the
-	# heatmap); embedded via the Workspace `custom_blocks` table + `content` JSON below, same
-	# name-scoped-fixture posture as Dashboard Chart/Number Card above.
+	# Workspace-P2: the grain x log-source heatmap is a matrix — no native chart form covers
+	# category x category, so it stays a Custom HTML Block that frappe.calls
+	# automation.report.grain_log_matrix and draws a hand-rolled table (100% theme-token, zero
+	# literal color). The health-by-grain widget is now a NATIVE Dashboard Chart (chart_type=Custom,
+	# source "Automation Health by Grain" above) — retired from here; embedded via the Workspace
+	# `custom_blocks` table + `content` JSON below, same name-scoped-fixture posture as Dashboard
+	# Chart/Number Card above.
 	{"dt": "Custom HTML Block", "filters": [["name", "in", [
-		"Automation Health by Grain", "Grain x Log Source Heatmap",
+		"Grain x Log Source Heatmap",
 	]]]},
 	{
 		"dt": "Custom Field",

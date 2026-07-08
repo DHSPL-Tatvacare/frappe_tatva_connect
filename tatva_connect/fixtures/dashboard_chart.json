@@ -179,6 +179,21 @@
  },
  {
   "doctype": "Dashboard Chart",
+  "name": "Automation Health by Grain",
+  "chart_name": "Automation Health by Grain",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Custom",
+  "source": "Automation Health by Grain",
+  "type": "Bar",
+  "timeseries": 0,
+  "custom_options": "{\"barOptions\": {\"stacked\": 1}}",
+  "filters_json": "{\"days\":\"7\"}",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
   "name": "Partner Leads by Vertical",
   "chart_name": "Partner Leads by Vertical",
   "module": "Tatva Connect",
