@@ -75,10 +75,18 @@ def run_effects(subject, r, trigger_doc, axes, grain, field_types, context):
 	frappe.db.savepoint(save_point)
 	try:
 		for i, action in enumerate(effect_actions, 1):
-			thunk = _run_action(action, subject, context, axes, trigger_doc)
-			if thunk:
-				deferred.append(thunk)
-			details.append(f"{i}. {actions._action_label(action)}: ok")
+			result = _run_action(action, subject, context, axes, trigger_doc)
+			label = actions._action_label(action)
+			if callable(result):
+				deferred.append(result)  # a deferred thunk (e.g. Call Webhook) - fires only after commit
+				details.append(f"{i}. {label}: ok")
+			elif result:
+				# A handler may return a plain-string marker instead of a thunk (e.g. Send WhatsApp/
+				# Send Email's "suppressed: sends dormant" / "sent: ..." - Task 7) - fold it into the
+				# same audit line rather than a second Run Log column.
+				details.append(f"{i}. {label}: ok ({result})")
+			else:
+				details.append(f"{i}. {label}: ok")
 		frappe.db.release_savepoint(save_point)
 		success = len(effect_actions)
 	except Exception as e:

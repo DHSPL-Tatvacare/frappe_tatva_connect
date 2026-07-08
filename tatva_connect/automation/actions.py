@@ -29,6 +29,10 @@ def _action_label(a):
 		return "Call Webhook {}".format(a.webhook_endpoint or "?")
 	if a.action_type == "Create Note":
 		return "Create Note"
+	if a.action_type == "Send WhatsApp":
+		return "Send WhatsApp {}".format(a.whatsapp_template or "?")
+	if a.action_type == "Send Email":
+		return "Send Email {}".format(a.email_recipient or "?")
 	return a.action_type or "?"
 
 
@@ -188,6 +192,24 @@ def _action_call_webhook(action, lead, context, axes, trigger_doc):
 	)
 
 
+def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
+	"""SEND_WHATSAPP (effect, Task 7) — the dormant sends gate. `sends.send_whatsapp` records the
+	fire behind `Task::Automation::sends` (OFF by default, A.6) and, once the operator flips it,
+	sends through the EXISTING WATI brain (grain-routed account + template, A.11/A.8). This handler
+	only resolves the action's config off the rule row; no adapter logic lives here."""
+	from tatva_connect.automation import sends
+
+	return sends.send_whatsapp(lead, action.whatsapp_template, context)
+
+
+def _action_send_email(action, lead, context, axes, trigger_doc):
+	"""SEND_EMAIL (effect, Task 7) — same dormant gate as Send WhatsApp; live sends go through
+	native `frappe.sendmail` (A.18), never a hand-rolled mail path."""
+	from tatva_connect.automation import sends
+
+	return sends.send_email(lead, action.email_recipient, action.email_subject, action.email_body, context)
+
+
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
 # `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
 # verb = one row here, never a second lane table. `Require Fields` is the first guard verb (Task 5);
@@ -200,6 +222,8 @@ _ACTION_LANES = {
 	"Upsert Child Row": ("effect", _action_upsert_child),
 	"Call Webhook": ("effect", _action_call_webhook),
 	"Create Note": ("effect", _action_add_comment),
+	"Send WhatsApp": ("effect", _action_send_whatsapp),
+	"Send Email": ("effect", _action_send_email),
 }
 
 
