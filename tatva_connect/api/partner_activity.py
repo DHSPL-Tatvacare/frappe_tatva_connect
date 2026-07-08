@@ -165,7 +165,7 @@ def _delete_one(name, mp, is_sysmgr):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def activity_schema(**kwargs):
+def activity_schema(**_kwargs):
 	"""DISCOVERY BY LEAD: given `?lead=<name>` or `?mobile_no=`, return the activity
 	types available to that lead's grain, each with its field schema — how an integrator
 	discovers exactly what to send for this patient. Grain-scoped through resolve_lead."""
@@ -195,7 +195,7 @@ def activity_schema(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def activity_get(**kwargs):
+def activity_get(**_kwargs):
 	"""Read one activity by CRM Task `name`, scoped to the caller's grain. Returns the
 	activity with `values` re-keyed to its schema fieldnames."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -205,7 +205,7 @@ def activity_get(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def activity_create(**kwargs):
+def activity_create(**_kwargs):
 	"""Create-or-upsert an activity. Body: {lead|mobile_no, task_type, external_id,
 	values:{fieldname:value}, created_at?}. Deduped on external_id; re-send updates."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -215,7 +215,7 @@ def activity_create(**kwargs):
 
 @frappe.whitelist(methods=["PUT"])
 @_api
-def activity_update(**kwargs):
+def activity_update(**_kwargs):
 	"""Update an activity by CRM Task `name` — re-run compute with new values. Scope-checked."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr)
@@ -224,7 +224,7 @@ def activity_update(**kwargs):
 
 @frappe.whitelist(methods=["DELETE"])
 @_api
-def activity_delete(**kwargs):
+def activity_delete(**_kwargs):
 	"""Delete an activity by CRM Task `name`, scope-checked (generic not-found)."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	name = frappe.form_dict.get("name")
@@ -236,7 +236,7 @@ def activity_delete(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def activity_create_bulk(**kwargs):
+def activity_create_bulk(**_kwargs):
 	"""Create-or-upsert many activities. Body: {"activities":[{...}, ...]} (<= 100).
 	Each record is enforced in its own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -252,7 +252,7 @@ def activity_create_bulk(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def activity_get_bulk(**kwargs):
+def activity_get_bulk(**_kwargs):
 	"""Read many activities by `names` OR `external_ids` (<= 100). Out-of-scope/unknown
 	ids are reported not_found in place — input-ordered (results[i] = the i-th id)."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -286,7 +286,7 @@ def activity_get_bulk(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def activity_list(**kwargs):
+def activity_list(**_kwargs):
 	"""List activities on a lead, paginated. `?lead=` (or `?mobile_no=`) is required and
 	grain-scoped through resolve_lead; optional `task_type` / `status` filters. Returns
 	{total, count, offset, limit, has_more, activities:[...]}."""

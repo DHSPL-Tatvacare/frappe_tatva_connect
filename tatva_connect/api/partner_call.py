@@ -204,7 +204,7 @@ def _upsert_one(data, mp, is_sysmgr):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def call_create(**kwargs):
+def call_create(**_kwargs):
 	"""Create-or-upsert a call log. Body: {lead|mobile_no, external_id, direction
 	(Inbound/Outbound), from_number, to_number, status, duration, recording_url?,
 	started_at?}. Deduped on external_id; re-send updates the same row, never doubles.
@@ -217,7 +217,7 @@ def call_create(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def call_get(**kwargs):
+def call_get(**_kwargs):
 	"""Read one call by `name`, grain-scoped (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -227,7 +227,7 @@ def call_get(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def call_list(**kwargs):
+def call_list(**_kwargs):
 	"""List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
 	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset. Returns
 	{total, count, offset, limit, has_more, calls:[...]}."""
@@ -275,7 +275,7 @@ def call_list(**kwargs):
 
 @frappe.whitelist(methods=["DELETE"])
 @_api
-def call_delete(**kwargs):
+def call_delete(**_kwargs):
 	"""Delete one call by `name`, scope-checked (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -287,7 +287,7 @@ def call_delete(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def call_create_bulk(**kwargs):
+def call_create_bulk(**_kwargs):
 	"""Create-or-upsert many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record
 	is enforced in its own savepoint -> partial success; each is idempotent on its own
 	external_id."""

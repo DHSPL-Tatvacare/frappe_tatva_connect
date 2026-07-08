@@ -192,7 +192,7 @@ def _file_lead(doc):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def file_attach(**kwargs):
+def file_attach(**_kwargs):
 	"""Attach a file to a lead (or a scoped activity task). Body:
 	{lead|mobile_no, activity?, external_id, file_type, file_url|content_base64, filename}.
 	Idempotent on external_id: re-sending returns the existing file (action="exists")."""
@@ -203,7 +203,7 @@ def file_attach(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def file_get(**kwargs):
+def file_get(**_kwargs):
 	"""Read one file by `name`, grain-scoped. Returns metadata + the proxy url."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	doc = _scoped_file(frappe.form_dict.get("name"), mp, is_sysmgr)
@@ -212,7 +212,7 @@ def file_get(**kwargs):
 
 @frappe.whitelist(methods=["GET"])
 @_api
-def file_list(**kwargs):
+def file_list(**_kwargs):
 	"""List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
 	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -254,7 +254,7 @@ def file_list(**kwargs):
 
 @frappe.whitelist(methods=["DELETE"])
 @_api
-def file_delete(**kwargs):
+def file_delete(**_kwargs):
 	"""Delete one file by `name`, scope-checked (own line only). Out-of-scope/missing ->
 	the SAME generic not-found. The on_trash hook drops the Azure blob (last reference)."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -266,7 +266,7 @@ def file_delete(**kwargs):
 
 @frappe.whitelist(methods=["POST"])
 @_api
-def file_attach_bulk(**kwargs):
+def file_attach_bulk(**_kwargs):
 	"""Attach many files. Body: {"files":[{...}, ...]} (<= 100). Partial success — each file
 	is idempotent on its own external_id."""
 	_user, mp, is_sysmgr = _resolve_caller()
