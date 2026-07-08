@@ -15,6 +15,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.patches import reshape_automation_triggers as patch
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.automation import field_allowlist
 
 _RULE = "CRM Automation Rule"
 _RULE_TABLE = "tab" + _RULE
@@ -195,6 +196,13 @@ class TestReshapeCriterionOperators(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		assert_masters_exist()
+		# Task 14: validate() now re-derives builder_schema, which scopes a criterion's field to the
+		# can_watch allowlist - custom_stage must be watchable to legally appear as a criterion field.
+		field_allowlist.seed_watchable("CRM Lead", "custom_stage")
+
+	@classmethod
+	def tearDownClass(cls):
+		field_allowlist.clear("CRM Lead")
 
 	def tearDown(self):
 		frappe.db.delete(_CRITERION, {"parent": ("like", "ReshapeProbe-%"), "parenttype": _RULE})

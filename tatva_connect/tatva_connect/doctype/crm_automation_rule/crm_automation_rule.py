@@ -5,15 +5,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-# TATVA v2 (Task 1): the frozen operator vocabulary (plan Part A) - a flat membership check only.
-# Task 3 replaces this with a per-field-type table once describe.OPERATORS_BY_TYPE (still the old
-# symbol set: "=", "!=", "like", ...) is reshaped onto these word operators; the builder (Task 14)
-# then re-derives the same table from describe.builder_schema so this constant retires there.
-_OPERATORS = frozenset({
-	"is", "is not", "greater than", "less than", "at least", "at most",
-	"is one of", "is not one of", "contains", "does not contain",
-	"is set", "is not set", "is between", "changed to", "changed from…to",
-})
 _CHANGED_OPERATORS = frozenset({"changed to", "changed from…to"})
 
 
@@ -91,41 +82,73 @@ class CRMAutomationRule(Document):
 				if not frappe.db.exists("CRM Task Type", a.task_type):
 					frappe.throw(_("Task Type {0} does not exist.").format(frappe.bold(a.task_type)), title=_("Unknown task type"))
 
-	def _criteria_vocabulary(self):
-		"""The {fieldname: descriptor} map a rule's criteria are validated against - the on_doctype's
-		own meta (fields_for_doctype). One describe contract - the builder and the validator read the
-		same vocabulary, so they can't drift (spec §5.4). TATVA v2 (Task 1): the old Task-Completed
-		branch (fields_for_task_type) is retired with trigger_type/task_type; Task 2 replaces this
-		whole resolver with the typed field_catalog (Link/Select/child-table pick sources)."""
-		from tatva_connect.automation.describe import fields_for_doctype
+	def _builder_schema(self):
+		"""Re-derive the SAME contract the Rule Form Script rendered from (describe.builder_schema) -
+		the ONE emitter, called here to re-enforce it at save time (Task 14 / plan Part G). A key the
+		schema doesn't offer can therefore never be saved, no matter what the frontend sends."""
+		from tatva_connect.automation import describe
 
-		return {f["key"]: f for f in fields_for_doctype(self.on_doctype)}
+		return describe.builder_schema(self.on_doctype, self.event, self.vertical, self.group, self.program)
 
 	def _validate_criteria_fields(self):
-		"""Each criterion's field must exist in the trigger's vocabulary, and its operator must be a
-		recognised v2 operator (Part A). `changed to` / `changed from…to` are transition operators,
-		not field-type operators - see `_validate_changed_operator`. TATVA v2 (Task 1): the operator
-		check is a flat frozen-set membership check (`_OPERATORS`), not yet per-field-type - Task 3
-		reshapes describe.OPERATORS_BY_TYPE onto the word set and this re-derives from that instead."""
-		descriptors = self._criteria_vocabulary()
+		"""Each criterion's field/operator/value must all be inside the SAME contract the builder
+		offered (describe.builder_schema): the field must be in the can_watch-scoped `fields` catalog,
+		the operator must be valid for that field's schema type (`operators_by_type`), and the value
+		must coerce to that type (describe.coerces). `changed to` / `changed from…to` are additionally
+		gated to event=Updated - see `_validate_changed_operator`. Fail-closed, one contract (A.8) -
+		this REPLACES the old flat `_OPERATORS` membership check and the full-meta `fields_for_doctype`
+		vocabulary (Task 1/3 stopgaps), both now derived through builder_schema instead."""
+		from tatva_connect.automation import describe
+
+		schema = self._builder_schema()
+		fields_by_key = {f["key"]: f for f in schema["fields"]}
 		for c in self.criteria:
 			if not c.field:
 				continue
-			if c.operator and c.operator not in _OPERATORS:
-				frappe.throw(
-					_("Operator {0} is not a recognised automation operator.").format(frappe.bold(c.operator)),
-					title=_("Unknown operator"),
-				)
-			if c.operator in _CHANGED_OPERATORS:
-				self._validate_changed_operator(c)
-				continue
-			d = descriptors.get(c.field) if descriptors else None
+			d = fields_by_key.get(c.field)
 			if d is None:
 				frappe.throw(
-					_("Criterion field {0} is not a field on {1}.").format(
+					_("Criterion field {0} is not offered for {1} — it must be a real, enabled Watchable field.").format(
 						frappe.bold(c.field), frappe.bold(self.on_doctype)
 					),
 					title=_("Unknown criterion field"),
+				)
+			if c.operator:
+				allowed_ops = schema["operators_by_type"].get(d["type"], [])
+				if c.operator not in allowed_ops:
+					frappe.throw(
+						_("Operator {0} is not valid for field {1} ({2}).").format(
+							frappe.bold(c.operator), frappe.bold(c.field), frappe.bold(d["type"])
+						),
+						title=_("Operator not valid for field type"),
+					)
+			if c.operator in _CHANGED_OPERATORS:
+				self._validate_changed_operator(c)
+				continue
+			self._validate_criterion_value(c, d, describe)
+
+	def _validate_criterion_value(self, c, d, describe):
+		"""A criterion's value(s) must coerce to its field's schema type (describe.coerces) - the
+		value half of the builder contract. Operator-shaped: `is set`/`is not set` carry no value;
+		membership splits into items; `is between` checks both bounds. Fail-closed."""
+		from tatva_connect.automation import rules
+
+		ftype = d["type"]
+		if c.operator in ("is set", "is not set", None, ""):
+			return
+		if c.operator in ("is one of", "is not one of"):
+			values = rules._split_list(c.value)
+		elif c.operator == "is between":
+			values = [c.from_value, c.value]
+		else:
+			values = [c.value]
+		for v in values:
+			if not describe.coerces(v, ftype):
+				frappe.throw(
+					_("Value {0} does not fit field {1} ({2}).").format(
+						frappe.bold(v), frappe.bold(c.field), frappe.bold(ftype)
+					),
+					title=_("Value does not fit field type"),
 				)
 
 	def _validate_changed_operator(self, c):

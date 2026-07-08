@@ -96,6 +96,9 @@ class TestGuardPlantedBad(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		frappe.db.set_value("CRM Tatva Automation", "Task::Automation::rules", "enabled", 1)
+		# Task 14: validate() now re-derives builder_schema, which scopes a criterion's field to the
+		# can_watch allowlist - status must be watchable to legally appear as a criterion field.
+		cls.watch_row = field_allowlist.seed_watchable("CRM Lead", "status")
 		cls.rule = _make_rule(
 			"TwoLane-plantedbad",
 			actions=[{"action_type": "Require Fields", "require_fields": "custom_dob"}],
@@ -106,6 +109,7 @@ class TestGuardPlantedBad(FrappeTestCase):
 	def tearDownClass(cls):
 		_cleanup("TwoLane-plantedbad")
 		frappe.db.delete("CRM Lead", {"lead_name": "TwoLane Probe"})
+		frappe.db.delete(_FIELD, {"name": cls.watch_row})
 
 	def tearDown(self):
 		router.clear_live_doctypes_cache()

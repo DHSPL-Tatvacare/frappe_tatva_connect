@@ -88,6 +88,7 @@ _ORDER_OPS = {
 _MEMBERSHIP_OPS = {"is one of": True, "is not one of": False}
 _TEXT_OPS = {"contains": True, "does not contain": False}
 _PRESENCE_OPS = {"is set": True, "is not set": False}
+_RANGE_OPS = {"is between"}
 _CHANGE_OPS = {"changed to", "changed from…to"}
 
 
@@ -111,7 +112,7 @@ def _one_match(c, context, ftype=None):
 			return _in_list(left, c.value, ftype) == _MEMBERSHIP_OPS[op]
 		if op in _TEXT_OPS:
 			return _contains(left, c.value) == _TEXT_OPS[op]
-		if op == "is between":
+		if op in _RANGE_OPS:
 			return _between(left, c.from_value, c.value, ftype)
 		if op in _CHANGE_OPS:
 			return _changed_match(op, c, context, left, ftype)
