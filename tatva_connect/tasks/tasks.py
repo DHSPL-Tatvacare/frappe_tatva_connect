@@ -86,13 +86,37 @@ def enforce_checklist(doc, method=None):
 		)
 
 
+def _location_guard_covers(doc):
+	"""True when an ENABLED 'Require Location' rule at this lead's grain would already run its guard,
+	synchronously, for THIS exact save — reuses the SAME matcher (rules.matching_rules), criteria
+	evaluator (rules.criteria_match) and context builder (router._diff_watched_fields/_context_for) the
+	guard lane itself uses (A.8, no parallel matcher). Lets the backstop below stand down only when an
+	authored rule genuinely covers this save, never on a blanket "a rule exists somewhere" guess."""
+	from tatva_connect.automation import rules, router
+
+	axes = rules.lead_axes(doc.reference_docname)
+	matched = rules.matching_rules("CRM Task", "Updated", *axes)
+	if not matched:
+		return False
+	changed = router._diff_watched_fields(doc)
+	context = router._context_for(doc, changed)
+	field_types = router._field_types_for("CRM Task")
+	for r in matched:
+		rule = frappe.get_doc("CRM Automation Rule", r.name)
+		has_guard = any(a.action_type == "Require Location" for a in rule.actions)
+		if has_guard and rules.criteria_match(rule.criteria, context, field_types):
+			return True
+	return False
+
+
 def enforce_location(doc, method=None):
-	"""Fail-closed backstop for the location guard: an activity that requires a location (always
-	in-person OR a matched conditional location_when) on a location-tracked lead grain must carry
-	coordinates. The activity flow (save_activity) captures + writes them via the client; this
-	guarantees the rule holds even on an API / import / scripted save where no browser ran. The
-	gate lives once in location.api.location_required, fed by the reconstructed submitted values
-	(one brain — same reconstruction the automation engine uses)."""
+	"""Fail-closed BACKSTOP for the location guard (VAPT, A.1/S.3) — stands down when an authored
+	'Require Location' rule already covers this exact save (its guard action already ran synchronously
+	ahead of this same validate and would have blocked it), so the two never double-throw. Otherwise
+	unchanged: guarantees coordinates on every save the rule-authored engine doesn't (yet) cover — API /
+	import / scripted saves, or before any Require Location rule exists. The gate lives once in
+	location.api.location_required, fed by the reconstructed submitted values (one brain — same
+	reconstruction the automation engine uses)."""
 	from tatva_connect.activity.automation import reconstruct_values
 	from tatva_connect.location.api import location_required
 
@@ -104,6 +128,8 @@ def enforce_location(doc, method=None):
 		return
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
 		return
+	if _location_guard_covers(doc):
+		return  # a Require Location rule already guarded this save in the sync guard lane
 	values = reconstruct_values(doc)
 	if location_required(doc.custom_task_type, doc.reference_docname, values) is None:
 		return
