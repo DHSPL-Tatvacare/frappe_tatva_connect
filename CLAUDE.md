@@ -81,6 +81,12 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, go-live/ 
   `now_datetime/getdate/cint/flt/cstr`, `frappe.conf` + `get_password`, `throw/log_error/enqueue/cache/
   has_permission/generate_hash`. Hand-roll ONLY when no native equivalent (or pre-model-sync DDL),
   **with explicit user sign-off**, tagged `# sqli-ok:`/`# authz-ok:`.
+- **A.19** No unaccounted catch — every runtime `except` must do ONE of: **log** it to the Error Log
+  table (`frappe.log_error`), **surface** it to the caller (response contract / a returned error value),
+  or **justify** silence with a one-line comment (a benign, expected fallback). A silent broad `except`
+  that swallows is a defect. Broad `except Exception` stays legal for open failure spaces (HTTP/SDK/
+  `get_meta`); narrow the catch when the error set is known (`parse_json` → `except ValueError`). Never
+  let a degrade catch swallow a control-flow throw (`ValidationError`/`PermissionError`/`DoesNotExistError`).
 
 ## S. Security invariants (mandatory, fail-closed)
 - **S.1** Enforce the Frappe permission layer on EVERY path — `frappe.has_permission`/`only_for`, never a

@@ -88,6 +88,7 @@ class WATINotification(WhatsAppNotification):
 			frappe.msgprint(_("WhatsApp Message Triggered (WATI)"), indicator="green", alert=True)
 			success = True
 		except Exception as e:
+			frappe.log_error(title="WATI WhatsApp trigger failed")
 			error_message = str(e)
 			frappe.msgprint(
 				_("Failed to trigger WATI WhatsApp message: {0}").format(error_message),

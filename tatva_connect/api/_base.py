@@ -670,4 +670,4 @@ def normalise_partner_response(response=None, request=None):
 		response.set_data(frappe.as_json({"status": "error", "error": {"code": code, "message": _(message)}}))
 		response.headers["Content-Type"] = "application/json"
 	except Exception:
-		frappe.logger().error("normalise_partner_response failed", exc_info=True)
+		frappe.log_error(title="normalise_partner_response failed")

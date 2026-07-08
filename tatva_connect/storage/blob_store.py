@@ -84,7 +84,8 @@ class BlobStore:
 			self._service = BlobServiceClient.from_connection_string(location.connection_string())
 		return self._service
 
-	def _container_for_key(self, blob_key: str) -> str:
+	@staticmethod
+	def _container_for_key(blob_key: str) -> str:
 		# One private container per BOX (the env); old keys route to the legacy container.
 		# Bytes are NEVER world-readable in Azure — is_private still drives the download gate
 		# (api.download_file). Fail-closed: an old key with no legacy container does no Azure op.
@@ -95,8 +96,9 @@ class BlobStore:
 			frappe.throw(_("No storage container resolvable for this file in this environment."))
 		return legacy
 
+	@staticmethod
 	def new_key(
-		self, file_name: str, attached_to_doctype: str | None, attached_to_name: str | None = None
+		file_name: str, attached_to_doctype: str | None, attached_to_name: str | None = None
 	) -> str:
 		"""Collision-proof blob key, grouped so the container browses sensibly:
 		`<app>/<owner_doctype>/<owner_id>/<hash>_<name>`, where app + owner come from the

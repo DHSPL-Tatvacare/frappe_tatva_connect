@@ -20,7 +20,7 @@ import frappe
 from frappe import _
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Count
-from frappe.utils import cint
+from frappe.utils import cint, cstr
 from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
@@ -243,6 +243,7 @@ def access():
 				or frappe.db.exists("CRM Smart View", {"owner_user": user})
 			)
 	except Exception:
+		frappe.log_error(title="smartview: access gate check failed")
 		visible = False
 	return {"visible": visible}
 
@@ -251,7 +252,7 @@ def access():
 # Query assembly.
 # ---------------------------------------------------------------------------
 
-def _driving(base_object, activity_type):
+def _driving(base_object):
 	"""(driving DocType name, driving qb table)."""
 	return (LEAD_DOCTYPE, DocType(LEAD_DOCTYPE)) if base_object == "Lead" else (TASK_DOCTYPE, DocType(TASK_DOCTYPE))
 
@@ -286,6 +287,7 @@ def _column_field_keys(view, cat):
 	try:
 		keys = frappe.parse_json(view.columns) if view.columns else []
 	except Exception:
+		frappe.log_error(title="smartview: bad saved columns JSON")
 		keys = []
 	keys = [k for k in (keys or []) if k in cat]
 	if not keys:
@@ -350,9 +352,9 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		# Every child join yields ONE row per parent — the newest by the pick's order field
 		# (`single` -> creation). ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
 		# a plain join would multiply the parent for a multi-row child, inflating rows AND the count.
-		for alias, (_child_tbl, pick, child_dt) in join_specs.items():
-			order_field = pick.split(":", 1)[1] if pick.startswith("latest_by:") else "creation"
-			inner = DocType(child_dt)
+		for spec_alias, (_child_tbl, spec_pick, spec_child_dt) in join_specs.items():
+			order_field = spec_pick.split(":", 1)[1] if spec_pick.startswith("latest_by:") else "creation"
+			inner = DocType(spec_child_dt)
 			rn = (
 				RowNumber()
 				.over(inner.parent)
@@ -368,9 +370,9 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 				frappe.qb.from_(ranked)
 				.select(PseudoColumn("*"))
 				.where(PseudoColumn("`_tc_rn` = 1"))
-			).as_(alias)
+			).as_(spec_alias)
 			query = query.left_join(sub).on(
-				PseudoColumn(f"`{alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
+				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 			)
 		return query
 
@@ -458,7 +460,9 @@ def _col_fieldtype(r):
 	"""The DocField fieldtype for a catalog column — drives the frontend's column width +
 	cell formatting (Date/Datetime/Currency...). Unknown -> 'Data' (inert)."""
 	df = _col_docfield(r)
-	return df.fieldtype if df else "Data"
+	if not df:
+		return "Data"
+	return df.fieldtype
 
 
 @frappe.whitelist()
@@ -473,7 +477,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	activity_type = v.activity_type
 
 	cat = _catalog_fields(base_object, activity_type, _grains_for_view(v), frappe.get_roles())
-	driving_name, driving_table = _driving(base_object, activity_type)
+	driving_name, driving_table = _driving(base_object)
 
 	col_keys = _column_field_keys(v, cat)
 	# Interactive column override wins over the saved set, but stays catalog-bounded: an
@@ -483,6 +487,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 			try:
 				columns = frappe.parse_json(columns)
 			except Exception:
+				frappe.log_error(title="smartview: bad columns override JSON")
 				columns = None
 		if isinstance(columns, (list, tuple)):
 			req = [k for k in columns if k in cat]
@@ -491,6 +496,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
+		frappe.log_error(title="smartview: bad predicate JSON")
 		predicate = None
 	if isinstance(filters, str):
 		filters = frappe.parse_json(filters) or []
@@ -645,7 +651,7 @@ def upsert_view(view):
 	operator = _is_operator()
 	name = view.get("name")
 	if name:
-		doc = frappe.get_doc("CRM Smart View", name)
+		doc = frappe.get_doc("CRM Smart View", cstr(name))
 		# A standard view, or any view you don't own, is operator-only to edit.
 		if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not operator:
 			frappe.throw(_("You can only edit your own views."), frappe.PermissionError)
