@@ -17,9 +17,11 @@ rule save/delete), never because of a per-doctype hook.
 Every downstream brain is reused, not reinvented (A.8, one brain): subject resolution
 (`subjects.resolve_lead_name`), grain (`rules.lead_axes`), the field-diff and context builder
 (moved here from `watch.py`, logic unchanged), the matcher (`rules.matching_rules`), and the
-per-rule executor (`dispatcher._run_rule`) — same re-entrancy guard (`frappe.flags.in_automation`),
-same kill switch (`Task::Automation::rules`), same enqueue-after-commit + `job_id`/`deduplicate`
-pattern the old dispatchers used.
+two-lane executor (Task 5: `dispatcher.run_guards`/`run_effects`) — same re-entrancy guard
+(`frappe.flags.in_automation`), same kill switch (`Task::Automation::rules`), same
+enqueue-after-commit + `job_id`/`deduplicate` pattern the old dispatchers used. `on_created`/
+`on_updated`/`run_for_event` below now call `dispatcher.run_effects` (effect-lane actions only) —
+the SYNCHRONOUS guard-lane entry point lands in a follow-up change.
 
 Concurrency posture (carried over, not a regression): dispatch is enqueue-after-commit with a
 per-(doc, event) `job_id` + `deduplicate`, which coalesces QUEUED duplicates but not one already
@@ -33,7 +35,8 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.automation import rules, subjects
-from tatva_connect.automation.dispatcher import _log_error, _run_rule
+from tatva_connect.automation import dispatcher
+from tatva_connect.automation.dispatcher import _log_error
 
 KILL_SWITCH = "Task::Automation::rules"  # the ONE toggle for the whole automation engine
 _LIVE_DOCTYPES_CACHE_KEY = "automation:live_doctypes"
@@ -124,9 +127,10 @@ def run_for_event(doctype, docname, event_name, changed):
 		field_types = _field_types_for(doctype)
 		grain = "{}::{}::{}".format(axes[0] or "", axes[1] or "", axes[2] or "")
 		# Reuse the SAME backbone both v1 dispatchers used - per-rule savepoint, guarded actions, run log.
+		# EFFECT lane only (Task 5) - this rule's guard actions already ran (or blocked) in validate.
 		for r in matched:
 			try:
-				_run_rule(r, subject.name, context, doc, axes, grain, field_types)
+				dispatcher.run_effects(subject.name, r, doc, axes, grain, field_types, context)
 			except Exception as e:
 				_log_error(r.name, "(rule)", grain, e)
 	except Exception:

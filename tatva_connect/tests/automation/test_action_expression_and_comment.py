@@ -258,8 +258,8 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			],
 		}).insert(ignore_permissions=True)
 		try:
-			# _run_rule catches the action failure, rolls the savepoint back, and logs (no re-raise).
-			dispatcher._run_rule(frappe._dict(name=rule.name), self.lead.name, self._ctx(), self.lead, self.lead_axes, "grain", {})
+			# run_effects catches the action failure, rolls the savepoint back, and logs (no re-raise).
+			dispatcher.run_effects(self.lead.name, frappe._dict(name=rule.name), self.lead, self.lead_axes, "grain", {}, self._ctx())
 			after = frappe.db.get_value("CRM Lead", self.lead.name, _SET_TARGET)
 			self.assertEqual(after, baseline, "action 1 persisted despite action 2 failing - the rule group is not atomic")
 		finally:

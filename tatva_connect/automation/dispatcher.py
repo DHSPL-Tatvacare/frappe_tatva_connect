@@ -3,19 +3,26 @@
 TATVA v2 (Task 4): the two v1 triggers (`fire_rules` — CRM Task on_update, Task-Completed; and
 `watch.fire_field_change_rules` — CRM Lead/Task on_update, Field-Changed) are RETIRED into the ONE
 wildcard event router (`automation/router.py`, keyed on `(on_doctype, event)`). This module now owns
-only what's downstream of a trigger decision: `_run_rule` (per-rule savepoint executor) and every
-action handler — the router calls `_run_rule` exactly as both old dispatchers did (same guarded
-executor, same Run Log, same allowlist recheck; no parallel brain, A.8).
+only what's downstream of a trigger decision: the two-lane executor (Task 5) and every action
+handler — router.run_guards/run_for_event call this module exactly as both old dispatchers did
+(same Run Log, same allowlist recheck; no parallel brain, A.8).
 
-`_run_rule` runs a matched rule's actions in a guarded executor: one action (or rule) failing never
-blocks siblings; every fire writes one Run Log row; every failure also hits the common error
-factory. The caller (router.run_for_event) sets the request-scoped `frappe.flags.in_automation`
-re-entrancy guard for the whole dispatch.
+TATVA v2 (Task 5): an after-commit action can DO but cannot DENY, so the executor splits into TWO
+lanes, one grammar, ONE registry (`_ACTION_LANES`) declaring each verb's lane exactly once (A.8):
+  - GUARD lane (`run_guards`) — runs synchronously in `validate` (router.run_guards); a guard
+    handler raising propagates out of validate and BLOCKS the save (S.1/S.3 — never swallowed). No
+    savepoint (nothing is written yet), no Run Log (the save may never happen).
+  - EFFECT lane (`run_effects`) — runs after commit (router.run_for_event), the ORIGINAL `_run_rule`
+    body: per-rule savepoint, deferred thunks, Run Log. Iterates ONLY effect-lane actions — a rule's
+    guard actions already ran in validate, never re-run here.
+Both lanes reuse the ONE criteria evaluator (`rules.criteria_match`) and the ONE context the router
+builds — no second copy of either.
 """
 import json
 import time
 
 import frappe
+from frappe import _
 
 from tatva_connect import automation
 from tatva_connect.automation import fields, rules
@@ -25,12 +32,32 @@ RUN_LOG = "CRM Automation Run Log"
 DEFAULT_RETENTION_DAYS = 90  # code fallback (no baked form value) — v1 has no operator field.
 
 
-def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
-	"""Evaluate one rule's criteria; if all match, run its actions in a guarded executor and log."""
+def run_guards(subject, r, context, field_types):
+	"""GUARD lane (Task 5) — evaluate one rule's criteria; if they match, run every GUARD-lane action
+	synchronously. A handler raising propagates straight out (no try/except here) — that raise IS the
+	block, and it must reach `validate` unswallowed (S.1/S.3). No savepoint, no Run Log: nothing has
+	been written yet and the save may never happen."""
+	rule = frappe.get_doc("CRM Automation Rule", r.name)
+	if not rules.criteria_match(rule.criteria, context, field_types):
+		return  # not a fire — same non-match semantics as the effect lane
+	for action in rule.actions:
+		lane, handler = _ACTION_LANES.get(action.action_type, (None, None))
+		if lane != "guard":
+			continue  # an effect-lane action on the same rule runs later, after commit
+		handler(action, subject, context)
+
+
+def run_effects(subject, r, trigger_doc, axes, grain, field_types, context):
+	"""EFFECT lane (Task 5) — the original per-rule executor: evaluate criteria once more (the
+	after-commit context can differ from the sync one — e.g. a rapid A→B→C edit, spec §5.2), then run
+	every EFFECT-lane action in a guarded, savepoint-atomic executor and write one Run Log row. Guard
+	actions on this same rule already ran (or blocked the save) in validate — never re-run here."""
 	started = time.monotonic()
 	rule = frappe.get_doc("CRM Automation Rule", r.name)
 	if not rules.criteria_match(rule.criteria, context, field_types):
 		return  # not a fire — no log (only fires are audited)
+
+	effect_actions = [a for a in rule.actions if _ACTION_LANES.get(a.action_type, (None, None))[0] == "effect"]
 
 	# A rule is all-or-nothing: run every action inside a savepoint; if ANY action fails, roll the
 	# whole rule back so no lead is left half-processed. Deferred side-effects (webhooks) fire only
@@ -43,13 +70,13 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 	save_point = f"tc_auto_rule_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
-		for i, action in enumerate(rule.actions, 1):
-			thunk = _run_action(action, lead, context, axes, trigger_doc)
+		for i, action in enumerate(effect_actions, 1):
+			thunk = _run_action(action, subject, context, axes, trigger_doc)
 			if thunk:
 				deferred.append(thunk)
 			details.append(f"{i}. {_action_label(action)}: ok")
 		frappe.db.release_savepoint(save_point)
-		success = len(rule.actions)
+		success = len(effect_actions)
 	except Exception as e:
 		frappe.db.rollback(save_point=save_point)
 		deferred = []
@@ -61,7 +88,7 @@ def _run_rule(r, lead, context, trigger_doc, axes, grain, field_types):
 		run_deferred()
 
 	duration_ms = int((time.monotonic() - started) * 1000)
-	_write_run_log(rule, lead, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
+	_write_run_log(rule, subject, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
 
 
 def _action_label(a):
@@ -83,25 +110,18 @@ def _action_label(a):
 
 
 def _run_action(action, lead, context, axes, trigger_doc):
-	"""Dispatch one action by type (spec §4). Raises on failure so the caller's per-action guard
-	records it — one failure never touches siblings.
+	"""Dispatch one EFFECT-lane action by type (spec §4). Raises on failure so the caller's per-action
+	guard records it — one failure never touches siblings. Never called with a guard-lane action:
+	`run_effects` pre-filters its action list by `_ACTION_LANES` before this is reached.
 
 	# TATVA v2 (Task 1): keys renamed to the frozen verb set (Set Field -> Update Field, Add
 	# Comment -> Create Note) to match the reshaped crm_automation_action.json action_type Select —
 	# a direct consequence of that schema change, not a behavior rewrite. Append/Upsert Child Row are
 	# dropped from the v2 verb set (Part A) but their handlers stay wired here (unreachable via the
-	# new Select, not pruned) until Task 6 formally retires them into actions.py. Task 5/6 own moving
-	# every handler below into actions.py under the two-lane (guard/effect) executor."""
-	handler = {
-		"Create Task": _action_create_task,
-		"Update Field": _action_set_field,
-		"Append Child Row": _action_append_child,
-		"Upsert Child Row": _action_upsert_child,
-		"Call Webhook": _action_call_webhook,
-		"Create Note": _action_add_comment,
-	}.get(action.action_type)
-	if handler is None:
-		raise ValueError(f"unknown action type {action.action_type!r}")
+	# new Select, not pruned) until Task 6 formally retires them into actions.py."""
+	lane, handler = _ACTION_LANES.get(action.action_type, (None, None))
+	if handler is None or lane != "effect":
+		raise ValueError(f"unknown effect action type {action.action_type!r}")
 	# A handler may return a deferred side-effect (a thunk) that must fire only if the whole rule
 	# commits — the caller runs it after the savepoint is released. DB actions return None.
 	return handler(action, lead, context, axes, trigger_doc)
@@ -245,6 +265,20 @@ def _action_call_webhook(action, lead, context, axes, trigger_doc):
 		webhook={"name": action.webhook_endpoint},
 		enqueue_after_commit=True,
 	)
+
+
+# The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
+# `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
+# verb = one row here, never a second lane table. No guard verb is registered yet (Require Fields
+# lands next) - `run_guards` is a real, callable lane with nothing to run.
+_ACTION_LANES = {
+	"Create Task": ("effect", _action_create_task),
+	"Update Field": ("effect", _action_set_field),
+	"Append Child Row": ("effect", _action_append_child),
+	"Upsert Child Row": ("effect", _action_upsert_child),
+	"Call Webhook": ("effect", _action_call_webhook),
+	"Create Note": ("effect", _action_add_comment),
+}
 
 
 # -- value + child helpers ---------------------------------------------------
