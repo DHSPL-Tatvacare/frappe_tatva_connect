@@ -24,6 +24,12 @@ for every existing criterion row, not just ones on a migrated rule.
 Idempotent: guarded by has_column(trigger_type) / has_column(operator-is-old-symbol) so a re-run
 after the JSON has synced (old columns gone, values already words) is a clean no-op. Reconciles the
 CRM Automation Rule row count before/after - frappe.throw on any mismatch (never silently drop a row).
+
+Column retirement (A.14): `bench migrate` never drops a column removed from a doctype JSON, so
+trigger_type/task_type/watch_doctype/watch_field would otherwise linger as dead schema forever.
+Once the reconcile guard above confirms every value is safely on the v2 shape, `_migrate_rules`
+calls `_drop_legacy_columns()` to DROP each of the four old-vocab columns that's still physically
+present (one small helper, A.8 - no per-column duplicated DDL).
 """
 import frappe
 
@@ -31,6 +37,9 @@ _RULE = "CRM Automation Rule"
 _RULE_TABLE = "tab" + _RULE
 _CRITERION = "CRM Automation Criterion"
 _CRITERION_TABLE = "tab" + _CRITERION
+
+# The four old-vocab columns retired by this reshape (docstring "Column retirement").
+_LEGACY_COLUMNS = ("trigger_type", "task_type", "watch_doctype", "watch_field")
 
 # Old operator SYMBOL -> new v2 WORD operator (Part A). changed_from_to (the old single Field-Changed
 # transition operator) maps onto the new paired "changed from…to" - the closest word-operator analogue.
@@ -77,8 +86,14 @@ def _migrate_rules():
 	if not _column_exists(_RULE_TABLE, "event"):
 		frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `event` varchar(140)")
 
+	# task_type/watch_doctype may already be individually absent on a site whose columns drifted
+	# ahead of trigger_type (e.g. a partially-cleaned dev DB) — select NULL in their place rather
+	# than a static column list that would fail to parse against the real table (same drift
+	# tolerance _column_exists exists for elsewhere in this file).
+	task_type_expr = "task_type" if _column_exists(_RULE_TABLE, "task_type") else "NULL AS task_type"
+	watch_doctype_expr = "watch_doctype" if _column_exists(_RULE_TABLE, "watch_doctype") else "NULL AS watch_doctype"
 	rows = frappe.db.sql(
-		f"""SELECT name, trigger_type, task_type, watch_doctype FROM `{_RULE_TABLE}`
+		f"""SELECT name, trigger_type, {task_type_expr}, {watch_doctype_expr} FROM `{_RULE_TABLE}`
 		    WHERE COALESCE(on_doctype, '') = ''""",
 		as_dict=True,
 	)
@@ -104,6 +119,31 @@ def _migrate_rules():
 			f"reshape_automation_triggers: CRM Automation Rule row count changed {before} -> {after} "
 			"during migration — refusing to continue."
 		)
+
+	# Only drop once the reconcile guard above has confirmed no row was silently lost.
+	_drop_legacy_columns()
+
+
+def _drop_legacy_columns():
+	"""One drop helper (A.8) for the four retired old-vocab columns - iterates _LEGACY_COLUMNS
+	instead of four copy-pasted DROP COLUMN blocks. Idempotent: _column_exists skips a column
+	already dropped by an earlier run."""
+	to_drop = [col for col in _LEGACY_COLUMNS if _column_exists(_RULE_TABLE, col)]
+	if not to_drop:
+		return
+	# ALLOWLIST: innodb_strict_mode OFF, scoped to this DROP only - the table's off-page TEXT
+	# columns (description/_comments/_assign/...) get miscounted as inline by InnoDB's row-size
+	# validator on this DROP COLUMN algorithm, tripping the 8126-byte ceiling even though the
+	# post-drop row is strictly smaller. Session-only toggle, restored immediately after.
+	frappe.db.sql("SET SESSION innodb_strict_mode = OFF")
+	try:
+		for col in to_drop:
+			# ALLOWLIST: raw DROP COLUMN DDL, same idiom as the ADD COLUMN above - schema-only,
+			# no value interpolation (S.2). Runs AFTER the row-count reconcile guard, i.e. only
+			# once every value has been confirmed migrated onto the v2 columns.
+			frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` DROP COLUMN `{col}`")
+	finally:
+		frappe.db.sql("SET SESSION innodb_strict_mode = ON")
 
 
 def _prepend_criterion(rule_name, field, operator, value):

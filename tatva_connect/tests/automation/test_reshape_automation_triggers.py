@@ -38,15 +38,30 @@ def _make_task_type(name):
 
 
 def _add_old_columns():
-	for col in _OLD_COLUMNS:
-		if not patch._column_exists(_RULE_TABLE, col):
+	to_add = [col for col in _OLD_COLUMNS if not patch._column_exists(_RULE_TABLE, col)]
+	if not to_add:
+		return
+	# Same innodb_strict_mode scoping as patch._drop_legacy_columns (reshape_automation_triggers.py)
+	# - InnoDB's row-size validator over-counts this table's off-page TEXT columns as inline on this
+	# ADD/DROP COLUMN algorithm, tripping the 8126-byte ceiling even though the actual row fits.
+	frappe.db.sql("SET SESSION innodb_strict_mode = OFF")
+	try:
+		for col in to_add:
 			frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `{col}` varchar(140)")
+	finally:
+		frappe.db.sql("SET SESSION innodb_strict_mode = ON")
 
 
 def _drop_old_columns():
-	for col in _OLD_COLUMNS:
-		if patch._column_exists(_RULE_TABLE, col):
+	to_drop = [col for col in _OLD_COLUMNS if patch._column_exists(_RULE_TABLE, col)]
+	if not to_drop:
+		return
+	frappe.db.sql("SET SESSION innodb_strict_mode = OFF")
+	try:
+		for col in to_drop:
 			frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` DROP COLUMN `{col}`")
+	finally:
+		frappe.db.sql("SET SESSION innodb_strict_mode = ON")
 
 
 def _make_v2_rule(name, **extra):
