@@ -94,6 +94,7 @@ class TestWaitParksAndResumes(FrappeTestCase):
 				"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
 			}).insert(ignore_permissions=True)
 		frappe.db.set_value("CRM Tatva Automation", "Task::Automation::rules", "enabled", 1)
+		frappe.db.set_value("CRM Tatva Automation", "Task::Automation::resume", "enabled", 1)
 
 	@classmethod
 	def tearDownClass(cls):
@@ -175,6 +176,7 @@ class TestChainedWaitReParks(FrappeTestCase):
 			"CRM Lead", "custom_patient_age", _GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"]
 		)
 		frappe.db.set_value("CRM Tatva Automation", "Task::Automation::rules", "enabled", 1)
+		frappe.db.set_value("CRM Tatva Automation", "Task::Automation::resume", "enabled", 1)
 
 	@classmethod
 	def tearDownClass(cls):

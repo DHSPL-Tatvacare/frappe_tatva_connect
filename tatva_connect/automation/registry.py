@@ -360,12 +360,12 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="every 15 min · Wait-step resume sweep",
 		purpose=(
-			"Registers the Wait-step resume sweep (Task 9): a rule with a Wait action parks its "
-			"remaining effects in CRM Automation Resume, and this sweep resumes each parked segment "
-			"once its wait elapses, through the SAME effect executor a first fire uses. Runtime "
-			"gating rides the master engine switch (Task::Automation::rules — A.6, nothing resumes "
-			"while the engine is off); this row exists so the sweep's own scheduled path carries its "
-			"own catalog entry, same as run-log-sweep, rather than borrowing the master row's.\n"
+			"The Wait-step resume sweep (Task 9): a rule with a Wait action parks its remaining "
+			"effects in CRM Automation Resume, and this sweep resumes each parked segment once its "
+			"wait elapses, through the SAME effect executor a first fire uses. Double-gated: the "
+			"master engine switch (Task::Automation::rules — A.6, nothing resumes while the engine "
+			"is off) AND this row, so an operator can pause just the resume sweep without killing "
+			"the whole engine.\n"
 			"Example: a rule creates a task now, waits 14 days, then updates a field — the field "
 			"update fires from this sweep 14 days later, not from the original trigger event."
 		),

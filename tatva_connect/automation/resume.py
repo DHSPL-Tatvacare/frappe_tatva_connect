@@ -19,6 +19,7 @@ import frappe
 from tatva_connect import automation
 
 RESUME_DT = "CRM Automation Resume"
+RESUME_SWITCH = "Task::Automation::resume"  # the sweep's own catalog row (Task 12) — same collapsed pattern as dispatcher.SWEEP_SWITCH
 _PAGE_LIMIT = 200  # a sane cap per sweep — a huge backlog drains over several sweeps, not one giant job
 
 
@@ -39,13 +40,17 @@ def park(rule_name, subject, resume_at, next_action_idx, context):
 
 
 def sweep_resume():
-	"""Scheduled job (~every 15 min, hooks.scheduler_events): gated by the SAME master kill switch
-	as the rest of the engine (Task::Automation::rules — A.6, nothing resumes when the engine is
-	off). Picks Pending rows whose `resume_at` has arrived and resumes each through the ONE effect
-	executor (`dispatcher.run_effects`, A.8). Idempotent: a row is flipped to a terminal status
-	(Done/Failed) as soon as it's resumed, so a second sweep over the same window finds nothing
+	"""Scheduled job (~every 15 min, hooks.scheduler_events): double-gated — the master engine switch
+	(Task::Automation::rules — A.6, nothing resumes when the engine is off) AND this sweep's own
+	catalog row (Task::Automation::resume — Task 12's collapse gives it independent on/off, same
+	pattern as dispatcher.SWEEP_SWITCH), so an operator can pause just the Wait sweep without killing
+	the whole engine. Picks Pending rows whose `resume_at` has arrived and resumes each through the
+	ONE effect executor (`dispatcher.run_effects`, A.8). Idempotent: a row is flipped to a terminal
+	status (Done/Failed) as soon as it's resumed, so a second sweep over the same window finds nothing
 	Pending left to re-run."""
 	if not automation.is_enabled("Task::Automation::rules"):
+		return
+	if not automation.is_enabled(RESUME_SWITCH):
 		return
 
 	rows = frappe.get_all(
