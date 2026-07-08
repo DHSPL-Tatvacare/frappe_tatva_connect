@@ -65,28 +65,10 @@ def _meta_fields(doctype):
 	return [df for df in frappe.get_meta(doctype).fields if df.fieldtype not in _STRUCTURAL_FIELDTYPES]
 
 
-def fields_for_task_type(task_type):
-	"""THE resolver for 'what fields does this task type's activity form have'. Used by both the
-	describe endpoint and the rule controller's validation - one brain, no parallel query."""
-	if not task_type:
-		return []
-	return [
-		_descriptor(r.fieldname, r.label, r.fieldtype, r.options)
-		for r in frappe.get_all(
-			"CRM Task Type Field",
-			filters={"parent": task_type, "parenttype": "CRM Task Type"},
-			fields=["fieldname", "label", "fieldtype", "options"],
-			order_by="idx",
-		)
-	]
-
-
 def fields_for_doctype(doctype):
 	"""THE resolver for 'what fields does a watched doctype expose to a Field-Changed rule'. Reads
 	the doctype META (not an activity schema) - a Field-Changed criterion tests the watched
-	doctype's own fields, so the vocabulary is the meta. Sibling to fields_for_task_type (which
-	reads the CRM Task Type Field activity schema for the Task-Completed path): two functions, two
-	genuine sources, one describe contract so the builder + validator + dispatcher never drift.
+	doctype's own fields, so the vocabulary is the meta.
 
 	TATVA v2 (Task 13): for CRM Task specifically, the meta alone UNDER-describes what a rule can
 	actually reference. A completed activity's real business signal (outcome/training_status/
@@ -194,36 +176,11 @@ def _settable_fields(vertical, group, program):
 	return out
 
 
-def _watchable_fields_for(doctype):
-	"""The enabled can_watch fieldnames for a doctype, enriched with type/options from the doctype
-	meta - so the Rule form's watch_field dropdown and the validator read the same derived list (one
-	brain, no parallel query)."""
-	if not doctype:
-		return []
-	meta = frappe.get_meta(doctype)
-	out = []
-	for fieldname in fields.watchable_fields(doctype):
-		df = meta.get_field(fieldname)
-		if df:
-			out.append(_descriptor(df.fieldname, df.label, df.fieldtype, df.options))
-	return out
-
-
-@frappe.whitelist()
-def describe(task_type=None, vertical=None, group=None, program=None, watch_doctype=None):
-	"""PRE-v2 emitter for the retired trigger_type/task_type/watch_doctype vocabulary (Task 1 dropped
-	those fields from the Rule doctype itself). Left in place only because test_describe_watch_fields
-	still exercises it directly - out of Task 14's scope to remove (narrow-ask discipline). The LIVE
-	Rule form (crm_automation_rule.js) and its `validate()` guardrail read `builder_schema` below,
-	the v2 vocabulary's ONE emitter - this function feeds nothing else."""
-	if not frappe.has_permission("CRM Automation Rule", "read"):
-		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	return {
-		"activity_fields": fields_for_task_type(task_type),
-		"watch_fields": _watchable_fields_for(watch_doctype),
-		"set_field_targets": _settable_fields(vertical, group, program),
-	}
-
+# TATVA (A.14): the pre-v2 `describe()` emitter (trigger_type/task_type/watch_doctype vocabulary)
+# was retired here — it was a parallel brain to builder_schema below, with zero live callers (the
+# Rule form and validate() have read builder_schema exclusively since Task 14). Its only caller was
+# test_describe_watch_fields.py, deleted alongside it (behaviour re-proven by test_builder_contract's
+# TestBuilderSchemaFields, which already covers can_watch-allowlist gating + live-meta typing).
 
 # -- v2 builder contract (Task 14 / plan Part G) ------------------------------
 #
