@@ -278,7 +278,7 @@ class TestWatchEndToEnd(FrappeTestCase):
 		# 1. Author the field as allowlisted (so the rule passes validate at authoring).
 		bad_allowlist = field_allowlist.seed_settable("CRM Lead", _BAD_TARGET, _GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"])
 		try:
-			rule = _make_field_change_rule("LegG-bad", _WATCH_FIELD, _BAD_TARGET, "ctx['custom_dob']")
+			_make_field_change_rule("LegG-bad", _WATCH_FIELD, _BAD_TARGET, "ctx['custom_dob']")
 			# 2. DISABLE the allowlist row - the rule is now stale (authoring permitted it; runtime must not).
 			frappe.db.set_value(_FIELD, bad_allowlist, "enabled", 0)
 			ld = _make_lead(stage="A")

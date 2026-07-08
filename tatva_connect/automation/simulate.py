@@ -51,7 +51,7 @@ def dry_run(rule_name, sample_doctype, sample_name):
 
 	guards, effects = [], []
 	for action in rule.actions:
-		lane, handler = actions._ACTION_LANES.get(action.action_type, (None, None))
+		lane, _handler = actions._ACTION_LANES.get(action.action_type, (None, None))
 		would = _preview_action(action, context, subject_name, axes)
 		if not matched:
 			would = f"{would} — criteria did not match; would NOT run"
@@ -142,13 +142,13 @@ def _would_create_note(action, context, subject_name, axes):
 
 def _would_send_whatsapp(action, context, subject_name, axes):
 	mobile = frappe.db.get_value("CRM Lead", subject_name, "mobile_no")
-	return "Send WhatsApp {0} to {1} (suppressed unless sends enabled)".format(
+	return "Send WhatsApp {} to {} (suppressed unless sends enabled)".format(
 		action.whatsapp_template or "?", mobile or "(no mobile_no on the lead)"
 	)
 
 
 def _would_send_email(action, context, subject_name, axes):
-	return "Send Email to {0}: {1!r} (suppressed unless sends enabled)".format(
+	return "Send Email to {}: {!r} (suppressed unless sends enabled)".format(
 		action.email_recipient or "?", action.email_subject or ""
 	)
 

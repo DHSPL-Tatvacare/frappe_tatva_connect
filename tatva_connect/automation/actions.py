@@ -110,8 +110,8 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
 	The due date resolves from a context field (From Context) or an expression (Expression)."""
 	from tatva_connect.activity.api import _scope_applies
-	from tatva_connect.tasks.tasks import create_followup_task
 	from tatva_connect.automation import expr
+	from tatva_connect.tasks.tasks import create_followup_task
 
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
 	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):

@@ -144,7 +144,7 @@ _DUE_BASE = datetime.datetime(2026, 8, 1, 10, 0, 0)
 
 def _tt(bare):
 	"""A bare task-type name -> its grain composite PK (A.7) - mirrors the seed's own `_tt()`."""
-	return "{}::{}::{}::{}".format(VERTICAL, GROUP, PROGRAM, bare) if bare else None
+	return f"{VERTICAL}::{GROUP}::{PROGRAM}::{bare}" if bare else None
 
 
 def _rule_name(idx):

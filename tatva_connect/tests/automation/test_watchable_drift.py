@@ -87,7 +87,7 @@ class TestSeamRegressions(FrappeTestCase):
 		fake = "tatva_connect.does_not_exist.handler"
 		patched = dict(hooks.doc_events)
 		patched["CRM Lead"] = dict(patched.get("CRM Lead", {}))
-		patched["CRM Lead"]["on_update"] = patched["CRM Lead"].get("on_update", []) + [fake]
+		patched["CRM Lead"]["on_update"] = [*patched["CRM Lead"].get("on_update", []), fake]
 		orig = hooks.doc_events
 		hooks.doc_events = patched
 		try:

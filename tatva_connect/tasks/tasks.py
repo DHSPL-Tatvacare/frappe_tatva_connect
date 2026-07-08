@@ -92,7 +92,7 @@ def _location_guard_covers(doc):
 	evaluator (rules.criteria_match) and context builder (router._diff_watched_fields/_context_for) the
 	guard lane itself uses (A.8, no parallel matcher). Lets the backstop below stand down only when an
 	authored rule genuinely covers this save, never on a blanket "a rule exists somewhere" guess."""
-	from tatva_connect.automation import rules, router
+	from tatva_connect.automation import router, rules
 
 	axes = rules.lead_axes(doc.reference_docname)
 	matched = rules.matching_rules("CRM Task", "Updated", *axes)

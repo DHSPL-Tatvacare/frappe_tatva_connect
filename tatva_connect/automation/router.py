@@ -42,8 +42,7 @@ misfire.
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.automation import rules, subjects
-from tatva_connect.automation import dispatcher
+from tatva_connect.automation import dispatcher, rules, subjects
 from tatva_connect.automation.dispatcher import _log_error
 
 KILL_SWITCH = "Task::Automation::rules"  # the ONE toggle for the whole automation engine
