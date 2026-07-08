@@ -127,6 +127,19 @@ def _run_action(action, lead, context, axes, trigger_doc):
 	return handler(action, lead, context, axes, trigger_doc)
 
 
+def _action_require_fields(action, subject, context):
+	"""REQUIRE_FIELDS (guard, Task 5) — the first guard verb, exercising the guard lane end to end.
+	Comma-separated fieldnames read off the rule's subject (the sync context `run_guards` built); a
+	blank one blocks the save. Fail-closed, native `frappe.throw` — this raise IS the block and must
+	reach `validate` unswallowed (S.1/S.3)."""
+	for fieldname in (action.require_fields or "").split(","):
+		fieldname = fieldname.strip()
+		if not fieldname:
+			continue
+		if context.get(fieldname) in (None, ""):
+			frappe.throw(_("Field {0} is required").format(fieldname))
+
+
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
@@ -269,9 +282,10 @@ def _action_call_webhook(action, lead, context, axes, trigger_doc):
 
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
 # `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
-# verb = one row here, never a second lane table. No guard verb is registered yet (Require Fields
-# lands next) - `run_guards` is a real, callable lane with nothing to run.
+# verb = one row here, never a second lane table. `Require Fields` is the first guard verb (Task 5);
+# `Require Location` (Task 8) will be the second.
 _ACTION_LANES = {
+	"Require Fields": ("guard", _action_require_fields),
 	"Create Task": ("effect", _action_create_task),
 	"Update Field": ("effect", _action_set_field),
 	"Append Child Row": ("effect", _action_append_child),
