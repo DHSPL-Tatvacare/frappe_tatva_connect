@@ -28,7 +28,7 @@ from tatva_connect.whatsapp import adapter, roles, routing
 from tatva_connect.whatsapp import api as wati
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # guest-ok: WATI webhook, no session — spine verifies a shared token/DID before acting (A.16)
 @rate_limit(key="token", limit=600, seconds=60, ip_based=True)
 def webhook(**kwargs):
 	"""Fast-ack endpoint. The spine does kill-switch -> token auth+scope -> always-on raw

@@ -11,7 +11,7 @@ from tatva_connect.storage.blob_store import BlobStore
 from tatva_connect.storage.file_events import offload
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # guest-ok: public file fetch (short-lived SAS link); PRIVATE files permission-gated inside (A.15)
 def download_file(file_name: str):
 	"""Proxy for an offloaded File: enforce Frappe's own permission, then redirect to a
 	short-lived SAS link. `allow_guest` so public files work; private files are gated by

@@ -29,6 +29,8 @@ except ModuleNotFoundError:
 
 	FrappeTestCase = unittest.TestCase
 
+from tatva_connect.tests.static._lock_helpers import app_root, guard_text, is_whitelist_decorator, span_text
+
 # Tokens that prove a function authorizes (any one in the function's CODE — decorators +
 # executable statements, never docstrings/comments — clears its bypasses).
 #   has_permission / check_permission  — Frappe's record gate (also crm's `ref_doc.has_permission`)
@@ -55,24 +57,12 @@ GUARD_TOKENS = (
 # Per-line opt-out: the offending line ends with this marker + a reason. Keep this list TINY.
 OPT_OUT = "authz-ok:"
 
-def _app_root():
-	"""The tatva_connect app dir, found by walking up to the `hooks.py` marker — robust to where
-	this test file sits (survives a tests/ reorg) and identical in the bench and standalone."""
-	d = os.path.dirname(os.path.abspath(__file__))
-	while d != os.path.dirname(d):
-		if os.path.exists(os.path.join(d, "hooks.py")):
-			return d
-		d = os.path.dirname(d)
-	raise RuntimeError("tatva_connect app root (hooks.py) not found above this test")
+_APP_DIR = app_root(__file__)
 
-
-_APP_DIR = _app_root()
-
-
-def _is_whitelist(deco):
-	"""True for `@frappe.whitelist` or `@frappe.whitelist(...)`."""
-	node = deco.func if isinstance(deco, ast.Call) else deco
-	return isinstance(node, ast.Attribute) and node.attr == "whitelist"
+# `_is_whitelist`/`_guard_text` are thin local aliases onto the shared helpers (`_lock_helpers.py`,
+# constitution A.8) — kept so the rest of this file (and its self-tests) reads unchanged.
+_is_whitelist = is_whitelist_decorator
+_guard_text = guard_text
 
 
 def _bypasses(func):
@@ -117,24 +107,6 @@ def _python_files():
 				yield os.path.join(root, name)
 
 
-def _guard_text(node):
-	"""The function's CODE as text for the guard-token check — decorators + executable
-	statements, with any leading docstring dropped. Built from the AST (via `ast.unparse`),
-	so docstrings and `#` comments NEVER contribute a guard token: a function whose only
-	mention of `get_list`/`has_permission` is in its docstring or a comment is NOT cleared."""
-	parts = [ast.unparse(d) for d in node.decorator_list]
-	stmts = node.body
-	if (
-		stmts
-		and isinstance(stmts[0], ast.Expr)
-		and isinstance(stmts[0].value, ast.Constant)
-		and isinstance(stmts[0].value.value, str)
-	):
-		stmts = stmts[1:]  # drop the docstring
-	parts.extend(ast.unparse(s) for s in stmts)
-	return "\n".join(parts)
-
-
 def _scan():
 	"""Return [(path, func, label, lineno), ...] — unguarded, unmarked bypasses."""
 	violations = []
@@ -149,7 +121,7 @@ def _scan():
 				continue
 			guarded = any(tok in _guard_text(node) for tok in GUARD_TOKENS)
 			for label, lineno, end_lineno in _bypasses(node):
-				span = "\n".join(lines[lineno - 1 : end_lineno])
+				span = span_text(lines, lineno, end_lineno)
 				if OPT_OUT in span:
 					continue
 				if guarded:

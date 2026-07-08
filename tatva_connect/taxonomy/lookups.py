@@ -48,7 +48,7 @@ def _filters(filters):
 	return frappe._dict(filters or {})
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # guest-ok: public web-form autocomplete, read-only, server-scoped; never trusts a client grain (A.9)
 def city_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Cities within the picked state. filters: {state}. (State -> City cascade.)"""
 	f = _filters(filters)
@@ -71,7 +71,7 @@ def _grain_from_form(filters):
 	return {"vertical": cfg.custom_vertical, "group": cfg.custom_group, "program": cfg.custom_current_program}
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # guest-ok: public web-form autocomplete, read-only, server-scoped; never trusts a client grain (A.9)
 def hospital_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Hospitals within the FORM's grain. filters: {intake_form}. The grain is looked up from the
 	named CRM Intake Form server-side (frappe's web-form pattern) — any grain values a browser sends
@@ -79,7 +79,7 @@ def hospital_query(doctype, txt, searchfield, start, page_len, filters):
 	return _scoped("CRM Hospital", "hospital_name", txt, _grain_from_form(filters), page_len)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # guest-ok: public web-form autocomplete, read-only, server-scoped; never trusts a client grain (A.9)
 def doctor_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Doctors at the picked hospital (the Doctor->Hospital FK). filters: {hospital} (its PK).
 	Since the hospital PK already encodes the grain, this inherits the grain scope too."""
