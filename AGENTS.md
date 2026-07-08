@@ -97,6 +97,11 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, go-live/ 
   `actual ⊆ native` (grain may narrow, NEVER widen — the metamorphic relation), then prove the suite isn't
   blind by planting a known-bad per attack vector and failing the build unless `recall == 1.0`. New coverage
   EXTENDS this, never bolts a parallel idiom. Full map → `tatva_connect/tests/authz/TESTS.md`.
+- **S.7** Engine-bypassing surfaces are self-documenting AND self-gated: a public `allow_guest` endpoint
+  carries `# guest-ok: <reason>` at its decorator AND a real self-gate; a permission-bypassing read
+  (`get_all`/`ignore_permissions=<non-False>`) in a whitelisted method carries `# authz-ok: <reason>`
+  AND a guard. The AST locks auto-discover every such surface and fail the build on a missing marker or
+  gate — no hand-maintained allowlist, no per-endpoint test.
 
 ## Mechanism (codified — don't rediscover each time)
 - ALL customization registers in `hooks.py` (`doc_events`, `scheduler_events`, `override_*`, `fixtures`,
