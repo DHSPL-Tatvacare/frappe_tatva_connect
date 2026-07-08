@@ -135,7 +135,8 @@ def classify_send_response(resp) -> WatiSendResult:
 		)
 		return WatiSendResult(True, None, reason)
 
-	msg = resp.get("message") if isinstance(resp.get("message"), dict) else {}
+	raw_msg = resp.get("message")
+	msg = raw_msg if isinstance(raw_msg, dict) else {}
 	message_id = (
 		resp.get("local_message_id")
 		or msg.get("localMessageId")
@@ -154,6 +155,7 @@ def template_param_names(template) -> list:
 		sv = frappe.parse_json(template.sample_values) or {}
 		return list(sv.keys())
 	except Exception:
+		frappe.log_error(title="WATI: unreadable template sample_values")
 		return []
 
 

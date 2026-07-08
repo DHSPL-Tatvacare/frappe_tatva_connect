@@ -82,7 +82,8 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			return
 		account = self._provider_account()
 		if account is None:
-			return super().send_outgoing()
+			super().send_outgoing()
+			return
 		if self.type != "Outgoing":
 			return
 		adapter = providers.adapter_for(account)
@@ -127,7 +128,8 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 	def send_template(self):
 		account = self._provider_account()
 		if account is None:
-			return super().send_template()
+			super().send_template()
+			return
 		adapter = providers.adapter_for(account)
 		adapter.assert_enabled()
 		template = frappe.get_doc("WhatsApp Templates", self.template)
@@ -194,6 +196,7 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 			try:
 				bp = frappe.parse_json(self.body_param)
 			except Exception:
+				frappe.log_error(title="WATI: unreadable message body_param")
 				return []
 			return [
 				{"name": _name(int(k)), "value": "" if bp[k] is None else str(bp[k])}
