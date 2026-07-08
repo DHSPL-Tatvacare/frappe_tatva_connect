@@ -336,7 +336,6 @@ AUTOMATIONS = [
 			"tatva_connect.automation.router.on_created",
 			"tatva_connect.automation.router.on_updated",
 			"tatva_connect.automation.router.on_deleted",
-			"tatva_connect.automation.resume.sweep_resume",
 		],
 	),
 	Auto(
@@ -354,6 +353,23 @@ AUTOMATIONS = [
 			"starts sending the real message."
 		),
 		backs=[],
+		requires="Task::Automation::rules",
+	),
+	Auto(
+		key="Task::Automation::resume",
+		fires_on="Schedule",
+		trigger_detail="every 15 min · Wait-step resume sweep",
+		purpose=(
+			"Registers the Wait-step resume sweep (Task 9): a rule with a Wait action parks its "
+			"remaining effects in CRM Automation Resume, and this sweep resumes each parked segment "
+			"once its wait elapses, through the SAME effect executor a first fire uses. Runtime "
+			"gating rides the master engine switch (Task::Automation::rules — A.6, nothing resumes "
+			"while the engine is off); this row exists so the sweep's own scheduled path carries its "
+			"own catalog entry, same as run-log-sweep, rather than borrowing the master row's.\n"
+			"Example: a rule creates a task now, waits 14 days, then updates a field — the field "
+			"update fires from this sweep 14 days later, not from the original trigger event."
+		),
+		backs=["tatva_connect.automation.resume.sweep_resume"],
 		requires="Task::Automation::rules",
 	),
 	Auto(
