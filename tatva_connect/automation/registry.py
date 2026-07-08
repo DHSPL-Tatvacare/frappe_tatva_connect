@@ -312,18 +312,21 @@ AUTOMATIONS = [
 	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
-		trigger_detail='wildcard "*" · after_insert (Created) + on_update (Updated)',
+		trigger_detail='wildcard "*" · validate (guards, sync) + after_insert (Created) + on_update (Updated) (effects, after commit)',
 		purpose=(
 			"The automation engine: runs every enabled grain-matching rule when its trigger fires. "
 			"ONE wildcard router (on_doctype x event) replaces the old Task-Completed/Field-Changed "
 			"split - a doctype fires only because an enabled rule names it, no per-doctype code push. "
 			"'Task completed' is now an Updated rule whose criteria include 'status changed to Done'. "
-			"Each rule checks its criteria, then fires its actions (create a task, set a field, add a "
-			"comment) in order.\n"
+			"Two lanes (Task 5): GUARD actions (e.g. Require Fields) run synchronously in validate and "
+			"can block the save; EFFECT actions (create a task, set a field, add a comment) run after "
+			"commit, in order.\n"
 			"Example: a Task's status changing to Done with outcome 'Enrolled' creates a 'Welcome "
-			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment."
+			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment; a rule "
+			"requiring 'outcome' to be set blocks the Task save when it's left blank."
 		),
 		backs=[
+			"tatva_connect.automation.router.run_guards",
 			"tatva_connect.automation.router.on_created",
 			"tatva_connect.automation.router.on_updated",
 		],

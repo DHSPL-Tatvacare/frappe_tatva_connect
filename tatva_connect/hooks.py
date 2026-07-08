@@ -137,7 +137,12 @@ doc_events = {
 	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
+	# Automation engine (Task 5): the GUARD lane rides validate, synchronous, BEFORE the save commits -
+	# a matched rule's guard actions (e.g. Require Fields) can frappe.throw and block the save.
 	"*": {
+		"validate": [
+			"tatva_connect.automation.router.run_guards",
+		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
 			"tatva_connect.automation.router.on_created",

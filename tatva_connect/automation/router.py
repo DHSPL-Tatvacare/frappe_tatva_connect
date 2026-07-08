@@ -17,11 +17,15 @@ rule save/delete), never because of a per-doctype hook.
 Every downstream brain is reused, not reinvented (A.8, one brain): subject resolution
 (`subjects.resolve_lead_name`), grain (`rules.lead_axes`), the field-diff and context builder
 (moved here from `watch.py`, logic unchanged), the matcher (`rules.matching_rules`), and the
-two-lane executor (Task 5: `dispatcher.run_guards`/`run_effects`) — same re-entrancy guard
+two-lane executor (`dispatcher.run_guards`/`run_effects`, Task 5) — same re-entrancy guard
 (`frappe.flags.in_automation`), same kill switch (`Task::Automation::rules`), same
-enqueue-after-commit + `job_id`/`deduplicate` pattern the old dispatchers used. `on_created`/
-`on_updated`/`run_for_event` below now call `dispatcher.run_effects` (effect-lane actions only) —
-the SYNCHRONOUS guard-lane entry point lands in a follow-up change.
+enqueue-after-commit + `job_id`/`deduplicate` pattern the old dispatchers used.
+
+TATVA v2 (Task 5): `run_guards` below is the SYNCHRONOUS entry (wired on `"*"` `validate` in
+hooks.py) — a matched rule's guard actions run inline and a raise blocks the save. `on_created`/
+`on_updated`/`run_for_event` are the ASYNC entry (after-commit) — unchanged in shape, now calling
+`dispatcher.run_effects` (effect-lane actions only; guard actions on the same rule already ran, or
+blocked the save, in validate).
 
 Concurrency posture (carried over, not a regression): dispatch is enqueue-after-commit with a
 per-(doc, event) `job_id` + `deduplicate`, which coalesces QUEUED duplicates but not one already
@@ -72,6 +76,45 @@ def on_created(doc, method=None):
 	if doc.doctype not in live_doctypes():
 		return
 	_enqueue(doc.doctype, doc.name, "Created", {})
+
+
+def run_guards(doc, method=None):
+	"""Wildcard `validate` (doc_events["*"]) — the SYNCHRONOUS GUARD lane (Task 5). Runs BEFORE the
+	save commits: a matched rule's guard actions run inline here, and a raise propagates straight out
+	of validate, blocking the save (S.1/S.3 — never swallowed). Reuses the SAME subject/context brains
+	as the after-commit effect lane below (`_subject`, `_diff_watched_fields`, `_context_for`) — one
+	context builder, no second copy (A.8). Effect-lane actions on the same rule are NOT run here —
+	router.on_created/on_updated enqueue those after commit, as before.
+
+	Axes read straight off the in-memory subject doc (`_subject_axes`), NOT `rules.lead_axes` (a DB
+	lookup by name) — on a brand-new Lead (Created), validate runs BEFORE `db_insert`, so the row
+	doesn't exist yet and a by-name lookup throws "not found"."""
+	if frappe.flags.get("in_automation"):
+		return  # re-entrancy guard: a write the engine made must not re-enter its own guard lane
+	if not automation.is_enabled(KILL_SWITCH):
+		return
+	if doc.doctype not in live_doctypes():
+		return
+	subject = _subject(doc)
+	if subject is None:
+		return  # no resolvable subject -> no rule can fire (fail-closed)
+	axes = _subject_axes(subject)
+	event = "Created" if doc.is_new() else "Updated"
+	matched = rules.matching_rules(doc.doctype, event, axes[0], axes[1], axes[2])
+	if not matched:
+		return
+	changed = {} if event == "Created" else _diff_watched_fields(doc)
+	context = _context_for(doc, changed)
+	field_types = _field_types_for(doc.doctype)
+	for r in matched:
+		dispatcher.run_guards(subject.name, r, context, field_types)
+
+
+def _subject_axes(subject):
+	"""(vertical, group, program) read straight off the in-memory subject DOCUMENT — never a DB round
+	trip. `_subject()` always returns the real CRM Lead doc (itself, or the loaded parent Lead for a
+	Task subject), already grain-stamped by `before_validate` - so its own fields are the answer."""
+	return (subject.get("custom_vertical") or "", subject.get("custom_group") or "", subject.get("custom_current_program") or "")
 
 
 def on_updated(doc, method=None):
