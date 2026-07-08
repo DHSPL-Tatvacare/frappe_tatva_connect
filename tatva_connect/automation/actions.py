@@ -13,6 +13,7 @@ import json
 
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 from tatva_connect.automation import fields
 
@@ -50,6 +51,44 @@ def _action_require_fields(action, subject, context):
 			continue
 		if context.get(fieldname) in (None, ""):
 			frappe.throw(_("Field {0} is required").format(fieldname))
+
+
+def _action_require_location(action, subject, context):
+	"""REQUIRE_LOCATION (guard, Task 8) — the second guard verb, same shape as Require Fields but
+	delegating the required-decision to the ONE existing brain (location.api.location_required, A.8) —
+	never a second copy of that logic. `subject` is the lead the router's guard lane resolved (the
+	rule's subject); `context` is the triggering doc's own field dict (the same sync context Require
+	Fields reads), so a rule On CRM Task Updated reads its custom_task_type / custom_location_latitude /
+	custom_location_longitude straight off it. Fail-closed, native `frappe.throw` — same message intent
+	as the `tasks.enforce_location` hook this verb supersedes once a rule is authored for a task type."""
+	from tatva_connect.location import api as location_api
+
+	radius = location_api.location_required(context.get("custom_task_type"), subject, context)
+	if radius is None:
+		return  # not required for this task type / submitted values — same non-match as the old hook
+	lat, lng = context.get("custom_location_latitude"), context.get("custom_location_longitude")
+	if not (lat and lng):
+		frappe.throw(
+			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
+			  "Tasks list or open the task."),
+			title=_("Location required"),
+		)
+	geofence = flt(action.geofence_meters)
+	if geofence <= 0:
+		return  # no radius configured on this action — the location_required check above is enough
+	site_lat, site_lng = frappe.db.get_value(
+		"CRM Lead", subject, ["custom_clinic_latitude", "custom_clinic_longitude"]
+	) or (None, None)
+	if not (site_lat and site_lng):
+		return  # no clinic anchor yet to measure against — nothing to enforce a radius on
+	distance = location_api.haversine(flt(lat), flt(lng), site_lat, site_lng)
+	if distance > geofence:
+		frappe.throw(
+			_("You are {0} m from the doctor's location — outside the allowed {1} m geofence.").format(
+				round(distance), geofence
+			),
+			title=_("Out of range"),
+		)
 
 
 def _action_create_task(action, lead, context, axes, trigger_doc):
@@ -213,9 +252,12 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
 # `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
 # verb = one row here, never a second lane table. `Require Fields` is the first guard verb (Task 5);
-# `Require Location` (Task 8) will be the second.
+# `Require Location` (Task 8) is the second. `CRMAutomationRule.validate()` rejects any action_type
+# not present here at author time (Task 8) — a verb sitting in the Select with no row here (e.g. Wait,
+# before Task 9) can never reach a rule.
 _ACTION_LANES = {
 	"Require Fields": ("guard", _action_require_fields),
+	"Require Location": ("guard", _action_require_location),
 	"Create Task": ("effect", _action_create_task),
 	"Update Field": ("effect", _action_set_field),
 	"Append Child Row": ("effect", _action_append_child),
