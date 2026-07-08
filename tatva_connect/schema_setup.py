@@ -22,6 +22,7 @@ from tatva_connect.patches import (
 	add_acefone_telephony_medium,
 	add_crm_task_metrics_index,
 	add_observability_indexes,
+	add_resume_index,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
 	rekey_task_types_composite,
@@ -38,6 +39,8 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
+	# Composite index (status, resume_at) on the Wait-park queue — backs sweep_resume()'s query.
+	add_resume_index,
 	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
 	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
 	rekey_task_types_composite,

@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "autoincrement",
+ "creation": "2026-07-08 00:00:00.000000",
+ "description": "The Wait park queue (Task 9): one row per parked rule-fire segment, waiting for automation.resume.sweep_resume() to resume run_effects from next_action_idx at/after resume_at. Runtime data only — never seeded (A.17).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "rule",
+  "subject_doctype",
+  "subject_name",
+  "resume_at",
+  "next_action_idx",
+  "status",
+  "context_json"
+ ],
+ "fields": [
+  {"fieldname": "rule", "fieldtype": "Link", "label": "Rule", "options": "CRM Automation Rule", "in_list_view": 1, "read_only": 1, "reqd": 1},
+  {"fieldname": "subject_doctype", "fieldtype": "Data", "label": "Subject Doctype", "read_only": 1, "reqd": 1},
+  {"fieldname": "subject_name", "fieldtype": "Data", "label": "Subject Name", "in_list_view": 1, "read_only": 1, "reqd": 1},
+  {"fieldname": "resume_at", "fieldtype": "Datetime", "label": "Resume At", "in_list_view": 1, "read_only": 1, "reqd": 1, "search_index": 1},
+  {"fieldname": "next_action_idx", "fieldtype": "Int", "label": "Next Action Index", "read_only": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nDone\nFailed", "default": "Pending", "in_list_view": 1, "read_only": 1, "search_index": 1},
+  {"fieldname": "context_json", "fieldtype": "Long Text", "label": "Context (JSON)", "read_only": 1}
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-07-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Automation Resume",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "role": "Sales Manager"},
+  {"read": 1, "role": "Automation Manager"},
+  {"create": 1, "delete": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "resume_at",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 0
+}
