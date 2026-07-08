@@ -109,8 +109,12 @@ seeds.manifest). `docs/` (INVENTORY.md, prod-deploy/DEPLOY.md, plans/, go-live/ 
   structural patches ALSO re-run idempotently on `after_migrate` (`schema_setup`).
 - `after_migrate` is a 10-step ORCHESTRATION with **3 gates that ABORT the migrate on registry drift**
   (automation drift · notification drift · lockdown). A migrate failure there = a missing registry row
-  (code), not a flaky deploy. The automation engine = 30 `CRM Tatva Automation` toggles (auto-seeded
-  DORMANT); rules are user-built. Full detail → `CICD.md` and `docs/go-live/3-seed/db-seeds/INDEX.md`.
+  (code), not a flaky deploy. The automation engine is `(On <Doctype> <Event>) · If <predicate> ·
+  Then <verbs>` — a wildcard `"*"` router (`automation/router.py`; no per-doctype code push), guard
+  (sync, `validate`) / effect (async, after commit; `actions.py`, `sends.py` dormant, `resume.py` Wait
+  sweep, `report.py` daily summary) lanes, gated by the 4 collapsed `Task::Automation::{rules,sends,
+  run-log-sweep,resume}` switches among 34 `CRM Tatva Automation` toggles total (auto-seeded DORMANT);
+  rules are user-built. Full detail → `CICD.md` and `docs/go-live/3-seed/db-seeds/INDEX.md`.
 
 ## Deploy posture (two lanes — full detail in CICD.md)
 - **Lane 1 — automatic:** build image (per-env apps file — `apps.uat.json`/`apps.prod.json` pin the fork's
