@@ -216,6 +216,7 @@ def _fail(code, message, http, **extra):
 	err.update(extra)
 	frappe.local.response.update({"status": "error", "error": err})
 	frappe.local.response["http_status_code"] = http
+	return True  # denial sentinel for throttle guards; body already set, so guards bare-`return`
 
 
 # -- error mapping + rate limit ----------------------------------------------
@@ -543,17 +544,17 @@ def _api(fn=None, *, bulk=False):
 				_user, mapping, _is_sysmgr = _resolve_caller()
 				rate = _rate_check(1, mapping)
 				denied = _throttle_response(rate, mapping)
-				if denied is not None:
+				if denied:
 					if idem:
 						_idempotency_release(idem)
-					return denied
+					return
 				remaining = rate[1] if rate else None
 				if not bulk:
 					denied = _meter_volume(1, _direction())
-					if denied is not None:
+					if denied:
 						if idem:
 							_idempotency_release(idem)
-						return denied
+						return
 			result = fn(*args, **kwargs)
 			if mapping is not None:
 				_ratelimit_headers(mapping, remaining=remaining)
@@ -581,8 +582,8 @@ def _run_bulk(items, fn):
 	if len(items) > bulk_max:
 		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(bulk_max, len(items)))
 	denied = _meter_volume(len(items), "write")
-	if denied is not None:
-		return denied
+	if denied:
+		return
 	results, ok = [], 0
 	for i, item in enumerate(items):
 		sp = f"tc_bulk_{i}"

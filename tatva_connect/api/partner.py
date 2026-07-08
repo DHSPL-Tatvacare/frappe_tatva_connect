@@ -1,31 +1,32 @@
 """Gated partner lead API — the ONLY surface external partners touch.
 
 Partners are role-less System Users. Raw `/api/resource/*` returns 403 for them
-(crm's `org_hierarchy.has_lead_permission` blocks non-managers). These methods are
-their entire contract — every one resolves the caller's `CRM Lead API Mapping` row:
+(CRM's `org_hierarchy.has_lead_permission` blocks non-managers). These methods are
+their entire contract; every one resolves the caller's `CRM Lead API Mapping` row:
 
-  * has an enabled mapping row  -> EXTERNAL partner. Routing (source / vertical /
-      group / program) is FORCED from the row; reads/writes are scoped to that
-      line; the fields they may send/read are THEIR ticked subset of the catalog.
-  * System Manager, no mapping  -> TRUSTED internal (e.g. MyTatvaCore). Sends
-      routing in the body; full catalog; unscoped.
-  * neither                      -> 403.
+  - Enabled mapping row: EXTERNAL partner. Routing (source, vertical, group and
+    program) is FORCED from the row, reads and writes are scoped to that line, and
+    the fields they may send or read are their ticked subset of the catalog.
+  - System Manager, no mapping: TRUSTED internal (for example, MyTatvaCore). Sends
+    routing in the body, full catalog, unscoped.
+  - Neither: 403.
 
-ONE set of endpoints serves every partner — what varies per partner is config on
-their mapping row (routing + allowed-fields grid), never code.
+ONE set of endpoints serves every partner. What varies per partner is config on
+their mapping row (routing and allowed-fields grid), never code.
 
 Singular:
-  GET    lead_schema  -> the fields THIS caller may send/read (+ their routing)
-  GET    lead_get     -> one lead by `name` or `mobile_no`, scoped to the line
-  POST   lead_create  -> create-or-upsert by phone; returns the CRM `name`
-  PUT    lead_update  -> update a lead by CRM `name` (the id POST returned)
-  DELETE lead_delete  -> delete a lead by CRM `name`, scoped to the line
-Bulk / query (each record enforced individually; partial success):
-  POST   lead_create_bulk  -> {"leads":[...]}  (<= 100)
-  PUT    lead_update_bulk   -> {"updates":[{"name":..,..}]}  (<= 100)
-  DELETE lead_delete_bulk   -> {"names":[...]}  (<= 100)
-  POST   lead_get_bulk      -> {"names":[...]} or {"mobile_nos":[...]} (<= 100)
-  GET    lead_list          -> curated filters + pagination, line-scoped
+  GET    lead_schema  the fields THIS caller may send or read, plus their routing
+  GET    lead_get     one lead by `name` or `mobile_no`, scoped to the line
+  POST   lead_create  create-or-upsert by phone; returns the CRM `name`
+  PUT    lead_update  update a lead by CRM `name` (the id POST returned)
+  DELETE lead_delete  delete a lead by CRM `name`, scoped to the line
+
+Bulk and query (each record enforced individually; partial success):
+  POST   lead_create_bulk  {"leads": [...]}                          (max 100)
+  PUT    lead_update_bulk  {"updates": [{"name": ..., ...}]}         (max 100)
+  DELETE lead_delete_bulk  {"names": [...]}                          (max 100)
+  POST   lead_get_bulk     {"names": [...]} or {"mobile_nos": [...]} (max 100)
+  GET    lead_list         curated filters and pagination, line-scoped
 """
 import frappe
 from frappe import _
@@ -33,18 +34,14 @@ from frappe.utils import cint, cstr
 
 from tatva_connect import automation
 from tatva_connect.api._base import (
-	_PARTNER_PATH,
 	_api,
 	_cfg,
-	_classify,
-	_fail,
 	_meter_volume,
 	_norm_phone,
 	_ok,
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
-	normalise_partner_response,
 )
 
 # ---------------------------------------------------------------------------
@@ -65,7 +62,7 @@ _CATALOG_CACHE_TTL_SEC = 60 * 60
 PARENT_SECTION = "lead"
 
 
-def _build_catalog():
+def _build_catalog() -> dict:
 	"""Read the `CRM Lead API Field` table into the structured catalog the API uses.
 	Returns a dict (everything below is derived from these keys):
 	  keys           ordered list of `section:fieldname` (sort_field=field_key)
@@ -113,7 +110,7 @@ def _build_catalog():
 	}
 
 
-def _catalog():
+def _catalog() -> dict:
 	"""The cached catalog. Invalidated by clear_catalog_cache on CRM Lead API Field write."""
 	cached = frappe.cache().get_value(_CATALOG_CACHE_KEY)
 	if cached is None:
@@ -160,7 +157,7 @@ LIST_FILTERS = {
 
 
 def catalog_section_title(child_fieldname):
-	"""Readable section title for a child-table fieldname, e.g. 'custom_lab_profile'
+	"""Readable section title for a child-table fieldname, e.g., 'custom_lab_profile'
 	-> 'Lab' — used in child-write error messages ('report_date is required to
 	identify a Lab row'). Falls back to the fieldname if the section is unknown."""
 	cat = _catalog()
@@ -433,7 +430,7 @@ def _curate(doc, parent_fields, child_allow):
 LEAD_IDENTITY = "mobile_no"   # the dedup anchor -> required
 _NAMELESS = "(no name)"       # placeholder for a lead sent without a name (the doctype requires one)
 # Parent fields the caller may OMIT (reported not-required, overriding the doctype's reqd flag):
-# first_name -> we fill the placeholder; status -> crm's CRM Lead controller defaults it.
+# first_name -> we fill the placeholder; status -> CRM's CRM Lead controller defaults it.
 LEAD_OPTIONAL = ("first_name", "status")
 _LEAD_REQUIRED = {LEAD_IDENTITY: True, **{fn: False for fn in LEAD_OPTIONAL}}
 
@@ -478,7 +475,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 		doc.save(ignore_permissions=True)
 		return doc, "updated"
 
-	parent.setdefault("first_name", _NAMELESS)  # status is left for crm's controller to default
+	parent.setdefault("first_name", _NAMELESS)  # status is left for CRM's controller to default
 	doc = frappe.new_doc("CRM Lead")
 	doc.update(parent)
 	_apply_children(doc, children)
@@ -539,14 +536,14 @@ def lead_schema(**kwargs):
 	Two partners hitting this get different field lists — driven by their grid."""
 	user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 
-	def describe(doctype, fields, required_override=None):
+	def describe(doctype, section_fields, required_override=None):
 		"""Field dicts for a section. `required_override` ({fieldname: bool}) reports the API's
 		actual contract instead of the doctype's `reqd` flag — used for the parent (identity
 		required, defaulted fields not) and a child key_field (required to address its row)."""
 		required_override = required_override or {}
 		m = frappe.get_meta(doctype)
-		out = []
-		for fn in fields:
+		entries = []
+		for fn in section_fields:
 			f = m.get_field(fn)
 			if not f:
 				continue
@@ -566,8 +563,8 @@ def lead_schema(**kwargs):
 				vals = picklist.values_for(f.options, (mp.vertical, mp.crm_group, mp.program or ""), fn)
 				if vals:
 					entry["allowed_values"] = vals
-			out.append(entry)
-		return out
+			entries.append(entry)
+		return entries
 
 	cat = _catalog()
 	children = {}
@@ -750,8 +747,8 @@ def lead_get_bulk(**kwargs):
 	if len(requested) > bulk_max:
 		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(bulk_max, len(requested)))
 	denied = _meter_volume(len(requested), "read")  # read volume = rows requested
-	if denied is not None:
-		return denied
+	if denied:
+		return
 
 	filters = {by: ["in", requested]}
 	if mp:
@@ -766,7 +763,7 @@ def lead_get_bulk(**kwargs):
 		lead_name = by_id.get(ident)
 		if lead_name:
 			results.append({"index": i, "status": "success",
-				"data": _curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow)})
+				"data": _curate(frappe.get_doc("CRM Lead", cstr(lead_name)), parent_fields, child_allow)})
 			found += 1
 		else:
 			results.append({"index": i, "status": "error",
@@ -798,8 +795,8 @@ def lead_list(**kwargs):
 	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
 	offset = cint(data.get("offset") or data.get("limit_start"))
 	denied = _meter_volume(limit, "read")  # read volume = the requested page size
-	if denied is not None:
-		return denied
+	if denied:
+		return
 
 	fields = list(dict.fromkeys(
 		[*parent_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]
