@@ -1,7 +1,7 @@
 {
  "app": "tatva_connect",
  "charts": [],
- "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}]",
+ "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 6}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 6}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,7 +13,7 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-06-19 13:00:00.000000",
+ "modified": "2026-07-09 15:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -54,6 +54,22 @@
    "doc_view": "List",
    "label": "Push Settings",
    "link_to": "CRM Push Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Call Log",
+   "link_to": "CRM Call Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "WhatsApp Messages",
+   "link_to": "WhatsApp Message",
    "stats_filter": "[]",
    "type": "DocType"
   }

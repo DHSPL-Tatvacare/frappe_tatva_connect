@@ -67,6 +67,18 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "message-square-text",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "WhatsApp Messages",
+   "link_to": "WhatsApp Message",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "phone",
@@ -109,6 +121,18 @@
    "keep_closed": 0,
    "label": "Telephony Settings",
    "link_to": "CRM Telephony Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "phone-call",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Call Log",
+   "link_to": "CRM Call Log",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -161,7 +185,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-19 13:00:00.000000",
+ "modified": "2026-07-09 15:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
