@@ -1,9 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Leg E+F sign-off - Action extensions (Expression / Add Comment / due_mode) + dispatcher handlers.
+"""Leg E+F sign-off - Action extensions (Expression / Add Comment / due_mode) + action handlers.
 
-Calls the dispatcher action handlers directly with a hand-built context (the full fire-rules path
+Calls the actions verb handlers directly with a hand-built context (the full fire-rules path
 is Leg G's sign-off). Real Frappe engine as the oracle - real saves, real allowlist, real throws.
+
+TATVA v2 (Task 6): the handlers under test moved from `dispatcher` into `automation/actions.py`
+(a move, not a rewrite - A.8); this suite follows them to their new home.
 """
 import datetime
 import unittest
@@ -11,7 +14,7 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import dispatcher
+from tatva_connect.automation import actions, dispatcher
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.tests.automation import field_allowlist
 
@@ -83,7 +86,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			value_mode="Expression",
 			expression="add_days(ctx['custom_dob'], 3)",
 		)
-		dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+		actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		out = frappe.db.get_value("CRM Lead", self.lead.name, _SET_TARGET)
 		self.assertEqual(frappe.utils.getdate(out), datetime.date(2026, 7, 9))
 
@@ -98,7 +101,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			expression="add_days(ctx['no_such_key'], 3)",
 		)
 		with self.assertRaises(Exception):
-			dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+			actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		after = frappe.db.get_value("CRM Lead", self.lead.name, _SET_TARGET)
 		self.assertEqual(before, after, "field was written despite the action raising - partial write leak")
 
@@ -118,7 +121,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 				due_mode="Expression",
 				due_expression="ctx['custom_dob']",
 			)
-			dispatcher._action_create_task(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+			actions._action_create_task(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 			tasks = frappe.get_all(
 				"CRM Task",
 				filters={"reference_doctype": "CRM Lead", "reference_docname": self.lead.name, "custom_task_type": tt_name},
@@ -143,7 +146,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			comment_mode="Literal",
 			comment_text="Auto: lead dropped after scheduled visit outcome.",
 		)
-		dispatcher._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+		actions._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		comments = frappe.get_all(
 			"Comment",
 			filters={"reference_doctype": "CRM Lead", "reference_name": self.lead.name},
@@ -160,7 +163,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			comment_mode="Expression",
 			comment_expression="f'Stage moved: {ctx[\"custom_stage__before\"]} -> {ctx[\"custom_stage\"]}'",
 		)
-		dispatcher._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+		actions._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		comments = frappe.get_all(
 			"Comment",
 			filters={"reference_doctype": "CRM Lead", "reference_name": self.lead.name},
@@ -185,7 +188,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			value="99",
 		)
 		with self.assertRaises(PermissionError):
-			dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+			actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 
 	# (g) REGRESSION: Set Field Literal mode still works (the existing v1 path).
 	def test_set_field_literal_still_works(self):
@@ -196,7 +199,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			value_mode="Literal",
 			value="2026-12-31",
 		)
-		dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+		actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		out = frappe.db.get_value("CRM Lead", self.lead.name, _SET_TARGET)
 		self.assertEqual(frappe.utils.getdate(out), datetime.date(2026, 12, 31))
 
@@ -208,7 +211,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 			comment_mode="Literal",
 			comment_text="no-resave probe",
 		)
-		dispatcher._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+		actions._action_add_comment(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		modified_after = frappe.db.get_value("CRM Lead", self.lead.name, "modified")
 		self.assertEqual(modified_before, modified_after, "add_comment re-saved the subject - new on_update re-entrancy surface")
 
@@ -221,7 +224,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 		try:
 			a = _action_row(action_type="Set Field", target_doctype="CRM Task", fieldname="title",
 				value_mode="Literal", value="written-by-automation")
-			dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, task)
+			actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, task)
 			self.assertEqual(frappe.db.get_value("CRM Task", task.name, "title"), "written-by-automation")
 		finally:
 			frappe.db.delete("CRM Task", {"name": task.name})
@@ -237,7 +240,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 				value_mode="Literal", value="x")
 			# trigger_doc is the Lead; target CRM Task is neither the Lead nor the trigger doc -> ValueError.
 			with self.assertRaises(ValueError):
-				dispatcher._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
+				actions._action_set_field(a, self.lead.name, self._ctx(), self.lead_axes, self.lead)
 		finally:
 			frappe.db.delete(_FIELD, {"name": row})
 

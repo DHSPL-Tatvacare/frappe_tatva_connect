@@ -179,7 +179,7 @@ class CRMAutomationRule(Document):
 	def _set_field_scope(self):
 		"""The doctypes a Set Field may target — the runtime write scope: the Lead, plus the trigger
 		doc's own type (a Field-Changed rule may set a field on the watched doc; a Task-Completed rule
-		on the completed task). Mirrors dispatcher._resolve_write_target so a rule can't save a target
+		on the completed task). Mirrors actions._resolve_write_target so a rule can't save a target
 		the dispatcher would only ever reject."""
 		scope = {"CRM Lead"}
 		trigger = self._trigger_doctype()

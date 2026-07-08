@@ -261,12 +261,12 @@ class TestWatchEndToEnd(FrappeTestCase):
 	# verdict regardless of trigger shape (grain narrows, never widens).
 	# NB: the dispatcher raises Python's builtin PermissionError (parity with the existing v1 code).
 	def test_field_change_set_field_non_allowlisted_throws(self):
-		from tatva_connect.automation import dispatcher
+		from tatva_connect.automation import actions
 		a = type("A", (), {"action_type": "Update Field", "target_doctype": "CRM Lead",
 			"fieldname": _BAD_TARGET, "value_mode": "Literal", "value": "99"})()
 		ld = _make_lead(stage="A")
 		with self.assertRaises(PermissionError):
-			dispatcher._action_set_field(a, ld.name, {"custom_dob": "2026-07-06"},
+			actions._action_set_field(a, ld.name, {"custom_dob": "2026-07-06"},
 				(_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"]), ld)
 
 	# (k) KNOWN-BAD PLANT (S.6 recall): a rule authored while the field WAS allowlisted, then the
