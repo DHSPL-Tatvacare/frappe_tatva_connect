@@ -23,6 +23,7 @@ class CRMAutomationRule(Document):
 		# can't be proven safe never saves. No engine imports here (avoid cycles).
 		self._require_grain()
 		self._require_trigger()
+		self._validate_action_verbs_registered()
 		self._require_action_task_types_exist()
 		self._validate_criteria_fields()
 		self._validate_set_field_actions()
@@ -67,6 +68,20 @@ class CRMAutomationRule(Document):
 				),
 				title=_("Unsupported trigger doctype"),
 			)
+
+	def _validate_action_verbs_registered(self):
+		"""Every action's verb must have a registered handler (Task 8's soul-check gap closer): a verb
+		sitting in the action_type Select with no `_ACTION_LANES` entry (e.g. Wait, before Task 9) must
+		fail LOUD at author time, not silently at fire time. Imports the registry off `actions` — the
+		single source of verb->lane truth (A.8), never a second verb list here."""
+		from tatva_connect.automation import actions
+
+		for a in self.actions:
+			if a.action_type and a.action_type not in actions._ACTION_LANES:
+				frappe.throw(
+					_("{0} has no registered handler yet and cannot be used in a rule.").format(frappe.bold(a.action_type)),
+					title=_("Unknown action verb"),
+				)
 
 	def _require_action_task_types_exist(self):
 		"""Every Create Task action's target task type must exist (trigger-agnostic - a Create Task
