@@ -34,7 +34,21 @@ def _action_label(a):
 		return "Send WhatsApp {}".format(a.whatsapp_template or "?")
 	if a.action_type == "Send Email":
 		return "Send Email {}".format(a.email_recipient or "?")
+	if a.action_type == "Wait":
+		return "Wait {}".format(a.wait_expression or "?")
 	return a.action_type or "?"
+
+
+class _ParkSignal(Exception):
+	"""Raised by the WAIT verb (effect lane, Task 9) — not a failure, a SEGMENT BOUNDARY. The
+	handler never parks anything itself: it only resolves the resume time and raises this; the
+	executor (`dispatcher.run_effects`) is what owns the effects list and this action's position in
+	it, so it is the one that catches the signal, commits the pre-wait segment, and calls
+	`resume.park()` with the index of the action AFTER the Wait."""
+
+	def __init__(self, resume_at):
+		self.resume_at = resume_at
+		super().__init__(f"wait: parked until {resume_at}")
 
 
 # -- actions -----------------------------------------------------------------
@@ -249,6 +263,34 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 	return sends.send_email(lead, action.email_recipient, action.email_subject, action.email_body, context)
 
 
+def _action_wait(action, lead, context, axes, trigger_doc):
+	"""WAIT (effect, Task 9) — a SEGMENT BOUNDARY, not a write. `action.wait_expression` is a Python
+	expression (safe_eval via the ONE resolver, expr.resolve_expression, A.8) that must evaluate to
+	a dict of `frappe.utils.add_to_date` kwargs — e.g. `{"days": 14}`, `{"hours": 2}`. This is the
+	ONE clear contract for this verb (a fixed-delay-from-now dict, never a raw datetime literal, so
+	authoring stays declarative and testable). Anything else — a non-dict, an empty dict, or a dict
+	`add_to_date` rejects — raises loudly (frappe.throw); a Wait can never silently resolve to a
+	zero-length (or nonexistent) delay. Never writes anything and never parks anything itself — it
+	raises `_ParkSignal(resume_at)`, which `run_effects` catches to do the actual parking."""
+	from tatva_connect.automation import expr
+
+	delay = expr.resolve_expression(action.wait_expression, context)
+	if not isinstance(delay, dict) or not delay:
+		frappe.throw(
+			_("A Wait action's expression must evaluate to a non-empty dict of add_to_date kwargs, "
+			  'e.g. {{"days": 14}} — got {0!r}.').format(delay),
+			title=_("Bad Wait expression"),
+		)
+	try:
+		resume_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), **delay)
+	except TypeError as e:
+		frappe.throw(
+			_("A Wait action's expression dict is not valid add_to_date kwargs: {0}").format(e),
+			title=_("Bad Wait expression"),
+		)
+	raise _ParkSignal(resume_at)
+
+
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
 # `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
 # verb = one row here, never a second lane table. `Require Fields` is the first guard verb (Task 5);
@@ -266,6 +308,7 @@ _ACTION_LANES = {
 	"Create Note": ("effect", _action_add_comment),
 	"Send WhatsApp": ("effect", _action_send_whatsapp),
 	"Send Email": ("effect", _action_send_email),
+	"Wait": ("effect", _action_wait),
 }
 
 

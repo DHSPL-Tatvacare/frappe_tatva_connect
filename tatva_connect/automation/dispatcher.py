@@ -23,6 +23,19 @@ TATVA v2 (Task 6): every verb handler + its resolver helpers + the `_ACTION_LANE
 into `automation/actions.py` (a move, not a rewrite — A.8/A.12). This module keeps ONLY orchestration:
 the two-lane executor, the per-action dispatch (`_run_action`), the Run Log writer and the error
 factory. `actions` is imported for the registry and the per-action label.
+
+TATVA v2 (Task 9): `run_effects` becomes SEGMENT-aware. A `Wait` action (actions._action_wait) is a
+segment boundary, not a write: it raises `actions._ParkSignal(resume_at)`, which this loop catches to
+commit everything the segment already did, hand the remainder off to `resume.park()`, and RETURN — no
+Wait means no behavior change (one segment, one Run Log row, exactly as before). `start_idx` lets the
+scheduled `resume.sweep_resume()` job resume a parked segment through the SAME executor (A.8 — never a
+second one); a resumed run may hit ANOTHER Wait and re-park (chained delays).
+
+HONEST CONSTRAINT: atomicity is per-SEGMENT (the effects between two Waits, or before the first / after
+the last), NEVER across a Wait — you cannot hold one DB transaction open for two weeks. A savepoint
+rollback inside one segment never touches an already-committed earlier segment, and a multi-Wait rule
+is NOT one atomic unit end to end (same posture as Salesforce/LeadSquared scheduled paths). Do not read
+"a rule is all-or-nothing" (below) as spanning a Wait — it describes ONE segment only.
 """
 import time
 
@@ -51,30 +64,39 @@ def run_guards(subject, r, context, field_types):
 		handler(action, subject, context)
 
 
-def run_effects(subject, r, trigger_doc, axes, grain, field_types, context):
+def run_effects(subject, r, trigger_doc, axes, grain, field_types, context, start_idx=0):
 	"""EFFECT lane (Task 5) — the original per-rule executor: evaluate criteria once more (the
 	after-commit context can differ from the sync one — e.g. a rapid A→B→C edit, spec §5.2), then run
 	every EFFECT-lane action in a guarded, savepoint-atomic executor and write one Run Log row. Guard
-	actions on this same rule already ran (or blocked the save) in validate — never re-run here."""
+	actions on this same rule already ran (or blocked the save) in validate — never re-run here.
+
+	`start_idx` (Task 9) is a 0-based index into THIS rule's effect-lane action list (guard actions
+	never appear in it) — 0 for a first fire, or a parked Wait's `next_action_idx` when
+	`resume.sweep_resume()` resumes a segment. A resume SKIPS the criteria re-check below: the
+	criteria already matched at the ORIGINAL fire (that's why this rule parked in the first place),
+	and the trigger context a resume replays is the one captured then, not a fresh one to re-judge."""
 	started = time.monotonic()
 	rule = frappe.get_doc("CRM Automation Rule", r.name)
-	if not rules.criteria_match(rule.criteria, context, field_types):
+	if start_idx == 0 and not rules.criteria_match(rule.criteria, context, field_types):
 		return  # not a fire — no log (only fires are audited)
 
 	effect_actions = [a for a in rule.actions if actions._ACTION_LANES.get(a.action_type, (None, None))[0] == "effect"]
 
-	# A rule is all-or-nothing: run every action inside a savepoint; if ANY action fails, roll the
-	# whole rule back so no lead is left half-processed. Deferred side-effects (webhooks) fire only
-	# after a clean commit. Native savepoint API — no hand-rolled transaction handling.
+	# A SEGMENT is all-or-nothing: run every action inside a savepoint; if ANY action fails, roll the
+	# whole segment back so no lead is left half-processed. Deferred side-effects (webhooks) fire only
+	# after a clean commit. Native savepoint API — no hand-rolled transaction handling. A Wait action
+	# ends the segment here (not a failure — see actions._ParkSignal / the module docstring's HONEST
+	# CONSTRAINT): everything up to and including the Wait itself is kept, the rest is parked.
 	success = 0
 	errors = []
 	details = []
 	deferred = []
-	i, action = 0, None
+	parked_at = None
+	i, action = start_idx, None
 	save_point = f"tc_auto_rule_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
-		for i, action in enumerate(effect_actions, 1):
+		for i, action in enumerate(effect_actions[start_idx:], start_idx + 1):
 			result = _run_action(action, subject, context, axes, trigger_doc)
 			label = actions._action_label(action)
 			if callable(result):
@@ -88,12 +110,20 @@ def run_effects(subject, r, trigger_doc, axes, grain, field_types, context):
 			else:
 				details.append(f"{i}. {label}: ok")
 		frappe.db.release_savepoint(save_point)
-		success = len(effect_actions)
+		success = i - start_idx
+	except actions._ParkSignal as signal:
+		# The Wait handler raised instead of writing — release (never rollback) so every effect that
+		# already ran THIS segment stays. `i` is the Wait's own 1-based position, which is exactly the
+		# 0-based index of the action AFTER it (the resume's next start_idx) — no extra +1 needed.
+		frappe.db.release_savepoint(save_point)
+		success = i - start_idx
+		parked_at = signal.resume_at
+		details.append(f"{i}. {actions._action_label(action)}: ok (parked, resuming {parked_at})")
 	except Exception as e:
 		frappe.db.rollback(save_point=save_point)
 		deferred = []
 		errors.append(f"{action.action_type}: {e}")
-		details.append(f"{i}. {actions._action_label(action)}: FAILED — {e} · rule rolled back (all actions undone)")
+		details.append(f"{i}. {actions._action_label(action)}: FAILED — {e} · segment rolled back (all its actions undone)")
 		_log_error(rule.name, action.action_type, grain, e)
 
 	for run_deferred in deferred:
@@ -101,6 +131,14 @@ def run_effects(subject, r, trigger_doc, axes, grain, field_types, context):
 
 	duration_ms = int((time.monotonic() - started) * 1000)
 	_write_run_log(rule, subject, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
+
+	if parked_at is not None:
+		# Park AFTER the segment's own Run Log write above, and outside the try/except (the parking
+		# insert must not be caught by this function's own error handling). `i` is next_action_idx —
+		# see the comment above.
+		from tatva_connect.automation import resume
+
+		resume.park(rule.name, subject, parked_at, i, context)
 
 
 def _run_action(action, lead, context, axes, trigger_doc):
