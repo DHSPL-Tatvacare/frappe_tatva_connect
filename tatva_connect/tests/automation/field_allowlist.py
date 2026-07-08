@@ -23,12 +23,22 @@ def seed_settable(doctype, fieldname, vertical="", group="", program="", child_t
 
 
 def _ensure(payload):
-	"""Insert the row, or OR the capability flags onto an existing one (idempotent across re-runs)."""
+	"""Insert the row, or OR the capability flags onto an existing one (idempotent across re-runs).
+
+	A BLANK axis round-trips through the DB as NULL, not '' (autoname's `::`-join stores whatever the
+	column actually holds) - so a blank-axis lookup below matches EITHER via `["in", ["", None]]`; a
+	SET axis still matches by plain equality (never a wildcard - two different grains must never
+	collide). Without this, a re-run over a prior blank-axis row misses it on a NULL-vs-'' mismatch
+	and crashes the next insert on a duplicate primary key."""
+	def _axis_filter(v):
+		v = v or ""
+		return ["in", ["", None]] if v == "" else v
+
 	key = {
 		"doctype_name": payload["doctype_name"], "fieldname": payload["fieldname"],
-		"child_table_field": payload.get("child_table_field", "") or "",
-		"vertical": payload.get("vertical", "") or "", "group": payload.get("group", "") or "",
-		"program": payload.get("program", "") or "",
+		"child_table_field": _axis_filter(payload.get("child_table_field")),
+		"vertical": _axis_filter(payload.get("vertical")), "group": _axis_filter(payload.get("group")),
+		"program": _axis_filter(payload.get("program")),
 	}
 	name = frappe.db.get_value(DOCTYPE, key)
 	if name:

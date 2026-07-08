@@ -39,11 +39,21 @@ class CRMAutomationField(Document):
 					)
 				)
 			target_dt = tf.options
-		if not frappe.get_meta(target_dt).has_field(self.fieldname):
-			frappe.throw(
-				_("{0} has no field {1}.").format(frappe.bold(target_dt), frappe.bold(self.fieldname)),
-				title=_("Unknown fieldname"),
-			)
+		if frappe.get_meta(target_dt).has_field(self.fieldname):
+			return
+		# TATVA v2 (Task 13): CRM Task's real business fields are often a per-task-type activity
+		# SCHEMA field (CRM Task Type Field), not a doctype meta field - outcome/training_status/...
+		# only ever land in a promoted column or the custom_activity_payload JSON (see
+		# describe.fields_for_doctype's docstring). Same union describe.py offers the rule builder.
+		if target_dt == "CRM Task":
+			from tatva_connect.automation.describe import activity_schema_fieldnames
+
+			if self.fieldname in activity_schema_fieldnames():
+				return
+		frappe.throw(
+			_("{0} has no field {1}.").format(frappe.bold(target_dt), frappe.bold(self.fieldname)),
+			title=_("Unknown fieldname"),
+		)
 
 	def _require_a_capability(self):
 		if not (self.can_watch or self.can_set):

@@ -304,12 +304,33 @@ def _diff_watched_fields(doc):
 def _context_for(doc, changed):
 	"""The trigger context: the doc's own persistable fields (get_valid_dict) PLUS, for each changed
 	watched field, a `{field}__before` key carrying the old value - the pair the `changed_from_to`
-	operator and Expression authors read. ONE builder for every subject/event - no doctype dispatch,
-	no second copy."""
+	operator and Expression authors read - PLUS (Task 13) CRM Task's activity-schema values, keyed by
+	their own schema fieldname, `setdefault`-merged so a genuine doc column always wins a name clash.
+	ONE builder for every subject/event - no doctype dispatch, no second copy."""
 	context = doc.get_valid_dict()
 	for fieldname, (old, _new) in changed.items():
 		context[f"{fieldname}__before"] = old
+	for fieldname, value in _activity_values(doc).items():
+		context.setdefault(fieldname, value)
 	return context
+
+
+def _activity_values(doc):
+	"""CRM Task's activity-schema submitted values, keyed by their SCHEMA fieldname - NOT the promoted
+	column / payload key `activity.api.compute_activity` actually routed them to. A rule criterion is
+	authored against the schema fieldname (outcome/training_status/call_completed_next_steps/...,
+	`describe.fields_for_doctype`'s vocabulary), so the context must expose the SAME name at fire time.
+	Reuses the ONE existing brain (`activity.api._task_values` + `_type_config` - the exact merge the
+	Lead task board/timeline already render from) instead of a second payload parse (A.8). Empty for a
+	non-CRM-Task subject or a plain task with no activity type."""
+	if doc.doctype != "CRM Task" or not doc.get("custom_task_type"):
+		return {}
+	from tatva_connect.activity.api import _task_values, _type_config
+
+	cfg = _type_config(doc.custom_task_type)
+	if not cfg:
+		return {}
+	return _task_values(doc, cfg)
 
 
 def _field_types_for(doctype):

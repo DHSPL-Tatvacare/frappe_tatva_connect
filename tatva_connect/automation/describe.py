@@ -86,10 +86,48 @@ def fields_for_doctype(doctype):
 	the doctype META (not an activity schema) - a Field-Changed criterion tests the watched
 	doctype's own fields, so the vocabulary is the meta. Sibling to fields_for_task_type (which
 	reads the CRM Task Type Field activity schema for the Task-Completed path): two functions, two
-	genuine sources, one describe contract so the builder + validator + dispatcher never drift."""
+	genuine sources, one describe contract so the builder + validator + dispatcher never drift.
+
+	TATVA v2 (Task 13): for CRM Task specifically, the meta alone UNDER-describes what a rule can
+	actually reference. A completed activity's real business signal (outcome/training_status/
+	call_completed_next_steps/...) is a per-task-type SCHEMA field (`CRM Task Type Field`) that
+	`activity.api.compute_activity` either promotes onto one of the 9 shared columns or folds into
+	the `custom_activity_payload` JSON blob - it is NEVER a CRM Task doctype field itself. So the
+	vocabulary here is unioned with every distinct activity-schema fieldname (meta wins on a name
+	clash) - the SAME union `crm_automation_field._require_real_field` accepts for a can_watch/
+	can_set row and `router._activity_values` resolves at fire time (one brain, no drift)."""
 	if not doctype:
 		return []
-	return [_descriptor(df.fieldname, df.label, df.fieldtype, df.options) for df in _meta_fields(doctype)]
+	descriptors = [_descriptor(df.fieldname, df.label, df.fieldtype, df.options) for df in _meta_fields(doctype)]
+	if doctype == "CRM Task":
+		present = {d["key"] for d in descriptors}
+		for fieldname, r in activity_schema_fields().items():
+			if fieldname in present:
+				continue
+			descriptors.append(_descriptor(r.fieldname, r.label, r.fieldtype, r.options))
+	return descriptors
+
+
+def activity_schema_fields():
+	"""Every distinct activity-schema fieldname across ALL `CRM Task Type Field` rows (any task type,
+	any grain), first-definition-wins (ordered by parent, idx - deterministic, not grain-scoped: a
+	rule's criterion vocabulary is doctype-wide, exactly like a real meta field would be). This is the
+	ADDITIONAL vocabulary CRM Task exposes beyond its own doctype meta - see `fields_for_doctype`."""
+	out = {}
+	for r in frappe.get_all(
+		"CRM Task Type Field",
+		filters={"parenttype": "CRM Task Type"},
+		fields=["fieldname", "label", "fieldtype", "options"],
+		order_by="parent, idx",
+	):
+		out.setdefault(r.fieldname, r)
+	return out
+
+
+def activity_schema_fieldnames():
+	"""Just the names - what `crm_automation_field._require_real_field` checks a CRM Task can_watch/
+	can_set row's fieldname against when the doctype meta itself doesn't carry it."""
+	return set(activity_schema_fields())
 
 
 def _pick_for(fieldtype, raw_options):
