@@ -95,5 +95,21 @@
   "type": "Bar",
   "filters_json": "[[\"CRM API Metric\",\"granularity\",\"=\",\"day\"]]",
   "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Automation Run Log by Outcome",
+  "chart_name": "Automation Run Log by Outcome",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Group By",
+  "document_type": "CRM Automation Run Log",
+  "group_by_based_on": "outcome",
+  "group_by_type": "Count",
+  "number_of_groups": 0,
+  "type": "Bar",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
  }
 ]

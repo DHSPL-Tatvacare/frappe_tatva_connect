@@ -228,9 +228,11 @@ after_migrate = [
 fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
+	# "Automation Run Log by Outcome" is the automation engine's Run Log chart (Task 12, A.17 — the LAYOUT ships here, rows never seeded).
 	{"dt": "Dashboard Chart", "filters": [["name", "in", [
 		"API Traffic (Daily)", "API Errors (Daily)", "API Error Rate (Daily)",
 		"API p95 Latency (Daily)", "API p95 Latency (Hourly)", "API Requests by Endpoint",
+		"Automation Run Log by Outcome",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
