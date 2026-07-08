@@ -332,6 +332,23 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Task::Automation::sends",
+		fires_on="Provider call",
+		trigger_detail="automation/sends gate · Send WhatsApp / Send Email effect verbs",
+		purpose=(
+			"The dormant send gate for the automation engine's Send WhatsApp / Send Email effect "
+			"verbs. OFF (default): a rule with a Send action still fires end-to-end and the Run Log "
+			"records the intent, but no WhatsApp template or email ever leaves. ON: the same actions "
+			"send for real, through the EXISTING WATI (grain-routed) / frappe.sendmail brain — never "
+			"a second transport.\n"
+			"Example: ops builds and tests a 'Welcome' rule with this switch off — the Run Log shows "
+			"it fired 'suppressed: sends dormant' — then flips it on at go-live and the same rule "
+			"starts sending the real message."
+		),
+		backs=[],
+		requires="Task::Automation::rules",
+	),
+	Auto(
 		key="Task::Automation::run-log-sweep",
 		fires_on="Schedule",
 		trigger_detail="daily 03:00",
