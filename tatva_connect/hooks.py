@@ -191,6 +191,8 @@ scheduler_events = {
 		"0 3 * * *": ["tatva_connect.automation.dispatcher.sweep_run_log"],
 		# Daily: drop expired partner-API idempotency records.
 		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
+		# Every 15 min: resume any automation rule fire parked at a Wait step whose time has arrived.
+		"*/15 * * * *": ["tatva_connect.automation.resume.sweep_resume"],
 	},
 }
 

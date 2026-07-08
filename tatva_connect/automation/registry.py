@@ -320,15 +320,20 @@ AUTOMATIONS = [
 			"'Task completed' is now an Updated rule whose criteria include 'status changed to Done'. "
 			"Two lanes (Task 5): GUARD actions (e.g. Require Fields) run synchronously in validate and "
 			"can block the save; EFFECT actions (create a task, set a field, add a comment) run after "
-			"commit, in order.\n"
+			"commit, in order. A Wait effect (Task 9) parks the remaining actions and a 15-min sweep "
+			"resumes them once the wait elapses — a rule with a Wait is atomic per SEGMENT, not "
+			"end to end.\n"
 			"Example: a Task's status changing to Done with outcome 'Enrolled' creates a 'Welcome "
 			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment; a rule "
-			"requiring 'outcome' to be set blocks the Task save when it's left blank."
+			"requiring 'outcome' to be set blocks the Task save when it's left blank; a rule with "
+			"'Create Task, Wait 14 days, Update Field' creates the task now and sets the field 14 "
+			"days later."
 		),
 		backs=[
 			"tatva_connect.automation.router.run_guards",
 			"tatva_connect.automation.router.on_created",
 			"tatva_connect.automation.router.on_updated",
+			"tatva_connect.automation.resume.sweep_resume",
 		],
 	),
 	Auto(
