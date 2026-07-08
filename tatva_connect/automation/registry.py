@@ -312,7 +312,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Task::Automation::rules",
 		fires_on="Doc Event",
-		trigger_detail='wildcard "*" · validate (guards, sync) + after_insert (Created) + on_update (Updated) (effects, after commit)',
+		trigger_detail='wildcard "*" · validate (guards, sync) + after_insert (Created) + on_update (Updated) + on_trash (Deleted) (effects, after commit)',
 		purpose=(
 			"The automation engine: runs every enabled grain-matching rule when its trigger fires. "
 			"ONE wildcard router (on_doctype x event) replaces the old Task-Completed/Field-Changed "
@@ -322,17 +322,20 @@ AUTOMATIONS = [
 			"can block the save; EFFECT actions (create a task, set a field, add a comment) run after "
 			"commit, in order. A Wait effect (Task 9) parks the remaining actions and a 15-min sweep "
 			"resumes them once the wait elapses — a rule with a Wait is atomic per SEGMENT, not "
-			"end to end.\n"
+			"end to end. A Deleted rule (Task 10) fires from on_trash: the trigger row is captured "
+			"synchronously before removal (it's gone by the time effects run after commit), and its "
+			"effects act on the still-existing subject lead.\n"
 			"Example: a Task's status changing to Done with outcome 'Enrolled' creates a 'Welcome "
 			"Call' task; setting a lead's stage to 'Dropped Doctor' logs an audit comment; a rule "
 			"requiring 'outcome' to be set blocks the Task save when it's left blank; a rule with "
 			"'Create Task, Wait 14 days, Update Field' creates the task now and sets the field 14 "
-			"days later."
+			"days later; deleting a duplicate Task logs a note on its lead."
 		),
 		backs=[
 			"tatva_connect.automation.router.run_guards",
 			"tatva_connect.automation.router.on_created",
 			"tatva_connect.automation.router.on_updated",
+			"tatva_connect.automation.router.on_deleted",
 			"tatva_connect.automation.resume.sweep_resume",
 		],
 	),

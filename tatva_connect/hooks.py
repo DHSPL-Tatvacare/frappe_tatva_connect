@@ -139,6 +139,9 @@ doc_events = {
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
 	# Automation engine (Task 5): the GUARD lane rides validate, synchronous, BEFORE the save commits -
 	# a matched rule's guard actions (e.g. Require Fields) can frappe.throw and block the save.
+	# Automation engine (Task 10): Deleted rides on_trash - the row still exists there (before removal),
+	# so router.on_deleted captures subject + context synchronously; the effect lane still runs
+	# after-commit like Created/Updated (router.py's on_deleted docstring has the full nuance).
 	"*": {
 		"validate": [
 			"tatva_connect.automation.router.run_guards",
@@ -149,6 +152,9 @@ doc_events = {
 		],
 		"on_update": [
 			"tatva_connect.automation.router.on_updated",
+		],
+		"on_trash": [
+			"tatva_connect.automation.router.on_deleted",
 		],
 	},
 	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache on any form add/toggle/remove so it never serves a stale set.

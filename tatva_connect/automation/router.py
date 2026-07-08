@@ -5,6 +5,10 @@ path, CRM Task on_update Done-flip; and `watch.fire_field_change_rules` — the 
 CRM Lead/Task on_update watched-field diff) into ONE router keyed on `(on_doctype, event)`:
   • Created = `after_insert` — no before-state, no diff, no `changed…` operators.
   • Updated = `on_update` — carries `{field}__before` for every watched field that changed.
+  • Deleted = `on_trash` — no before-state either (same as Created), and unlike the other two the
+    trigger DOC ITSELF is gone by the time the after-commit job runs; `on_deleted` captures the
+    subject + trigger context synchronously (while the row still exists) and threads them through
+    the enqueue payload instead of letting the background job re-fetch anything — see its docstring.
 "Task Completed" no longer exists as a path: it is an Updated rule whose criteria include
 `status changed to Done` (the shape `patches.reshape_automation_triggers` already produced for
 every migrated rule) — the Updated path subsumes it.
@@ -132,6 +136,83 @@ def on_updated(doc, method=None):
 	if not changed:
 		return
 	_enqueue(doc.doctype, doc.name, "Updated", changed)
+
+
+def on_deleted(doc, method=None):
+	"""Wildcard `on_trash` (doc_events["*"]) — Deleted. Frappe runs `on_trash` BEFORE the row is
+	actually removed, but this router's dispatch is enqueue-after-commit exactly like Created/Updated
+	— so by the time the background job runs, the row is GONE. Unlike Created/Updated it therefore
+	CANNOT re-fetch the trigger doc there. So everything the effect lane needs is captured
+	SYNCHRONOUSLY here, right now, while `doc` still exists: the subject lead's name (`_subject`) and
+	the trigger doc's own field dict (`doc.get_valid_dict()`), both threaded through the enqueue
+	payload to `run_for_delete` instead of a bare (doctype, docname) the background job could re-fetch.
+	The SUBJECT is the parent LEAD, not the row being deleted, so it still exists after commit and
+	effects act on it normally. No before-state exists for a delete (same as Created) — no `changed…`
+	criterion can match; `context` never carries a `__before` key, and authoring one on event=Deleted
+	is already rejected at save time (CRMAutomationRule._validate_changed_operator)."""
+	if frappe.flags.get("in_automation"):
+		return  # re-entrancy guard
+	if not automation.is_enabled(KILL_SWITCH):
+		return
+	if doc.doctype not in live_doctypes():
+		return
+	subject = _subject(doc)
+	if subject is None:
+		return  # no resolvable subject -> no rule can fire (fail-closed)
+	context = doc.get_valid_dict()
+	_enqueue_delete(doc.doctype, doc.name, subject.name, context)
+
+
+def _enqueue_delete(doctype, docname, subject_name, context):
+	"""Enqueue the Deleted-event dispatch to run after the delete commits — same enqueue-after-commit +
+	job_id/deduplicate posture as `_enqueue`, but carrying the SUBJECT NAME and CONTEXT captured
+	synchronously in `on_deleted` (the trigger row is gone by the time this job runs — there is nothing
+	left for it to re-fetch)."""
+	frappe.enqueue(
+		"tatva_connect.automation.router.run_for_delete",
+		queue="short",
+		enqueue_after_commit=True,
+		now=bool(frappe.flags.get("in_test")),
+		job_id=f"automation-event::{doctype}::{docname}::Deleted",
+		deduplicate=True,
+		doctype=doctype,
+		docname=docname,
+		subject_name=subject_name,
+		context=context,
+	)
+
+
+def run_for_delete(doctype, docname, subject_name, context):
+	"""Background entry for the Deleted event (after the delete commits). The trigger row
+	(doctype, docname) is GONE by now — unlike `run_for_event`, this does NOT re-fetch it: it builds an
+	in-memory trigger doc straight from the CONTEXT captured synchronously in `on_deleted`
+	(`frappe.get_doc({"doctype": ..., **context})` constructs an unsaved Document from a dict, no DB
+	round trip — see get_doc's own docstring), so the SAME downstream verb handlers that read
+	`trigger_doc.doctype`/`.name`/`.get(field)` (e.g. Create Task's assignee carry-over) keep working
+	off the captured snapshot instead of a re-fetch that would 404. `subject_name` is the parent lead's
+	name, resolved synchronously too — the subject is NOT the deleted row, so it still exists and its
+	axes resolve from the DB exactly as for Created/Updated (`rules.lead_axes`). Reuses the SAME matcher
+	+ effect executor as every other event (A.8) — no parallel engine. `context` never carries a
+	`__before` key (no diff on a delete, exactly like Created), so a `changed…` criterion is a clean
+	non-match, never a raise."""
+	frappe.flags.in_automation = True
+	try:
+		axes = rules.lead_axes(subject_name)
+		matched = rules.matching_rules(doctype, "Deleted", axes[0], axes[1], axes[2])
+		if not matched:
+			return
+		field_types = _field_types_for(doctype)
+		grain = "{}::{}::{}".format(axes[0] or "", axes[1] or "", axes[2] or "")
+		trigger_doc = frappe.get_doc({"doctype": doctype, **context})
+		for r in matched:
+			try:
+				dispatcher.run_effects(subject_name, r, trigger_doc, axes, grain, field_types, context)
+			except Exception as e:
+				_log_error(r.name, "(rule)", grain, e)
+	except Exception:
+		frappe.log_error(title="automation: delete dispatch failed", message=frappe.get_traceback())
+	finally:
+		frappe.flags.in_automation = False
 
 
 def _enqueue(doctype, docname, event_name, changed):
