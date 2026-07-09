@@ -232,6 +232,9 @@ after_migrate = [
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
+	# LMS/Wiki desktop-icon rollout: gate the "Learning"/"Wiki" workspaces' roles (fixtures can only
+	# add rows, never a table's own permission gate) + hide the auto-generated orphan tile.
+	"tatva_connect.desktop_icon_reconcile.reconcile",
 ]
 
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
