@@ -14,6 +14,12 @@ The fixture layer (desktop_icon/ + workspace_sidebar/) ships the "LMS"/"LMS Admi
      icon — e.g. a stray top-level "Learning" tile. This hides that specific auto-orphan.
      NEVER touch a standard=1 icon (a real fixture) or one owned by a real user (a personal
      customization) — that scope is load-bearing, not incidental.
+  3. The wiki app's own "Wiki" App tile is gated by `wiki.utils.check_app_permission`, which
+     requires the `Wiki Manager` role — so plain readers never reach it and can't see the Wiki
+     group under it. We surface the group under OUR OWN "Wiki Space" Folder tile instead (a
+     Folder is always permitted; ships as a fixture, label "Wiki" so the children's label-match
+     grouping lands on it). This hides the wiki App tile so there's no Wiki-Manager gate blocking
+     readers and no duplicate "Wiki" tile for Wiki Managers. Hides only — never forks wiki (A.1).
 """
 
 import frappe
@@ -33,6 +39,7 @@ _ORPHAN_ICON_NAMES = list(_WORKSPACE_ROLES.keys())
 def reconcile():
 	_gate_workspace_roles()
 	_hide_orphan_icons()
+	_hide_wiki_app_tile()
 	# Roles/hidden flags above affect every user's cached tile list — drop it site-wide.
 	frappe.cache.delete_key("desktop_icons")
 	frappe.cache.delete_key("bootinfo")
@@ -81,3 +88,21 @@ def _hide_orphan_icons():
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "desktop_icon_reconcile: hide_orphan_icons")
+
+
+def _hide_wiki_app_tile():
+	"""Hide the wiki app's own "Wiki" App tile (gated by check_app_permission → Wiki Manager) so the
+	Wiki group is reachable via our always-permitted "Wiki Space" Folder instead. Scoped tightly to
+	the wiki-owned App icon; never touches our Folder, a child, or a user-owned icon. Idempotent."""
+	try:
+		wiki_tiles = frappe.get_all(
+			"Desktop Icon",
+			filters={"icon_type": "App", "app": "wiki", "name": "Wiki", "hidden": 0},
+			pluck="name",
+		)
+		for name in wiki_tiles:
+			frappe.db.set_value("Desktop Icon", name, "hidden", 1)
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "desktop_icon_reconcile: hide_wiki_app_tile")

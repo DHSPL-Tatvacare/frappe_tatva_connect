@@ -10,11 +10,11 @@
  "link_to": "Wiki",
  "link_type": "Workspace Sidebar",
  "logo_url": "/assets/tatva_connect/images/spaces/wiki_editor.png",
- "modified": "2026-07-09 16:00:00.000000",
+ "modified": "2026-07-09 17:00:00.000000",
  "modified_by": "Administrator",
  "name": "Wiki Editor",
  "owner": "Administrator",
- "parent_icon": "Wiki",
+ "parent_icon": "Wiki Space",
  "restrict_removal": 0,
  "roles": [],
  "standard": 1
