@@ -144,13 +144,23 @@ assignment, portal self-service). The fix is a **curated denylist**, doctype by 
 `lockdown.py`. (tatva_connect's own doctypes grant `All` **nowhere** — already compliant. The leaks are in
 stock apps you install.)
 
-**Current denylist to enforce (stock apps, ~9 doctypes):**
+**Current denylist (stock apps) — enforced in `lockdown.py::LOCKED_MATRIX`:**
 
-| Doctype(s) | App | Why | Lock to |
-|---|---|---|---|
-| `HD Ticket` + 6 HD doctypes | helpdesk | `All` read/write/create on *all* tickets | Agent, Agent Manager, System Manager *(unless you run the customer portal)* |
-| `TP Exotel Settings`, `TP Twilio Settings` | telephony | provider config world-readable | System Manager (+ manager) |
-| `Contact` | frappe | stock grants `All` | **already locked** by `lockdown.py` ✅ |
+| Doctype(s) | App | Why | Lock to | Status |
+|---|---|---|---|---|
+| `Contact` | frappe | stock grants `All` | System Manager, Sales Manager, Sales User (reps no delete) | **locked** ✅ |
+| `Comment` | frappe | stock write reachable via `frappe.client.set_value` → cross-user IDOR (VAPT P1) | System Manager + Website Manager; operational roles write/delete `if_owner=1` (edit OWN only) | **locked** ✅ |
+| `HD Ticket` | helpdesk | `All` read/create on *all* tickets — no customer portal here (agent-only internal) | System Manager, Agent, Agent Manager | **locked** ✅ |
+| `HD Article`, `HD Article Category`, `HD Article Feedback`, `HD View` | helpdesk | `All`/`Guest` read/write on KB + views | System Manager, Agent, Agent Manager | **locked** ✅ |
+| `WhatsApp Message/Templates/Account/Settings` | frappe_whatsapp | capability doctypes | WhatsApp User/Admin (read) + System Manager | **locked** ✅ |
+| `TP Exotel Settings`, `TP Twilio Settings` | telephony | provider config world-readable | System Manager (+ manager) | pending |
+
+> **Engine-bypassing methods** (Helpdesk `get_article_stats`, LMS `get_courses`/`get_batches`/
+> `get_job_details`, CRM `get_assignment_rules_list`/`get_views`) can't be closed by a DocPerm lock —
+> they read via `get_all`/`db.get_value`. They are wrapped in `access/native_guards.py` (Primitive A):
+> a `has_permission` gate, or a metamorphic NARROW (LMS → `published=1` for non-privileged callers).
+> The profile-picture private-file BAC is closed in `storage/file_override.py::FileOverride.validate`.
+> Full remediation map → `docs/plans/vapt-jun26-remediation.md`.
 
 ---
 

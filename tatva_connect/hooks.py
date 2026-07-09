@@ -59,6 +59,16 @@ override_whitelisted_methods = {
 	"crm.fcrm.doctype.crm_deal.crm_deal.create_deal": "tatva_connect.access.native_guards.create_deal",
 	"crm.fcrm.doctype.crm_deal.api.get_deal_contacts": "tatva_connect.access.native_guards.get_deal_contacts",
 	"crm.api.whatsapp.get_whatsapp_messages": "tatva_connect.access.native_guards.get_whatsapp_messages",
+	"crm.api.assignment_rule.get_assignment_rules_list": "tatva_connect.access.native_guards.get_assignment_rules_list",
+	"crm.api.views.get_views": "tatva_connect.access.native_guards.get_views",
+	# VAPT hardening — Helpdesk (agent-only internal): the KB stats endpoint bypasses the engine (S.7).
+	"helpdesk.api.article.get_article_stats": "tatva_connect.access.native_guards.get_article_stats",
+	# VAPT hardening — LMS (internal training, Mode 2): allow_guest + engine-bypass catalog reads; the
+	# wrapper NARROWS a non-privileged caller to published rows (courses/batches) and strips the
+	# creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
+	"lms.lms.utils.get_courses": "tatva_connect.access.native_guards.get_courses",
+	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
+	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
 }
 
 # Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.

@@ -64,6 +64,11 @@ MARKER = "guest-ok:"
 #   _grain_from_form        — taxonomy.lookups.hospital_query's grain resolver: derives the grain
 #     SERVER-SIDE from the named, published CRM Intake Form — a client-supplied grain value is
 #     never read (A.9/A.16).
+#   _force_published        — access.native_guards' LMS wrappers (get_courses/get_batches): forces
+#     `published=1` for a non-privileged caller (metamorphic narrow), so an unauthenticated/no-LMS
+#     caller can never enumerate DRAFT catalog rows via a crafted filter (VAPT Jun'26, Mode 2).
+#   _lms_privileged         — the same module's LMS privilege check (get_job_details): strips the
+#     creator email (`owner`) for a non-privileged caller. A real per-caller narrowing gate.
 GUEST_GATE_TOKENS = (
 	"spine.receive",
 	"_receive",
@@ -72,6 +77,8 @@ GUEST_GATE_TOKENS = (
 	"PermissionError",
 	"_scoped",
 	"_grain_from_form",
+	"_force_published",
+	"_lms_privileged",
 )
 
 

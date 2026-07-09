@@ -115,3 +115,84 @@ def get_whatsapp_messages(reference_doctype, reference_name):
 	from crm.api.whatsapp import get_whatsapp_messages as _native
 
 	return _native(reference_doctype, reference_name)
+
+
+# --- CRM (assignment rules / saved views) ------------------------------------------------------
+@frappe.whitelist()
+def get_assignment_rules_list():
+	# Native reads Assignment Rules for CRM Lead/Deal via get_all (engine-bypass). Gate on CRM Lead
+	# read — every CRM user (Sales User/Manager) holds it; a no-App-Access user does not.
+	frappe.has_permission("CRM Lead", "read", throw=True)
+	from crm.api.assignment_rule import get_assignment_rules_list as _native
+
+	return _native()
+
+
+@frappe.whitelist()
+def get_views(doctype):
+	# Native is self-scoped (own/shared views) but ungated; gate on read of the target doctype so a
+	# no-access user can't probe another doctype's view settings.
+	frappe.has_permission(doctype, "read", throw=True)
+	from crm.api.views import get_views as _native
+
+	return _native(doctype)
+
+
+# --- Helpdesk (agent-only internal) ------------------------------------------------------------
+@frappe.whitelist()
+def get_article_stats(article_name):
+	# Native reads view/like/dislike counts via db.get_value/count with NO perm check (engine-bypass,
+	# S.7). HD Article is locked to agents (lockdown.py), so this read-gate now denies non-agents.
+	_require_read("HD Article", article_name)
+	from helpdesk.api.article import get_article_stats as _native
+
+	return _native(article_name)
+
+
+# --- LMS (internal training only — Mode 2) -----------------------------------------------------
+# The LMS catalog endpoints are allow_guest + engine-bypass (get_all/get_value); a DocPerm lock can't
+# reach them. We NARROW instead of gate (metamorphic — narrow, never widen): a non-privileged caller
+# only ever sees PUBLISHED rows, so the draft-enumeration leak (filters={"published":0}) is closed
+# without breaking browse/enrol for anyone who is allowed to see drafts.
+_LMS_PRIVILEGED_ROLES = {"System Manager", "Moderator", "Course Creator"}
+
+
+def _lms_privileged():
+	"""True if the caller may see unpublished LMS content (author/moderator/admin)."""
+	return bool(_LMS_PRIVILEGED_ROLES & set(frappe.get_roles()))
+
+
+def _force_published(filters):
+	"""Parse the request `filters` and force published=1 for a non-privileged caller."""
+	if isinstance(filters, str):
+		filters = frappe.parse_json(filters) or {}
+	filters = dict(filters or {})
+	if not _lms_privileged():
+		filters["published"] = 1
+	return filters
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _force_published narrows a non-privileged caller to published rows
+def get_courses(filters=None, start=0):
+	from lms.lms.utils import get_courses as _native
+
+	return _native(_force_published(filters), start)
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _force_published narrows a non-privileged caller to published rows
+def get_batches(filters=None, start=0, order_by="start_date"):
+	from lms.lms.utils import get_batches as _native
+
+	return _native(_force_published(filters), start, order_by)
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _lms_privileged gate strips the creator email for a non-privileged caller
+def get_job_details(job):
+	# Public job board by design; the only leak is the creator's email (`owner`). Strip it for a
+	# non-privileged caller; the native return is otherwise unchanged.
+	from lms.lms.api import get_job_details as _native
+
+	data = _native(job)
+	if data and not _lms_privileged():
+		data.pop("owner", None)
+	return data

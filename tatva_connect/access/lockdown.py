@@ -23,24 +23,77 @@ from frappe.permissions import reset_perms
 
 from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
 
-# doctype -> {role: (read, write, create, delete)}. ONLY these roles get access; every other
-# role is denied. Extend per the app-wide lock-list rollout (File, ToDo, HD Ticket, ...).
-# System Manager is listed on every row because a Custom DocPerm OVERRIDES the stock DocPerm
-# entirely — omit it and the stock System Manager grant would vanish.
-LOCKED_MATRIX = {
+# doctype -> {role: (read, write, create, delete[, if_owner])}. ONLY these roles get access; every
+# other role is denied. The matrix is composed from per-app sections below (one auditable surface —
+# constitution A.8/S.6: extend the ONE lock, never a parallel per-app idiom). System Manager is
+# listed on every row because a Custom DocPerm OVERRIDES the stock DocPerm entirely — omit it and the
+# stock System Manager grant would vanish. A 5-tuple sets if_owner (own-records-only, policy §5 rule 2).
+
+# --- CRM / core (frappe) -----------------------------------------------------------------------
+_CRM_CORE = {
 	"Contact": {
 		"System Manager": (1, 1, 1, 1),
 		"Sales Manager": (1, 1, 1, 1),  # managers may delete (clean up duplicates/junk)
 		"Sales User": (1, 1, 1, 0),  # reps cannot delete
 	},
-	# WhatsApp is a CAPABILITY (whatsapp/roles.py), decoupled from Sales — these upstream
-	# frappe_whatsapp doctypes can't carry our perms in their own JSON, so we lock them here.
-	# This RELOCATES the crm fork's add_roles() grant (which is now guarded to defer to us).
-	# READ-ONLY for both roles. The WATI send fires in WhatsAppMessage.before_insert, and every
-	# legit send/react path inserts with ignore_permissions AFTER validate_access + the rate-cap.
-	# So no user role needs `create` — and granting it is a send-gate BYPASS: a holder could insert
-	# an Outgoing row directly (frappe.client.insert) and send to any number, skipping the gate,
-	# cap, and 24h window. Read is all a sender/viewer needs; sends go through the gated methods.
+	# Comment (VAPT P1 IDOR). Stock grants write to System Manager + Website Manager only (no `All`);
+	# comment CREATION goes through frappe_add_comment (ignore_permissions), but the CRM SPA EDITS via
+	# frappe.client.set_value and DELETES via frappe.client.delete (CommentArea.vue) — both run through
+	# the engine. Without an owner scope, one rep could rewrite another's comment (the P1). So the
+	# operational roles get write+delete `if_owner=1` (edit/delete OWN only); create stays 0.
+	"Comment": {
+		"System Manager": (1, 1, 1, 1),
+		"Website Manager": (1, 1, 1, 1),  # preserve the stock grant (Custom DocPerm overrides stock)
+		"Sales User": (1, 1, 0, 1, 1),
+		"Sales Manager": (1, 1, 0, 1, 1),
+		"Agent": (1, 1, 0, 1, 1),
+		"Agent Manager": (1, 1, 0, 1, 1),
+	},
+}
+
+# --- Helpdesk (agent-only internal; NO customer portal — product-owner decision 2026-07-09) --------
+# Stock opens HD Ticket read/create to `All` (the customer-portal grant) and the KB (HD Article/
+# Category) read to All+Guest. With no portal, drop `All`/`Guest` and lock to the agent roles. This
+# alone fixes get_list_data (standard get_list respects perms), get_ticket_contact/get_ticket_activities
+# (both has_permission("HD Ticket","read",…,throw=True) — now denies non-agents) and `new` (.insert()
+# create-check). Read-only reference config (Status/Type/Priority/Template/Form Script) is left at
+# stock All-READ — policy §5 rule 1 reference data the agent UI needs; not a VAPT finding.
+_HELPDESK = {
+	"HD Ticket": {
+		"System Manager": (1, 1, 1, 1),
+		"Agent": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+	},
+	"HD Article": {
+		"System Manager": (1, 1, 1, 1),
+		"Agent": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+	},
+	"HD Article Category": {
+		"System Manager": (1, 1, 1, 1),
+		"Agent": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+	},
+	"HD Article Feedback": {  # stock: All (1,1,1,1,if_owner) — a portal rating; internal-only -> agents
+		"System Manager": (1, 1, 1, 1),
+		"Agent": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+	},
+	"HD View": {  # stock: Guest (1,1,1,1,if_owner) — no guest role internally
+		"System Manager": (1, 1, 1, 1),
+		"Agent": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+	},
+}
+
+# --- WhatsApp (capability; whatsapp/roles.py) ---------------------------------------------------
+# Upstream frappe_whatsapp doctypes can't carry our perms in their own JSON, so we lock them here.
+# This RELOCATES the crm fork's add_roles() grant (now guarded to defer to us). READ-ONLY for both
+# roles: the WATI send fires in WhatsAppMessage.before_insert, and every legit send/react path inserts
+# with ignore_permissions AFTER validate_access + the rate-cap. So no user role needs `create` — and
+# granting it is a send-gate BYPASS: a holder could insert an Outgoing row directly (frappe.client.
+# insert) and send to any number, skipping the gate, cap, and 24h window.
+_WHATSAPP = {
 	"WhatsApp Message": {
 		"System Manager": (1, 1, 1, 1),
 		WHATSAPP_USER: (1, 0, 0, 0),
@@ -65,14 +118,18 @@ LOCKED_MATRIX = {
 	},
 }
 
+LOCKED_MATRIX = {**_CRM_CORE, **_HELPDESK, **_WHATSAPP}
 
-def apply(*args, **kwargs):
+
+def apply(*_args, **_kwargs):
 	"""Rebuild each locked doctype's permission matrix to exactly LOCKED_MATRIX (after_migrate)."""
 	for doctype, roles in LOCKED_MATRIX.items():
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		reset_perms(doctype)  # drop any prior custom perms -> deterministic rebuild
-		for role, (r, w, c, d) in roles.items():
+		for role, perms in roles.items():
+			r, w, c, d = perms[:4]
+			if_owner = perms[4] if len(perms) > 4 else 0  # optional 5th element (own-records-only)
 			frappe.get_doc(
 				{
 					"doctype": "Custom DocPerm",
@@ -85,6 +142,7 @@ def apply(*args, **kwargs):
 					"write": w,
 					"create": c,
 					"delete": d,
+					"if_owner": if_owner,
 				}
 			).insert(ignore_permissions=True)
 	frappe.clear_cache()
@@ -107,7 +165,7 @@ def effective_all_guest_grants(doctype):
 	return [(doctype, r.role) for r in rows if r.write or r.create or r.delete]
 
 
-def assert_locked(*args, **kwargs):
+def assert_locked(*_args, **_kwargs):
 	"""Fail the migrate if a locked doctype is EFFECTIVELY open to All/Guest write/create/delete
 	— the Layer-4 drift guard, same idiom as automation.drift / notifications.drift."""
 	bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]

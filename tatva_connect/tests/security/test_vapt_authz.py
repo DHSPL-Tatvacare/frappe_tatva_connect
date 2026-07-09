@@ -29,6 +29,7 @@ NOROLE = "vapt-norole@example.com"      # no roles
 OWNER = "vapt-owner@example.com"        # Sales User — owns the data
 PEER = "vapt-peer@example.com"          # Sales User — NOT on the data
 MANAGER = "vapt-manager@example.com"    # Sales Manager
+AGENT = "vapt-agent@example.com"        # Helpdesk Agent — the ONLY role that may touch HD doctypes
 
 # brain switches that scope the doc-specific gates (Lead/Call Log visibility) for the peer test
 BRAIN = [
@@ -51,8 +52,11 @@ def dispatch(cmd, **kwargs):
 class TestVAPTAuthz(FrappeTestCase):
 	def setUp(self):
 		seed.sync_catalog()
-		for u, roles in [(ATTACKER, [JUNK_ROLE]), (NOROLE, []), (OWNER, ["Sales User"]),
-						 (PEER, ["Sales User"]), (MANAGER, ["Sales Manager"])]:
+		# OWNER carries WhatsApp User too: get_whatsapp_messages' native gate requires a WhatsApp
+		# capability role, so an "authorized owner" must hold it to be genuinely authorized (not a
+		# VAPT change — corrects a latent gap the WhatsApp-role gate exposed).
+		for u, roles in [(ATTACKER, [JUNK_ROLE]), (NOROLE, []), (OWNER, ["Sales User", "WhatsApp User"]),
+						 (PEER, ["Sales User"]), (MANAGER, ["Sales Manager"]), (AGENT, ["Agent"])]:
 			self._user(u, roles)
 		self.contact = self._contact()
 		self.lead = self._lead(OWNER)
@@ -61,6 +65,8 @@ class TestVAPTAuthz(FrappeTestCase):
 		self.task = self._task(self.lead)
 		self.deal = self._deal(OWNER)
 		self.fx = {"lead": self.lead, "call_log": self.call_log, "deal": self.deal, "contact": self.contact}
+		# HD / Comment fixtures are created lazily INSIDE the tests that need them (some HD hooks commit,
+		# which would break FrappeTestCase's per-test rollback if run in this shared setUp).
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -82,6 +88,9 @@ class TestVAPTAuthz(FrappeTestCase):
 		("crm.integrations.api.get_contact_by_phone_number", lambda f: dict(phone_number="999"), None),
 		("crm.integrations.api.get_contact_lead_or_deal_from_number", lambda f: dict(number="999"), None),
 		("crm.integrations.api.set_default_calling_medium", lambda f: dict(medium="Acefone"), None),
+		# VAPT Jun'26 — CRM reads a no-App-Access user reached (gated on CRM Lead read; OWNER=Sales User passes).
+		("crm.api.assignment_rule.get_assignment_rules_list", lambda f: dict(), None),
+		("crm.api.views.get_views", lambda f: dict(doctype="CRM Lead"), None),
 	]
 
 	# ---------- L1: doctype matrix (Contact) ----------
@@ -144,6 +153,56 @@ class TestVAPTAuthz(FrappeTestCase):
 		bad = [g for dt in lockdown.LOCKED_MATRIX for g in lockdown.effective_all_guest_grants(dt)]
 		self.assertEqual(bad, [], f"L4 BREACH: locked doctype(s) still open to All/Guest: {bad}")
 
+	# ---------- L1: Helpdesk (agent-only internal) ----------
+	def test_L1_hd_ticket_agent_only(self):
+		hd_ticket = self._hd_ticket()
+		for u in (NOROLE, ATTACKER, OWNER):  # OWNER is a Sales User — a CRM rep is NOT a helpdesk agent
+			self.assertFalse(self._as(u, lambda: frappe.has_permission("HD Ticket", "read", hd_ticket)),
+							 f"L1 BREACH: {u} can READ HD Ticket (VAPT HD 1-4)")
+		self.assertTrue(self._as(AGENT, lambda: frappe.has_permission("HD Ticket", "read", hd_ticket)),
+						"L1 REGRESSION: Agent lost HD Ticket read")
+
+	def test_L1_hd_article_stats_agent_only(self):
+		# get_article_stats bypasses the engine (db.get_value/count) — the wrapper re-gates on HD Article
+		# read, which is now agent-only. No-role/CRM-rep denied; agent passes.
+		hd_article = self._hd_article()
+		for u in (NOROLE, OWNER):
+			with self.assertRaises(frappe.PermissionError, msg=f"L1 BREACH: {u} reached get_article_stats"):
+				self._as(u, lambda: dispatch("helpdesk.api.article.get_article_stats", article_name=hd_article))
+		try:
+			self._as(AGENT, lambda: dispatch("helpdesk.api.article.get_article_stats", article_name=hd_article))
+		except frappe.PermissionError as e:
+			self.fail(f"L1 REGRESSION: Agent denied get_article_stats: {e}")
+
+	# ---------- L1: Comment IDOR (VAPT P1) ----------
+	def test_L1_comment_idor_peer_cannot_edit_others(self):
+		# A peer rep must NOT edit a comment they don't own (if_owner scope); the owner still can.
+		comment = self._comment(OWNER)
+		with self.assertRaises(frappe.PermissionError, msg="L1 BREACH: peer edited another user's Comment (VAPT P1)"):
+			self._as(PEER, lambda: self._edit_comment(comment, "hacked by peer"))
+		try:
+			self._as(OWNER, lambda: self._edit_comment(comment, "owner edits own"))
+		except frappe.PermissionError as e:
+			self.fail(f"L1 REGRESSION: owner cannot edit their OWN comment: {e}")
+
+	# ---------- LMS narrowing (internal, Mode 2) ----------
+	def test_lms_non_privileged_forced_to_published(self):
+		# The wrapper NARROWS (never denies): a non-privileged caller's filters are pinned to published=1,
+		# so a crafted {"published":0} can't enumerate drafts. A privileged LMS role is unaffected.
+		from tatva_connect.access import native_guards as ng
+		self.assertEqual(self._as(NOROLE, lambda: ng._force_published({"published": 0})), {"published": 1},
+						 "LMS BREACH: no-role caller could request unpublished (draft) catalog rows")
+
+	# ---------- File: profile-picture private-blob BAC ----------
+	def test_file_no_role_cannot_reference_private_blob(self):
+		victim = frappe.get_doc({"doctype": "File", "file_name": "zvapt_secret.txt", "is_private": 1,
+								 "content": b"secret", "attached_to_doctype": "User", "attached_to_name": "Administrator"})
+		victim.insert(ignore_permissions=True)
+		with self.assertRaises(frappe.PermissionError, msg="FILE BREACH: no-role forged a File referencing another's private blob"):
+			self._as(NOROLE, lambda: frappe.get_doc({
+				"doctype": "File", "file_url": victim.file_url, "is_private": 1,
+				"attached_to_doctype": "User", "attached_to_name": NOROLE}).insert())
+
 	# ---------- fixtures ----------
 	def _user(self, email, roles):
 		if frappe.db.exists("User", email):
@@ -195,6 +254,28 @@ class TestVAPTAuthz(FrappeTestCase):
 		from frappe.desk.form.assign_to import add as assign_to
 		assign_to({"doctype": "CRM Deal", "name": d.name, "assign_to": [owner]})
 		return d.name
+
+	def _hd_ticket(self):
+		d = frappe.get_doc({"doctype": "HD Ticket", "subject": "ZVAPT-TICKET"})
+		d.insert(ignore_permissions=True)
+		return d.name
+
+	def _hd_article(self):
+		d = frappe.get_doc({"doctype": "HD Article", "title": "ZVAPT-ARTICLE"})
+		d.insert(ignore_permissions=True)
+		return d.name
+
+	def _comment(self, owner):
+		c = frappe.get_doc({"doctype": "Comment", "comment_type": "Comment",
+							"reference_doctype": "CRM Lead", "reference_name": self.lead, "content": "owned by OWNER"})
+		c.insert(ignore_permissions=True)
+		c.db_set("owner", owner)  # stamp ownership so if_owner scoping applies
+		return c.name
+
+	def _edit_comment(self, name, content):
+		doc = frappe.get_doc("Comment", name)  # engine-checked load+save path (the VAPT set_value route)
+		doc.content = content
+		doc.save()
 
 	def _switch(self, key, on):
 		frappe.db.set_value("CRM Tatva Automation", key, "enabled", 1 if on else 0)
