@@ -3,8 +3,9 @@
 """The merged `CRM Automation Field` allowlist — validate() contract (fail-closed, unambiguous).
 
 Replaces the retired test_watchable_field.py. Real Frappe engine as the oracle: real meta reads, real
-validate() throws, no mocked verdicts. The contract: at least one capability; watch is grain-independent,
-parent-only, subject-only (so grain/child columns only ever mean set-scope); a row key implies a child set.
+validate() throws, no mocked verdicts. The contract: at least one capability; read and watch are
+grain-independent, parent-only, subject-only (so grain/child columns only ever mean set-scope); a row
+key implies a child set.
 """
 import unittest
 
@@ -64,6 +65,16 @@ class TestAutomationField(FrappeTestCase):
 	def test_watch_non_subject_throws(self):
 		with self.assertRaises(frappe.exceptions.ValidationError):
 			self._row(doctype_name="Customer", fieldname="customer_name", can_watch=1).insert(ignore_permissions=True)
+
+	# (f1) a can_read row is its own capability - readable without being watchable.
+	def test_read_row_saves_without_watch(self):
+		doc = self._row(can_read=1).insert(ignore_permissions=True)
+		self.assertTrue(doc.can_read and not doc.can_watch)
+
+	# (f2) can_read carries the SAME shape guard as can_watch - a grain on it is a config error.
+	def test_read_with_grain_throws(self):
+		with self.assertRaises(frappe.exceptions.ValidationError):
+			self._row(can_read=1, vertical=_GRAIN["vertical"]).insert(ignore_permissions=True)
 
 	# (g) is_row_key without a settable child -> throws.
 	def test_row_key_without_child_throws(self):

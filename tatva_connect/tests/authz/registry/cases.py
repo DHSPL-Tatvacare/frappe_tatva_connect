@@ -14,6 +14,13 @@ rows — every attack key in attacks.py should end with >=1 case and >=1 planted
 from dataclasses import dataclass
 
 from tatva_connect.tests.authz.registry.attacks import ATTACKS
+from tatva_connect.tests.authz.registry.endpoints import APP_ENDPOINTS, GENERIC_ENDPOINTS, SENSITIVE_DOCTYPES
+
+# The API-layer deny-sweep runs as principals that hold NO business access to the sensitive doctypes:
+# the strict floor (no_role), the real signup (default_user), the anonymous caller (guest), and the
+# cross-app junk role. The oracle confirms each is natively denied; a case that gets through is an
+# escalation (the VAPT class). Grain roles are covered by the in-process A1..A14 cases, not here.
+HOSTILE_PRINCIPALS = ["no_role", "default_user", "guest", "junk_crossapp"]
 
 
 @dataclass(frozen=True)
@@ -23,14 +30,47 @@ class CaseSpec:
 	english: str           # human description of what this case proves
 	principal: str         # roster persona name (roster.PERSONAS[].persona) or a role string
 	doctype: str
-	action: str            # read | write | create | delete | field_read
-	surface: str           # list | doc | field | bypass_write | method
-	target: str            # in_grain | out_of_grain | same_program_diff_vertical | orphan_parent | wildcard | na
+	action: str            # read | write | create | delete | field_read | list | info
+	surface: str           # list | doc | field | bypass_write | method | http
+	target: str            # in_grain | out_of_grain | ... | other_owner | na
 	expected: str          # "allow" | "deny"
 	oracle: str = ""       # override; defaults to the attack's oracle
+	engine: str = "in_process"  # in_process | http
+	method: str = ""       # http only: the dotted whitelisted path
+	http: str = ""         # http only: GET | POST
+	endpoint_key: str = ""  # http only: key into endpoints.{GENERIC,APP}_ENDPOINTS (rebuilds params)
 
 	def resolved_oracle(self):
 		return self.oracle or ATTACKS[self.attack]["oracle"]
+
+
+def generate_http_cases():
+	"""PRODUCE the API-layer (B1..B5) cases by crossing the endpoint primitives with the hostile
+	principals — never hand-listed. Doctype-parametric generics cross SENSITIVE_DOCTYPES; named app
+	methods cross principals on their own fixed doctype. Every case expects DENY (the oracle confirms)."""
+	out = []
+	for principal in HOSTILE_PRINCIPALS:
+		for ep in GENERIC_ENDPOINTS:
+			for meta in SENSITIVE_DOCTYPES:
+				dt = meta["doctype"]
+				# a READ on a PRIVATE doctype (File) IS the B5 private-file surface per ATTACKS, not the
+				# generic B1 read — same endpoint, but the vector the case proves is the file-IDOR class.
+				vector = "B5" if (ep.action == "read" and meta.get("private")) else ep.vector
+				out.append(CaseSpec(
+					id=f"{vector}-{principal}-{ep.key}-{dt.replace(' ', '')}",
+					attack=vector, principal=principal, doctype=dt, action=ep.action,
+					surface="http", target="other_owner", expected="deny",
+					english=f"{principal} calling {ep.method} on a foreign-owned {dt} must be denied ({vector})",
+					engine="http", method=ep.method, http=ep.http, endpoint_key=ep.key))
+		for ep in APP_ENDPOINTS:
+			dt = ep.doctype or "na"
+			out.append(CaseSpec(
+				id=f"{ep.vector}-{principal}-{ep.key}",
+				attack=ep.vector, principal=principal, doctype=ep.doctype, action=ep.action,
+				surface="http", target="other_owner" if ep.doctype else "na", expected="deny",
+				english=f"{principal} calling {ep.method} must be denied ({ep.vector})",
+				engine="http", method=ep.method, http=ep.http, endpoint_key=ep.key))
+	return out
 
 
 # Curated seed cases. ids are stable: <attack>-<principal>-<doctype-short>-<action>-<surface>.
@@ -103,18 +143,118 @@ CASES = [
 	         "(fail-closed: no parent => not visible)",
 	         "grain_1", "CRM Task", "read", "doc", "orphan_parent", "deny"),
 
-	# A9 — switch-OFF exposure: with the visibility switch ON, an out-of-grain child is denied;
-	# the OFF delta (stock CRM opens it) is documented and exercised in Playwright, not here.
-	CaseSpec("A9-grain1-childscope-switch-on", "A9",
-	         "with Task::CRM Task::visibility ON, grain_1 must NOT see an out-of-grain task; the "
-	         "switch-OFF delta is the documented stock-CRM exposure",
-	         "grain_1", "CRM Task", "read", "list", "out_of_grain", "deny"),
+	# A9 — child-doctype visibility (the ROW-visibility brain, access/visibility.py). Each child
+	# inherits its parent Lead/Deal scope. Consolidated from the four superseded child-scope suites
+	# (notes/tasks/telephony/whatsapp test_*_scope.py): per doctype we prove (a) switch ON blocks the
+	# out-of-scope peer AND keeps the in-scope owner (child_scope), (b) switch OFF = stock CRM exposure,
+	# the documented delta (child_off), and (c) the reference_*/owner/assigned_to PQC inheritance shape
+	# (child_shape). Two carve-outs keep their unique bits: a links-only Call Log fails closed, and a
+	# task assignee sees their own task on a hidden parent (least-privilege). Owner=grain_1, peer=grain_2,
+	# child planted on a grain_1 lead; the handler toggles the switch in a savepoint (base.py discipline).
+	CaseSpec("A9-task-switch-on-peer-blocked", "A9",
+	         "Task::CRM Task::visibility ON: the out-of-scope peer (grain_2) cannot read a CRM Task on a "
+	         "grain_1 lead it cannot see, while the in-scope owner (grain_1) can",
+	         "grain_2", "CRM Task", "read", "child_scope", "out_of_grain", "deny"),
+	CaseSpec("A9-task-switch-off-stock-exposure", "A9",
+	         "with the CRM Task visibility switch OFF, scoped_pqc is empty and the peer CAN read the task "
+	         "(stock CRM, no child scoping) — the documented switch-OFF exposure delta",
+	         "grain_2", "CRM Task", "read", "child_off", "out_of_grain", "allow"),
+	CaseSpec("A9-task-inheritance-shape", "A9",
+	         "CRM Task list PQC inherits parent scope via owner + reference_doctype + reference_docname, "
+	         "and (uniquely among the four) an assigned_to self-ownership clause",
+	         "grain_2", "CRM Task", "read", "child_shape", "out_of_grain", "deny"),
+	CaseSpec("A9-callog-switch-on-peer-blocked", "A9",
+	         "Telephony::CRM Call Log::visibility ON: the peer cannot read a Call Log referencing a "
+	         "grain_1 lead it cannot see, while the in-scope owner can",
+	         "grain_2", "CRM Call Log", "read", "child_scope", "out_of_grain", "deny"),
+	CaseSpec("A9-callog-switch-off-stock-exposure", "A9",
+	         "with the Call Log visibility switch OFF, scoped_pqc is empty and the peer CAN read the call "
+	         "log (stock CRM) — the documented switch-OFF exposure delta",
+	         "grain_2", "CRM Call Log", "read", "child_off", "out_of_grain", "allow"),
+	CaseSpec("A9-callog-inheritance-shape", "A9",
+	         "CRM Call Log list PQC inherits parent scope via owner + reference_doctype + "
+	         "reference_docname, with NO assigned_to clause (Call Log has no such column)",
+	         "grain_2", "CRM Call Log", "read", "child_shape", "out_of_grain", "deny"),
+	CaseSpec("A9-callog-links-only-fail-closed", "A9",
+	         "a links-only CRM Call Log (no reference_* parent) is an orphan -> denied even for the "
+	         "in-scope user (fail-closed; the single-doc gate and reference-only PQC agree)",
+	         "grain_1", "CRM Call Log", "read", "child_orphan", "in_grain", "deny"),
+	CaseSpec("A9-note-switch-on-peer-blocked", "A9",
+	         "Note::FCRM Note::visibility ON: the peer cannot read an FCRM Note on a grain_1 lead it "
+	         "cannot see, while the in-scope owner can",
+	         "grain_2", "FCRM Note", "read", "child_scope", "out_of_grain", "deny"),
+	CaseSpec("A9-note-switch-off-stock-exposure", "A9",
+	         "with the FCRM Note visibility switch OFF, scoped_pqc is empty and the peer CAN read the "
+	         "note (stock CRM) — the documented switch-OFF exposure delta",
+	         "grain_2", "FCRM Note", "read", "child_off", "out_of_grain", "allow"),
+	CaseSpec("A9-note-inheritance-shape", "A9",
+	         "FCRM Note list PQC inherits parent scope via owner + reference_doctype + reference_docname, "
+	         "with NO assigned_to clause",
+	         "grain_2", "FCRM Note", "read", "child_shape", "out_of_grain", "deny"),
+	CaseSpec("A9-whatsapp-switch-on-peer-blocked", "A9",
+	         "WhatsApp::WhatsApp Message::visibility ON: the peer cannot read a WhatsApp Message on a "
+	         "grain_1 lead it cannot see, while the in-scope owner can",
+	         "grain_2", "WhatsApp Message", "read", "child_scope", "out_of_grain", "deny"),
+	CaseSpec("A9-whatsapp-switch-off-stock-exposure", "A9",
+	         "with the WhatsApp Message visibility switch OFF, scoped_pqc is empty and the peer CAN read "
+	         "the message (stock CRM) — the documented switch-OFF exposure delta",
+	         "grain_2", "WhatsApp Message", "read", "child_off", "out_of_grain", "allow"),
+	CaseSpec("A9-whatsapp-inheritance-shape", "A9",
+	         "WhatsApp Message list PQC inherits parent scope via owner + reference_doctype + "
+	         "reference_name (NOT reference_docname — the field name differs), with NO assigned_to clause",
+	         "grain_2", "WhatsApp Message", "read", "child_shape", "out_of_grain", "deny"),
+	CaseSpec("A9-task-assignee-sees-own-on-hidden-parent", "A9",
+	         "least-privilege carve-out: a CRM Task ASSIGNED to grain_2 is visible to grain_2 even on a "
+	         "grain_1 parent it cannot see (assigning a task grants the task, not the lead)",
+	         "grain_2", "CRM Task", "read", "child_assignee", "out_of_grain", "allow"),
 
-	# A10 — native-method bypass: a peer must be thrown by a guarded native method on another's row.
-	CaseSpec("A10-peer-callog-method", "A10",
-	         "a peer (grain_2) calling a guarded native method (e.g. get_recording_url) on a "
-	         "CRM Call Log they cannot read is denied (PermissionError)",
-	         "grain_2", "CRM Call Log", "read", "method", "out_of_grain", "deny"),
+	# A10 — native-method bypass: the 11 engine-bypassing native crm methods wrapped by
+	# access.native_guards (registered in hooks.py under override_whitelisted_methods). Consolidated from
+	# the L3 method-gate layer of the superseded test_vapt_authz.py — the only RUNTIME exercise of the
+	# wrappers. Three angles, driven through the REAL override dispatch: (1) a PEER calling a row-scoped
+	# guard on a row it cannot read is denied; (2) a NO-ROLE caller is denied at the doctype matrix
+	# (privilege escalation); (3) the AUTHORIZED owner is NOT denied (no regression). CaseSpec.method
+	# carries the native dotted path; the handler resolves the override and asserts PermissionError.
+	CaseSpec("A10-peer-callog-get-recording-url", "A10",
+	         "a peer (grain_2) calling get_recording_url on a CRM Call Log referencing a lead it cannot "
+	         "read is denied (the guard _require_read throws before the native call)",
+	         "grain_2", "CRM Call Log", "read", "method", "out_of_grain", "deny",
+	         method="crm.integrations.api.get_recording_url"),
+	CaseSpec("A10-peer-callog-add-task", "A10",
+	         "a peer calling add_task_to_call_log on a Call Log it cannot read is denied",
+	         "grain_2", "CRM Call Log", "write", "method", "out_of_grain", "deny",
+	         method="crm.integrations.api.add_task_to_call_log"),
+	CaseSpec("A10-peer-callog-add-note", "A10",
+	         "a peer calling add_note_to_call_log on a Call Log it cannot read is denied",
+	         "grain_2", "CRM Call Log", "write", "method", "out_of_grain", "deny",
+	         method="crm.integrations.api.add_note_to_call_log"),
+	CaseSpec("A10-peer-lead-assigned-users", "A10",
+	         "a peer calling get_assigned_users on an out-of-grain CRM Lead it cannot read is denied",
+	         "grain_2", "CRM Lead", "read", "method", "out_of_grain", "deny",
+	         method="crm.api.doc.get_assigned_users"),
+	CaseSpec("A10-peer-lead-linked-docs", "A10",
+	         "a peer calling get_linked_docs_of_document on an out-of-grain CRM Lead it cannot read is "
+	         "denied",
+	         "grain_2", "CRM Lead", "read", "method", "out_of_grain", "deny",
+	         method="crm.api.doc.get_linked_docs_of_document"),
+	CaseSpec("A10-peer-lead-whatsapp-messages", "A10",
+	         "a peer calling get_whatsapp_messages on an out-of-grain CRM Lead it cannot read is denied",
+	         "grain_2", "CRM Lead", "read", "method", "out_of_grain", "deny",
+	         method="crm.api.whatsapp.get_whatsapp_messages"),
+	CaseSpec("A10-norole-callog-get-recording-url", "A10",
+	         "a no-role caller is denied get_recording_url at the doctype matrix (privilege escalation) — "
+	         "no CRM Call Log read capability at all",
+	         "no_role", "CRM Call Log", "read", "method", "out_of_grain", "deny",
+	         method="crm.integrations.api.get_recording_url"),
+	CaseSpec("A10-norole-lead-assigned-users", "A10",
+	         "a no-role caller is denied get_assigned_users on a CRM Lead (privilege escalation)",
+	         "no_role", "CRM Lead", "read", "method", "out_of_grain", "deny",
+	         method="crm.api.doc.get_assigned_users"),
+	CaseSpec("A10-authorized-lead-assigned-users", "A10",
+	         "the AUTHORIZED owner (grain_1) is NOT denied get_assigned_users on its own in-grain lead — "
+	         "the negative control proving the guard gates escalation, not every caller",
+	         "grain_1", "CRM Lead", "read", "method", "in_grain", "allow",
+	         method="crm.api.doc.get_assigned_users"),
 
 	# A12 — User Permission / DocShare over-grant: a fenced user sees only fenced rows; a share
 	# grants only what was explicitly shared, never more.
@@ -188,6 +328,8 @@ def cases_for(attack_key):
 
 
 def attacks_without_cases():
-	"""Attack keys that have no case yet — surfaced so coverage gaps are visible, never silent."""
-	covered = {c.attack for c in CASES}
+	"""Attack keys that have no case yet — surfaced so coverage gaps are visible, never silent. The
+	B1..B5 endpoint vectors are covered by the GENERATED http sweep (never hand-listed in CASES), so
+	their generated cases count toward coverage exactly like the curated A1..A14 rows."""
+	covered = {c.attack for c in CASES} | {c.attack for c in generate_http_cases()}
 	return [k for k in ATTACKS if k not in covered]

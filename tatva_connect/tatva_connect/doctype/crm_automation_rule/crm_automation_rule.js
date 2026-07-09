@@ -24,6 +24,7 @@ frappe.ui.form.on("CRM Automation Rule", {
 
 frappe.ui.form.on("CRM Automation Criterion", {
 	field(frm, cdt, cdn) {
+		reset_invalid_operator(frm, cdt, cdn);
 		apply_criterion_row(frm, cdt, cdn);
 		render_preview(frm);
 	},
@@ -102,6 +103,7 @@ function reload_describe(frm) {
 		.then((r) => {
 			frm._schema = r.message || { fields: [], operators_by_type: {}, verbs: [], set_targets: [] };
 			apply_field_options(frm);
+			apply_verb_options(frm);
 			apply_action_query(frm);
 			(frm.doc.actions || []).forEach((a) => apply_action_row(frm, a.doctype, a.name));
 			render_preview(frm);
@@ -112,34 +114,78 @@ function field_descriptor(frm, key) {
 	return frm._schema ? frm._schema.fields.find((f) => f.key === key) || null : null;
 }
 
-// The criterion Field dropdown = builder_schema's `fields` (already can_watch-scoped server-side).
+// A frappe Select silently rewrites a model value its options can't render (controls/select.js
+// set_formatted_input). So every stored value stays in its own row's option list even when the
+// schema no longer offers it (a field dropped from the allowlist, a Select option retired) - merely
+// OPENING a rule must never erase what it stores. validate() still rejects it on save.
+function option_lines(offered, stored) {
+	const kept = [...new Set(stored.filter((v) => v && !offered.includes(v)))];
+	return [""].concat(offered, kept).join("\n");
+}
+
+// The criterion Field dropdown = builder_schema's `fields` (already read-allowlist-scoped server-side).
 function apply_field_options(frm) {
 	if (!frm.fields_dict.criteria) return;
-	const opts = [""].concat((frm._schema.fields || []).map((f) => f.key)).join("\n");
-	frm.fields_dict.criteria.grid.update_docfield_property("field", "options", opts);
+	const offered = (frm._schema.fields || []).map((f) => f.key);
+	const stored = (frm.doc.criteria || []).map((c) => c.field);
+	frm.fields_dict.criteria.grid.update_docfield_property("field", "options", option_lines(offered, stored));
 	frm.fields_dict.criteria.grid.refresh();
 	(frm.doc.criteria || []).forEach((c) => apply_criterion_row(frm, c.doctype, c.name));
 }
 
-// Narrow ONE criterion row to its chosen field: valid Operators for the field's schema type (from
-// builder_schema.operators_by_type - the one operator table, no hardcoded literal), the `changed…`
-// operators offered only when the rule's Event is Updated, and a typed Value/From Value control
-// matching the field's `pick` (Link search / Select options / Date) instead of free text.
-function apply_criterion_row(frm, cdt, cdn) {
-	const c = locals[cdt] && locals[cdt][cdn];
-	if (!c) return;
-	const d = field_descriptor(frm, c.field);
-	const op_df = frappe.meta.get_docfield(cdt, "operator", cdn);
-	let ops = d && frm._schema ? (frm._schema.operators_by_type[d.type] || []).slice() : [];
-	if (frm.doc.event !== "Updated") {
-		ops = ops.filter((op) => op !== "changed to" && op !== "changed from…to");
-	}
-	op_df.options = ops.join("\n");
-	if (c.operator && !ops.includes(c.operator)) {
+// The Action Type dropdown = builder_schema's `verbs` (actions._ACTION_LANES, the ONE verb registry).
+// The doctype's own Select options are the pre-schema fallback only; sourcing the live list from the
+// registry means a registered verb can never be unpickable, and a RETIRED verb still renders on an
+// old rule (option_lines) instead of being silently blanked on open - validate() rejects it on save.
+function apply_verb_options(frm) {
+	if (!frm.fields_dict.actions) return;
+	const offered = (frm._schema.verbs || []).map((v) => v.verb);
+	const stored = (frm.doc.actions || []).map((a) => a.action_type);
+	frm.fields_dict.actions.grid.update_docfield_property("action_type", "options", option_lines(offered, stored));
+	frm.fields_dict.actions.grid.refresh();
+}
+
+const TRANSITION_OPERATORS = ["changed to", "changed from…to"];
+
+// Valid Operators for a field's schema type, off builder_schema.operators_by_type - the one operator
+// table, no hardcoded literal. The transition operators need a before-value, which only an Updated
+// event carries.
+function allowed_operators(frm, d) {
+	if (!(d && frm._schema)) return [];
+	const ops = frm._schema.operators_by_type[d.type] || [];
+	return frm.doc.event === "Updated" ? ops : ops.filter((op) => !TRANSITION_OPERATORS.includes(op));
+}
+
+// Picking a new Field is a deliberate edit, so an operator its type can't take is dropped here - and
+// ONLY here. Doing it on render would silently rewrite a stored rule the schema no longer describes.
+function reset_invalid_operator(frm, cdt, cdn) {
+	const c = locals[cdt][cdn];
+	if (c.operator && !allowed_operators(frm, field_descriptor(frm, c.field)).includes(c.operator)) {
 		frappe.model.set_value(cdt, cdn, "operator", "");
 	}
-	apply_typed_control(frm, "criteria", cdn, "value", d);
-	apply_typed_control(frm, "criteria", cdn, "from_value", d);
+}
+
+// The per-row seam. `grid_row.docfields` is the row's OWN docfield copy (frappe.meta.get_docfields);
+// its compact in-grid control is built from it LAZILY, on first edit - so a control-only seam
+// (`set_field_property`) narrows nothing on a freshly rendered row. Write the row's docfield, then
+// let `refresh_field` repaint the static cell and any live control. No manual DOM control (S.4).
+function set_row_property(grid_row, fieldname, props) {
+	const df = grid_row.docfields.find((d) => d.fieldname === fieldname);
+	if (!df) return;
+	Object.assign(df, props);
+	grid_row.refresh_field(fieldname);
+}
+
+// Narrow ONE criterion row to its chosen field: its type's operators, and a typed Value/From Value
+// control matching the field's `pick` (Link search / Select options / Date) instead of free text.
+function apply_criterion_row(frm, cdt, cdn) {
+	const c = locals[cdt] && locals[cdt][cdn];
+	const grid_row = c && frm.fields_dict.criteria.grid.grid_rows_by_docname[cdn];
+	if (!grid_row) return;
+	const d = field_descriptor(frm, c.field);
+	set_row_property(grid_row, "operator", { options: option_lines(allowed_operators(frm, d), [c.operator]) });
+	apply_typed_control(grid_row, "value", d, c.value);
+	apply_typed_control(grid_row, "from_value", d, c.from_value);
 }
 
 // Grain-scope Create Task's task_type Link to this rule's own grain axes (blank axis = wildcard,
@@ -155,7 +201,9 @@ function apply_action_query(frm) {
 }
 
 // Then side: Update Field's `fieldname` picks from builder_schema.set_targets (the grain's can_set
-// allowlist) instead of free text.
+// allowlist) instead of free text. An action row is POLYMORPHIC - its params depend on its verb - and
+// a grid has one column set for every row, so the grid lists the verb alone and every param is edited
+// in the row form, where `depends_on` narrows per row. This runs for both (same docfield objects).
 function apply_action_row(frm, cdt, cdn) {
 	if (cdt !== "CRM Automation Action" || !frm._schema) return;
 	const a = locals[cdt][cdn];
@@ -163,34 +211,48 @@ function apply_action_row(frm, cdt, cdn) {
 	const grid_row = frm.fields_dict.actions.grid.grid_rows_by_docname[cdn];
 	if (!grid_row) return;
 	const targets = frm._schema.set_targets || [];
-	const opts = [""].concat(targets.map((t) => t.key)).join("\n");
-	grid_row.set_field_property("fieldname", "fieldtype", targets.length ? "Select" : "Data");
-	grid_row.set_field_property("fieldname", "options", opts);
+	set_row_property(grid_row, "fieldname", {
+		fieldtype: targets.length ? "Select" : "Data",
+		options: option_lines(targets.map((t) => t.key), [a.fieldname]),
+	});
 }
 
 // Swap a row control's fieldtype/options to match a typed descriptor's `pick` - the one seam every
-// typed value control (criterion Value/From Value) uses. `set_field_property` is the native grid
-// seam (frappe/public/js/frappe/form/grid_row.js) - it updates both the compact in-grid control and
-// the expanded row-form control and refreshes them; no manual DOM control construction (S.4).
-function apply_typed_control(frm, table_fieldname, cdn, fieldname, d) {
-	const grid_row = frm.fields_dict[table_fieldname].grid.grid_rows_by_docname[cdn];
-	if (!grid_row) return;
-	const [fieldtype, options] = control_shape(d);
-	grid_row.set_field_property(fieldname, "fieldtype", fieldtype);
-	grid_row.set_field_property(fieldname, "options", options);
+// typed value control (criterion Value/From Value) uses.
+function apply_typed_control(grid_row, fieldname, d, current) {
+	const [fieldtype, options] = control_shape(d, current);
+	set_row_property(grid_row, fieldname, { fieldtype, options });
 }
 
-function control_shape(d) {
+const TYPED_CONTROLS = ["Date", "Datetime", "Check", "Int", "Float", "Currency"];
+
+// Key off the pick's own target/options rather than its `kind`: a child-table descriptor is
+// kind="child" yet carries the inner field's Link target / Select options (describe.field_catalog),
+// so a child criterion gets a real picker instead of a bare text box.
+function control_shape(d, current) {
 	if (!d) return ["Data", ""];
-	if (d.pick && d.pick.kind === "link") return ["Link", d.pick.target || ""];
-	if (d.pick && d.pick.kind === "select") return ["Select", [""].concat(d.pick.options || []).join("\n")];
-	if (["Date", "Datetime", "Check", "Int", "Float", "Currency"].includes(d.type)) return [d.type, ""];
+	const pick = d.pick || {};
+	if (pick.target) return ["Link", pick.target];
+	if (pick.options) return ["Select", option_lines(pick.options, [current])];
+	if (TYPED_CONTROLS.includes(d.type)) return [d.type, ""];
 	return ["Data", ""];
 }
 
 // -- live plain-English preview ---------------------------------------------
 
 const _EVENT_VERB = { Created: "is created", Updated: "is updated", Deleted: "is deleted" };
+
+// The preview renders onto frappe's `.form-message.blue` surface, which already picks its own text
+// colour per theme (scss/desk/form.scss). Page-tuned tokens (--text-muted) and the global `code`
+// styling both fight that surface, so nothing inside sets a colour: emphasis inherits, and "muted"
+// is opacity. Theme-aware by construction, no hardcoded value (C.7).
+function mono(text) {
+	return `<code style="color:inherit;background:none;padding:0;">${text}</code>`;
+}
+
+function muted(text) {
+	return `<span style="opacity:0.7;">${text}</span>`;
+}
 
 function grain_phrase(frm) {
 	const parts = ["vertical", "group", "program"].map((a) => frm.doc[a]).filter(Boolean);
@@ -199,15 +261,15 @@ function grain_phrase(frm) {
 
 function criterion_phrase(c) {
 	if (!c.field) return null;
-	const field = frappe.utils.escape_html(c.field);
+	const field = mono(frappe.utils.escape_html(c.field));
 	const op = frappe.utils.escape_html(c.operator || "is");
 	if (c.operator === "changed from…to") {
-		return `<code>${field}</code> changed from <code>${frappe.utils.escape_html(c.from_value || "")}</code> to <code>${frappe.utils.escape_html(c.value || "")}</code>`;
+		return `${field} changed from ${mono(frappe.utils.escape_html(c.from_value || ""))} to ${mono(frappe.utils.escape_html(c.value || ""))}`;
 	}
 	if (c.operator === "is set" || c.operator === "is not set") {
-		return `<code>${field}</code> ${op}`;
+		return `${field} ${op}`;
 	}
-	return `<code>${field}</code> ${op} <code>${frappe.utils.escape_html(c.value || "")}</code>`;
+	return `${field} ${op} ${mono(frappe.utils.escape_html(c.value || ""))}`;
 }
 
 function action_phrase(a) {
@@ -218,14 +280,14 @@ function action_phrase(a) {
 			return `require a captured location${a.geofence_meters ? ` within <b>${a.geofence_meters}m</b>` : ""} (blocks save)`;
 		case "Create Task": {
 			const due = a.due_mode === "Expression"
-				? ` due <code>${frappe.utils.escape_html(a.due_expression || "?")}</code>`
-				: (a.due_from ? ` due from <code>${frappe.utils.escape_html(a.due_from)}</code>` : "");
+				? ` due ${mono(frappe.utils.escape_html(a.due_expression || "?"))}`
+				: (a.due_from ? ` due from ${mono(frappe.utils.escape_html(a.due_from))}` : "");
 			return `create a <b>${frappe.utils.escape_html(a.task_type || "?")}</b> task${due}`;
 		}
 		case "Update Field": {
 			let src;
 			if (a.value_mode === "From Context") src = `context.${frappe.utils.escape_html(a.context_field || "?")}`;
-			else if (a.value_mode === "Expression") src = `<code>${frappe.utils.escape_html(a.expression || "?")}</code>`;
+			else if (a.value_mode === "Expression") src = mono(frappe.utils.escape_html(a.expression || "?"));
 			else src = `"${frappe.utils.escape_html(a.value || "")}"`;
 			return `set <b>${frappe.utils.escape_html(a.fieldname || "?")}</b> on ${frappe.utils.escape_html(a.target_doctype || "?")} to ${src}`;
 		}
@@ -237,7 +299,7 @@ function action_phrase(a) {
 			return `call webhook <b>${frappe.utils.escape_html(a.webhook_endpoint || "?")}</b>`;
 		case "Create Note": {
 			const txt = a.comment_mode === "Expression"
-				? `<code>${frappe.utils.escape_html(a.comment_expression || "?")}</code>`
+				? mono(frappe.utils.escape_html(a.comment_expression || "?"))
 				: `"${frappe.utils.escape_html(a.comment_text || "")}"`;
 			return `add a note ${txt} on the subject`;
 		}
@@ -246,7 +308,7 @@ function action_phrase(a) {
 		case "Send Email":
 			return `email <b>${frappe.utils.escape_html(a.email_recipient || "?")}</b>${a.email_subject ? `: "${frappe.utils.escape_html(a.email_subject)}"` : ""}`;
 		case "Wait":
-			return `wait <code>${frappe.utils.escape_html(a.wait_expression || "?")}</code>, then continue`;
+			return `wait ${mono(frappe.utils.escape_html(a.wait_expression || "?"))}, then continue`;
 		default:
 			return "(choose an action)";
 	}
@@ -264,8 +326,8 @@ function render_preview(frm) {
 	const html = `
 		<div style="padding:4px 0;">
 			<b>When</b> ${trigger_phrase}
-			<span style="color:var(--text-muted)">(${frappe.utils.escape_html(grain_phrase(frm))})</span>${when}
-			${actions ? `<b> → then:</b><ul style="margin:4px 0 0 16px;">${actions}</ul>` : `<b> → then:</b> <span style="color:var(--text-muted)">no actions yet</span>`}
+			${muted(`(${frappe.utils.escape_html(grain_phrase(frm))})`)}${when}
+			${actions ? `<b> → then:</b><ul style="margin:4px 0 0 16px;">${actions}</ul>` : `<b> → then:</b> ${muted("no actions yet")}`}
 		</div>`;
 	frm.dashboard.clear_headline();
 	frm.dashboard.set_headline(html);

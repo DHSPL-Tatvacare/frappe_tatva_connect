@@ -255,15 +255,18 @@ class TestTpTuplesEndToEnd(FrappeTestCase):
 		# meaningful - see TestUpdateFieldDerivesStage in test_effect_verbs.py for the same wiring.
 		frappe.db.set_value("CRM Tatva Automation", "Lead::CRM Lead::stage", "enabled", 1)
 
-		# can_watch allowlist: status, custom_task_type, every distinct criterion field in the 38 tuples.
+		# Criterion allowlist, mirroring the seed: `status` is WATCHED (the completion signal the router
+		# diffs, and the only field a `changed to` may test); `custom_task_type` and the 7 activity-schema
+		# criterion fields are merely READABLE (no save can diff a field that is not a column).
 		# `status`/`custom_task_type` are shared with other automation test files (test_guard_verbs.py,
 		# test_watch_entry.py, test_two_lane.py all seed them too, same idempotent blank-grain row) -
 		# left in place on teardown (harmless dormant registration, matches this repo's convention of
 		# only tearing down allowlist rows exclusively owned by one suite). The 7 TP-specific criterion
 		# fields below are unique to this suite - torn down explicitly.
 		cls.tp_watch_fields = sorted({f for _t, f, *_ in RULES})
-		for fieldname in {"status", "custom_task_type"} | set(cls.tp_watch_fields):
-			field_allowlist.seed_watchable("CRM Task", fieldname)
+		field_allowlist.seed_watchable("CRM Task", "status")
+		for fieldname in {"custom_task_type"} | set(cls.tp_watch_fields):
+			field_allowlist.seed_readable("CRM Task", fieldname)
 		# can_set allowlist: the REAL settable stage field (custom_substage, NOT the derived
 		# custom_stage - see the module docstring's root-cause (2)).
 		field_allowlist.seed_settable("CRM Lead", "custom_substage", VERTICAL, GROUP, PROGRAM)

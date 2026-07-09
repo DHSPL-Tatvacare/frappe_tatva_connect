@@ -6,7 +6,6 @@ row into a routed, deduped CRM Lead using that contract: forced grain + a field 
 needs only a new `CRM Intake Form` row — the builder makes its DocType + Web Form, no new Python.
 """
 import frappe
-from frappe import _
 
 from tatva_connect import automation
 

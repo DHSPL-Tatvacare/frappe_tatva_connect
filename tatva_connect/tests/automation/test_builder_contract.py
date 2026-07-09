@@ -33,6 +33,11 @@ def _seed_watch(*fieldnames):
 		field_allowlist.seed_watchable("CRM Lead", f)
 
 
+def _seed_read(*fieldnames):
+	for f in fieldnames:
+		field_allowlist.seed_readable("CRM Lead", f)
+
+
 def _rule_doc(name, criteria=None, actions=None, **overrides):
 	base = {
 		"doctype": _DT,
@@ -51,20 +56,22 @@ def _rule_doc(name, criteria=None, actions=None, **overrides):
 
 
 class TestBuilderSchemaFields(FrappeTestCase):
-	"""`fields` = the typed catalog INTERSECTED with the can_watch allowlist."""
+	"""`fields` = the typed catalog INTERSECTED with the READ allowlist (can_read, or can_watch which
+	implies it)."""
 
 	@classmethod
 	def setUpClass(cls):
 		assert_masters_exist()
 		frappe.set_user("Administrator")
-		_seed_watch(_CHOICE_FIELD, _TEXT_FIELD)
+		_seed_watch(_CHOICE_FIELD)
+		_seed_read(_TEXT_FIELD)
 
 	@classmethod
 	def tearDownClass(cls):
 		field_allowlist.clear("CRM Lead")
 		frappe.set_user("Administrator")
 
-	# (a) an allowlisted field appears, typed off the live meta.
+	# (a) a watchable field appears, typed off the live meta - watch implies read.
 	def test_watchable_field_appears_typed(self):
 		out = describe.builder_schema("CRM Lead", "Updated")
 		entry = next((f for f in out["fields"] if f["key"] == _CHOICE_FIELD), None)
@@ -73,9 +80,15 @@ class TestBuilderSchemaFields(FrappeTestCase):
 		self.assertEqual(entry["type"], live.fieldtype)
 		self.assertEqual(entry["pick"], {"kind": "link", "target": live.options})
 
-	# (b) PLANTED-BAD: a real CRM Lead field that is NOT can_watch-enabled must be ABSENT - the
+	# (a1) a can_read-only field appears too - a criterion may test a field no change of which fires
+	# a rule (the activity-schema case: readable, never a column, so never watchable).
+	def test_readable_only_field_appears(self):
+		out = describe.builder_schema("CRM Lead", "Updated")
+		self.assertIn(_TEXT_FIELD, {f["key"] for f in out["fields"]})
+
+	# (b) PLANTED-BAD: a real CRM Lead field with NEITHER read nor watch must be ABSENT - the
 	# allowlist is the fence, not just a hint.
-	def test_non_watchable_real_field_is_absent(self):
+	def test_non_readable_real_field_is_absent(self):
 		out = describe.builder_schema("CRM Lead", "Updated")
 		keys = {f["key"] for f in out["fields"]}
 		self.assertNotIn("custom_patient_age", keys)  # real Int field, deliberately not seeded
@@ -200,6 +213,7 @@ class TestValidateReDerivesBuilderContract(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		_seed_watch(_CHOICE_FIELD, _DATE_FIELD)
+		_seed_read(_TEXT_FIELD)
 
 	@classmethod
 	def tearDownClass(cls):
@@ -263,6 +277,26 @@ class TestValidateReDerivesBuilderContract(FrappeTestCase):
 			"BuilderProbe-changedupdated",
 			event="Updated",
 			criteria=[{"field": _CHOICE_FIELD, "operator": "changed to", "value": "New"}],
+		)
+		doc.insert(ignore_permissions=True)
+		self.assertTrue(frappe.db.exists(_DT, doc.name))
+
+	# (o) PLANTED-BAD (e): a `changed…` operator on a merely READABLE field is rejected. The router
+	# only diffs WATCHED fields, so such a criterion would never match - it must fail at author time,
+	# not silently at fire time. The same field with `is` saves (p) - the operator is the fence.
+	def test_rejects_changed_operator_on_readable_only_field(self):
+		doc = _rule_doc(
+			"BuilderProbe-changedunwatched",
+			criteria=[{"field": _TEXT_FIELD, "operator": "changed to", "value": "L-1"}],
+		)
+		with self.assertRaises(frappe.exceptions.ValidationError):
+			doc.insert(ignore_permissions=True)
+
+	# (p) REGRESSION: a non-transition operator on that same readable-only field saves clean.
+	def test_readable_only_field_with_plain_operator_saves(self):
+		doc = _rule_doc(
+			"BuilderProbe-readonlyplain",
+			criteria=[{"field": _TEXT_FIELD, "operator": "is", "value": "L-1"}],
 		)
 		doc.insert(ignore_permissions=True)
 		self.assertTrue(frappe.db.exists(_DT, doc.name))

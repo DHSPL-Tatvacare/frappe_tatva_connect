@@ -9,18 +9,19 @@ from tatva_connect.automation.subjects import is_subject
 
 
 class CRMAutomationField(Document):
-	"""The fail-closed field allowlist for the automation engine — one table, two capabilities
-	(can_watch / can_set). Ships EMPTY: a field not listed here can neither be watched nor set.
+	"""The fail-closed field allowlist for the automation engine — one table, three capabilities
+	(can_read / can_watch / can_set). Ships EMPTY: a field not listed here can neither be tested,
+	watched nor set.
 
-	validate() makes the row unambiguous: at least one capability; the field must really exist; watch
-	is grain-independent and subject-only (so grain/child columns only ever mean set-scope); an upsert
-	key implies a child set. This replaces both `CRM Automatable Field` (write) and
+	validate() makes the row unambiguous: at least one capability; the field must really exist; read
+	and watch are grain-independent and subject-only (so grain/child columns only ever mean set-scope);
+	an upsert key implies a child set. This replaces both `CRM Automatable Field` (write) and
 	`CRM Automation Watchable Field` (read)."""
 
 	def validate(self):
 		# Structural guards first (cheap, no meta lookup), then confirm the field really exists.
 		self._require_a_capability()
-		self._guard_watch_shape()
+		self._guard_read_shape()
 		self._guard_row_key()
 		self._require_real_field()
 
@@ -56,28 +57,28 @@ class CRMAutomationField(Document):
 		)
 
 	def _require_a_capability(self):
-		if not (self.can_watch or self.can_set):
+		if not (self.can_read or self.can_watch or self.can_set):
 			frappe.throw(
-				_("A field row must be watchable, settable, or both — tick Can Watch or Can Set."),
+				_("A field row must be readable, watchable or settable — tick Can Read, Can Watch or Can Set."),
 				title=_("No capability"),
 			)
 
-	def _guard_watch_shape(self):
-		"""Watch is grain-independent, parent-only, and subject-only — so grain/child columns can only
-		ever mean set-scope (no ambiguity), and you can only watch a doctype the engine resolves to a
-		lead."""
-		if not self.can_watch:
+	def _guard_read_shape(self):
+		"""Read and watch are grain-independent, parent-only, and subject-only — so grain/child columns
+		can only ever mean set-scope (no ambiguity), and a rule can only test a doctype the engine
+		resolves to a lead."""
+		if not (self.can_read or self.can_watch):
 			return
 		if self.child_table_field:
-			frappe.throw(_("A child-table field cannot be watched — clear Child Table Field or untick Can Watch."))
+			frappe.throw(_("A child-table field cannot be read or watched — clear Child Table Field, or untick Can Read and Can Watch."))
 		if self.vertical or self.group or self.program:
-			frappe.throw(_("Watch is grain-independent — clear the grain axes, or use a separate Can Set row."))
+			frappe.throw(_("Read and watch are grain-independent — clear the grain axes, or use a separate Can Set row."))
 		if not is_subject(self.doctype_name):
 			frappe.throw(
-				_("{0} is not a watch subject (CRM Lead / CRM Task). A new subject needs a resolver in automation.subjects first.").format(
+				_("{0} is not a rule subject (CRM Lead / CRM Task). A new subject needs a resolver in automation.subjects first.").format(
 					frappe.bold(self.doctype_name)
 				),
-				title=_("Not a watch subject"),
+				title=_("Not a rule subject"),
 			)
 
 	def _guard_row_key(self):

@@ -73,6 +73,25 @@ def native_permitted_fields(user, doctype):
 	return set(get_permitted_fields(doctype, user=user, permission_type="read"))
 
 
+def native_http_verdict(user, action, doctype, name=None):
+	"""One dispatcher for the endpoint sweep: True = native would ALLOW this action, False = deny.
+	Picks the right per-surface oracle (audit discipline): read/list -> row visibility; write/delete ->
+	would_allow on the concrete doc; create -> doctype capability; info / no-doctype -> deny-expected."""
+	if not doctype:
+		return False  # info-disclosure: a low-privilege caller should get nothing back
+	if action in ("read", "list"):
+		if name:
+			return native_can_read_row(user, doctype, name)
+		return bool(native_visible_names(user, doctype))
+	if action in ("write", "delete"):
+		if not (name and frappe.db.exists(doctype, name)):
+			return False
+		return native_would_allow(user, doctype, action, frappe.get_doc(doctype, name))
+	if action == "create":
+		return native_doctype_capability(user, doctype, "create")
+	return False
+
+
 def assert_no_escalation(test, user, doctype, ptype, doc, actually_allowed):
 	"""Fail `test` when a path allowed an ACTION on `doc` that native would deny — escalation signal.
 	For READ-row and FIELD cases use native_can_read_row / native_permitted_fields, not this."""

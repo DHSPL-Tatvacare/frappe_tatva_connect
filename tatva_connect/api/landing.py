@@ -16,7 +16,6 @@ on /apps only because the auto-assigned `LMS Student` role inflated their app co
 or a stray `default_workspace`. It is strictly read-only; it changes nothing.
 """
 import frappe
-from frappe import _
 from frappe.utils import slug
 
 

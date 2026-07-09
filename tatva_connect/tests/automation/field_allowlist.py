@@ -8,8 +8,13 @@ import frappe
 DOCTYPE = "CRM Automation Field"
 
 
+def seed_readable(doctype, fieldname):
+	"""An enabled can_read row — testable by a criterion, but no change to it fires a rule."""
+	return _ensure({"doctype_name": doctype, "fieldname": fieldname, "can_read": 1, "enabled": 1})
+
+
 def seed_watchable(doctype, fieldname):
-	"""An enabled can_watch row (blank grain — watch is grain-independent)."""
+	"""An enabled can_watch row (blank grain — watch is grain-independent). Implies readable."""
 	return _ensure({"doctype_name": doctype, "fieldname": fieldname, "can_watch": 1, "enabled": 1})
 
 
@@ -43,7 +48,7 @@ def _ensure(payload):
 	name = frappe.db.get_value(DOCTYPE, key)
 	if name:
 		doc = frappe.get_doc(DOCTYPE, name)
-		for flag in ("can_watch", "can_set", "is_row_key"):
+		for flag in ("can_read", "can_watch", "can_set", "is_row_key"):
 			if payload.get(flag):
 				setattr(doc, flag, 1)
 		doc.enabled = 1

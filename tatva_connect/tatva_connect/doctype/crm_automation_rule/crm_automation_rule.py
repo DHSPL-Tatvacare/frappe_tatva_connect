@@ -154,13 +154,22 @@ class CRMAutomationRule(Document):
 	def _validate_changed_operator(self, c):
 		"""`changed to` (new value only) and `changed from…to` (old->new pair) are the narrowed-
 		transition operators (Part A): valid only when event=Updated (Created has no before-state;
-		Deleted fires pre-removal with no diff). TATVA v2 (Task 1): the old restriction to a single
-		rule-wide watch_field is dropped - v2 has no single watch_field, and the router (Task 4)
-		carries `{field}__before` for every criteria-referenced field, not just one."""
+		Deleted fires pre-removal with no diff), and only on a WATCHED field - `router._context_for`
+		carries a `{field}__before` key for exactly the fields `router._diff_watched_fields` diffs,
+		so a transition on a merely readable field silently never matches. Fail loud at author time."""
+		from tatva_connect.automation import fields
+
 		if self.event != "Updated":
 			frappe.throw(
 				_("Operator {0} is only valid when the rule's Event is Updated.").format(frappe.bold(c.operator)),
 				title=_("Operator not valid for event"),
+			)
+		if not fields.is_watchable(self.on_doctype, c.field):
+			frappe.throw(
+				_("Operator {0} needs field {1} to be watched — tick Can Watch on its Automation Field row.").format(
+					frappe.bold(c.operator), frappe.bold(c.field)
+				),
+				title=_("Field not watched"),
 			)
 		if c.operator == "changed from…to" and not (c.from_value and c.value):
 			frappe.throw(

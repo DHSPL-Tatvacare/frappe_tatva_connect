@@ -151,7 +151,8 @@ def list_types_for_lead(lead):
 	gate uses) — a set axis equals the lead's, a blank axis is a wildcard, an all-blank grain is dormant.
 	Native `frappe.get_all` pre-filters to candidate grains (no raw SQL), then the predicate decides.
 	Value = the composite PK (`name`); label = the clean `type_name`."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
+		frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	vertical, group, program = _lead_axes(lead)
 	rows = frappe.get_all(
 		"CRM Task Type",
@@ -177,7 +178,8 @@ def list_types_for_lead(lead):
 @frappe.whitelist()
 def get_schema(task_type):
 	"""The activity type's per-field schema, in order — for the client form."""
-	frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
+	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
+		frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
 	doc = frappe.get_doc("CRM Task Type", task_type)
 	return [
 		{
@@ -311,24 +313,26 @@ def save_activity(lead, task_type, values, task=None):
 
 	The shell insert is in the same request transaction as the guard: an out-of-range throw rolls the
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
-	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
+		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 	if not task:
 		# title = the clean type_name (display), never the composite PK.
 		title = frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type
+		# Trusted (partner/system) write has no caller-assignee: leave unassigned for the Assignment Rule.
 		shell = frappe.get_doc({
 			"doctype": "CRM Task",
 			"title": title,
 			"custom_task_type": task_type,
-			"assigned_to": frappe.session.user,
+			"assigned_to": None if frappe.flags.ignore_permissions else frappe.session.user,
 			"reference_doctype": "CRM Lead",
 			"reference_docname": lead,
 		})
-		shell.insert()
+		shell.insert(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
 		task = shell.name
 	fields = compute_activity(lead, task_type, values, task=task)
 	doc = frappe.get_doc("CRM Task", task)
 	doc.update(fields)
-	doc.save()
+	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
 	return doc.name
 
 

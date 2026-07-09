@@ -248,7 +248,8 @@ class TestBypassWrites(AuthzTestCase):
         """Insert a CRM Lead on grain `g` inside a named savepoint (mutation isolation per base.py)."""
         frappe.set_user("Administrator")
         frappe.db.savepoint(savepoint)
-        status = frappe.get_all("CRM Lead Status", pluck="name", limit=1)[0]
+        # A Lost-type status (Junk/Unqualified) requires a lost-reason on save; pick a non-Lost one.
+        status = frappe.get_all("CRM Lead Status", filters={"type": ["!=", "Lost"]}, pluck="name", limit=1)[0]
         doc = frappe.get_doc({
             "doctype": "CRM Lead", "first_name": f"bypass-{savepoint}",
             "status": status, "mobile_no": mobile,

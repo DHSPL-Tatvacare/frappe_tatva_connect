@@ -41,7 +41,7 @@ So a crossing is a test whether the expected outcome is *allow* or *deny*. We on
 
 ---
 
-## 4. The surface, curated into two tiers
+## 4. The surface, curated into three tiers
 
 ### Tier 1 — Catastrophe sweeps (broad, programmatic, over ALL doctypes)
 Blanket invariants that must hold for **every** doctype in the live DB. The generator enumerates `frappe.get_all("DocType")` and loops:
@@ -57,6 +57,22 @@ Cheap (each check is one `has_permission` call), exhaustive, and **every violati
 
 ### Tier 2 — Targeted interaction cases (curated registry, subtle logic)
 The grain × role × hierarchy contradictions on the **sensitive** doctypes (`CRM Lead`, `CRM Task`, `FCRM Note`, `CRM Call Log`, `WhatsApp Message`, `Contact`). These are the data-registry cases (§6).
+
+### Tier 3 — Endpoint deny-sweep over REAL HTTP (the VAPT class, B1-B5)
+The OWASP-API layer (Broken Object/Function/Property-Level Authorization). `cases.generate_http_cases()`
+crosses the endpoint primitives (`registry/endpoints.py`) with the hostile principals to PRODUCE the
+cases — never hand-listed. `test_endpoint_sweep.run` fires each as its persona via `http_engine`
+(token auth) and judges the response against `oracle.native_http_verdict`: an endpoint that returns or
+does MORE than native allows is an **escalation** (a live VAPT-class hole). `vapt/findings.py` is the
+recall gate — every Jun'26 finding must be covered by a generated case. This tier runs in the
+**committed HTTP lifecycle** (seed commit=True + teardown), not the in-process one.
+
+**Two hostile users, on purpose:** `no_role` (truly zero roles — the strict floor; anything it reaches
+is a definite bug) and `default_user` (only the platform-default `LMS Student`+`Wiki User` a real signup
+gets — the faithful VAPT actor). A finding reachable by `no_role` is a code IDOR; reachable only by
+`default_user` means the auto-strapped role is too broad (a platform decision). **Role fidelity is
+enforced**: `generator` strips any app-auto-strapped role so each persona holds EXACTLY its declared set,
+and `_assert_role_fidelity()` fails the seed on drift.
 
 ---
 
@@ -92,8 +108,21 @@ The grain × role × hierarchy contradictions on the **sensitive** doctypes (`CR
 | A11 | Cross-app doctype leak | a role reaches another app's doctype |
 | A12 | User-perm / DocShare over-grant | a fence or share grants more than intended |
 | A13 | Partner-mapping abuse | disabled / multi-mapping / wrong-tenant attribution (invariant 16) |
+| A14 | Public-intake guest abuse | anonymous web-form submit forces routing / grows a master / writes outside form scope |
 
-A **relevance grid** maps which attacks apply to which tuples, so Tier-2 tests only the crossings that can actually occur — and the grid itself is data we can audit.
+A1-A14 are the GRAIN vectors (in-process, differential). The **endpoint layer** adds the OWASP-API
+vectors below, derived from the Jun'26 VAPT and exercised by the generated HTTP sweep (Tier 3):
+
+| # | Attack vector (OWASP API) | Plain meaning |
+|---|---|---|
+| B1 | IDOR object read (API1 BOLA) | supply an object id to a read method and read a record you can't natively read |
+| B2 | IDOR object write (API1/API3) | `set_value` (or a write method) mutates another owner's record |
+| B3 | Unauthorised function (API5 BFLA) | a no-access caller runs a list/create/delete it holds no capability for |
+| B4 | Excessive data / info disclosure (API3) | a method leaks global/system info to a low-privilege caller |
+| B5 | Private file access (API1 on File) | read a private File you can't natively read |
+
+A1-A14 use a **relevance grid** (which attack applies to which tuple). B1-B5 need no grid: the endpoint
+generator crosses every endpoint primitive with the hostile principals, and the oracle judges each.
 
 ---
 
@@ -105,29 +134,31 @@ tatva_connect/tests/authz/
 │
 │  ── REGISTRY (the curated surface, as DATA) ──
 ├── registry/
-│   ├── dimensions.py       tuple dimensions + allowed values
-│   ├── attacks.py          the 13 attack vectors + how each probes
-│   ├── relevance.py        which attack applies to which tuple (the grid)
-│   ├── cases.py            generator: tuple × attack → CaseSpec(id, english, expected)
-│   └── dropped.json        logically-impossible crossings + why (auditable)
+│   ├── dimensions.py       tuple dimensions + allowed values (who/what axes)
+│   ├── attacks.py          the vectors: A1-A14 (grain) + B1-B5 (endpoint / OWASP API)
+│   ├── endpoints.py        endpoint PRIMITIVES: GENERIC (doctype-parametric) + APP + SENSITIVE_DOCTYPES
+│   └── cases.py            CaseSpec + generate_http_cases() (crosses endpoints × hostile principals)
 │
 │  ── HARNESS (machinery) ──
 ├── base.py                 AuthzTestCase: COMMS-OFF gate + rollback wiring (§7,§8)
+├── comms.py                assert_comms_off() — the safety interlock (§7)
 ├── grains.py               the 5 canonical grains
-├── roster.py               the always-on dummy-user roster
-├── generator.py            seeds users/grains/leads/tasks + creds.json + teardown
-├── oracle.py               native_would_allow() — the judge (§2)
+├── roster.py               the dummy-user roster (incl. no_role AND default_user, §role-fidelity)
+├── generator.py            seeds users (role-fidelity enforced) + grains/leads/tasks + tokens + creds.json
+├── oracle.py               native_*() judges incl. native_http_verdict() — the judge (§2)
+├── http_engine.py          token-auth HTTP transport: fire a real request AS any persona at any method
 ├── mutation.py             plants known-bad cases to measure False Negatives (§9)
-├── confusion.py            scores TP/FP/FN/TN → confusion matrix (§9)
+├── confusion.py / matrix.py  scores TP/FP/FN/TN → confusion matrix (§9)
 ├── report.py               grid + metrics → console / JSON / feeds the PDF
+├── vapt/findings.py        the Jun'26 VAPT findings as a coverage/recall map (endpoint_key + doctype)
 │
-│  ── TESTS (data-driven; each CaseSpec → one tracked test) ──
+│  ── TESTS (data-driven) ──
 ├── test_catastrophe_sweep.py   Tier-1 sweeps over ALL doctypes
-├── test_registry_cases.py      Tier-2: parametrized over registry/cases.py
-├── test_bypass_writes.py       the ~14 ignore_permissions paths (differential)
+├── test_registry_cases.py      Tier-2: parametrized over registry/cases.py (grain, in-process)
+├── test_bypass_writes.py       the ignore_permissions paths (differential)
+├── test_endpoint_sweep.py      Tier-3: the generated B1-B5 HTTP deny-sweep + VAPT coverage (§endpoint)
 ├── test_surface_audit.py       cross-app drift vs allowlist.json
-├── test_stage_leakage.py       stage/sub-stage isolation: a stage for one program (grain) never
-│                               leaks into another's picker; backstop blocks cross-program saves
+├── test_stage_leakage.py       stage/sub-stage isolation across programs (grain)
 ├── test_self_validation.py     runs mutation.py → asserts the suite goes RED (no FN)
 │
 │  ── PLAYWRIGHT (break it through the real browser) ──
@@ -205,10 +236,18 @@ Metrics reported every run: counts of TP/FP/FN/TN, plus **precision** (TP/(TP+FP
 
 ## 11. How to run + what you get
 
-**Standalone (bench):**
+**In-process tiers (bench, rolled back per class):**
 ```bash
 bench --site dev.localhost set-config allow_tests true
 bench --site dev.localhost run-tests --module tatva_connect.tests.authz.test_registry_cases
+```
+**Tier-3 endpoint sweep (real HTTP; committed lifecycle, seeds + tears down):**
+```bash
+# runs IN the bench (needs frappe for oracle/seed); hits the site by its INTERNAL url.
+# AUTHZ_HTTP_BASE defaults to the local gunicorn (http://localhost:8000); override per environment.
+AUTHZ_HTTP_BASE=http://localhost:8000 \
+  bench --site dev.localhost execute tatva_connect.tests.authz.test_endpoint_sweep.run
+# prints: cases / escalations (live holes) / vapt_uncovered (must be 0). LOCAL-ONLY, not CI-gated.
 ```
 **Playwright (after seeding + copying creds out of the bench):**
 ```bash

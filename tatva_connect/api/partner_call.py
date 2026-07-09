@@ -34,8 +34,6 @@ from frappe.utils import cint, get_datetime
 from tatva_connect.api._base import (
 	_api,
 	_cfg,
-	_fail,
-	_norm_phone,
 	_ok,
 	_read_list,
 	_resolve_caller,

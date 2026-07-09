@@ -40,7 +40,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action Type",
-   "options": "Require Fields\nRequire Location\nUpdate Field\nCreate Task\nCreate Note\nSend WhatsApp\nSend Email\nCall Webhook\nWait",
+   "options": "Require Fields\nRequire Location\nCreate Task\nUpdate Field\nAppend Child Row\nUpsert Child Row\nCall Webhook\nCreate Note\nSend WhatsApp\nSend Email\nWait",
    "reqd": 1
   },
   {
@@ -75,7 +75,6 @@
    "description": "The activity type to raise as an open task when this rule fires.",
    "fieldname": "task_type",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Task Type",
    "options": "CRM Task Type"
   },
@@ -93,7 +92,6 @@
    "description": "The fieldname to set on the target doctype.",
    "fieldname": "fieldname",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Fieldname"
   },
   {
@@ -112,7 +110,6 @@
    "description": "The literal value to write.",
    "fieldname": "value",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Value"
   },
   {

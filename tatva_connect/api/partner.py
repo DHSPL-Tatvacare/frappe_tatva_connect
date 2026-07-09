@@ -42,6 +42,8 @@ from tatva_connect.api._base import (
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
+	field_descriptor,
+	is_writable,
 )
 
 # ---------------------------------------------------------------------------
@@ -65,8 +67,10 @@ PARENT_SECTION = "lead"
 def _build_catalog() -> dict:
 	"""Read the `CRM Lead API Field` table into the structured catalog the API uses.
 	Returns a dict (everything below is derived from these keys):
-	  keys           ordered list of `section:fieldname` (sort_field=field_key)
+	  keys           ordered list of writable `section:fieldname` (sort_field=field_key)
 	  key_set        set(keys)
+	  audit          [{fieldname, label}] reserved OUTPUT_ONLY lead fields, shown in the
+	                 schema (marked) but never writable (see _base.RESERVED_FIELDS)
 	  section_doctype  {section: target doctype}
 	  section_child    {section: child-table fieldname}  (child sections only)
 	  section_title    {section: display title}
@@ -75,10 +79,11 @@ def _build_catalog() -> dict:
 	"""
 	rows = frappe.get_all(
 		"CRM Lead API Field",
-		fields=["field_key", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key", "sql_source"],
+		fields=["field_key", "label", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key", "sql_source"],
 		order_by="field_key asc",
 	)
 	keys, section_doctype, section_child, section_title, section_key_field = [], {}, {}, {}, {}
+	audit = []
 	for r in rows:
 		# Smart-Views-only activity rows (CRM Task promoted columns / payload) are NOT lead
 		# fields — the partner API exposes lead fields only. Skip them so they never reach
@@ -92,7 +97,6 @@ def _build_catalog() -> dict:
 		# partner's writable lead_schema — skip them here. The Smart View path reads them directly.
 		if r.fieldname in ROUTING_FIELDS:
 			continue
-		keys.append(r.field_key)
 		section = r.section_key
 		section_doctype[section] = r.target_doctype
 		if r.child_table_field:
@@ -100,9 +104,19 @@ def _build_catalog() -> dict:
 		if r.is_row_key:
 			section_key_field[section] = r.fieldname
 		section_title.setdefault(section, section.title())
+		# Reserved audit fields (_base.RESERVED_FIELDS) stay OUT of the writable catalog so a partner
+		# can never send them, but are surfaced (marked OUTPUT_ONLY) in lead_schema for discovery. They
+		# live on the parent (lead) section; the Smart View composer reads the table directly, so its
+		# own owner and creation columns are untouched.
+		if not is_writable(r.fieldname):
+			if section == PARENT_SECTION:
+				audit.append({"fieldname": r.fieldname, "label": r.label or r.fieldname})
+			continue
+		keys.append(r.field_key)
 	return {
 		"keys": keys,
 		"key_set": set(keys),
+		"audit": audit,
 		"section_doctype": section_doctype,
 		"section_child": section_child,
 		"section_title": section_title,
@@ -529,6 +543,18 @@ def _delete_one(name, mp):
 
 # -- singular endpoints ------------------------------------------------------
 
+# Fieldtypes for Frappe standard fields, which are not DocFields (meta.get_field returns None).
+_STD_FIELD_TYPES = {"name": "Data", "owner": "Link", "creation": "Datetime", "modified": "Datetime", "modified_by": "Link"}
+
+
+def _audit_field(fieldname, label, meta):
+	"""OUTPUT_ONLY descriptor for a reserved audit field (discovery only, never writable).
+	Frappe standard fields are not DocFields, so fall back to _STD_FIELD_TYPES for the type."""
+	f = meta.get_field(fieldname)
+	ftype = f.fieldtype if f else _STD_FIELD_TYPES.get(fieldname, "Data")
+	return field_descriptor(fieldname, (f.label if f else None) or label, ftype, options=(f.options if f else None))
+
+
 @frappe.whitelist(methods=["GET"])
 @_api
 def lead_schema(**_kwargs):
@@ -547,23 +573,17 @@ def lead_schema(**_kwargs):
 			f = m.get_field(fn)
 			if not f:
 				continue
-			entry = {
-				"fieldname": fn, "label": f.label, "type": f.fieldtype,
-				"required": required_override.get(fn, bool(f.reqd)),
-				"options": (f.options or None) if f.fieldtype in ("Link", "Select") else None,
-			}
+			required = required_override.get(fn, bool(f.reqd))
 			# Controlled vocabulary for any grain-scoped composite-PK Link (picklist, stage, ...):
-			# advertise the exact human values this caller may send — the SAME registry the ingestion
-			# resolver (taxonomy.picklist.resolve_row_links) dispatches through, so discovery ==
-			# ingestion, always. Only when the grain is fixed (a partner mapping); a trusted caller
-			# supplies its own grain, so there's no single value list.
+			# advertise the exact human values this caller may send, from the SAME registry the
+			# ingestion resolver dispatches through, so discovery equals ingestion. Only when the
+			# grain is fixed (a partner mapping); a trusted caller supplies its own grain.
+			allowed_values = None
 			if mp and f.fieldtype == "Link":
 				from tatva_connect.taxonomy import picklist
 
-				vals = picklist.values_for(f.options, (mp.vertical, mp.crm_group, mp.program or ""), fn)
-				if vals:
-					entry["allowed_values"] = vals
-			entries.append(entry)
+				allowed_values = picklist.values_for(f.options, (mp.vertical, mp.crm_group, mp.program or ""), fn)
+			entries.append(field_descriptor(fn, f.label, f.fieldtype, required, f.options, allowed_values or None))
 		return entries
 
 	cat = _catalog()
@@ -600,6 +620,9 @@ def lead_schema(**_kwargs):
 		"bulk": {"max_per_call": _cfg()["bulk_max_records"], "list_page_max": _cfg()["list_max_page"],
 		         "list_filters": [*list(LIST_FILTERS.keys()), "mobile_no"]},
 	}
+	# Audit fields: discoverable but OUTPUT_ONLY, never writable (Frappe and the assignment rule set them).
+	m_lead = frappe.get_meta("CRM Lead")
+	out["lead"] += [_audit_field(a["fieldname"], a["label"], m_lead) for a in cat["audit"]]
 	if mp and not mp.program:
 		# Open-program key: line + group forced; program mode is LIST if the key has an
 		# allowed_programs set, else NONE. Both derived from config, no hardcoding.
@@ -798,8 +821,12 @@ def lead_list(**_kwargs):
 	if denied:
 		return
 
+	# SELECT only real CRM Lead columns: a catalog fieldname that is a Smart-View-only alias (no column)
+	# would otherwise break the SQL. lead_schema/_curate already filter defensively via meta.get_field.
+	m = frappe.get_meta("CRM Lead")
+	safe_fields = [f for f in parent_fields if m.has_field(f)]
 	fields = list(dict.fromkeys(
-		[*parent_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]
+		[*safe_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]
 	))
 	total = frappe.db.count("CRM Lead", filters)
 	leads = frappe.get_all(

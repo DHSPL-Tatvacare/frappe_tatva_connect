@@ -3,13 +3,14 @@
  "allow_rename": 0,
  "autoname": "format:{doctype_name}::{child_table_field}::{fieldname}::{vertical}::{group}::{program}",
  "creation": "2026-07-07 00:00:00.000000",
- "description": "Fail-closed field allowlist for the Automation engine (read + write in one table). can_watch = a change may fire a rule; can_set = an action may write it (grain-scoped). Ships EMPTY - a field not listed here can neither be watched nor set. System Manager curates; ops author rules within it.",
+ "description": "Fail-closed field allowlist for the Automation engine (read + write in one table). can_read = a rule criterion may test it; can_watch = a change to it may fire a rule (implies can_read); can_set = an action may write it (grain-scoped). Ships EMPTY - a field not listed here can neither be tested, watched nor set. System Manager curates; ops author rules within it.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "doctype_name",
   "fieldname",
+  "can_read",
   "can_watch",
   "can_set",
   "child_table_field",
@@ -38,11 +39,18 @@
    "description": "The field."
   },
   {
+   "fieldname": "can_read",
+   "fieldtype": "Check",
+   "label": "Can Read",
+   "in_list_view": 1,
+   "description": "A rule criterion may test this field. Criterion doctypes: CRM Lead / CRM Task."
+  },
+  {
    "fieldname": "can_watch",
    "fieldtype": "Check",
    "label": "Can Watch",
    "in_list_view": 1,
-   "description": "A change to this field may fire a Field-Changed rule. Watch doctypes: CRM Lead / CRM Task."
+   "description": "A change to this field may fire a rule, and a transition operator may test it. Implies Can Read."
   },
   {
    "fieldname": "can_set",

@@ -37,6 +37,37 @@ GRAIN_FIELDNAMES = ("custom_vertical", "custom_group", "custom_current_program")
 # The runtime switch that turns on grain enforcement (off = documented stock exposure).
 _GRAIN_SWITCH = "Lead::CRM Lead::grain"
 
+# A9 — the reference/owner PQC inheritance shape per child doctype: (has_assigned_to, ref_docname_col).
+# CRM Task alone carries an assigned_to self-ownership clause; WhatsApp Message keys on reference_name
+# (not reference_docname). Mirrors access.visibility.scoped_pqc's per-column derivation.
+_A9_SHAPE = {
+	"CRM Task": (True, "reference_docname"),
+	"CRM Call Log": (False, "reference_docname"),
+	"FCRM Note": (False, "reference_docname"),
+	"WhatsApp Message": (False, "reference_name"),
+}
+
+# A10 — request kwargs per guarded native method (the target row/lead resolved by the handler). Keyed
+# on the NATIVE dotted path so _dispatch resolves the override_whitelisted_methods wrapper.
+_A10_KW = {
+	"crm.integrations.api.get_recording_url": lambda t: {"call_log_name": t},
+	"crm.integrations.api.add_task_to_call_log": lambda t: {"call_sid": t, "task": {"title": "authz", "status": "Todo"}},
+	"crm.integrations.api.add_note_to_call_log": lambda t: {"call_sid": t, "note": {"content": "authz"}},
+	"crm.api.doc.get_assigned_users": lambda t: {"doctype": "CRM Lead", "name": t},
+	"crm.api.doc.get_linked_docs_of_document": lambda t: {"doctype": "CRM Lead", "docname": t},
+	"crm.api.whatsapp.get_whatsapp_messages": lambda t: {"reference_doctype": "CRM Lead", "reference_name": t},
+}
+
+
+def _dispatch(cmd, **kwargs):
+	"""Mirror frappe.handler.execute_cmd's override resolution — the REAL HTTP dispatch path, so
+	override_whitelisted_methods (the native_guards wrappers) is honoured. A direct import would bypass
+	the wrapper and give a false green."""
+	for hook in (frappe.get_hooks("override_whitelisted_methods") or {}).get(cmd, []):
+		cmd = hook
+		break
+	return frappe.call(frappe.get_attr(cmd), **kwargs)
+
 
 class TestRegistryCases(AuthzTestCase):
 	# A shared per-form-style submission sink for A14. Created ONCE (DDL) so a per-case scaffold's
@@ -337,8 +368,8 @@ class TestRegistryCases(AuthzTestCase):
 		doc.set("custom_external_id", external_id)
 		doc.type = "Incoming"
 		doc.status = "Completed"
-		setattr(doc, "from", "")
-		doc.to = ""
+		setattr(doc, "from", "+910000000000")  # from/to are required (reqd); an empty string counts as missing
+		doc.to = "+910000000001"
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead_name
 		doc.insert(ignore_permissions=True)
@@ -607,3 +638,185 @@ class TestRegistryCases(AuthzTestCase):
 				msg=f"A SMART-VIEW LEAK: {user} ({c.principal}) persisted a cross-tenant view via {c.id}",
 			):
 				smartview_api.upsert_view(view)
+
+	# ---- A9: child-doctype visibility inheritance (the row-visibility brain, access/visibility.py) ---
+	# Consolidated from notes/tasks/telephony/whatsapp test_*_scope.py. Owner=grain_1, peer=grain_2,
+	# child planted on a grain_1 lead. The peer natively cannot read that lead (grain scope), so with the
+	# child's visibility switch ON the child inherits the denial; switch OFF = stock CRM (no scoping).
+	# White-box on visibility.scoped_pqc / scoped_has_permission, mirroring the four superseded suites.
+	# Mutates a switch + plants a row -> named savepoint per base.py (never a bare rollback).
+
+	def test_A9_child_scope_inheritance(self):
+		for c in registry_cases.cases_for("A9"):
+			with self.subTest(case=c.id):
+				self._run_a9_case(c)
+
+	def _a9_make_child(self, doctype, lead, assigned_to=None, links_only=False):
+		"""Plant a child of `doctype` on `lead` (as Administrator; the caller holds the savepoint). The
+		generator seeds no child rows for Note/Call Log/WhatsApp, so the visibility brain has a concrete
+		row to scope. WhatsApp Message's before_insert is a full WATI/profile pipeline irrelevant to row
+		scoping and impossible without a tenant, so db_insert() persists the row directly (as its own
+		scope suite does)."""
+		if doctype == "CRM Task":
+			doc = frappe.new_doc("CRM Task")
+			doc.title, doc.status = "A9 Scope Task", "Todo"
+			doc.reference_doctype, doc.reference_docname = "CRM Lead", lead
+			if assigned_to:
+				doc.assigned_to = assigned_to
+			doc.insert(ignore_permissions=True)
+			return doc
+		if doctype == "CRM Call Log":
+			doc = frappe.new_doc("CRM Call Log")
+			doc.id = f"A9-{frappe.generate_hash(length=8)}"
+			doc.type, doc.status = "Incoming", "Completed"
+			setattr(doc, "from", "+910000000000")
+			doc.to = "+910000000001"
+			if links_only:
+				doc.append("links", {"link_doctype": "CRM Lead", "link_name": lead})
+			else:
+				doc.reference_doctype, doc.reference_docname = "CRM Lead", lead
+			doc.insert(ignore_permissions=True)
+			return doc
+		if doctype == "FCRM Note":
+			doc = frappe.new_doc("FCRM Note")
+			doc.title, doc.content = "A9 Scope Note", "secret"
+			doc.reference_doctype, doc.reference_docname = "CRM Lead", lead
+			doc.insert(ignore_permissions=True)
+			return doc
+		if doctype == "WhatsApp Message":
+			doc = frappe.new_doc("WhatsApp Message")
+			doc.type, doc.content_type, doc.message = "Incoming", "text", "secret"
+			doc.message_id = frappe.generate_hash(length=12)
+			doc.reference_doctype, doc.reference_name = "CRM Lead", lead
+			doc.name = doc.message_id
+			doc.db_insert()
+			return frappe.get_doc("WhatsApp Message", doc.name)
+		raise ValueError(f"A9: no child factory for {doctype}")
+
+	def _run_a9_case(self, c):
+		from tatva_connect.access import visibility
+
+		switch = visibility._SWITCH_OF.get(c.doctype)
+		if not switch:
+			self.skipTest(f"A9: {c.doctype} is not a registered child-scope doctype")
+		in_user = roster.email("grain_1")   # owner of the grain_1 lead the child hangs off
+		out_user = roster.email("grain_2")  # the peer that natively cannot read that lead
+		lead = self._lead_in_grain(grains.GRAINS[0])
+		if lead is None:
+			self.skipTest(f"no seeded grain_1 lead for case {c.id}")
+		save_point = "authz_a9_{}".format(c.id.replace("-", "_"))
+		frappe.db.savepoint(save_point)
+		try:
+			if c.surface == "child_off":
+				# Switch OFF = stock CRM: no PQC, and the peer CAN read the child (the documented delta).
+				frappe.db.set_value("CRM Tatva Automation", switch, "enabled", 0)
+				frappe.clear_cache()
+				child = self._a9_make_child(c.doctype, lead)
+				self.assertEqual(
+					visibility.scoped_pqc(c.doctype, out_user), "",
+					f"A9: {c.doctype} switch OFF must yield NO scoped PQC (stock CRM)")
+				self.assertTrue(
+					visibility.scoped_has_permission(child, "read", out_user),
+					f"A9: {c.doctype} switch OFF must expose the child to any role-permitted user "
+					"(the documented stock-CRM exposure delta)")
+				return
+			# every other branch is the switch-ON (scoped) state.
+			frappe.db.set_value("CRM Tatva Automation", switch, "enabled", 1)
+			frappe.clear_cache()
+			if c.surface == "child_shape":
+				pqc = visibility.scoped_pqc(c.doctype, out_user)
+				has_assigned, ref_col = _A9_SHAPE[c.doctype]
+				self.assertIn(f"`tab{c.doctype}`.`owner`=", pqc,
+				              f"A9 shape: {c.doctype} PQC missing the owner self-ownership clause")
+				self.assertIn("reference_doctype", pqc,
+				              f"A9 shape: {c.doctype} PQC missing the reference_doctype parent clause")
+				self.assertIn(ref_col, pqc, f"A9 shape: {c.doctype} PQC missing the {ref_col} column")
+				if has_assigned:
+					self.assertIn("assigned_to", pqc,
+					              f"A9 shape: {c.doctype} PQC missing its assigned_to clause")
+				else:
+					self.assertNotIn("assigned_to", pqc,
+					                 f"A9 shape: {c.doctype} PQC has an assigned_to clause it should not")
+				if ref_col == "reference_name":
+					self.assertNotIn("reference_docname", pqc,
+					                 "A9 shape: WhatsApp Message must key on reference_name, not reference_docname")
+				return
+			if c.surface == "child_orphan":
+				# A links-only Call Log has no reference_* parent -> orphan -> fail-closed even in-scope.
+				child = self._a9_make_child(c.doctype, lead, links_only=True)
+				self.assertFalse(
+					visibility.scoped_has_permission(child, "read", in_user),
+					"A9: a links-only Call Log (no reference parent) must fail closed even for the "
+					"in-scope user")
+				return
+			if c.surface == "child_assignee":
+				# Least-privilege carve-out: the assignee sees their own task on a hidden parent.
+				child = self._a9_make_child(c.doctype, lead, assigned_to=out_user)
+				self.assertTrue(
+					visibility.scoped_has_permission(child, "read", out_user),
+					"A9: an assignee must see their own task even on a parent they cannot read")
+				return
+			# default: child_scope — switch ON blocks the peer AND keeps the in-scope owner.
+			child = self._a9_make_child(c.doctype, lead)
+			self.assertTrue(
+				visibility.scoped_has_permission(child, "read", in_user),
+				f"A9 REGRESSION: in-scope grain_1 denied its own {c.doctype} {child.name}")
+			self.assertFalse(
+				visibility.scoped_has_permission(child, "read", out_user),
+				f"A9 LEAK: out-of-scope grain_2 saw {c.doctype} {child.name} on a lead it cannot read")
+			with set_user(out_user):
+				self.assertFalse(
+					frappe.has_permission(c.doctype, "read", child.name),
+					f"A9 LEAK: frappe.has_permission exposed {c.doctype} {child.name} to grain_2 "
+					"(the wired has_permission hook must deny too)")
+		finally:
+			frappe.db.rollback(save_point=save_point)
+			frappe.clear_cache()
+
+	# ---- A10: native-method bypass (the 11 access.native_guards wrappers) --------------------------
+	# Consolidated from the L3 method-gate layer of test_vapt_authz.py — the ONLY runtime exercise of
+	# the wrappers. Driven through the REAL override dispatch (a direct import would skip the guard). A
+	# peer is denied on a row it cannot read; a no-role caller is denied at the doctype matrix; the
+	# authorized owner is NOT denied. Call Log targets are planted + the visibility switch toggled ON
+	# (dev default is OFF) inside a savepoint; Lead targets use the seeded leads directly.
+
+	def test_A10_native_method_bypass(self):
+		for c in registry_cases.cases_for("A10"):
+			with self.subTest(case=c.id):
+				self._run_a10_case(c)
+
+	def _run_a10_case(self, c):
+		user = self._principal_user(c)
+		lead = self._resolve_target(c)
+		if lead is None:
+			self.skipTest(f"no seeded {c.target} lead for case {c.id}")
+		save_point = "authz_a10_{}".format(c.id.replace("-", "_"))
+		frappe.db.savepoint(save_point)
+		try:
+			if c.doctype == "CRM Call Log":
+				# The guard is CRM Call Log read; with the switch ON the peer inherits the lead denial.
+				frappe.db.set_value(
+					"CRM Tatva Automation", "Telephony::CRM Call Log::visibility", "enabled", 1)
+				frappe.clear_cache()
+				target = self._plant_call_log(lead, f"A10-{frappe.generate_hash(length=6)}")
+			else:
+				target = lead
+			kwargs = _A10_KW[c.method](target)
+			with set_user(user):
+				if c.expected == "deny":
+					with self.assertRaises(
+						frappe.PermissionError,
+						msg=f"A10 BYPASS: {user} ({c.principal}) reached {c.method} on a {c.doctype} it "
+						"cannot read",
+					):
+						_dispatch(c.method, **kwargs)
+				else:
+					try:
+						_dispatch(c.method, **kwargs)
+					except frappe.PermissionError as e:
+						self.fail(f"A10 REGRESSION: authorized {user} denied on {c.method}: {e}")
+					except Exception:
+						pass  # native (non-permission) errors are not our gate — only a denial regresses
+		finally:
+			frappe.db.rollback(save_point=save_point)
+			frappe.clear_cache()

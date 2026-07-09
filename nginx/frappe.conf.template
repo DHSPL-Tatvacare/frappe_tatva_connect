@@ -28,9 +28,9 @@ server {
 	real_ip_recursive ${UPSTREAM_REAL_IP_RECURSIVE};
 
 	# --- Zudoku static API docs at /docs (TatvaCare, added 2026-06-02) ---
-	# Static SSG build lives in the site's public dir: sites/crm.local/public/docs
+	# SSG in the active site's public dir (envsubst fills the site); shipped by api-docs/deploy-docs.sh.
 	location /docs {
-		root /home/frappe/frappe-bench/sites/crm.local/public;
+		root /home/frappe/frappe-bench/sites/${FRAPPE_SITE_NAME_HEADER}/public;
 		try_files $uri $uri.html $uri/index.html /docs/index.html;
 	}
 

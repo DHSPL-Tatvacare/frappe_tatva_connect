@@ -44,6 +44,22 @@ ATTACKS = {
 	"A14": {"title": "Public-intake guest abuse", "oracle": "would_allow",
 	        "desc": "an anonymous web-form submit forces routing across grain, grows a master, or "
 	                "writes outside the form's configured lead scope (the intake-specialised sibling of A6)."},
+	# B1..B5 — the endpoint / API layer (OWASP API Top-10), derived from the Jun'26 VAPT. Same oracle
+	# discipline as A1..A14: a hostile principal must never get MORE over HTTP than native would allow.
+	# These are exercised by the generated endpoint sweep (cases.generate_http_cases), never hand-listed.
+	"B1": {"title": "IDOR object read (BOLA / OWASP API1)", "oracle": "can_read_row",
+	       "desc": "supply an object id to a read method (frappe.client.get, app get_*) and read a "
+	               "record the caller cannot natively read"},
+	"B2": {"title": "IDOR object write (BOLA / OWASP API1+API3)", "oracle": "would_allow",
+	       "desc": "frappe.client.set_value (or a write method) mutates another owner's record"},
+	"B3": {"title": "Unauthorised function (BFLA / OWASP API5)", "oracle": "capability",
+	       "desc": "a no-access principal runs a list/create/delete function it holds no capability for "
+	               "(frappe.client.get_list/insert/delete, app list endpoints)"},
+	"B4": {"title": "Excessive data / info disclosure (OWASP API3)", "oracle": "explicit",
+	       "desc": "a method leaks global/system info to a low-privilege caller (installed apps, stats); "
+	               "no per-row oracle, so the expected verdict is explicit deny"},
+	"B5": {"title": "Private file access (BOLA on File / OWASP API1)", "oracle": "can_read_row",
+	       "desc": "read a private File the caller cannot natively read (e.g. via reference linking)"},
 }
 
 

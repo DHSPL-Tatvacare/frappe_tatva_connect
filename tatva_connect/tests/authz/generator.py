@@ -48,8 +48,38 @@ def _ensure_user(p):
 			"doctype": "User", "email": p["email"], "first_name": p["persona"],
 			"user_type": "System User", "send_welcome_email": 0, "new_password": p["password"],
 		}).insert(ignore_permissions=True)
-	if p["roles"]:
-		frappe.get_doc("User", p["email"]).add_roles(*p["roles"])
+	declared = set(p["roles"])
+	if declared:
+		frappe.get_doc("User", p["email"]).add_roles(*declared)
+	# Apps (Wiki, LMS) auto-latch their default roles (Wiki User, LMS Student) on User create/save via
+	# hooks. For fidelity a persona's role set MUST be EXACTLY the roster's declaration (no_role must be
+	# truly role-less), so hard-remove any undeclared Has Role the hooks added.
+	frappe.db.delete("Has Role", {"parent": p["email"], "role": ["not in", list(declared) or ["__never__"]]})
+
+
+def _assert_role_fidelity():
+	"""Fail loud if any seeded persona holds a role the roster did not declare (an app auto-strapped
+	Wiki/LMS role would silently widen a no-role/least-privilege principal and rot the whole suite)."""
+	drift = []
+	for p in roster.PERSONAS:
+		actual = set(frappe.get_all("Has Role", {"parent": p["email"]}, pluck="role"))
+		extra = actual - set(p["roles"])
+		if extra:
+			drift.append(f"{p['persona']}: unexpected {sorted(extra)}")
+	if drift:
+		frappe.throw("Role-fidelity drift (app auto-strapped roles): " + "; ".join(drift))
+
+
+def _ensure_token(email):
+	"""Give a persona an API token (api_key:api_secret) for the HTTP engine. Token auth resolves to the
+	SAME frappe.session.user as a browser login, so authorization behaves identically, without CSRF
+	friction. Returns 'api_key:api_secret'. Regenerated each seed so creds.json is always current."""
+	d = frappe.get_doc("User", email)
+	d.api_key = d.api_key or frappe.generate_hash(length=15)
+	secret = frappe.generate_hash(length=15)
+	d.api_secret = secret
+	d.save(ignore_permissions=True)
+	return f"{d.api_key}:{secret}"
 
 
 # ---- grain plumbing ------------------------------------------------------------------------------
@@ -110,9 +140,9 @@ def _seed_leads_and_tasks():
 
 # ---- creds manifest ------------------------------------------------------------------------------
 
-def _write_creds():
+def _write_creds(tokens):
 	data = [{"persona": p["persona"], "email": p["email"], "password": p["password"],
-	         "grain_key": p["grain_key"]} for p in roster.PERSONAS]
+	         "grain_key": p["grain_key"], "token": tokens.get(p["email"])} for p in roster.PERSONAS]
 	path = creds_path()
 	with open(path, "w") as fh:
 		fh.write(frappe.as_json(data))
@@ -131,13 +161,15 @@ def seed(commit=False):
 	grains.assert_masters_exist()  # fail loud before writing anything
 	for p in roster.PERSONAS:
 		_ensure_user(p)
+	_assert_role_fidelity()  # no persona may carry an app-strapped role beyond its declaration
 	by_key = {g["key"]: g for g in grains.GRAINS}
 	for p in roster.PERSONAS:
 		if p["grain_key"]:
 			_ensure_assignment_rule(by_key[p["grain_key"]], p["email"])
 	_ensure_partner_mapping(grains.GRAINS[0], roster.email("partner"))
 	leads = _seed_leads_and_tasks()
-	creds = _write_creds()
+	tokens = {p["email"]: _ensure_token(p["email"]) for p in roster.PERSONAS}
+	creds = _write_creds(tokens)
 	if commit:
 		frappe.db.commit()
 	return {"users": len(roster.PERSONAS), "leads": leads,

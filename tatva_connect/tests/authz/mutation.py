@@ -44,6 +44,7 @@ from tatva_connect.tests.authz.generator import TAG
 from tatva_connect.tests.authz.oracle import (
 	native_can_read_row,
 	native_doctype_capability,
+	native_http_verdict,
 	native_permitted_fields,
 	native_visible_names,
 	native_would_allow,
@@ -395,6 +396,58 @@ def _smartview_grain_overgrant():
 	return plant, detect
 
 
+def _synthetic_endpoint_responses(action):
+	"""The two synthetic HTTP responses the B-vector detector feeds the escalation judgment: the
+	KNOWN-BAD (the endpoint DID the thing) and the KNOWN-GOOD control (the endpoint DENIED). Keyed by
+	the action shape, mirroring _endpoint_allowed: a read/list/info leaks by returning a non-empty
+	`message`; a write/create/delete leaks by a clean 2xx."""
+	if action in ("read", "list", "info"):
+		bad = (200, {"message": ["authz-mut-leaked-row"]})  # non-empty payload = data was returned
+	else:
+		bad = (200, {"message": "ok"})                       # clean 2xx = write/create/delete succeeded
+	good = (403, {})                                         # endpoint refused = no escalation
+	return good, bad
+
+
+def _endpoint_escalation(action, doctype, seed_file=False):
+	"""CODE mutation (B1..B5, the endpoint layer): the sweep runs over REAL HTTP (committed lifecycle),
+	which an in-process rollback test can't fire, so we mutate the sweep's ESCALATION DETECTOR instead.
+	We feed test_endpoint_sweep._escalates — the ONE judgment the live sweep runs — a KNOWN-BAD synthetic
+	response (the endpoint returned/did the thing) on a (doctype, action) the REAL oracle DENIES for a
+	hostile principal, and confirm it is flagged. Only the HTTP response is synthetic; the oracle side is
+	genuine (native_http_verdict on a seeded foreign-owned row). A KNOWN-GOOD control (endpoint denied)
+	must NOT flag, proving the detector discriminates rather than firing blindly."""
+	from tatva_connect.tests.authz.test_endpoint_sweep import _escalates
+
+	def plant():
+		user = roster.email("no_role")  # the strict catastrophe floor: zero roles, natively denied
+		name = None
+		if seed_file:
+			# a PRIVATE File owned by Administrator — the B5 IDOR target, minted in the caller's savepoint.
+			f = frappe.get_doc({
+				"doctype": "File", "file_name": f"authz-mut-{frappe.generate_hash(length=6)}.txt",
+				"is_private": 1, "content": "authz-mut-secret",
+			}).insert(ignore_permissions=True)
+			name = f.name
+		elif doctype and action not in ("list", "info"):
+			name = _lead_in_grain(0)  # a seeded foreign-owned CRM Lead
+		native_ok = native_http_verdict(user, action, doctype, name)
+		return {"action": action, "native_ok": native_ok}
+
+	def detect(ctx):
+		# The oracle side must be GENUINE: a principal the real engine denies. If it somehow allows, the
+		# plant is vacuous (no known-bad to flag) -> report as not-detected, never a false pass.
+		if ctx["native_ok"]:
+			return False
+		good, bad = _synthetic_endpoint_responses(ctx["action"])
+		flagged_bad = _escalates(ctx["action"], bad[0], bad[1], ctx["native_ok"])
+		flagged_good = _escalates(ctx["action"], good[0], good[1], ctx["native_ok"])
+		# Detected iff the detector FLAGS the known-bad escalation AND does NOT flag the known-good control.
+		return flagged_bad and not flagged_good
+
+	return plant, detect
+
+
 # ---- the registry of planted violations ---------------------------------------------------------
 # AT LEAST ONE per attack vector. Untestable-without-code-mutation vectors are declared explicitly
 # (never silently skipped) so the self-validation can surface them as build warnings.
@@ -415,6 +468,13 @@ def _build_mutations():
 	a13p, a13d = _partner_write_out_of_grain()
 	a13clp, a13cld = _partner_callog_cross_tenant()  # cross-tenant write on the CALL surface
 	a14p, a14d = _guest_routing_coercion()
+	# B1..B5 — the endpoint layer: mutate the sweep's escalation detector with a known-bad HTTP response
+	# on a (doctype, action) the oracle genuinely denies for no_role (the hostile floor).
+	b1p, b1d = _endpoint_escalation("read", "CRM Lead")    # IDOR object read
+	b2p, b2d = _endpoint_escalation("write", "CRM Lead")   # IDOR object write
+	b3p, b3d = _endpoint_escalation("list", "CRM Lead")    # BFLA: unauthorised list
+	b4p, b4d = _endpoint_escalation("info", None)          # excessive info disclosure (no doctype oracle)
+	b5p, b5d = _endpoint_escalation("read", "File", seed_file=True)  # private-file IDOR
 
 	return [
 		{"attack": "A1", "id": "MUT-A1-share-other-grain-lead",
@@ -539,6 +599,37 @@ def _build_mutations():
 			 "+1 as an authed caller against the SAME growable master (CRM Side Effect Option) — so if "
 			 "line 355 were deleted, the Guest no-grow assertion would fail. Recorded here, not silently "
 			 "skipped (audit M2)."},
+
+		{"attack": "B1", "id": "MUT-B1-endpoint-idor-read",
+		 "english": "the endpoint-sweep escalation detector is fed a 200-with-payload read of a foreign "
+		            "CRM Lead that native denies no_role -> must be flagged (IDOR object read), while a "
+		            "denied response is not",
+		 "plant": b1p, "detect": b1d, "expected_detector": "test_endpoint_sweep._escalates",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "B2", "id": "MUT-B2-endpoint-idor-write",
+		 "english": "a clean-200 write on a foreign CRM Lead that native denies no_role must be flagged "
+		            "(IDOR object write), while a 403 is not",
+		 "plant": b2p, "detect": b2d, "expected_detector": "test_endpoint_sweep._escalates",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "B3", "id": "MUT-B3-endpoint-bfla-list",
+		 "english": "a 200-with-rows list of CRM Lead that native denies no_role must be flagged "
+		            "(unauthorised function / BFLA), while an empty/denied response is not",
+		 "plant": b3p, "detect": b3d, "expected_detector": "test_endpoint_sweep._escalates",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "B4", "id": "MUT-B4-endpoint-info-disclosure",
+		 "english": "a 200-with-payload info response (no doctype -> oracle deny-expected) must be flagged "
+		            "(excessive data disclosure), while a denied response is not",
+		 "plant": b4p, "detect": b4d, "expected_detector": "test_endpoint_sweep._escalates",
+		 "untestable_without_code_mutation": None},
+
+		{"attack": "B5", "id": "MUT-B5-endpoint-private-file-idor",
+		 "english": "a 200-with-payload read of a private File that native denies no_role must be flagged "
+		            "(BOLA on File), while a denied response is not",
+		 "plant": b5p, "detect": b5d, "expected_detector": "test_endpoint_sweep._escalates",
+		 "untestable_without_code_mutation": None},
 	]
 
 

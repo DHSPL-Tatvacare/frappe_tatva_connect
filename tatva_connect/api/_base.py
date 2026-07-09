@@ -20,16 +20,78 @@ Holds (moved verbatim from partner.py, behaviour-preserving):
   * `normalise_partner_response` — after_request gateway-error normaliser
   * `resolve_lead`     — the ONE grain-scoped lead resolver every entity API calls
 """
+import contextlib
 import functools
 import hashlib
 import time
 
 import frappe
 from frappe import _
+from frappe.model import child_table_fields, default_fields, optional_fields
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
+
+# Field behavior (Google AIP-203). The one reserved set every partner endpoint shares: a partner
+# may never send these (Frappe sets the audit and identity stamps, the Assignment Rule sets the
+# owner). OUTPUT_ONLY means discoverable in a schema but ignored on write. Sourced from Frappe's
+# own field lists so new standard fields are covered automatically, plus the domain field lead_owner.
+RESERVED_FIELDS = frozenset(default_fields) | frozenset(optional_fields) | frozenset(
+	child_table_fields
+) | {"lead_owner"}
+
+BEHAVIOR_REQUIRED = "REQUIRED"
+BEHAVIOR_OPTIONAL = "OPTIONAL"
+BEHAVIOR_OUTPUT_ONLY = "OUTPUT_ONLY"
+
+
+def is_writable(fieldname):
+	"""True if a partner may SEND this field (not a reserved audit/system/assignment field)."""
+	return fieldname not in RESERVED_FIELDS
+
+
+def field_behavior(fieldname, required=False):
+	"""The AIP-203 field_behavior for a partner-facing descriptor: reserved is OUTPUT_ONLY,
+	otherwise REQUIRED or OPTIONAL. One vocabulary across every endpoint's schema."""
+	if fieldname in RESERVED_FIELDS:
+		return BEHAVIOR_OUTPUT_ONLY
+	return BEHAVIOR_REQUIRED if required else BEHAVIOR_OPTIONAL
+
+
+def field_descriptor(fieldname, label, fieldtype, required=False, options=None, allowed_values=None):
+	"""The one partner-facing field descriptor shared by every endpoint schema (lead, activity, ...).
+	A reserved field is OUTPUT_ONLY and never required; options apply only to Link and Select."""
+	writable = is_writable(fieldname)
+	d = {
+		"fieldname": fieldname,
+		"label": label,
+		"type": fieldtype,
+		"behavior": field_behavior(fieldname, required),
+		"required": bool(required) and writable,
+		"options": options if fieldtype in ("Link", "Select") else None,
+	}
+	if allowed_values:
+		d["allowed_values"] = allowed_values
+	return d
+
+
+@contextlib.contextmanager
+def trusted_permissions():
+	"""Run a block with Frappe permission checks bypassed, for the partner API ONLY.
+
+	The partner is already authorized by the mapping and grain gate (_resolve_caller + resolve_lead),
+	and is a role-less user who fails every native role check by design, so a shared engine brain
+	(the activity brain, ...) must run trusted here. This is the SAME posture the lead and call
+	endpoints take with ignore_permissions=True on their writes; it only ever runs inside a partner
+	endpoint that has already gated the caller. The flag is server-set (never from the request body),
+	and resets on exit."""
+	prev = frappe.flags.ignore_permissions
+	frappe.flags.ignore_permissions = True  # authz-ok: server-set only, never from the request; entered post-gate
+	try:
+		yield
+	finally:
+		frappe.flags.ignore_permissions = prev
 
 # Config ---------------------------------------------------------------------
 # Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each

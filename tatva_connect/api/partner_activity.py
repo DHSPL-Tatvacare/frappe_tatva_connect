@@ -39,14 +39,14 @@ from tatva_connect.activity import api as activity_brain
 from tatva_connect.api._base import (
 	_api,
 	_cfg,
-	_fail,
-	_norm_phone,
 	_ok,
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
+	field_descriptor,
 	find_by_external_id_scoped,
 	resolve_lead,
+	trusted_permissions,
 )
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
@@ -132,9 +132,14 @@ def _upsert_one(item, mp, is_sysmgr):
 
 	external_id = item.get("external_id")
 	existing = find_by_external_id_scoped("CRM Task", DEDUP_FIELD, external_id, mp, is_sysmgr)
-	# The brain computes + writes; `task=existing` re-runs compute on the same task
-	# (no duplicate insert). New external_id (or none) -> brain inserts the shell.
-	name = activity_brain.save_activity(lead, task_type, values, task=existing)
+	# task_type may be the human type name OR the composite grain PK: resolve to this lead's grain-scoped
+	# type (the SAME brain the schema advertises), so discovery equals ingestion. Then the brain computes
+	# and writes; task=existing re-runs compute on the same task (no duplicate insert).
+	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
+		resolved = activity_brain.resolve_type_for_lead(lead, task_type)
+		if not resolved:
+			frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
+		name = activity_brain.save_activity(lead, resolved, values, task=existing)
 
 	if external_id and not existing:
 		frappe.db.set_value("CRM Task", name, DEDUP_FIELD, external_id, update_modified=False)
@@ -151,7 +156,11 @@ def _update_one(name, item, mp, is_sysmgr):
 	if not task_type:
 		frappe.throw(_("task_type is required"))
 	values = item.get("values") or {}
-	activity_brain.save_activity(row.reference_docname, task_type, values, task=name)
+	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
+		resolved = activity_brain.resolve_type_for_lead(row.reference_docname, task_type)
+		if not resolved:
+			frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
+		activity_brain.save_activity(row.reference_docname, resolved, values, task=name)
 	return _activity_payload(name)
 
 
@@ -172,24 +181,18 @@ def activity_schema(**_kwargs):
 	_user, mp, is_sysmgr = _resolve_caller()
 	lead = resolve_lead(mp, is_sysmgr, frappe.form_dict)
 
-	types = activity_brain.list_types_for_lead(lead)
 	out = []
-	for t in types:
-		schema = activity_brain.get_schema(t["name"])
-		out.append({
-			"name": t["name"],
-			"is_logged_complete": int(t.get("is_logged_complete") or 0),
-			"fields": [
-				{
-					"fieldname": f["fieldname"],
-					"label": f["label"],
-					"type": f["fieldtype"],
-					"options": f.get("options") or None,
-					"reqd": int(f.get("reqd") or 0),
-				}
-				for f in schema
-			],
-		})
+	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
+		for t in activity_brain.list_types_for_lead(lead):
+			schema = activity_brain.get_schema(t["name"])
+			out.append({
+				"name": t["name"],
+				"is_logged_complete": int(t.get("is_logged_complete") or 0),
+				"fields": [
+					field_descriptor(f["fieldname"], f["label"], f["fieldtype"], f.get("reqd"), f.get("options"))
+					for f in schema
+				],
+			})
 	_ok(action="fetched", data={"lead": lead, "task_types": out})
 
 

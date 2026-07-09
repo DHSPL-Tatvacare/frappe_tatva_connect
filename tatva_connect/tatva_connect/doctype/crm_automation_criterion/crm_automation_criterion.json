@@ -37,7 +37,6 @@
     "description": "Old value required for the transition to match (paired with Value as the new value). Only valid when the rule's event is Updated.",
     "fieldname": "from_value",
     "fieldtype": "Data",
-    "in_list_view": 1,
     "label": "From Value"
    },
    {

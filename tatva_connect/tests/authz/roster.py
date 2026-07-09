@@ -43,9 +43,16 @@ _role_personas = [
 	# grain still comes from the CRM Lead API Mapping (set in generator).
 	{"persona": "partner", "email": _email("partner"), "password": PASSWORD,
 	 "roles": ["Partner API User"], "grain_key": None},
-	# no-role authenticated user: the catastrophe baseline (must be denied almost everything)
+	# no-role authenticated user: the strict catastrophe floor (truly zero roles). If THIS reaches
+	# something, it is a definite bug.
 	{"persona": "no_role", "email": _email("norole"), "password": PASSWORD,
 	 "roles": [], "grain_key": None},
+	# default_user: what a REAL freshly-signed-up user actually holds — the platform-default roles Wiki
+	# and LMS auto-strap on create. This is the FAITHFUL VAPT "No App Access" actor. A finding reachable
+	# by no_role is a pure IDOR (code fix); reachable only by default_user means the auto-strapped role is
+	# too broad (a platform decision). Both are role-fidelity-enforced by the generator.
+	{"persona": "default_user", "email": _email("defaultuser"), "password": PASSWORD,
+	 "roles": ["LMS Student", "Wiki User"], "grain_key": None},
 	# cross-app junk role: the existing VAPT suite used "Purchase Master Manager" because it
 	# reproduced "reads all Contacts". Keep a cross-app principal so that regression class (A11/A3)
 	# stays covered. The Tier-1 sweep additionally enumerates ALL roles, not just this one.

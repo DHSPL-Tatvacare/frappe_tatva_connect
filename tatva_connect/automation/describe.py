@@ -76,7 +76,7 @@ def fields_for_doctype(doctype):
 	`activity.api.compute_activity` either promotes onto one of the 9 shared columns or folds into
 	the `custom_activity_payload` JSON blob - it is NEVER a CRM Task doctype field itself. So the
 	vocabulary here is unioned with every distinct activity-schema fieldname (meta wins on a name
-	clash) - the SAME union `crm_automation_field._require_real_field` accepts for a can_watch/
+	clash) - the SAME union `crm_automation_field._require_real_field` accepts for a can_read/
 	can_set row and `router._activity_values` resolves at fire time (one brain, no drift)."""
 	if not doctype:
 		return []
@@ -107,7 +107,7 @@ def activity_schema_fields():
 
 
 def activity_schema_fieldnames():
-	"""Just the names - what `crm_automation_field._require_real_field` checks a CRM Task can_watch/
+	"""Just the names - what `crm_automation_field._require_real_field` checks a CRM Task can_read/
 	can_set row's fieldname against when the doctype meta itself doesn't carry it."""
 	return set(activity_schema_fields())
 
@@ -180,7 +180,7 @@ def _settable_fields(vertical, group, program):
 # was retired here — it was a parallel brain to builder_schema below, with zero live callers (the
 # Rule form and validate() have read builder_schema exclusively since Task 14). Its only caller was
 # test_describe_watch_fields.py, deleted alongside it (behaviour re-proven by test_builder_contract's
-# TestBuilderSchemaFields, which already covers can_watch-allowlist gating + live-meta typing).
+# TestBuilderSchemaFields, which already covers read-allowlist gating + live-meta typing).
 
 # -- v2 builder contract (Task 14 / plan Part G) ------------------------------
 #
@@ -256,13 +256,14 @@ def _typed_catalog(doctype):
 	return catalog
 
 
-def _watched_fields(doctype):
-	"""`fields` for the builder contract: the typed catalog INTERSECTED with the enabled can_watch
-	allowlist (fields.watchable_fields) - the builder can only offer a field the engine is actually
-	allowed to read (Part H: the allowlist is both the security fence and the builder vocabulary)."""
+def _criterion_fields(doctype):
+	"""`fields` for the builder contract: the typed catalog INTERSECTED with the enabled READ allowlist
+	(fields.readable_fields) - the builder can only offer a field the engine is actually allowed to test
+	(Part H: the allowlist is both the security fence and the builder vocabulary). Reading is not
+	watching: a field a rule may TEST need not be one whose change may FIRE the rule."""
 	if not doctype:
 		return []
-	allowed = set(fields.watchable_fields(doctype))
+	allowed = set(fields.readable_fields(doctype))
 	return [d for d in _typed_catalog(doctype) if d["key"] in allowed]
 
 
@@ -358,7 +359,7 @@ def builder_schema(on_doctype=None, event=None, vertical=None, group=None, progr
 	if not frappe.has_permission("CRM Automation Rule", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	return {
-		"fields": _watched_fields(on_doctype),
+		"fields": _criterion_fields(on_doctype),
 		"operators_by_type": operators_by_type(),
 		"verbs": builder_verbs(),
 		"set_targets": _settable_fields(vertical, group, program),

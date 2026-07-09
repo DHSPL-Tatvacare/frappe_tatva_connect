@@ -11,6 +11,8 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.automation.actions import _ACTION_LANES
+
 _DT = "CRM Automation Rule"
 
 
@@ -52,17 +54,14 @@ class TestCriterionOperatorVocabulary(FrappeTestCase):
 
 
 class TestActionVerbVocabulary(FrappeTestCase):
-	def test_action_type_options_match_frozen_set(self):
-		meta = frappe.get_meta("CRM Automation Action")
-		action_type = meta.get_field("action_type")
+	def test_action_type_options_match_the_verb_registry(self):
+		"""DRIFT GATE: the Select's options ARE `actions._ACTION_LANES` (the ONE verb registry), in its
+		order. A hardcoded literal here is what let `Append Child Row` / `Upsert Child Row` sit
+		registered, handled and validator-accepted while being unpickable in the UI - the registry is
+		the oracle, never a second list."""
+		action_type = frappe.get_meta("CRM Automation Action").get_field("action_type")
 		options = [o for o in (action_type.options or "").split("\n") if o]
-		self.assertEqual(
-			options,
-			[
-				"Require Fields", "Require Location", "Update Field", "Create Task",
-				"Create Note", "Send WhatsApp", "Send Email", "Call Webhook", "Wait",
-			],
-		)
+		self.assertEqual(options, list(_ACTION_LANES))
 
 	def test_new_verb_fields_exist(self):
 		meta = frappe.get_meta("CRM Automation Action")
@@ -79,6 +78,24 @@ class TestActionVerbVocabulary(FrappeTestCase):
 			self.assertIsNotNone(df, f"CRM Automation Action has no {fieldname!r} field")
 			self.assertEqual(df.fieldtype, fieldtype, f"{fieldname} should be {fieldtype}")
 		self.assertEqual(meta.get_field("whatsapp_template").options, "WhatsApp Templates")
+
+
+class TestGridColumnShape(FrappeTestCase):
+	"""An action row is POLYMORPHIC - its params depend on its verb - and a Frappe grid has ONE column
+	set for every row (`in_list_view` is a property of the field, not of the row). So the Actions grid
+	lists the VERB alone; every param is edited in the row form, where `depends_on` narrows per row.
+	The criterion grid lists the uniform Field/Operator/Value triple; `from_value` (meaningful for one
+	operator of fifteen) moves to the row form for the same reason. Locked here so a per-verb column
+	can never creep back and render blank cells against nine of the eleven verbs."""
+
+	def _listed(self, doctype):
+		return [df.fieldname for df in frappe.get_meta(doctype).fields if df.in_list_view]
+
+	def test_action_grid_lists_only_the_verb(self):
+		self.assertEqual(self._listed("CRM Automation Action"), ["action_type"])
+
+	def test_criterion_grid_lists_the_uniform_triple(self):
+		self.assertEqual(self._listed("CRM Automation Criterion"), ["field", "operator", "value"])
 
 
 if __name__ == "__main__":

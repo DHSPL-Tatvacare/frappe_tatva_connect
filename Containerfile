@@ -62,6 +62,9 @@ USER root
 COPY docker/entrypoint.sh docker/start.sh /usr/local/bin/
 RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/start.sh
 
+# TATVA: bake our nginx template (adds /docs route + WATI/Acefone webhooks) over frappe_docker's default.
+COPY nginx/frappe.conf.template /templates/nginx/frappe.conf.template
+
 USER frappe
 
 COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench

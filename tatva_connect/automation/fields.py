@@ -1,25 +1,43 @@
 """The ONE query brain over `CRM Automation Field` — the merged field allowlist (read + write).
 
 Every read of the allowlist goes through here so there is exactly one place that knows the table's
-shape. Two capabilities live on one row via two flags:
-  • can_watch — a change to this field may fire a Field-Changed rule (grain-independent).
+shape. Three capabilities live on one row via three flags:
+  • can_read  — a rule criterion may test this field (grain-independent).
+  • can_watch — a change to this field may fire a rule (grain-independent). Implies can_read: the
+    engine already lifts a watched field's before/after pair into the criterion context.
   • can_set   — this field may be written by a Set Field / child-row action (grain-scoped).
 
-Grain is a SET scope only (a can_watch row is validated to have blank grain). So the watch reads ignore
-grain; the set reads honour it via `rules.grain_matches` — the same predicate rule-selection uses (one
-grain brain). This module replaces the two copies of `_allowlisted` that lived in the dispatcher and the
-rule controller.
+Read and watch are distinct permissions: watching drives DISPATCH (only a changed watched field wakes
+the router), reading only widens the criterion vocabulary. A per-task-type activity field is readable
+but never watchable — it is not a column, so no save can diff it.
+
+Grain is a SET scope only (a read/watch row is validated to have blank grain). So the read and watch
+queries ignore grain; the set reads honour it via `rules.grain_matches` — the same predicate
+rule-selection uses (one grain brain). This module replaces the two copies of `_allowlisted` that lived
+in the dispatcher and the rule controller.
 """
 import frappe
 
 DOCTYPE = "CRM Automation Field"
 
 
-# -- watch side (grain-independent) ------------------------------------------
+# -- read + watch side (grain-independent) -----------------------------------
+
+
+def readable_fields(doctype):
+	"""The enabled fieldnames a rule criterion may test — the builder's vocabulary and the validator's
+	fence. can_watch is folded in here (and nowhere else) because it implies can_read."""
+	return frappe.get_all(
+		DOCTYPE,
+		filters={"doctype_name": doctype, "enabled": 1},
+		or_filters={"can_read": 1, "can_watch": 1},
+		pluck="fieldname",
+	)
 
 
 def is_watchable(doctype, fieldname):
-	"""True if an enabled can_watch row exists for this parent field."""
+	"""True if an enabled can_watch row exists for this parent field — what a transition operator
+	(`changed to` / `changed from…to`) needs, since only a watched field carries a before-value."""
 	return bool(
 		frappe.db.exists(
 			DOCTYPE, {"doctype_name": doctype, "fieldname": fieldname, "can_watch": 1, "enabled": 1}
@@ -28,7 +46,7 @@ def is_watchable(doctype, fieldname):
 
 
 def watchable_fields(doctype):
-	"""The enabled can_watch fieldnames for a doctype (the Field-Changed dispatch cache + validator)."""
+	"""The enabled can_watch fieldnames for a doctype (the dispatch diff cache)."""
 	return frappe.get_all(
 		DOCTYPE,
 		filters={"doctype_name": doctype, "can_watch": 1, "enabled": 1},

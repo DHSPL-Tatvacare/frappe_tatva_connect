@@ -53,16 +53,16 @@ def _attach_link_titles(result, doctype=None):
 
 	titles = result.setdefault("_link_titles", {})
 
-	def add(target_dt, value):
+	def add(dt, value):
 		# Dedup, then delegate to the ONE resolver. A Dynamic Link target can be a permissioned record,
 		# so _resolve_title gates on read (a caller who sees the row but not the referenced lead must not
 		# get the lead's name); static masters (Stage/Picklist) read freely.
-		if not (target_dt and value):
+		if not (dt and value):
 			return
-		key = f"{target_dt}::{value}"
+		key = f"{dt}::{value}"
 		if key in titles:
 			return
-		title = _resolve_title(target_dt, value)
+		title = _resolve_title(dt, value)
 		if title is not None:
 			titles[key] = title
 
