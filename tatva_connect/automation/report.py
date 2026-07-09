@@ -12,8 +12,12 @@ this report cannot distinguish the two, by design (matching the log it reads).
 Workspace-P2: grain-sliced aggregation for the custom Automations/Observability widgets
 (`grain_health`, `grain_log_matrix`) + two Custom-Number-Card methods (`active_grains_card`,
 `failure_rate_card`). Same posture as `daily_summary` throughout: `has_permission` FIRST (fail-closed,
-no separate hole), native `frappe.get_all` with parameterised filters, pure-Python grouping. `grain`
-on Run Log is the dispatcher's own denormalized `vertical::group::program` tag
+no separate hole). `daily_summary`/`active_grains_card` use native `frappe.get_all` with
+parameterised filters + pure-Python grouping (already bounded by day/rule-count); `grain_health`,
+`grain_log_matrix`, and `failure_rate_card` instead `GROUP BY` in the DB via parameterised
+`frappe.db.sql` (every value bound `%()s`, only constant table identifiers interpolated — S.2), so
+their reads are bounded by grain/outcome/title cardinality, not fire count, over a wide window.
+`grain` on Run Log is the dispatcher's own denormalized `vertical::group::program` tag
 (`dispatcher._grain_tag`, stamped at fire time) — reused here, not re-derived (A.8), so these reports
 never touch CRM Lead's permlevel-1 `custom_vertical/group/program` fields at all (Phase 1's open
 item): the aggregate is already grain-safe without `ignore_permissions` anywhere in this module.
@@ -25,6 +29,13 @@ from tatva_connect.automation.dispatcher import RUN_LOG, _grain_tag
 
 OUTCOMES = ("Success", "Partial", "Failed")
 NO_GRAIN = "(no grain)"
+
+# Table identifiers for the grouped-aggregate queries below (`grain_health`, `grain_log_matrix`,
+# `failure_rate_card`) — constants only, never built from request input; every filter VALUE in
+# those queries is bound via `%()s` (S.2). `_RUN_LOG_TABLE` derives from the `RUN_LOG` doctype
+# constant so the two never drift; `_ERROR_LOG_TABLE` names the core `Error Log` doctype (fixed).
+_RUN_LOG_TABLE = f"tab{RUN_LOG}"
+_ERROR_LOG_TABLE = "tabError Log"
 
 # `grain_log_matrix`'s log SOURCES. Only `automation` (CRM Automation Run Log) carries a real
 # `grain` field — that column is a true per-grain split. `partner`/`telephony`/`error` read the core
@@ -102,29 +113,44 @@ def _window(days):
 	return f"{start_day} 00:00:00", f"{add_days(end_day, 1)} 00:00:00"
 
 
+def _normalize_grain(grain):
+	"""ONE rule for "no grain" shared by every endpoint in this module (Fix 3): `None`, blank, and
+	the fully-empty `_grain_tag` output (`"::"` — vertical/group/program all unset) all collapse to
+	the shared `NO_GRAIN` sentinel, so `active_grains_card` counts the same universe
+	`grain_health`/`grain_log_matrix` bucket into."""
+	return grain if grain and grain != "::" else NO_GRAIN
+
+
 @frappe.whitelist()
 def grain_health(days=None):
 	"""Per-grain Run Log outcome counts over the trailing `days` window (default 7) — the source
 	for the stacked health-by-grain bar. Same fire-only caveat as `daily_summary` (module
-	docstring): a grain with zero rows may mean nothing matched, not nothing happened."""
+	docstring): a grain with zero rows may mean nothing matched, not nothing happened.
+
+	Bounded by grain x outcome cardinality, not fire count: the count is a DB `GROUP BY`, so a
+	30-day window with millions of fires still returns one row per (grain, outcome) pair."""
 	frappe.has_permission(RUN_LOG, "read", throw=True)
 	start, end = _window(days)
-	rows = frappe.get_all(
-		RUN_LOG,
-		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
-		fields=["grain", "outcome"],
+	rows = frappe.db.sql(  # sqli-ok: constant _RUN_LOG_TABLE identifier; start/end bound via %()s
+		f"""SELECT grain, outcome, COUNT(*) AS cnt
+			FROM `{_RUN_LOG_TABLE}`
+			WHERE fire_time >= %(start)s AND fire_time < %(end)s
+			GROUP BY grain, outcome""",
+		{"start": start, "end": end},
+		as_dict=True,
 	)
 	return _grain_totals(rows)
 
 
 def _grain_totals(rows):
-	"""Pure grouping over already-fetched rows, mirroring `_summarize` (kept parameter-safe,
-	unit-testable in isolation)."""
+	"""Pure grouping over already-aggregated (grain, outcome, cnt) rows from the `GROUP BY` above —
+	kept as a separate step so the returned shape stays parameter-safe and unit-testable in
+	isolation, mirroring `_summarize`."""
 	by_grain = {}
 	for row in rows:
-		grain = row["grain"] or NO_GRAIN
+		grain = _normalize_grain(row["grain"])
 		bucket = by_grain.setdefault(grain, {"grain": grain, "success": 0, "partial": 0, "failed": 0})
-		bucket[row["outcome"].lower()] += 1
+		bucket[row["outcome"].lower()] += row["cnt"]
 	for bucket in by_grain.values():
 		bucket["total"] = bucket["success"] + bucket["partial"] + bucket["failed"]
 	return sorted(by_grain.values(), key=lambda b: b["total"], reverse=True)
@@ -152,20 +178,27 @@ def grain_log_matrix(days=None):
 	throw for a Sales Manager who can read Run Log but not Error Log, this degrades: the
 	`partner`/`telephony`/`error` columns read 0 and `error_log_readable: False` tells the caller
 	why, so the widget can render a note instead of a hard error (partial data over a denial, the
-	same posture the KPI/report surface already takes elsewhere)."""
+	same posture the KPI/report surface already takes elsewhere).
+
+	Bounded by grain cardinality (Run Log side) and DISTINCT error title cardinality (Error Log
+	side), not fire/error count — both reads are DB `GROUP BY`s. `_classify_error_title` still runs
+	in Python (A.8, unchanged), just once per distinct title rather than once per row."""
 	frappe.has_permission(RUN_LOG, "read", throw=True)
 	start, end = _window(days)
 
-	run_rows = frappe.get_all(
-		RUN_LOG,
-		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
-		fields=["grain"],
+	run_rows = frappe.db.sql(  # sqli-ok: constant _RUN_LOG_TABLE identifier; start/end bound via %()s
+		f"""SELECT grain, COUNT(*) AS cnt
+			FROM `{_RUN_LOG_TABLE}`
+			WHERE fire_time >= %(start)s AND fire_time < %(end)s
+			GROUP BY grain""",
+		{"start": start, "end": end},
+		as_dict=True,
 	)
 	matrix = {}
 	for row in run_rows:
-		grain = row["grain"] or NO_GRAIN
+		grain = _normalize_grain(row["grain"])
 		bucket = matrix.setdefault(grain, dict.fromkeys(LOG_SOURCES, 0))
-		bucket["automation"] += 1
+		bucket["automation"] += row["cnt"]
 
 	error_log_readable = bool(frappe.has_permission("Error Log", "read"))
 	if error_log_readable:
@@ -173,14 +206,17 @@ def grain_log_matrix(days=None):
 		# on the line above (never unconditionally) — a caller without native Error Log read gets
 		# error_log_readable=False and no rows are fetched, so this is a permission-respecting read
 		# gated by an explicit check, not a bypass.
-		err_rows = frappe.get_all(
-			"Error Log",
-			filters=[["creation", ">=", start], ["creation", "<", end]],
-			fields=["method"],
+		err_rows = frappe.db.sql(  # sqli-ok: constant _ERROR_LOG_TABLE identifier; start/end bound via %()s
+			f"""SELECT method, COUNT(*) AS cnt
+				FROM `{_ERROR_LOG_TABLE}`
+				WHERE creation >= %(start)s AND creation < %(end)s
+				GROUP BY method""",
+			{"start": start, "end": end},
+			as_dict=True,
 		)
 		no_grain = matrix.setdefault(NO_GRAIN, dict.fromkeys(LOG_SOURCES, 0))
 		for row in err_rows:
-			no_grain[_classify_error_title(row["method"])] += 1
+			no_grain[_classify_error_title(row["method"])] += row["cnt"]
 
 	return {
 		"sources": list(LOG_SOURCES),
@@ -200,7 +236,7 @@ def active_grains_card(filters=None):
 		filters=[["enabled", "=", 1]],
 		fields=["vertical", "group", "program"],
 	)
-	grains = {_grain_tag(r["vertical"], r["group"], r["program"]) for r in rows}
+	grains = {_normalize_grain(_grain_tag(r["vertical"], r["group"], r["program"])) for r in rows}
 	return {"value": len(grains), "fieldtype": "Int"}
 
 
@@ -208,15 +244,21 @@ def active_grains_card(filters=None):
 def failure_rate_card(filters=None, days=None):
 	"""Custom Number Card: Failed / total Run Log fires over the trailing `days` window (default
 	7) — labelled "Failure Rate % (7d)" on the workspace. Same fire-only caveat as `daily_summary`:
-	a zero-fire window reads as 0%, not "no automation activity"."""
+	a zero-fire window reads as 0%, not "no automation activity".
+
+	Bounded by outcome cardinality (3 rows max — Success/Partial/Failed), not fire count: the
+	count is a DB `GROUP BY`."""
 	frappe.has_permission(RUN_LOG, "read", throw=True)
 	start, end = _window(days)
-	rows = frappe.get_all(
-		RUN_LOG,
-		filters=[["fire_time", ">=", start], ["fire_time", "<", end]],
-		fields=["outcome"],
+	rows = frappe.db.sql(  # sqli-ok: constant _RUN_LOG_TABLE identifier; start/end bound via %()s
+		f"""SELECT outcome, COUNT(*) AS cnt
+			FROM `{_RUN_LOG_TABLE}`
+			WHERE fire_time >= %(start)s AND fire_time < %(end)s
+			GROUP BY outcome""",
+		{"start": start, "end": end},
+		as_dict=True,
 	)
-	total = len(rows)
-	failed = sum(1 for r in rows if r["outcome"] == "Failed")
+	total = sum(r["cnt"] for r in rows)
+	failed = sum(r["cnt"] for r in rows if r["outcome"] == "Failed")
 	pct = round(failed / total * 100, 2) if total else 0
 	return {"value": pct, "fieldtype": "Percent"}
