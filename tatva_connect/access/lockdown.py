@@ -36,18 +36,18 @@ _CRM_CORE = {
 		"Sales Manager": (1, 1, 1, 1),  # managers may delete (clean up duplicates/junk)
 		"Sales User": (1, 1, 1, 0),  # reps cannot delete
 	},
-	# Comment (VAPT P1 IDOR). Stock grants write to System Manager + Website Manager only (no `All`);
-	# comment CREATION goes through frappe_add_comment (ignore_permissions), but the CRM SPA EDITS via
+	# Comment (VAPT P1 IDOR). Stock grants write to System Manager + Website Manager only (no `All`).
+	# CREATION goes through frappe_add_comment (ignore_permissions); the CRM SPA EDITS via
 	# frappe.client.set_value and DELETES via frappe.client.delete (CommentArea.vue) — both run through
-	# the engine. Without an owner scope, one rep could rewrite another's comment (the P1). So the
-	# operational roles get write+delete `if_owner=1` (edit/delete OWN only); create stays 0.
+	# the engine. Without an owner scope one user could rewrite ANOTHER's comment (the P1). The universal
+	# rule is "you may edit/delete only your OWN comment": a single `All` row, if_owner=1, write+delete
+	# only. read/create stay 0 (reads go through get_activities' ignore_permissions path; creation through
+	# frappe_add_comment). This closes the cross-user IDOR for EVERY commenting surface at once — CRM
+	# leads, HD tickets, any future one — with nothing to maintain (policy §5 rule 2, same shape as ToDo).
 	"Comment": {
 		"System Manager": (1, 1, 1, 1),
 		"Website Manager": (1, 1, 1, 1),  # preserve the stock grant (Custom DocPerm overrides stock)
-		"Sales User": (1, 1, 0, 1, 1),
-		"Sales Manager": (1, 1, 0, 1, 1),
-		"Agent": (1, 1, 0, 1, 1),
-		"Agent Manager": (1, 1, 0, 1, 1),
+		"All": (0, 1, 0, 1, 1),  # anyone may edit/delete ONLY their own comment (if_owner)
 	},
 }
 
@@ -160,9 +160,11 @@ def effective_all_guest_grants(doctype):
 	rows = frappe.get_all(
 		src,
 		filters={"parent": doctype, "role": ["in", ["All", "Guest"]]},
-		fields=["role", "write", "create", "delete"],
+		fields=["role", "write", "create", "delete", "if_owner"],
 	)
-	return [(doctype, r.role) for r in rows if r.write or r.create or r.delete]
+	# An if_owner=1 grant is own-records-only — the sanctioned pattern (policy §5 rule 2, e.g. ToDo,
+	# Comment). Only a NON-if_owner All/Guest write/create/delete opens every row -> that is the drift.
+	return [(doctype, r.role) for r in rows if (r.write or r.create or r.delete) and not r.if_owner]
 
 
 def assert_locked(*_args, **_kwargs):

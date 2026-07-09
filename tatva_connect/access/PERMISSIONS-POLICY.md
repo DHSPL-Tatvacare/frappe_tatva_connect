@@ -149,7 +149,7 @@ stock apps you install.)
 | Doctype(s) | App | Why | Lock to | Status |
 |---|---|---|---|---|
 | `Contact` | frappe | stock grants `All` | System Manager, Sales Manager, Sales User (reps no delete) | **locked** ✅ |
-| `Comment` | frappe | stock write reachable via `frappe.client.set_value` → cross-user IDOR (VAPT P1) | System Manager + Website Manager; operational roles write/delete `if_owner=1` (edit OWN only) | **locked** ✅ |
+| `Comment` | frappe | stock write reachable via `frappe.client.set_value` → cross-user IDOR (VAPT P1) | System Manager + Website Manager (full); `All` write/delete `if_owner=1` — anyone edits only their OWN comment | **locked** ✅ |
 | `HD Ticket` | helpdesk | `All` read/create on *all* tickets — no customer portal here (agent-only internal) | System Manager, Agent, Agent Manager | **locked** ✅ |
 | `HD Article`, `HD Article Category`, `HD Article Feedback`, `HD View` | helpdesk | `All`/`Guest` read/write on KB + views | System Manager, Agent, Agent Manager | **locked** ✅ |
 | `WhatsApp Message/Templates/Account/Settings` | frappe_whatsapp | capability doctypes | WhatsApp User/Admin (read) + System Manager | **locked** ✅ |
