@@ -22,8 +22,22 @@ isn't blind (S.6 posture - never trust a report that only shows the happy path):
   (d) failure_rate_card - Failed/total percentage on known inputs; a Failed row OUTSIDE the window
       must not move the ratio.
 Plus the has_permission fail-closed gate (S.1) for all four whitelisted endpoints.
+
+Harden pass (review gaps, see .superpowers/sdd/harden-brief.md) adds three more legs, same
+baseline-delta / real-Frappe posture:
+  (f) grain_log_matrix's error_log_readable=False DEGRADE path - a Sales Manager can read Run Log
+      but NOT Error Log (core doctype, System Manager only on this bench); the matrix must not
+      throw, must still carry the real `automation` column, and must report
+      error_log_readable=False with partner/telephony/error reading 0 (no Error Log row fetched
+      at all while degraded, not merely hidden).
+  (g) the Dashboard Chart Source `get()` - a thin delegate to `grain_health` (A.8): its
+      {labels, datasets} shape must literally match `grain_health`'s own counts over the identical
+      window, and a Guest/no-perm caller must raise (S.1), same gate as the four report endpoints.
+  (h) failure_rate_card's zero-division guard - an empty window (`_window` patched to a real,
+      far-past date range with no Run Log rows) must return 0%, not raise ZeroDivisionError.
 """
 import unittest
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -31,6 +45,9 @@ from frappe.utils import add_days, now_datetime
 
 from tatva_connect.automation import report
 from tatva_connect.automation.dispatcher import RUN_LOG, _grain_tag
+from tatva_connect.tatva_connect.dashboard_chart_source.automation_health_by_grain import (
+	automation_health_by_grain as chart_source,
+)
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 
 _RULE_DT = "CRM Automation Rule"
@@ -45,6 +62,7 @@ _RULE_NAME_PREFIX = "grtest-"  # every rule this suite creates is named "grtest-
 # test_report.py's "report-" prefix, so the two suites' cleanups never collide)
 _LOG_MARKER = "grtest-subject"  # every Run Log row this suite creates carries this trigger_docname
 _ERROR_MARKER = "grtest-error-subject"  # every Error Log row this suite creates carries this reference_name
+_DEGRADE_USER = "grtest-degrade@example.test"  # scratch Sales Manager - Run Log read, NOT Error Log
 
 
 def _make_rule(name, grain, enabled=1):
@@ -100,12 +118,33 @@ def _bucket(rows, key, value):
 	return next((r for r in rows if r[key] == value), {})
 
 
+def _degrade_user():
+	"""Idempotent scratch user, Sales Manager role ONLY - real DocPerm on this bench grants Sales
+	Manager read on CRM Automation Run Log but NOT on Error Log (core doctype, System Manager only,
+	no Custom DocPerm override) - the exact "can read Run Log, can't read Error Log" persona
+	`grain_log_matrix`'s degrade branch exists for. Mirrors the scratch-user pattern in
+	`test_task_scope.py::_user`."""
+	if not frappe.db.exists("User", _DEGRADE_USER):
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": _DEGRADE_USER,
+				"first_name": "grtest-degrade",
+				"send_welcome_email": 0,
+				"roles": [{"role": "Sales Manager"}],
+			}
+		).insert(ignore_permissions=True)
+	return _DEGRADE_USER
+
+
 def _cleanup():
-	"""Delete exactly this suite's own rows - Run Log rows, Error Log rows, then the rules - by the
-	three narrow markers above. Never touches any other row."""
+	"""Delete exactly this suite's own rows - Run Log rows, Error Log rows, the rules, and the
+	scratch degrade user - by the narrow markers above. Never touches any other row."""
 	frappe.db.delete(RUN_LOG, {"trigger_docname": _LOG_MARKER})
 	frappe.db.delete("Error Log", {"reference_doctype": RUN_LOG, "reference_name": _ERROR_MARKER})
 	frappe.db.delete(_RULE_DT, {"rule_name": ["like", f"{_RULE_NAME_PREFIX}%"]})
+	if frappe.db.exists("User", _DEGRADE_USER):
+		frappe.delete_doc("User", _DEGRADE_USER, force=True, ignore_permissions=True)
 
 
 class TestGrainReports(FrappeTestCase):
@@ -196,6 +235,31 @@ class TestGrainReports(FrappeTestCase):
 		self.assertEqual(bucket_no_grain["error"] - base_no_grain.get("error", 0), 1)
 		self.assertEqual(bucket_no_grain["automation"] - base_no_grain.get("automation", 0), 0)
 
+	# (f) grain_log_matrix DEGRADE: a Sales Manager can read Run Log but not Error Log. Must NOT
+	# throw; the real `automation` column still counts; error_log_readable reads False and
+	# partner/telephony/error read 0 - proving no Error Log row was fetched at all while degraded
+	# (a real Error Log row planted alongside must not leak in under any column).
+	def test_grain_log_matrix_error_log_readable_false_degrades(self):
+		rule = _make_rule("grtest-degrade-a", _GRAIN_A)
+		_log_row(rule.name, "Success", _TAG_A)
+		_error_row("telephony: grtest degrade noise")  # must NOT be counted while degraded
+
+		try:
+			frappe.set_user(_degrade_user())
+			out = report.grain_log_matrix(days=1)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertFalse(out["error_log_readable"])
+		rows = {r["grain"]: r for r in out["rows"]}
+		bucket_a = rows[_TAG_A]
+		self.assertGreaterEqual(bucket_a["automation"], 1)  # the real column, not zeroed by the degrade
+		# planted-bad: with Error Log unreadable, no source column reads anything for grain A either -
+		# the degrade withholds ALL Error Log-derived counts, not just the ones on other grains.
+		self.assertEqual(bucket_a["partner"], 0)
+		self.assertEqual(bucket_a["telephony"], 0)
+		self.assertEqual(bucket_a["error"], 0)
+
 	# (c) active_grains_card: distinct grain count across ENABLED rules only. Each assertion is a
 	# delta against the immediately-prior call (not a fresh baseline), so the test is correct
 	# regardless of what other suites' rules already exist on the shared DB.
@@ -250,6 +314,48 @@ class TestGrainReports(FrappeTestCase):
 		out = report.failure_rate_card(days=1)
 		self.assertEqual(out["value"], expected_pct)
 		self.assertEqual(out["fieldtype"], "Percent")
+
+	# (h) failure_rate_card zero-division guard: `_window` patched to a real, far-past date range
+	# (no Run Log row can exist there) so the query itself runs for real and comes back empty - the
+	# `if total else 0` guard must return 0%, not raise ZeroDivisionError.
+	def test_failure_rate_card_empty_window_is_zero_not_zerodiv(self):
+		with patch.object(report, "_window", return_value=("1999-01-01 00:00:00", "1999-01-02 00:00:00")):
+			out = report.failure_rate_card(days=1)
+		self.assertEqual(out["value"], 0)
+		self.assertEqual(out["fieldtype"], "Percent")
+
+	# (g) Dashboard Chart Source get(): a thin delegate to grain_health (A.8, module docstring) -
+	# its {labels, datasets} shape must literally match grain_health's own counts over the identical
+	# window, and a Guest/no-perm caller must raise (S.1), same gate as the four report endpoints.
+	def test_dashboard_chart_source_get_matches_grain_health(self):
+		rule = _make_rule("grtest-chart-a", _GRAIN_A)
+		_log_row(rule.name, "Success", _TAG_A)
+		_log_row(rule.name, "Failed", _TAG_A)
+
+		expected = report.grain_health(days=1)
+		# `_get` is `cache_source`-wrapped, and that framework wrapper's own `no_cache=1` branch drops
+		# every kwarg except `chart`/`no_cache` (frappe/utils/dashboard.py) - so it can't carry
+		# `filters` through. `_get.__wrapped__` (functools.wraps) is the same underlying app function
+		# with the framework cache layer skipped - exercises this module's real aggregation/shape code
+		# with a real, asserted window.
+		out = chart_source._get.__wrapped__(filters={"days": 1})
+
+		self.assertEqual(set(out.keys()), {"labels", "datasets", "type"})
+		self.assertEqual(out["labels"], [b["grain"] for b in expected])
+		datasets = {d["name"]: d["values"] for d in out["datasets"]}
+		self.assertEqual(datasets["Success"], [b["success"] for b in expected])
+		self.assertEqual(datasets["Partial"], [b["partial"] for b in expected])
+		self.assertEqual(datasets["Failed"], [b["failed"] for b in expected])
+
+		# The public, whitelisted `get()` gates on permission BEFORE it ever reaches `_get`/caching
+		# (module docstring) - a Guest/no-perm caller must raise here, same fail-closed posture as
+		# the four report endpoints (S.1).
+		try:
+			frappe.set_user("Guest")
+			with self.assertRaises(frappe.PermissionError):
+				chart_source.get(filters={"days": 1})
+		finally:
+			frappe.set_user("Administrator")
 
 	# (e) fail-closed: a user without the required read is refused, not silently emptied, on ALL
 	# four endpoints - same posture as test_report.py's daily_summary gate (S.1).
