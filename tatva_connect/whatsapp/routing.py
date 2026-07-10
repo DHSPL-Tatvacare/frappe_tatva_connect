@@ -53,6 +53,16 @@ def resolve_account_for_lead(lead):
 	)
 
 
+def resolve_account_for_grain(vertical, group, program):
+	"""Author-time sibling of resolve_account_for_lead: resolve the account a GRAIN routes to, for
+	validating a rule before any lead exists. Reuses the one engine (A.8) via a synthetic grain-dict -
+	the engine reads only custom_vertical/custom_group/custom_current_program off its argument. Returns
+	None when the (possibly partial) grain does not pin a single active account."""
+	return resolve_account_for_lead(
+		frappe._dict(custom_vertical=vertical, custom_group=group, custom_current_program=program)
+	)
+
+
 def leads_for_number_and_account(lead_names, account):
 	"""Inbound attribution: of the candidate leads sharing a phone, return those whose
 	routing resolves to `account`. The inverse of resolve_account_for_lead — it scopes an

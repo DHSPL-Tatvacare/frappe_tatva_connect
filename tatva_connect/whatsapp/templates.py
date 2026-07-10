@@ -12,6 +12,9 @@ So for WATI we neutralise every Meta-bound path:
 The local `WhatsApp Templates` rows are a READ-ONLY mirror of WATI's
 getMessageTemplates (populated by tatva_connect.whatsapp.templates_sync, Phase 3),
 so the CRM picker has something to list. Registered via override_doctype_class.
+
+Also carries `template_picker_query`, the account-and-grain-aware link-query behind the Send
+WhatsApp action's `whatsapp_template` picker.
 """
 import frappe
 from frappe import _
@@ -50,3 +53,31 @@ class WATITemplates(WhatsAppTemplates):
 		# message_templates endpoint. Our rows are a read-only mirror of WATI —
 		# deleting one locally must never call out. No-op.
 		pass
+
+
+@frappe.whitelist()
+def template_picker_query(doctype, txt, searchfield, start, page_length, filters, **kwargs):
+	"""Link-query for the Send WhatsApp template picker: one line per template, described by its
+	account and the grains routing to that account. Native link-query contract (frappe.desk.search
+	build_for_autosuggest): row[0] = value, row[1:] = description. Read-gated (S.1), no raw SQL (S.2)."""
+	frappe.has_permission("WhatsApp Templates", "read", throw=True)  # authz-ok: native perm gate on the picker read
+	tmpls = frappe.get_all(
+		"WhatsApp Templates",
+		filters={"actual_name": ["like", f"%{txt}%"]} if txt else {},
+		fields=["name", "actual_name", "whatsapp_account", "status"],
+		limit_start=int(start or 0), limit_page_length=int(page_length or 20), order_by="actual_name asc",
+	)
+	accounts = {t.whatsapp_account for t in tmpls if t.whatsapp_account}
+	grains = {}
+	if accounts:
+		for r in frappe.get_all(
+			"CRM WhatsApp Routing", filters={"whatsapp_account": ["in", list(accounts)]},
+			fields=["whatsapp_account", "vertical", "psp_group", "program"],
+		):
+			grains.setdefault(r.whatsapp_account, []).append(
+				"::".join(x for x in (r.vertical, r.psp_group, r.program) if x)
+			)
+	return [
+		[t.name, t.whatsapp_account or "(no account)", ", ".join(grains.get(t.whatsapp_account, [])) or "(no grain routed)"]
+		for t in tmpls
+	]

@@ -22,6 +22,17 @@ def sends_enabled() -> bool:
 	return automation.is_enabled(SENDS_SWITCH)
 
 
+def template_account_mismatch(template_name, account_name) -> str | None:
+	"""Shared predicate (A.8): does the picked WhatsApp Template belong to the account it is about to
+	send through? Returns None when they match, or a ready error message naming both accounts when
+	they do not. Shared by the send-time guard below (send_whatsapp) and the author-time validator
+	(crm_automation_rule._validate_send_whatsapp) - the comparison lives in exactly one place."""
+	template_account = frappe.db.get_value("WhatsApp Templates", template_name, "whatsapp_account")
+	if template_account == account_name:
+		return None
+	return f"template {template_name} belongs to account {template_account}, but the resolved account is {account_name}"
+
+
 def send_whatsapp(subject_lead, template_name, context=None) -> str:
 	"""Send (or, while dormant, record) a WATI template message to `subject_lead`'s `mobile_no`.
 
@@ -48,6 +59,9 @@ def send_whatsapp(subject_lead, template_name, context=None) -> str:
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
 	template = frappe.get_doc("WhatsApp Templates", template_name)
+	mismatch = template_account_mismatch(template_name, account_name)
+	if mismatch:
+		raise ValueError(f"Send WhatsApp: lead {subject_lead} - {mismatch}")
 	names = adapter.template_param_names(template)
 	ctx = context or {}
 	parameters = [{"name": n, "value": "" if ctx.get(n) is None else str(ctx[n])} for n in names]

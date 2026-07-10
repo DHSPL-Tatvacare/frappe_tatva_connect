@@ -22,6 +22,7 @@ class CRMAutomationRule(Document):
 		self._validate_create_note_actions()
 		self._validate_child_actions()
 		self._validate_webhook_actions()
+		self._validate_send_whatsapp()
 		self._validate_wait_actions()
 		self._plan_in_flight_migration()
 
@@ -368,6 +369,39 @@ class CRMAutomationRule(Document):
 				frappe.throw(_("A Call Webhook action needs an endpoint."), title=_("Incomplete action"))
 			if not frappe.db.exists("Webhook", a.webhook_endpoint):
 				frappe.throw(_("Webhook endpoint {0} does not exist.").format(frappe.bold(a.webhook_endpoint)), title=_("Unknown endpoint"))
+
+	def _validate_send_whatsapp(self):
+		"""Send WhatsApp: author-time sibling of the send-time guard (sends.template_account_mismatch) -
+		catches an obviously wrong pick before save, for the rules whose grain is specific enough to pin
+		a single WATI account. Resolves the rule's OWN grain (not a lead's) via
+		routing.resolve_account_for_grain, the same engine resolve_account_for_lead uses (A.8). A
+		partial grain that cannot pin a single account is not an authoring error - it just cannot be
+		checked here, so it warns and lets the save through; the send-time guard still covers it per
+		real lead."""
+		from tatva_connect.automation import sends
+		from tatva_connect.whatsapp import routing
+
+		for a in self.actions:
+			if a.action_type != "Send WhatsApp" or not a.whatsapp_template:
+				continue
+			account_name = routing.resolve_account_for_grain(self.vertical, self.group, self.program)
+			if account_name is None:
+				frappe.msgprint(
+					_(
+						"This rule's grain does not pin a single WhatsApp account, so the template pick in "
+						"row {0} cannot be verified now. The send-time guard still blocks a genuine "
+						"mismatch for each lead."
+					).format(a.idx),
+					title=_("Cannot verify WhatsApp template account"),
+					indicator="orange",
+				)
+				continue
+			mismatch = sends.template_account_mismatch(a.whatsapp_template, account_name)
+			if mismatch:
+				frappe.throw(
+					_("Send WhatsApp action (row {0}): {1}").format(a.idx, mismatch),
+					title=_("Template does not match routed account"),
+				)
 
 	def on_change(self):
 		"""TATVA v2 (Task 4): the wildcard router's `live_doctypes()` guard set is derived from every
