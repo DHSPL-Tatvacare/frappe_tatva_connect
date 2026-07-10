@@ -19,7 +19,7 @@ const config: ZudokuConfig = {
   },
   basePath: "/docs",
   metadata: {
-    favicon: "/tatva_logo.jpeg",
+    favicon: "/tatva-new-icon.png",
     title: "%s",
     defaultTitle: "TatvaCare Partner API",
   },
