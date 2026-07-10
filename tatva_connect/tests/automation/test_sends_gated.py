@@ -176,28 +176,34 @@ class TestSendsGateOnCallsRealBrain(FrappeTestCase):
 		wati_api.is_enabled = lambda: True  # the separate WATI master kill-switch (A.11), also dormant by default
 		return orig_sends, orig_is_enabled
 
-	def test_send_whatsapp_calls_adapter_once_with_grain_routed_account(self):
+	def test_send_whatsapp_returns_deferred_thunk_that_enqueues_the_grain_routed_account(self):
+		"""R1 (post-audit remediation): Send WhatsApp rides the transaction now - it returns a deferred
+		thunk instead of calling the adapter inline. Spy `frappe.enqueue` (never the adapter directly
+		here; test_send_whatsapp_routing_guard.py's `_deliver_whatsapp` test covers the adapter call)
+		and invoke the thunk, same contract as Call Webhook."""
 		orig_sends, orig_is_enabled = self._flip_on()
-		calls = []
-		orig_send = wati_api.send_template_message
+		enqueue_calls = []
+		orig_enqueue = frappe.enqueue
 
-		def _fake_send(account, **kwargs):
-			calls.append((account, kwargs))
-			return {"result": True, "local_message_id": "wamid-sends-gate-test"}
+		def _spy_enqueue(method, **kwargs):
+			enqueue_calls.append((method, kwargs))
 
-		wati_api.send_template_message = _fake_send
+		frappe.enqueue = _spy_enqueue
 		try:
 			a = _action_row(action_type="Send WhatsApp", whatsapp_template=self.template)
 			result = actions._action_send_whatsapp(a, self.lead.name, {}, _AXES, self.lead)
+			self.assertTrue(callable(result), "a match must return a deferred thunk, not send inline")
+			self.assertEqual(enqueue_calls, [], "nothing may enqueue until the thunk is actually invoked")
+			result()
 		finally:
-			wati_api.send_template_message = orig_send
+			frappe.enqueue = orig_enqueue
 			sends.sends_enabled = orig_sends
 			wati_api.is_enabled = orig_is_enabled
-		self.assertEqual(len(calls), 1, "the adapter must be called exactly once when the gate is on")
-		account, kwargs = calls[0]
-		self.assertEqual(account.name, self.account, "the grain-routed account was not the one WhatsApp Routing points to")
+		self.assertEqual(len(enqueue_calls), 1, "the send must enqueue exactly once when the gate is on")
+		method, kwargs = enqueue_calls[0]
+		self.assertEqual(method, "tatva_connect.automation.sends._deliver_whatsapp")
+		self.assertEqual(kwargs["account_name"], self.account, "the grain-routed account was not the one WhatsApp Routing points to")
 		self.assertEqual(kwargs["to_number"], wati_api.normalize_number("+919876500001"))
-		self.assertTrue(result.startswith("sent:"), f"expected a 'sent: ...' marker, got {result!r}")
 
 	def test_send_email_calls_sendmail_once(self):
 		orig_sends, orig_is_enabled = self._flip_on()
@@ -217,7 +223,7 @@ class TestSendsGateOnCallsRealBrain(FrappeTestCase):
 		self.assertEqual(len(calls), 1, "frappe.sendmail must be called exactly once when the gate is on")
 		self.assertEqual(calls[0]["recipients"], ["patient@example.invalid"])
 		self.assertEqual(calls[0]["subject"], "Welcome")
-		self.assertTrue(result.startswith("sent:"), f"expected a 'sent: ...' marker, got {result!r}")
+		self.assertTrue(result.startswith("queued:"), f"expected a 'queued: ...' marker, got {result!r}")
 
 
 class TestSendsGatePlantedBad(FrappeTestCase):

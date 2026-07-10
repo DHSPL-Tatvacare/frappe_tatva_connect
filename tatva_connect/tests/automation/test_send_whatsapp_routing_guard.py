@@ -1,12 +1,13 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The send-time routing guard (plan section 2.3 / 3.3): `sends.send_whatsapp` must refuse to send a
-template through an account that did not approve it. Two grains route to two different WATI accounts;
-a template lives on one account only. The match case (lead's grain routes to the template's own
-account) sends; the mismatch case (lead's grain routes to the OTHER account) raises before any adapter
-call. Real Frappe engine as the oracle (S.6) - real routing rows, a real rule fired through the real
-dispatcher for the through-the-dispatcher case; only the WATI adapter's outbound call is spied (never a
-real WATI HTTP call, per the plan's mandate).
+"""The send-time routing guard (plan section 2.3 / 3.3), rewritten to the DEFERRED send model (R1,
+post-audit remediation, plan section 8b): `sends.send_whatsapp` validates and resolves SYNCHRONOUSLY
+(so a mismatch or bad config still fails the segment before anything is queued) and, on a match,
+RETURNS a thunk instead of sending inline. No test performs a real WATI send or a real background job
+run: `frappe.enqueue` is always spied at the call site (proving the deferred contract itself), and the
+actual delivery function `sends._deliver_whatsapp` is tested directly with a spied adapter. Real Frappe
+engine as the oracle (S.6) - real routing rows, a real rule fired through the real dispatcher for the
+through-the-dispatcher cases.
 """
 import unittest
 
@@ -15,13 +16,17 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import dispatcher, sends, versions
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.tests.automation import field_allowlist
 from tatva_connect.whatsapp import api as wati_api
 
 _RUN_LOG = "CRM Automation Run Log"
 _DT = "CRM Automation Rule"
+_FIELD = field_allowlist.DOCTYPE
 _GRAIN_A = GRAINS[0]
 _GRAIN_B = GRAINS[1]
+_AXES_A = (_GRAIN_A["vertical"], _GRAIN_A["group"], _GRAIN_A["program"])
 _PREFIX = "RoutingGuard-"
+_DELIVER_METHOD = "tatva_connect.automation.sends._deliver_whatsapp"
 
 
 def _make_lead(grain, **extra):
@@ -106,6 +111,18 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 		wati_api.is_enabled = lambda: True
 		return orig_sends, orig_is_enabled
 
+	def _spy_enqueue(self):
+		"""Spy `frappe.enqueue` itself - the deferred contract is what these tests prove, so nothing
+		here ever runs a real background job or a real WATI HTTP call."""
+		calls = []
+		orig = frappe.enqueue
+
+		def spy(method, **kwargs):
+			calls.append((method, kwargs))
+
+		frappe.enqueue = spy
+		return calls, orig
+
 	def _spy_adapter(self):
 		calls = []
 		orig_send = wati_api.send_template_message
@@ -117,41 +134,45 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 		wati_api.send_template_message = _fake_send
 		return calls, orig_send
 
-	def test_match_sends_once_through_the_templates_own_account(self):
+	def test_match_returns_deferred_thunk_that_enqueues_once_when_called(self):
 		orig_sends, orig_is_enabled = self._flip_on()
-		calls, orig_send = self._spy_adapter()
+		enqueue_calls, orig_enqueue = self._spy_enqueue()
 		try:
 			result = sends.send_whatsapp(self.lead_on_a.name, self.template_on_a, {})
+			self.assertTrue(callable(result), "a match must return a deferred thunk, not send inline")
+			self.assertEqual(enqueue_calls, [], "nothing may enqueue until the thunk is actually invoked")
+			result()
 		finally:
-			wati_api.send_template_message = orig_send
 			sends.sends_enabled = orig_sends
 			wati_api.is_enabled = orig_is_enabled
-		self.assertTrue(result.startswith("sent:"), f"expected a 'sent: ...' marker, got {result!r}")
-		self.assertEqual(len(calls), 1, "the adapter must be called exactly once on a match")
-		account, kwargs = calls[0]
-		self.assertEqual(account.name, self.account_a)
+			frappe.enqueue = orig_enqueue
+		self.assertEqual(len(enqueue_calls), 1, "the thunk must enqueue exactly once when invoked")
+		method, kwargs = enqueue_calls[0]
+		self.assertEqual(method, _DELIVER_METHOD)
+		self.assertTrue(kwargs.get("enqueue_after_commit"), "the delivery job must be enqueued after_commit")
+		self.assertEqual(kwargs["account_name"], self.account_a)
 		self.assertEqual(kwargs["template_name"], "RoutingGuard-template")
 
-	def test_mismatch_raises_and_never_calls_the_adapter(self):
+	def test_mismatch_raises_and_never_enqueues(self):
 		"""Lead routes to account B; the template belongs to account A - fail-closed."""
 		orig_sends, orig_is_enabled = self._flip_on()
-		calls, orig_send = self._spy_adapter()
+		enqueue_calls, orig_enqueue = self._spy_enqueue()
 		try:
 			with self.assertRaises(ValueError):
 				sends.send_whatsapp(self.lead_on_b.name, self.template_on_a, {})
 		finally:
-			wati_api.send_template_message = orig_send
 			sends.sends_enabled = orig_sends
 			wati_api.is_enabled = orig_is_enabled
-		self.assertEqual(calls, [], "mismatch must never reach the adapter (fail-closed)")
+			frappe.enqueue = orig_enqueue
+		self.assertEqual(enqueue_calls, [], "mismatch must never reach frappe.enqueue (fail-closed)")
 
-	def test_through_the_dispatcher_mismatch_writes_failed_run_log_and_error_log(self):
+	def test_through_the_dispatcher_mismatch_writes_failed_run_log_and_never_enqueues(self):
 		"""Simulates 'routing changed after the rule was authored' (plan section 1, row 3): the rule is
 		authored with only the Product Line set - too partial to pin a single account, so
 		`_validate_send_whatsapp` allows the save (msgprint, not throw) - and the lead that actually
 		fires it carries the full grain that routes to account B, mismatching the picked template."""
 		orig_sends, orig_is_enabled = self._flip_on()
-		calls, orig_send = self._spy_adapter()
+		enqueue_calls, orig_enqueue = self._spy_enqueue()
 		rule = frappe.get_doc({
 			"doctype": _DT, "rule_name": f"{_PREFIX}mismatch-rule", "enabled": 1,
 			"on_doctype": "CRM Lead", "event": "Updated", "vertical": _GRAIN_B["vertical"],
@@ -163,7 +184,7 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 				self.lead_on_b.name, versions.current_name(rule.name), self.lead_on_b, axes, "grain", {}, {},
 			)
 			self.assertTrue(outcome.failed, "a mismatched Send WhatsApp action must fail the segment")
-			self.assertEqual(calls, [], "the dispatcher must not reach the adapter on a mismatch")
+			self.assertEqual(enqueue_calls, [], "the dispatcher must never reach frappe.enqueue on a mismatch")
 			logs = frappe.get_all(
 				_RUN_LOG, filters={"rule": rule.name}, fields=["outcome", "error"],
 			)
@@ -176,10 +197,87 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 			)
 			self.assertTrue(errors, "no Error Log row titled 'automation: rule fire failed' was written")
 		finally:
-			wati_api.send_template_message = orig_send
 			sends.sends_enabled = orig_sends
 			wati_api.is_enabled = orig_is_enabled
+			frappe.enqueue = orig_enqueue
 			_cleanup(_PREFIX)
+
+	def test_a_later_sibling_action_failing_clears_the_deferred_send(self):
+		"""Finding-1 regression (plan section 8b, R1): a rule [Send WhatsApp (valid, matching), Update
+		Field (fails at RUNTIME)] must roll back the WHOLE segment, including the already-queued Send
+		WhatsApp thunk - `dispatcher.run_effects` clears `deferred` on any exception (dispatcher.py
+		~line 148) before it ever runs the deferred list, so nothing enqueues despite the send having
+		validated cleanly. Same known-bad shape as test_effect_verbs's Call Webhook rollback test:
+		author the 2nd action's field WHILE allowlisted (so the rule passes validate at save time), then
+		disable the allowlist row before firing - the runtime recheck (defense in depth) fails it."""
+		bad_field = "custom_patient_age"
+		allow_row = field_allowlist.seed_settable(
+			"CRM Lead", bad_field, _GRAIN_A["vertical"], _GRAIN_A["group"], _GRAIN_A["program"]
+		)
+		rule = frappe.get_doc({
+			"doctype": _DT, "rule_name": f"{_PREFIX}sibling-fails-rule", "enabled": 1,
+			"on_doctype": "CRM Lead", "event": "Updated",
+			"vertical": _GRAIN_A["vertical"], "group": _GRAIN_A["group"], "program": _GRAIN_A["program"],
+			"actions": [
+				{"action_type": "Send WhatsApp", "whatsapp_template": self.template_on_a},
+				{"action_type": "Update Field", "target_doctype": "CRM Lead", "fieldname": bad_field,
+				 "value_mode": "Literal", "value": "40"},
+			],
+		}).insert(ignore_permissions=True)
+		frappe.db.set_value(_FIELD, allow_row, "enabled", 0)  # stale: authoring permitted it, runtime must not
+		orig_sends, orig_is_enabled = self._flip_on()
+		enqueue_calls, orig_enqueue = self._spy_enqueue()
+		# Also spy the adapter directly - an inline-send mutation (the pre-R1 bug) never reaches
+		# frappe.enqueue at all, so enqueue_calls alone would read empty either way. Only a direct
+		# adapter spy actually distinguishes "deferred, then cleared on rollback" from "sent inline
+		# before the sibling even had a chance to fail" - see the mutation-proof note in the plan.
+		adapter_calls, orig_send = self._spy_adapter()
+		try:
+			outcome = dispatcher.run_effects(
+				self.lead_on_a.name, versions.current_name(rule.name), self.lead_on_a, _AXES_A, "grain", {}, {},
+			)
+			self.assertTrue(outcome.failed, "the sibling's runtime failure must fail the whole segment")
+			self.assertEqual(
+				enqueue_calls, [],
+				"the Send WhatsApp thunk enqueued despite the segment rolling back - a patient would be "
+				"messaged while the Run Log records Failed",
+			)
+			self.assertEqual(
+				adapter_calls, [],
+				"the WATI adapter was called despite the segment rolling back - the send fired inline "
+				"instead of being deferred past the commit",
+			)
+			logs = frappe.get_all(_RUN_LOG, filters={"rule": rule.name}, fields=["outcome"])
+			self.assertTrue(logs, "no Run Log row written for the failed fire")
+			self.assertEqual(logs[0].outcome, "Failed")
+		finally:
+			sends.sends_enabled = orig_sends
+			wati_api.is_enabled = orig_is_enabled
+			frappe.enqueue = orig_enqueue
+			wati_api.send_template_message = orig_send
+			frappe.db.delete(_FIELD, {"name": allow_row})
+			_cleanup(_PREFIX)
+
+	def test_deliver_whatsapp_calls_the_adapter_with_the_resolved_args(self):
+		"""`_deliver_whatsapp` is the job body `enqueue_after_commit` runs - call it directly (as the
+		job runner would) and prove it calls the adapter with exactly what was queued."""
+		calls, orig_send = self._spy_adapter()
+		try:
+			sends._deliver_whatsapp(
+				account_name=self.account_a,
+				to_number="919876500002",
+				template_name="RoutingGuard-template",
+				parameters=[{"name": "1", "value": "RoutingGuard"}],
+				lead=self.lead_on_a.name,
+			)
+		finally:
+			wati_api.send_template_message = orig_send
+		self.assertEqual(len(calls), 1, "the adapter must be called exactly once")
+		account, kwargs = calls[0]
+		self.assertEqual(account.name, self.account_a)
+		self.assertEqual(kwargs["to_number"], "919876500002")
+		self.assertEqual(kwargs["template_name"], "RoutingGuard-template")
+		self.assertEqual(kwargs["parameters"], [{"name": "1", "value": "RoutingGuard"}])
 
 
 if __name__ == "__main__":

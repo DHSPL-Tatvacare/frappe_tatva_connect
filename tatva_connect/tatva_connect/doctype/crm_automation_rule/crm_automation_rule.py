@@ -373,29 +373,48 @@ class CRMAutomationRule(Document):
 	def _validate_send_whatsapp(self):
 		"""Send WhatsApp: author-time sibling of the send-time guard (sends.template_account_mismatch) -
 		catches an obviously wrong pick before save, for the rules whose grain is specific enough to pin
-		a single WATI account. Resolves the rule's OWN grain (not a lead's) via
-		routing.resolve_account_for_grain, the same engine resolve_account_for_lead uses (A.8). A
-		partial grain that cannot pin a single account is not an authoring error - it just cannot be
-		checked here, so it warns and lets the save through; the send-time guard still covers it per
-		real lead."""
+		a single WATI account. A Send WhatsApp action with no template is an incomplete action, same as
+		every sibling verb - it throws (R2), never saves silently unconfigured.
+
+		The rule's OWN grain (not a lead's) is resolved ONCE, before the action loop - it depends only
+		on this rule's grain, not on any one action - via routing.resolve_account_for_grain, the same
+		engine resolve_account_for_lead uses (A.8). Two cases cannot be checked here and degrade to the
+		same warn-and-allow path: a partial grain that cannot pin a single account, and an ambiguous tie
+		the routing engine itself refuses to resolve (R3) - both let the save through with an orange
+		warning; the send-time guard still covers a genuine mismatch per real lead. Only a resolved,
+		unambiguous account that differs from a picked template's own account blocks the save."""
 		from tatva_connect.automation import sends
 		from tatva_connect.whatsapp import routing
 
-		for a in self.actions:
-			if a.action_type != "Send WhatsApp" or not a.whatsapp_template:
-				continue
-			account_name = routing.resolve_account_for_grain(self.vertical, self.group, self.program)
-			if account_name is None:
-				frappe.msgprint(
-					_(
-						"This rule's grain does not pin a single WhatsApp account, so the template pick in "
-						"row {0} cannot be verified now. The send-time guard still blocks a genuine "
-						"mismatch for each lead."
-					).format(a.idx),
-					title=_("Cannot verify WhatsApp template account"),
-					indicator="orange",
+		send_whatsapp_actions = [a for a in self.actions if a.action_type == "Send WhatsApp"]
+		if not send_whatsapp_actions:
+			return
+
+		for a in send_whatsapp_actions:
+			if not a.whatsapp_template:
+				frappe.throw(
+					_("A Send WhatsApp action (row {0}) needs a WhatsApp Template.").format(a.idx),
+					title=_("Incomplete action"),
 				)
-				continue
+
+		try:
+			account_name = routing.resolve_account_for_grain(self.vertical, self.group, self.program)
+		except frappe.ValidationError:
+			account_name = None  # an ambiguous tie the routing engine can't resolve - same as unpinnable
+
+		if account_name is None:
+			frappe.msgprint(
+				_(
+					"This rule's grain does not pin a single WhatsApp account, so its Send WhatsApp "
+					"template pick(s) cannot be verified now. The send-time guard still blocks a genuine "
+					"mismatch for each lead."
+				),
+				title=_("Cannot verify WhatsApp template account"),
+				indicator="orange",
+			)
+			return
+
+		for a in send_whatsapp_actions:
 			mismatch = sends.template_account_mismatch(a.whatsapp_template, account_name)
 			if mismatch:
 				frappe.throw(

@@ -122,6 +122,103 @@ class TestSendWhatsappAuthorValidate(FrappeTestCase):
 			f"expected a 'cannot verify' warning in the message log, got: {warnings}",
 		)
 
+	def test_blank_template_raises_incomplete_action(self):
+		"""R2 (post-audit remediation): a Send WhatsApp action with no template must throw at save,
+		same as every sibling verb's incomplete-config check - a blank pick must never save cleanly and
+		rely on the send-time guard alone to ever notice."""
+		rule = frappe.get_doc({
+			"doctype": _DT, "rule_name": f"{_PREFIX}blank-template", "enabled": 1,
+			"on_doctype": "CRM Lead", "event": "Updated",
+			"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+			"actions": [{"action_type": "Send WhatsApp", "whatsapp_template": None}],
+		})
+		with self.assertRaises(frappe.ValidationError) as cm:
+			rule.insert(ignore_permissions=True)
+		self.assertIn("row 1", str(cm.exception))
+
+	def test_multiple_send_whatsapp_actions_names_the_mismatched_row(self):
+		"""Two Send WhatsApp actions in one rule: row 1 picks the matching account, row 2 does not -
+		the throw must name row 2, proving the validator checks every Send WhatsApp action instead of
+		stopping after the first."""
+		rule = frappe.get_doc({
+			"doctype": _DT, "rule_name": f"{_PREFIX}multi-mismatch", "enabled": 1,
+			"on_doctype": "CRM Lead", "event": "Updated",
+			"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+			"actions": [
+				{"action_type": "Send WhatsApp", "whatsapp_template": self.template_on_a},
+				{"action_type": "Send WhatsApp", "whatsapp_template": self.template_on_b},
+			],
+		})
+		with self.assertRaises(frappe.ValidationError) as cm:
+			rule.insert(ignore_permissions=True)
+		self.assertIn("row 2", str(cm.exception))
+
+	def test_ambiguous_tie_degrades_to_warning_not_throw(self):
+		"""R3 (post-audit remediation): an ambiguous-tie routing config must warn-and-allow, same as an
+		unpinnable partial grain, instead of hard-blocking the save.
+
+		The composite `::` primary key on CRM WhatsApp Routing (autoname
+		`format:{vertical}::{psp_group}::{program}`, A.7) makes a genuine tie structurally unreachable
+		through real routing rows for this table: two rows that could tie in specificity for the same
+		grain would need the identical (vertical, group, program) triple - the identical primary key,
+		which the DB already refuses to duplicate. This proves the degrade path by forcing the shared
+		routing engine's own tie exception (`tatva_connect.routing.resolve_account_for_lead` raises
+		`frappe.ValidationError` on a genuine tie) at the exact seam `_validate_send_whatsapp` calls
+		through, rather than fabricating DB rows that cannot exist."""
+		from tatva_connect.whatsapp import routing
+
+		def _raise_ambiguous(vertical, group, program):
+			frappe.throw("Ambiguous routing: two equally-specific rules point at different accounts for this lead.")
+
+		orig = routing.resolve_account_for_grain
+		routing.resolve_account_for_grain = _raise_ambiguous
+		frappe.clear_messages()
+		try:
+			rule = frappe.get_doc({
+				"doctype": _DT, "rule_name": f"{_PREFIX}ambiguous-tie", "enabled": 1,
+				"on_doctype": "CRM Lead", "event": "Updated",
+				"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+				"actions": [{"action_type": "Send WhatsApp", "whatsapp_template": self.template_on_a}],
+			}).insert(ignore_permissions=True)
+		finally:
+			routing.resolve_account_for_grain = orig
+		self.assertTrue(rule.name)
+		warnings = [m.get("message", "") for m in frappe.get_message_log()]
+		self.assertTrue(
+			any("cannot be verified" in w.lower() for w in warnings),
+			f"expected an ambiguous tie to degrade to a 'cannot verify' warning, got: {warnings}",
+		)
+
+	def test_inactive_account_route_degrades_to_cannot_verify_warning(self):
+		"""A routing row pointing at an Inactive account must never read as a resolved match:
+		`routing._active_account_names()` excludes non-Active accounts (the per-account kill switch), so
+		a deactivated tenant's grain no longer pins ANY account and the validator degrades to the same
+		'cannot verify' warning as an unpinnable grain - fail-closed, never a false match on a stale
+		row, never a hard block while the operator is mid-decommission on a tenant."""
+		stale_grain = GRAINS[2]
+		account_c = _make_wati_account("AuthorValidate-account-c")
+		routing_c = _make_routing(stale_grain, account_c)
+		template_on_c = _make_template("AuthorValidate-template-c", account_c)
+		frappe.db.set_value("WhatsApp Account", account_c, "status", "Inactive")
+		frappe.clear_messages()
+		try:
+			rule = frappe.get_doc({
+				"doctype": _DT, "rule_name": f"{_PREFIX}inactive-account", "enabled": 1,
+				"on_doctype": "CRM Lead", "event": "Updated",
+				"vertical": stale_grain["vertical"], "group": stale_grain["group"], "program": stale_grain["program"],
+				"actions": [{"action_type": "Send WhatsApp", "whatsapp_template": template_on_c}],
+			}).insert(ignore_permissions=True)
+			self.assertTrue(rule.name)
+			warnings = [m.get("message", "") for m in frappe.get_message_log()]
+			self.assertTrue(
+				any("cannot be verified" in w.lower() for w in warnings),
+				f"expected a 'cannot verify' warning for an inactive-account route, got: {warnings}",
+			)
+		finally:
+			frappe.delete_doc("CRM WhatsApp Routing", routing_c, force=True, ignore_permissions=True)
+			frappe.delete_doc("WhatsApp Templates", template_on_c, force=True, ignore_permissions=True)
+			frappe.delete_doc("WhatsApp Account", account_c, force=True, ignore_permissions=True)
+
 
 if __name__ == "__main__":
 	unittest.main()

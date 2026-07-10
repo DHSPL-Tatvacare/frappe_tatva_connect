@@ -78,6 +78,9 @@ frappe.ui.form.on("CRM Automation Action", {
 			})
 			.then(() => {
 				frappe.show_alert({ message: __("Templates synced"), indicator: "green" });
+			})
+			.catch(() => {
+				frappe.show_alert({ message: __("Template sync failed, see the error above"), indicator: "red" });
 			});
 	},
 });
