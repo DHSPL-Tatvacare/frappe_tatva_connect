@@ -38,7 +38,7 @@ from tatva_connect.api._base import (
 	_run_bulk,
 	resolve_lead,
 )
-from tatva_connect.storage import file_manager
+from tatva_connect.storage import file_manager, file_screening
 
 # All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
 # Settings Single via _cfg() — one source of truth, no module-local copy.
@@ -137,6 +137,14 @@ def _attach_one(data, mp, is_sysmgr):
 		return _file_view(existing), "exists"
 
 	content = _load_bytes(data)
+	# Screen the bytes BEFORE the File is saved (shared brain; dormant unless the operator has
+	# activated the "Partner API" channel in CRM File Screening Settings). A block throws a
+	# ValidationError, which @_api returns as a structured _fail — no File is created.
+	file_screening.screen(
+		file_name=filename, raw=content, channel="Partner API", source=frappe.session.user,
+		attached_to_doctype=target_doctype, attached_to_name=target_name,
+		source_ip=getattr(frappe.local, "request_ip", None),
+	)
 	# ALWAYS private (Invariant #15) — file_manager.save defaults private=True; the File
 	# doc_events enforce the private floor regardless. custom_file_type / custom_lsq_attachment_id
 	# go via meta so the dedup key + category land on the row in one insert.

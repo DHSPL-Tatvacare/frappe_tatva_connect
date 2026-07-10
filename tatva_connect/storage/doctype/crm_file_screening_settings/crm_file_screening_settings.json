@@ -1,0 +1,40 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-10 00:00:00.000000",
+ "description": "Config for the shared file screener. Screening runs ONLY for the channels listed in Active Channels, and ONLY while the Storage::File::screening toggle is on. Blank scanner fields fall back to code defaults.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "scanner_section",
+  "clamav_host",
+  "clamav_port",
+  "scanner_unavailable",
+  "channels_section",
+  "active_channels"
+ ],
+ "fields": [
+  {"fieldname": "scanner_section", "fieldtype": "Section Break", "label": "Virus Scanner (ClamAV)"},
+  {"fieldname": "clamav_host", "fieldtype": "Data", "label": "ClamAV Host", "description": "clamd host. Blank = clamav (the compose service)."},
+  {"fieldname": "clamav_port", "fieldtype": "Int", "label": "ClamAV Port", "description": "clamd TCP port. Blank = 3310."},
+  {"fieldname": "scanner_unavailable", "fieldtype": "Select", "label": "If Scanner Unavailable", "options": "block\nallow", "description": "When clamd is unreachable: block (fail-closed, reject the upload) or allow (accept with magic-byte sniff only). Blank = block."},
+  {"fieldname": "channels_section", "fieldtype": "Section Break", "label": "Active Channels"},
+  {"fieldname": "active_channels", "fieldtype": "Table", "label": "Active Channels", "options": "CRM Screened Channel", "description": "Screening runs ONLY for the channels listed here. Add a row to activate a channel (Intake, Partner API); remove it to deactivate. Empty = dormant even with the toggle on."}
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Storage",
+ "name": "CRM File Screening Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "print": 1, "read": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

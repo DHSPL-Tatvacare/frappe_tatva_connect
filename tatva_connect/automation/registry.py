@@ -449,16 +449,20 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Intake::File::screening",
+		key="Storage::File::screening",
 		fires_on="Doc Event",
-		trigger_detail="File · before_insert · enrolment attachments",
+		trigger_detail="File · before_insert (intake) + partner file API",
 		purpose=(
-			"Screens prescription uploads beyond Frappe's native size/extension/unsafe-PDF checks: "
-			"a magic-byte sniff (the bytes must match the claimed type) plus a ClamAV virus scan. "
-			"OFF = native checks only (today's behaviour). Needs the ClamAV container for the scan.\n"
-			"Example: once on, a .exe renamed to .pdf is rejected, and an infected upload is blocked."
+			"Master switch for the shared file screener: a magic-byte sniff (bytes must match the "
+			"claimed type) plus a ClamAV virus scan, beyond Frappe's native size/extension/unsafe-PDF "
+			"checks. Screening runs only for the channels the operator lists in CRM File Screening "
+			"Settings -> Active Channels (Intake, Partner API), so a new channel is a config edit. "
+			"OFF = native checks only. Needs the ClamAV container for the scan.\n"
+			"Example: once on with 'Partner API' active, a .exe renamed to .pdf sent to file_attach is "
+			"rejected, and an infected upload is blocked."
 		),
 		backs=["tatva_connect.intake.guards.guard_file"],
+		activator="tatva_connect.storage.file_screening.apply_scan_logging",
 	),
 	Auto(
 		key="Partner::Catalog::cache",

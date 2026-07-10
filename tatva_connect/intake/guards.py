@@ -8,9 +8,11 @@ allowlist (`allowed_file_extensions`), unsafe-PDF (`File.check_content`) and pri
 (`storage.file_events.apply_privacy_policy`); and on every web-form submit a per-IP rate
 limit (`@rate_limit` on `accept`, 10/min). We add only the gaps:
 
-  * guard_file      — magic-byte sniff (bytes must match the claimed extension) + a ClamAV
-                      virus scan. One File `before_insert` hook scoped to the submission,
-                      gated by `Intake::File::screening`.
+  * guard_file      — the intake activation of the shared file screener
+                      (`storage.file_screening.screen`): one File `before_insert` hook scoped to
+                      the submission, gated by `Storage::File::screening`. All scan/log logic
+                      lives in the shared brain; this is a thin adapter that supplies intake
+                      context (web form, phone).
   * throttle_intake — stricter per-IP + per-phone rate limits on the enrolment submit
                       (before_request), gated by `Intake::RateLimit::enforcement`.
 
@@ -18,7 +20,7 @@ limit (`@rate_limit` on `accept`, 10/min). We add only the gaps:
 business-built form would require client DOM injection — disallowed. Bot defence is the
 native per-IP limit + the stricter limits here.)
 
-Config (caps/host) lives in the `CRM Intake Settings` Single; blanks fall back to DEFAULTS.
+Config (rate caps) lives in the `CRM Intake Settings` Single; blanks fall back to DEFAULTS.
 """
 import re
 
@@ -40,20 +42,8 @@ def _intake_sinks():
 
 # Blank Single fields fall back here (Invariant A.4 — no baked form values).
 DEFAULTS = {
-	"clamav_host": "clamav",
-	"clamav_port": 3310,
-	"scanner_unavailable": "block",
 	"ip_per_hour": 20,
 	"phone_per_day": 3,
-}
-
-# extension -> accepted leading bytes. Native already allowlists the extension; this only
-# asserts the CONTENT matches it, so a renamed .html/.svg/.exe can't pose as a .pdf.
-_MAGIC = {
-	"pdf": [b"%PDF"],
-	"png": [b"\x89PNG\r\n\x1a\n"],
-	"jpg": [b"\xff\xd8\xff"],
-	"jpeg": [b"\xff\xd8\xff"],
 }
 
 
@@ -78,52 +68,32 @@ def _is_enrolment_webform():
 	return bool(dt) and dt in _intake_sinks()
 
 
-# -- File screening (File before_insert) -------------------------------------
+# -- File screening (File before_insert, intake activation) ------------------
 
 def guard_file(doc, method=None):
-	"""Scoped to enrolment-submission attachments. Magic-byte sniff + ClamAV scan. Size,
-	extension, unsafe-PDF and privacy are native (see module docstring) and untouched.
-	Dormant until `Intake::File::screening` is enabled."""
+	"""Intake activation of the shared file screener (`storage.file_screening.screen`): scoped to
+	enrolment-submission attachments, it screens the uploaded bytes and logs the verdict. All
+	scan/log logic AND activation gating live in the shared brain; this is a thin adapter that only
+	supplies intake context (web form, phone). Size, extension, unsafe-PDF and privacy are native
+	(see module docstring) and untouched."""
 	if doc.attached_to_doctype not in _intake_sinks():
 		return
-	if not automation.is_enabled("Intake::File::screening"):
-		return
+	if doc.is_folder or getattr(doc, "content", None) is None:
+		return  # folders / links (no in-memory bytes) — nothing to screen
 
-	raw = doc.get_content()  # in-memory content, available at before_insert (verified in core File)
-	if isinstance(raw, str):
-		raw = raw.encode("utf-8", "ignore")
+	from tatva_connect.storage import file_screening
 
-	_sniff(doc.file_name, raw)
-	_scan(raw)
-
-
-def _sniff(file_name, raw):
-	ext = (file_name.rsplit(".", 1)[-1] if "." in (file_name or "") else "").lower()
-	sigs = _MAGIC.get(ext)
-	if sigs and not any(raw.startswith(s) for s in sigs):
-		frappe.throw(_("This file's contents don't match its type."), title=_("Invalid file"))
-
-
-def _scan(raw):
-	"""Stream the bytes to ClamAV (INSTREAM). FOUND -> reject. Scanner unreachable ->
-	honour `scanner_unavailable` (block|allow); never 500 a patient."""
-	import io
-
-	try:
-		import clamd
-
-		port = int(_cfg("clamav_port") or DEFAULTS["clamav_port"])
-		cd = clamd.ClamdNetworkSocket(host=_cfg("clamav_host"), port=port, timeout=30)
-		result = cd.instream(io.BytesIO(raw))
-	except Exception:
-		frappe.log_error(title="Intake virus scan unavailable", message=frappe.get_traceback())
-		if (_cfg("scanner_unavailable") or "block") == "block":
-			frappe.throw(
-				_("File could not be security-scanned. Please try again later."), title=_("Upload failed")
-			)
-		return  # allow: operator chose to accept uploads while the scanner is down
-	if (result.get("stream") or (None,))[0] == "FOUND":
-		frappe.throw(_("This file failed a security scan and was not accepted."), title=_("Invalid file"))
+	file_screening.screen(
+		file_name=doc.file_name,
+		raw=doc.get_content(),  # in-memory content, available at before_insert (verified in core File)
+		channel="Intake",
+		source=frappe.session.user,
+		attached_to_doctype=doc.attached_to_doctype,
+		attached_to_name=doc.attached_to_name,
+		web_form=frappe.form_dict.get("web_form"),
+		phone=_submitted_phone(),
+		source_ip=getattr(frappe.local, "request_ip", None),
+	)
 
 
 # -- Rate limiting (before_request) ------------------------------------------

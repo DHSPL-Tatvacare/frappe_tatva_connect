@@ -8,22 +8,12 @@
  "field_order": [
   "ratelimit_section",
   "ip_per_hour",
-  "phone_per_day",
-  "scanner_section",
-  "clamav_host",
-  "clamav_port",
-  "column_break_scanner",
-  "scanner_unavailable"
+  "phone_per_day"
  ],
  "fields": [
   {"fieldname": "ratelimit_section", "fieldtype": "Section Break", "label": "Submission Rate Limits"},
   {"description": "Max enrolment submissions per IP per hour (on top of frappe's native 10/min). Blank = 20. Enforced when CRM Tatva Automation → Intake::RateLimit::enforcement is ON.", "fieldname": "ip_per_hour", "fieldtype": "Int", "label": "Per IP / hour"},
-  {"description": "Max submissions per phone number per day. Blank = 3.", "fieldname": "phone_per_day", "fieldtype": "Int", "label": "Per phone / day"},
-  {"fieldname": "scanner_section", "fieldtype": "Section Break", "label": "Virus Scan (ClamAV)"},
-  {"description": "clamd host. Blank = clamav (the compose service). Enable scanning via CRM Tatva Automation → Intake::File::screening.", "fieldname": "clamav_host", "fieldtype": "Data", "label": "ClamAV Host"},
-  {"description": "clamd TCP port. Blank = 3310.", "fieldname": "clamav_port", "fieldtype": "Int", "label": "ClamAV Port"},
-  {"fieldname": "column_break_scanner", "fieldtype": "Column Break"},
-  {"description": "What to do if the scanner is unreachable while screening is ON. block = reject the upload (safest); allow = accept it (magic-byte sniff still applies). Blank = block.", "fieldname": "scanner_unavailable", "fieldtype": "Select", "label": "If Scanner Unavailable", "options": "\nblock\nallow"}
+  {"description": "Max submissions per phone number per day. Blank = 3.", "fieldname": "phone_per_day", "fieldtype": "Int", "label": "Per phone / day"}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
