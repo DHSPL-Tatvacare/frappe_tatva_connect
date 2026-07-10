@@ -30,6 +30,8 @@ services:
       - >
         ls -1 apps > sites/apps.txt;
         bench set-config -g  db_host  $$DB_HOST;
+        bench set-config -g  tatva_storage_env "$$STORAGE_ENV";
+        bench set-config -g  tatva_storage_connection_string "$$STORAGE_CONN";
         bench set-config -gp db_port  $$DB_PORT;
         bench set-config -g  redis_cache    "redis://redis-cache:6379";
         bench set-config -g  redis_queue    "redis://redis-queue:6379";
@@ -39,6 +41,8 @@ services:
     environment:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT:-3306}
+      STORAGE_ENV: ${STORAGE_ENV}
+      STORAGE_CONN: ${STORAGE_CONN}
 
   backend:
     <<: *bench
