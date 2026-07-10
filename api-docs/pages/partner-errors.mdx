@@ -1,0 +1,89 @@
+---
+title: Errors
+---
+
+Every failure returns the same envelope, so there is only one to handle. A stack trace or raw framework error is never returned, even for the earliest failures such as a bad key or malformed JSON.
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "validation_error",
+    "message": "Please specify a reason for losing the lead."
+  }
+}
+```
+
+- `status` is always `"error"` on a failure.
+- `error.code` is a stable, machine-readable string. It is the value that application code branches on to decide how to handle each failure. The message text can change and must not be matched in code.
+- `error.message` is human-readable and safe to display to an operator.
+- Some errors carry extras: `error.fields` (the offending field names on a `validation_error`) and `error.retry_after` (seconds, on `rate_limited`).
+
+<Mermaid chart={`
+flowchart TD
+  A["response body"] --> B{"status"}
+  B -- success --> C["branch on action,<br/>read data"]
+  B -- error --> D["branch on error.code"]
+  D --> E["show error.message"]
+`} />
+
+## Every code
+
+| `error.code` | HTTP | Meaning | Handling |
+|---|---|---|---|
+| `validation_error` | 400 | A field failed validation. | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. |
+| `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
+| `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
+| `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
+| `not_found` | 404 | The lead does not exist, or is outside the caller's business line. | The two cases are identical by design. The unique ID should be re-checked. Only leads on the caller's own business line are visible. |
+| `duplicate` | 409 | A unique constraint was violated. | Usually a race. `lead_create` is idempotent on phone, product line, and group, so a plain re-send does not duplicate. |
+| `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
+| `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |
+| `server_error` | 500 | Unexpected, and logged server-side. | Retry with exponential backoff. If it persists, the request and response are sent to Ops. |
+
+:::caution{title="Not-found is intentionally vague"}
+
+A lead that does not exist and a lead on another business line both return the same `404 not_found`, "Lead not found". There is no ID hint and no out-of-scope signal, so what exists elsewhere cannot be probed. Code must not attempt to distinguish the two.
+
+:::
+
+## Validation errors carry the field
+
+When a write fails validation, `error.fields` names the offending field:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "validation_error",
+    "message": "report_date is required to identify a Lab row",
+    "fields": ["report_date"]
+  }
+}
+```
+
+The most common causes are:
+
+- A required field is missing. `lead_schema` lists which fields the key marks required.
+- A multi-row child row has no key. Every row in a multi-row table needs its `key_field`, for example `report_date`. See [Schema discovery](/discover-schema#child-tables).
+- An unknown option value. A Link or Select field received a value not in its `options`. Valid options are read from `lead_schema`.
+- A single-row child received two rows. Single-row tables accept one row.
+
+## Errors inside a bulk call
+
+A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry carries its own `status`, and a failed row carries the same `error` block:
+
+```json
+{
+  "status": "success",
+  "summary": { "total": 2, "succeeded": 1, "failed": 1 },
+  "results": [
+    { "index": 0, "status": "success", "action": "created", "name": "CRM-LEAD-2026-00125" },
+    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
+  ]
+}
+```
+
+The top-level `status` is checked, then `results[].status` is walked per row; a 200 does not mean every row landed. The failed row is rolled back while the rest still commit, so re-sending only the failed rows is safe.
+
+[Reading responses](/reading-values) covers pulling `error.code` and `error.fields` out by path, and [Rate limits](/rate-limits) covers handling a 429.

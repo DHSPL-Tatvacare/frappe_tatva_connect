@@ -1,0 +1,129 @@
+---
+title: Reading responses
+---
+
+Every response is JSON. A value is read by following its dotted path from the top of the body. The pattern is the same every time: check `status`, branch on `action` for a success or `error.code` for a failure, then read the value by its path.
+
+## Paths by example
+
+A field lives at a dotted path from the body. Child rows are arrays and are indexed.
+
+| Target | Path |
+|---|---|
+| Whether it succeeded | `status`, `"success"` or `"error"` |
+| What happened | `action`, one of `created`, `updated`, `deleted`, `fetched` |
+| The lead's unique ID | `data.name` |
+| A top-level field | `data.first_name`, `data.status` |
+| The latest lab's HbA1c | `data.custom_lab_profile[0].hba1c` |
+| A specific lab row's date | `data.custom_lab_profile[1].report_date` |
+| An error code | `error.code` |
+| The third item in a bulk reply | `results[2].status`, `results[2].name` |
+
+Child arrays are returned newest first, so `[0]` is the most recent row. Bulk `results[]` is input-ordered, so `results[2]` is the outcome of the third item sent.
+
+## Reading one value
+
+The latest HbA1c is read from a `lead_get` response. `$BASE_URL` is the base URL for the target environment (see [Conventions](/conventions#environment)):
+
+<CodeTabs>
+
+```bash title="curl + jq"
+curl -s -H 'Authorization: token KEY:SECRET' \
+  "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123" \
+  | jq '.data.custom_lab_profile[0].hba1c'
+```
+
+```python title="Python"
+import os
+import requests
+
+BASE_URL = os.environ["BASE_URL"]
+r = requests.get(
+    f"{BASE_URL}/api/method/tatva_connect.api.partner.lead_get",
+    headers={"Authorization": "token KEY:SECRET"},
+    params={"name": "CRM-LEAD-2026-00123"},
+)
+body = r.json()
+if body["status"] == "success":
+    labs = body["data"].get("custom_lab_profile", [])
+    hba1c = labs[0]["hba1c"] if labs else None
+    print(hba1c)
+```
+
+```javascript title="Node"
+const BASE_URL = process.env.BASE_URL;
+const res = await fetch(
+  `${BASE_URL}/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123`,
+  { headers: { Authorization: "token KEY:SECRET" } },
+);
+const body = await res.json();
+if (body.status === "success") {
+  const labs = body.data.custom_lab_profile ?? [];
+  const hba1c = labs[0]?.hba1c ?? null;
+  console.log(hba1c);
+}
+```
+
+</CodeTabs>
+
+## The full loop on a write
+
+`status` is checked, then `action` for a success or `error.code` for a failure:
+
+<CodeTabs>
+
+```python title="Python"
+r = requests.post(url, headers=headers, json={"mobile_no": "+919900000000", "first_name": "Example"})
+body = r.json()
+
+if body["status"] == "success":
+    lead_id = body["data"]["name"]          # data.name, the lead's unique ID
+    print(body["action"], lead_id)          # "created" or "updated"
+else:
+    code = body["error"]["code"]            # error.code, the value to branch on
+    if code == "rate_limited":
+        wait = body["error"]["retry_after"]
+    elif code == "validation_error":
+        bad = body["error"].get("fields", [])
+    print(code, body["error"]["message"])
+```
+
+```javascript title="Node"
+const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ mobile_no: "+919900000000", first_name: "Example" }) });
+const body = await res.json();
+
+if (body.status === "success") {
+  const leadId = body.data.name;           // data.name, the lead's unique ID
+  console.log(body.action, leadId);        // "created" or "updated"
+} else {
+  const code = body.error.code;            // error.code, the value to branch on
+  if (code === "rate_limited") {
+    const wait = body.error.retry_after;
+  } else if (code === "validation_error") {
+    const bad = body.error.fields ?? [];
+  }
+  console.log(code, body.error.message);
+}
+```
+
+</CodeTabs>
+
+## Reading a bulk reply
+
+Bulk replies place per-record outcomes in `results[]`, in the order sent. Each row's own `status` is read:
+
+```python title="Python"
+body = r.json()
+print(body["summary"])                        # {"total":2,"succeeded":1,"failed":1}
+for row in body["results"]:                    # results[i] is the i-th input
+    if row["status"] == "success":
+        print(row["index"], row["name"])       # results[i].name
+    else:
+        print(row["index"], row["error"]["code"])  # results[i].error.code
+```
+
+:::note{title="Partner responses are top-level"}
+
+These dotted paths read straight from the top of the body; there is no wrapper to unwrap. Native Frappe REST responses elsewhere nest results under `message` or `data`; the partner methods do not.
+
+:::

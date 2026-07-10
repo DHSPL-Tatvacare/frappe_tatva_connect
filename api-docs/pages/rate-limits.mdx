@@ -1,0 +1,99 @@
+---
+title: Rate limits
+---
+
+A key has two independent budgets. Both are configured per key, and either can be raised on request.
+
+| Budget | Default | Counts |
+|---|---|---|
+| Request rate | 1,200 requests per minute | every call, read or write |
+| Daily record volume | 25,000 records read and 25,000 records written per day | rows touched, not calls |
+
+There is also a shared ceiling across all keys together. In rare bursts, a key can be limited even while it is under its own budget. For planning, the per-key budgets are the ones that matter.
+
+When either budget is exceeded, the next call returns **HTTP 429** with this body:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded. Retry in 42s.",
+    "retry_after": 42
+  }
+}
+```
+
+`error.retry_after` gives the number of seconds to wait before the next retry. This value is used directly, not guessed.
+
+## Response headers
+
+Every response reports the current state of the request budget, so a client can slow down before a 429 is reached:
+
+| Header | Meaning |
+|---|---|
+| `RateLimit-Limit` | the request budget for the window |
+| `RateLimit-Remaining` | requests left in the current window |
+| `RateLimit-Reset` | seconds until the window resets |
+| `Retry-After` | on a 429 only, seconds to wait before retrying |
+
+## Bulk saves the request budget
+
+A bulk call of up to 100 records counts as one request against the rate budget. Each record still counts against the daily volume budget. So a batch of 100 leads costs one request, not 100. `lead_create_bulk`, `lead_update_bulk`, and `lead_get_bulk` are preferred for any volume.
+
+<Mermaid chart={`
+flowchart TD
+  A["send a request"] --> B{"HTTP 429?"}
+  B -- no --> C["handle the response"]
+  B -- yes --> D["read error.retry_after"]
+  D --> E["wait that many seconds"]
+  E --> A
+`} />
+
+## Retry handling
+
+On a 429, the call is retried after `error.retry_after` seconds. Every write is idempotent, so a retry is always safe.
+
+<CodeTabs>
+
+```python title="Python"
+import time
+
+def call_with_retry(do_request, max_attempts=6):
+    for attempt in range(max_attempts):
+        r = do_request()
+        if r.status_code != 429:
+            return r
+        body = r.json()
+        wait = body.get("error", {}).get("retry_after") or (2 ** attempt)
+        time.sleep(wait)
+    return r
+```
+
+```javascript title="Node"
+async function callWithRetry(doRequest, maxAttempts = 6) {
+  let res;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    res = await doRequest();
+    if (res.status !== 429) return res;
+    const body = await res.clone().json();
+    const wait = body?.error?.retry_after ?? 2 ** attempt;
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
+  return res;
+}
+```
+
+</CodeTabs>
+
+## Spending the budget wisely
+
+- **Use bulk calls.** Up to 100 records are sent in one request, which spends only one unit of the request budget.
+- **Slow down large backfills.** For a one-time migration, a few requests per second is enough. Combined with bulk, thousands of records are loaded without hitting a 429.
+- **Cache repeated reads.** When the same lead is read again and again, the stored response is reused instead of fetched each time.
+
+:::note{title="Raising a budget"}
+
+A sustained integration that needs more than the defaults contacts TatvaCare Ops. Both budgets are set per key and can be raised.
+
+:::

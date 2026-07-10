@@ -1,0 +1,56 @@
+---
+title: Authentication
+---
+
+A key is verified by calling `lead_schema` with it. The call has no side effects: it reads nothing and writes nothing, and reports what the key is permitted to see.
+
+:::note{title="Playground key"}
+
+A key pasted below is stored in this browser. In any operation's playground, selecting the **Partner API key** identity then applies it automatically.
+
+:::
+
+<ApiKeyInput />
+
+```bash
+curl -i -H 'Authorization: token <api_key>:<api_secret>' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```
+
+`$BASE_URL` is the base URL for the target environment (production, UAT, or local). See [Conventions](/conventions#environment).
+
+## Interpreting the result
+
+| Response | Meaning | Action |
+|---|---|---|
+| `200` with a `data` object listing fields | The key is valid, and `data` is the granted schema. | Proceed to the [Quickstart](/partner-quickstart). |
+| `401` `unauthorized` | The key is missing, malformed, or wrong. | Confirm the header is exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. See [Conventions](/conventions#auth). |
+| `403` `forbidden` | The header is well-formed, but the key is not permitted here. | Confirm the key issued for the Partner API is the one in use. Broader access is requested from Ops. |
+
+A `200` response has the following shape, trimmed. The `data` block is the exact set of fields and child tables the key may use:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "lead": [
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "required": false },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false }
+    ],
+    "children": { "...": "..." },
+    "routing": { "mode": "forced", "...": "..." }
+  }
+}
+```
+
+:::note{title="Each key has its own schema"}
+
+Two keys return two different schemas. The response here is what the integration must build against; a field list must not be copied from elsewhere. [Schema discovery](/discover-schema) covers this in full.
+
+:::
+
+## Next
+
+- [Quickstart](/partner-quickstart): key, header, first schema call, first lead.
+- [Schema discovery](/discover-schema): the call every integration begins with.
+- [Errors](/partner-errors): the single error shape and how it is handled.

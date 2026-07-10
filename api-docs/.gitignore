@@ -1,0 +1,16 @@
+# deps & build output — never committed
+node_modules/
+dist/
+.output/
+public/pagefind/
+
+# generated at prebuild from openapi-partner.json — never drifts, never tracked
+public/tatvacare-partner-api.openapi.json
+
+# deploy shell stays local only — no shell tooling ships in the public repo
+*.sh
+
+# retired internal pages (superseded by the wiki handbook) — kept local, not public
+_retired/
+nav.json
+**/.DS_Store

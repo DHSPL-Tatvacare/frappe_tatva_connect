@@ -1,0 +1,81 @@
+---
+title: Conventions
+---
+
+The cross-cutting rules that apply to every call.
+
+## Auth
+
+Every request carries the key in one header:
+
+```
+Authorization: token <api_key>:<api_secret>
+```
+
+The literal lowercase `token`, one space, then `api_key:api_secret` joined by a colon. A missing or malformed header returns `401 unauthorized`. A key is verified with a single read:
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```
+
+A `200` with the schema confirms access. A key is requested from TatvaCare Ops.
+
+## Phone format
+
+Phone numbers use E.164: `+<country code><digits>`, no spaces or hyphens, for example `+919999000123`. A bare 10-digit Indian number is normalised to `+91…` automatically, though sending the full E.164 form is the safe default.
+
+## Idempotency and retry safety
+
+| Call | Safe to retry |
+|---|---|
+| `lead_create` | Yes. Idempotent on phone, product line, and group. The same input converges to the same lead and never duplicates. |
+| `lead_update` | Yes. The same payload produces the same final state, and children merge by key without clobbering. |
+| `lead_delete` | Yes. A second delete of a removed lead returns `not_found`. |
+| bulk variants | Yes. Each record is addressed by key, so a replay converges. Only the failed rows from `results[]` need re-sending. |
+| reads (`lead_get`, `lead_list`, `lead_get_bulk`) | Yes, always. |
+
+Because writes are idempotent, the correct response to a network fault or a `5xx` is a retry with backoff.
+
+## Partial updates never clobber
+
+A write touches only the fields sent. Omitted top-level fields keep their values, and in child tables omitted fields and unmentioned rows are left alone. Incremental updates can be sent freely as new data arrives. See [Schema discovery](/discover-schema#child-tables).
+
+## Versioning
+
+This API is `v1`. Backward-compatible changes, such as new fields, new endpoints, new option values, or a new field granted to a key, ship without a version bump and do not break an integration. A breaking change, such as a field rename, an endpoint removal, or tighter validation, is announced by email to integration owners, with a migration window of at least four weeks.
+
+Because the contract is whatever [`lead_schema`](/discover-schema) returns, code that reads the schema at runtime adapts to additive changes automatically.
+
+## Environment
+
+The API runs on three environments. A base URL is set for the target environment and used in every request. Examples in these docs use `$BASE_URL` in place of a fixed host.
+
+| Environment | Base URL |
+|---|---|
+| Production | `https://one.tatvacare.in` |
+| UAT | `https://one-uat.tatvacare.in` |
+| Local | `http://localhost:8080` |
+
+```bash
+export BASE_URL=https://one.tatvacare.in
+```
+
+For safe testing, clearly-test data is used, for example a `mobile_no` such as `+91999900xxxx`, which Ops removes periodically. A sandbox is requested from Ops.
+
+## Browser clients and CORS
+
+The docs and the API share one origin on every environment: the docs are served at `/docs` on the same host that serves `/api`. The try-it console therefore calls the API on the same origin and needs no CORS setup.
+
+A partner web app hosted on a different origin should call the API from its own server, not the browser. This avoids CORS and keeps the key off the client. If a browser-to-API call from another origin is genuinely required, the origin is allowlisted by Ops.
+
+## Support
+
+Key requests, rate-limit increases, new-field grants, and integration issues are directed to TatvaCare Ops.
+
+A report on a failing integration includes:
+
+1. The exact request: URL, method, and body.
+2. The full response: HTTP status and body.
+3. The unique ID (`name`) of any affected lead.
+4. Timestamps, with timezone.

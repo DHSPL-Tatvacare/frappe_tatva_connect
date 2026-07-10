@@ -43,8 +43,9 @@ docs/
 /DEPLOY.md
 /FRAPPE.md
 
-# partner API docs site (Zudoku) — deployed separately via deploy-docs.sh, never on the app image
-api-docs/
+# partner API docs site (Zudoku): SOURCE is tracked (public docs for a public API). Build
+# artifacts, deps, and any deploy shell are ignored inside api-docs/.gitignore. The site is
+# built and shipped by the private frappe-tatva-deploy repo, never on the app image.
 
 # playwright mcp scratch (browser logs/snapshots)
 .playwright-mcp/

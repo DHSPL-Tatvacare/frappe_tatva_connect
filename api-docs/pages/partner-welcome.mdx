@@ -1,0 +1,35 @@
+---
+title: Overview
+---
+
+The Partner API pushes leads into TatvaCare and reads their state back. The key determines which fields may be read and written, and which business line a lead belongs to. There is no fixed payload.
+
+The fields available to a key, which of them are required, and how its child tables behave are defined by that key. They are discovered by calling [`GET lead_schema`](/discover-schema), whose response is the contract to build against. A field list must never be hardcoded.
+
+## Capabilities
+
+- Leads are created or updated by phone, idempotently, one at a time or up to 100 per call.
+- Leads are read by their unique ID (for example `CRM-LEAD-2026-00123`) or by phone, or listed a page at a time with a fixed set of filters.
+- Leads are deleted by their unique ID, singly or in bulk.
+- The schema is discovered at runtime, so the fields a key may send and read can be queried directly.
+
+Each call is a single HTTPS request carrying a token header. A live console for every endpoint is available in the [API Reference](/partner-api).
+
+## The model
+
+- A lead is one record, identified by phone plus the business line it belongs to. Re-sending updates the existing lead rather than creating a duplicate, so every write is safe to retry.
+- Each lead has a unique ID, returned as `name` (for example `CRM-LEAD-2026-00123`). This ID is used to read, update, or delete the lead later.
+- Business line details (such as Product and Group) are assigned automatically from the API key and are never sent by the caller.
+- The program is a mutable attribute, not part of identity. It is sent by the key, stamped by the key, or absent, depending on the key's mode. A lead moved to a new program stays the same lead.
+- Child tables hold additional structured, repeating data such as lab reports, plan details, and the care team. They are sent as JSON arrays within the same body.
+
+Lead identity is described in full on [Lead identity](/concepts).
+
+## Further reading
+
+- [Quickstart](/partner-quickstart) covers the path from key to first lead in four steps.
+- [Schema discovery](/discover-schema) documents the call every integration begins with.
+- [Reading responses](/reading-values) explains how a value is read from a response by its path.
+- [Errors](/partner-errors) describes the single error shape and how it is handled.
+
+A missing field, a higher rate limit, or a failing write should be raised with TatvaCare Ops. [Conventions](/conventions) lists what to include.

@@ -1,0 +1,60 @@
+---
+title: Lead identity
+---
+
+Four ideas cover the whole API: how a lead is identified, how the program attribute behaves, how child profiles are structured, and how status tracks the lifecycle.
+
+## Identity
+
+A lead is identified by three things together:
+
+| Part | Field | Meaning |
+|---|---|---|
+| Phone | `mobile_no` | the contact's number, in E.164 format (`+<country><digits>`, no spaces or hyphens), for example `+919999000123` |
+| Product line | `custom_vertical` | the business line the lead belongs to |
+| Group | `custom_group` | the unit within that business line |
+
+A lead is one combination of phone, product line, and group. When the same combination is re-sent, the existing lead is updated and no duplicate is created, so every write is safe to retry. The same phone under a different product line or group is a separate lead.
+
+Business line details (Product and Group) are assigned automatically from the API key and are never sent by the caller.
+
+Each lead has a unique ID, returned as `name` (for example `CRM-LEAD-2026-00123`), which is used to read, update, or delete it.
+
+<Mermaid chart={`
+flowchart LR
+  P["mobile_no"] --> K{{"one lead"}}
+  V["Product<br/>(from the API key)"] --> K
+  G["Group<br/>(from the API key)"] --> K
+  K --> R["re-sending the same three<br/>updates this lead,<br/>never a duplicate"]
+`} />
+
+## Program
+
+`custom_current_program` records the lead's current program. It is not part of identity: it may change on the same lead (a transition), and changing it never creates a second lead.
+
+Whether it is sent depends on the key's program mode, the one attribute that differs between keys:
+
+| Mode | `custom_current_program` | Behaviour |
+|---|---|---|
+| Forced | not sent | one program is stamped by the key, and anything sent is ignored |
+| List | sent, required | one value from the allowed set is sent and validated. Re-sending with a different value transitions the same lead |
+| None | not sent | no program |
+
+The mode, and the allowed programs for List mode, are returned by [`lead_schema`](/discover-schema).
+
+## Child profiles
+
+A lead carries additional structured, repeating data in child profiles, which are sent and returned as arrays within the lead body:
+
+<Mermaid chart={`
+flowchart TD
+  L["Lead"] --> PP["Plan profile<br/>subscription, program, payment"]
+  L --> LP["Lab profile<br/>lab values, vitals, scores"]
+  L --> CP["Care and providers<br/>coaches, doctor, hospital"]
+`} />
+
+Profiles are sliced by concern rather than by organisation or program, so a single lead may have several profile types populated at once. A profile is never addressed on its own. Profiles are read inline under the lead (`lead_get` returns `custom_lab_profile: [ ... ]`) and written inline (`custom_lab_profile: [ ... ]` is sent within the `lead_create` or `lead_update` body). Each row is merged field by field, so a partial write never wipes a row. [Schema discovery](/discover-schema) describes how each profile's rows are keyed.
+
+## Status
+
+Every lead carries a universal `status`: `New`, `Contacted`, `Nurture`, `Qualified`, `Converted`, `Junk`, or `Unqualified`. This is the coarse lifecycle shared across every business line. The allowed values, along with any finer program-specific stage a key is allowed to set, are returned by [`lead_schema`](/discover-schema). They must not be hardcoded, because they can differ by key and change over time.

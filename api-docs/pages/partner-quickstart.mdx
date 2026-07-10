@@ -1,0 +1,95 @@
+---
+title: Quickstart
+---
+
+The path from a new key to a first lead is four steps: obtain the key, set the base URL and header, discover what may be sent, then create a lead and read it back.
+
+<Mermaid chart={`
+flowchart LR
+  A["1. Obtain a key"] --> B["2. Discover<br/>lead_schema"]
+  B --> C["3. Create<br/>lead_create"]
+  C --> D["4. Read back<br/>lead_get"]
+`} />
+
+## 1. Obtain a key and set the base URL
+
+An API key and secret are issued by TatvaCare Ops. Two strings are returned, an `api_key` and an `api_secret`. The secret is shown once and must be stored securely.
+
+Both are carried in a single header, joined by a colon:
+
+```
+Authorization: token <api_key>:<api_secret>
+```
+
+The literal lowercase `token`, one space, then `key:secret`. The exact format is described in [Conventions](/conventions#auth).
+
+Every example below uses `$BASE_URL` in place of a fixed host. Set it once for the target environment (production, UAT, or local), listed in [Conventions](/conventions#environment):
+
+```bash
+export BASE_URL=https://one.tatvacare.in
+```
+
+## 2. Discover what may be sent
+
+Discovery is the starting point for every integration. `lead_schema` returns the exact fields the key may read and write, which of them are required, and how each child table behaves.
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```
+
+The response is a `data` object listing the `lead` fields, the `children` (each with `multi_row` and `key_field`), and the `routing` (fixed to the key, and therefore not set by the caller). The full walkthrough is on [Schema discovery](/discover-schema).
+
+## 3. Create the first lead
+
+`lead_create` is the primary write. It is idempotent on the lead's identity (phone plus the key's business line), so it is always safe to retry. The minimal payload is a phone plus whatever the schema marks required.
+
+For a List-mode key, `custom_current_program` is required and must be one of the allowed programs:
+
+```bash
+curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
+     -H 'Content-Type: application/json' \
+     -d '{"mobile_no":"+919900000000","first_name":"Example","custom_current_program":"<one-of-the-allowed-programs>"}' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_create"
+```
+
+A Forced-mode key omits the program, which is stamped by the key. A None-mode key has no program. The mode is reported by [`lead_schema`](/discover-schema).
+
+The response is top-level `status`, `action`, and `data`. `data.name` is the lead's unique ID (for example `CRM-LEAD-2026-00123`) and is used to update or read the lead later.
+
+```json
+{
+  "status": "success",
+  "action": "created",
+  "data": {
+    "name": "CRM-LEAD-2026-00123",
+    "source": "…",
+    "vertical": "…",
+    "group": "…",
+    "program": "…"
+  }
+}
+```
+
+The `source`, `vertical`, and `group` are returned already filled in. These are the business line details, assigned automatically from the key. `program` is either stamped (Forced mode) or the value sent (List mode). A failed call returns a single consistent error shape instead; see [Errors](/partner-errors).
+
+:::note{title="A transition is an ordinary write"}
+
+Re-sending the same phone with a different `custom_current_program` updates the same lead: the program changes and everything else is carried over. A second lead is never created for the same phone on the same business line.
+
+:::
+
+## 4. Read it back
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123"
+```
+
+The lead is returned with the key's allowed fields, and any child tables inlined as arrays (empty here, since no rows were sent). Values are read by their dotted path; see [Reading responses](/reading-values).
+
+## Next steps
+
+- A child row (labs, plan, or care team) is added to a write. The row key is discovered first via [`lead_schema`](/discover-schema).
+- [Response shapes](/responses) documents what a client must expect.
+- [Errors](/partner-errors) and [Rate limits](/rate-limits) should be reviewed before shipping.

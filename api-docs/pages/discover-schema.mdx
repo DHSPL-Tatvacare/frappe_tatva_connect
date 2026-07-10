@@ -1,0 +1,151 @@
+---
+title: Schema discovery
+---
+
+`GET lead_schema` returns, for the calling key, the exact fields that may be sent and read, which of them are required, the routing mode, and how each child table behaves.
+
+:::note{title="Discover, do not hardcode"}
+
+Two keys return different schemas, and grants change over time. `lead_schema` is read at startup and payloads are built from its response. A fixed field list must not be copied from this page.
+
+:::
+
+```bash
+curl -H 'Authorization: token <api_key>:<api_secret>' \
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
+```
+
+## What is returned
+
+The response is top-level `status` and `data`. The following is a trimmed example for a key granted a few lab and plan fields:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "lead": [
+      { "fieldname": "mobile_no",  "label": "Mobile No",  "type": "Data", "required": false, "options": null },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false, "options": null },
+      { "fieldname": "status",     "label": "Status",     "type": "Link", "required": true,  "options": "CRM Lead Status" }
+    ],
+    "children": {
+      "custom_lab_profile": {
+        "multi_row": true,
+        "key_field": "report_date",
+        "fields": [
+          { "fieldname": "hba1c",       "label": "HbA1c",       "type": "Float", "required": false, "options": null },
+          { "fieldname": "report_date", "label": "Report Date", "type": "Date",  "required": true,  "options": null }
+        ]
+      },
+      "custom_plan_profile": {
+        "multi_row": false,
+        "key_field": null,
+        "fields": [
+          { "fieldname": "policy_number", "label": "Policy Number", "type": "Data", "required": false, "options": null }
+        ]
+      }
+    },
+    "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
+    "bulk": { "max_per_call": 100, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
+    "routing": {
+      "mode": "list",
+      "source": "…", "vertical": "…", "group": "…",
+      "program": null,
+      "allowed_programs": ["Program A", "Program B", "Program C"],
+      "program_required": true,
+      "note": "Line and group are fixed. custom_current_program is sent from allowed_programs on every lead."
+    }
+  }
+}
+```
+
+## Reading each block
+
+| Block | Meaning |
+|---|---|
+| `data.lead[]` | The top-level lead fields available to the key. Each carries `fieldname`, `label`, `type`, `required`, and, for Link and Select fields, the allowed `options`. |
+| `data.children` | One entry per child table available to the key, keyed by its array name (for example `custom_lab_profile`). |
+| `data.children.<t>.multi_row` | `true` means the table holds many rows, addressed by a key. `false` means a single row that is merged into. |
+| `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row. `null` on single-row tables. |
+| `data.children.<t>.fields[]` | The fields available in that table, in the same shape as `lead[]`. The `key_field` is always present and `required`. |
+| `data.routing.mode` | `forced` (one program stamped by the key), `list` (`custom_current_program` is sent, one of `allowed_programs`), or `none` (no program). Product line and group are always assigned from the key. |
+| `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required: true` means a create must carry `custom_current_program`. |
+| `data.dedup` | The rule that makes a lead unique: phone, product line, and group. Program is an attribute, not identity. |
+| `data.bulk` | Bulk caps and the filters `lead_list` accepts. |
+
+### Field attributes
+
+Every entry in `lead[]` (and in a child table's `fields[]`) describes one field:
+
+| Attribute | Meaning |
+|---|---|
+| `fieldname` | the key used in JSON, for example `mobile_no` |
+| `label` | the human-readable name, for example "Mobile No" |
+| `type` | the data type: `Data`, `Int`, `Float`, `Date`, `Link`, `Select`, and so on |
+| `required` | `true` means the field must be present when the lead is created |
+| `options` | for Link and Select fields, the allowed target or values, otherwise `null` |
+
+## Required fields
+
+A field with `"required": true` must be present on a create. This is read straight from the schema rather than assumed, because the required set is whatever the key is granted and can differ between keys.
+
+## Child tables
+
+Child tables are sent as JSON arrays nested in the same lead body. There are two kinds, and the schema indicates which is which.
+
+### Multi-row tables (`multi_row: true`): upsert by key
+
+Each row is addressed by its `key_field`. The write merges by that key and never replaces the whole array:
+
+- A new key appends a new row.
+- The same key updates that row, and only the fields sent change. Omitted fields remain.
+- Rows that are not mentioned are left untouched.
+- A row is deleted by sending `{ "<key_field>": <value>, "_delete": true }`.
+
+Every row sent must carry its `key_field`, which is the row's address. The schema marks it `required` even when it is not part of the field grant.
+
+```json
+// The 2026-05-18 lab row's hba1c is updated, a new row for 2026-06-20 is added,
+// and the 2026-01-10 row is deleted, all in one write. Other rows are untouched.
+{
+  "mobile_no": "+919900000000",
+  "custom_lab_profile": [
+    { "report_date": "2026-05-18", "hba1c": 6.9 },
+    { "report_date": "2026-06-20", "hba1c": 6.4, "fbs": 110 },
+    { "report_date": "2026-01-10", "_delete": true }
+  ]
+}
+```
+
+### Single-row tables (`multi_row: false`): merge the one row
+
+A one-element array is sent. The fields sent are merged onto the single row, which is created if it does not exist yet. Sending two distinct rows is ambiguous and returns a `validation_error`.
+
+```json
+{
+  "mobile_no": "+919900000000",
+  "custom_plan_profile": [
+    { "policy_number": "NB-POL-0001" }
+  ]
+}
+```
+
+:::caution{title="Partial writes never clobber"}
+
+Whether multi-row or single-row, sending only some fields updates only those fields. The rest of the row, and every row not mentioned, is left as it was. Incremental updates can therefore be sent safely as new data arrives.
+
+:::
+
+## Routing
+
+`source`, product line (`vertical`), and `group` are the business line details. They are assigned automatically from the key and stamped on every lead, so they are not sent, and a lead cannot be moved to a different line or group. The program depends on the `mode`:
+
+- **Forced**: stamped by the key, like the rest of the routing.
+- **List**: `custom_current_program` is sent on every lead, validated against `allowed_programs`. It is a mutable attribute, so re-sending a phone with a different program transitions the same lead, never a new one.
+- **None**: no program.
+
+## Reading rows back
+
+When a lead is read (`lead_get` or `lead_get_bulk`), each child row carries its `name`, the row's unique ID (for example `a1b2c3`), and its `key_field`, so the address for the next write is always known.
+
+A live console is available in the [API Reference](/partner-api).

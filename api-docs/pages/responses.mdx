@@ -1,0 +1,72 @@
+---
+title: Response shapes
+---
+
+Every call returns one of three top-level shapes.
+
+## A single record
+
+Returned by `lead_create`, `lead_update`, `lead_delete`, and `lead_get`:
+
+```json
+{
+  "status": "success",
+  "action": "created",
+  "data": { "name": "CRM-LEAD-2026-00123", "source": "…", "vertical": "…", "group": "…", "program": "…" }
+}
+```
+
+- `status` is `"success"`.
+- `action` is `created`, `updated`, or `deleted` for writes, or `fetched` for reads. It is absent on `lead_schema`.
+- `data` is the result: the lead's unique id (`name`) and its routing on a write, the curated lead on a `lead_get`, or the schema on `lead_schema`.
+
+On a delete, `data` carries only `{ "name": "…" }`.
+
+## A list
+
+`lead_list` returns a page object under `data`:
+
+```json
+{
+  "status": "success",
+  "action": "fetched",
+  "data": { "total": 240, "count": 20, "offset": 0, "limit": 20, "leads": [ /* curated leads, no children */ ] }
+}
+```
+
+`total` is the full count for the applied filters, and `leads[]` is the current page. Paging is by `offset`, up to 200 per page. Lists omit child tables; `lead_get` returns a full record.
+
+## A bulk batch
+
+Every bulk method returns HTTP 200 even when some rows fail. `summary` is read first, then `results[]` is walked:
+
+```json
+{
+  "status": "success",
+  "summary": { "total": 2, "succeeded": 1, "failed": 1 },
+  "results": [
+    { "index": 0, "status": "success", "action": "created", "name": "CRM-LEAD-2026-00125" },
+    { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
+  ]
+}
+```
+
+- `summary` is `{total, succeeded, failed}` for writes, or `{requested, found, not_found}` for `lead_get_bulk`.
+- `results[]` is input-ordered, so `results[i]` is the outcome of the i-th item sent.
+- Each row carries its own `status`; a failed row carries the same `error` block as a single-call failure.
+
+:::caution{title="A 200 does not mean every row landed"}
+
+On bulk, each `results[].status` must be checked, not only the top-level one. One bad row reports its error while the rest still commit.
+
+:::
+
+## A failure
+
+Any failure returns this shape, with a matching HTTP status:
+
+```json
+{ "status": "error", "error": { "code": "validation_error", "message": "…" } }
+```
+
+`error.code` is stable and is the value to branch on; `error.message` is human-readable. The full per-code table is on [Errors](/partner-errors), and [Reading responses](/reading-values) covers reading any value by its path.

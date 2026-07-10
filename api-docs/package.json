@@ -1,0 +1,17 @@
+{
+  "name": "tatvacare-crm-docs-zudoku",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "DOCS_ENV=local zudoku dev",
+    "prebuild": "node gen-postman.mjs",
+    "build": "zudoku build"
+  },
+  "dependencies": {
+    "mermaid": "^11.15.0",
+    "zudoku": "0.79.1"
+  }
+}
