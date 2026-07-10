@@ -20,5 +20,8 @@ def execute():
     )
     if cur and cur[0][0] and int(cur[0][0]) >= 500:
         return                                   # already widened — no-op
-    frappe.db.change_column_type("File", "custom_lsq_attachment_id", "varchar(500)")
+    # nullable=True: this column is NOT required (the fixture Data field has no reqd flag), so the
+    # widen must PRESERVE nullability. change_column_type defaults nullable=False -> NOT NULL, which
+    # under strict mode fails a DB whose File rows already hold a NULL here (1265 Data truncated).
+    frappe.db.change_column_type("File", "custom_lsq_attachment_id", "varchar(500)", nullable=True)
     frappe.db.commit()
