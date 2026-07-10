@@ -104,22 +104,22 @@ _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
 
 DEFAULTS = {
 	"window_seconds": 60,
-	"per_token_rate": 1200,
-	"per_token_burst": 1200,
-	"global_rate": 6000,
-	"global_burst": 6000,
+	"per_token_rate": 120,
+	"per_token_burst": 240,
+	"global_rate": 300,
+	"global_burst": 600,
 	"bulk_max_records": 100,
 	"list_max_page": 200,
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
 	"file_download_max_mb": 25,
-	# Volume dimension — rows/window, read + write, per-token + global (global = 5x per-token,
-	# mirroring the call rate's 6000:1200). Single + bulk both charge their row count here.
+	# Volume dimension — rows/window, read + write, per-token + global (records global = 5x
+	# per-token). Single + bulk both charge their row count here.
 	"records_window_seconds": 86400,
-	"per_token_read_records": 25000,
-	"global_read_records": 125000,
-	"per_token_write_records": 25000,
-	"global_write_records": 125000,
+	"per_token_read_records": 10000,
+	"global_read_records": 50000,
+	"per_token_write_records": 10000,
+	"global_write_records": 50000,
 	# Idempotency (opt-in write-dedup): how long a stored key/response is honoured for replay.
 	"idempotency_window_hours": 24,
 }

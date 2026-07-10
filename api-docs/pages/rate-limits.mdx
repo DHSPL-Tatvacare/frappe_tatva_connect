@@ -6,8 +6,8 @@ A key has two independent budgets. Both are configured per key, and either can b
 
 | Budget | Default | Counts |
 |---|---|---|
-| Request rate | 1,200 requests per minute | every call, read or write |
-| Daily record volume | 25,000 records read and 25,000 records written per day | rows touched, not calls |
+| Request rate | 120 requests per minute | every call, read or write |
+| Daily record volume | 10,000 records read and 10,000 records written per day | rows touched, not calls |
 
 There is also a shared ceiling across all keys together. In rare bursts, a key can be limited even while it is under its own budget. For planning, the per-key budgets are the ones that matter.
 

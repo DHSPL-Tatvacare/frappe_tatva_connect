@@ -1975,7 +1975,7 @@
         "description": "The key's request budget for the current window. Sent on every partner response. A shared global ceiling is enforced separately, so a 429 can occur on the global limit even while RateLimit-Remaining is above zero. Absent when rate-limit enforcement is off or the caller is exempt.",
         "schema": {
           "type": "integer",
-          "example": 1200
+          "example": 120
         }
       },
       "RateLimit-Remaining": {
