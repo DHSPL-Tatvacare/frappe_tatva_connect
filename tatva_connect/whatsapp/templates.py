@@ -64,7 +64,7 @@ def template_picker_query(doctype, txt, searchfield, start, page_length, filters
 	tmpls = frappe.get_all(
 		"WhatsApp Templates",
 		filters={"actual_name": ["like", f"%{txt}%"]} if txt else {},
-		fields=["name", "actual_name", "whatsapp_account", "status"],
+		fields=["name", "whatsapp_account"],
 		limit_start=int(start or 0), limit_page_length=int(page_length or 20), order_by="actual_name asc",
 	)
 	accounts = {t.whatsapp_account for t in tmpls if t.whatsapp_account}
