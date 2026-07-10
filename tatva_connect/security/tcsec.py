@@ -59,9 +59,9 @@ SENSITIVE_STEPS = {"secrets", "dast"}
 MAX_PANEL_CHARS = 6000  # cap shown output (and per-step text sent to --explain) to bound noise/tokens
 
 # PDF generation — ALL generated/installed artifacts live in this gitignored working dir.
-PDF_DIR = REPO_ROOT / "custom-user-work" / "security" / "pdf"
+PDF_DIR = REPO_ROOT / ".custom-user-work" / "security" / "pdf"
 BROWSERS_DIR = PDF_DIR / ".browsers"  # playwright chromium installs here (PLAYWRIGHT_BROWSERS_PATH)
-DEFAULT_PDF = REPO_ROOT / "custom-user-work" / "security" / "reports" / "tcsec-report.pdf"
+DEFAULT_PDF = REPO_ROOT / ".custom-user-work" / "security" / "reports" / "tcsec-report.pdf"
 LOGO_SRC = Path.home() / ".claude" / "skills" / "research-company" / "assets" / "tatvacare-logo.svg"
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -627,7 +627,7 @@ def build_parser() -> argparse.ArgumentParser:
 	g = common.add_argument_group("common options")
 	g.add_argument("--app", action="append", metavar="DIR", help="app/dir to scan (repeatable; default tatva_connect)")
 	g.add_argument("--format", choices=["txt", "json"], default="txt", help="also emit machine-readable reports")
-	g.add_argument("--output-dir", metavar="DIR", default="custom-user-work/security/reports", help="report output dir")
+	g.add_argument("--output-dir", metavar="DIR", default=".custom-user-work/security/reports", help="report output dir")
 	g.add_argument("--fail-fast", action="store_true", help="stop at the first failing step")
 	g.add_argument("--stream", action="store_true", help="stream tool output live (no spinner)")
 	g.add_argument("--quiet", action="store_true", help="stats only; suppress findings panels")

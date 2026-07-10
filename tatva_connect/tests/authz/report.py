@@ -11,7 +11,7 @@ Two outputs, no DB needed for either:
 `results` = [{id|principal, doctype, action, verdict}] where verdict in {ALLOW, DENY, ESCALATION}.
 Rendering is dependency-light so a test or the tcsec CLI can call it without a bench.
 """
-REPORT_SUBDIR = "custom-user-work/security/reports"
+REPORT_SUBDIR = ".custom-user-work/security/reports"
 REPORT_FILE = "authz-report.json"
 CONFUSION_FILE = "authz-confusion.json"
 
@@ -177,7 +177,7 @@ def _confusion_dict(confusion):
 def _reports_dir():
 	"""Resolve the reports dir: the repo checkout root, located via this file's own path.
 
-	`custom-user-work/security/reports/` lives at the repo root, four levels above this module
+	`.custom-user-work/security/reports/` lives at the repo root, four levels above this module
 	(tatva_connect/tests/authz/report.py). Anchoring on __file__ keeps it correct whether called
 	from a bench test (cwd = bench root) or the tcsec CLI (cwd = repo root).
 	"""

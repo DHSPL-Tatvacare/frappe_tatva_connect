@@ -34,7 +34,7 @@ scripts/lsq_migration/
 
 # internal planning docs — kept local, NOT in the public repo
 docs/
-custom-user-work/
+.custom-user-work/
 
 # internal dev/agent constitution + deploy notes — kept local; only README.md is public.
 # Gitignored, NOT deleted: they still drive local work, they just do not ship in the repo/image.
@@ -63,7 +63,7 @@ db-seeds/
 # Archived legacy migration patches — kept for bookkeeping, out of active code.
 # Restore into tatva_connect/patches/ + patches.txt ONLY for an in-place upgrade of an
 # old-schema prod DB; a clean rebuild never needs them.
-archive/
+.archive/
 
 # Internal / local-only — kept out of the public repo (operator-shared via other channels).
 # operator-facing handbook (markdown + diagrams/screenshots) — shared out-of-band, not public
@@ -94,4 +94,4 @@ tatva_connect/security/dast-targets.txt
 tatva_connect/tests/authz/spikes/
 
 # PyCharm inspection exports (per-file problem triage) — LOCAL only, never committed
-inspections/
+.inspections/

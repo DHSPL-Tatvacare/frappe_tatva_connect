@@ -40,7 +40,7 @@ python security/tcsec.py <command> [flags]
 authority, so a finding is triaged in one tool, not two.
 
 Exit code is non-zero if any step failed (CI-ready). Reports are written to
-`custom-user-work/security/reports/` (gitignored); add `--format json` for machine-readable
+`.custom-user-work/security/reports/` (gitignored); add `--format json` for machine-readable
 artifacts (bandit.json, semgrep.json, pip-audit.json, locks-junit.xml).
 
 ## At-a-glance UI & analysis
@@ -61,7 +61,7 @@ Both `--ai-explain` and `--pdf` are **fully opt-in** and independent.
 - `--pdf [PATH]` — a branded TatvaCare PDF report rendered with Playwright (banner + summary cards →
   per-command details). **Add `--ai-explain` to include the Claude analysis section**, which then
   leads the report (analysis first, then details). `--pdf` alone produces a findings-only report and
-  makes **no** claude call. Default output `custom-user-work/security/reports/tcsec-report.pdf`.
+  makes **no** claude call. Default output `.custom-user-work/security/reports/tcsec-report.pdf`.
 
   ```bash
   python security/tcsec.py static --pdf                    # findings-only PDF, no AI
@@ -70,8 +70,8 @@ Both `--ai-explain` and `--pdf` are **fully opt-in** and independent.
   ```
 
   Everything Playwright touches is gitignored: chromium installs to
-  `custom-user-work/security/pdf/.browsers/` (via `PLAYWRIGHT_BROWSERS_PATH`), and the working
-  HTML + PDF live under `custom-user-work/security/`. First `--pdf` run auto-installs chromium
+  `.custom-user-work/security/pdf/.browsers/` (via `PLAYWRIGHT_BROWSERS_PATH`), and the working
+  HTML + PDF live under `.custom-user-work/security/`. First `--pdf` run auto-installs chromium
   there (~120 MB). PDF generation is fail-open — a render error never changes the exit code.
 
 ## Common runs

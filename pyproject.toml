@@ -113,7 +113,7 @@ omit = [
     "*/tests/*",       # the tests themselves are not "covered code"
     "*/security/*",    # the gate's own tooling (tcsec + static_checks)
     "*/patches/*",     # operator-run migrations
-    "*/archive/*",     # dead/legacy
+    ".archive",     # dead/legacy
     "*/node_modules/*",
     "*/.devbench/*",
 ]

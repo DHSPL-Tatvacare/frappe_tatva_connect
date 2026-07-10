@@ -270,7 +270,7 @@ python security/tcsec.py authz --pdf      # branded report incl. the confusion m
 **Expected outcomes:**
 - **Exit 0** only if: every catastrophe sweep DENIED, every registry case matched the oracle, the surface audit had no drift, **and recall == 1.0 on the mutation set** (the suite proved it can go red).
 - **Exit non-zero** on any escalation (🚨), any drift, or any False Negative.
-- **Artifacts:** `custom-user-work/security/reports/authz-{report.json,confusion.json}` and the per-case grid (ALLOW / DENY / 🚨), each row tagged with its case ID.
+- **Artifacts:** `.custom-user-work/security/reports/authz-{report.json,confusion.json}` and the per-case grid (ALLOW / DENY / 🚨), each row tagged with its case ID.
 
 ---
 
