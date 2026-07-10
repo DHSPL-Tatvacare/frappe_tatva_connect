@@ -14,6 +14,7 @@ frappe.ui.form.on("CRM Automation Rule", {
 	refresh(frm) {
 		reload_describe(frm);
 		add_simulate_button(frm);
+		apply_whatsapp_template_query(frm);
 	},
 	on_doctype: reload_describe,
 	event: reload_describe,
@@ -67,6 +68,17 @@ frappe.ui.form.on("CRM Automation Action", {
 	actions_remove: render_preview,
 	form_render(frm, cdt, cdn) {
 		apply_action_row(frm, cdt, cdn);
+	},
+	sync_templates(frm, cdt, cdn) {
+		frappe
+			.call({
+				method: "tatva_connect.whatsapp.templates_sync.sync_from_wati",
+				freeze: true,
+				freeze_message: __("Syncing WhatsApp templates"),
+			})
+			.then(() => {
+				frappe.show_alert({ message: __("Templates synced"), indicator: "green" });
+			});
 	},
 });
 
@@ -197,6 +209,15 @@ function apply_action_query(frm) {
 			group: ["in", ["", frm.doc.group]],
 			program: ["in", ["", frm.doc.program]],
 		},
+	}));
+}
+
+// Send WhatsApp's whatsapp_template picker is the server's account-aware link-query (each result
+// described by its WATI account and the grains routing to it) instead of the doctype's own bare
+// title search - see tatva_connect.whatsapp.templates.template_picker_query.
+function apply_whatsapp_template_query(frm) {
+	frm.set_query("whatsapp_template", "actions", () => ({
+		query: "tatva_connect.whatsapp.templates.template_picker_query",
 	}));
 }
 
