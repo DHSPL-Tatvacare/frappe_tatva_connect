@@ -49,3 +49,12 @@ def assert_parses(expr):
 	and wrongly block a legitimate rule at save time, so we only confirm the expression is a single
 	eval-form Python expression. Raises `SyntaxError` on a malformed expression."""
 	ast.parse(expr, mode="eval")
+
+
+def references_context(expr):
+	"""True when the expression reads `ctx`. A context-FREE expression is a constant, so an author-time
+	validator may evaluate it for real and reject a bad value; one that reads `ctx` can only be checked
+	for syntax, because the author-time context is empty and `ctx.get("x")` would legitimately yield
+	`None` there. Structural (an AST walk), never a substring match - `context_note` must not read as a
+	reference."""
+	return any(isinstance(node, ast.Name) and node.id == "ctx" for node in ast.walk(ast.parse(expr, mode="eval")))

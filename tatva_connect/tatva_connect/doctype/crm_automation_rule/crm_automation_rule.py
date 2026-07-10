@@ -22,6 +22,58 @@ class CRMAutomationRule(Document):
 		self._validate_create_note_actions()
 		self._validate_child_actions()
 		self._validate_webhook_actions()
+		self._validate_wait_actions()
+		self._plan_in_flight_migration()
+
+	def on_update(self):
+		"""Freeze this definition and move every in-flight lead the edit provably did not disturb onto
+		it — inside the rule's OWN save transaction, so the program and its executions advance together
+		or not at all. The plan was dry-run in validate(), so nothing here can raise a surprise."""
+		from tatva_connect.automation import versions
+
+		version = versions.ensure_version(self)
+		migrated, retained = versions.apply_migration(self._migration_plan, version)
+		if not (migrated or retained):
+			return
+		summary = _(
+			"Version {0}: {1} in-flight lead(s) adopted it; {2} stay on their prior version because this "
+			"edit changed a step they had already passed."
+		).format(frappe.bold(version), migrated, retained)
+		self.add_comment("Info", summary)  # the audit trail lives on the rule, beside its Version history
+		frappe.msgprint(summary, title=_("In-flight leads"), indicator="blue")
+
+	def _plan_in_flight_migration(self):
+		"""DRY RUN, before anything commits: decide per parked execution whether it may adopt this new
+		definition, and precompute its rescheduled wake time. Raises — and so blocks the save in the Desk
+		form — when a lead cannot be rescheduled under the edited Wait. `on_update` applies this exact
+		plan, so the decision and the write can never drift."""
+		from tatva_connect.automation import versions
+
+		self._migration_plan = versions.plan_migration(self)
+
+	def _validate_wait_actions(self):
+		"""A Wait is a segment boundary, so it must have something to resume INTO, and its delay must BE
+		a delay. Both are verb-agnostic misconfiguration, caught at author time instead of months later
+		on a sweep (a Wait with nothing after it used to log a silent 'Success, 0 actions').
+
+		A context-FREE expression is a constant, so evaluate it for real and reject a bad value. One that
+		reads `ctx` can only be checked for syntax: the author-time context is empty, and `ctx.get("x")`
+		would legitimately resolve to `None` there — the same reasoning `expr.assert_parses` documents."""
+		from tatva_connect.automation import actions, expr
+
+		effect_actions = [a for a in self.actions if actions._ACTION_LANES.get(a.action_type, (None, None))[0] == "effect"]
+		for position, action in enumerate(effect_actions):
+			if action.action_type != "Wait":
+				continue
+			if position == len(effect_actions) - 1:
+				frappe.throw(
+					_("A Wait must be followed by at least one action to resume into — row {0} is the last one.").format(action.idx),
+					title=_("Wait resumes into nothing"),
+				)
+			if expr.references_context(action.wait_expression):
+				expr.assert_parses(action.wait_expression)
+			else:
+				actions.wait_resume_at(action.wait_expression, {}, frappe.utils.now_datetime())
 
 	def _require_grain(self):
 		"""No global rule: at least one grain axis must be set (invariant #11 / spec §5.1)."""
@@ -326,10 +378,21 @@ class CRMAutomationRule(Document):
 		router.clear_live_doctypes_cache()
 
 	def on_trash(self):
-		"""Same cache-clear as on_change - a deleted rule must drop out of live_doctypes() too."""
-		from tatva_connect.automation import router
+		"""Same cache-clear as on_change - a deleted rule must drop out of live_doctypes() too - and the
+		ONE destructive path for the queue: deleting a rule stops it. Frappe still runs `on_trash` under
+		`delete_doc(..., force=1)` (force bypasses the LINK check, not the lifecycle), so the operator
+		db-seed's rule re-create can never leave a parked lead pointing at a program nobody will resume."""
+		from tatva_connect.automation import router, versions
 
 		router.clear_live_doctypes_cache()
+		cancelled = versions.retire(self.name, _("the rule was deleted"))
+		if cancelled:
+			frappe.msgprint(
+				_("{0} parked lead(s) were cancelled with this rule.").format(cancelled),
+				title=_("In-flight leads cancelled"),
+				indicator="orange",
+			)
+
 
 def _parse_json(raw, label):
 	"""Parse a child-row JSON map; throw a clear authoring error if it's not a JSON object."""

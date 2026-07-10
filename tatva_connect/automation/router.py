@@ -42,7 +42,7 @@ misfire.
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.automation import dispatcher, rules, subjects
+from tatva_connect.automation import dispatcher, rules, subjects, versions
 from tatva_connect.automation.dispatcher import _log_error
 
 KILL_SWITCH = "Task::Automation::rules"  # the ONE toggle for the whole automation engine
@@ -110,7 +110,7 @@ def run_guards(doc, method=None):
 	context = _context_for(doc, changed)
 	field_types = _field_types_for(doc.doctype)
 	for r in matched:
-		dispatcher.run_guards(subject.name, r, context, field_types)
+		dispatcher.run_guards(subject.name, versions.current_name(r.name), context, field_types)
 
 
 def _subject_axes(subject):
@@ -201,11 +201,11 @@ def run_for_delete(doctype, docname, subject_name, context):
 		if not matched:
 			return
 		field_types = _field_types_for(doctype)
-		grain = "{}::{}::{}".format(axes[0] or "", axes[1] or "", axes[2] or "")
+		grain = dispatcher._grain_tag(*axes)
 		trigger_doc = frappe.get_doc({"doctype": doctype, **context})
 		for r in matched:
 			try:
-				dispatcher.run_effects(subject_name, r, trigger_doc, axes, grain, field_types, context)
+				dispatcher.run_effects(subject_name, versions.current_name(r.name), trigger_doc, axes, grain, field_types, context)
 			except Exception as e:
 				_log_error(r.name, "(rule)", grain, e)
 	except Exception:
@@ -248,12 +248,13 @@ def run_for_event(doctype, docname, event_name, changed):
 			return
 		context = _context_for(doc, changed)
 		field_types = _field_types_for(doctype)
-		grain = "{}::{}::{}".format(axes[0] or "", axes[1] or "", axes[2] or "")
+		grain = dispatcher._grain_tag(*axes)
 		# Reuse the SAME backbone both v1 dispatchers used - per-rule savepoint, guarded actions, run log.
 		# EFFECT lane only (Task 5) - this rule's guard actions already ran (or blocked) in validate.
+		# Each fire binds to the rule's CURRENT version and never reads the rule again (automation.versions).
 		for r in matched:
 			try:
-				dispatcher.run_effects(subject.name, r, doc, axes, grain, field_types, context)
+				dispatcher.run_effects(subject.name, versions.current_name(r.name), doc, axes, grain, field_types, context)
 			except Exception as e:
 				_log_error(r.name, "(rule)", grain, e)
 	except Exception:

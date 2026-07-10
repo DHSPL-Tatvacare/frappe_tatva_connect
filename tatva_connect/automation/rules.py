@@ -41,8 +41,8 @@ def matching_rules(on_doctype, event, vertical, group, program):
 	ALL-MATCH fan-out (spec §5.1) - deliberately NOT resolve_scoped's pick-one. TATVA v2 (Task 4): the
 	ONE matcher for every trigger shape (Created/Updated/Deleted) - REPLACES the v1 split
 	(matching_rules(vertical, group, program, task_type) for Task-Completed and
-	matching_rules_for_field_change(...) for Field-Changed; both retired with dispatcher.fire_rules /
-	watch.py - see router.py). A rule with zero grain axes is rejected at author-time, so the query can
+	matching_rules_for_field_change(...) for Field-Changed; both removed with dispatcher.fire_rules and
+	the deleted watch.py - see router.py). A rule with zero grain axes is rejected at author-time, so the query can
 	never widen to a global default. Ordered by priority then creation so the executor fires them
 	deterministically."""
 	# Blank axis = wildcard: ["in", ["", None, x]] reproduces (= '' OR IS NULL OR = x); get_all

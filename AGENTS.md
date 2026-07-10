@@ -30,7 +30,7 @@ masters use composite `::` primary keys, never `hash`.
 ## What we built
 - **`tatva_connect` (this repo, backend):** ALL customization — WhatsApp (WATI), telephony (Acefone),
   intake/enrolment forms, Azure Blob storage, partner Lead API, the automation engine, smart-view
-  engine, observability, access/VAPT hardening. **59 custom doctypes**, registered in `hooks.py`.
+  engine, observability, access/VAPT hardening. **61 custom doctypes**, registered in `hooks.py`.
   Modules: `whatsapp telephony taxonomy lead tasks activity automation notifications intake storage
   partner_api smartview observability access location`. Full list → `docs/INVENTORY.md`.
 - **The CRM fork** (`DHSPL-Tatvacare/frappe_tatva_crm`, branches `develop`→`uat`→`prod`): thin, guarded

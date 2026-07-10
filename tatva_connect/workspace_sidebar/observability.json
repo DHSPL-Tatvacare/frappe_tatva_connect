@@ -111,21 +111,9 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
-  },
-  {
-   "child": 1,
-   "collapsible": 1,
-   "icon": "webhook",
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Webhook Log",
-   "link_to": "Webhook Request Log",
-   "link_type": "DocType",
-   "show_arrow": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-07-09 15:30:00.000000",
+ "modified": "2026-07-10 10:20:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "Observability",

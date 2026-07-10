@@ -24,12 +24,18 @@ into `automation/actions.py` (a move, not a rewrite — A.8/A.12). This module k
 the two-lane executor, the per-action dispatch (`_run_action`), the Run Log writer and the error
 factory. `actions` is imported for the registry and the per-action label.
 
-TATVA v2 (Task 9): `run_effects` becomes SEGMENT-aware. A `Wait` action (actions._action_wait) is a
-segment boundary, not a write: it raises `actions._ParkSignal(resume_at)`, which this loop catches to
-commit everything the segment already did, hand the remainder off to `resume.park()`, and RETURN — no
-Wait means no behavior change (one segment, one Run Log row, exactly as before). `start_idx` lets the
-scheduled `resume.sweep_resume()` job resume a parked segment through the SAME executor (A.8 — never a
-second one); a resumed run may hit ANOTHER Wait and re-park (chained delays).
+TATVA v2 (Task 9): `run_effects` is SEGMENT-aware. A `Wait` action (actions._action_wait) is a segment
+boundary, not a write: it raises `actions._ParkSignal`, which this loop catches to commit everything the
+segment already did, hand the remainder off to `resume.park()`, and RETURN — no Wait means no behaviour
+change (one segment, one Run Log row). `cursor` lets the scheduled `resume.sweep_resume()` job resume a
+parked segment through the SAME executor (A.8 — never a second one); a resumed run may hit ANOTHER Wait
+and re-park (chained delays).
+
+The DEFINITION comes from an immutable `CRM Automation Rule Version` (automation.versions), never from
+the mutable rule. That is what makes `cursor` — a plain index — correct: it indexes a list that cannot
+change underneath a parked execution. Editing a rule can therefore never re-route, duplicate or orphan a
+lead already running it. `run_effects` REPORTS its outcome (`parked`/`failed`/`success`) so the queue can
+close a row honestly; a failed segment must never read as Done.
 
 HONEST CONSTRAINT: atomicity is per-SEGMENT (the effects between two Waits, or before the first / after
 the last), NEVER across a Wait — you cannot hold one DB transaction open for two weeks. A savepoint
@@ -42,45 +48,59 @@ import time
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.automation import actions, rules
+from tatva_connect.automation import actions, rules, versions
+from tatva_connect.automation.resume import RESUME_DT
 
 SWEEP_SWITCH = "Task::Automation::run-log-sweep"
 RUN_LOG = "CRM Automation Run Log"
 DEFAULT_RETENTION_DAYS = 90  # code fallback (no baked form value) — v1 has no operator field.
 
 
-def run_guards(subject, r, context, field_types):
+def _lane(action):
+	"""A verb's lane comes from `actions._ACTION_LANES` — CODE, not data. So a frozen definition carries
+	BOTH lanes and each executor filters for its own."""
+	return actions._ACTION_LANES.get(action.action_type, (None, None))[0]
+
+
+def run_guards(subject, rule_version, context, field_types):
 	"""GUARD lane (Task 5) — evaluate one rule's criteria; if they match, run every GUARD-lane action
 	synchronously. A handler raising propagates straight out (no try/except here) — that raise IS the
 	block, and it must reach `validate` unswallowed (S.1/S.3). No savepoint, no Run Log: nothing has
-	been written yet and the save may never happen."""
-	rule = frappe.get_doc("CRM Automation Rule", r.name)
-	if not rules.criteria_match(rule.criteria, context, field_types):
+	been written yet and the save may never happen.
+
+	Reads the same frozen definition the effect lane will, so a rule edited between the two lanes of one
+	request can never split them across two programs."""
+	definition = versions.load(rule_version)
+	if not rules.criteria_match(definition.criteria, context, field_types):
 		return  # not a fire — same non-match semantics as the effect lane
-	for action in rule.actions:
+	for action in definition.actions:
 		lane, handler = actions._ACTION_LANES.get(action.action_type, (None, None))
-		if lane != "guard":
-			continue  # an effect-lane action on the same rule runs later, after commit
-		handler(action, subject, context)
+		if lane == "guard":
+			handler(action, subject, context)
 
 
-def run_effects(subject, r, trigger_doc, axes, grain, field_types, context, start_idx=0):
-	"""EFFECT lane (Task 5) — the original per-rule executor: evaluate criteria once more (the
-	after-commit context can differ from the sync one — e.g. a rapid A→B→C edit, spec §5.2), then run
-	every EFFECT-lane action in a guarded, savepoint-atomic executor and write one Run Log row. Guard
-	actions on this same rule already ran (or blocked the save) in validate — never re-run here.
+def run_effects(subject, rule_version, trigger_doc, axes, grain, field_types, context, cursor=0):
+	"""EFFECT lane (Task 5) — the per-execution executor: evaluate criteria once more (the after-commit
+	context can differ from the sync one — e.g. a rapid A→B→C edit, spec §5.2), then run every
+	EFFECT-lane action in a guarded, savepoint-atomic executor and write one Run Log row. Guard actions
+	already ran (or blocked the save) in validate — never re-run here.
 
-	`start_idx` (Task 9) is a 0-based index into THIS rule's effect-lane action list (guard actions
-	never appear in it) — 0 for a first fire, or a parked Wait's `next_action_idx` when
-	`resume.sweep_resume()` resumes a segment. A resume SKIPS the criteria re-check below: the
-	criteria already matched at the ORIGINAL fire (that's why this rule parked in the first place),
-	and the trigger context a resume replays is the one captured then, not a fresh one to re-judge."""
+	The definition comes from an IMMUTABLE `CRM Automation Rule Version`, never from the mutable rule —
+	so `cursor`, a plain index into `definition.actions`, indexes a list that cannot change underneath a
+	parked execution. It counts EVERY action (both lanes), not just the effect ones: one list, one index,
+	one meaning. Guard-lane entries are skipped as we walk.
+
+	`cursor` is 0 for a first fire, or a parked execution's own cursor when `resume.sweep_resume()`
+	resumes it. A resume SKIPS the criteria re-check below: they already matched at the ORIGINAL fire
+	(that is why this execution parked), and the context a resume replays is the one captured then, not
+	a fresh one to re-judge.
+
+	Returns `_dict(parked, failed, success)` — the resume queue closes a row off this report, so a
+	failed segment can never read as Done."""
 	started = time.monotonic()
-	rule = frappe.get_doc("CRM Automation Rule", r.name)
-	if start_idx == 0 and not rules.criteria_match(rule.criteria, context, field_types):
-		return  # not a fire — no log (only fires are audited)
-
-	effect_actions = [a for a in rule.actions if actions._ACTION_LANES.get(a.action_type, (None, None))[0] == "effect"]
+	definition = versions.load(rule_version)
+	if cursor == 0 and not rules.criteria_match(definition.criteria, context, field_types):
+		return frappe._dict(parked=False, failed=False, success=0)  # not a fire — no log (only fires are audited)
 
 	# A SEGMENT is all-or-nothing: run every action inside a savepoint; if ANY action fails, roll the
 	# whole segment back so no lead is left half-processed. Deferred side-effects (webhooks) fire only
@@ -91,54 +111,69 @@ def run_effects(subject, r, trigger_doc, axes, grain, field_types, context, star
 	errors = []
 	details = []
 	deferred = []
-	parked_at = None
-	i, action = start_idx, None
+	parked = None
+	idx, action = cursor, None
 	save_point = f"tc_auto_rule_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
-		for i, action in enumerate(effect_actions[start_idx:], start_idx + 1):
+		for idx in range(cursor, len(definition.actions)):
+			action = definition.actions[idx]
+			if _lane(action) != "effect":
+				continue  # a guard-lane action ran synchronously in validate
 			result = _run_action(action, subject, context, axes, trigger_doc)
 			label = actions._action_label(action)
+			success += 1
 			if callable(result):
 				deferred.append(result)  # a deferred thunk (e.g. Call Webhook) - fires only after commit
-				details.append(f"{i}. {label}: ok")
+				details.append(f"{idx + 1}. {label}: ok")
 			elif result:
 				# A handler may return a plain-string marker instead of a thunk (e.g. Send WhatsApp/
 				# Send Email's "suppressed: sends dormant" / "sent: ..." - Task 7) - fold it into the
 				# same audit line rather than a second Run Log column.
-				details.append(f"{i}. {label}: ok ({result})")
+				details.append(f"{idx + 1}. {label}: ok ({result})")
 			else:
-				details.append(f"{i}. {label}: ok")
+				details.append(f"{idx + 1}. {label}: ok")
 		frappe.db.release_savepoint(save_point)
-		success = i - start_idx
 	except actions._ParkSignal as signal:
 		# The Wait handler raised instead of writing — release (never rollback) so every effect that
-		# already ran THIS segment stays. `i` is the Wait's own 1-based position, which is exactly the
-		# 0-based index of the action AFTER it (the resume's next start_idx) — no extra +1 needed.
+		# already ran THIS segment stays. The Wait itself counts as run; the execution resumes at the
+		# action after it.
 		frappe.db.release_savepoint(save_point)
-		success = i - start_idx
-		parked_at = signal.resume_at
-		details.append(f"{i}. {actions._action_label(action)}: ok (parked, resuming {parked_at})")
+		success += 1
+		parked = frappe._dict(
+			parked_at=signal.parked_at, resume_at=signal.resume_at, cursor=idx + 1, label=actions._action_label(action)
+		)
 	except Exception as e:
 		frappe.db.rollback(save_point=save_point)
 		deferred = []
+		success = 0  # the whole segment rolled back — NOTHING durably ran, so the outcome is Failed, not Partial
 		errors.append(f"{action.action_type}: {e}")
-		details.append(f"{i}. {actions._action_label(action)}: FAILED — {e} · segment rolled back (all its actions undone)")
-		_log_error(rule.name, action.action_type, grain, e)
+		details.append(f"{idx + 1}. {actions._action_label(action)}: FAILED — {e} · segment rolled back (all its actions undone)")
+		_log_error(definition.rule, action.action_type, grain, e)
+
+	if parked:
+		# Schedule the remainder BEFORE the Run Log write, and let a failure propagate: the log must
+		# never claim "parked" while no queue row exists behind it. If park raises, no log is written
+		# here and the caller (router.run_for_event / resume._resume_one) records the failure through the
+		# handler it already owns — no second, hand-rolled error path.
+		from tatva_connect.automation import resume
+
+		resume.park(
+			rule=definition.rule, rule_version=rule_version, subject=subject, resume_at=parked.resume_at,
+			cursor=parked.cursor, context=context, parked_at=parked.parked_at,
+		)
+		details.append(f"{parked.cursor}. {parked.label}: ok (parked, resuming {parked.resume_at})")
 
 	for run_deferred in deferred:
 		run_deferred()
 
 	duration_ms = int((time.monotonic() - started) * 1000)
-	_write_run_log(rule, subject, trigger_doc, grain, success, len(errors), "; ".join(errors), "\n".join(details), duration_ms)
+	_write_run_log(
+		definition.rule, rule_version, subject, trigger_doc, grain,
+		success, len(errors), "; ".join(errors), "\n".join(details), duration_ms,
+	)
 
-	if parked_at is not None:
-		# Park AFTER the segment's own Run Log write above, and outside the try/except (the parking
-		# insert must not be caught by this function's own error handling). `i` is next_action_idx —
-		# see the comment above.
-		from tatva_connect.automation import resume
-
-		resume.park(rule.name, subject, parked_at, i, context)
+	return frappe._dict(parked=bool(parked), failed=bool(errors), success=success)
 
 
 def _run_action(action, lead, context, axes, trigger_doc):
@@ -166,17 +201,19 @@ def _grain_tag(vertical, group, program):
 	return "{}::{}::{}".format(vertical or "", group or "", program or "")
 
 
-def _write_run_log(rule, lead, trigger_doc, grain, success, failed, error, details, duration_ms):
-	"""ONE Run Log row per fire (spec §8). Its own try/except — a log-write failure never breaks
-	the run. `error` carries every failed action's message; `details` the per-action ok/FAILED trail
-	(so a partial fire shows exactly which write landed)."""
+def _write_run_log(rule, rule_version, lead, trigger_doc, grain, success, failed, error, details, duration_ms):
+	"""ONE Run Log row per SEGMENT (spec §8). Its own try/except — a log-write failure never breaks the
+	run. `error` carries every failed action's message; `details` the per-action ok/FAILED trail (so a
+	partial fire shows exactly which write landed). `rule_version` answers "which program produced this
+	outcome" — a rule edited since the fire no longer explains its own history without it."""
 	outcome = "Success" if not failed else ("Partial" if success else "Failed")
 	try:
 		frappe.get_doc(
 			{
 				"doctype": RUN_LOG,
 				"fire_time": frappe.utils.now_datetime(),
-				"rule": rule.name,
+				"rule": rule,
+				"rule_version": rule_version,
 				"trigger_doctype": trigger_doc.doctype,
 				"trigger_docname": trigger_doc.name,
 				"lead": lead,
@@ -207,12 +244,38 @@ def _log_error(rule_name, action_type, grain, err):
 
 
 def sweep_run_log():
-	"""Scheduled job (spec §8): delete Run Log rows older than the retention window. Gated like every
-	scheduled automation (invariant #6). Idempotent — a re-run over a swept window deletes nothing."""
+	"""Scheduled job (spec §8): prune the engine's finished history past the retention window. Gated like
+	every scheduled automation (invariant #6). Idempotent — a re-run over a swept window deletes nothing.
+
+	Three tiers, in dependency order so a version is only ever dropped once nothing references it:
+	  1. Run Log rows older than the window.
+	  2. TERMINAL resume rows (Done/Failed/Cancelled) parked before the window. Pending rows are the
+	     live queue and are never touched, however old — a six-month Wait is not stale data.
+	  3. Rule versions no execution and no surviving Run Log still points at. Versions therefore outlive
+	     their own audit trail and no longer, and a rule that has ever fired stays deletable."""
 	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-_retention_days())
 	frappe.db.delete(RUN_LOG, {"fire_time": ["<", cutoff]})
+	frappe.db.delete(RESUME_DT, {"status": ["!=", "Pending"], "parked_at": ["<", cutoff]})
+	_purge_unreferenced_versions()
+
+
+def _purge_unreferenced_versions():
+	"""Delete every rule version that no execution and no surviving Run Log points at.
+
+	A LIVE rule's current version is never a candidate, however cold — it is what the next fire binds to,
+	and a rule that has never fired would otherwise lose its definition. But `is_current` protects a rule,
+	not a ghost: a version whose rule is gone is reclaimable even if it was never retired (`on_trash` does
+	that, yet a raw SQL delete bypasses the lifecycle). Set-difference in Python over indexed `pluck` reads
+	— no correlated subquery, no raw SQL (A.18/S.2)."""
+	referenced = set(frappe.get_all(RESUME_DT, pluck="rule_version", distinct=True))
+	referenced |= set(frappe.get_all(RUN_LOG, pluck="rule_version", distinct=True))
+	live_rules = set(frappe.get_all("CRM Automation Rule", pluck="name"))
+	for row in frappe.get_all(versions.DOCTYPE, fields=["name", "rule", "is_current"]):
+		if row.name in referenced or (row.is_current and row.rule in live_rules):
+			continue
+		frappe.delete_doc(versions.DOCTYPE, row.name, ignore_permissions=True, delete_permanently=True)
 
 
 def _retention_days():

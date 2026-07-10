@@ -119,10 +119,16 @@ tatva_connect.patches.retire_crm_enrolment_submission
 # install (old doctypes archived, never sync). See docs/plans/2026-07-07-automation-spine-merge-and-subjects.md.
 tatva_connect.patches.merge_automation_field_allowlists
 tatva_connect.patches.widen_lsq_attachment_id           # post — File.custom_lsq_attachment_id varchar(140)->500 (long S3 paths failed the migration File save)
-# Composite index (status, resume_at) on the new CRM Automation Resume Wait-park queue — backs
-# sweep_resume()'s Pending/resume_at<=now query. Can't be declared in doctype JSON. Idempotent;
-# also runs on after_migrate via schema_setup. See docs/plans/2026-07-08-automation-engine-v2-unified-vocabulary.md Task 9.
+# Composite indexes on the CRM Automation Resume Wait-park queue + the UNIQUE (rule, definition_hash)
+# on CRM Automation Rule Version. Can't be declared in doctype JSON. Idempotent; also runs on
+# after_migrate via schema_setup. See docs/plans/2026-07-09-automation-rule-versioning.md.
 tatva_connect.patches.add_resume_index
+# Bind every already-parked execution to an immutable CRM Automation Rule Version, translating the old
+# effect-lane `next_action_idx` into the new all-lanes `cursor`. A running execution must never depend
+# on a mutable definition — a reordered or deleted action used to re-route or orphan a parked lead.
+# Runs AFTER add_resume_index (needs the version table). Idempotent; no-op on a fresh install / empty
+# queue. A row that can't be translated is marked Failed and logged — never guessed.
+tatva_connect.patches.migrate_resume_to_versions
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field

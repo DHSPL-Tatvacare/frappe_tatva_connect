@@ -14,7 +14,7 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import dispatcher, router
+from tatva_connect.automation import dispatcher, router, versions
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.tests.automation import field_allowlist
 
@@ -150,7 +150,7 @@ class TestEffectLaneRegression(FrappeTestCase):
 			 "value_mode": "Expression", "expression": "add_days(ctx['no_such_key'], 1)"},  # raises at fire
 		])
 		ctx = {"custom_dob": "1990-01-01"}
-		dispatcher.run_effects(self.lead.name, frappe._dict(name=rule.name), self.lead, (_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"]), "grain", {}, ctx)
+		dispatcher.run_effects(self.lead.name, versions.current_name(rule.name), self.lead, (_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"]), "grain", {}, ctx)
 		after = frappe.db.get_value("CRM Lead", self.lead.name, "custom_last_report_date")
 		self.assertEqual(after, baseline, "action 1 persisted despite action 2 failing - the rule group is not atomic")
 		logs = frappe.get_all(_RUN_LOG, filters={"rule": rule.name}, fields=["outcome", "actions_failed"])

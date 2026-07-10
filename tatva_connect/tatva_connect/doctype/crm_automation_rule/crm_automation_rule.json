@@ -3,18 +3,18 @@
  "allow_rename": 1,
  "autoname": "field:rule_name",
  "creation": "2026-06-18 00:00:00.000000",
- "description": "A declarative, grain-scoped automation rule: Trigger → When (criteria, all match) → Then (actions, in order). Ships dormant (enabled off) and is rejected at save if it has no grain or targets a field outside the Automatable-Field allowlist.",
+ "description": "A declarative, grain-scoped automation rule: Trigger \u2192 When (criteria, all match) \u2192 Then (actions, in order). Ships dormant (enabled off) and is rejected at save if it has no grain or targets a field outside the Automatable-Field allowlist.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
-  "field_order": [
-   "rule_name",
-   "enabled",
-   "priority",
-   "trigger_section",
-   "on_doctype",
-   "event",
-   "when_section",
+ "field_order": [
+  "rule_name",
+  "enabled",
+  "priority",
+  "trigger_section",
+  "on_doctype",
+  "event",
+  "when_section",
   "vertical",
   "group",
   "program",
@@ -78,7 +78,7 @@
    "label": "When (Grain + Criteria)"
   },
   {
-   "description": "Grain axis. At least one of vertical / group / program must be set — a rule with no grain is rejected (no global rule). Blank axis = wildcard.",
+   "description": "Grain axis. At least one of vertical / group / program must be set \u2014 a rule with no grain is rejected (no global rule). Blank axis = wildcard.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "label": "Vertical",
@@ -99,7 +99,7 @@
    "options": "CRM Program"
   },
   {
-   "description": "Structured conditions on the trigger's context — ALL must match. No rows = grain + trigger alone.",
+   "description": "Structured conditions on the trigger's context \u2014 ALL must match. No rows = grain + trigger alone.",
    "fieldname": "criteria",
    "fieldtype": "Table",
    "label": "Criteria",
@@ -126,7 +126,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-07-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Automation Rule",
@@ -165,5 +165,6 @@
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

@@ -40,15 +40,20 @@ def _action_label(a):
 
 
 class _ParkSignal(Exception):
-	"""Raised by the WAIT verb (effect lane, Task 9) — not a failure, a SEGMENT BOUNDARY. The
-	handler never parks anything itself: it only resolves the resume time and raises this; the
-	executor (`dispatcher.run_effects`) is what owns the effects list and this action's position in
-	it, so it is the one that catches the signal, commits the pre-wait segment, and calls
-	`resume.park()` with the index of the action AFTER the Wait."""
+	"""Raised by the WAIT verb (effect lane, Task 9) — not a failure, a SEGMENT BOUNDARY. The handler
+	never parks anything itself: it only resolves the wake time and raises this; the executor
+	(`dispatcher.run_effects`) owns the action list and this action's position in it, so it is the one
+	that catches the signal, commits the pre-wait segment, and calls `resume.park()` with the index of
+	the action AFTER the Wait.
 
-	def __init__(self, resume_at):
+	Carries `parked_at` — the exact instant `resume_at` was derived FROM — so the queue stores the input
+	alongside the answer. Re-deriving a wake time later (a Wait's delay edited under a sleeping lead)
+	then lands on the same arithmetic, to the microsecond."""
+
+	def __init__(self, parked_at, resume_at):
+		self.parked_at = parked_at
 		self.resume_at = resume_at
-		super().__init__(f"wait: parked until {resume_at}")
+		super().__init__(f"wait: parked at {parked_at} until {resume_at}")
 
 
 # -- actions -----------------------------------------------------------------
@@ -110,7 +115,6 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
 	The due date resolves from a context field (From Context) or an expression (Expression)."""
 	from tatva_connect.activity.api import _scope_applies
-	from tatva_connect.automation import expr
 	from tatva_connect.tasks.tasks import create_followup_task
 
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
@@ -263,18 +267,21 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 	return sends.send_email(lead, action.email_recipient, action.email_subject, action.email_body, context)
 
 
-def _action_wait(action, lead, context, axes, trigger_doc):
-	"""WAIT (effect, Task 9) — a SEGMENT BOUNDARY, not a write. `action.wait_expression` is a Python
-	expression (safe_eval via the ONE resolver, expr.resolve_expression, A.8) that must evaluate to
-	a dict of `frappe.utils.add_to_date` kwargs — e.g. `{"days": 14}`, `{"hours": 2}`. This is the
-	ONE clear contract for this verb (a fixed-delay-from-now dict, never a raw datetime literal, so
-	authoring stays declarative and testable). Anything else — a non-dict, an empty dict, or a dict
-	`add_to_date` rejects — raises loudly (frappe.throw); a Wait can never silently resolve to a
-	zero-length (or nonexistent) delay. Never writes anything and never parks anything itself — it
-	raises `_ParkSignal(resume_at)`, which `run_effects` catches to do the actual parking."""
+def wait_resume_at(wait_expression, context, base):
+	"""The ONE Wait-delay resolver (A.8). `wait_expression` is a Python expression (safe_eval via the
+	ONE resolver, expr.resolve_expression) that must evaluate to a non-empty dict of
+	`frappe.utils.add_to_date` kwargs — e.g. `{"days": 14}`, `{"months": 1}`. This is the ONE clear
+	contract for the verb (a fixed delay, never a raw datetime literal, so authoring stays declarative
+	and testable). Anything else — a non-dict, an empty dict, or a dict `add_to_date` rejects — raises
+	loudly; a Wait can never silently resolve to a zero-length (or nonexistent) delay.
+
+	Returns `base` shifted by that delay. Three callers, one arithmetic: the Wait verb (base = now),
+	`versions` rescheduling a parked execution after its Wait's delay was edited (base = when it
+	parked), and the rule's author-time validator (base = now, empty context) — so a rescheduled wake
+	time can never diverge from a freshly computed one."""
 	from tatva_connect.automation import expr
 
-	delay = expr.resolve_expression(action.wait_expression, context)
+	delay = expr.resolve_expression(wait_expression, context)
 	if not isinstance(delay, dict) or not delay:
 		frappe.throw(
 			_("A Wait action's expression must evaluate to a non-empty dict of add_to_date kwargs, "
@@ -282,13 +289,20 @@ def _action_wait(action, lead, context, axes, trigger_doc):
 			title=_("Bad Wait expression"),
 		)
 	try:
-		resume_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), **delay)
+		return frappe.utils.add_to_date(base, **delay)
 	except TypeError as e:
 		frappe.throw(
 			_("A Wait action's expression dict is not valid add_to_date kwargs: {0}").format(e),
 			title=_("Bad Wait expression"),
 		)
-	raise _ParkSignal(resume_at)
+
+
+def _action_wait(action, lead, context, axes, trigger_doc):
+	"""WAIT (effect, Task 9) — a SEGMENT BOUNDARY, not a write. Never writes anything and never parks
+	anything itself: it raises `_ParkSignal`, which `run_effects` catches to do the actual parking. The
+	delay contract lives in `wait_resume_at` (the one resolver)."""
+	parked_at = frappe.utils.now_datetime()
+	raise _ParkSignal(parked_at, wait_resume_at(action.wait_expression, context, parked_at))
 
 
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both

@@ -15,7 +15,7 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import actions, dispatcher, sends
+from tatva_connect.automation import actions, dispatcher, sends, versions
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.whatsapp import api as wati_api
 
@@ -133,7 +133,7 @@ class TestSendsGateOffSuppressesBoth(FrappeTestCase):
 		frappe.sendmail = lambda **kw: mail_calls.append(kw)
 		try:
 			dispatcher.run_effects(
-				self.lead.name, frappe._dict(name=rule.name), self.lead, _AXES, "grain", {}, {},
+				self.lead.name, versions.current_name(rule.name), self.lead, _AXES, "grain", {}, {},
 			)
 			logs = frappe.get_all(_RUN_LOG, filters={"rule": rule.name}, fields=["outcome", "details", "actions_failed"])
 			self.assertTrue(logs, "no Run Log row written for the fire")

@@ -11,7 +11,7 @@ same functions, the same logic, moved (not duplicated, A.8). The suite is rewrit
 `router.on_updated` / `router.run_for_event` / `router._diff_watched_fields`.
 
 Real Frappe engine as the oracle. frappe.flags.in_test makes `frappe.enqueue(..., now=True)` run
-synchronously, so the whole fire -> enqueue -> run_for_event -> _run_rule -> _run_action chain
+synchronously, so the whole fire -> enqueue -> run_for_event -> run_effects -> _run_action chain
 executes inside the test. The S.6 metamorphic pair (j)/(k) plants a known-bad and asserts
 recall==1.0; (l) is the no-regression gate on the retired Task-Completed trigger's replacement shape.
 """
@@ -204,7 +204,7 @@ class TestWatchEntryGuards(FrappeTestCase):
 
 
 class TestWatchEndToEnd(FrappeTestCase):
-	"""The full chain: on_update -> enqueue -> run_for_event -> _run_rule -> Update Field action."""
+	"""The full chain: on_update -> enqueue -> run_for_event -> run_effects -> Update Field action."""
 
 	@classmethod
 	def setUpClass(cls):

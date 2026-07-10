@@ -14,7 +14,7 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import actions, dispatcher
+from tatva_connect.automation import actions, dispatcher, versions
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.tests.automation import field_allowlist
 
@@ -262,7 +262,7 @@ class TestActionExpressionAndComment(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 		try:
 			# run_effects catches the action failure, rolls the savepoint back, and logs (no re-raise).
-			dispatcher.run_effects(self.lead.name, frappe._dict(name=rule.name), self.lead, self.lead_axes, "grain", {}, self._ctx())
+			dispatcher.run_effects(self.lead.name, versions.current_name(rule.name), self.lead, self.lead_axes, "grain", {}, self._ctx())
 			after = frappe.db.get_value("CRM Lead", self.lead.name, _SET_TARGET)
 			self.assertEqual(after, baseline, "action 1 persisted despite action 2 failing - the rule group is not atomic")
 		finally:

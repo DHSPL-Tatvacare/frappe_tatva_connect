@@ -377,9 +377,13 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="daily 03:00",
 		purpose=(
-			"Each night, prunes automation Run Log rows past the retention window so the audit "
-			"trail stays useful without growing without bound.\n"
-			"Example: run-log entries older than the retention period are removed at 03:00."
+			"Each night, prunes the engine's finished history past the retention window so the audit "
+			"trail stays useful without growing without bound: Run Log rows, then FINISHED queue "
+			"executions (Done/Failed/Cancelled), then any rule version no execution and no surviving "
+			"Run Log still points at. A WAITING execution is never touched, however old — a six-month "
+			"Wait is the live queue, not stale data.\n"
+			"Example: run-log entries older than the retention period are removed at 03:00, along with "
+			"the completed drip executions and the retired rule definitions that only they referenced."
 		),
 		backs=["tatva_connect.automation.dispatcher.sweep_run_log"],
 	),

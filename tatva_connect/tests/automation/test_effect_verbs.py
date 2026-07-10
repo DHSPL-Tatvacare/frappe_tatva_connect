@@ -15,7 +15,7 @@ import unittest
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import actions, dispatcher
+from tatva_connect.automation import actions, dispatcher, versions
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.tests.automation import field_allowlist
 
@@ -293,7 +293,7 @@ class TestCallWebhookDeferredThunk(FrappeTestCase):
 		calls, orig = self._spy_enqueue()
 		try:
 			dispatcher.run_effects(
-				self.lead.name, frappe._dict(name=rule.name), self.lead, _AXES, "grain", {}, {},
+				self.lead.name, versions.current_name(rule.name), self.lead, _AXES, "grain", {}, {},
 			)
 			self.assertEqual(calls, [], "the webhook fired despite the rule rolling back — the thunk must be deferred to commit")
 			logs = frappe.get_all(_RUN_LOG, filters={"rule": rule.name}, fields=["outcome", "actions_failed"])
