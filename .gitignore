@@ -40,7 +40,7 @@ custom-user-work/
 # Gitignored, NOT deleted: they still drive local work, they just do not ship in the repo/image.
 /CLAUDE.md
 /AGENTS.md
-/CICD.md
+/DEPLOY.md
 /FRAPPE.md
 
 # partner API docs site (Zudoku) — deployed separately via deploy-docs.sh, never on the app image

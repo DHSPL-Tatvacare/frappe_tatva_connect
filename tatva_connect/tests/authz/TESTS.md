@@ -67,6 +67,12 @@ does MORE than native allows is an **escalation** (a live VAPT-class hole). `vap
 recall gate — every Jun'26 finding must be covered by a generated case. This tier runs in the
 **committed HTTP lifecycle** (seed commit=True + teardown), not the in-process one.
 
+The judge counts *rows*, never the metadata envelope (`_endpoint_allowed` reads `data`/`values`, not the
+`columns`/`keys` wrapper). A live run may surface **known-benign residuals** that widen vs the oracle but
+are not sensitive — the public File **folder skeleton** (`is_folder=1`, e.g. `Home/Attachments`) and a
+role-scoped `get_apps` that returns only the caller's own entitled app. These are documented in
+`vapt/findings.py` and the wire stays live, so a *real* private-File or cross-app leak still trips it.
+
 **Two hostile users, on purpose:** `no_role` (truly zero roles — the strict floor; anything it reaches
 is a definite bug) and `default_user` (only the platform-default `LMS Student`+`Wiki User` a real signup
 gets — the faithful VAPT actor). A finding reachable by `no_role` is a code IDOR; reachable only by
@@ -221,6 +227,8 @@ Ground truth per case comes from the **oracle** (native verdict) and **explicit 
 | **Test stays green** | ❌ **FN** — *the dangerous one*; suite is blind | ✅ **TN** — correct |
 
 `mutation.py` deliberately introduces violations — seed an out-of-grain lead a user must not see; open a `lockdown` row; flip a known-good case to known-bad — and `test_self_validation.py` asserts the suite turns **red**. **A planted bug that stays green is a False Negative = a broken test, reported as a build failure.** That is the metric that makes this trustworthy for VAPT.
+
+The **endpoint layer is mutated the same way** (`MUT-B1..B5`): each feeds the sweep's ONE escalation judge (`test_endpoint_sweep._escalates`, shared by the live run and the mutation) a known-bad synthetic HTTP response — a 200 that returns foreign data on a (doctype, action) the *real* oracle denies for `no_role` — plus a known-good control (403). It must flag the bad and not the good, so B1-B5 count toward recall exactly like A1-A14. Only the HTTP response is synthetic; the oracle verdict is genuine.
 
 Metrics reported every run: counts of TP/FP/FN/TN, plus **precision** (TP/(TP+FP)) and **recall** (TP/(TP+FN)). Recall < 1.0 on the mutation set = **fail the build**.
 
