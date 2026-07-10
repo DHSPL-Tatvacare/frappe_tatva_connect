@@ -5,7 +5,7 @@ record a `"suppressed: sends dormant"` marker and call NO adapter — the engine
 fires, action runs, Run Log records it) without a message ever leaving. Once the operator flips the
 switch, the SAME functions resolve against the EXISTING WATI send brain (`whatsapp.routing`
 grain-routing + `whatsapp.providers.adapter_for` + `whatsapp.api.send_template_message`) or native
-`frappe.sendmail` (A.18) — never a second HTTP path (A.11/A.8, one brain). Both irreversible side
+`frappe.sendmail` (A.18), never a second HTTP path (A.11/A.8, one brain). Both irreversible side
 effects RIDE the rule's own segment transaction (R1, post-audit remediation): Send WhatsApp defers
 its WATI call past commit via a thunk (`_deliver_whatsapp`), Send Email drops `now=True` so the Email
 Queue insert is itself the transactional write - a segment that rolls back sends nothing either way.
@@ -36,7 +36,7 @@ def template_account_mismatch(template_name, account_name) -> str | None:
 	return f"template {template_name} belongs to account {template_account}, but the resolved account is {account_name}"
 
 
-def send_whatsapp(subject_lead, template_name, context=None) -> str:
+def send_whatsapp(subject_lead, template_name, context=None):
 	"""Validate and resolve a WATI template send to `subject_lead`'s `mobile_no`, then RETURN a
 	deferred thunk instead of sending inline (R1, post-audit remediation). Every check that can fail
 	the segment (blank config, no routing, a disabled account, a template/account mismatch) runs here,
@@ -114,7 +114,7 @@ def _deliver_whatsapp(account_name, to_number, template_name, parameters, lead):
 def send_email(subject_lead, recipient, subject, body, context=None) -> str:
 	"""Queue (or, while dormant, record) a plain email. `context` is accepted for parity with
 	`send_whatsapp` (a future Expression-mode subject/body would resolve against it before this call)
-	but is not otherwise used — `email_subject`/`email_body` are plain literal fields today.
+	but is not otherwise used; `email_subject`/`email_body` are plain literal fields today.
 
 	No `now=True` (R1, post-audit remediation): `frappe.sendmail` then only inserts an Email Queue row,
 	a normal DB write that rides the rule's own segment transaction - a rollback removes the queued row
