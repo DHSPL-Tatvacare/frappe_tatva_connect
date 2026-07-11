@@ -389,6 +389,14 @@ def _ok(action=None, data=None, **extra):
 
 
 def _fail(code, message, http, **extra):
+	# The vocabulary is closed: a code the caller cannot look up is worse than no code. Emitting an
+	# undeclared one is a bug in US, so it is loud in dev and degrades to the generic code in prod
+	# rather than shipping a string no partner can branch on.
+	if code not in ERROR_CODES:
+		frappe.log_error(title=f"Partner API: undeclared error code {code!r}")
+		if frappe.conf.developer_mode:
+			raise ValueError(f"{code!r} is not in _base.ERROR_CODES — declare it and publish it")
+		code = "server_error"
 	frappe.clear_messages()
 	frappe.local.error_log = []
 	err = {"code": code, "message": message}
@@ -416,6 +424,27 @@ if hasattr(frappe, "DuplicateEntryError"):
 	_ERROR_MAP[frappe.DuplicateEntryError] = ("duplicate", 409)
 if hasattr(frappe, "RateLimitExceededError"):
 	_ERROR_MAP[frappe.RateLimitExceededError] = ("rate_limited", 429)
+
+# THE error vocabulary — every code the API may put in `error.code`, declared once.
+#
+# A caller branches on this string, so a code the API emits and the docs do not list is a lie by
+# omission. It lived in three places (this module, the OpenAPI enum, the errors page) and drifted:
+# `conflict`, which every idempotency collision returns, was emitted for months and published in
+# neither. Declaring it here makes the three provable against each other, and _fail refuses a code
+# that is not in the set — so a new one cannot be invented without being published.
+ERROR_CODES = frozenset({
+	"validation_error",   # 400 — a field failed validation
+	"bad_request",        # 400 — the body was malformed
+	"unauthorized",       # 401 — missing or invalid key
+	"forbidden",          # 403 — the key may not make this call
+	"not_found",          # 404 — no such record, or out of the caller's grain
+	"conflict",           # 409 — an Idempotency-Key is in flight; 422 — reused with a different body
+	"duplicate",          # 409 — a unique constraint was violated
+	"cannot_delete",      # 409 — the record has linked records
+	"rate_limited",       # 429 — a budget is exhausted
+	"server_error",       # 500 — unexpected, and logged
+	"write_conflict",     # 503 — a concurrent write rolled the batch back; nothing was saved
+})
 
 
 def _classify(e, fn_name):
@@ -541,7 +570,18 @@ def _bulk_rate_check(mapping):
 	Separate from the general call rate on purpose. A bulk write is not the same animal as a lead
 	read: it holds N rows' worth of locks for the length of its transaction, so what has to be
 	limited is how many of them can be IN FLIGHT, not how many arrive per minute. With a burst of 1,
-	the second concurrent bulk call is refused before it opens a transaction."""
+	the second concurrent bulk call is refused before it opens a transaction.
+
+	The global bucket is deliberately the SAME size as the per-token one, which the other two
+	dimensions are not (their global ceiling is 2.5x and 5x the per-token). That makes bulk writes
+	serial ACROSS PARTNERS, not merely per partner — and it has to be, because `ix_lead_dedup_unique`
+	is one index on `tabCRM Lead` for every grain. Two partners on different grains inserting at once
+	still contend on it and still deadlock, so a per-partner limit alone would not close the hole.
+
+	The cost is real and is the intended trade: while one partner is backfilling, another partner's
+	bulk call waits its turn (and is told to, with a Retry-After). Bulk is a backfill tool, not a hot
+	path, so a shared queue is the right price for a deadlock that cannot happen. Single-record writes
+	are untouched and stay fully concurrent."""
 	cfg = _cfg()
 	window = cfg["bulk_window_seconds"] or DEFAULTS["bulk_window_seconds"]
 	return _bucket_pair(

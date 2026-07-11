@@ -422,6 +422,7 @@
                   "unauthorized",
                   "forbidden",
                   "not_found",
+                  "conflict",
                   "duplicate",
                   "cannot_delete",
                   "write_conflict",

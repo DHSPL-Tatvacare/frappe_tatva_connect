@@ -36,6 +36,7 @@ flowchart TD
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
 | `not_found` | 404 | The lead does not exist, or is outside the caller's business line. | The two cases are identical by design. The unique ID should be re-checked. Only leads on the caller's own business line are visible. |
+| `conflict` | 409 / 422 | An `Idempotency-Key` collided. **409**: a request with that key is still in flight. **422**: that key was reused with a *different* body. | On 409, wait and retry the same call. On 422, a new key is used for a new body — a key belongs to exactly one request. See [Writes, addressing and retries](/writes-and-retries). |
 | `duplicate` | 409 | A unique constraint was violated. | Usually a race. `lead_create` is idempotent on phone, product line, and group, so a plain re-send does not duplicate. |
 | `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
 | `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |

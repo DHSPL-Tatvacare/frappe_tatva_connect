@@ -39,6 +39,12 @@ The practical rule is simple:
 
 Single-record calls are unaffected. They may be sent concurrently, up to the request rate.
 
+The bulk queue is **shared across all keys**, not held per key. While one integration is running a
+large backfill, another integration's bulk call waits its turn and is told how long to wait. This is
+deliberate: the constraint being protected is a single database index that every key writes through,
+so a per-key limit alone would not protect it. A backfill that must not be delayed by another is
+scheduled with Ops.
+
 ## Bulk still saves the request budget
 
 A bulk call of up to **25 records** counts as **one** request against the request budget. Each record still counts against the daily volume budget. So a batch of 25 leads costs one request, not 25.

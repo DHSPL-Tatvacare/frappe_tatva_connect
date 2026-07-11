@@ -21,10 +21,12 @@ It drives the endpoints in-process, so it needs no running web server and no net
 """
 import time
 import unittest
+from pathlib import Path
 
 import frappe
 
 from tatva_connect.api import partner, partner_activity, partner_call, partner_file
+from tatva_connect.api._base import ERROR_CODES
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
 MODULES = (partner, partner_activity, partner_call, partner_file)
@@ -172,6 +174,36 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			for u in unexercisable:
 				print(f"    {u}")
 		self.assertFalse(missing, f"{len(missing)} endpoints succeed but have no example: {missing}")
+
+	def test_the_error_vocabulary_is_published_wherever_a_caller_looks_it_up(self):
+		"""Every code the API can emit must be findable — in the spec's enum AND on the errors page.
+
+		A caller branches on `error.code`, so a code the API emits and the docs do not list is a lie by
+		omission. The vocabulary lived in three places and drifted: `conflict`, returned by every
+		Idempotency-Key collision, was emitted for months and published in neither. `_base.ERROR_CODES`
+		is now the one declaration, and this locks the other two to it."""
+		spec = load_spec()
+		enum = set(spec["components"]["schemas"]["PartnerError"]
+		           ["properties"]["error"]["properties"]["code"]["enum"])
+
+		page = Path(__file__).resolve().parents[3] / "api-docs" / "pages" / "partner-errors.mdx"
+		documented = {line.split("`")[1] for line in page.read_text().splitlines()
+		              if line.startswith("| `")}
+
+		self.assertEqual(
+			ERROR_CODES - enum, set(),
+			"a code the API can emit is missing from the OpenAPI enum — a generated client cannot "
+			"branch on it",
+		)
+		self.assertEqual(
+			ERROR_CODES - documented, set(),
+			"a code the API can emit is missing from the errors page — a partner meets it with "
+			"nothing to look up",
+		)
+		self.assertEqual(
+			enum - ERROR_CODES, set(),
+			"the spec advertises a code the API can never emit",
+		)
 
 	def test_the_spec_declares_authentication(self):
 		"""Without securitySchemes, every generated client -- Postman, PyCharm, codegen -- emits
