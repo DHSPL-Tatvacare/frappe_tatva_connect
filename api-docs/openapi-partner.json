@@ -2036,6 +2036,41 @@
     }
   },
   "paths": {
+    "/api/method/frappe.auth.get_logged_user": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Verify API Key",
+        "description": "Confirms the `Authorization` header is correct by returning the account the key belongs to. Suitable as the first call when integrating, and as a health check in CI: anything other than `200` means the auth is wrong. Setup: [Authentication](/partner-validate-key).",
+        "responses": {
+          "200": {
+            "description": "Authenticated: the key is valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "format": "email"
+                    }
+                  }
+                },
+                "examples": {
+                  "OK": {
+                    "$ref": "#/components/examples/AuthCheckResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (HTTP 401)."
+          }
+        }
+      }
+    },
     "/api/method/tatva_connect.api.partner.lead_schema": {
       "get": {
         "tags": [
@@ -2474,33 +2509,23 @@
         }
       }
     },
-    "/api/method/tatva_connect.api.partner.lead_create_bulk": {
-      "post": {
+    "/api/method/tatva_connect.api.partner.lead_update": {
+      "put": {
         "tags": [
           "Leads"
         ],
-        "summary": "Bulk Create",
-        "description": "Create or update up to 100 leads in one call, body `{\"leads\": [... ]}`. Same idempotent identity and field rules as Create Lead; each row commits in its own savepoint, so one bad row reports its error while the rest still commit (**partial success**). Over 100 rows is rejected.",
+        "summary": "Update Lead",
+        "description": "Updates a lead by `name` (its unique id, e.g. `CRM-LEAD-2026-00123`). Fields that are sent are updated, fields that are omitted are left alone, and child profiles merge field by field, so a partial write never wipes a row. Only leads on the caller's own line can be updated.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "leads": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {
-                      "$ref": "#/components/schemas/UpsertLeadRequest"
-                    },
-                    "description": "Up to 100 lead payloads (same shape as `lead_create`)."
-                  }
-                }
+                "$ref": "#/components/schemas/LeadUpdateRequest"
               },
               "examples": {
-                "Two leads": {
-                  "$ref": "#/components/examples/LeadCreateBulkRequest"
+                "Update": {
+                  "$ref": "#/components/examples/LeadUpdateRequest"
                 }
               }
             }
@@ -2508,7 +2533,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Lead updated (top-level `status`/`action`/`data`).",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -2523,11 +2548,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                  "$ref": "#/components/schemas/PartnerWriteResponse"
                 },
                 "examples": {
-                  "Partial success": {
-                    "$ref": "#/components/examples/BulkSuccessMixed"
+                  "Updated": {
+                    "$ref": "#/components/examples/LeadUpdateResponse"
                   }
                 }
               }
@@ -2544,7 +2569,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key is not permitted, or the lead is outside the caller's line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2555,6 +2580,132 @@
           },
           "400": {
             "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                },
+                "example": {
+                  "status": "error",
+                  "error": {
+                    "code": "not_found",
+                    "message": "Lead not found"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner.lead_delete": {
+      "delete": {
+        "tags": [
+          "Leads"
+        ],
+        "summary": "Delete Lead",
+        "description": "Deletes a lead by `name` (its unique id), in the query or body. Only leads on the caller's own line can be deleted. A lead with linked activity (calls, tasks, notes) cannot be deleted and returns `cannot_delete`; see [Errors](/partner-errors).",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123`, to delete (may also be sent in the JSON body).",
+            "example": "CRM-LEAD-2026-00123"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lead deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerWriteResponse"
+                },
+                "examples": {
+                  "Deleted": {
+                    "$ref": "#/components/examples/LeadDeleteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted, or the lead is outside the caller's line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                },
+                "example": {
+                  "status": "error",
+                  "error": {
+                    "code": "not_found",
+                    "message": "Lead not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Lead has linked activity, `cannot_delete` (generic message by design).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2676,23 +2827,33 @@
         }
       }
     },
-    "/api/method/tatva_connect.api.partner.lead_update": {
-      "put": {
+    "/api/method/tatva_connect.api.partner.lead_create_bulk": {
+      "post": {
         "tags": [
           "Leads"
         ],
-        "summary": "Update Lead",
-        "description": "Updates a lead by `name` (its unique id, e.g. `CRM-LEAD-2026-00123`). Fields that are sent are updated, fields that are omitted are left alone, and child profiles merge field by field, so a partial write never wipes a row. Only leads on the caller's own line can be updated.",
+        "summary": "Bulk Create",
+        "description": "Create or update up to 100 leads in one call, body `{\"leads\": [... ]}`. Same idempotent identity and field rules as Create Lead; each row commits in its own savepoint, so one bad row reports its error while the rest still commit (**partial success**). Over 100 rows is rejected.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LeadUpdateRequest"
+                "type": "object",
+                "properties": {
+                  "leads": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/UpsertLeadRequest"
+                    },
+                    "description": "Up to 100 lead payloads (same shape as `lead_create`)."
+                  }
+                }
               },
               "examples": {
-                "Update": {
-                  "$ref": "#/components/examples/LeadUpdateRequest"
+                "Two leads": {
+                  "$ref": "#/components/examples/LeadCreateBulkRequest"
                 }
               }
             }
@@ -2700,7 +2861,7 @@
         },
         "responses": {
           "200": {
-            "description": "Lead updated (top-level `status`/`action`/`data`).",
+            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -2715,11 +2876,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PartnerWriteResponse"
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
                 },
                 "examples": {
-                  "Updated": {
-                    "$ref": "#/components/examples/LeadUpdateResponse"
+                  "Partial success": {
+                    "$ref": "#/components/examples/BulkSuccessMixed"
                   }
                 }
               }
@@ -2736,7 +2897,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or the lead is outside the caller's line.",
+            "description": "The key is not permitted to make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2751,23 +2912,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "not_found",
-                    "message": "Lead not found"
-                  }
                 }
               }
             }
@@ -2873,115 +3017,6 @@
           },
           "400": {
             "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
-    "/api/method/tatva_connect.api.partner.lead_delete": {
-      "delete": {
-        "tags": [
-          "Leads"
-        ],
-        "summary": "Delete Lead",
-        "description": "Deletes a lead by `name` (its unique id), in the query or body. Only leads on the caller's own line can be deleted. A lead with linked activity (calls, tasks, notes) cannot be deleted and returns `cannot_delete`; see [Errors](/partner-errors).",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123`, to delete (may also be sent in the JSON body).",
-            "example": "CRM-LEAD-2026-00123"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lead deleted (`status:success`, `action:deleted`, `data:{name}`).",
-            "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
-              },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
-              },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerWriteResponse"
-                },
-                "examples": {
-                  "Deleted": {
-                    "$ref": "#/components/examples/LeadDeleteResponse"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The key is not permitted, or the lead is outside the caller's line.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                },
-                "example": {
-                  "status": "error",
-                  "error": {
-                    "code": "not_found",
-                    "message": "Lead not found"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Lead has linked activity, `cannot_delete` (generic message by design).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3265,6 +3300,137 @@
         }
       }
     },
+    "/api/method/tatva_connect.api.partner_activity.activity_list": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "List Activities",
+        "description": "List a lead's activities, paginated. `lead` (or `mobile_no`) is required and line-scoped; optional `task_type` / `status` filters. Returns `{total, count, offset, limit, has_more, activities:[…]}`.",
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "CRM-LEAD-2026-00123"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to one activity type."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by task status."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the lead's activities under `data`.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Page": {
+                    "$ref": "#/components/examples/ActivityListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
     "/api/method/tatva_connect.api.partner_activity.activity_create": {
       "post": {
         "tags": [
@@ -3534,96 +3700,6 @@
         }
       }
     },
-    "/api/method/tatva_connect.api.partner_activity.activity_create_bulk": {
-      "post": {
-        "tags": [
-          "Activities"
-        ],
-        "summary": "Bulk Create Activities",
-        "description": "Create-or-upsert up to 100 activities, body `{\"activities\": [ … ]}`. Same idempotent (`external_id`) and field rules as Create Activity; each row commits in its own savepoint (**partial success**).",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "activities": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {
-                      "$ref": "#/components/schemas/ActivityUpsertRequest"
-                    },
-                    "description": "Up to 100 activity payloads (same shape as `activity_create`)."
-                  }
-                }
-              },
-              "examples": {
-                "Two activities": {
-                  "$ref": "#/components/examples/ActivityCreateBulkRequest"
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
-            "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
-              },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
-              },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerBulkResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The key is not permitted to make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
     "/api/method/tatva_connect.api.partner_activity.activity_get_bulk": {
       "post": {
         "tags": [
@@ -3728,157 +3804,33 @@
         }
       }
     },
-    "/api/method/tatva_connect.api.partner_activity.activity_list": {
-      "get": {
+    "/api/method/tatva_connect.api.partner_activity.activity_create_bulk": {
+      "post": {
         "tags": [
           "Activities"
         ],
-        "summary": "List Activities",
-        "description": "List a lead's activities, paginated. `lead` (or `mobile_no`) is required and line-scoped; optional `task_type` / `status` filters. Returns `{total, count, offset, limit, has_more, activities:[…]}`.",
-        "parameters": [
-          {
-            "name": "lead",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "CRM Lead id. Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
-          },
-          {
-            "name": "mobile_no",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
-            "example": "9000000001"
-          },
-          {
-            "name": "task_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter to one activity type."
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by task status."
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 20,
-              "maximum": 200
-            },
-            "description": "Page size. Default 20, max 200."
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0
-            },
-            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of the lead's activities under `data`.",
-            "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
-              },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
-              },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EntityListResponse"
-                },
-                "examples": {
-                  "Page": {
-                    "$ref": "#/components/examples/ActivityListResponse"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The key is not permitted to make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
-    "/api/method/tatva_connect.api.partner_file.file_attach": {
-      "post": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Attach File",
-        "description": "Attach a file to a lead (or a scoped activity task). Supply the bytes as a downloadable `file_url` (the server fetches it) OR `content_base64` (exactly one). **The file is always stored private.** Idempotent on `external_id` (stored in `custom_lsq_attachment_id`): re-attaching the same value to the same record returns the existing file with `action: exists`.",
+        "summary": "Bulk Create Activities",
+        "description": "Create-or-upsert up to 100 activities, body `{\"activities\": [ … ]}`. Same idempotent (`external_id`) and field rules as Create Activity; each row commits in its own savepoint (**partial success**).",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FileAttachRequest"
+                "type": "object",
+                "properties": {
+                  "activities": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/ActivityUpsertRequest"
+                    },
+                    "description": "Up to 100 activity payloads (same shape as `activity_create`)."
+                  }
+                }
               },
               "examples": {
-                "By file_url": {
-                  "$ref": "#/components/examples/FileAttachRequestUrl"
-                },
-                "By content_base64": {
-                  "$ref": "#/components/examples/FileAttachRequestBase64"
+                "Two activities": {
+                  "$ref": "#/components/examples/ActivityCreateBulkRequest"
                 }
               }
             }
@@ -3886,7 +3838,7 @@
         },
         "responses": {
           "200": {
-            "description": "File attached (`action: attached`) or already present (`action: exists`).",
+            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -3901,15 +3853,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntityReadResponse"
-                },
-                "examples": {
-                  "Attached": {
-                    "$ref": "#/components/examples/FileAttachResponse"
-                  },
-                  "Already attached": {
-                    "$ref": "#/components/examples/FileAttachResponseExists"
-                  }
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
                 }
               }
             }
@@ -3936,16 +3880,6 @@
           },
           "403": {
             "description": "The key is not permitted to make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Lead/activity not found or outside the caller's line (identical, to prevent enumeration).",
             "content": {
               "application/json": {
                 "schema": {
@@ -4163,6 +4097,107 @@
         }
       }
     },
+    "/api/method/tatva_connect.api.partner_file.file_attach": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Attach File",
+        "description": "Attach a file to a lead (or a scoped activity task). Supply the bytes as a downloadable `file_url` (the server fetches it) OR `content_base64` (exactly one). **The file is always stored private.** Idempotent on `external_id` (stored in `custom_lsq_attachment_id`): re-attaching the same value to the same record returns the existing file with `action: exists`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileAttachRequest"
+              },
+              "examples": {
+                "By file_url": {
+                  "$ref": "#/components/examples/FileAttachRequestUrl"
+                },
+                "By content_base64": {
+                  "$ref": "#/components/examples/FileAttachRequestBase64"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File attached (`action: attached`) or already present (`action: exists`).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Attached": {
+                    "$ref": "#/components/examples/FileAttachResponse"
+                  },
+                  "Already attached": {
+                    "$ref": "#/components/examples/FileAttachResponseExists"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead/activity not found or outside the caller's line (identical, to prevent enumeration).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
     "/api/method/tatva_connect.api.partner_file.file_delete": {
       "delete": {
         "tags": [
@@ -4315,107 +4350,6 @@
           },
           "403": {
             "description": "The key is not permitted to make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
-    "/api/method/tatva_connect.api.partner_call.call_create": {
-      "post": {
-        "tags": [
-          "Calls"
-        ],
-        "summary": "Create Call",
-        "description": "Create-or-upsert a call log. `external_id` and `direction` are required. Idempotent on `external_id` (stored in `custom_external_id`): re-sending updates the same row and never doubles.\n\n**Attribution is fail-closed; `lead` is read.** `lead` or `mobile_no` attaches explicitly (line-scoped); omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the caller's line. No match, or an ambiguous (2+) match, leaves the call unlinked and `lead` returns `null`, never on a wrong lead.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CallUpsertRequest"
-              },
-              "examples": {
-                "Explicit lead": {
-                  "$ref": "#/components/examples/CallCreateRequest"
-                },
-                "Server attribution": {
-                  "$ref": "#/components/examples/CallCreateRequestAttribute"
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Call created or updated. **Read `data.lead`**, it is `null` when attribution found no/ambiguous match (the call is unlinked).",
-            "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
-              },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
-              },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EntityReadResponse"
-                },
-                "examples": {
-                  "Created (linked)": {
-                    "$ref": "#/components/examples/CallCreateResponse"
-                  },
-                  "Created (unlinked, lead null)": {
-                    "$ref": "#/components/examples/CallCreateResponseUnlinked"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The key is not permitted to make this call.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PartnerError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "An explicitly-sent lead or mobile_no was not found, or is outside the caller's line (identical, to prevent enumeration). Server-attribution misses do not 404; they return `lead: null`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4646,6 +4580,107 @@
         }
       }
     },
+    "/api/method/tatva_connect.api.partner_call.call_create": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Create Call",
+        "description": "Create-or-upsert a call log. `external_id` and `direction` are required. Idempotent on `external_id` (stored in `custom_external_id`): re-sending updates the same row and never doubles.\n\n**Attribution is fail-closed; `lead` is read.** `lead` or `mobile_no` attaches explicitly (line-scoped); omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the caller's line. No match, or an ambiguous (2+) match, leaves the call unlinked and `lead` returns `null`, never on a wrong lead.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallUpsertRequest"
+              },
+              "examples": {
+                "Explicit lead": {
+                  "$ref": "#/components/examples/CallCreateRequest"
+                },
+                "Server attribution": {
+                  "$ref": "#/components/examples/CallCreateRequestAttribute"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Call created or updated. **Read `data.lead`**, it is `null` when attribution found no/ambiguous match (the call is unlinked).",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Created (linked)": {
+                    "$ref": "#/components/examples/CallCreateResponse"
+                  },
+                  "Created (unlinked, lead null)": {
+                    "$ref": "#/components/examples/CallCreateResponseUnlinked"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An explicitly-sent lead or mobile_no was not found, or is outside the caller's line (identical, to prevent enumeration). Server-attribution misses do not 404; they return `lead: null`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
     "/api/method/tatva_connect.api.partner_call.call_delete": {
       "delete": {
         "tags": [
@@ -4808,41 +4843,6 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
-    "/api/method/frappe.auth.get_logged_user": {
-      "get": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Verify API Key",
-        "description": "Confirms the `Authorization` header is correct by returning the account the key belongs to. Suitable as the first call when integrating, and as a health check in CI: anything other than `200` means the auth is wrong. Setup: [Authentication](/partner-validate-key).",
-        "responses": {
-          "200": {
-            "description": "Authenticated: the key is valid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "format": "email"
-                    }
-                  }
-                },
-                "examples": {
-                  "OK": {
-                    "$ref": "#/components/examples/AuthCheckResponse"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key (HTTP 401)."
           }
         }
       }
