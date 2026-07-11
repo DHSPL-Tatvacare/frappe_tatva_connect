@@ -129,6 +129,8 @@ tatva_connect.patches.add_resume_index
 # Runs AFTER add_resume_index (needs the version table). Idempotent; no-op on a fresh install / empty
 # queue. A row that can't be translated is marked Failed and logged — never guessed.
 tatva_connect.patches.migrate_resume_to_versions
+tatva_connect.patches.add_lead_dedup_unique_index      # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
+tatva_connect.patches.add_call_log_reference_index     # post — index (reference_doctype, reference_docname): call_list full-scanned without it
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field

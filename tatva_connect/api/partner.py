@@ -486,22 +486,10 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	parent, children = _resolve_picklists(
 		parent, children, (anchor_vertical or "", anchor_group or "", program or "")
 	)
-	existing = frappe.db.get_value(
-		"CRM Lead",
-		{"mobile_no": mobile, "custom_vertical": anchor_vertical, "custom_group": anchor_group},
-		"name",
-	)
+	anchor = {"mobile_no": mobile, "custom_vertical": anchor_vertical, "custom_group": anchor_group}
+	existing = frappe.db.get_value("CRM Lead", anchor, "name")
 	if existing:
-		doc = frappe.get_doc("CRM Lead", existing)
-		doc.update(parent)
-		_apply_children(doc, children)
-		if mp:
-			_force_routing(doc, mp)
-		if open_program and program:
-			doc.custom_current_program = program
-		doc.save(ignore_permissions=True)
-		_stamp_label(doc, item)
-		return doc, "updated"
+		return _merge_onto(existing, parent, children, mp, program, open_program, item)
 
 	parent.setdefault("first_name", _NAMELESS)  # status is left for CRM's controller to default
 	doc = frappe.new_doc("CRM Lead")
@@ -511,9 +499,46 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 		_force_routing(doc, mp)
 	if open_program:
 		doc.custom_current_program = program
-	doc.insert(ignore_permissions=True)
+
+	# The lookup above is a NON-LOCKING read, and dedup_guard's validate-time lookup is the same
+	# unguarded read — so two concurrent creates for one new patient BOTH miss BOTH reads and both
+	# reach here. The UNIQUE index on (mobile_no, custom_vertical, custom_group) is the real gate: it
+	# is what makes the dedup rule true rather than merely likely. When it fires, the other request has
+	# already committed (or we would still be waiting on its lock), so we fold onto the row it wrote —
+	# the caller gets the same lead either way, which is exactly what the rule promises. Without this,
+	# a parallelised backfill silently produced two leads for one patient and no API path healed it.
+	#
+	# A unique-INDEX violation is UniqueValidationError(ValidationError); DuplicateEntryError(NameError)
+	# is a doc-NAME collision. They are unrelated branches of Frappe's hierarchy, so both are caught.
+	sp = f"lead_insert_{frappe.generate_hash(length=8)}"
+	frappe.db.savepoint(sp)
+	try:
+		doc.insert(ignore_permissions=True)
+	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+		frappe.db.rollback(save_point=sp)
+		winner = frappe.db.get_value("CRM Lead", anchor, "name")
+		if not winner:
+			raise  # the clash was on some OTHER unique key (facebook_lead_id, ...) — not ours to absorb
+		return _merge_onto(winner, parent, children, mp, program, open_program, item)
+
 	_stamp_label(doc, item)
 	return doc, "created"
+
+
+def _merge_onto(name, parent, children, mp, program, open_program, item):
+	"""Overlay the payload onto an existing lead. The ONE update path, taken both when the dedup lookup
+	finds the lead and when the unique index catches a concurrent insert — so a race and a re-send
+	converge on identical behaviour."""
+	doc = frappe.get_doc("CRM Lead", name)
+	doc.update(parent)
+	_apply_children(doc, children)
+	if mp:
+		_force_routing(doc, mp)
+	if open_program and program:
+		doc.custom_current_program = program
+	doc.save(ignore_permissions=True)
+	_stamp_label(doc, item)
+	return doc, "updated"
 
 
 def _stamp_label(doc, item):

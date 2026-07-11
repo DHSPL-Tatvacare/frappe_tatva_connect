@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 import frappe
 
+from tatva_connect.activity import api as activity_brain
 from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file
 from tatva_connect.api._base import (
 	ACTION_CREATED,
@@ -625,6 +626,93 @@ class TestPartnerContract(unittest.TestCase):
 		self.assertEqual((code, http), ("cannot_delete", 409))
 		self.assertNotIn("lead", message.lower(), "the shared message must not name one entity")
 		self.assertIn("record", message.lower())
+
+	# -- P2: the DB enforces the dedup rule the API promises ------------------
+
+	def test_the_dedup_rule_is_enforced_by_a_unique_index(self):
+		"""P2 was a promise the database did not keep. The lookup in _upsert_one is a NON-LOCKING read,
+		so two concurrent creates for one patient both miss and both insert -- and no API path heals it,
+		because resolve_lead (behind every activity/file/call endpoint) then picks an arbitrary one."""
+		self.assertTrue(
+			frappe.db.has_index("tabCRM Lead", "ix_lead_dedup_unique"),
+			"CRM Lead has no unique index on (mobile_no, custom_vertical, custom_group) -- the dedup "
+			"rule is unenforced and a parallel backfill will silently split a patient across two leads",
+		)
+
+	def test_a_racing_insert_folds_onto_the_winner_instead_of_failing_the_caller(self):
+		"""When the index fires, the other request has already committed. Fold onto its row: the caller
+		gets the same lead either way, which is exactly what the dedup rule promises."""
+		phone = "+919812300102"
+		first, _ = self._lead(phone)
+
+		# Reproduce the real sequence. A concurrent request has not COMMITTED yet, so neither of the
+		# two reads that guard an insert can see it: _upsert_one's own dedup lookup misses, and so does
+		# dedup_guard's validate-time lookup (it is the same unguarded read, which is why it races
+		# identically and is not a backstop). Both miss, both reach the insert -- and only the UNIQUE
+		# INDEX can stop the second one. Once it fires, the winner IS committed, so the recovery lookup
+		# must see it: the blind lifts after those two reads.
+		real_get_value = frappe.db.get_value
+		blinded = {"n": 0}
+
+		def blind_until_the_insert(doctype, filters, *a, **kw):
+			if doctype == "CRM Lead" and isinstance(filters, dict) and filters.get("mobile_no") == phone:
+				blinded["n"] += 1
+				if blinded["n"] <= 2:  # 1 = _upsert_one's dedup read, 2 = dedup_guard's validate read
+					return None
+			return real_get_value(doctype, filters, *a, **kw)
+
+		with patch.object(frappe.db, "get_value", side_effect=blind_until_the_insert):
+			second, action = self._lead(phone)
+
+		self.assertGreaterEqual(blinded["n"], 3, "the insert must actually have been attempted")
+
+		self.assertEqual(action, ACTION_UPDATED, "a racing insert must fold onto the winner, not fail")
+		self.assertEqual(second.name, first.name, "the race must converge on ONE lead")
+		self.assertEqual(
+			frappe.db.count("CRM Lead", {"mobile_no": phone, "custom_vertical": VERTICAL,
+			                             "custom_group": GROUP}),
+			1, "the race produced two leads for one patient",
+		)
+
+	# -- performance: the list is not an N+1 ---------------------------------
+
+	def test_the_activity_list_is_not_an_n_plus_one(self):
+		"""_activity_payload re-read every row and rebuilt its type config per row. A 200-row page was
+		~1,000 round-trips. The config is now resolved once per DISTINCT type."""
+		lead, _ = self._lead("+919812300102")
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name})
+		partner_activity.activity_schema()
+		types = frappe.local.response["data"]["task_types"]
+		if not types:
+			self.skipTest("no activity type is available for this lead's grain")
+
+		for _ in range(5):
+			partner_activity._create_one(
+				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": {}}),
+				self.mp, self.is_sysmgr)
+
+		configs = []
+		with patch.object(activity_brain, "_type_config",
+		                  side_effect=lambda tt: configs.append(tt) or None):
+			frappe.local.response = frappe._dict()
+			frappe.form_dict = frappe._dict({"lead": lead.name, "limit": 50})
+			partner_activity.activity_list()
+
+		self.assertEqual(frappe.local.response["data"]["count"], 5, "all five rows must come back")
+		self.assertEqual(
+			len(configs), 1,
+			f"_type_config ran {len(configs)} times for 5 rows of ONE type; it must run once per "
+			f"DISTINCT type, not once per row",
+		)
+
+	def test_the_call_log_reference_lookup_is_indexed(self):
+		"""call_list filters on (reference_doctype, reference_docname) and full-scanned without this.
+		CRM Task already carried the equivalent (ix_refdoc_tasktype_status)."""
+		self.assertTrue(
+			frappe.db.has_index("tabCRM Call Log", "ix_calllog_reference"),
+			"CRM Call Log has no index on its reference pair -- call_list full-scans the table",
+		)
 
 	# -- discovery -----------------------------------------------------------
 

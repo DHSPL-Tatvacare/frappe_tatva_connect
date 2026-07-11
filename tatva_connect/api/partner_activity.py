@@ -93,27 +93,35 @@ def _scoped_task(name, mp, is_sysmgr):
 	return row
 
 
-def _activity_payload(name):
-	"""Render one activity to the partner shape: name, lead, task_type, status, the caller's
-	own external_id label, and `values` re-keyed to its schema fieldnames (reuse the brain's
-	_task_values via the type config — one projection, identical to the SPA/timeline)."""
-	r = frappe.db.get_value(
-		"CRM Task", name,
-		["name", "reference_docname", "custom_task_type", "status", "description",
-		 "custom_activity_payload", *activity_brain.PROMOTED_COLUMNS,
-		 "custom_location_latitude", "custom_location_longitude",
-		 "custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD],
-		as_dict=True,
-	)
-	cfg = activity_brain._type_config(r.custom_task_type) if r.custom_task_type else None
+# Every column the partner shape needs. Projected ONCE — by the single read and by the list alike —
+# so a page never re-reads per row.
+_PAYLOAD_FIELDS = [
+	"name", "reference_docname", "custom_task_type", "status", "description",
+	"custom_activity_payload", *activity_brain.PROMOTED_COLUMNS,
+	"custom_location_latitude", "custom_location_longitude",
+	"custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD,
+]
+
+
+def _render(row, cfg):
+	"""ONE activity row -> the partner shape, given its type config. The single projection both the
+	single read and the list use, so a get and a page can never render differently. `values` is
+	re-keyed to the schema fieldnames by the brain's own _task_values — identical to the SPA/timeline."""
 	return {
-		"name": r.name,
-		"lead": r.reference_docname,
-		"task_type": r.custom_task_type or "",
-		"status": r.status,
-		"external_id": r.get(EXTERNAL_ID_FIELD) or None,
-		"values": activity_brain._task_values(r, cfg),
+		"name": row.name,
+		"lead": row.reference_docname,
+		"task_type": row.custom_task_type or "",
+		"status": row.status,
+		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
+		"values": activity_brain._task_values(row, cfg),
 	}
+
+
+def _activity_payload(name):
+	"""One activity by name -> the partner shape. The single-record path."""
+	row = frappe.db.get_value("CRM Task", name, _PAYLOAD_FIELDS, as_dict=True)
+	cfg = activity_brain._type_config(row.custom_task_type) if row.custom_task_type else None
+	return _render(row, cfg)
 
 
 def _resolve_task_type(lead, task_type):
@@ -357,7 +365,16 @@ def activity_list(**_kwargs):
 
 	total = frappe.db.count("CRM Task", filters)
 	rows = frappe.get_all(
-		"CRM Task", filters=filters, fields=["name"],
+		"CRM Task", filters=filters, fields=_PAYLOAD_FIELDS,
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
-	_list_ok("activities", [_activity_payload(r.name) for r in rows], total, offset, limit)
+	# The type config is resolved once per DISTINCT type, not once per row: _type_config costs a
+	# db.exists plus a get_doc that pulls two child tables, and the list used to pay that for every
+	# row on top of a per-row get_value. A 200-row page was ~1,000 round-trips; it is now ~4. Same
+	# shape as the SPA's lead_task_board, which already batches this way.
+	cfgs = {
+		tt: activity_brain._type_config(tt)
+		for tt in {r.custom_task_type for r in rows if r.custom_task_type}
+	}
+	activities = [_render(r, cfgs.get(r.custom_task_type)) for r in rows]
+	_list_ok("activities", activities, total, offset, limit)
