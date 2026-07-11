@@ -121,16 +121,31 @@ AUTOMATIONS = [
 	Auto(
 		key="Task::Assignment::followup",
 		fires_on="Doc Event",
-		trigger_detail="ToDo · after_insert · WhatsApp Message · after_insert",
+		trigger_detail="ToDo · after_insert",
 		purpose=(
-			"Raises the right follow-up task automatically so a lead never goes cold — a 'Call "
-			"Lead' task when a lead is assigned, and a reply task when a patient messages in.\n"
+			"Raises a 'Call Lead' follow-up task automatically when a lead is assigned, so a lead "
+			"never goes cold.\n"
 			"Example: a lead is assigned to a rep; a 'Call Lead' task due in 24 hours appears on "
 			"their list."
 		),
+		# The WhatsApp inbound reply-task was retired here (folded into a user-built rule on the new
+		# WhatsApp Message automation subject), so this toggle now backs only the assignment follow-up.
 		backs=[
 			"tatva_connect.tasks.tasks.on_lead_assignment",
-			"tatva_connect.whatsapp.inbound.on_inbound_message",
+		],
+	),
+	Auto(
+		key="Task::Review::mirror",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · on_update",
+		purpose=(
+			"Copies a Document Review task's verdict onto the document it reviewed, so the "
+			"Attachments tab shows an Approved/Rejected badge on the file.\n"
+			"Example: a rep approves a patient's uploaded prescription on its review task, and the "
+			"file on the lead's Attachments tab immediately shows an Approved badge."
+		),
+		backs=[
+			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
 		],
 	),
 	Auto(

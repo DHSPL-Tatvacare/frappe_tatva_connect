@@ -16,6 +16,12 @@ name a subject), the drift gate's doctype list, and `watch._subject`'s Lead reso
 SUBJECTS = {
 	"CRM Lead": {"link": None},
 	"CRM Task": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	# A File resolves to the lead it is attached to (attached_to_doctype/attached_to_name) — the guard
+	# keeps a File attached to anything else (a Task, a Note) from ever resolving to a lead.
+	"File": {"link": "attached_to_name", "guard_field": "attached_to_doctype", "guard_value": "CRM Lead"},
+	# A WhatsApp Message resolves to its linked lead via reference_name (NOT reference_docname — the
+	# WhatsApp Message field is reference_name); the guard pins it to a CRM Lead reference only.
+	"WhatsApp Message": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 }
 
 

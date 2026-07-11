@@ -1,40 +1,9 @@
-"""WhatsApp automations — driven by the WhatsApp Message row, not the provider.
+"""WhatsApp inbound follow-up — RETIRED (folded into the automation engine).
 
-Any WhatsApp Message of type "Incoming" linked to a CRM Lead raises ONE open
-follow-up task for that lead's owner. Provider-agnostic: WATI (or any future
-provider) just writes the message row; this event does the rest.
+The hand-coded "raise ONE reply task on every inbound WhatsApp Message" side-effect used to live here
+as `on_inbound_message` (wired on WhatsApp Message · after_insert). It is gone: WhatsApp Message is
+now an automation SUBJECT (see `automation.subjects`), so the identical follow-up is expressed as a
+user-built rule — On WhatsApp Message Created → Create Task — grain-scoped and dormant until an
+operator builds it. No code side-effect remains on inbound messages; the wildcard router carries the
+after_insert. Retiring this leaves no orphan behaviour: the rule reproduces the same follow-up.
 """
-import frappe
-from frappe import _
-
-from tatva_connect import automation
-
-WHATSAPP_FOLLOWUP_TYPE = "WhatsApp Follow-up"
-FOLLOWUP_DUE_HOURS = 4
-
-
-def on_inbound_message(doc, method=None):
-	# Master switch — OFF by default (esp. in prod so it never fires on a historical
-	# backfill). Flip the `followup` automation ON to enable.
-	if not automation.is_enabled("Task::Assignment::followup"):
-		return
-	if (doc.type or "") != "Incoming":
-		return
-	if doc.reference_doctype != "CRM Lead" or not doc.reference_name:
-		return
-
-	lead = frappe.db.get_value(
-		"CRM Lead", doc.reference_name, ["lead_owner", "lead_name"], as_dict=True
-	)
-	if not (lead and lead.lead_owner):
-		return  # unowned lead — assignment must set an owner first; no task yet
-
-	from tatva_connect.tasks import tasks
-
-	tasks.create_followup_task(
-		lead=doc.reference_name,
-		task_type=WHATSAPP_FOLLOWUP_TYPE,
-		due_in_hours=FOLLOWUP_DUE_HOURS,
-		assigned_to=lead.lead_owner,
-		title=_("Reply to WhatsApp — {0}").format(lead.lead_name or doc.reference_name),
-	)

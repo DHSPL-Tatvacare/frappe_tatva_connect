@@ -21,6 +21,7 @@
   "match_json",
   "set_json",
   "webhook_endpoint",
+  "webhook_payload_source",
   "comment_mode",
   "comment_text",
   "comment_expression",
@@ -158,6 +159,16 @@
    "fieldtype": "Link",
    "label": "Webhook Endpoint",
    "options": "Webhook"
+  },
+  {
+   "columns": 2,
+   "default": "Lead",
+   "depends_on": "eval:doc.action_type==\"Call Webhook\"",
+   "description": "What rides the webhook body. Lead = the rule's CRM Lead (default; existing rules unchanged). Trigger Doc = the record that fired the rule (e.g. the Document Review task), so its own fields — disposition, reason — go out.",
+   "fieldname": "webhook_payload_source",
+   "fieldtype": "Select",
+   "label": "Webhook Payload Source",
+   "options": "Lead\nTrigger Doc"
   },
   {
    "columns": 2,

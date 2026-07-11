@@ -277,7 +277,7 @@ _VERB_PARAM_FIELDS = {
 	"Update Field": ["target_doctype", "fieldname", "value_mode", "value", "context_field", "expression"],
 	"Append Child Row": ["child_table", "set_json"],
 	"Upsert Child Row": ["child_table", "match_json", "set_json"],
-	"Call Webhook": ["webhook_endpoint"],
+	"Call Webhook": ["webhook_endpoint", "webhook_payload_source"],
 	"Create Note": ["comment_mode", "comment_text", "comment_expression"],
 	"Send WhatsApp": ["whatsapp_template"],
 	"Send Email": ["email_recipient", "email_subject", "email_body"],

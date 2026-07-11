@@ -37,7 +37,7 @@ def ensure_lead_media(lead: str, message_uid: str, filename: str, content: bytes
 		filename=filename,
 		attached_to_doctype="CRM Lead",
 		attached_to_name=lead,
-		meta={"custom_wa_message_id": message_uid},
+		meta={"custom_wa_message_id": message_uid, "custom_source": "WhatsApp"},
 	)
 
 

@@ -161,11 +161,16 @@ def enforce_activity_logged(doc, method=None):
 
 
 @frappe.whitelist()
-def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None):
-	"""Idempotent follow-up task. Throttle: ONE open task per lead per type — if one
+def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None, throttle=True):
+	"""Idempotent follow-up task. Throttle (default): ONE open task per lead per type — if one
 	is already open, return it untouched. Otherwise create it (assigned + due at
 	`due_at` if given, else `due_in_hours` from now). Also the method the WhatsApp
 	inbound event calls.
+
+	`throttle=False` skips the one-open-per-lead-per-type check and always inserts a fresh task. The
+	Document Review flow uses it because its idempotency is PER DOCUMENT (keyed on the File's
+	custom_review_task back-reference by its caller), not per lead+type — several reviewable files on
+	one lead must each get their own review task, never collapse onto the first.
 
 	Race-free throttle: a row lock on the lead serializes concurrent creates, so simultaneous
 	fires (automation engine / assignment / inbound) for the same lead can't slip two tasks past
@@ -186,18 +191,19 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	# Lock the lead row so the check-then-insert below is serialized per lead (no duplicate task).
 	frappe.db.get_value("CRM Lead", lead, "name", for_update=True)
 
-	existing = frappe.db.get_value(
-		"CRM Task",
-		{
-			"reference_doctype": "CRM Lead",
-			"reference_docname": lead,
-			"custom_task_type": task_type,
-			"status": ["not in", CLOSED_STATUSES],
-		},
-		"name",
-	)
-	if existing:
-		return existing
+	if throttle:
+		existing = frappe.db.get_value(
+			"CRM Task",
+			{
+				"reference_doctype": "CRM Lead",
+				"reference_docname": lead,
+				"custom_task_type": task_type,
+				"status": ["not in", CLOSED_STATUSES],
+			},
+			"name",
+		)
+		if existing:
+			return existing
 
 	due_date = due_at or add_to_date(now_datetime(), hours=cint(due_in_hours))
 	# Title defaults to the CLEAN activity name (type_name), never the grain-composite `::` PK — a

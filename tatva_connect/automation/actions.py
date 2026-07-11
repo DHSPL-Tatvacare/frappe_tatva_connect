@@ -113,21 +113,82 @@ def _action_require_location(action, subject, context):
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
 	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
-	The due date resolves from a context field (From Context) or an expression (Expression)."""
+	The due date resolves from a context field (From Context) or an expression (Expression).
+
+	A File / WhatsApp Message trigger carries no assignee, so the follow-up would land unassigned (on
+	no rep's list, no assignment notification): fall back to the lead's owner. When the trigger is a
+	File and the raised type is Document Review, pin the file onto the review task and mark the File
+	Pending + linked (the review flow's on-upload step)."""
 	from tatva_connect.activity.api import _scope_applies
 	from tatva_connect.tasks.tasks import create_followup_task
 
 	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
 	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
 		raise PermissionError(f"task type {action.task_type} is not in this lead's grain")
-	# Carry the completing task's assignee onto the next task (old-engine parity — otherwise the
-	# follow-up lands unassigned, on no rep's list and with no assignment notification).
+	# Carry the completing task's assignee onto the next task (old-engine parity). Only a trigger that
+	# genuinely has no assignee field — a File / WhatsApp Message — falls back to the lead owner so its
+	# task is never orphaned; a Lead- or Task-triggered rule keeps producing an unassigned task for the
+	# native Assignment Rule to route (do NOT force lead_owner on those — it defeats the Assignment Rule).
+	assignee = trigger_doc.get("assigned_to") if trigger_doc else None
+	if not assignee and trigger_doc is not None and trigger_doc.doctype in ("File", "WhatsApp Message"):
+		assignee = frappe.db.get_value("CRM Lead", lead, "lead_owner")
+	# Review flow: a File that raises a Document Review task gets its OWN task, one per document — the
+	# verdict is per-document, so it must never ride the per-lead-per-type throttle (which would collapse
+	# several reviewable files onto one task and mirror one verdict onto all). The File back-reference is
+	# the idempotency key: a re-fire on the same File reuses its open review task. Every other Create Task
+	# rule keeps the idempotent per-lead-per-type helper unchanged.
+	is_review = (
+		trigger_doc is not None
+		and trigger_doc.doctype == "File"
+		and frappe.db.get_value("CRM Task Type", action.task_type, "type_name") == "Document Review"
+	)
+	if is_review:
+		_pin_review_file(_review_task_for_file(trigger_doc.name, lead, action, context, assignee), trigger_doc.name)
+		return
 	create_followup_task(
 		lead=lead,
 		task_type=action.task_type,
 		due_at=_due_at(action, context),
-		assigned_to=trigger_doc.get("assigned_to"),
+		assigned_to=assignee,
 	)
+
+
+def _review_task_for_file(file_name, lead, action, context, assignee):
+	"""The review task for one File — per document, not per lead+type (review flow, spec §4.2/§13).
+	Idempotent on the File's own back-reference: if this File already links to an open review task,
+	reuse it; otherwise raise a fresh one with the per-lead-per-type throttle OFF so a second reviewable
+	document on the same lead gets its own task instead of collapsing onto the first."""
+	from tatva_connect.tasks.tasks import CLOSED_STATUSES, create_followup_task
+
+	existing = frappe.db.get_value("File", file_name, "custom_review_task")
+	if existing and frappe.db.get_value("CRM Task", existing, "status") not in CLOSED_STATUSES:
+		return existing  # this document already has an open review task — idempotent re-fire
+	return create_followup_task(
+		lead=lead,
+		task_type=action.task_type,
+		due_at=_due_at(action, context),
+		assigned_to=assignee,
+		throttle=False,
+	)
+
+
+def _pin_review_file(task_name, file_name):
+	"""Pin a File onto its Document Review task and back-link it (review flow, spec §4.2). Both writes
+	go through the unified get_doc/save path (never db.set_value — that skips validate/mirroring) and
+	are idempotent: the document Attach schema value lands in the task's JSON payload under its
+	fieldname (`document`), and the File is stamped Pending + custom_review_task, each written only
+	when it actually changes so a re-fire is a no-op."""
+	file_doc = frappe.get_doc("File", file_name)
+	task = frappe.get_doc("CRM Task", task_name)
+	payload = frappe.parse_json(task.custom_activity_payload) if (task.custom_activity_payload or "").strip() else {}
+	if payload.get("document") != file_doc.file_url:
+		payload["document"] = file_doc.file_url
+		task.custom_activity_payload = frappe.as_json(payload)
+		task.save(ignore_permissions=True)
+	if file_doc.custom_review_status != "Pending" or file_doc.custom_review_task != task_name:
+		file_doc.custom_review_status = "Pending"
+		file_doc.custom_review_task = task_name
+		file_doc.save(ignore_permissions=True)
 
 
 def _action_set_field(action, lead, context, axes, trigger_doc):
@@ -232,18 +293,25 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 
 def _action_call_webhook(action, lead, context, axes, trigger_doc):
 	"""CALL_WEBHOOK — invoke a curated native Webhook's delivery (spec §6). We don't rebuild HTTP:
-	enqueue Frappe's enqueue_webhook (HMAC + 3 retries + Webhook Request Log) with the lead as payload
-	context. The endpoint is picked, never typed; its URL/secret stay admin-curated."""
+	enqueue Frappe's enqueue_webhook (HMAC + 3 retries + Webhook Request Log) with the payload doc as
+	context. The endpoint is picked, never typed; its URL/secret stay admin-curated.
+
+	`webhook_payload_source` chooses what rides the body: the Lead (default — every existing rule is
+	unchanged) or the Trigger Doc (the record that fired the rule, e.g. a Document Review task, so the
+	disposition + reason go out). Trigger Doc degrades to the lead only when there is no trigger doc."""
 	if not action.webhook_endpoint:
 		raise ValueError("Call Webhook action missing an endpoint")
 	if not frappe.db.exists("Webhook", action.webhook_endpoint):
 		raise ValueError(f"Webhook endpoint {action.webhook_endpoint!r} does not exist")
-	lead_doc = frappe.get_doc("CRM Lead", lead)
+	if (action.webhook_payload_source or "Lead") == "Trigger Doc" and trigger_doc is not None:
+		payload_doc = frappe.get_doc(trigger_doc.doctype, trigger_doc.name)  # fresh load, same txn
+	else:
+		payload_doc = frappe.get_doc("CRM Lead", lead)
 	# Deferred: return the enqueue as a thunk so it fires only if the rule commits (a rolled-back
 	# rule must not send its webhook — a savepoint rollback would not clear an after_commit hook).
 	return lambda: frappe.enqueue(
 		"frappe.integrations.doctype.webhook.webhook.enqueue_webhook",
-		doc=lead_doc,
+		doc=payload_doc,
 		webhook={"name": action.webhook_endpoint},
 		enqueue_after_commit=True,
 	)

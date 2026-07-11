@@ -275,4 +275,7 @@ def _attach_files(doc, lead_name):
 		if df.fieldtype in ("Attach", "Attach Image"):
 			url = doc.get(df.fieldname)
 			if url:
-				file_manager.link(url, attached_to_doctype="CRM Lead", attached_to_name=lead_name)
+				file_manager.link(
+					url, attached_to_doctype="CRM Lead", attached_to_name=lead_name,
+					meta={"custom_source": "Intake"},
+				)

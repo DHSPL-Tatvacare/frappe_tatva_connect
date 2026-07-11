@@ -154,7 +154,8 @@ def _attach_one(data, mp, is_sysmgr):
 		attached_to_doctype=target_doctype,
 		attached_to_name=target_name,
 		private=True,
-		meta={"custom_file_type": file_type, "custom_lsq_attachment_id": external_id},
+		meta={"custom_file_type": file_type, "custom_lsq_attachment_id": external_id,
+		      "custom_source": "Partner API"},
 	)
 	return _file_view(doc), "attached"
 

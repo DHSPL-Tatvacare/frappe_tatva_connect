@@ -120,6 +120,8 @@ doc_events = {
 		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
 		"on_update": [
 			"tatva_connect.tasks.metrics.refresh_for_lead",
+			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
+			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
 		],
 		"on_submit": [
 			"tatva_connect.tasks.metrics.refresh_for_lead",
@@ -138,7 +140,9 @@ doc_events = {
 	"WhatsApp Message": {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone; runs after crm validate, before db_insert; inbound-only (flag-gated).
 		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
-		"after_insert": "tatva_connect.whatsapp.inbound.on_inbound_message",
+		# The inbound follow-up task is RETIRED here — WhatsApp Message is now an automation subject, so
+		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
+		# router below carries the after_insert; no per-message code side-effect remains.
 	},
 	# the partner-API catalog is data-driven (cached read of CRM Lead API Field); drop the cache on any catalog row change so the API picks it up at once.
 	"CRM Lead API Field": {
