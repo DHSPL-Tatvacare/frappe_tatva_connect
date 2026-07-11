@@ -389,7 +389,7 @@
       },
       "PartnerError": {
         "type": "object",
-        "description": "Every failure returns this one envelope. Even framework errors such as a bad key or malformed body are normalised, so a raw traceback is never returned. `error.code` (stable, machine-readable) is the value to branch on, `error.message` is displayed to a human, and the HTTP status mirrors the code. The full `error.code` to HTTP map is on the Errors page.",
+        "description": "The single error envelope returned by every failure. Branch on `error.code`; the full `error.code`-to-HTTP map is on the [Errors](/partner-errors) page.",
         "properties": {
           "status": {
             "type": "string",
