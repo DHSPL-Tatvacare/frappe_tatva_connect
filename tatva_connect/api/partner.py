@@ -58,6 +58,7 @@ from tatva_connect.api._base import (
 	field_descriptor,
 	is_writable,
 	stamp_external_id,
+	validate_external_id,
 )
 
 # ---------------------------------------------------------------------------
@@ -466,6 +467,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	mobile = _norm_phone(item.get(LEAD_IDENTITY))
 	if not mobile:
 		frappe.throw(_("{0} is required").format(LEAD_IDENTITY))
+	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	parent[LEAD_IDENTITY] = mobile
 
@@ -535,6 +537,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
 	doc = frappe.get_doc("CRM Lead", name)
 	if mp and (doc.custom_vertical != mp.vertical or doc.custom_group != mp.crm_group):
 		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	grain = (
 		(mp.vertical if mp else doc.custom_vertical) or "",

@@ -52,6 +52,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	validate_external_id,
 	stamp_external_id,
 )
 
@@ -193,6 +194,7 @@ def _create_one(data, mp, is_sysmgr):
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
 		frappe.throw(_("direction (Inbound or Outbound) is required"))
+	validate_external_id("CRM Call Log", data.get("external_id"))
 
 	lead_name = _attribute_lead(data, mp, is_sysmgr)
 
@@ -220,6 +222,7 @@ def _update_one(name, data, mp, is_sysmgr):
 	"""Update ONE call log by `name`, scope-checked. Only the fields present in the payload change.
 	Returns (call_view, "updated")."""
 	doc = _scoped_call(name, mp, is_sysmgr)
+	validate_external_id("CRM Call Log", data.get("external_id"))
 	# Re-attribution is allowed only when the caller explicitly names a lead; a payload that omits
 	# lead/mobile_no leaves the existing link alone (it never silently re-attributes by phone).
 	lead_name = resolve_lead(mp, is_sysmgr, data) if (data.get("lead") or data.get("mobile_no")) else None

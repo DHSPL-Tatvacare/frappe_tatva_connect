@@ -33,6 +33,8 @@ import binascii
 
 import frappe
 from frappe import _
+from frappe.query_builder import Order
+from frappe.query_builder.functions import Count
 
 from tatva_connect.api._base import (
 	ACTION_CREATED,
@@ -51,11 +53,20 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	validate_external_id,
 )
 from tatva_connect.storage import file_manager, file_screening
 
 # All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
 # Settings Single via _cfg() — one source of truth, no module-local copy.
+
+# The homes a file may hang from, besides the lead itself — the ONE table the write side
+# (_resolve_target), the read side (_file_lead) and the enumeration side (_lead_files) all walk.
+# Each doctype carries reference_doctype/reference_docname back to its lead, which is what makes a
+# file homed on one resolvable. Adding a fourth home is one tuple entry and cannot desync the three.
+#   request key -> the doctype it homes the file on
+_TARGETS = (("activity", "CRM Task"), ("note", "FCRM Note"))
+_TARGET_DOCTYPES = tuple(doctype for _key, doctype in _TARGETS)
 
 # The attach payload contract — the ONE source of truth for what a caller may send and what
 # `file_schema` advertises. Discovery equals ingestion because both read THIS.
@@ -90,11 +101,10 @@ def _file_view(doc):
 
 
 def _resolve_target(data, lead_name):
-	"""(attached_to_doctype, attached_to_name) for an attach. Defaults to the lead. `activity` (a CRM
-	Task name) homes the file on that task; `note` (an FCRM Note name) homes it on that note — each ONLY
-	after scope-checking the record belongs to THIS lead (else the same generic not-found, no probing).
-	This is how a note's attachment lands on the note and an activity's document lands on its task."""
-	for key, doctype in (("activity", "CRM Task"), ("note", "FCRM Note")):
+	"""(attached_to_doctype, attached_to_name) for an attach — the WRITE side of _TARGETS. Defaults to
+	the lead; a request key from _TARGETS homes the file on that record instead, but ONLY after
+	scope-checking it belongs to THIS lead (else the same generic not-found, no probing)."""
+	for key, doctype in _TARGETS:
 		name = data.get(key)
 		if not name:
 			continue
@@ -120,20 +130,31 @@ def _load_bytes(data):
 		assert_safe_public_url(file_url)  # SSRF: block internal/metadata targets before fetching
 		cfg = _cfg()
 		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
-		# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
-		resp = requests.get(
-			file_url, timeout=cfg["file_download_timeout_seconds"], stream=True,
-			allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
-		)  # nosec B113
-		if 300 <= resp.status_code < 400:
-			frappe.throw(_("file_url must resolve directly, without redirects"))
-		resp.raise_for_status()
+		# The URL is the CALLER'S input, so a URL that will not fetch is a 400, never a 500. Every
+		# requests failure (an expired pre-signed link, a 404, a dead host, a timeout) is a
+		# RequestException; unmapped it fell through _classify to "server_error", which told the
+		# partner to contact support and made their retry logic hammer a permanently-bad URL —
+		# 100 stale links in one bulk attach also wrote 100 Error Log rows, burying real faults.
 		chunks, total = [], 0
-		for chunk in resp.iter_content(64 * 1024):
-			total += len(chunk)
-			if total > max_bytes:
-				frappe.throw(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]))
-			chunks.append(chunk)
+		try:
+			# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
+			resp = requests.get(
+				file_url, timeout=cfg["file_download_timeout_seconds"], stream=True,
+				allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
+			)  # nosec B113
+			if 300 <= resp.status_code < 400:
+				frappe.throw(_("file_url must resolve directly, without redirects"))
+			resp.raise_for_status()
+			# The stream is inside the guard too: a connection that dies mid-download raises here,
+			# not at the get(). Our own throws are ValidationError, not RequestException, so the
+			# redirect and byte-cap refusals below pass straight through as the 400s they already were.
+			for chunk in resp.iter_content(64 * 1024):
+				total += len(chunk)
+				if total > max_bytes:
+					frappe.throw(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]))
+				chunks.append(chunk)
+		except requests.exceptions.RequestException as e:
+			frappe.throw(_("file_url could not be fetched: {0}").format(type(e).__name__))
 		return b"".join(chunks)
 	if content_b64:
 		try:
@@ -166,16 +187,48 @@ def _scoped_file(name, mp, is_sysmgr):
 
 
 def _file_lead(doc):
-	"""The CRM Lead name a File hangs off — directly, or via its CRM Task. None if neither."""
+	"""The CRM Lead a File hangs from — the READ side of _TARGETS. Directly, or through any home the
+	write side accepts. None if neither.
+
+	This walks the SAME table _resolve_target does, which is the point: a home the write accepts but
+	the read cannot resolve mints a `name` that file_get, file_delete and both their bulk siblings
+	answer with 404 — an address the API refuses to honour."""
 	if doc.attached_to_doctype == "CRM Lead":
 		return doc.attached_to_name
-	if doc.attached_to_doctype == "CRM Task" and doc.attached_to_name:
+	if doc.attached_to_doctype in _TARGET_DOCTYPES and doc.attached_to_name:
 		ref = frappe.db.get_value(
-			"CRM Task", doc.attached_to_name, ["reference_doctype", "reference_docname"], as_dict=True
+			doc.attached_to_doctype, doc.attached_to_name,
+			["reference_doctype", "reference_docname"], as_dict=True,
 		)
 		if ref and ref.reference_doctype == "CRM Lead":
 			return ref.reference_docname
 	return None
+
+
+def _lead_files(lead_name):
+	"""The ONE predicate for "a file belonging to this lead": attached to the lead itself, or to any
+	record homed on it through _TARGETS. Returns (File table, where-condition) for frappe.qb.
+
+	The ENUMERATION side of _TARGETS. file_list used to know only the lead, so a file homed on an
+	activity — the pattern file_schema itself recommends — never appeared in the only enumeration
+	surface the API has: a partner reconciling after a crashed batch could not rediscover what it had
+	already uploaded, and re-uploaded duplicates instead."""
+	f = frappe.qb.DocType("File")
+	homes = [("CRM Lead", [lead_name])]
+	for _key, doctype in _TARGETS:
+		names = frappe.get_all(
+			doctype,
+			filters={"reference_doctype": "CRM Lead", "reference_docname": lead_name},
+			pluck="name",
+		)
+		if names:
+			homes.append((doctype, names))
+
+	cond = None
+	for doctype, names in homes:
+		this = (f.attached_to_doctype == doctype) & (f.attached_to_name.isin(names))
+		cond = this if cond is None else (cond | this)
+	return f, cond
 
 
 # -- per-record core (shared by singular + bulk) -----------------------------
@@ -191,6 +244,7 @@ def _create_one(data, mp, is_sysmgr):
 	filename = data.get("filename")
 	if not filename:
 		frappe.throw(_("filename is required"))
+	validate_external_id("File", data.get("external_id"))
 
 	target_doctype, target_name = _resolve_target(data, lead_name)
 	content = _load_bytes(data)
@@ -345,22 +399,28 @@ def file_delete_bulk(**_kwargs):
 @_api(bulk=True, read=True)
 def file_list(**_kwargs):
 	"""List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
-	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead."""
+	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead.
+
+	"A lead's files" means every home in _TARGETS, not just the lead itself — so a file attached to an
+	activity or a note appears here, exactly as file_get already resolves it."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead_name = resolve_lead(mp, is_sysmgr, data)
 
-	filters = {"attached_to_doctype": "CRM Lead", "attached_to_name": lead_name}
+	f, cond = _lead_files(lead_name)
 	if data.get("file_type"):
-		filters["custom_file_type"] = data.get("file_type")
+		cond = cond & (f.custom_file_type == data.get("file_type"))
 
 	limit, offset = _page(data)
-	total = frappe.db.count("File", filters)
-	rows = frappe.get_all(
-		"File", filters=filters,
-		fields=["name", "custom_file_type", EXTERNAL_ID_FIELD, "file_name",
-		        "file_url", "is_private", "attached_to_doctype", "attached_to_name"],
-		limit_page_length=limit, limit_start=offset, order_by="creation desc",
+	total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
+	rows = (
+		frappe.qb.from_(f)
+		.select(f.name, f.custom_file_type, getattr(f, EXTERNAL_ID_FIELD), f.file_name,
+		        f.file_url, f.is_private, f.attached_to_doctype, f.attached_to_name)
+		.where(cond)
+		.orderby(f.creation, order=Order.desc)
+		.limit(limit).offset(offset)
+		.run(as_dict=True)
 	)
 	# Pass a doc-like so proxy_url takes the .file_url branch (extracts the blob key);
 	# a bare string is treated as an already-built key and double-wraps the proxy URL.

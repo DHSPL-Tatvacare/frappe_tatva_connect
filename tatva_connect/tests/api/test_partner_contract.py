@@ -363,6 +363,125 @@ class TestPartnerContract(unittest.TestCase):
 
 		self.assertEqual(checked, 38, "every partner endpoint must carry a declared lane")
 
+	# -- P1: one address. Every home the write accepts, the read must honour -
+
+	def _note(self, lead):
+		return frappe.get_doc({
+			"doctype": "FCRM Note", "title": "contract-test",
+			"reference_doctype": "CRM Lead", "reference_docname": lead,
+		}).insert(ignore_permissions=True)
+
+	def _task(self, lead):
+		return frappe.get_doc({
+			"doctype": "CRM Task", "title": "contract-test", "status": "Backlog",
+			"reference_doctype": "CRM Lead", "reference_docname": lead,
+		}).insert(ignore_permissions=True)
+
+	def _attach(self, lead, **extra):
+		frappe.form_dict = frappe._dict({
+			"lead": lead, "filename": f"probe-{frappe.generate_hash(length=6)}.txt",
+			"content_base64": "cHJvYmU=", **extra,
+		})
+		return partner_file._create_one(frappe.form_dict, self.mp, self.is_sysmgr)
+
+	def test_every_home_the_attach_accepts_is_readable_listable_and_deletable(self):
+		"""THE ADDRESS AXIOM. _resolve_target knew three homes, _file_lead knew two and file_list knew
+		one, so a file attached to a note came back with a `name` that every read, list and delete then
+		404'd. The API must never mint an address it refuses to honour."""
+		lead, _ = self._lead("+919812300094")
+		task = self._task(lead.name)
+		note = self._note(lead.name)
+
+		homes = {
+			"lead": self._attach(lead.name)[0],
+			"activity": self._attach(lead.name, activity=task.name)[0],
+			"note": self._attach(lead.name, note=note.name)[0],
+		}
+
+		for home, view in homes.items():
+			with self.subTest(home=home):
+				name = view["name"]
+				# readable by the address the create handed back
+				self.assertEqual(
+					partner_file._read_one(name, self.mp, self.is_sysmgr)["name"], name,
+					f"a file homed on a {home} is unreadable by the name its own create returned",
+				)
+
+		# every one of them is enumerable -- file_list is the ONLY enumeration surface the API has
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name, "limit": 50})
+		partner_file.file_list()
+		listed = {f["name"] for f in frappe.local.response["data"]["files"]}
+		for home, view in homes.items():
+			with self.subTest(home=home):
+				self.assertIn(
+					view["name"], listed,
+					f"a file homed on a {home} is invisible to file_list -- a partner reconciling a "
+					f"crashed batch can never rediscover it and re-uploads duplicates instead",
+				)
+		self.assertEqual(frappe.local.response["data"]["total"], 3, "total must count every home")
+
+		# and deletable
+		for home, view in homes.items():
+			with self.subTest(home=home):
+				partner_file._delete_one(view["name"], self.mp, self.is_sysmgr)
+				self.assertFalse(frappe.db.exists("File", view["name"]))
+
+	def test_the_target_table_is_the_one_source_for_write_read_and_enumeration(self):
+		"""DRIFT LOCK. A home added to the write side without the read side would mint unaddressable
+		records again. All three sides walk _TARGETS."""
+		self.assertEqual(
+			partner_file._TARGET_DOCTYPES,
+			tuple(dt for _k, dt in partner_file._TARGETS),
+			"the read side must be derived from the write side, never re-listed",
+		)
+		# every target must carry reference_doctype/reference_docname, which is what makes a file
+		# homed on it resolvable back to its lead.
+		for _key, doctype in partner_file._TARGETS:
+			with self.subTest(doctype=doctype):
+				meta = frappe.get_meta(doctype)
+				self.assertTrue(meta.get_field("reference_doctype"))
+				self.assertTrue(meta.get_field("reference_docname"))
+
+	# -- P3: the label is written the same way on every entity ---------------
+
+	def test_an_overlong_external_id_is_the_same_clean_400_on_every_entity(self):
+		"""One input, one answer. The label was written with db.set_value AFTER the insert on three of
+		the four entities, bypassing Frappe's length check -- so an over-long label raised a raw
+		MariaDB DataError, which _classify does not map, giving an opaque 500 on a record that had
+		already been committed. The file path answered the same input with a clean 400."""
+		lead, _ = self._lead("+919812300095")
+		task = self._task(lead.name)
+		long_label = "X" * 600  # the column is Data(500) on all four
+
+		cases = (
+			("lead", lambda: self._lead("+919812300096", external_id=long_label)),
+			("call", lambda: self._call(lead.name, external_id=long_label)),
+			("file", lambda: self._attach(lead.name, external_id=long_label)),
+			("activity", lambda: partner_activity._create_one(
+				frappe._dict({"lead": lead.name, "task_type": task.custom_task_type or "x",
+				              "external_id": long_label, "values": {}}), self.mp, self.is_sysmgr)),
+		)
+		for entity, run in cases:
+			with self.subTest(entity=entity):
+				with self.assertRaises(frappe.ValidationError) as ctx:
+					run()
+				self.assertIn(
+					"external_id", str(ctx.exception),
+					f"{entity}: an over-long label must name the field it rejected, not 500",
+				)
+
+	def test_the_label_guard_runs_before_anything_is_written(self):
+		"""The guard is the first thing past validation, so a rejected label leaves no row behind."""
+		before = frappe.db.count("CRM Call Log")
+		lead, _ = self._lead("+919812300097")
+		with self.assertRaises(frappe.ValidationError):
+			self._call(lead.name, external_id="Y" * 600)
+		self.assertEqual(
+			frappe.db.count("CRM Call Log"), before,
+			"a rejected label must not leave a call log behind",
+		)
+
 	# -- discovery -----------------------------------------------------------
 
 	def test_every_schema_states_identity_and_dedup(self):

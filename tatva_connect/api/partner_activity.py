@@ -57,6 +57,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	validate_external_id,
 	stamp_external_id,
 	trusted_permissions,
 )
@@ -128,7 +129,7 @@ def _backdate(name, created_at):
 # -- per-record core (shared by singular + bulk) -----------------------------
 
 def _create_one(item, mp, is_sysmgr):
-	"""Create ONE activity. Resolves the lead (grain-scoped), runs the brain's compute → save (the
+	"""Create ONE activity. Resolves the lead (grain-scoped), runs the brain's compute-then-save (the
 	ONLY writer). Returns the partner payload.
 
 	A create CREATES: there is no upsert on a caller-supplied key. `external_id`, if sent, is stamped
@@ -138,6 +139,7 @@ def _create_one(item, mp, is_sysmgr):
 	task_type = item.get("task_type")
 	if not task_type:
 		frappe.throw(_("task_type is required"))
+	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
 
 	# task_type may be the human type name OR the composite grain PK: resolve to this lead's grain-scoped
@@ -161,6 +163,7 @@ def _update_one(name, item, mp, is_sysmgr):
 	task_type = item.get("task_type") or row.custom_task_type
 	if not task_type:
 		frappe.throw(_("task_type is required"))
+	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		resolved = activity_brain.resolve_type_for_lead(row.reference_docname, task_type)

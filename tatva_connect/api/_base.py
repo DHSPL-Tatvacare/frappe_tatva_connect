@@ -56,8 +56,31 @@ ACTION_FETCHED = "fetched"
 ACTION_DELETED = "deleted"
 
 
+def validate_external_id(doctype, external_id):
+	"""Guard the caller's label BEFORE the entity writes anything. Called by every per-record core.
+
+	The label is a Data column with a length, and three of the four entities write it with
+	db.set_value AFTER the insert — which bypasses Document._validate_length(), so an over-long label
+	surfaced as a raw MariaDB DataError. That is not in _ERROR_MAP, so it fell through to an opaque
+	500 on a record that had already been inserted, while the file path (which puts the label on the
+	doc) answered the same input with a clean 400. One input, two answers. This is the one guard, run
+	before the first write, so every entity gives the same answer."""
+	if not external_id:
+		return
+	field = frappe.get_meta(doctype).get_field(EXTERNAL_ID_FIELD)
+	limit = (field.length if field else 0) or 0
+	if limit and len(str(external_id)) > limit:
+		message = _("external_id must be at most {0} characters (got {1}).").format(
+			limit, len(str(external_id))
+		)
+		e = frappe.ValidationError(message)
+		e.fields = ["external_id"]  # surfaced as error.fields, so the caller knows WHICH field
+		frappe.throw(message, e)
+
+
 def stamp_external_id(doctype, name, external_id):
-	"""Store the caller's label on a row. No-op when the caller sent none (it is optional)."""
+	"""Store the caller's label on a row. No-op when the caller sent none (it is optional).
+	The value MUST already have passed validate_external_id."""
 	if not external_id:
 		return
 	frappe.db.set_value(doctype, name, EXTERNAL_ID_FIELD, external_id, update_modified=False)
