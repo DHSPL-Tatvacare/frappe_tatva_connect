@@ -105,9 +105,13 @@ _PAYLOAD_FIELDS = [
 
 def _render(row, cfg):
 	"""One activity row -> the partner shape. The single projection both the single read and the list
-	use, so a get and a page cannot render differently. `values` is re-keyed by the brain."""
+	use, so a get and a page cannot render differently. `values` is re-keyed by the brain.
+
+	`name` is stringified: CRM Task is autoincrement-named so its PK is an int, while every other
+	entity's address is a string. One address, one type — a typed client cannot be asked to handle
+	both. Frappe resolves the string form of an autoincrement PK, so the round-trip still works."""
 	return {
-		"name": row.name,
+		"name": str(row.name),
 		"lead": row.reference_docname,
 		"task_type": row.custom_task_type or "",
 		"status": row.status,

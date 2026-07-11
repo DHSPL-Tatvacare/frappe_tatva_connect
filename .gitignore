@@ -96,3 +96,6 @@ tatva_connect/tests/authz/spikes/
 
 # PyCharm inspection exports (per-file problem triage) — LOCAL only, never committed
 .inspections/
+
+# PyCharm HTTP Client — holds the API key/secret. NEVER commit (this repo is public).
+api-docs/http-client.private.env.json

@@ -1,0 +1,625 @@
+# TatvaCare Partner API — runnable collection (PyCharm / IntelliJ HTTP Client)
+#
+# SETUP
+#   1. Copy http-client.private.env.json.example -> http-client.private.env.json
+#      and paste your key as "API_KEY:API_SECRET". That file is gitignored; this repo is public.
+#   2. Pick the `local` environment in the run-configuration dropdown (top right of the editor).
+#   3. Run any request with the green arrow, or "Run all requests in file" from the gutter icon
+#      at the top. Requests are ordered so the whole file runs top-to-bottom as one lifecycle:
+#      the `name` a create returns is captured and fed to the read/update/delete that follow.
+#
+# WHAT THIS PROVES
+#   Shape — every request carries assertions on the contract (the envelope, the action vocabulary,
+#           the bulk summary, the page shape, the error codes). A green run means the API is
+#           speaking the language the docs claim.
+#   Perf  — the response pane shows the round-trip time for every call. Watch lead_list and
+#           activity_list in particular; those are the ones that page.
+#
+# MINTING A LOCAL KEY (bench console, dev only)
+#   u = frappe.get_doc("User", "partner.httpclient@example.test")
+#   u.api_key = frappe.generate_hash(length=15); u.api_secret = frappe.generate_hash(length=15)
+#   u.append("roles", {"role": "Partner API User"}); u.save(ignore_permissions=True)
+#   frappe.get_doc({"doctype": "CRM Lead API Mapping", "partner_user": u.name, "enabled": 1,
+#                   "vertical": "GoodFlip Care", "crm_group": "Anaya"}).insert(ignore_permissions=True)
+#   frappe.db.commit()
+#
+# THE CONTRACT, IN FOUR LINES
+#   Every record is addressed by `name`, returned when it was created. That is the only address.
+#   Dedup is the CRM's: a lead is one per (mobile_no, product line, group). Activities, files and
+#   calls are CREATED — a re-sent create makes a second record. `external_id` is a label the CRM
+#   stores and echoes back but never interprets. Retries are made safe with the Idempotency-Key
+#   header, and nothing else.
+
+@phone = +919900012001
+
+# ─────────────────────────────────────────────────────────── AUTHENTICATION
+
+### Verify the key
+GET {{baseUrl}}/api/method/frappe.auth.get_logged_user
+Authorization: token {{token}}
+
+> {%
+    client.test("the key authenticates", function () {
+        client.assert(response.status === 200, "expected 200, got " + response.status);
+        client.assert(response.body.message.length > 0, "no user returned");
+    });
+    client.log("authenticated as " + response.body.message);
+%}
+
+# ─────────────────────────────────────────────────────────────────── LEADS
+
+### Lead Schema — discovery. Never hardcode a field list; read it from here.
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_schema
+Authorization: token {{token}}
+
+> {%
+    client.test("discovery carries the whole contract", function () {
+        const d = response.body.data;
+        client.assert(response.body.status === "success");
+        client.assert(d.entity === "lead");
+        client.assert(d.identity.addressed_by === "name", "records must be addressed by name");
+        client.assert(typeof d.dedup === "string" && d.dedup.length > 0, "dedup rule must be stated");
+        client.assert(Array.isArray(d.fields), "fields must be a list");
+        client.assert(d.bulk.max_per_call > 0, "bulk ceiling must be advertised");
+    });
+    client.test("every field declares whether it is required", function () {
+        response.body.data.fields.forEach(function (f) {
+            client.assert(["REQUIRED", "OPTIONAL", "OUTPUT_ONLY"].indexOf(f.behavior) >= 0,
+                f.fieldname + " has no AIP-203 behavior");
+            client.assert(typeof f.required === "boolean", f.fieldname + " has no boolean required");
+        });
+    });
+    client.test("external_id is an OPTIONAL label", function () {
+        const ext = response.body.data.fields.filter(f => f.fieldname === "external_id")[0];
+        client.assert(ext && ext.behavior === "OPTIONAL" && ext.required === false);
+    });
+%}
+
+### Create Lead — deduped by phone + line + group. Returns the full record.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "mobile_no": "{{phone}}",
+  "first_name": "HTTP Client",
+  "status": "New",
+  "external_id": "HTTPC-LEAD-1"
+}
+
+> {%
+    client.test("a create returns the full record and its name", function () {
+        client.assert(response.status === 200);
+        client.assert(response.body.status === "success");
+        client.assert(response.body.action === "created" || response.body.action === "updated");
+        client.assert(response.body.data.name.length > 0, "no name returned -- there is no address");
+        client.assert(response.body.data.external_id === "HTTPC-LEAD-1", "the label must be echoed");
+    });
+    client.global.set("leadName", response.body.data.name);
+%}
+
+### Re-send the SAME phone with a DIFFERENT label — must be the SAME lead. Dedup is ours.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "mobile_no": "{{phone}}",
+  "first_name": "HTTP Client",
+  "external_id": "HTTPC-LEAD-2-DIFFERENT"
+}
+
+> {%
+    client.test("a label never splits a lead", function () {
+        client.assert(response.body.action === "updated", "a re-sent phone must UPDATE, not create");
+        client.assert(response.body.data.name === client.global.get("leadName"),
+            "dedup must be (phone, line, group) -- NOT external_id");
+    });
+%}
+
+### Get Lead by name
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get?name={{leadName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("a lead is addressable by the name its create returned", function () {
+        client.assert(response.body.action === "fetched");
+        client.assert(response.body.data.name === client.global.get("leadName"));
+    });
+%}
+
+### Get Lead by mobile_no — phone is the lead's natural key, so it is a valid address HERE ONLY
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get?mobile_no={{phone}}
+Authorization: token {{token}}
+
+> {%
+    client.test("phone resolves the same lead", function () {
+        client.assert(response.body.data.name === client.global.get("leadName"));
+    });
+%}
+
+### Update Lead by name
+PUT {{baseUrl}}/api/method/tatva_connect.api.partner.lead_update
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "name": "{{leadName}}",
+  "first_name": "HTTP Client (renamed)"
+}
+
+> {%
+    client.test("an update returns the full record and never re-mints the name", function () {
+        client.assert(response.body.action === "updated");
+        client.assert(response.body.data.name === client.global.get("leadName"));
+    });
+%}
+
+### List Leads — the one page shape every entity uses
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_list?limit=5
+Authorization: token {{token}}
+
+> {%
+    client.test("one page shape", function () {
+        const d = response.body.data;
+        ["total", "count", "offset", "limit", "has_more", "leads"].forEach(function (k) {
+            client.assert(d.hasOwnProperty(k), "the page is missing " + k);
+        });
+        client.assert(d.count === d.leads.length, "count must match the rows returned");
+    });
+%}
+
+### Bulk Create Leads
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_create_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "leads": [
+    {"mobile_no": "+919900012002", "first_name": "Bulk One"},
+    {"mobile_no": "+919900012003", "first_name": "Bulk Two"}
+  ]
+}
+
+> {%
+    client.test("one bulk summary shape", function () {
+        const s = response.body.summary;
+        client.assert(s.total === 2 && s.succeeded === 2 && s.failed === 0, JSON.stringify(s));
+    });
+    client.test("a bulk row carries the record under data -- NOT a top-level name", function () {
+        const r = response.body.results[0];
+        client.assert(r.status === "success" && r.action.length > 0);
+        client.assert(r.data && r.data.name, "results[i].data.name is the address; results[i].name is not");
+    });
+    client.global.set("bulkLead1", response.body.results[0].data.name);
+    client.global.set("bulkLead2", response.body.results[1].data.name);
+%}
+
+### Bulk Read Leads — by names, input-ordered, unknown ids report in place
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "names": ["{{bulkLead1}}", "DOES-NOT-EXIST"]
+}
+
+> {%
+    client.test("a bulk READ emits the SAME summary keys as a bulk write", function () {
+        const s = response.body.summary;
+        client.assert(s.total === 2 && s.succeeded === 1 && s.failed === 1, JSON.stringify(s));
+    });
+    client.test("a missing id reports not_found in place, at its own index", function () {
+        client.assert(response.body.results[1].index === 1);
+        client.assert(response.body.results[1].error.code === "not_found");
+    });
+%}
+
+### Bulk Delete Leads
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner.lead_delete_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "names": ["{{bulkLead1}}", "{{bulkLead2}}"]
+}
+
+> {%
+    client.test("both deleted", function () {
+        client.assert(response.body.summary.succeeded === 2, JSON.stringify(response.body.summary));
+        client.assert(response.body.results[0].action === "deleted");
+    });
+%}
+
+# ────────────────────────────────────────────────────────────────── CALLS
+
+### Call Schema
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_schema
+Authorization: token {{token}}
+
+> {%
+    client.test("discovery states that a call does NOT dedup", function () {
+        const d = response.body.data;
+        client.assert(d.entity === "call");
+        client.assert(d.identity.addressed_by === "name");
+        client.assert(d.dedup.indexOf("does not deduplicate") >= 0, "dedup rule must say so plainly");
+    });
+    client.test("direction is the one required field", function () {
+        const dir = response.body.data.fields.filter(f => f.fieldname === "direction")[0];
+        client.assert(dir.required === true);
+        client.assert(JSON.stringify(dir.allowed_values) === JSON.stringify(["Inbound", "Outbound"]));
+    });
+%}
+
+### Create Call
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "direction": "Inbound",
+  "from_number": "9900012001",
+  "to_number": "9000000000",
+  "status": "Completed",
+  "duration": 95,
+  "external_id": "HTTPC-CALL-1"
+}
+
+> {%
+    client.test("a call is created and linked", function () {
+        client.assert(response.body.action === "created");
+        client.assert(response.body.data.lead === client.global.get("leadName"),
+            "read data.lead -- it is null when attribution found no match");
+    });
+    client.global.set("callName", response.body.data.name);
+%}
+
+### Re-send the SAME external_id — a create CREATES. This must be a SECOND call.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "direction": "Inbound",
+  "from_number": "9900012001",
+  "to_number": "9000000000",
+  "external_id": "HTTPC-CALL-1"
+}
+
+> {%
+    client.test("external_id does NOT dedup -- a re-sent create yields a second record", function () {
+        client.assert(response.body.action === "created");
+        client.assert(response.body.data.name !== client.global.get("callName"),
+            "external_id must never deduplicate; use Idempotency-Key to make a retry safe");
+    });
+    client.global.set("callName2", response.body.data.name);
+%}
+
+### Retry safety — the SAME body twice under one Idempotency-Key must yield ONE call.
+# Run this request TWICE. The second run replays the stored response; no second call is created.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_create
+Authorization: token {{token}}
+Content-Type: application/json
+Idempotency-Key: httpc-fixed-key-001
+
+{
+  "lead": "{{leadName}}",
+  "direction": "Outbound",
+  "from_number": "9000000000",
+  "to_number": "9900012001",
+  "external_id": "HTTPC-CALL-IDEM"
+}
+
+> {%
+    client.test("the write succeeded", function () {
+        client.assert(response.body.status === "success");
+    });
+    const first = client.global.get("idemCallName");
+    if (first) {
+        client.test("a retry under the same key replays -- it does not create a second call", function () {
+            client.assert(response.body.data.name === first,
+                "the same Idempotency-Key produced a DIFFERENT record; the replay is broken");
+        });
+    } else {
+        client.global.set("idemCallName", response.body.data.name);
+        client.log("first run. Run this request again -- the name must not change.");
+    }
+%}
+
+### Update Call by name
+PUT {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_update
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "name": "{{callName}}",
+  "status": "Completed",
+  "duration": 187
+}
+
+> {%
+    client.test("an update addresses by name and changes only what was sent", function () {
+        client.assert(response.body.action === "updated");
+        client.assert(response.body.data.name === client.global.get("callName"));
+        client.assert(Number(response.body.data.duration) === 187);
+    });
+%}
+
+### List a lead's Calls
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_list?lead={{leadName}}&limit=10
+Authorization: token {{token}}
+
+> {%
+    client.test("the page shape is identical to every other list", function () {
+        const d = response.body.data;
+        ["total", "count", "offset", "limit", "has_more", "calls"].forEach(function (k) {
+            client.assert(d.hasOwnProperty(k), "missing " + k);
+        });
+    });
+%}
+
+### Bulk Read Calls
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_get_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "names": ["{{callName}}", "{{callName2}}", "DOES-NOT-EXIST"]
+}
+
+> {%
+    client.test("input-ordered, with the miss reported in place", function () {
+        const s = response.body.summary;
+        client.assert(s.total === 3 && s.succeeded === 2 && s.failed === 1, JSON.stringify(s));
+        client.assert(response.body.results[2].error.code === "not_found");
+    });
+%}
+
+### Bulk Delete Calls
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_delete_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "names": ["{{callName}}", "{{callName2}}"]
+}
+
+> {%
+    client.test("both deleted", function () {
+        client.assert(response.body.summary.succeeded === 2, JSON.stringify(response.body.summary));
+    });
+%}
+
+# ────────────────────────────────────────────────────────────── ACTIVITIES
+
+### Activity Schema — BY LEAD. The types and fields vary by the lead's grain.
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_schema?lead={{leadName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("discovery is per lead", function () {
+        const d = response.body.data;
+        client.assert(d.entity === "activity");
+        client.assert(d.lead === client.global.get("leadName"));
+        client.assert(Array.isArray(d.task_types), "task_types must be a list");
+    });
+    if (response.body.data.task_types.length > 0) {
+        client.global.set("taskType", response.body.data.task_types[0].name);
+        client.log("using task_type: " + response.body.data.task_types[0].name);
+    } else {
+        client.log("no activity type is configured for this grain -- the activity requests will 400");
+    }
+%}
+
+### Create Activity
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "task_type": "{{taskType}}",
+  "external_id": "HTTPC-ACT-1",
+  "values": {}
+}
+
+> {%
+    client.test("an activity is created and addressable", function () {
+        client.assert(response.body.action === "created");
+        client.assert(typeof response.body.data.name === "string" && response.body.data.name.length > 0,
+            "every entity returns a STRING address -- CRM Task is autoincrement-named, so this is coerced");
+    });
+    client.global.set("activityName", response.body.data.name);
+%}
+
+### List a lead's Activities, filtered by the SAME task_type the create accepted
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_list?lead={{leadName}}&task_type={{taskType}}&limit=20
+Authorization: token {{token}}
+
+> {%
+    client.test("the list filter speaks the create's vocabulary", function () {
+        const names = response.body.data.activities.map(a => a.name);
+        client.assert(names.indexOf(client.global.get("activityName")) >= 0,
+            "filtering by the task_type the create just accepted did not find the activity");
+    });
+%}
+
+### Bulk Read Activities
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_get_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "names": ["{{activityName}}", "DOES-NOT-EXIST"]
+}
+
+> {%
+    client.test("one summary shape", function () {
+        const s = response.body.summary;
+        client.assert(s.total === 2 && s.succeeded === 1 && s.failed === 1, JSON.stringify(s));
+    });
+%}
+
+### Delete Activity
+# An activity that has been worked carries linked records (a visit audit is written on completion),
+# and a delete is then refused with 409 cannot_delete. Both outcomes are correct; a partner must
+# branch on error.code, never on the message.
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner_activity.activity_delete?name={{activityName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("deleted, or refused because it has linked records", function () {
+        if (response.status === 200) {
+            client.assert(response.body.action === "deleted");
+        } else {
+            client.assert(response.status === 409, "expected 200 or 409, got " + response.status);
+            client.assert(response.body.error.code === "cannot_delete");
+            client.assert(response.body.error.message.toLowerCase().indexOf("lead") < 0,
+                "the shared message must not name one entity");
+        }
+    });
+%}
+
+# ────────────────────────────────────────────────────────────────── FILES
+
+### File Schema
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_schema
+Authorization: token {{token}}
+
+> {%
+    client.test("discovery states the attach contract", function () {
+        const d = response.body.data;
+        client.assert(d.entity === "file");
+        client.assert(d.identity.addressed_by === "name");
+        client.assert(d.immutable.length > 0, "the no-update decision must be stated");
+    });
+    client.test("filename is required, external_id is not", function () {
+        const f = response.body.data.fields;
+        client.assert(f.filter(x => x.fieldname === "filename")[0].required === true);
+        client.assert(f.filter(x => x.fieldname === "external_id")[0].required === false);
+    });
+%}
+
+### Attach File (base64)
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_attach
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "filename": "httpclient-probe.txt",
+  "file_type": "Prescription",
+  "content_base64": "SFRUUCBDbGllbnQgcHJvYmU=",
+  "external_id": "HTTPC-FILE-1"
+}
+
+> {%
+    client.test("a file is attached, private, behind a proxy url", function () {
+        client.assert(response.body.action === "created");
+        client.assert(response.body.data.is_private === true, "every partner file must be private");
+        client.assert(response.body.data.file_url.indexOf("/private/files/") !== 0,
+            "file_url must be a proxy url, never a raw storage path");
+    });
+    client.global.set("fileName", response.body.data.name);
+%}
+
+### Get File by name
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_get?name={{fileName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("a file is addressable by the name its attach returned", function () {
+        client.assert(response.body.data.name === client.global.get("fileName"));
+    });
+%}
+
+### List a lead's Files — must include files homed on an activity or a note, not just the lead
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_list?lead={{leadName}}&limit=20
+Authorization: token {{token}}
+
+> {%
+    client.test("the file appears in the only enumeration surface the API has", function () {
+        const names = response.body.data.files.map(f => f.name);
+        client.assert(names.indexOf(client.global.get("fileName")) >= 0,
+            "an attached file is invisible to file_list");
+    });
+%}
+
+### Delete File
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner_file.file_delete?name={{fileName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("deleted", function () {
+        client.assert(response.body.action === "deleted");
+    });
+%}
+
+# ───────────────────────────────────────────────── THE CONTRACT, ADVERSARIALLY
+
+### A mistyped bulk body key must be a 400 — NOT a green 200 that silently writes nothing
+POST {{baseUrl}}/api/method/tatva_connect.api.partner.lead_create_bulk
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": [
+    {"mobile_no": "+919900012099", "first_name": "Should never be written"}
+  ]
+}
+
+> {%
+    client.test("a mistyped body key is refused, not silently ignored", function () {
+        client.assert(response.status === 400, "expected 400, got " + response.status);
+        client.assert(response.body.status === "error");
+        client.assert(response.body.error.code === "validation_error");
+        client.assert(response.body.error.message.indexOf("leads") >= 0,
+            "the error must name the key it wanted");
+    });
+%}
+
+### An unknown name is a generic not-found — existence is never disclosed
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-DOES-NOT-EXIST
+Authorization: token {{token}}
+
+> {%
+    client.test("not-found is generic", function () {
+        client.assert(response.status === 404);
+        client.assert(response.body.error.code === "not_found");
+    });
+%}
+
+### external_id is a LABEL, not an address — it must never resolve a record
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_call.call_get?name=HTTPC-CALL-1
+Authorization: token {{token}}
+
+> {%
+    client.test("an external_id is not an address", function () {
+        client.assert(response.status === 404,
+            "external_id resolved a record -- it is a label and must never be an address");
+    });
+%}
+
+### A missing key is 401 — not a traceback
+GET {{baseUrl}}/api/method/tatva_connect.api.partner.lead_schema
+
+> {%
+    client.test("an unauthenticated call gets the unified contract, never a Frappe traceback", function () {
+        client.assert(response.status === 401 || response.status === 403);
+        client.assert(response.body.status === "error", "the error envelope must hold even here");
+        client.assert(!response.body.hasOwnProperty("exc"), "a raw Frappe traceback leaked");
+    });
+%}
+
+### Clean up the lead this run created
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner.lead_delete?name={{leadName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("cleaned up", function () {
+        client.assert(response.body.action === "deleted" || response.status === 409,
+            "a 409 here means the lead still has linked records -- delete those first");
+    });
+%}

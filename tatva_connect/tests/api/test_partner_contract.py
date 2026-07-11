@@ -145,6 +145,34 @@ class TestPartnerContract(unittest.TestCase):
 		partner_call._delete_one(name, self.mp, self.is_sysmgr)
 		self.assertFalse(frappe.db.exists("CRM Call Log", name))
 
+	def test_every_entity_returns_a_STRING_address(self):
+		"""One address means one TYPE. CRM Task is autoincrement-named, so its PK is an int, and the
+		activity payload handed back a number while lead/call/file handed back strings -- against an
+		OpenAPI that declares `name` a string. A generated typed client breaks on the wire."""
+		lead, _ = self._lead("+919812300104")
+		call, _ = self._call(lead.name)
+		file_view, _ = self._attach(lead.name)
+
+		addresses = {"lead": lead.name, "call": call["name"], "file": file_view["name"]}
+
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name})
+		partner_activity.activity_schema()
+		types = frappe.local.response["data"]["task_types"]
+		if types:
+			activity = partner_activity._create_one(
+				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": {}}),
+				self.mp, self.is_sysmgr)
+			addresses["activity"] = activity["name"]
+
+		for entity, name in addresses.items():
+			with self.subTest(entity=entity):
+				self.assertIsInstance(
+					name, str,
+					f"{entity} returned a {type(name).__name__} address; every entity must return a "
+					f"string, and the OpenAPI declares `name` a string",
+				)
+
 	def test_external_id_is_stored_echoed_and_never_resolves(self):
 		"""The label round-trips on every read, and is NOT an address: no endpoint takes it."""
 		lead, _ = self._lead("+919812300085")
