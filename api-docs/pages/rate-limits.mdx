@@ -10,7 +10,7 @@ A key has three independent budgets. Each is configured per key, and any of them
 | **Bulk rate** | **one bulk call per 5 seconds, one in flight at a time** | bulk write calls only |
 | Daily record volume | 10,000 records read and 10,000 records written per day | rows touched, not calls |
 
-There is also a shared ceiling across all keys together. In rare bursts, a key can be limited even while it is under its own budget. For planning, the per-key budgets are the ones that matter.
+Each budget is enforced twice: **per key**, and again **at platform level** across every key on the platform. A call is refused if either is exhausted, so a key can be throttled while still inside its own budget. The per-key numbers above are what an integration is sized against; the platform ceiling protects the service.
 
 When any budget is exceeded, the next call returns **HTTP 429** with this body:
 
@@ -39,10 +39,10 @@ The practical rule is simple:
 
 Single-record calls are unaffected. They may be sent concurrently, up to the request rate.
 
-The bulk queue is **shared across all keys**, not held per key. While one integration is running a
-large backfill, another integration's bulk call waits its turn and is told how long to wait. This is
+The bulk budget is enforced **at platform level**, not per key. While one integration runs a large
+backfill, another integration's bulk call waits its turn and is told how long to wait. This is
 deliberate: the constraint being protected is a single database index that every key writes through,
-so a per-key limit alone would not protect it. A backfill that must not be delayed by another is
+so a per-key limit alone would not protect it. A backfill that must not be delayed by another one is
 scheduled with Ops.
 
 ## Bulk still saves the request budget

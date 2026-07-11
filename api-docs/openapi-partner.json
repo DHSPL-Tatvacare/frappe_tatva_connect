@@ -279,7 +279,7 @@
           },
           "custom_job_title": {
             "type": "string",
-            "description": "Job title (rarely used)."
+            "description": "Job title."
           },
           "custom_plan_profile": {
             "type": "array",
@@ -6104,7 +6104,7 @@
     },
     "headers": {
       "RateLimit-Limit": {
-        "description": "The key's request budget for the current window. Sent on every partner response. A shared global ceiling is enforced separately, so a 429 can occur on the global limit even while RateLimit-Remaining is above zero. Absent when rate-limit enforcement is off or the caller is exempt.",
+        "description": "The key's request budget for the current window. Sent on every partner response. A platform-level ceiling across all keys is enforced separately, so a 429 can occur even while this header still shows budget remaining.",
         "schema": {
           "type": "integer",
           "example": 120
@@ -6134,7 +6134,7 @@
     },
     "responses": {
       "RateLimited": {
-        "description": "Rate limit exceeded (`error.code` is `rate_limited`). Throttling is enforced against both the per-key budget and a shared global ceiling; the call is limited if either is exhausted. `Retry-After` or `error.retry_after` seconds are waited, then the call is retried (every write is idempotent, so retrying is safe).",
+        "description": "Rate limit exceeded (`error.code` is `rate_limited`). Every budget is enforced twice — per key, and at platform level across all keys — and the call is refused if either is exhausted. `Retry-After` or `error.retry_after` seconds are waited, then the call is retried; a 429 is raised before the write runs, so nothing was saved and retrying is safe. Bulk writes have their own, much tighter budget: one call at a time, platform-wide.",
         "headers": {
           "RateLimit-Limit": {
             "$ref": "#/components/headers/RateLimit-Limit"
