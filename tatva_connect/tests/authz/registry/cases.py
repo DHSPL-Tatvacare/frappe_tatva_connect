@@ -279,12 +279,14 @@ CASES = [
 	         "partner (grain_1) creating a CRM Task (activity) against a grain_3 lead is rejected by "
 	         "resolve_lead's forced grain filter before the ignore_permissions save",
 	         "partner", "CRM Task", "create", "bypass_write", "out_of_grain", "deny"),
-	# A13 — external_id is a PER-PARTNER namespace, not global: a colliding external_id already on a
-	# grain_3 lead's row must NOT resolve/overwrite that row for the grain_1 partner (the cross-tenant fix).
+	# A13 — external_id is a LABEL, never an address: NOTHING in the partner API resolves by it, so a
+	# colliding external_id already on a grain_3 lead's row is inert. Sending it creates the caller's
+	# OWN row and leaves the other tenant's row untouched.
 	CaseSpec("A13-partner-extid-collision-no-cross-tenant", "A13",
 	         "partner (grain_1) sending an external_id that already exists on a grain_3 lead's CRM "
-	         "Call Log must NOT resolve that row — find_by_external_id_scoped returns None (grain-scoped "
-	         "via the linked lead), so a colliding id can never overwrite another tenant's row",
+	         "Call Log creates a NEW row on their own lead and leaves the grain_3 row byte-for-byte "
+	         "untouched — external_id never resolves a record, so a colliding label cannot reach "
+	         "another tenant",
 	         "partner", "CRM Call Log", "create", "bypass_write", "out_of_grain", "deny"),
 
 	# A14 — public-intake guest abuse: an anonymous web-form submit must not escape the form's grain.

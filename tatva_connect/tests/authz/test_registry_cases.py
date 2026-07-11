@@ -377,7 +377,7 @@ class TestRegistryCases(AuthzTestCase):
 
 	def _run_a13_partner_case(self, c):
 		from tatva_connect.api import partner_activity, partner_call
-		from tatva_connect.api._base import _resolve_caller, find_by_external_id_scoped
+		from tatva_connect.api._base import _resolve_caller
 
 		user = roster.email("partner")  # bound to grain_1 via the CRM Lead API Mapping seed()
 		# resolve_lead raises the deliberately-generic not-found; widen the catch so a path change
@@ -401,24 +401,49 @@ class TestRegistryCases(AuthzTestCase):
 		if out_lead is None:
 			self.skipTest(f"no seeded grain_3 (out-of-grain) lead for case {c.id}")
 
-		# external_id is a PER-PARTNER namespace: a colliding id on a grain_3 row must NOT resolve.
+		# external_id is a LABEL, never an address: nothing in the API resolves by it, so a colliding
+		# id on another tenant's row is inert. Sending it creates the caller's OWN row and leaves the
+		# grain_3 row byte-for-byte untouched. (This supersedes the old find_by_external_id_scoped
+		# vector — that lookup is gone, so the attack surface it guarded no longer exists at all.)
 		if c.id == "A13-partner-extid-collision-no-cross-tenant":
 			save_point = "authz_a13_collision"
 			external_id = "AUTHZ-A13-COLLIDE"
+			in_lead = self._lead_in_grain(grains.GRAINS[0])  # grain_1 — the partner's OWN lead
+			if in_lead is None:
+				self.skipTest(f"no seeded grain_1 (in-grain) lead for case {c.id}")
 			frappe.db.savepoint(save_point)
+			original_form_dict = frappe.form_dict
 			try:
 				with set_user(user):
 					_u, mp, is_sysmgr = _resolve_caller()
-				self._plant_call_log(out_lead, external_id)  # as Administrator
+				planted = self._plant_call_log(out_lead, external_id)  # as Administrator, on grain_3
+				before = frappe.db.get_value(
+					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True)
+
+				# The partner sends the SAME external_id against their OWN lead.
+				frappe.form_dict = frappe._dict({
+					"lead": in_lead, "external_id": external_id, "direction": "Inbound",
+					"from_number": "9990000010", "to_number": "9990000011", "duration": 99,
+				})
 				with set_user(user):
-					hit = find_by_external_id_scoped(
-						"CRM Call Log", "custom_external_id", external_id, mp, is_sysmgr)
-				self.assertIsNone(
-					hit,
-					"A13 CROSS-TENANT: partner (grain_1) resolved a grain_3 Call Log by colliding "
-					f"external_id {external_id} — find_by_external_id_scoped must grain-scope via the lead",
+					view, action = partner_call._create_one(frappe.form_dict, mp, is_sysmgr)
+
+				self.assertEqual(action, "created", "A13: a colliding external_id must still CREATE")
+				self.assertNotEqual(
+					view["name"], planted,
+					"A13 CROSS-TENANT: a colliding external_id addressed the grain_3 Call Log — "
+					"external_id must never resolve a record",
+				)
+				self.assertEqual(view["lead"], in_lead, "A13: the new call must land on the partner's own lead")
+				after = frappe.db.get_value(
+					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True)
+				self.assertEqual(
+					dict(before), dict(after),
+					f"A13 CROSS-TENANT: the grain_3 Call Log was mutated by a colliding external_id "
+					f"{external_id} — a label must never touch another tenant's row",
 				)
 			finally:
+				frappe.form_dict = original_form_dict
 				frappe.db.rollback(save_point=save_point)
 			return
 
@@ -434,12 +459,12 @@ class TestRegistryCases(AuthzTestCase):
 					"lead": out_lead, "external_id": "AUTHZ-A13-CL", "direction": "Inbound",
 					"from_number": "9990000010", "to_number": "9990000011",
 				})
-				core = lambda: partner_call._upsert_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
+				core = lambda: partner_call._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			elif c.id == "A13-partner-activity-out-of-grain-create":
 				frappe.form_dict = frappe._dict({
 					"lead": out_lead, "external_id": "AUTHZ-A13-AC", "task_type": "__authz_probe__",
 				})
-				core = lambda: partner_activity._upsert_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
+				core = lambda: partner_activity._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			else:
 				self.skipTest(f"A13 runner: unhandled case {c.id}")
 				return

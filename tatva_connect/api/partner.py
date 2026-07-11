@@ -14,10 +14,18 @@ their entire contract; every one resolves the caller's `CRM Lead API Mapping` ro
 ONE set of endpoints serves every partner. What varies per partner is config on
 their mapping row (routing and allowed-fields grid), never code.
 
+IDENTITY. A lead is addressed by `name`, the CRM Lead primary key, returned when it was created.
+`mobile_no` is ALSO a valid address here — and only here — because phone is the lead's natural key;
+no other entity has one. Dedup is the CRM's own rule, (mobile_no, custom_vertical, custom_group), and
+never a caller-supplied value: re-sending the same patient updates that lead, and a changed phone
+number is a new patient and a new lead. `external_id` is the caller's own label (stored in
+`custom_external_id`): echoed back on every read, never interpreted, never used to find a lead.
+Retries are made safe with the Idempotency-Key header.
+
 Singular:
   GET    lead_schema  the fields THIS caller may send or read, plus their routing
   GET    lead_get     one lead by `name` or `mobile_no`, scoped to the line
-  POST   lead_create  create-or-upsert by phone; returns the CRM `name`
+  POST   lead_create  create-or-update, deduped by phone + line + group; returns the record
   PUT    lead_update  update a lead by CRM `name` (the id POST returned)
   DELETE lead_delete  delete a lead by CRM `name`, scoped to the line
 
@@ -30,20 +38,27 @@ Bulk and query (each record enforced individually; partial success):
 """
 import frappe
 from frappe import _
-from frappe.utils import cint, cstr
+from frappe.utils import cstr
 
 from tatva_connect import automation
 from tatva_connect.api._base import (
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	EXTERNAL_ID_FIELD,
 	_api,
-	_cfg,
+	_bulk_read,
+	_list_ok,
 	_meter_volume,
 	_norm_phone,
 	_ok,
+	_page,
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
+	_schema_ok,
 	field_descriptor,
 	is_writable,
+	stamp_external_id,
 )
 
 # ---------------------------------------------------------------------------
@@ -413,18 +428,14 @@ def _force_routing(doc, mp):
 # The shared _ok / _fail writers (the top-level {status:...} envelope) live in
 # _base and are imported above. The lead-shaped result/curate shims stay here.
 
-def _result(doc, action):
-	_ok(action=action, data={
-		"name": doc.name, "source": doc.source, "vertical": doc.custom_vertical,
-		"group": doc.custom_group, "program": doc.custom_current_program,
-	})
-
-
 def _curate(doc, parent_fields, child_allow):
-	"""A lead as only the caller's allowed fields (+ name + read-only routing)."""
+	"""A lead as only the caller's allowed fields (+ name, the caller's own external_id label,
+	and read-only routing). The ONE lead projection: every read AND every write returns this, so a
+	create, an update and a get can never hand back different shapes."""
 	out = {fn: doc.get(fn) for fn in parent_fields}
 	out.update({
-		"name": doc.name, "source": doc.source, "custom_vertical": doc.custom_vertical,
+		"name": doc.name, "external_id": doc.get(EXTERNAL_ID_FIELD),
+		"source": doc.source, "custom_vertical": doc.custom_vertical,
 		"custom_group": doc.custom_group, "custom_current_program": doc.custom_current_program,
 	})
 	for cf, allowed in child_allow.items():
@@ -487,6 +498,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 		if open_program and program:
 			doc.custom_current_program = program
 		doc.save(ignore_permissions=True)
+		_stamp_label(doc, item)
 		return doc, "updated"
 
 	parent.setdefault("first_name", _NAMELESS)  # status is left for CRM's controller to default
@@ -498,7 +510,19 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	if open_program:
 		doc.custom_current_program = program
 	doc.insert(ignore_permissions=True)
+	_stamp_label(doc, item)
 	return doc, "created"
+
+
+def _stamp_label(doc, item):
+	"""Store the caller's `external_id` label on the lead, when one was sent. It is written back onto
+	the in-memory doc too, so the response echoes it without a re-read. A label is NOT identity: the
+	lead was found (or created) by phone + line + group, never by this value."""
+	external_id = item.get("external_id")
+	if external_id is None:
+		return
+	stamp_external_id("CRM Lead", doc.name, external_id)
+	doc.set(EXTERNAL_ID_FIELD, external_id)
 
 
 def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
@@ -524,6 +548,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
 	if mp:
 		_force_routing(doc, mp)
 	doc.save(ignore_permissions=True)
+	_stamp_label(doc, item)
 	return doc, "updated"
 
 
@@ -605,86 +630,100 @@ def lead_schema(**_kwargs):
 			                   required_override={key_field: True} if key_field else None),
 		}
 
-	out = {
-		"lead": describe("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED),
-		"children": children,
-		"child_write": "Send each child as a JSON array under its key, e.g. "
-		               "custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. Multi-row "
-		               "children are upsert-by-key on key_field: a new key adds a row, the same "
-		               "key updates that row (only sent fields change), rows you omit are untouched. "
-		               "Single-row children merge onto the one row. Delete a row with "
-		               "{<key_field>, \"_delete\": true}.",
-		"dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same "
-		         "patient updates that lead. Program is NOT part of identity: sending the same "
-		         "patient with a different program transitions the SAME lead, never a new one.",
-		"bulk": {"max_per_call": _cfg()["bulk_max_records"], "list_page_max": _cfg()["list_max_page"],
-		         "list_filters": [*list(LIST_FILTERS.keys()), "mobile_no"]},
-	}
-	# Audit fields: discoverable but OUTPUT_ONLY, never writable (Frappe and the assignment rule set them).
+	# The lead's writable fields + the caller's own external_id label + the OUTPUT_ONLY audit fields
+	# (discoverable, never writable — Frappe and the assignment rule set those).
 	m_lead = frappe.get_meta("CRM Lead")
-	out["lead"] += [_audit_field(a["fieldname"], a["label"], m_lead) for a in cat["audit"]]
+	fields = describe("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED)
+	fields.append(field_descriptor("external_id", "External ID", "Data", required=False))
+	fields += [_audit_field(a["fieldname"], a["label"], m_lead) for a in cat["audit"]]
+
 	if mp and not mp.program:
 		# Open-program key: line + group forced; program mode is LIST if the key has an
 		# allowed_programs set, else NONE. Both derived from config, no hardcoding.
 		ap = _allowed_programs(user, True)
-		out["routing"] = {
+		routing = {
 			"mode": "list" if ap else "none",
 			"source": mp.source, "vertical": mp.vertical, "group": mp.crm_group,
 			"program": None,
 			"allowed_programs": ap,
 			"program_required": bool(ap),
 			"note": (
-				"Line and group are fixed. Send custom_current_program from allowed_programs on "
+				"Line and group are fixed. custom_current_program is sent from allowed_programs on "
 				"every lead. Program is a mutable attribute, NOT identity: the same patient on a "
 				"new program is the SAME lead (a transition)."
 			) if ap else "Line and group are fixed. This key uses no program.",
 		}
 	elif mp:
-		out["routing"] = {
+		routing = {
 			"mode": "forced", "source": mp.source, "vertical": mp.vertical,
 			"group": mp.crm_group, "program": mp.program,
-			"note": "Your routing is fixed. Any routing fields you send are ignored.",
+			"note": "Routing is fixed. Any routing fields sent in the body are ignored.",
 		}
 	else:
-		out["routing"] = {
+		routing = {
 			"mode": "caller-supplied", "fields": list(ROUTING_FIELDS),
-			"note": "Trusted caller: send these routing fields in the body.",
+			"note": "Trusted caller: these routing fields are sent in the body.",
 		}
-	_ok(data=out)
+
+	_schema_ok(
+		"lead",
+		dedup=(
+			"A lead is unique per (mobile_no, product line, group) — the CRM's own rule, never an "
+			"`external_id`. Re-sending the same patient updates that lead. Program is NOT part of "
+			"identity: the same patient sent with a different program transitions the SAME lead. A "
+			"changed phone number is a new patient and mints a new lead."
+		),
+		fields=fields,
+		children=children,
+		child_write=(
+			"Each child is sent as a JSON array under its key, e.g. "
+			"custom_lab_profile=[{\"report_date\":\"2026-01-15\", ...}]. Multi-row children are "
+			"upsert-by-key on key_field: a new key adds a row, the same key updates that row (only "
+			"sent fields change), and rows that are omitted are left untouched. Single-row children "
+			"merge onto the one row. A row is removed with {<key_field>, \"_delete\": true}."
+		),
+		routing=routing,
+		list_filters=[*list(LIST_FILTERS.keys()), "mobile_no"],
+	)
+
+
+def _read_one(ident, by, mp, parent_fields, child_allow):
+	"""Load ONE lead by `name` or `mobile_no` -> the curated payload. The per-record loader both
+	lead_get and lead_get_bulk call, so a single read and a bulk read can never diverge. Missing AND
+	out-of-scope raise the SAME generic not-found (no probing)."""
+	filters = {by: _norm_phone(ident) if by == "mobile_no" else ident}
+	if mp:
+		filters["custom_vertical"] = mp.vertical
+		filters["custom_group"] = mp.crm_group
+	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
+	if not lead_name:
+		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+	return _curate(frappe.get_doc("CRM Lead", cstr(lead_name)), parent_fields, child_allow)
 
 
 @frappe.whitelist(methods=["GET"])
 @_api
 def lead_get(**_kwargs):
-	"""Read one lead by `name` or `mobile_no`. A partner only sees leads on their
-	line, and only their allowed fields."""
+	"""Read one lead by `name` or `mobile_no` (phone is the lead's natural key, so it is a valid
+	address here — no other entity has one). A partner only sees leads on their line, and only
+	their allowed fields."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
-	filters = {}
-	if data.get("name"):
-		filters["name"] = data.get("name")
-	elif data.get("mobile_no"):
-		filters["mobile_no"] = _norm_phone(data.get("mobile_no"))
-	else:
+	if not (data.get("name") or data.get("mobile_no")):
 		frappe.throw(_("name or mobile_no is required"))
-	if mp:
-		filters["custom_vertical"] = mp.vertical
-		filters["custom_group"] = mp.crm_group
-
-	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
-	if not lead_name:
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
-	_ok(action="fetched", data=_curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow))
+	by = "name" if data.get("name") else "mobile_no"
+	_ok(action=ACTION_FETCHED, data=_read_one(data.get(by), by, mp, parent_fields, child_allow))
 
 
 @frappe.whitelist(methods=["POST"])
 @_api
 def lead_create(**_kwargs):
-	"""Create-or-upsert a lead by phone. Returns the CRM `name` to PUT back to."""
+	"""Create-or-update a lead, deduped by phone + line + group (the CRM's own rule). Returns the
+	full record, including the `name` to address it by from now on."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
 	doc, action = _upsert_one(frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
-	return _result(doc, action)
+	_ok(action=action, data=_curate(doc, parent_fields, child_allow))
 
 
 @frappe.whitelist(methods=["PUT"])
@@ -693,7 +732,7 @@ def lead_update(**_kwargs):
 	"""Update a lead by CRM `name`. Partner scope-checked; can't move it to another line."""
 	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow)
-	return _result(doc, action)
+	_ok(action=action, data=_curate(doc, parent_fields, child_allow))
 
 
 @frappe.whitelist(methods=["DELETE"])
@@ -704,7 +743,7 @@ def lead_delete(**_kwargs):
 	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	name = frappe.form_dict.get("name")
 	_delete_one(name, mp)
-	_ok(action="deleted", data={"name": name})
+	_ok(action=ACTION_DELETED, data={"name": name})
 
 
 # -- bulk / query endpoints --------------------------------------------------
@@ -712,14 +751,15 @@ def lead_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def lead_create_bulk(**_kwargs):
-	"""Create-or-upsert many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
+	"""Create-or-update many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
 	leads = _read_list(frappe.form_dict, "leads") or []
 
 	def one(i, item):
 		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
-		return {"index": i, "status": "success", "action": action, "name": doc.name}
+		return {"index": i, "status": "success", "action": action,
+		        "data": _curate(doc, parent_fields, child_allow)}
 
 	return _run_bulk(leads, one)
 
@@ -733,7 +773,8 @@ def lead_update_bulk(**_kwargs):
 
 	def one(i, item):
 		doc, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr, parent_fields, child_allow)
-		return {"index": i, "status": "success", "action": action, "name": doc.name}
+		return {"index": i, "status": "success", "action": action,
+		        "data": _curate(doc, parent_fields, child_allow)}
 
 	return _run_bulk(updates, one)
 
@@ -747,7 +788,7 @@ def lead_delete_bulk(**_kwargs):
 
 	def one(i, name):
 		_delete_one(name, mp)
-		return {"index": i, "status": "success", "action": "deleted", "name": name}
+		return {"index": i, "status": "success", "action": ACTION_DELETED, "data": {"name": name}}
 
 	return _run_bulk(names, one)
 
@@ -755,7 +796,8 @@ def lead_delete_bulk(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def lead_get_bulk(**_kwargs):
-	"""Read many leads by `names` OR `mobile_nos` (<= 100). Out-of-scope ids omitted."""
+	"""Read many leads by `names` OR `mobile_nos` (<= 100). Input-ordered; out-of-scope/unknown ids
+	are reported not_found in place."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	names = _read_list(data, "names")
@@ -763,36 +805,9 @@ def lead_get_bulk(**_kwargs):
 	if not names and not mobiles:
 		frappe.throw(_("names or mobile_nos is required"))
 
-	# input-ordered: results[i] corresponds to the i-th requested id, found or not.
 	by = "name" if names else "mobile_no"
-	requested = list(names) if names else [_norm_phone(m) for m in mobiles]
-	bulk_max = _cfg()["bulk_max_records"]
-	if len(requested) > bulk_max:
-		frappe.throw(_("Max {0} per call; received {1}. Page the rest.").format(bulk_max, len(requested)))
-	denied = _meter_volume(len(requested), "read")  # read volume = rows requested
-	if denied:
-		return
-
-	filters = {by: ["in", requested]}
-	if mp:
-		filters["custom_vertical"] = mp.vertical
-		filters["custom_group"] = mp.crm_group
-	by_id = {}
-	for r in frappe.get_all("CRM Lead", filters=filters, fields=["name", by]):
-		by_id.setdefault(r.get(by), r.get("name"))  # first lead per id (one per line in scope)
-
-	results, found = [], 0
-	for i, ident in enumerate(requested):
-		lead_name = by_id.get(ident)
-		if lead_name:
-			results.append({"index": i, "status": "success",
-				"data": _curate(frappe.get_doc("CRM Lead", cstr(lead_name)), parent_fields, child_allow)})
-			found += 1
-		else:
-			results.append({"index": i, "status": "error",
-				"error": {"code": "not_found", "message": _("Lead not found")}})
-	_ok(summary={"requested": len(requested), "found": found, "not_found": len(requested) - found},
-		results=results)
+	requested = list(names or mobiles or [])
+	return _bulk_read(requested, lambda ident: _read_one(ident, by, mp, parent_fields, child_allow))
 
 
 @frappe.whitelist(methods=["GET"])
@@ -814,11 +829,10 @@ def lead_list(**_kwargs):
 	if data.get("mobile_no"):
 		filters.append(["mobile_no", "=", _norm_phone(data.get("mobile_no"))])
 
-	cfg = _cfg()
-	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
-	offset = cint(data.get("offset") or data.get("limit_start"))
-	denied = _meter_volume(limit, "read")  # read volume = the requested page size
-	if denied:
+	limit, offset = _page(data)
+	# The page's rows ARE the read volume — charged here so a list drains the read budget exactly
+	# like N single gets. @_api(bulk=True) already charged the 1-call rate cost.
+	if _meter_volume(limit, "read"):
 		return
 
 	# SELECT only real CRM Lead columns: a catalog fieldname that is a Smart-View-only alias (no column)
@@ -826,11 +840,15 @@ def lead_list(**_kwargs):
 	m = frappe.get_meta("CRM Lead")
 	safe_fields = [f for f in parent_fields if m.has_field(f)]
 	fields = list(dict.fromkeys(
-		[*safe_fields, "name", "source", "custom_vertical", "custom_group", "custom_current_program"]
+		[*safe_fields, "name", EXTERNAL_ID_FIELD, "source", "custom_vertical", "custom_group",
+		 "custom_current_program"]
 	))
 	total = frappe.db.count("CRM Lead", filters)
 	leads = frappe.get_all(
 		"CRM Lead", filters=filters, fields=fields,
 		limit_page_length=limit, limit_start=offset, order_by="modified desc",
 	)
-	_ok(action="fetched", data={"total": total, "count": len(leads), "offset": offset, "limit": limit, "leads": leads})
+	# Echo the caller's own label under the partner-facing key, not the raw column name.
+	for row in leads:
+		row["external_id"] = row.pop(EXTERNAL_ID_FIELD, None)
+	_list_ok("leads", leads, total, offset, limit)

@@ -1,54 +1,81 @@
-"""Gated partner CALL API — create / read / list / delete call logs on a lead.
+"""Gated partner CALL API — create / read / update / list / delete call logs on a lead.
 
-Shares the ONE brain in `tatva_connect.api._base`: the SAME `_resolve_caller`
-enablement gate (the single enabled `CRM Lead API Mapping` row + its grain governs
-calls just like leads/activities/files — there is NO per-entity enablement), the SAME
-`resolve_lead` grain-scoped resolver, the SAME `_ok`/`_fail` envelope, error codes,
-rate limit (100 req/60s) and `_run_bulk` partial-success engine.
+Shares the ONE brain in `tatva_connect.api._base`: the SAME `_resolve_caller` enablement gate (the
+single enabled `CRM Lead API Mapping` row + its grain governs calls just like leads/activities/files —
+there is NO per-entity enablement), the SAME `resolve_lead` grain-scoped resolver, the SAME `_ok`/`_fail`
+envelope, error codes, rate limit, `_run_bulk` / `_bulk_read` partial-success engines and `_list_ok`
+list envelope.
 
-Calls land in frappe/crm's native `CRM Call Log` — the SAME doctype the Acefone webhook
-adapter writes (`tatva_connect.telephony.adapter`). No parallel call store.
+Calls land in frappe/crm's native `CRM Call Log` — the SAME doctype the Acefone webhook adapter writes
+(`tatva_connect.telephony.adapter`). No parallel call store.
 
-`external_id` is the idempotency key, stored in `custom_external_id` (Data, indexed):
-re-sending the same external_id updates that call log, never doubling. The CRM Call Log
-autoname is `field:id`, so the partner-facing `external_id` is NOT the row name — we mint
-a synthetic `id` on insert and dedup on `custom_external_id`, exactly as the foundation
-field's description prescribes.
+IDENTITY. A call is addressed by `name`, the CRM Call Log primary key, returned when it was created.
+That is the only address. `external_id` is the caller's own label (stored in `custom_external_id`):
+echoed back on every read, never interpreted, never used to find a call, never a dedup key. A POST
+creates a call; a PUT updates one by `name`. Retries are made safe with the Idempotency-Key header.
 
 Lead attribution (Invariant #16 — NO best-guess):
   * `lead`/`mobile_no` given -> the shared grain-scoped `resolve_lead`.
-  * else -> STRICT last-10 phone match on the customer number, SCOPED to the caller's
-    grain (vertical+group). Exactly one match links; no match or ambiguous (2+) -> leave
-    UNLINKED (note `unlinked`), never attach to the wrong lead.
+  * else -> STRICT last-10 phone match on the customer number, SCOPED to the caller's grain
+    (vertical+group). Exactly one match links; no match or ambiguous (2+) -> leave UNLINKED, never
+    attach to the wrong lead.
 
-  POST   call_create       -> create-or-upsert a call log (dedup on external_id)
+  GET    call_schema       -> discovery: the call payload contract (fields, types, required)
   GET    call_get          -> one call by `name`, grain-scoped, generic not-found
   GET    call_list         -> a lead's calls (+ direction/status), paginated
+  POST   call_create       -> create a call log; returns its `name`
+  PUT    call_update       -> update a call by `name`, scope-checked
   DELETE call_delete       -> delete a call by `name`, scope-checked
+  POST   call_get_bulk     -> {"names":[...]} (<= 100), partial success
   POST   call_create_bulk  -> {"calls":[...]} (<= 100), partial success
+  PUT    call_update_bulk  -> {"updates":[{"name":..,..}]} (<= 100), partial success
+  DELETE call_delete_bulk  -> {"names":[...]} (<= 100), partial success
 """
 import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime
 
 from tatva_connect.api._base import (
+	ACTION_CREATED,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	ACTION_UPDATED,
+	EXTERNAL_ID_FIELD,
 	_api,
-	_cfg,
+	_bulk_read,
+	_list_ok,
 	_ok,
+	_page,
 	_read_list,
 	_resolve_caller,
 	_run_bulk,
-	find_by_external_id_scoped,
+	_schema_ok,
+	field_descriptor,
 	resolve_lead,
+	stamp_external_id,
 )
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
 
-DEDUP_FIELD = "custom_external_id"   # the idempotency key column on CRM Call Log
-
 # Partner direction vocab -> CRM Call Log `type` vocab.
 _DIRECTION_TYPE = {"Inbound": "Incoming", "Outbound": "Outgoing"}
+
+# The call's payload contract — the ONE source of truth for what a caller may send, what it maps to on
+# CRM Call Log, and what `call_schema` advertises. Discovery equals ingestion because both read THIS.
+#   partner fieldname -> (label, CRM Call Log fieldname or None, required)
+CALL_FIELDS = (
+	("lead",          "Lead",          "reference_docname", False),
+	("mobile_no",     "Mobile No",     None,                False),
+	("external_id",   "External ID",   EXTERNAL_ID_FIELD,   False),
+	("direction",     "Direction",     "type",              True),
+	("from_number",   "From Number",   "from",              False),
+	("to_number",     "To Number",     "to",                False),
+	("status",        "Status",        "status",            False),
+	("duration",      "Duration",      "duration",          False),
+	("recording_url", "Recording URL", "recording_url",     False),
+	("started_at",    "Started At",    "start_time",        False),
+)
 
 
 # -- helpers -----------------------------------------------------------------
@@ -91,7 +118,7 @@ def _call_view(doc):
 	"""The partner-facing shape of a CRM Call Log row."""
 	return {
 		"name": doc.name,
-		"external_id": doc.get(DEDUP_FIELD),
+		"external_id": doc.get(EXTERNAL_ID_FIELD),
 		"lead": doc.reference_docname if doc.reference_doctype == "CRM Lead" else None,
 		"direction": "Inbound" if doc.type == "Incoming" else "Outbound",
 		"from_number": doc.get("from"),
@@ -155,63 +182,104 @@ def _apply_fields(doc, data, lead_name):
 		doc.link_with_reference_doc("CRM Lead", lead_name)
 
 
-def _upsert_one(data, mp, is_sysmgr):
-	"""Create-or-upsert ONE call log. Deduped on external_id. Returns (call_view, action).
+# -- per-record core (shared by singular + bulk) -----------------------------
 
-	external_id already on a row -> update THAT row (re-send is idempotent). New external_id
-	-> insert a fresh row with a synthetic `id` (the autoname field). Backdate creation from
-	`started_at` on insert."""
-	external_id = data.get("external_id")
-	if not external_id:
-		frappe.throw(_("external_id is required"))
+def _create_one(data, mp, is_sysmgr):
+	"""Create ONE call log. Returns (call_view, "created").
+
+	A create CREATES: there is no upsert on a caller-supplied key. `external_id`, if sent, is stamped
+	as a label and nothing more. A caller that re-POSTs the same call gets a second call log — that is
+	correct, and the Idempotency-Key header is how a retry is made safe."""
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
 		frappe.throw(_("direction (Inbound or Outbound) is required"))
 
 	lead_name = _attribute_lead(data, mp, is_sysmgr)
 
-	existing = find_by_external_id_scoped("CRM Call Log", DEDUP_FIELD, external_id, mp, is_sysmgr)
-	if existing:
-		doc = frappe.get_doc("CRM Call Log", existing)
-		_apply_fields(doc, data, lead_name)
-		doc.save(ignore_permissions=True)
-		return _call_view(doc), "updated"
-
 	doc = frappe.new_doc("CRM Call Log")
-	# The autoname is field:id, so the row NAME is `id`. external_id is only a PER-PARTNER dedup
-	# key (resolved grain-scoped above), never the row identity — so the id is a fresh hash that
-	# can't collide across tenants; dedup is the custom_external_id lookup, not the name.
+	# The autoname is field:id, so the row NAME is `id` — a fresh hash that cannot collide.
 	doc.id = f"PARTNER-{frappe.generate_hash(length=10)}"
-	doc.set(DEDUP_FIELD, external_id)
-	# Sensible required-field floors so a sparse payload still inserts (status defaults New-
-	# equivalent "Completed" only if the caller sent none; from/to default to empty strings).
+	# Sensible required-field floors so a sparse payload still inserts (status defaults to
+	# "Completed" only if the caller sent none; from/to default to empty strings).
 	doc.status = data.get("status") or "Completed"
 	setattr(doc, "from", "")
 	doc.to = ""
 	_apply_fields(doc, data, lead_name)
 	doc.insert(ignore_permissions=True)
+
+	stamp_external_id("CRM Call Log", doc.name, data.get("external_id"))
 	# Backdate creation from started_at (historical load), mirroring the activity API.
 	if data.get("started_at"):
 		dt = get_datetime(data.get("started_at"))
 		if dt:
 			frappe.db.set_value("CRM Call Log", doc.name, "creation", dt, update_modified=False)
-	return _call_view(doc), "created"
+	return _call_view(frappe.get_doc("CRM Call Log", doc.name)), ACTION_CREATED
 
 
-# -- endpoints ---------------------------------------------------------------
+def _update_one(name, data, mp, is_sysmgr):
+	"""Update ONE call log by `name`, scope-checked. Only the fields present in the payload change.
+	Returns (call_view, "updated")."""
+	doc = _scoped_call(name, mp, is_sysmgr)
+	# Re-attribution is allowed only when the caller explicitly names a lead; a payload that omits
+	# lead/mobile_no leaves the existing link alone (it never silently re-attributes by phone).
+	lead_name = resolve_lead(mp, is_sysmgr, data) if (data.get("lead") or data.get("mobile_no")) else None
+	_apply_fields(doc, data, lead_name)
+	doc.save(ignore_permissions=True)
+	if data.get("external_id") is not None:
+		stamp_external_id("CRM Call Log", doc.name, data.get("external_id"))
+	return _call_view(frappe.get_doc("CRM Call Log", doc.name)), ACTION_UPDATED
 
-@frappe.whitelist(methods=["POST"])
+
+def _delete_one(name, mp, is_sysmgr):
+	"""Delete one call by `name`, scope-checked (generic not-found)."""
+	doc = _scoped_call(name, mp, is_sysmgr)
+	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)
+
+
+def _read_one(name, mp, is_sysmgr):
+	"""Load one call by `name` -> the partner view. The per-record loader both call_get and
+	call_get_bulk call, so a single read and a bulk read can never diverge."""
+	return _call_view(_scoped_call(name, mp, is_sysmgr))
+
+
+# -- discovery ---------------------------------------------------------------
+
+@frappe.whitelist(methods=["GET"])
 @_api
-def call_create(**_kwargs):
-	"""Create-or-upsert a call log. Body: {lead|mobile_no, external_id, direction
-	(Inbound/Outbound), from_number, to_number, status, duration, recording_url?,
-	started_at?}. Deduped on external_id; re-send updates the same row, never doubles.
-	Lead resolution is grain-scoped (lead/mobile_no) OR strict phone+grain match on the
-	customer number — no/ambiguous match leaves the call UNLINKED (never a wrong lead)."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	view, action = _upsert_one(frappe.form_dict, mp, is_sysmgr)
-	_ok(action=action, data=view)
+def call_schema(**_kwargs):
+	"""Discovery: the call payload contract — every field a caller may send, its type, and whether it
+	is required. The shape is fixed (it does not vary by partner or grain), but it is discoverable, so
+	an integrator never hardcodes a field list."""
+	_resolve_caller()
+	m = frappe.get_meta("CRM Call Log")
+	fields = []
+	for fieldname, label, crm_field, required in CALL_FIELDS:
+		f = m.get_field(crm_field) if crm_field else None
+		fieldtype = f.fieldtype if f else "Data"
+		options, allowed = (f.options if f else None), None
+		if fieldname == "direction":
+			# The partner vocabulary is Inbound/Outbound; the native column is Incoming/Outgoing.
+			fieldtype, options, allowed = "Select", None, list(_DIRECTION_TYPE)
+		elif fieldname == "status" and f:
+			allowed = [o for o in (f.options or "").split("\n") if o] or None
+		fields.append(field_descriptor(fieldname, label, fieldtype, required, options, allowed))
+	_schema_ok(
+		"call",
+		dedup=(
+			"None. Every POST creates a new call log and returns a new `name`. Retries are made safe "
+			"with the Idempotency-Key header; `external_id` does not deduplicate."
+		),
+		fields=fields,
+		attribution=(
+			"`lead` or `mobile_no` attaches the call explicitly, scoped to the caller's line. When both "
+			"are omitted, the customer number is strict-matched within the line (from_number on Inbound, "
+			"to_number on Outbound). No match, or an ambiguous match, leaves the call unlinked and `lead` "
+			"reads null — a call is never attached to a wrong lead."
+		),
+	)
 
+
+# -- singular endpoints ------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
 @_api
@@ -219,16 +287,102 @@ def call_get(**_kwargs):
 	"""Read one call by `name`, grain-scoped (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	doc = _scoped_call(frappe.form_dict.get("name"), mp, is_sysmgr)
-	_ok(action="fetched", data=_call_view(doc))
+	_ok(action=ACTION_FETCHED, data=_read_one(frappe.form_dict.get("name"), mp, is_sysmgr))
+
+
+@frappe.whitelist(methods=["POST"])
+@_api
+def call_create(**_kwargs):
+	"""Create a call log. Body: {lead|mobile_no?, external_id?, direction (Inbound/Outbound),
+	from_number, to_number, status, duration, recording_url?, started_at?}. Returns the `name` to
+	address the call by from now on."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	view, action = _create_one(frappe.form_dict, mp, is_sysmgr)
+	_ok(action=action, data=view)
+
+
+@frappe.whitelist(methods=["PUT"])
+@_api
+def call_update(**_kwargs):
+	"""Update a call by `name`. Only the fields present in the body change. Scope-checked."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	view, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr)
+	_ok(action=action, data=view)
+
+
+@frappe.whitelist(methods=["DELETE"])
+@_api
+def call_delete(**_kwargs):
+	"""Delete one call by `name`, scope-checked (own line only). Out-of-scope/missing ->
+	the SAME generic not-found."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	name = frappe.form_dict.get("name")
+	_delete_one(name, mp, is_sysmgr)
+	_ok(action=ACTION_DELETED, data={"name": name})
+
+
+# -- bulk / query endpoints --------------------------------------------------
+
+@frappe.whitelist(methods=["POST"])
+@_api(bulk=True)
+def call_get_bulk(**_kwargs):
+	"""Read many calls by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
+	reported not_found in place."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	names = _read_list(frappe.form_dict, "names")
+	if not names:
+		frappe.throw(_("names is required"))
+	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
+
+
+@frappe.whitelist(methods=["POST"])
+@_api(bulk=True)
+def call_create_bulk(**_kwargs):
+	"""Create many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record is enforced in its
+	own savepoint -> partial success."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	calls = _read_list(frappe.form_dict, "calls") or []
+
+	def one(i, item):
+		view, action = _create_one(item, mp, is_sysmgr)
+		return {"index": i, "status": "success", "action": action, "data": view}
+
+	return _run_bulk(calls, one)
+
+
+@frappe.whitelist(methods=["PUT"])
+@_api(bulk=True)
+def call_update_bulk(**_kwargs):
+	"""Update many calls. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	updates = _read_list(frappe.form_dict, "updates") or []
+
+	def one(i, item):
+		view, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr)
+		return {"index": i, "status": "success", "action": action, "data": view}
+
+	return _run_bulk(updates, one)
+
+
+@frappe.whitelist(methods=["DELETE"])
+@_api(bulk=True)
+def call_delete_bulk(**_kwargs):
+	"""Delete many calls. Body: {"names":[...]} (<= 100). Partial success."""
+	_user, mp, is_sysmgr = _resolve_caller()
+	names = _read_list(frappe.form_dict, "names") or []
+
+	def one(i, name):
+		_delete_one(name, mp, is_sysmgr)
+		return {"index": i, "status": "success", "action": ACTION_DELETED, "data": {"name": name}}
+
+	return _run_bulk(names, one)
 
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(bulk=True)
 def call_list(**_kwargs):
 	"""List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
-	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset. Returns
-	{total, count, offset, limit, has_more, calls:[...]}."""
+	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	data = frappe.form_dict
 	lead = resolve_lead(mp, is_sysmgr, data)
@@ -242,59 +396,12 @@ def call_list(**_kwargs):
 	if data.get("status"):
 		filters["status"] = data.get("status")
 
-	cfg = _cfg()
-	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
-	offset = cint(data.get("offset") or data.get("limit_start"))
-
+	limit, offset = _page(data)
 	total = frappe.db.count("CRM Call Log", filters)
 	rows = frappe.get_all(
 		"CRM Call Log", filters=filters,
-		fields=["name", DEDUP_FIELD, "reference_docname", "type", "from", "to",
-		        "status", "duration", "recording_url", "start_time"],
+		fields=["name", EXTERNAL_ID_FIELD, "reference_doctype", "reference_docname", "type",
+		        "from", "to", "status", "duration", "recording_url", "start_time"],
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
-	calls = [{
-		"name": r.name,
-		"external_id": r.get(DEDUP_FIELD),
-		"lead": r.reference_docname,
-		"direction": "Inbound" if r.type == "Incoming" else "Outbound",
-		"from_number": r.get("from"),
-		"to_number": r.to,
-		"status": r.status,
-		"duration": r.duration,
-		"recording_url": r.recording_url,
-		"start_time": str(r.start_time) if r.start_time else None,
-	} for r in rows]
-	_ok(action="fetched", data={
-		"total": total, "count": len(calls), "offset": offset, "limit": limit,
-		"has_more": (offset + len(calls)) < total, "calls": calls,
-	})
-
-
-@frappe.whitelist(methods=["DELETE"])
-@_api
-def call_delete(**_kwargs):
-	"""Delete one call by `name`, scope-checked (own line only). Out-of-scope/missing ->
-	the SAME generic not-found."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	name = frappe.form_dict.get("name")
-	doc = _scoped_call(name, mp, is_sysmgr)
-	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)
-	_ok(action="deleted", data={"name": name})
-
-
-@frappe.whitelist(methods=["POST"])
-@_api
-def call_create_bulk(**_kwargs):
-	"""Create-or-upsert many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record
-	is enforced in its own savepoint -> partial success; each is idempotent on its own
-	external_id."""
-	_user, mp, is_sysmgr = _resolve_caller()
-	calls = _read_list(frappe.form_dict, "calls") or []
-
-	def one(i, item):
-		view, action = _upsert_one(item, mp, is_sysmgr)
-		return {"index": i, "status": "success", "action": action,
-				"name": view["name"], "external_id": view["external_id"]}
-
-	return _run_bulk(calls, one)
+	_list_ok("calls", [_call_view(frappe._dict(r)) for r in rows], total, offset, limit)

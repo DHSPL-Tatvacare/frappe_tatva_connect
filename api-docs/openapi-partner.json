@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare Partner API",
     "version": "1.0.0",
-    "description": "The Partner API pushes leads into TatvaCare and reads their state back. The key determines which fields may be read and written, and which product line a lead belongs to. There is no fixed payload.\n\n## What this API does\n\nLeads are created or updated by phone (idempotent), one at a time or in bulk. They are read singly or listed, and deleted by id. The schema is discovered at runtime: `lead_schema` returns exactly what a key may send and read.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays (such as `custom_lab_profile` and `custom_plan_profile`). A lead is unique per phone within its product line and group. Re-sending the same phone updates that lead and never duplicates it, so every write is safe to retry. Product line and group are fixed to the key. The program is a mutable attribute (sent in List mode, stamped in Forced mode) and is never part of identity.\n\n## Where to start\n\n- [Overview](/partner-welcome) and [Quickstart](/partner-quickstart) introduce the API.\n- [`lead_schema`](/discover-schema) is called first when building a request; it returns the available fields, which of them are required, and how child tables behave.\n- [Reading responses](/reading-values) and [Errors](/partner-errors) cover reading a response.\n\nEvery endpoint has a live console below. A saved API key ([Authentication](/partner-validate-key)) is reused on every request.",
+    "description": "The Partner API pushes leads, activities, files and calls into TatvaCare and reads their state back. One\nkey governs every entity: there is no per-entity enablement. The key determines which fields may be read\nand written, and which product line and group a record belongs to.\n\n## Identity — read this first\n\n**Every record is addressed by `name`.** A create returns the `name` of the row it created — the primary\nkey of the underlying table. It is stored by the caller and is the address used for every subsequent\nread, update and delete. It is the only address the API accepts.\n\n**Deduplication is performed by the CRM, never by the caller.** A lead is unique per\n`(mobile_no, product line, group)`. Re-sending the same patient updates that lead; the program is a\nmutable attribute and is not part of identity. A changed phone number is a new patient and mints a new\nlead. Activities, files and calls are **created** against a lead and are **updated by `name`** — they are\nnever deduplicated on a caller-supplied value, so a re-sent create produces a second record.\n\n**`external_id` is a label, not an address.** It is an optional, free-form reference of the caller's own\nchoosing, stored against the record and echoed back on every read so a caller can recognise their own\nrow. It is never interpreted, never deduplicated on, and never used to locate a record.\n\n**Retries are made safe with the `Idempotency-Key` header.** A write may carry one. The first request\nclaims the key and stores its response; a retry with the same key and the same body replays that stored\nresponse instead of writing again. The same key with a different body is rejected with a 422. This is the\nonly retry-safety mechanism, and it is unrelated to `external_id`.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays\n(such as `custom_lab_profile` and `custom_plan_profile`). There is no fixed payload: the schema is\ndiscovered at runtime. Every entity exposes a `*_schema` endpoint returning exactly what the calling key\nmay send and read, with each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. A field list is never\nhardcoded.\n\n## One envelope\n\nEvery response is emitted at the top level, with no `message` wrapper. A success carries\n`{\"status\": \"success\", \"action\": ..., \"data\": ...}`, where `action` is one of `created`, `updated`,\n`fetched` or `deleted`. A failure carries `{\"status\": \"error\", \"error\": {\"code\", \"message\"}}` with a\nnon-2xx status. Every bulk method returns `{\"status\": \"success\", \"summary\": {\"total\", \"succeeded\",\n\"failed\"}, \"results\": [...]}` — reads and writes alike — with `results` input-ordered and each row\ncarrying its own outcome. A bulk call returns 200 even when individual rows failed.\n\n## Limits\n\nBulk methods accept up to 100 records per call. Lists page at up to 200 rows. Two limits apply\nindependently: a call-rate limit and a daily record-volume quota. Single, bulk and list methods all charge\ntheir true row count against the volume quota. A breach of either returns 429 with `Retry-After`.\n",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -58,22 +58,22 @@
     },
     {
       "name": "Leads",
-      "description": "The gated lead methods are the entire lead surface. Each one resolves what the key is permitted to do: the fixed product line, and the fields that may be sent and read. The raw resource route for `CRM Lead` is not available to partner keys (it returns `403`); these methods are the supported path.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `lead_schema` | Discovery: exactly the fields the key may send and read, plus the routing mode. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| POST | `lead_create` | Create or upsert by phone. Returns the CRM `name`. |\n| PUT | `lead_update` | Update a lead by CRM `name` (the id `lead_create` returned). |\n| DELETE | `lead_delete` | Delete a lead by CRM `name` (a lead with linked activity cannot be deleted). |\n| POST | `lead_create_bulk` | `{\"leads\":[{...}]}` (up to 100). Partial success. |\n| PUT | `lead_update_bulk` | `{\"updates\":[{\"name\":...}]}` (up to 100). Partial success. |\n| DELETE | `lead_delete_bulk` | `{\"names\":[...]}` (up to 100). Partial success. |\n| POST | `lead_get_bulk` | `{\"names\":[...]}` or `{\"mobile_nos\":[...]}` (up to 100). Out-of-scope ids are omitted. |\n| GET | `lead_list` | Curated filters and pagination, always scoped to the line. |\n\n**`lead_create` is the default write path.** It is idempotent on the lead identity, safe to retry, and performs the lookup-or-create.\n\n### Lead identity and dedup\n\nA lead is unique per phone, product line, and group ([Lead identity](/concepts)). Routing is never sent, because the line is fixed to the key, so dedup reduces to phone within the line: `lead_create` finds the lead matching the line and that phone and updates it, or creates a new one. The same phone on a different line is a separate lead.\n\n### Child profile writes\n\nProfile children (`custom_plan_profile`, `custom_lab_profile`) are sent as embedded arrays inside the body. Writes merge field by field into the existing row: fields that are sent are overlaid, fields that are omitted are left alone. A partial write never wipes the row. This holds for `lead_create`, `lead_update`, and their bulk forms.\n\n### Routing\n\nRouting (`source`, line, group, program) is forced from the key. Any routing field that is sent is ignored.\n\n### Field validation\n\n- Allowed fields are per key. `lead_schema` lists exactly what a key may send; anything outside that list is dropped. `mobile_no` is always allowed (the anchor).\n- Required to create: `mobile_no`. `first_name` and `status` are default-filled when omitted.\n- Some values are checked against an allowed set (for example `status`, `source`, and program). The valid values are returned by `lead_schema`.\n\n### Reading leads\n\nThree paths: `lead_get` (one, by `name` or `mobile_no`), `lead_get_bulk` (many), `lead_list` (filtered and paginated). All return only the key's allowed fields and only leads on the caller's line.\n\n`lead_list` honours a curated set of filters only, never arbitrary fields:\n\n| Parameter | Meaning |\n|---|---|\n| `status` | exact lead status |\n| `created_after` / `created_before` | creation date range |\n| `updated_after` / `updated_before` | last-modified date range |\n| `mobile_no` | exact phone |\n| `limit` | page size (default 20, max 200) |\n| `offset` | rows to skip (paging) |\n\nList results return curated parent fields and no children; `lead_get` returns a full record. The response nests the page under `data`: `{\"status\":\"success\",\"action\":\"fetched\",\"data\":{\"total\":..,\"count\":..,\"offset\":..,\"limit\":..,\"leads\":[..]}}`.\n\n### Bulk partial success\n\nEvery bulk method runs each record independently: one bad row reports its error, the rest still commit. The response is `{\"status\":\"success\",\"summary\":{..},\"results\":[{\"index\":..,\"status\":\"success\"|\"error\",..}]}`.\n\n### Reading children\n\n`lead_get` and `lead_get_bulk` return the profile children inline, filtered to the key's allowed fields. Child tables cannot be read on their own; they are always read through the parent lead.",
+      "description": "Leads are the root entity. Every activity, file and call hangs off one.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `lead_schema` | Discovery: the fields this key may send and read, plus its routing. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| GET | `lead_list` | List leads on the key's line, filtered and paginated. |\n| POST | `lead_create` | Create or update, deduped by phone within the line and group. |\n| PUT | `lead_update` | Update a lead by `name`. |\n| DELETE | `lead_delete` | Delete a lead by `name`. |\n| POST | `lead_get_bulk` | `{\"names\":[...]}` or `{\"mobile_nos\":[...]}` (up to 100). |\n| POST | `lead_create_bulk` | `{\"leads\":[...]}` (up to 100). |\n| PUT | `lead_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `lead_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Identity and dedup\n\nA lead is unique per `(mobile_no, product line, group)` — the CRM's own rule, never an `external_id`. Re-sending the same patient updates that lead. The program is a mutable attribute and is NOT part of identity: the same patient sent with a different program transitions the SAME lead. A changed phone number is a new patient and mints a new lead.\n\n`mobile_no` is a valid address here, and only here, because phone is the lead's natural key. Every other entity is addressed by `name` alone.\n\n### Discover before sending\n\n`lead_schema` returns exactly what THIS key may send and read, each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. Two keys calling it receive different field lists. A field list is never hardcoded.",
       "x-zudoku-collapsed": false
     },
     {
       "name": "Activities",
-      "description": "Activities are logged on a lead. An activity is a task of a configured activity type, scoped to the lead's product line and group. The same key that writes leads writes activities: there is no per-entity enablement, and one key governs all four entity APIs.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `activity_schema` | Discovery by lead: the activity types available to a lead, each with its field schema. |\n| GET | `activity_get` | Read one activity by task `name`. |\n| POST | `activity_create` | Create or upsert (deduped on `external_id`). |\n| PUT | `activity_update` | Re-apply values to an activity by `name`. |\n| DELETE | `activity_delete` | Delete an activity by `name`. |\n| POST | `activity_create_bulk` | `{\"activities\":[...]}` (up to 100). Partial success. |\n| POST | `activity_get_bulk` | `{\"names\":[...]}` or `{\"external_ids\":[...]}` (up to 100). |\n| GET | `activity_list` | By lead (plus optional `task_type` and `status`), paginated. |\n\n### Discover before sending\n\nActivity fields are scoped to the lead: different leads expose different types and fields. `activity_schema?lead=<id>` (or `?mobile_no=`) is called first, and values are sent and read keyed by the schema `fieldname` under `values`. A field list must not be hardcoded.\n\n### Idempotency\n\n`external_id` is the idempotency key: re-sending the same `external_id` updates that activity and never doubles it. Optional `created_at` backdates the activity for historical loads.\n\n### Scope\n\nEvery activity resolves its lead through the shared scoped resolver: an out-of-scope or missing lead returns the same generic not-found. Bulk endpoints take up to 100 records per call, with per-row partial success. See [Rate limits](/rate-limits).",
+      "description": "Activities are logged on a lead. An activity is a task of a configured activity type, scoped to the lead's product line and group. The same key that writes leads writes activities: there is no per-entity enablement, and one key governs all four entity APIs.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `activity_schema` | Discovery by lead: the activity types available to a lead, each with its field schema. |\n| GET | `activity_get` | Read one activity by `name`. |\n| GET | `activity_list` | List a lead's activities, filtered and paginated. |\n| POST | `activity_create` | Create an activity; returns its `name`. |\n| PUT | `activity_update` | Update an activity by `name`. |\n| DELETE | `activity_delete` | Delete an activity by `name`. |\n| POST | `activity_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `activity_create_bulk` | `{\"activities\":[...]}` (up to 100). |\n| PUT | `activity_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `activity_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Discover before sending\n\nActivity fields are scoped to the lead: different leads expose different types and fields. `activity_schema?lead=<id>` (or `?mobile_no=`) is called first, and values are sent and read keyed by the schema `fieldname` under `values`. A field list is never hardcoded.\n\n### Identity\n\nAn activity is addressed by `name`, returned when it was created. A POST **creates**: it does not deduplicate, so a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `created_at` backdates the activity for a historical load.",
       "x-zudoku-collapsed": true
     },
     {
       "name": "Files",
-      "description": "Files are attached to a lead (or to a scoped activity or note on that lead). The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| POST | `file_attach` | Decode or download the bytes and attach to a lead (or a scoped activity or note). |\n| GET | `file_get` | Read one file's metadata and proxy url. |\n| GET | `file_list` | A lead's files (optional `file_type`), paginated. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 100). Partial success. |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` is always `true` and `file_url` is a proxy url, never a raw storage key or local path. The bytes are sent either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Idempotency\n\n`external_id` is the idempotency key: re-attaching the same `external_id` to the same record returns the existing file with `action: \"exists\"` and never duplicates it.\n\n### Scope\n\nThe lead (or its activity or note) is scoped through the shared resolver: out-of-scope or missing is the same generic not-found. Bulk endpoints take up to 100 records per call, with per-row partial success. See [Rate limits](/rate-limits).",
+      "description": "Files are attached to a lead, or to a scoped activity or note on that lead. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `file_schema` | Discovery: the attach payload contract. |\n| GET | `file_get` | Read one file's metadata and proxy url by `name`. |\n| GET | `file_list` | List a lead's files, filtered and paginated. |\n| POST | `file_attach` | Decode or download the bytes and attach to a lead, activity or note. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 100). |\n| DELETE | `file_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` always reads `true` and `file_url` is always a proxy url, never a raw storage key or a local path. The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Identity\n\nA file is addressed by `name`, returned when it was attached. A POST **attaches**: it does not deduplicate, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\n### No update\n\nA file's bytes are immutable. There is deliberately no update method: replacing a file means attaching the new one and deleting the old.",
       "x-zudoku-collapsed": true
     },
     {
       "name": "Calls",
-      "description": "Calls are logged on a lead. A call is stored in the same call log the telephony integration writes to. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| POST | `call_create` | Create or upsert a call log (deduped on `external_id`). |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | A lead's calls (plus optional `direction` and `status`), paginated. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_create_bulk` | `{\"calls\":[...]}` (up to 100). Partial success. |\n\n### Attribution: `lead` is always read\n\n`lead` or `mobile_no` attaches the call explicitly (scoped to the line). Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to the line. No match, or an ambiguous match, leaves the call unlinked and `lead` returns `null`, never on the wrong lead. `lead` is always read to confirm whether the call was linked.\n\n### Idempotency\n\n`external_id` is the idempotency key: re-sending the same `external_id` updates that call and never doubles it. The returned `name` is the call's own id, which is not the `external_id`. Optional `started_at` backdates the call on insert.\n\n### Scope\n\nReads and deletes are scoped to the line, and an unlinked call is never visible to a partner. Bulk endpoints take up to 100 records per call, with per-row partial success. See [Rate limits](/rate-limits).",
+      "description": "Calls are logged on a lead. A call is stored in the same call log the telephony integration writes to. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `call_schema` | Discovery: the call payload contract. |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | List a lead's calls, filtered and paginated. |\n| POST | `call_create` | Create a call log; returns its `name`. |\n| PUT | `call_update` | Update a call by `name`. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `call_create_bulk` | `{\"calls\":[...]}` (up to 100). |\n| PUT | `call_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `call_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Attribution: `lead` is always read\n\n`lead` or `mobile_no` attaches the call explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`, never on the wrong lead. `lead` is always read back to confirm whether the call was linked.\n\n### Identity\n\nA call is addressed by `name`, returned when it was created — which is NOT the `external_id`. A POST **creates**: it does not deduplicate, so a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `started_at` backdates the call on insert.",
       "x-zudoku-collapsed": true
     }
   ],
@@ -366,7 +366,13 @@
               "mobile_no"
             ]
           }
-        ]
+        ],
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          }
+        }
       },
       "LeadUpdateRequest": {
         "type": "object",
@@ -385,7 +391,13 @@
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          }
+        }
       },
       "PartnerError": {
         "type": "object",
@@ -437,7 +449,7 @@
       },
       "PartnerWriteResponse": {
         "type": "object",
-        "description": "Success envelope from `lead_create` / `lead_update` / `lead_delete`. **Top-level, there is no `message` wrapper** (the gated partner methods emit the body directly). Read `status` first, then `action`, then `data`. A failure instead returns the PartnerError envelope with a non-2xx status.",
+        "description": "Success envelope from every single-record write and read. It is emitted at the top level; there is no `message` wrapper. `status` is read first, then `action`, then `data`. A failure instead returns the PartnerError envelope with a non-2xx status.",
         "properties": {
           "status": {
             "type": "string",
@@ -451,35 +463,14 @@
             "enum": [
               "created",
               "updated",
+              "fetched",
               "deleted"
             ],
-            "description": "What happened: a new lead, an upsert onto an existing one, or a delete."
+            "description": "What happened: `created`, `updated`, `fetched` or `deleted`."
           },
           "data": {
             "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "CRM Lead id (e.g. `CRM-LEAD-2026-00123`). PUT this back to `lead_update`."
-              },
-              "source": {
-                "type": "string",
-                "description": "Lead source, forced from the key for partners."
-              },
-              "vertical": {
-                "type": "string",
-                "description": "Product line (`custom_vertical`)."
-              },
-              "group": {
-                "type": "string",
-                "description": "Group (`custom_group`)."
-              },
-              "program": {
-                "type": "string",
-                "description": "Current program (`custom_current_program`)."
-              }
-            },
-            "description": "On `deleted`, only `name` is present."
+            "description": "The full record. A delete returns `{name}` only."
           }
         }
       },
@@ -506,7 +497,7 @@
       },
       "PartnerSchemaResponse": {
         "type": "object",
-        "description": "Success envelope from `lead_schema`. Top-level (no `message` wrapper), no `action`. `data` holds the fields THIS key may send/read, the child-write rules, dedup grain, bulk limits, and routing mode.",
+        "description": "Success envelope from every `*_schema` discovery method. `data` carries the SAME four blocks on every entity: `entity`, `identity` (how records are addressed), `dedup` (how uniqueness is decided, always by the CRM and never by an `external_id`), and `bulk` (the per-call and page ceilings). `fields` carries the field descriptors, each marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. Entity-specific blocks are added alongside.",
         "properties": {
           "status": {
             "type": "string",
@@ -514,35 +505,42 @@
               "success"
             ]
           },
+          "action": {
+            "type": "string",
+            "enum": [
+              "fetched"
+            ]
+          },
           "data": {
             "type": "object",
             "properties": {
-              "lead": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                },
-                "description": "Allowed parent (CRM Lead) fields."
-              },
-              "children": {
-                "type": "object",
-                "description": "Per child table: `{multi_row, key_field, fields[]}`. `multi_row:true` means upsert-by-key on `key_field`."
-              },
-              "child_write": {
+              "entity": {
                 "type": "string",
-                "description": "How to send child arrays + the upsert-by-key rule."
+                "enum": [
+                  "lead",
+                  "activity",
+                  "file",
+                  "call"
+                ]
+              },
+              "identity": {
+                "type": "object",
+                "description": "`addressed_by` and the addressing rule in prose."
               },
               "dedup": {
                 "type": "string",
-                "description": "The lead identity (mobile_no + product line + group)."
+                "description": "How uniqueness is decided for this entity."
               },
               "bulk": {
                 "type": "object",
-                "description": "`max_per_call`, `list_page_max`, allowed `list_filters`."
+                "description": "`max_per_call`, `list_page_max`, `list_page_default`."
               },
-              "routing": {
-                "type": "object",
-                "description": "`forced` / `list` / `none` for a partner (line + group always fixed); `caller-supplied` for a trusted internal caller."
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ActivitySchemaField"
+                },
+                "description": "Field descriptors: fieldname, label, type, behavior, required."
               }
             }
           }
@@ -550,7 +548,7 @@
       },
       "PartnerBulkResultEntry": {
         "type": "object",
-        "description": "One record's outcome in a bulk response. `status` is `success` or `error` per row. On `success`: `action`+`name` (writes) or `data` (lead_get_bulk). On `error`: the same `error:{code,message}` block as the top-level PartnerError.",
+        "description": "One record's outcome inside a bulk response. `status` is `success` or `error` per row. A success carries `action` and `data` (the full record; a delete carries `{name}`). An error carries the same `error: {code, message}` block as the top-level PartnerError.",
         "properties": {
           "index": {
             "type": "integer",
@@ -568,59 +566,64 @@
             "enum": [
               "created",
               "updated",
+              "fetched",
               "deleted"
             ],
-            "description": "Present on a successful write row."
-          },
-          "name": {
-            "type": "string",
-            "description": "CRM Lead id (present on a successful write row)."
+            "description": "Present on a successful row."
           },
           "data": {
             "type": "object",
-            "description": "Curated lead (present on a successful `lead_get_bulk` row)."
+            "description": "The full record on a successful row; `{name}` on a successful delete."
           },
           "error": {
             "type": "object",
+            "description": "Present on a failed row: `{code, message}`.",
             "properties": {
               "code": {
                 "type": "string"
               },
               "message": {
                 "type": "string"
-              },
-              "fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
               }
-            },
-            "description": "Present on a failed row (its savepoint rolled back)."
+            }
           }
         }
       },
       "PartnerBulkResponse": {
         "type": "object",
-        "description": "Partial-success envelope shared by every bulk method. Top-level (no `message` wrapper). Each record runs in its own savepoint, one bad row reports its error, the rest still commit. `summary` is `{total,succeeded,failed}` for writes and `{requested,found,not_found}` for `lead_get_bulk`. Inspect `results[].status` per row; the HTTP status is 200 even when some rows failed.",
+        "description": "Partial-success envelope shared by EVERY bulk method — reads and writes alike. It is emitted at the top level; there is no `message` wrapper. Each record is handled independently: a write runs in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered, so `results[i]` is the i-th record of the request. The HTTP status is 200 even when individual rows failed; `results[].status` is inspected per row.",
         "properties": {
           "status": {
             "type": "string",
             "enum": [
               "success"
             ],
-            "description": "`success`, the batch ran (individual rows may have failed)."
+            "description": "`success` — the batch ran. Individual rows may still have failed."
           },
           "summary": {
             "type": "object",
-            "description": "Counts: a write returns `{total,succeeded,failed}`, and a get returns `{requested,found,not_found}`."
+            "description": "Counts for the batch. The SAME three keys on every bulk method, read or write.",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "description": "Records in the request."
+              },
+              "succeeded": {
+                "type": "integer",
+                "description": "Records that succeeded."
+              },
+              "failed": {
+                "type": "integer",
+                "description": "Records that failed."
+              }
+            }
           },
           "results": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PartnerBulkResultEntry"
             },
-            "description": "Per-record outcome, in request order."
+            "description": "Per-record outcome, input-ordered."
           }
         }
       },
@@ -706,8 +709,7 @@
           },
           "external_id": {
             "type": "string",
-            "nullable": true,
-            "description": "**Idempotency key** (stored in `custom_lsq_activity_id`). Re-sending the same `external_id` updates that activity, never doubles."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "values": {
             "type": "object",
@@ -718,7 +720,7 @@
       },
       "ActivityUpsertRequest": {
         "type": "object",
-        "description": "Body for `activity_create` / `activity_update`. Target a lead by `lead` (CRM name) OR `mobile_no`. `task_type` names the activity type; `values` carries data keyed by the type's `fieldname`s (from `activity_schema`). `external_id` is the idempotency key, re-send to update, never doubles.",
+        "description": "Body for `activity_create` and `activity_update`. On a create, the lead is targeted by `lead` (its CRM `name`) OR `mobile_no`. On an update, the activity is targeted by its own `name`. `task_type` names the activity type, and `values` carries the data keyed by the type's `fieldname`s, as advertised by `activity_schema` for that lead.\n\nA create does NOT deduplicate: a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record. Optional `created_at` backdates the activity for a historical load.",
         "properties": {
           "lead": {
             "type": "string",
@@ -737,7 +739,7 @@
           },
           "external_id": {
             "type": "string",
-            "description": "Idempotency key (stored in `custom_lsq_activity_id`). Re-sending the same value updates that activity instead of creating a new one."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "values": {
             "type": "object",
@@ -751,8 +753,7 @@
           },
           "name": {
             "type": "string",
-            "description": "**`activity_update` only**, the activity id to update.",
-            "example": "abc123def4"
+            "description": "The record's `name` — the primary key returned when it was created. Required on an update; it is the only address the API accepts."
           }
         },
         "required": [
@@ -774,8 +775,7 @@
           },
           "external_id": {
             "type": "string",
-            "nullable": true,
-            "description": "**Idempotency key** (stored in `custom_lsq_attachment_id`). Re-attaching the same `external_id` to the same record returns the existing file (`action: exists`)."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "filename": {
             "type": "string",
@@ -805,7 +805,7 @@
       },
       "FileAttachRequest": {
         "type": "object",
-        "description": "Body for `file_attach`. Target a lead by `lead` OR `mobile_no` (optionally a scoped `activity` task). Supply the bytes as a downloadable `file_url` OR `content_base64` (exactly one). Idempotent on `external_id` + the target record.",
+        "description": "Body for `file_attach`. The lead is targeted by `lead` OR `mobile_no`, and the file optionally homed on a scoped `activity` (a CRM Task) or `note` on that lead. The bytes are supplied as a downloadable `file_url` OR as `content_base64` — exactly one is sent.\n\nAn attach does NOT deduplicate: re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.",
         "properties": {
           "lead": {
             "type": "string",
@@ -827,7 +827,7 @@
           },
           "external_id": {
             "type": "string",
-            "description": "**Required.** Idempotency key (stored in `custom_lsq_attachment_id`). Re-attaching the same value to the same record returns the existing file (`action: exists`)."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "file_type": {
             "type": "string",
@@ -847,7 +847,6 @@
           }
         },
         "required": [
-          "external_id",
           "filename"
         ]
       },
@@ -861,8 +860,7 @@
           },
           "external_id": {
             "type": "string",
-            "nullable": true,
-            "description": "**Idempotency key** (stored in `custom_external_id`). Re-sending the same value updates that call log, never doubles."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "lead": {
             "type": "string",
@@ -907,11 +905,11 @@
       },
       "CallUpsertRequest": {
         "type": "object",
-        "description": "Body for `call_create`. `external_id` (idempotency key) and `direction` are required. Attribution: `lead` or `mobile_no` targets a lead explicitly (line-scoped); omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the caller's line. No match, or an ambiguous match, leaves the call unlinked (`lead: null`), never on a wrong lead.",
+        "description": "Body for `call_create` and `call_update`. `direction` (Inbound or Outbound) is required on a create. On an update, the call is targeted by its own `name`.\n\nAttribution: `lead` or `mobile_no` targets a lead explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`.\n\nA create does NOT deduplicate: a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record. Optional `started_at` backdates the call on insert.",
         "properties": {
           "external_id": {
             "type": "string",
-            "description": "**Required.** Idempotency key (stored in `custom_external_id`). Re-sending the same value updates that call log, never doubles."
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
           },
           "direction": {
             "type": "string",
@@ -954,16 +952,19 @@
             "type": "string",
             "format": "date-time",
             "description": "Call start time. On insert it also backdates the row's `creation` (historical load)."
+          },
+          "name": {
+            "type": "string",
+            "description": "The record's `name` — the primary key returned when it was created. Required on an update; it is the only address the API accepts."
           }
         },
         "required": [
-          "external_id",
           "direction"
         ]
       },
       "EntityListResponse": {
         "type": "object",
-        "description": "Success envelope from the entity list endpoints (`activity_list` / `file_list` / `call_list`). Top-level (no `message` wrapper), `action: fetched`. `data` is a page object with `total/count/offset/limit/has_more` plus the entity array (`activities` / `files` / `calls`).",
+        "description": "Success envelope from every list method (`lead_list` / `activity_list` / `file_list` / `call_list`). It is emitted at the top level; there is no `message` wrapper, and `action` is `fetched`. `data` is a page object carrying the SAME five keys on every entity, plus the entity array under its own plural name (`leads` / `activities` / `files` / `calls`).",
         "properties": {
           "status": {
             "type": "string",
@@ -982,7 +983,7 @@
             "properties": {
               "total": {
                 "type": "integer",
-                "description": "Total rows matching the filter (across all pages)."
+                "description": "Total rows matching the filter, across all pages."
               },
               "count": {
                 "type": "integer",
@@ -994,20 +995,19 @@
               },
               "limit": {
                 "type": "integer",
-                "description": "Page size used (default 20, max 200)."
+                "description": "Page size used (defaults to 20, capped at 200)."
               },
               "has_more": {
                 "type": "boolean",
-                "description": "`true` if `offset + count < total`, page again."
+                "description": "Whether further pages remain."
               }
-            },
-            "description": "Page object; the entity array is keyed `activities` / `files` / `calls` depending on the endpoint."
+            }
           }
         }
       },
       "EntityReadResponse": {
         "type": "object",
-        "description": "Success envelope from the entity single-read / write endpoints (`*_get`, `activity_create/update`, `file_attach`, `call_create`, `activity_schema`). Top-level (no `message` wrapper). `action` reflects what happened; `data` is the entity (Activity / File / Call) or the schema/discovery object.",
+        "description": "Success envelope from every single-record endpoint of an entity (`*_schema`, `*_get`, `*_create`, `*_update`, `*_delete`). It is emitted at the top level; there is no `message` wrapper. Every write returns the FULL record in `data`, so a create, an update and a get can never hand back different shapes.",
         "properties": {
           "status": {
             "type": "string",
@@ -1018,78 +1018,66 @@
           "action": {
             "type": "string",
             "enum": [
-              "fetched",
               "created",
               "updated",
-              "upserted",
-              "deleted",
-              "attached",
-              "exists"
+              "fetched",
+              "deleted"
             ],
-            "description": "What happened. Writes: `created`/`updated`/`upserted` (activity), `attached`/`exists` (file), `created`/`updated` (call). Reads: `fetched`. Delete: `deleted`."
+            "description": "What happened. Reads report `fetched`, writes report `created` or `updated`, and a delete reports `deleted`."
           },
           "data": {
-            "description": "The entity (Activity / File / Call), the `{name}` on a delete, or the discovery object on `activity_schema`."
+            "description": "The full record (Lead / Activity / File / Call), the `{name}` on a delete, or the discovery object on a `*_schema` call."
           }
         }
       },
-      "EntityGetBulkResponse": {
+      "BulkNamesRequest": {
         "type": "object",
-        "description": "Partial-success envelope for `activity_get_bulk`. Top-level (no `message` wrapper). `summary` is `{requested, found, not_found}`; `results[]` is input-ordered, `results[i]` is the i-th requested id. A found row carries `data` (the entity); a missing/out-of-scope id reports `not_found` in place.",
+        "required": [
+          "names"
+        ],
+        "description": "A batch addressed by `name` — the primary keys returned when the records were created. Up to 100 per call.",
         "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "success"
-            ]
-          },
-          "summary": {
-            "type": "object",
-            "properties": {
-              "requested": {
-                "type": "integer"
-              },
-              "found": {
-                "type": "integer"
-              },
-              "not_found": {
-                "type": "integer"
-              }
-            }
-          },
-          "results": {
+          "names": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "index": {
-                  "type": "integer",
-                  "description": "0-based position in the request array."
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "success",
-                    "error"
-                  ]
-                },
-                "data": {
-                  "description": "The entity (present on a found row)."
-                },
-                "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "description": "Present on a `not_found` row."
-                }
-              }
-            }
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "The records' `name`s. Up to 100."
+          }
+        }
+      },
+      "ActivityUpdateBulkRequest": {
+        "type": "object",
+        "required": [
+          "updates"
+        ],
+        "description": "A batch of activity updates, each addressed by `name`. Up to 100 per call.",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ActivityUpsertRequest"
+            },
+            "description": "Each entry carries the activity's `name` plus the fields to change."
+          }
+        }
+      },
+      "CallUpdateBulkRequest": {
+        "type": "object",
+        "required": [
+          "updates"
+        ],
+        "description": "A batch of call updates, each addressed by `name`. Up to 100 per call.",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/CallUpsertRequest"
+            },
+            "description": "Each entry carries the call's `name` plus the fields to change."
           }
         }
       }
@@ -1516,48 +1504,6 @@
           ]
         }
       },
-      "LeadGetBulkResponse": {
-        "summary": "lead_get_bulk: found 1 of 2 (out-of-scope omitted)",
-        "value": {
-          "status": "success",
-          "summary": {
-            "requested": 2,
-            "found": 1,
-            "not_found": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "data": {
-                "first_name": "Example",
-                "mobile_no": "+919000000001",
-                "status": "New",
-                "name": "CRM-LEAD-2026-00123",
-                "source": "Program D",
-                "custom_vertical": "Metabolic",
-                "custom_group": "Program D",
-                "custom_current_program": "Program D",
-                "custom_lab_profile": [
-                  {
-                    "hba1c": 7.2,
-                    "report_date": "2026-05-30",
-                    "name": "a1b2c3"
-                  }
-                ]
-              }
-            },
-            {
-              "index": 1,
-              "status": "error",
-              "error": {
-                "code": "not_found",
-                "message": "Lead not found"
-              }
-            }
-          ]
-        }
-      },
       "LeadListResponse": {
         "summary": "lead_list: page of curated leads (no children)",
         "value": {
@@ -1643,24 +1589,6 @@
           }
         }
       },
-      "ActivityUpsertResponse": {
-        "summary": "activity_create: upserted",
-        "value": {
-          "status": "success",
-          "action": "upserted",
-          "data": {
-            "name": "abc123def4",
-            "lead": "CRM-LEAD-2026-00123",
-            "task_type": "Welcome Call",
-            "status": "Done",
-            "external_id": "LSQ-ACT-88231",
-            "values": {
-              "call_outcome": "Connected",
-              "notes": "Onboarded, scheduled follow-up."
-            }
-          }
-        }
-      },
       "ActivityCreateBulkRequest": {
         "summary": "activity_create_bulk: two activities",
         "value": {
@@ -1690,41 +1618,6 @@
           "external_ids": [
             "LSQ-ACT-1",
             "LSQ-ACT-2"
-          ]
-        }
-      },
-      "ActivityGetBulkResponse": {
-        "summary": "activity_get_bulk: found 1 of 2",
-        "value": {
-          "status": "success",
-          "summary": {
-            "requested": 2,
-            "found": 1,
-            "not_found": 1
-          },
-          "results": [
-            {
-              "index": 0,
-              "status": "success",
-              "data": {
-                "name": "abc123def4",
-                "lead": "CRM-LEAD-2026-00123",
-                "task_type": "Welcome Call",
-                "status": "Done",
-                "external_id": "LSQ-ACT-1",
-                "values": {
-                  "call_outcome": "Connected"
-                }
-              }
-            },
-            {
-              "index": 1,
-              "status": "error",
-              "error": {
-                "code": "not_found",
-                "message": "Activity not found"
-              }
-            }
           ]
         }
       },
@@ -1775,27 +1668,10 @@
         }
       },
       "FileAttachResponse": {
-        "summary": "file_attach: attached (private)",
+        "summary": "file_attach: created",
         "value": {
           "status": "success",
-          "action": "attached",
-          "data": {
-            "name": "fghij67890",
-            "file_type": "Lab Report",
-            "external_id": "LSQ-ATT-5521",
-            "filename": "hba1c-2026-05.pdf",
-            "file_url": "/api/method/tatva_connect.storage.file_manager.proxy?key=...",
-            "is_private": true,
-            "attached_to_doctype": "CRM Lead",
-            "attached_to_name": "CRM-LEAD-2026-00123"
-          }
-        }
-      },
-      "FileAttachResponseExists": {
-        "summary": "file_attach: already attached (idempotent)",
-        "value": {
-          "status": "success",
-          "action": "exists",
+          "action": "created",
           "data": {
             "name": "fghij67890",
             "file_type": "Lab Report",
@@ -1967,6 +1843,206 @@
               "status": "Missed"
             }
           ]
+        }
+      },
+      "BulkNamesRequestExample": {
+        "summary": "Address a batch by name",
+        "value": {
+          "names": [
+            "b1a2c3d4e5",
+            "f6g7h8i9j0",
+            "k1l2m3n4o5"
+          ]
+        }
+      },
+      "BulkDeleteResponseExample": {
+        "summary": "Two deleted, one already gone",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 3,
+            "succeeded": 2,
+            "failed": 1
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "b1a2c3d4e5"
+              }
+            },
+            {
+              "index": 1,
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "f6g7h8i9j0"
+              }
+            },
+            {
+              "index": 2,
+              "status": "error",
+              "error": {
+                "code": "not_found",
+                "message": "Activity not found"
+              }
+            }
+          ]
+        }
+      },
+      "FileSchemaResponse": {
+        "summary": "The attach payload contract",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "file",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created."
+            },
+            "dedup": "None. Every POST attaches a new file and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
+            "bulk": {
+              "max_per_call": 100,
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "fields": [
+              {
+                "fieldname": "lead",
+                "label": "Lead",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "filename",
+                "label": "Filename",
+                "type": "Data",
+                "behavior": "REQUIRED",
+                "required": true,
+                "options": null
+              },
+              {
+                "fieldname": "external_id",
+                "label": "External ID",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              }
+            ],
+            "immutable": "A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old."
+          }
+        }
+      },
+      "CallSchemaResponse": {
+        "summary": "The call payload contract",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "call",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created."
+            },
+            "dedup": "None. Every POST creates a new call log and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
+            "bulk": {
+              "max_per_call": 100,
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "fields": [
+              {
+                "fieldname": "direction",
+                "label": "Direction",
+                "type": "Select",
+                "behavior": "REQUIRED",
+                "required": true,
+                "options": null,
+                "allowed_values": [
+                  "Inbound",
+                  "Outbound"
+                ]
+              },
+              {
+                "fieldname": "external_id",
+                "label": "External ID",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              }
+            ]
+          }
+        }
+      },
+      "CallUpdateRequest": {
+        "summary": "Correct a call's duration and status",
+        "value": {
+          "name": "PARTNER-a1b2c3d4e5",
+          "status": "Completed",
+          "duration": 187
+        }
+      },
+      "ActivityUpdateBulkRequest": {
+        "summary": "Update two activities by name",
+        "value": {
+          "updates": [
+            {
+              "name": "b1a2c3d4e5",
+              "task_type": "Welcome Call",
+              "values": {
+                "call_outcome": "Connected"
+              }
+            },
+            {
+              "name": "f6g7h8i9j0",
+              "task_type": "Welcome Call",
+              "values": {
+                "call_outcome": "Not reachable"
+              }
+            }
+          ]
+        }
+      },
+      "CallUpdateBulkRequest": {
+        "summary": "Update two calls by name",
+        "value": {
+          "updates": [
+            {
+              "name": "PARTNER-a1b2c3d4e5",
+              "status": "Completed",
+              "duration": 187
+            },
+            {
+              "name": "PARTNER-f6g7h8i9j0",
+              "status": "No Answer",
+              "duration": 0
+            }
+          ]
+        }
+      },
+      "ActivityCreateResponse": {
+        "summary": "activity_create: created",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "b1a2c3d4e5",
+            "lead": "CRM-LEAD-2026-00123",
+            "task_type": "Welcome Call",
+            "status": "Completed",
+            "external_id": "PARTNER-ACT-9981",
+            "values": {
+              "call_outcome": "Connected",
+              "call_notes": "Patient onboarded."
+            }
+          }
         }
       }
     },
@@ -2415,7 +2491,7 @@
           "Leads"
         ],
         "summary": "Create Lead",
-        "description": "The default write for most integrations. Idempotent on lead identity (`mobile_no` + product line + group): it updates the matching lead or creates a new one, so it is always safe to retry. Returns `name`, the lead's unique ID. Identity model: [Concepts](/concepts).",
+        "description": "A lead is created, or the existing lead on the same phone within the key's line and group is updated. The FULL record is returned, including the `name` — the address used for every subsequent update and delete.\n\nDeduplication is the CRM's own rule, `(mobile_no, product line, group)`, and is never driven by a caller-supplied value. The program is a mutable attribute and is NOT part of identity. A changed phone number is a new patient and mints a new lead.\n\n### Identity\n\nRecords are addressed by `name`, the primary key returned when the record was created. `external_id` is an optional label of the caller's own choosing: it is stored and echoed back, never interpreted, and never used to locate a record. Retries are made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2725,8 +2801,8 @@
         "tags": [
           "Leads"
         ],
-        "summary": "Bulk Read",
-        "description": "Read up to 100 leads in one call by `names` or `mobile_nos` (send one). Returns the leads found, allowed fields, read-only routing, inlined children; out-of-scope or missing ids are omitted, so `found` may be less than `requested`. POST because the id list travels in the body.",
+        "summary": "Bulk Read Leads",
+        "description": "Up to 100 leads are read, addressed by `names` OR `mobile_nos`. `results` is input-ordered, so `results[i]` is the i-th requested id. A lead that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2782,11 +2858,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PartnerBulkResponse"
-                },
-                "examples": {
-                  "Found 1 of 2": {
-                    "$ref": "#/components/examples/LeadGetBulkResponse"
-                  }
                 }
               }
             }
@@ -3257,8 +3328,8 @@
                   "$ref": "#/components/schemas/EntityReadResponse"
                 },
                 "examples": {
-                  "One activity": {
-                    "$ref": "#/components/examples/ActivityUpsertResponse"
+                  "Created": {
+                    "$ref": "#/components/examples/ActivityCreateResponse"
                   }
                 }
               }
@@ -3437,7 +3508,7 @@
           "Activities"
         ],
         "summary": "Create Activity",
-        "description": "Create-or-upsert an activity on a lead. Idempotent on `external_id` (stored in `custom_lsq_activity_id`): re-sending the same value updates that activity, never doubles. `task_type` and the `values` keys come from `activity_schema` for the lead.",
+        "description": "An activity is created against a lead and its `name` is returned — the address used for every subsequent read, update and delete. `task_type` names the activity type and `values` carries the data, keyed by the `fieldname`s that `activity_schema` advertises for this lead.\n\nA POST **creates**. It does not deduplicate on any caller-supplied value, so a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header.\n\n### Identity\n\nRecords are addressed by `name`, the primary key returned when the record was created. `external_id` is an optional label of the caller's own choosing: it is stored and echoed back, never interpreted, and never used to locate a record. Retries are made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3455,7 +3526,7 @@
         },
         "responses": {
           "200": {
-            "description": "Activity created or updated (`action: upserted`).",
+            "description": "The activity was created. Its `name` is returned — the address used from now on.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -3473,8 +3544,8 @@
                   "$ref": "#/components/schemas/EntityReadResponse"
                 },
                 "examples": {
-                  "Upserted": {
-                    "$ref": "#/components/examples/ActivityUpsertResponse"
+                  "Created": {
+                    "$ref": "#/components/examples/ActivityCreateResponse"
                   }
                 }
               }
@@ -3706,36 +3777,17 @@
           "Activities"
         ],
         "summary": "Bulk Read Activities",
-        "description": "Read up to 100 activities by `names` OR `external_ids` (send one). Input-ordered `results[]`, `results[i]` is the i-th id; out-of-scope/unknown ids report `not_found` in place. POST because the id list travels in the body.",
+        "description": "Up to 100 activities are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "names": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Up to 100 activity ids. Use this OR `external_ids`."
-                  },
-                  "external_ids": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Up to 100 idempotency keys (`custom_lsq_activity_id`). Use this OR `names`."
-                  }
-                },
-                "description": "Send exactly one of `names` / `external_ids`."
+                "$ref": "#/components/schemas/BulkNamesRequest"
               },
               "examples": {
-                "By external_ids": {
-                  "$ref": "#/components/examples/ActivityGetBulkRequest"
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
                 }
               }
             }
@@ -3758,12 +3810,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntityGetBulkResponse"
-                },
-                "examples": {
-                  "Found 1 of 2": {
-                    "$ref": "#/components/examples/ActivityGetBulkResponse"
-                  }
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
                 }
               }
             }
@@ -3810,7 +3857,7 @@
           "Activities"
         ],
         "summary": "Bulk Create Activities",
-        "description": "Create-or-upsert up to 100 activities, body `{\"activities\": [ … ]}`. Same idempotent (`external_id`) and field rules as Create Activity; each row commits in its own savepoint (**partial success**).",
+        "description": "Up to 100 activities are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of activities. A retry is made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4103,7 +4150,7 @@
           "Files"
         ],
         "summary": "Attach File",
-        "description": "Attach a file to a lead (or a scoped activity task). Supply the bytes as a downloadable `file_url` (the server fetches it) OR `content_base64` (exactly one). **The file is always stored private.** Idempotent on `external_id` (stored in `custom_lsq_attachment_id`): re-attaching the same value to the same record returns the existing file with `action: exists`.",
+        "description": "The bytes are decoded from `content_base64` or downloaded from `file_url` (exactly one is sent), and attached to the lead — or to a scoped `activity` or `note` on that lead. The file's `name` is returned: the address used for every subsequent read and delete.\n\nA POST **attaches**. It does not deduplicate on any caller-supplied value, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header.\n\nEvery file attached here is private: `is_private` always reads `true` and `file_url` is always a proxy url.\n\n### Identity\n\nRecords are addressed by `name`, the primary key returned when the record was created. `external_id` is an optional label of the caller's own choosing: it is stored and echoed back, never interpreted, and never used to locate a record. Retries are made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4144,9 +4191,6 @@
                 "examples": {
                   "Attached": {
                     "$ref": "#/components/examples/FileAttachResponse"
-                  },
-                  "Already attached": {
-                    "$ref": "#/components/examples/FileAttachResponseExists"
                   }
                 }
               }
@@ -4280,7 +4324,7 @@
           "Files"
         ],
         "summary": "Bulk Attach Files",
-        "description": "Attach up to 100 files, body `{\"files\": [ … ]}`. Same private-by-default and idempotent (`external_id`) rules as Attach File; each file runs in its own savepoint (**partial success**).",
+        "description": "Up to 100 files are attached. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **attaches**. It does not deduplicate, so a re-sent batch attaches a second set of files.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4586,7 +4630,7 @@
           "Calls"
         ],
         "summary": "Create Call",
-        "description": "Create-or-upsert a call log. `external_id` and `direction` are required. Idempotent on `external_id` (stored in `custom_external_id`): re-sending updates the same row and never doubles.\n\n**Attribution is fail-closed; `lead` is read.** `lead` or `mobile_no` attaches explicitly (line-scoped); omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the caller's line. No match, or an ambiguous (2+) match, leaves the call unlinked and `lead` returns `null`, never on a wrong lead.",
+        "description": "A call log is created and its `name` is returned — the address used for every subsequent read, update and delete. `direction` (Inbound or Outbound) is required.\n\nA POST **creates**. It does not deduplicate on any caller-supplied value, so a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header.\n\n**Attribution is fail-closed and `lead` is always read.** `lead` or `mobile_no` attaches the call explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`, never on a wrong lead.\n\n### Identity\n\nRecords are addressed by `name`, the primary key returned when the record was created. `external_id` is an optional label of the caller's own choosing: it is stored and echoed back, never interpreted, and never used to locate a record. Retries are made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4763,7 +4807,7 @@
           "Calls"
         ],
         "summary": "Bulk Create Calls",
-        "description": "Create-or-upsert up to 100 call logs, body `{\"calls\": [ … ]}`. Same idempotent (`external_id`) and fail-closed attribution rules as Create Call; each row runs in its own savepoint (**partial success**). A row may succeed yet still be unlinked (`lead: null`), but the bulk result reports `name`/`external_id`, not `lead`; read each back via `call_get`/`call_list` to confirm linkage.",
+        "description": "Up to 100 call logs are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of calls.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4843,6 +4887,1081 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_update_bulk": {
+      "put": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Bulk Update Activities",
+        "description": "Up to 100 activities are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityUpdateBulkRequest"
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/ActivityUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_activity.activity_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Activities"
+        ],
+        "summary": "Bulk Delete Activities",
+        "description": "Up to 100 activities are deleted, each addressed by its `name`. Each record is handled in its own savepoint. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Mixed": {
+                    "$ref": "#/components/examples/BulkDeleteResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_schema": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "File Schema",
+        "description": "Discovery. The attach payload contract is returned: every field the caller may send, its type, and whether it is required. The shape is fixed — it does not vary by key or grain — but it is discoverable, so a field list is never hardcoded.",
+        "responses": {
+          "200": {
+            "description": "The file payload contract.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSchemaResponse"
+                },
+                "examples": {
+                  "Contract": {
+                    "$ref": "#/components/examples/FileSchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_get_bulk": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Bulk Read Files",
+        "description": "Up to 100 files are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A file that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_file.file_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Bulk Delete Files",
+        "description": "Up to 100 files are deleted, each addressed by its `name`. Each record is handled in its own savepoint. The stored blob is dropped with its last reference.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Mixed": {
+                    "$ref": "#/components/examples/BulkDeleteResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_schema": {
+      "get": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Call Schema",
+        "description": "Discovery. The call payload contract is returned: every field the caller may send, its type, and whether it is required. The shape is fixed — it does not vary by key or grain — but it is discoverable, so a field list is never hardcoded.",
+        "responses": {
+          "200": {
+            "description": "The call payload contract.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSchemaResponse"
+                },
+                "examples": {
+                  "Contract": {
+                    "$ref": "#/components/examples/CallSchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_update": {
+      "put": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Update Call",
+        "description": "A call is updated, addressed by its `name` — the id returned when it was created. Only the fields present in the body are changed. The lead link is left alone unless `lead` or `mobile_no` is supplied, so an update never silently re-attributes a call by phone.",
+        "responses": {
+          "200": {
+            "description": "The updated call is returned in full.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallUpsertRequest"
+              },
+              "examples": {
+                "Correct a duration": {
+                  "$ref": "#/components/examples/CallUpdateRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_get_bulk": {
+      "post": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Bulk Read Calls",
+        "description": "Up to 100 calls are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A call that does not exist, lies outside the key's line and group, or is unlinked reports the same generic not-found in place.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_update_bulk": {
+      "put": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Bulk Update Calls",
+        "description": "Up to 100 calls are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallUpdateBulkRequest"
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/CallUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_call.call_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Calls"
+        ],
+        "summary": "Bulk Delete Calls",
+        "description": "Up to 100 calls are deleted, each addressed by its `name`. Each record is handled in its own savepoint.",
+        "responses": {
+          "200": {
+            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Mixed": {
+                    "$ref": "#/components/examples/BulkDeleteResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key is not permitted to make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
           }
         }
       }

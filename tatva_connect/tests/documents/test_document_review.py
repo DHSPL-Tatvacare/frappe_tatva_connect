@@ -89,12 +89,13 @@ def _make_lead(grain, **extra):
 
 def _make_file(lead, source, file_type, external_id, attached_to_doctype="CRM Lead", attached_to_name=None):
 	"""A real private File on the lead (the patient upload), stamped with the ingestion `custom_source`
-	and `custom_file_type` a rule scopes on, plus the partner `external_id` (custom_lsq_attachment_id)."""
+	and `custom_file_type` a rule scopes on, plus the caller's own `external_id` label
+	(custom_external_id — a label, never an address; the file is addressed by `name`)."""
 	return frappe.get_doc({
 		"doctype": "File", "file_name": f"rev-{external_id}.txt", "content": "review-doc-bytes",
 		"is_private": 1,
 		"attached_to_doctype": attached_to_doctype, "attached_to_name": attached_to_name or lead,
-		"custom_source": source, "custom_file_type": file_type, "custom_lsq_attachment_id": external_id,
+		"custom_source": source, "custom_file_type": file_type, "custom_external_id": external_id,
 	}).insert(ignore_permissions=True)
 
 

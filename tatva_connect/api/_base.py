@@ -7,7 +7,7 @@ leads, activities, files, calls — via the SAME `_resolve_caller`. A partner en
 for a grain can use every entity API for that grain with the SAME API key. There is
 NO per-entity enablement; this module is the one brain all entity modules call.
 
-Holds (moved verbatim from partner.py, behaviour-preserving):
+Holds:
   * `_resolve_caller`  — (user, mapping-or-None, is_sysmgr); 403 if neither
   * `_norm_phone`      — phone normaliser
   * `_ok` / `_fail`    — unified success / failure response writers
@@ -15,10 +15,14 @@ Holds (moved verbatim from partner.py, behaviour-preserving):
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
   * `_cfg`             — fresh read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
   * `_rate_check`      — per-token + global token-bucket limiter (cost = records)
-  * `_run_bulk`        — per-record savepoint -> partial success
+  * `_run_bulk`        — per-record savepoint -> partial success (writes)
+  * `_bulk_read`       — per-record read -> the SAME partial-success envelope (reads)
+  * `_list_ok`         — the ONE list envelope every entity emits
+  * `_page`            — the ONE limit/offset clamp every list endpoint calls
   * `_read_list`       — parse a JSON-list request arg
   * `normalise_partner_response` — after_request gateway-error normaliser
   * `resolve_lead`     — the ONE grain-scoped lead resolver every entity API calls
+  * `EXTERNAL_ID_FIELD` + `stamp_external_id` — the caller's own label (never an address)
 """
 import contextlib
 import functools
@@ -28,10 +32,35 @@ import time
 import frappe
 from frappe import _
 from frappe.model import child_table_fields, default_fields, optional_fields
-from frappe.utils import add_to_date, get_datetime, now_datetime
+from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
+
+# -- identity ----------------------------------------------------------------
+# EVERY record is addressed by `name` — the primary key of its underlying table (CRM Lead,
+# CRM Task, CRM Call Log, File). A create returns that name; the caller stores it and uses it
+# for every subsequent read, update and delete. That is the ONLY address.
+#
+# `external_id` is the caller's own LABEL for the record: one column name across every entity,
+# free-form, optional, stored and echoed back, never interpreted. It does NOT identify a record
+# and does NOT deduplicate — nothing is ever resolved by it.
+#
+# Retry safety is the Idempotency-Key header (below), and nothing else. The two are unrelated.
+EXTERNAL_ID_FIELD = "custom_external_id"
+
+# The ONE action vocabulary every endpoint reports. No entity invents its own verb.
+ACTION_CREATED = "created"
+ACTION_UPDATED = "updated"
+ACTION_FETCHED = "fetched"
+ACTION_DELETED = "deleted"
+
+
+def stamp_external_id(doctype, name, external_id):
+	"""Store the caller's label on a row. No-op when the caller sent none (it is optional)."""
+	if not external_id:
+		return
+	frappe.db.set_value(doctype, name, EXTERNAL_ID_FIELD, external_id, update_modified=False)
 
 # Field behavior (Google AIP-203). The one reserved set every partner endpoint shares: a partner
 # may never send these (Frappe sets the audit and identity stamps, the Assignment Rule sets the
@@ -211,36 +240,6 @@ def resolve_lead(mp, is_sysmgr, data):
 	return lead_name
 
 
-def find_by_external_id_scoped(doctype, field, external_id, mp, is_sysmgr):
-	"""Resolve a partner `external_id` (stored in `field` — `custom_external_id` for calls,
-	`custom_lsq_activity_id` for activities) to ONE `doctype` row, but ONLY within the caller's grain
-	— the SAME scoping resolve_lead applies to leads. external_id is a PER-PARTNER namespace, not a
-	global one: a row is returned only when its linked CRM Lead is on the caller's (vertical, group),
-	so a partner can never address (overwrite / re-parent / read) another tenant's row by colliding an
-	external_id. System Manager (no mapping) is unscoped. Returns the row name or None."""
-	if not external_id:
-		return None
-	for r in frappe.get_all(
-		doctype,
-		filters={field: external_id},
-		fields=["name", "reference_doctype", "reference_docname", "owner"],
-	):
-		if is_sysmgr:
-			return r.name
-		if r.reference_doctype == "CRM Lead" and r.reference_docname:
-			g = frappe.db.get_value(
-				"CRM Lead", r.reference_docname, ["custom_vertical", "custom_group"], as_dict=True
-			)
-			if g and g.custom_vertical == mp.vertical and g.custom_group == mp.crm_group:
-				return r.name
-		elif not r.reference_docname and r.owner == frappe.session.user:
-			# No lead to grain-scope through -> an unlinked row is the caller's iff they own it,
-			# so a re-sent external_id updates that same row instead of duplicating (a different
-			# partner can never address it — owner mismatch). Mirrors the grain gate for lead-less rows.
-			return r.name
-	return None
-
-
 # -- request-arg helpers -----------------------------------------------------
 
 def _read_list(data, key):
@@ -253,6 +252,15 @@ def _read_list(data, key):
 	if not isinstance(val, list):
 		val = [val]
 	return val
+
+
+def _page(data):
+	"""(limit, offset) for a list request, clamped to the configured page ceiling. The ONE
+	pagination brain every list endpoint calls — no module-local clamping."""
+	cfg = _cfg()
+	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
+	offset = cint(data.get("offset") or data.get("limit_start"))
+	return limit, offset
 
 
 # -- response contract -------------------------------------------------------
@@ -442,7 +450,9 @@ def _throttle_response(check, mapping, reason=None):
 def _direction():
 	"""Single-endpoint volume direction: read on a GET, write otherwise. (Bulk endpoints pass
 	their own direction explicitly — lead_get_bulk is a READ over POST, so method is unreliable there.)"""
-	return "read" if (getattr(getattr(frappe, "request", None), "method", "GET") or "GET").upper() == "GET" else "write"
+	req = _request()
+	method = ((req.method if req is not None else "GET") or "GET").upper()
+	return "read" if method == "GET" else "write"
 
 
 def _meter_volume(rows, direction):
@@ -489,16 +499,36 @@ _IDEM_CLEANUP = "Partner::Idempotency::cleanup"
 _IDEM_STALE_SECONDS = 60  # a 'pending' claim older than this = a crashed run -> reclaimable
 
 
+def _request():
+	"""The live werkzeug request, or None when there is no HTTP context.
+
+	`frappe.request` is a Local PROXY: it is NEVER None, and touching an attribute on it raises
+	RuntimeError("object is not bound") when no request is bound — a test, the bench console, a
+	background job, the scheduler. A bare `getattr(frappe, "request", None)` therefore hands back a
+	live-looking proxy that detonates on first use, which surfaced as an opaque 500 from every
+	endpoint called outside HTTP. This is the ONE request accessor; every introspecting helper below
+	goes through it so a non-HTTP caller degrades to its documented default instead of crashing."""
+	req = getattr(frappe, "request", None)
+	if req is None:
+		return None
+	try:
+		req.method  # force the proxy to resolve: an unbound Local raises HERE, not on the getattr
+	except RuntimeError:
+		return None  # no bound request — the callers' defaults below apply (silence is the contract)
+	return req
+
+
 def _idem_key():
 	"""The client's key: the Idempotency-Key header first, then a body arg fallback."""
-	req = getattr(frappe, "request", None)
+	req = _request()
 	hdr = req.headers.get(_IDEM_HEADER) if req is not None else None
 	return (hdr or frappe.form_dict.get("idempotency_key") or "").strip()
 
 
 def _is_write():
 	"""Writes carry idempotency; GETs are already idempotent."""
-	m = (getattr(getattr(frappe, "request", None), "method", "GET") or "GET").upper()
+	req = _request()
+	m = ((req.method if req is not None else "GET") or "GET").upper()
 	return m in ("POST", "PUT", "DELETE")
 
 
@@ -634,17 +664,37 @@ def _api(fn=None, *, bulk=False):
 	return wrapper
 
 
-def _run_bulk(items, fn):
-	"""Run `fn(index, item)` per record in its own savepoint -> partial success. A failing record
-	is rolled back and reported; the rest still commit. Charges VOLUME = len(items) write-rows (the
-	batch drains the write budget like N singles); the 1-call RATE cost was charged by @_api(bulk=True)."""
+def _bulk_error(i, e, fn_name):
+	"""One failed record -> its entry in a bulk `results` array. Shared by the write and read
+	lanes so a per-record failure looks IDENTICAL whichever bulk endpoint produced it."""
+	code, _http, message, fields = _classify(e, fn_name)
+	# the throw populated message_log -> clear it so build_response doesn't
+	# leak `_server_messages` into the (otherwise clean) bulk envelope.
+	frappe.clear_messages()
+	frappe.local.message_log = []
+	err = {"code": code, "message": message}
+	if fields:
+		err["fields"] = fields
+	return {"index": i, "status": "error", "error": err}
+
+
+def _bulk_guard(items, direction):
+	"""Shared preamble for both bulk lanes: assert a JSON array, enforce the per-call ceiling, and
+	charge VOLUME = len(items) rows in `direction`. Returns the 429 `_fail` sentinel when the daily
+	budget is exhausted (the caller bare-`return`s), else None. The 1-call RATE cost was already
+	charged by @_api(bulk=True)."""
 	if not isinstance(items, list):
 		frappe.throw(_("Expected a JSON array"))
 	bulk_max = _cfg()["bulk_max_records"]
 	if len(items) > bulk_max:
 		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(bulk_max, len(items)))
-	denied = _meter_volume(len(items), "write")
-	if denied:
+	return _meter_volume(len(items), direction)
+
+
+def _run_bulk(items, fn):
+	"""WRITE lane. Run `fn(index, item)` per record in its own savepoint -> partial success. A failing
+	record is rolled back and reported; the rest still commit."""
+	if _bulk_guard(items, "write"):
 		return
 	results, ok = [], 0
 	for i, item in enumerate(items):
@@ -655,16 +705,63 @@ def _run_bulk(items, fn):
 			ok += 1
 		except Exception as e:
 			frappe.db.rollback(save_point=sp)
-			code, _http, message, fields = _classify(e, "bulk")
-			# the throw populated message_log -> clear it so build_response doesn't
-			# leak `_server_messages` into the (otherwise clean) bulk envelope.
-			frappe.clear_messages()
-			frappe.local.message_log = []
-			err = {"code": code, "message": message}
-			if fields:
-				err["fields"] = fields
-			results.append({"index": i, "status": "error", "error": err})
+			results.append(_bulk_error(i, e, "bulk"))
 	_ok(summary={"total": len(items), "succeeded": ok, "failed": len(items) - ok}, results=results)
+
+
+def _bulk_read(names, load):
+	"""READ lane. Load each record by `name` via `load(name)` -> the SAME partial-success envelope the
+	write lane emits ({total, succeeded, failed} + input-ordered results). Results are input-ordered:
+	results[i] is the i-th requested name, found or not. Charges the true row count as READ volume —
+	a bulk read drains the read budget exactly like N single gets."""
+	if _bulk_guard(names, "read"):
+		return
+	results, ok = [], 0
+	for i, name in enumerate(names):
+		try:
+			results.append({"index": i, "status": "success", "action": ACTION_FETCHED, "data": load(name)})
+			ok += 1
+		except Exception as e:
+			results.append(_bulk_error(i, e, "bulk_read"))
+	_ok(summary={"total": len(names), "succeeded": ok, "failed": len(names) - ok}, results=results)
+
+
+def _list_ok(collection, rows, total, offset, limit):
+	"""The ONE list envelope every entity emits: {total, count, offset, limit, has_more, <collection>}.
+	`collection` is the entity's plural key (leads / activities / files / calls)."""
+	_ok(action=ACTION_FETCHED, data={
+		"total": total, "count": len(rows), "offset": offset, "limit": limit,
+		"has_more": (offset + len(rows)) < total, collection: rows,
+	})
+
+
+# -- discovery ---------------------------------------------------------------
+
+_ADDRESSING = (
+	"Every record is addressed by `name` — the primary key of its underlying table, returned when the "
+	"record is created. It is stored by the caller and is the only address the API accepts. "
+	"`external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, "
+	"is never interpreted, and is never used to locate a record. Retries are made safe with the "
+	"Idempotency-Key header, not with any identifier in the body."
+)
+
+
+def _schema_ok(entity, dedup, fields=None, **extra):
+	"""The ONE discovery envelope every `*_schema` endpoint emits. `dedup` states in the caller's own
+	language how this entity's uniqueness is decided — always by OUR logic, never by an `external_id`."""
+	cfg = _cfg()
+	data = {
+		"entity": entity,
+		"identity": {"addressed_by": "name", "note": _ADDRESSING},
+		"dedup": dedup,
+		"bulk": {"max_per_call": cfg["bulk_max_records"],
+		         "list_page_max": cfg["list_max_page"],
+		         "list_page_default": cfg["list_default_page"]},
+	}
+	if fields is not None:
+		data["fields"] = fields
+	data.update(extra)
+	_ok(action=ACTION_FETCHED, data=data)
 
 
 # -- gateway-error normaliser ------------------------------------------------
