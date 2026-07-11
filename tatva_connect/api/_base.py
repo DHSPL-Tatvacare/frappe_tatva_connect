@@ -123,11 +123,20 @@ def trusted_permissions():
 		frappe.flags.ignore_permissions = prev
 
 # Config ---------------------------------------------------------------------
-# Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each
-# request via _cfg(). DEFAULTS is the blank-field fallback ONLY — never live policy.
+# Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each request via
+# _cfg(). DEFAULTS is the fallback for a Single that has NEVER been saved; every field also carries
+# this same value as its doctype `default`, so the form pre-fills it and an operator who saves the
+# form without touching a field persists the default rather than a 0 they never typed. (It used to
+# persist 0: Frappe casts an unset Int with cint(None) -> 0, and 0 on a rate means UNLIMITED — so
+# one save of the settings form silently switched the whole limiter off.) `test_the_doctype_defaults
+# _match_the_code_defaults` locks the two lists together.
+#
 # 0-rules (applied centrally in _cfg, never at call sites):
-#   rate/burst fields  -> 0 = UNLIMITED for that dimension
-#   cap fields         -> 0 = REJECT (footgun), blank = the DEFAULT below
+#   rate + record fields -> 0 = UNLIMITED for that dimension (an explicit choice, now never an accident)
+#   burst fields         -> a CAPACITY, not a dimension. 0 falls back to the DEFAULT and is clamped to
+#                           at least its rate — a bucket that cannot hold one call's cost never refills
+#                           and would 429 forever.
+#   cap fields           -> 0 = the DEFAULT (a cap of 0 rejects every request)
 _SETTINGS = "CRM Partner API Settings"
 _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
 
@@ -152,9 +161,10 @@ DEFAULTS = {
 	# Idempotency (opt-in write-dedup): how long a stored key/response is honoured for replay.
 	"idempotency_window_hours": 24,
 }
-# These treat 0 as "unlimited"; every other numeric field is a cap where 0 falls back to its DEFAULT.
+# The DIMENSIONS: 0 here means "unlimited", and the limiter skips that bucket entirely. A burst is
+# NOT in this list — it is the bucket's capacity, so a 0 falls back to its DEFAULT (see the 0-rules).
 _UNLIMITED_WHEN_ZERO = (
-	"per_token_rate", "per_token_burst", "global_rate", "global_burst",
+	"per_token_rate", "global_rate",
 	"per_token_read_records", "global_read_records",
 	"per_token_write_records", "global_write_records",
 )
@@ -163,8 +173,7 @@ _UNLIMITED_WHEN_ZERO = (
 def _cfg():
 	"""The partner-API numeric config, read FRESH each request (a Single is one cheap
 	row read; like is_enabled, an edit applies on the very next call — NO cache, no
-	cache-clear hook). Blank -> DEFAULTS; then the 0-rules: rate/burst 0 stays 0
-	(= unlimited), a cap field of 0 is rejected back to its DEFAULT. Any read error
+	cache-clear hook). Blank -> DEFAULTS; then the 0-rules above. Any read error
 	-> the DEFAULTS (fail-open)."""
 	try:
 		row = frappe.db.get_singles_dict(_SETTINGS) or {}
@@ -325,84 +334,99 @@ def _classify(e, fn_name):
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
 
-# A token bucket per key, entirely in Redis and ATOMIC (no read-then-write race in
-# Python). HASH {tokens, last_refill}; refill rate/window tokens per elapsed second,
-# capped at burst; consume `cost` only if the bucket can pay. ARGV: rate window burst
-# cost now. Returns {allowed, retry_after, remaining}. A rate of 0 means UNLIMITED for
-# this dimension (the limiter short-circuits to allow before calling the script).
+# The (global, per-token) token-bucket PAIR, evaluated ATOMICALLY in Redis. Each bucket is a HASH
+# {tokens, last_refill} refilling rate/window tokens per elapsed second, capped at burst.
+#
+# BOTH buckets are tested BEFORE EITHER is debited. The previous script ran one bucket at a time and
+# debited as it tested, so a partner at their own ceiling still spent `cost` rows from the SHARED
+# global bucket on every rejected attempt — and the volume window is a day (refill ≈ 0.116 rows/sec),
+# so it never healed: the global ceiling ratcheted down until it denied every partner.
+#
+# A rate <= 0 means that dimension is UNLIMITED: its bucket is neither tested nor debited. A burst
+# below its rate can never pay for one window's worth and would deadlock at 429 forever, so it is
+# clamped up to the rate.
+#
+# KEYS: global, per-token.  ARGV: window cost now g_rate g_burst t_rate t_burst
+# Returns {allowed, retry_after, per_token_remaining} (remaining = -1 when the per-token dimension
+# is unlimited).
 _RL_LUA = """
-local key = KEYS[1]
-local rate = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-local burst = tonumber(ARGV[3])
-local cost = tonumber(ARGV[4])
-local now = tonumber(ARGV[5])
-local refill = rate / window
-local data = redis.call('HMGET', key, 'tokens', 'last_refill')
-local tokens = tonumber(data[1])
-local last = tonumber(data[2])
-if tokens == nil then tokens = burst; last = now end
-local elapsed = now - last
-if elapsed > 0 then
-  tokens = math.min(burst, tokens + elapsed * refill)
-  last = now
+local window = tonumber(ARGV[1])
+local cost   = tonumber(ARGV[2])
+local now    = tonumber(ARGV[3])
+
+local function peek(key, rate, burst)
+  if rate <= 0 then return nil end
+  if burst < rate then burst = rate end
+  local data = redis.call('HMGET', key, 'tokens', 'last_refill')
+  local tokens = tonumber(data[1])
+  local last = tonumber(data[2])
+  if tokens == nil then tokens = burst; last = now end
+  local elapsed = now - last
+  if elapsed > 0 then
+    tokens = math.min(burst, tokens + elapsed * (rate / window))
+    last = now
+  end
+  return {key = key, tokens = tokens, last = last, rate = rate}
 end
+
+local function deficit(b)
+  if b == nil or b.tokens >= cost then return 0 end
+  return math.ceil((cost - b.tokens) / (b.rate / window))
+end
+
+local function commit(b, spend)
+  if b == nil then return end
+  if spend then b.tokens = b.tokens - cost end
+  redis.call('HMSET', b.key, 'tokens', b.tokens, 'last_refill', b.last)
+  redis.call('EXPIRE', b.key, math.ceil(window * 2))
+end
+
+local g = peek(KEYS[1], tonumber(ARGV[4]), tonumber(ARGV[5]))
+local t = peek(KEYS[2], tonumber(ARGV[6]), tonumber(ARGV[7]))
+local gd, td = deficit(g), deficit(t)
 local allowed = 0
-local retry_after = 0
-if tokens >= cost then
-  tokens = tokens - cost
-  allowed = 1
-else
-  local deficit = cost - tokens
-  retry_after = math.ceil(deficit / refill)
-end
-redis.call('HMSET', key, 'tokens', tokens, 'last_refill', last)
-redis.call('EXPIRE', key, math.ceil(window * 2))
-return {allowed, retry_after, math.floor(tokens)}
+if gd == 0 and td == 0 then allowed = 1 end
+
+-- The refill clock advances on a denial too, but NOTHING is spent unless both buckets can pay.
+commit(g, allowed == 1)
+commit(t, allowed == 1)
+
+local remaining = -1
+if t ~= nil then remaining = math.floor(t.tokens) end
+return {allowed, math.max(gd, td), remaining}
 """
 _RL_SHA = None
 
 
-def _run_bucket(name, rate, burst, window, cost):
-	"""Consume `cost` from the Redis token bucket `name`. rate 0 => unlimited (skip the
-	script). Atomic via EVALSHA (fallback EVAL on NOSCRIPT). Returns
-	(allowed, retry_after, remaining)."""
+def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, window):
+	"""Charge `cost` against the (global, per-token) bucket pair — allowed only if BOTH can pay, and
+	debited only when both do. The ONE brain both the rate (calls) and volume (rows) dimensions run
+	through. Returns None (exempt: no mapping) or (retry_after | None, per_token_remaining | None).
+	Fail-open: ANY Redis/Lua error is logged and the request is ALLOWED. The per-token key is the
+	session user — each partner is one User (mapping name == partner_user)."""
+	if not mapping:
+		return None
+	if grate <= 0 and trate <= 0:
+		return None, None  # both dimensions unlimited — nothing to test
 	global _RL_SHA
-	if rate <= 0:
-		return True, 0, burst
 	import redis as _redis
 
-	key = frappe.cache.make_key(f"partner_rl:{name}")
-	args = [rate, window, burst, cost, int(time.time())]
+	keys = [frappe.cache.make_key(f"partner_rl:{gname}"), frappe.cache.make_key(f"partner_rl:{tname}")]
+	args = [window, cost, int(time.time()), grate, gburst, trate, tburst]
 	try:
 		if _RL_SHA is None:
 			_RL_SHA = frappe.cache.script_load(_RL_LUA)
-		res = frappe.cache.evalsha(_RL_SHA, 1, key, *args)
-	except _redis.exceptions.NoScriptError:
-		_RL_SHA = frappe.cache.script_load(_RL_LUA)
-		res = frappe.cache.evalsha(_RL_SHA, 1, key, *args)
-	allowed, retry_after, remaining = int(res[0]), int(res[1]), int(res[2])
-	return bool(allowed), retry_after, remaining
-
-
-def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, window):
-	"""Charge `cost` against a (global, per-token) token-bucket pair — throttled if EITHER denies.
-	The ONE brain both the rate (calls) and volume (rows) dimensions run through. Returns None
-	(exempt: no mapping) or (retry_after | None, per_token_remaining). Fail-open: ANY Redis/Lua
-	error is logged and the request is ALLOWED (returns None). The per-token key is the session
-	user — each partner is one User (mapping name == partner_user), so this is the per-partner bucket."""
-	if not mapping:
-		return None
-	try:
-		g_ok, g_retry, _g = _run_bucket(gname, grate, gburst, window, cost)
-		t_ok, t_retry, t_rem = _run_bucket(tname, trate, tburst, window, cost)
+		try:
+			res = frappe.cache.evalsha(_RL_SHA, 2, *keys, *args)
+		except _redis.exceptions.NoScriptError:
+			_RL_SHA = frappe.cache.script_load(_RL_LUA)
+			res = frappe.cache.evalsha(_RL_SHA, 2, *keys, *args)
 	except Exception:
 		frappe.log_error(title="Partner API limiter failed (allowed)")
 		return None
-	if g_ok and t_ok:
-		return None, t_rem
-	# Denied: report the longer of the two waits.
-	return max(g_retry if not g_ok else 0, t_retry if not t_ok else 0), t_rem
+	allowed, retry_after, remaining = int(res[0]), int(res[1]), int(res[2])
+	remaining = None if remaining < 0 else remaining
+	return (None if allowed else retry_after), remaining
 
 
 def _rate_check(cost, mapping):
@@ -462,13 +486,21 @@ def _meter_volume(rows, direction):
 
 def _ratelimit_headers(mapping, remaining=None, retry_after=None):
 	"""IETF RateLimit-* headers on every partner response (+ Retry-After on a 429), set on
-	frappe.local.response_headers (app.py merges these into the final response). The limit
-	is the per-token budget (the partner's own ceiling); sysmgr/no-mapping callers are
-	exempt and get none. Never raises (header decoration must not break a response)."""
+	frappe.local.response_headers (app.py merges these into the final response). The limit is the
+	per-token call budget; sysmgr/no-mapping callers are exempt and get none.
+
+	When the per-token rate is 0 the dimension is UNLIMITED, and NO headers are sent: a
+	`RateLimit-Limit: 0` reads to a conforming client as a budget of nothing, which is the opposite
+	of what it means. Absent headers correctly say "this dimension does not constrain you".
+	Never raises (header decoration must not break a response)."""
 	if not mapping:
 		return
 	try:
 		cfg = _cfg()
+		if cfg["per_token_rate"] <= 0:
+			if retry_after is not None:  # a 429 can still come from the OTHER dimension (volume)
+				frappe.local.response_headers["Retry-After"] = str(retry_after)
+			return
 		hdrs = frappe.local.response_headers
 		hdrs["RateLimit-Limit"] = str(cfg["per_token_rate"])
 		if remaining is not None:
