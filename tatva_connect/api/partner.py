@@ -500,16 +500,10 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	if open_program:
 		doc.custom_current_program = program
 
-	# The lookup above is a NON-LOCKING read, and dedup_guard's validate-time lookup is the same
-	# unguarded read — so two concurrent creates for one new patient BOTH miss BOTH reads and both
-	# reach here. The UNIQUE index on (mobile_no, custom_vertical, custom_group) is the real gate: it
-	# is what makes the dedup rule true rather than merely likely. When it fires, the other request has
-	# already committed (or we would still be waiting on its lock), so we fold onto the row it wrote —
-	# the caller gets the same lead either way, which is exactly what the rule promises. Without this,
-	# a parallelised backfill silently produced two leads for one patient and no API path healed it.
-	#
-	# A unique-INDEX violation is UniqueValidationError(ValidationError); DuplicateEntryError(NameError)
-	# is a doc-NAME collision. They are unrelated branches of Frappe's hierarchy, so both are caught.
+	# The lookup above and dedup_guard's are both non-locking reads, so two concurrent creates for one
+	# patient miss both and reach here. The UNIQUE index is the real gate; when it fires the other
+	# request has committed, so fold onto its row. UniqueValidationError(ValidationError) is an index
+	# violation, DuplicateEntryError(NameError) a doc-name collision — unrelated branches, catch both.
 	sp = f"lead_insert_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(sp)
 	try:
@@ -526,9 +520,8 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 
 
 def _merge_onto(name, parent, children, mp, program, open_program, item):
-	"""Overlay the payload onto an existing lead. The ONE update path, taken both when the dedup lookup
-	finds the lead and when the unique index catches a concurrent insert — so a race and a re-send
-	converge on identical behaviour."""
+	"""Overlay the payload onto an existing lead. The one update path — taken both when the dedup
+	lookup finds it and when the unique index catches a race, so the two converge."""
 	doc = frappe.get_doc("CRM Lead", name)
 	doc.update(parent)
 	_apply_children(doc, children)
@@ -542,9 +535,8 @@ def _merge_onto(name, parent, children, mp, program, open_program, item):
 
 
 def _stamp_label(doc, item):
-	"""Store the caller's `external_id` label on the lead, when one was sent. It is written back onto
-	the in-memory doc too, so the response echoes it without a re-read. A label is NOT identity: the
-	lead was found (or created) by phone + line + group, never by this value."""
+	"""Store the caller's label, when one was sent, and mirror it onto the in-memory doc so the
+	response echoes it without a re-read. A label is never identity."""
 	external_id = item.get("external_id")
 	if external_id is None:
 		return

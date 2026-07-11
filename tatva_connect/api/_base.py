@@ -38,15 +38,9 @@ from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
 
 # -- identity ----------------------------------------------------------------
-# EVERY record is addressed by `name` — the primary key of its underlying table (CRM Lead,
-# CRM Task, CRM Call Log, File). A create returns that name; the caller stores it and uses it
-# for every subsequent read, update and delete. That is the ONLY address.
-#
-# `external_id` is the caller's own LABEL for the record: one column name across every entity,
-# free-form, optional, stored and echoed back, never interpreted. It does NOT identify a record
-# and does NOT deduplicate — nothing is ever resolved by it.
-#
-# Retry safety is the Idempotency-Key header (below), and nothing else. The two are unrelated.
+# Every record is addressed by `name`, the primary key of its underlying table. `external_id` is the
+# caller's own label: one column across every entity, optional, stored and echoed back, never
+# interpreted and never resolved by. Retry safety is the Idempotency-Key header, and nothing else.
 EXTERNAL_ID_FIELD = "custom_external_id"
 
 # The ONE action vocabulary every endpoint reports. No entity invents its own verb.
@@ -57,14 +51,9 @@ ACTION_DELETED = "deleted"
 
 
 def validate_external_id(doctype, external_id):
-	"""Guard the caller's label BEFORE the entity writes anything. Called by every per-record core.
-
-	The label is a Data column with a length, and three of the four entities write it with
-	db.set_value AFTER the insert — which bypasses Document._validate_length(), so an over-long label
-	surfaced as a raw MariaDB DataError. That is not in _ERROR_MAP, so it fell through to an opaque
-	500 on a record that had already been inserted, while the file path (which puts the label on the
-	doc) answered the same input with a clean 400. One input, two answers. This is the one guard, run
-	before the first write, so every entity gives the same answer."""
+	"""Guard the caller's label before the entity writes anything — the one check every per-record core
+	runs, so one input gets one answer. Three of the four entities write the label with db.set_value
+	after the insert, which bypasses Document._validate_length()."""
 	if not external_id:
 		return
 	field = frappe.get_meta(doctype).get_field(EXTERNAL_ID_FIELD)
@@ -146,20 +135,15 @@ def trusted_permissions():
 		frappe.flags.ignore_permissions = prev
 
 # Config ---------------------------------------------------------------------
-# Every numeric knob lives on the `CRM Partner API Settings` Single, read FRESH each request via
-# _cfg(). DEFAULTS is the fallback for a Single that has NEVER been saved; every field also carries
-# this same value as its doctype `default`, so the form pre-fills it and an operator who saves the
-# form without touching a field persists the default rather than a 0 they never typed. (It used to
-# persist 0: Frappe casts an unset Int with cint(None) -> 0, and 0 on a rate means UNLIMITED — so
-# one save of the settings form silently switched the whole limiter off.) `test_the_doctype_defaults
-# _match_the_code_defaults` locks the two lists together.
+# Every numeric knob lives on the `CRM Partner API Settings` Single, read fresh each request via
+# _cfg(). DEFAULTS is the fallback for a Single that has never been saved; each field carries the
+# same value as its doctype default (Frappe casts an unset Int to 0, and 0 on a rate means unlimited,
+# so a blank form save must not reach here). The two lists are drift-locked in tests/api.
 #
-# 0-rules (applied centrally in _cfg, never at call sites):
-#   rate + record fields -> 0 = UNLIMITED for that dimension (an explicit choice, now never an accident)
-#   burst fields         -> a CAPACITY, not a dimension. 0 falls back to the DEFAULT and is clamped to
-#                           at least its rate — a bucket that cannot hold one call's cost never refills
-#                           and would 429 forever.
-#   cap fields           -> 0 = the DEFAULT (a cap of 0 rejects every request)
+# 0-rules, applied in _cfg and never at a call site:
+#   rate + record -> 0 = unlimited for that dimension
+#   burst         -> a capacity, not a dimension: 0 falls back to DEFAULT, clamped to >= its rate
+#   caps          -> 0 = DEFAULT
 _SETTINGS = "CRM Partner API Settings"
 _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
 
@@ -225,10 +209,8 @@ def _norm_phone(raw):
 def _resolve_caller():
 	"""(user, mapping-or-None, is_sysmgr) — the gate, memoised for the life of one request.
 
-	The @_api preamble runs `_load_caller()` ONCE and stashes the result; every caller downstream (the
-	endpoint body, _meter_volume) comes through here and reads the stash, so the gate costs one DB
-	read per request rather than the three it used to. Outside the wrapper (a test, the console, a
-	job) there is no stash, so every call loads fresh and a mapping toggled mid-test is seen at once."""
+	The @_api preamble runs _load_caller() once and stashes it; everything downstream reads the stash,
+	so the gate costs one DB read. Outside the wrapper there is no stash and every call loads fresh."""
 	ctx = getattr(frappe.local, "partner_ctx", None)
 	if ctx is not None:
 		return ctx
@@ -300,13 +282,8 @@ def _read_list(data, key):
 
 
 def _read_required_list(data, key):
-	"""A bulk body's array — REQUIRED. A missing key is a 400, never a silent success.
-
-	Every bulk WRITE used to apply `or []` to a missing key, and _run_bulk([]) emits a success
-	envelope: `POST lead_create_bulk {"lead": [...]}` (plural dropped) answered
-	200 {"summary":{"total":0,"succeeded":0,"failed":0}}. Nothing written, no error — a partner
-	shipped it and found out later. Every bulk READ already threw. This is the one reader both lanes
-	call, so they cannot disagree again."""
+	"""A bulk body's array, required. A missing key is a 400, never a silent success — `or []` on a
+	mistyped key would make _run_bulk emit a 200 with total: 0. The one reader both bulk lanes call."""
 	items = _read_list(data, key)
 	if items is None:
 		frappe.throw(_("{0} is required").format(key))
@@ -385,21 +362,15 @@ def _classify(e, fn_name):
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
 
-# The (global, per-token) token-bucket PAIR, evaluated ATOMICALLY in Redis. Each bucket is a HASH
+# The (global, per-token) bucket pair, evaluated atomically. Each bucket is a HASH
 # {tokens, last_refill} refilling rate/window tokens per elapsed second, capped at burst.
 #
-# BOTH buckets are tested BEFORE EITHER is debited. The previous script ran one bucket at a time and
-# debited as it tested, so a partner at their own ceiling still spent `cost` rows from the SHARED
-# global bucket on every rejected attempt — and the volume window is a day (refill ≈ 0.116 rows/sec),
-# so it never healed: the global ceiling ratcheted down until it denied every partner.
-#
-# A rate <= 0 means that dimension is UNLIMITED: its bucket is neither tested nor debited. A burst
-# below its rate can never pay for one window's worth and would deadlock at 429 forever, so it is
-# clamped up to the rate.
+# Both are tested BEFORE either is debited, so a denial by one never spends the other's budget.
+# rate <= 0 means that dimension is unlimited: its bucket is neither tested nor debited. A burst
+# below its rate could never pay for one window and would deadlock at 429, so it is clamped up.
 #
 # KEYS: global, per-token.  ARGV: window cost now g_rate g_burst t_rate t_burst
-# Returns {allowed, retry_after, per_token_remaining} (remaining = -1 when the per-token dimension
-# is unlimited).
+# Returns {allowed, retry_after, per_token_remaining}; remaining is -1 when per-token is unlimited.
 _RL_LUA = """
 local window = tonumber(ARGV[1])
 local cost   = tonumber(ARGV[2])
@@ -536,14 +507,9 @@ def _meter_volume(rows, direction):
 
 
 def _ratelimit_headers(mapping, remaining=None, retry_after=None):
-	"""IETF RateLimit-* headers on every partner response (+ Retry-After on a 429), set on
-	frappe.local.response_headers (app.py merges these into the final response). The limit is the
-	per-token call budget; sysmgr/no-mapping callers are exempt and get none.
-
-	When the per-token rate is 0 the dimension is UNLIMITED, and NO headers are sent: a
-	`RateLimit-Limit: 0` reads to a conforming client as a budget of nothing, which is the opposite
-	of what it means. Absent headers correctly say "this dimension does not constrain you".
-	Never raises (header decoration must not break a response)."""
+	"""IETF RateLimit-* headers (+ Retry-After on a 429) on frappe.local.response_headers. Sysmgr and
+	no-mapping callers are exempt. A per-token rate of 0 is unlimited and sends NO headers — a
+	RateLimit-Limit: 0 reads to a conforming client as a budget of nothing. Never raises."""
 	if not mapping:
 		return
 	try:
@@ -701,19 +667,12 @@ def _api(fn=None, *, bulk=False, read=False):
 	def wrapper(*args, **kwargs):
 		idem = None
 		try:
-			# THE PREAMBLE. One order, every endpoint, every time: AUTHORIZE, then CHARGE, then
-			# DEDUPE THE RETRY, then act. It used to run backwards — the idempotency replay
-			# short-circuited ABOVE the gate, so a partner whose mapping had been disabled (the kill
-			# switch) still received a stored 200 for every key they had already used, and a client
-			# looping on a replayed key was never charged and never 429'd.
-
-			# 1. AUTHORIZE — unconditionally, and once. This is the gate, not a rate-limit detail; it
-			#    used to run only when the rate flag happened to be on. Stashed for the endpoint body
-			#    and _meter_volume to reuse, so the gate is one DB read per request, not three.
+			# The preamble, in this order on every endpoint: authorize, charge, dedupe the retry, act.
+			# Authorizing first is what makes the kill switch fail-closed on a replayed key; charging
+			# before the claim is what stops a retry loop running free.
 			user, mapping, is_sysmgr = _load_caller()
 			frappe.local.partner_ctx = (user, mapping, is_sysmgr)
 
-			# 2. CHARGE — a replay costs what a call costs, so a retry loop cannot run free.
 			remaining = None
 			if automation.is_enabled(_RATE_ENFORCEMENT):
 				rate = _rate_check(1, mapping)
@@ -723,8 +682,6 @@ def _api(fn=None, *, bulk=False, read=False):
 				if not bulk and _meter_volume(1, "read" if read else "write"):
 					return
 
-			# 3. DEDUPE THE RETRY — claimed only once the caller is authorized and has paid, so a
-			#    denial never has a claim to release.
 			key = _idem_key()
 			if key and not read:  # a read is already idempotent; it never claims a key
 				action, idem = _idempotency_begin(user, key, fn.__name__)
@@ -738,12 +695,9 @@ def _api(fn=None, *, bulk=False, read=False):
 				_idempotency_store(idem)
 			return result
 		except Exception as e:
-			# ROLL BACK FIRST. Swallowing the exception ends the request "normally", so Frappe's
-			# sync_database() would otherwise COMMIT whatever the failed endpoint already wrote —
-			# an insert that then failed validation would be told "400, nothing created" while the
-			# row survives. The bulk lane has always had per-record savepoints; this gives the
-			# singular lane the same all-or-nothing guarantee. The idempotency claim is committed on
-			# its own connection state by _idempotency_begin, so the release below still lands.
+			# Roll back BEFORE writing the error body: swallowing the exception ends the request
+			# normally, so Frappe's sync_database() would otherwise commit what the failed endpoint
+			# already wrote. _idempotency_begin commits its claim separately, so the release still lands.
 			frappe.db.rollback()
 			code, http, message, fields = _classify(e, fn.__name__)
 			if fields:
@@ -753,7 +707,7 @@ def _api(fn=None, *, bulk=False, read=False):
 			if idem:
 				_idempotency_release(idem)
 		finally:
-			frappe.local.partner_ctx = None  # the stash is per-request; never leak it across one
+			frappe.local.partner_ctx = None
 
 	wrapper._partner_lane = {"bulk": bulk, "read": read}  # introspected by the drift lock in tests/api
 	return wrapper
@@ -789,17 +743,11 @@ def _bulk_guard(items, direction):
 def _undo_side_effects(depth):
 	"""Run the after_rollback callbacks a failed bulk record registered, and drop them.
 
-	`frappe.db.rollback(save_point=X)` issues ONLY `rollback to savepoint X` — it never drains the
-	after_rollback queue (database.py:1196-1215), and Frappe's own savepoint() docstring warns that
-	"rollback watchers can not work with save points". But `File.before_insert` writes the bytes to
-	disk and only THEN registers its deleter on that queue. So a bulk row that failed after
-	before_insert rolled the DB back cleanly and left the bytes orphaned on disk forever — no File
-	row, no owner, and Frappe ships no sweeper. This runs exactly the callbacks that row added.
-
-	HAND-ROLLED, JUSTIFIED: CallbackManager exposes only run() (drains everything) and reset()
-	(discards everything). Neither is correct here — the queue may already hold callbacks belonging to
-	rows that SUCCEEDED and must still fire if the whole request later rolls back. Draining by depth
-	is the only way to undo one record's side effects without touching another's."""
+	rollback(save_point=X) never drains that queue (database.py:1196-1215), but File.before_insert
+	writes the bytes to disk and only then registers its deleter on it — so a savepoint rollback
+	leaves the bytes orphaned. HAND-ROLLED, JUSTIFIED: CallbackManager offers only run() (drains all)
+	and reset() (discards all); neither is correct when the queue also holds callbacks from rows that
+	succeeded. Draining by depth undoes one record without touching another's."""
 	queue = frappe.db.after_rollback._functions
 	added = []
 	while len(queue) > depth:
@@ -849,13 +797,9 @@ def _bulk_read(names, load):
 
 
 def _list_ok(collection, rows, total, offset, limit):
-	"""The ONE list envelope every entity emits: {total, count, offset, limit, has_more, <collection>}.
-	`collection` is the entity's plural key (leads / activities / files / calls).
-
-	This is ALSO where a list charges its read volume — the TRUE row count, not the requested page
-	size, so an over-wide `limit` or a page past the end costs what it actually returned. Metering
-	here (rather than at each call site) is why a list endpoint cannot be added that forgets to meter:
-	there is no way to emit a list body except through this function."""
+	"""The one list envelope: {total, count, offset, limit, has_more, <collection>}. Also where a list
+	charges its read volume — the true row count, not the requested page size. Metering here rather
+	than at each call site is why a list endpoint cannot be written that forgets to meter."""
 	if _meter_volume(len(rows), "read"):
 		return
 	_ok(action=ACTION_FETCHED, data={

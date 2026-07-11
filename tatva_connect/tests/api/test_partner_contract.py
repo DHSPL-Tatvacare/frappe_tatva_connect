@@ -245,27 +245,30 @@ class TestPartnerContract(unittest.TestCase):
 	# -- P4: one transaction boundary ---------------------------------------
 
 	def test_a_rejected_write_leaves_nothing_behind(self):
-		"""A throw AFTER a row has landed must roll the row back. Swallowing the exception ends the
-		request normally, so without an explicit rollback Frappe commits the failed write."""
-		probe_id = f"ROLLBACK-PROBE-{frappe.generate_hash(length=8)}"
+		"""A throw AFTER a row has landed must roll the row back. @_api swallows the exception, so the
+		request ends normally and Frappe would otherwise commit the failed write."""
+		lead, _ = self._lead("+919812300103")
+		landed = {}
 
 		@_api
 		def probe(**_kwargs):
-			doc = frappe.new_doc("CRM Call Log")
-			doc.id = probe_id
-			doc.type = "Incoming"
-			doc.status = "Completed"
-			setattr(doc, "from", "")
-			doc.to = ""
-			doc.insert(ignore_permissions=True)
+			# A REAL create, through the real core -- so a row genuinely exists when the throw fires.
+			view, _action = partner_call._create_one(
+				frappe._dict({"lead": lead.name, "direction": "Inbound",
+				              "from_number": "9812300077", "to_number": "9999999999"}),
+				self.mp, self.is_sysmgr)
+			landed["name"] = view["name"]
+			self.assertTrue(frappe.db.exists("CRM Call Log", view["name"]), "the row must exist here")
 			frappe.throw("rejected after the row landed")
 
 		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict()
 		probe()
 
 		self.assertEqual(frappe.local.response["status"], "error", "the caller must be told it failed")
+		self.assertIn("name", landed, "the probe must have actually written a row")
 		self.assertFalse(
-			frappe.db.exists("CRM Call Log", probe_id),
+			frappe.db.exists("CRM Call Log", landed["name"]),
 			"a rejected write must leave NOTHING behind -- the caller was told 'nothing was created'",
 		)
 

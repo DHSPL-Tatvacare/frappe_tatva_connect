@@ -53,8 +53,8 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
-	validate_external_id,
 	stamp_external_id,
+	validate_external_id,
 )
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
@@ -187,11 +187,8 @@ def _apply_fields(doc, data, lead_name):
 # -- per-record core (shared by singular + bulk) -----------------------------
 
 def _create_one(data, mp, is_sysmgr):
-	"""Create ONE call log. Returns (call_view, "created").
-
-	A create CREATES: there is no upsert on a caller-supplied key. `external_id`, if sent, is stamped
-	as a label and nothing more. A caller that re-POSTs the same call gets a second call log — that is
-	correct, and the Idempotency-Key header is how a retry is made safe."""
+	"""Create ONE call log. Returns (call_view, "created"). A create creates: there is no upsert on a
+	caller key, so a re-POST yields a second call. Retries are made safe with Idempotency-Key."""
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
 		frappe.throw(_("direction (Inbound or Outbound) is required"))

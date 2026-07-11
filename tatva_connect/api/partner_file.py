@@ -61,10 +61,9 @@ from tatva_connect.storage import file_manager, file_screening
 # All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
 # Settings Single via _cfg() — one source of truth, no module-local copy.
 
-# The homes a file may hang from, besides the lead itself — the ONE table the write side
-# (_resolve_target), the read side (_file_lead) and the enumeration side (_lead_files) all walk.
-# Each doctype carries reference_doctype/reference_docname back to its lead, which is what makes a
-# file homed on one resolvable. Adding a fourth home is one tuple entry and cannot desync the three.
+# The homes a file may hang from besides the lead — the one table the write (_resolve_target), read
+# (_file_lead) and enumeration (_lead_files) sides all walk, so they cannot desync and mint an address
+# no read can honour. Each doctype carries reference_doctype/docname back to its lead.
 #   request key -> the doctype it homes the file on
 _TARGETS = (("activity", "CRM Task"), ("note", "FCRM Note"))
 _TARGET_DOCTYPES = tuple(doctype for _key, doctype in _TARGETS)
@@ -131,11 +130,8 @@ def _load_bytes(data):
 		assert_safe_public_url(file_url)  # SSRF: block internal/metadata targets before fetching
 		cfg = _cfg()
 		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
-		# The URL is the CALLER'S input, so a URL that will not fetch is a 400, never a 500. Every
-		# requests failure (an expired pre-signed link, a 404, a dead host, a timeout) is a
-		# RequestException; unmapped it fell through _classify to "server_error", which told the
-		# partner to contact support and made their retry logic hammer a permanently-bad URL —
-		# 100 stale links in one bulk attach also wrote 100 Error Log rows, burying real faults.
+		# The URL is the caller's input, so one that will not fetch is a 400, never a 500. Every
+		# requests failure is a RequestException; unmapped, _classify would call it a server_error.
 		chunks, total = [], 0
 		try:
 			# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
@@ -146,9 +142,8 @@ def _load_bytes(data):
 			if 300 <= resp.status_code < 400:
 				frappe.throw(_("file_url must resolve directly, without redirects"))
 			resp.raise_for_status()
-			# The stream is inside the guard too: a connection that dies mid-download raises here,
-			# not at the get(). Our own throws are ValidationError, not RequestException, so the
-			# redirect and byte-cap refusals below pass straight through as the 400s they already were.
+			# The stream is inside the guard: a connection that dies mid-download raises here, not at
+			# the get(). Our own throws are ValidationError, so they pass through untouched.
 			for chunk in resp.iter_content(64 * 1024):
 				total += len(chunk)
 				if total > max_bytes:
@@ -188,12 +183,8 @@ def _scoped_file(name, mp, is_sysmgr):
 
 
 def _file_lead(doc):
-	"""The CRM Lead a File hangs from — the READ side of _TARGETS. Directly, or through any home the
-	write side accepts. None if neither.
-
-	This walks the SAME table _resolve_target does, which is the point: a home the write accepts but
-	the read cannot resolve mints a `name` that file_get, file_delete and both their bulk siblings
-	answer with 404 — an address the API refuses to honour."""
+	"""The CRM Lead a File hangs from — the read side of _TARGETS. Directly, or through any home the
+	write side accepts. None if neither."""
 	if doc.attached_to_doctype == "CRM Lead":
 		return doc.attached_to_name
 	if doc.attached_to_doctype in _TARGET_DOCTYPES and doc.attached_to_name:
@@ -207,13 +198,8 @@ def _file_lead(doc):
 
 
 def _lead_files(lead_name):
-	"""The ONE predicate for "a file belonging to this lead": attached to the lead itself, or to any
-	record homed on it through _TARGETS. Returns (File table, where-condition) for frappe.qb.
-
-	The ENUMERATION side of _TARGETS. file_list used to know only the lead, so a file homed on an
-	activity — the pattern file_schema itself recommends — never appeared in the only enumeration
-	surface the API has: a partner reconciling after a crashed batch could not rediscover what it had
-	already uploaded, and re-uploaded duplicates instead."""
+	"""The one predicate for "a file belonging to this lead" — attached to the lead itself, or to any
+	record homed on it through _TARGETS. Returns (File table, where-condition) for frappe.qb."""
 	f = frappe.qb.DocType("File")
 	homes = [("CRM Lead", [lead_name])]
 	for _key, doctype in _TARGETS:

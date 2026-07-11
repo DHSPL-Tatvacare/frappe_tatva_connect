@@ -57,9 +57,9 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
-	validate_external_id,
 	stamp_external_id,
 	trusted_permissions,
+	validate_external_id,
 )
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
@@ -104,9 +104,8 @@ _PAYLOAD_FIELDS = [
 
 
 def _render(row, cfg):
-	"""ONE activity row -> the partner shape, given its type config. The single projection both the
-	single read and the list use, so a get and a page can never render differently. `values` is
-	re-keyed to the schema fieldnames by the brain's own _task_values — identical to the SPA/timeline."""
+	"""One activity row -> the partner shape. The single projection both the single read and the list
+	use, so a get and a page cannot render differently. `values` is re-keyed by the brain."""
 	return {
 		"name": row.name,
 		"lead": row.reference_docname,
@@ -125,10 +124,9 @@ def _activity_payload(name):
 
 
 def _resolve_task_type(lead, task_type):
-	"""A partner's `task_type` -> this lead's grain-scoped composite type PK. The ONE resolver every
-	path calls — create, update AND the list filter — so discovery, ingestion and query all speak the
-	same vocabulary. Accepts the human type name or the composite PK, exactly as the schema advertises.
-	An unavailable type is the same refusal everywhere; it is never silently coerced to a sentinel."""
+	"""A partner's `task_type` -> this lead's grain-scoped composite type PK. The one resolver create,
+	update and the list filter all call, so discovery, ingestion and query speak one vocabulary.
+	Accepts the human name or the composite PK. An unavailable type is refused, never coerced."""
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		resolved = activity_brain.resolve_type_for_lead(lead, task_type)
 	if not resolved:
@@ -149,12 +147,8 @@ def _backdate(name, created_at):
 # -- per-record core (shared by singular + bulk) -----------------------------
 
 def _create_one(item, mp, is_sysmgr):
-	"""Create ONE activity. Resolves the lead (grain-scoped), runs the brain's compute-then-save (the
-	ONLY writer). Returns the partner payload.
-
-	A create CREATES: there is no upsert on a caller-supplied key. `external_id`, if sent, is stamped
-	as a label and nothing more. A caller that re-POSTs the same activity gets a second task — that is
-	correct, and the Idempotency-Key header is how a retry is made safe."""
+	"""Create ONE activity through the brain (the only writer). A create creates: there is no upsert on
+	a caller key, so a re-POST yields a second task. Retries are made safe with Idempotency-Key."""
 	lead = resolve_lead(mp, is_sysmgr, item)
 	task_type = item.get("task_type")
 	if not task_type:
@@ -352,11 +346,8 @@ def activity_list(**_kwargs):
 		return
 	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 	if data.get("task_type"):
-		# The FILTER resolves through the SAME brain the CREATE does, so the two speak one vocabulary.
-		# It used to test membership in a set of composite grain PKs and, on a miss, substitute a
-		# sentinel that matches nothing — so filtering by the very type name activity_create had just
-		# accepted ("Welcome Call") returned a successful 200 with total: 0, and a typo behaved
-		# identically. An unavailable type is now the same refusal _create_one gives.
+		# The filter resolves through the same brain the create does, so both speak one vocabulary and
+		# an unavailable type is refused rather than silently matching nothing.
 		filters["custom_task_type"] = _resolve_task_type(lead, data.get("task_type"))
 	else:
 		filters["custom_task_type"] = ["in", list(activity_types)]
@@ -368,10 +359,8 @@ def activity_list(**_kwargs):
 		"CRM Task", filters=filters, fields=_PAYLOAD_FIELDS,
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
-	# The type config is resolved once per DISTINCT type, not once per row: _type_config costs a
-	# db.exists plus a get_doc that pulls two child tables, and the list used to pay that for every
-	# row on top of a per-row get_value. A 200-row page was ~1,000 round-trips; it is now ~4. Same
-	# shape as the SPA's lead_task_board, which already batches this way.
+	# One config per DISTINCT type, not per row: _type_config costs a db.exists plus a get_doc pulling
+	# two child tables. Same batching as the SPA's lead_task_board.
 	cfgs = {
 		tt: activity_brain._type_config(tt)
 		for tt in {r.custom_task_type for r in rows if r.custom_task_type}
