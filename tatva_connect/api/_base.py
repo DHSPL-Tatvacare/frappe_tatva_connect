@@ -185,6 +185,71 @@ _UNLIMITED_WHEN_ZERO = (
 )
 
 
+# The Settings form is wired straight to the live API — _cfg() re-reads the Single on every request,
+# so a save takes effect on the very next call. That makes the form the one place every limit in this
+# file can be undone from, and it shipped with no validation at all: bulk_burst=100 or bulk_rate=0
+# would restore the concurrent-bulk deadlock in a single click. These ceilings are what stop that.
+#
+# Tightening is always allowed. Only LOOSENING is capped, and which direction is loose differs by
+# field: a bigger rate is looser, but a SHORTER window refills the bucket faster, so for a window it
+# is the small value that is dangerous.
+_CEILING_FACTOR = 2  # a knob may be tuned to at most 2x looser than the value it ships with
+
+_LOOSER_WHEN_HIGHER = (
+	"per_token_rate", "per_token_burst", "global_rate", "global_burst", "bulk_rate",
+	"per_token_read_records", "global_read_records",
+	"per_token_write_records", "global_write_records",
+	"bulk_max_records", "list_max_page", "list_default_page",
+	"file_download_timeout_seconds", "file_download_max_mb", "idempotency_window_hours",
+)
+_LOOSER_WHEN_LOWER = ("window_seconds", "records_window_seconds", "bulk_window_seconds")
+
+# bulk_burst is the bucket's CAPACITY — how many bulk writes may be in flight at once. At 2, two
+# concurrent bulk inserts race on the lead dedup index and deadlock, which is the whole bug. It gets
+# no tuning band: it is pinned.
+_PINNED = {"bulk_burst": 1}
+
+
+def assert_within_ceiling(doc):
+	"""Refuse a settings save that would loosen the API past its safe band. Called from the form's
+	validate, so the ceiling is enforced where an operator actually types."""
+	for field, pinned in _PINNED.items():
+		value = cint(doc.get(field))
+		if value != pinned:
+			frappe.throw(_(
+				"{0} must be {1}. It is the number of bulk writes allowed in flight at once; above {1} "
+				"two concurrent bulk calls deadlock on the lead dedup index and the batch is lost."
+			).format(_meta_label(doc, field), pinned))
+
+	for field in _LOOSER_WHEN_HIGHER:
+		value = cint(doc.get(field))
+		ceiling = DEFAULTS[field] * _CEILING_FACTOR
+		if field in _UNLIMITED_WHEN_ZERO and value == 0:
+			frappe.throw(_(
+				"{0} cannot be 0. Zero means UNLIMITED, which is the loosest possible setting. "
+				"The permitted range is 1 to {1}."
+			).format(_meta_label(doc, field), ceiling))
+		if value > ceiling:
+			frappe.throw(_(
+				"{0} cannot exceed {1} (twice the shipped default of {2}). A higher budget needs a "
+				"code change, not a form edit."
+			).format(_meta_label(doc, field), ceiling, DEFAULTS[field]))
+
+	for field in _LOOSER_WHEN_LOWER:
+		value = cint(doc.get(field))
+		floor = max(1, DEFAULTS[field] // _CEILING_FACTOR)
+		if value and value < floor:
+			frappe.throw(_(
+				"{0} cannot be below {1} (half the shipped default of {2}). A shorter window refills "
+				"the rate bucket faster, so lowering it LOOSENS the limit."
+			).format(_meta_label(doc, field), floor, DEFAULTS[field]))
+
+
+def _meta_label(doc, field):
+	df = doc.meta.get_field(field)
+	return df.label if df else field
+
+
 def _cfg():
 	"""The partner-API numeric config, read FRESH each request (a Single is one cheap
 	row read; like is_enabled, an edit applies on the very next call — NO cache, no

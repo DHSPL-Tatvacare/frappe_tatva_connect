@@ -212,6 +212,62 @@ class TestPartnerLimiter(unittest.TestCase):
 		self.assertLessEqual(cfg["bulk_max_records"], 25,
 		                     "a bulk call holds every record's locks for its whole transaction")
 
+	# -- the Desk form cannot undo the limits --------------------------------
+
+	def _settings(self, **overrides):
+		"""The live Settings doc with fields overridden IN MEMORY. Never saved: this form is wired to
+		the live API (_cfg re-reads it every request), so a save here would change the running site."""
+		doc = frappe.get_doc(_base._SETTINGS)
+		for field, default in _base.DEFAULTS.items():
+			doc.set(field, default)
+		for field, value in overrides.items():
+			doc.set(field, value)
+		return doc
+
+	def test_the_form_cannot_put_two_bulk_writes_in_flight(self):
+		"""bulk_burst is the bucket's CAPACITY. At 2, two concurrent bulk inserts race on the lead
+		dedup index and deadlock — the exact bug this limit exists to prevent. It is pinned, so it gets
+		no tuning band at all."""
+		with self.assertRaises(frappe.ValidationError):
+			self._settings(bulk_burst=2).validate()
+		with self.assertRaises(frappe.ValidationError):
+			self._settings(bulk_burst=100).validate()
+		self._settings(bulk_burst=1).validate()  # the shipped value saves
+
+	def test_the_form_cannot_set_a_limit_to_unlimited(self):
+		"""0 means UNLIMITED in _cfg — the loosest setting there is, and one keystroke away."""
+		for field in ("per_token_rate", "global_rate", "bulk_rate", "per_token_write_records"):
+			with self.subTest(field=field):
+				with self.assertRaises(frappe.ValidationError):
+					self._settings(**{field: 0}).validate()
+
+	def test_the_form_cannot_restore_the_old_loose_limits(self):
+		"""The values this site actually ran before — a form save must not be able to bring them back."""
+		for field, was in (("per_token_rate", 1200), ("global_rate", 6000),
+		                   ("per_token_write_records", 25000), ("bulk_max_records", 100)):
+			with self.subTest(field=field):
+				with self.assertRaises(frappe.ValidationError):
+					self._settings(**{field: was}).validate()
+
+	def test_the_form_allows_tuning_up_to_twice_the_default_and_no_further(self):
+		"""Ops can accommodate a busy partner without a deploy, but only inside the band."""
+		self._settings(per_token_rate=_base.DEFAULTS["per_token_rate"] * 2).validate()
+		with self.assertRaises(frappe.ValidationError):
+			self._settings(per_token_rate=_base.DEFAULTS["per_token_rate"] * 2 + 1).validate()
+
+	def test_the_form_cannot_loosen_a_window_by_shortening_it(self):
+		"""For a WINDOW the loose direction is downward: a shorter window refills the bucket faster.
+		Guarding it with a ceiling like the rates would have left it wide open."""
+		with self.assertRaises(frappe.ValidationError):
+			self._settings(window_seconds=1).validate()
+		with self.assertRaises(frappe.ValidationError):
+			self._settings(bulk_window_seconds=1).validate()
+		self._settings(bulk_window_seconds=_base.DEFAULTS["bulk_window_seconds"] * 4).validate()
+
+	def test_tightening_is_always_allowed(self):
+		"""A limit may be made stricter freely — only loosening is capped."""
+		self._settings(per_token_rate=10, bulk_max_records=5, per_token_write_records=100).validate()
+
 	# -- exemption ------------------------------------------------------------
 
 	def test_a_caller_with_no_mapping_is_exempt(self):
