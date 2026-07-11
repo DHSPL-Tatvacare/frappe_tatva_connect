@@ -17,6 +17,8 @@ from pathlib import Path
 
 import frappe
 
+from tatva_connect.tests.loadtest.config import PARTNER_USER
+
 REPORTS = Path(__file__).resolve().parent / "reports"
 
 GRAIN = {
@@ -69,14 +71,23 @@ def validate(account):
 	#    reference pair -- an orphan task is invisible in the lead view even though it "succeeded".
 	tasks = frappe.get_all("CRM Task",
 	                       filters={"reference_doctype": "CRM Lead", "reference_docname": ["in", names]},
-	                       fields=["name", "reference_docname", "custom_task_type", "status"])
+	                       fields=["name", "reference_docname", "custom_task_type", "status", "owner"])
 	orphans = frappe.db.count("CRM Task", {"reference_doctype": "CRM Lead",
 	                                       "reference_docname": ["is", "not set"]})
 	c.add("activities bound to a lead", bool(tasks), f"{len(tasks)} task(s) reference a lead on this grain")
 	c.add("no orphan activities", orphans == 0, f"{orphans} task(s) reference no lead")
 
-	types = Counter(t.custom_task_type for t in tasks)
-	c.add("task types resolved", all(types), f"{len(types)} distinct type(s): {list(types)[:6]}")
+	# The type check has to look at what the API WROTE, not at everything on the grain. These grains
+	# also carry tasks from earlier migration trials and from ordinary CRM use, owned by real people
+	# and typed by whatever made them — an untyped one of those says nothing about this run. The API's
+	# writes are the ones owned by the partner user.
+	partner = PARTNER_USER[account]
+	mine = [t for t in tasks if t.owner == partner]
+	untyped = [t.name for t in mine if not t.custom_task_type]
+	types = Counter(t.custom_task_type for t in mine)
+	c.add("task types resolved", mine and not untyped,
+	      f"{len(types)} distinct type(s) across {len(mine)} task(s) the API wrote"
+	      if not untyped else f"{len(untyped)} untyped: {untyped[:3]}")
 
 	# 4. CALL BINDING.
 	calls = frappe.get_all("CRM Call Log", filters={"reference_doctype": "CRM Lead",

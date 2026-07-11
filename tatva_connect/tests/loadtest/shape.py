@@ -16,6 +16,33 @@ FILE_HINT = ("leadsquaredcdn", "s3.amazon", "amazonaws", "lsq-private-storage", 
 CALL_STATUS = {"answered": "Completed", "notanswered": "No Answer", "not answered": "No Answer",
                "busy": "Busy", "failed": "Failed", "missed": "No Answer", "noanswer": "No Answer",
                "cancelled": "Canceled", "canceled": "Canceled"}
+
+# LSQ names a call's direction Incoming/Outgoing. The API names it Inbound/Outbound, and says so:
+# call_schema publishes allowed_values for the field. Passing LSQ's word straight through is what
+# made every one of 3,844 calls fail with "direction (Inbound or Outbound) is required" — the harness
+# read lead_schema and never read call_schema, which is the one rule this API is built on. The
+# translation is declared here, and `assert_allowed` below holds it against what the API actually
+# publishes, so it cannot silently rot back.
+CALL_DIRECTION = {"Incoming": "Inbound", "Outgoing": "Outbound",
+                  "Inbound": "Inbound", "Outbound": "Outbound"}
+
+
+def assert_allowed(schema, fieldname, values, entity):
+	"""Fail loudly if a value this harness intends to send is not one the API says it accepts.
+
+	Discovery is not decoration: every `*_schema` endpoint publishes `allowed_values` for a field with
+	a controlled vocabulary. A harness that ignores it is a partner that ignores it, and finds out one
+	failed record at a time."""
+	field = next((f for f in schema.get("fields") or [] if f["fieldname"] == fieldname), None)
+	allowed = set(field.get("allowed_values") or []) if field else set()
+	if not allowed:
+		return
+	unknown = {v for v in values if v} - allowed
+	if unknown:
+		raise SystemExit(
+			f"{entity}.{fieldname}: this harness would send {sorted(unknown)}, but the API accepts "
+			f"only {sorted(allowed)}. Fix the mapping, not the API."
+		)
 GENDER = {"F": "Female", "M": "Male", "FEMALE": "Female", "MALE": "Male", "OTHER": "Other"}
 SOURCE_DATA = re.compile(r"SourceData\{=\}(\{.*?\})\{next\}")
 
@@ -163,7 +190,7 @@ def call_bodies(bundle, fmap, lead_name):
 		sid = source_id(act)
 		out.append({
 			"lead": lead_name,
-			"direction": "Incoming" if direction == "Incoming" else "Outgoing",
+			"direction": CALL_DIRECTION.get(direction, "Outbound"),
 			"from_number": str(source.get("SourceNumber") or "")[:20],
 			"to_number": str(source.get("DestinationNumber") or "")[:20],
 			"status": CALL_STATUS.get(status, "Completed"),

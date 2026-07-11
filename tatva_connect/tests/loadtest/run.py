@@ -76,10 +76,21 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 	if limit:
 		bundles = bundles[:limit]
 
-	call, schema = api.get("partner", "lead_schema", {})
-	if not call.ok:
-		raise SystemExit(f"[{account}] lead_schema failed: {call.code} {call.message}")
-	children_spec = schema["data"].get("children") or {}
+	# Discovery before ingestion — for EVERY entity, not just the lead. Reading lead_schema and
+	# assuming the rest is how 3,844 calls were sent with LSQ's word for a direction (Incoming) when
+	# call_schema plainly publishes the two the API takes (Inbound, Outbound).
+	schemas = {}
+	for entity, module in (("lead", "partner"), ("activity", "partner_activity"),
+	                       ("call", "partner_call"), ("file", "partner_file")):
+		params = {"lead": bundles[0]["prospect_id"]} if entity == "activity" else {}
+		call, body = api.get(module, f"{entity}_schema", params)
+		if not call.ok:
+			raise SystemExit(f"[{account}] {entity}_schema failed: {call.code} {call.message}")
+		schemas[entity] = body["data"]
+
+	children_spec = schemas["lead"].get("children") or {}
+	shape.assert_allowed(schemas["call"], "direction", set(shape.CALL_DIRECTION.values()), "call")
+	shape.assert_allowed(schemas["call"], "status", set(shape.CALL_STATUS.values()), "call")
 
 	acts = sum(len(b.get("activities") or []) for b in bundles)
 	print(f"[{account}] grain={grain}  {len(bundles)} lead(s), {acts} source activities  "
