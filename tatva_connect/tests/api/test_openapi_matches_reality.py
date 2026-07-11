@@ -19,6 +19,7 @@ This test refuses to let it happen again. It asserts, against the real code:
 
 It drives the endpoints in-process, so it needs no running web server and no network.
 """
+import time
 import unittest
 
 import frappe
@@ -212,11 +213,22 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 		out = {}
 
 		def hit(fn, dotted, **args):
-			frappe.local.response = frappe._dict()
-			frappe.form_dict = frappe._dict(args)
-			fn()
-			out[dotted] = dict(frappe.local.response)
-			return out[dotted]
+			"""Drive one endpoint, honouring a throttle the way the docs tell a partner to.
+
+			Bulk has its own bucket and a capacity of ONE, so driving the twelve bulk endpoints
+			back to back is exactly the traffic that bucket exists to refuse. A 429 here is the API
+			working, not failing; the spec is documented from the response that comes back AFTER the
+			retry, which is the response a partner actually sees."""
+			for _attempt in range(6):
+				frappe.local.response = frappe._dict()
+				frappe.form_dict = frappe._dict(args)
+				fn()
+				body = dict(frappe.local.response)
+				if (body.get("error") or {}).get("code") != "rate_limited":
+					out[dotted] = body
+					return body
+				time.sleep((body["error"].get("retry_after") or 1) + 0.2)
+			raise AssertionError(f"{dotted} stayed rate-limited across every retry")
 
 		try:
 			r = hit(partner.lead_create, "tatva_connect.api.partner.lead_create",

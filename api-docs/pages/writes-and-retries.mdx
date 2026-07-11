@@ -92,13 +92,15 @@ Content-Type: application/json
 On a network fault, a 5xx, or a 429, retry with backoff **and the same `Idempotency-Key`**. Without
 the key, a create that timed out *after* the server committed will be duplicated by the retry.
 
-A 429 is raised before the write runs, so retrying that specific status is safe with or without a
-key. Do not generalise from it.
+Two statuses are the exception, because neither ever saved anything: a **429** (`rate_limited`) is
+raised before the write runs, and a **503** (`write_conflict`) means the database rolled the whole
+batch back. Both are safe to retry with or without a key. Do not generalise from them to any other
+failure.
 
 ## What this means in practice
 
 - A **nightly re-sync** of leads is safe: they dedup on phone.
 - A **nightly re-sync** of activities, files or calls is **not** safe: it duplicates. Either keep the
   `name`s you were given, or send an `Idempotency-Key` that is stable per record.
-- A **parallel backfill** through `lead_create_bulk` is safe: the unique index converges concurrent
-  creates for one patient onto one lead.
+- A **backfill** is sent through `lead_create_bulk` **one call at a time**. Bulk calls are limited to
+  one in flight; a second sent in parallel is refused with a 429. See [Rate limits](/rate-limits).

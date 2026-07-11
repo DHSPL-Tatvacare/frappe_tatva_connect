@@ -2,29 +2,48 @@
 title: Rate limits
 ---
 
-A key has two independent budgets. Both are configured per key, and either can be raised on request.
+A key has three independent budgets. Each is configured per key, and any of them can be raised on request.
 
 | Budget | Default | Counts |
 |---|---|---|
 | Request rate | 120 requests per minute | every call, read or write |
+| **Bulk rate** | **one bulk call per 5 seconds, one in flight at a time** | bulk write calls only |
 | Daily record volume | 10,000 records read and 10,000 records written per day | rows touched, not calls |
 
 There is also a shared ceiling across all keys together. In rare bursts, a key can be limited even while it is under its own budget. For planning, the per-key budgets are the ones that matter.
 
-When either budget is exceeded, the next call returns **HTTP 429** with this body:
+When any budget is exceeded, the next call returns **HTTP 429** with this body:
 
 ```json
 {
   "status": "error",
   "error": {
     "code": "rate_limited",
-    "message": "Rate limit exceeded. Retry in 42s.",
-    "retry_after": 42
+    "message": "Bulk rate limit exceeded. Retry in 5s.",
+    "retry_after": 5
   }
 }
 ```
 
 `error.retry_after` gives the number of seconds to wait before the next retry. This value is used directly, not guessed.
+
+## The bulk budget is separate, and deliberately tight
+
+A bulk write is not the same animal as a lead read. It holds every record's row locks for the length of its transaction, so what has to be limited is not how many bulk calls arrive per minute, but **how many are allowed to run at the same time**. That number is **one**.
+
+A second bulk call sent while the first is still running is refused with a 429 before it reaches the database. Two bulk writes are therefore never in flight together, and the write conflicts that concurrency would otherwise cause do not arise.
+
+The practical rule is simple:
+
+> **Bulk calls are sent one at a time, in sequence, never in parallel.**
+
+Single-record calls are unaffected. They may be sent concurrently, up to the request rate.
+
+## Bulk still saves the request budget
+
+A bulk call of up to **25 records** counts as **one** request against the request budget. Each record still counts against the daily volume budget. So a batch of 25 leads costs one request, not 25.
+
+At one bulk call every 5 seconds, that is 300 records a minute — comfortably more than the daily volume budget allows in an hour, so the volume budget, not the bulk rate, is what a real integration runs into first.
 
 ## Response headers
 
@@ -35,34 +54,39 @@ Every response reports the current state of the request budget, so a client can 
 | `RateLimit-Limit` | the request budget for the window |
 | `RateLimit-Remaining` | requests left in the current window |
 | `RateLimit-Reset` | seconds until the window resets |
-| `Retry-After` | on a 429 only, seconds to wait before retrying |
+| `Retry-After` | on a 429 or 503 only, seconds to wait before retrying |
 
-## Bulk saves the request budget
+## Retry handling
 
-A bulk call of up to 100 records counts as one request against the rate budget. Each record still counts against the daily volume budget. So a batch of 100 leads costs one request, not 100. `lead_create_bulk`, `lead_update_bulk`, and `lead_get_bulk` are preferred for any volume.
+Two statuses are retried, and both are safe to retry:
+
+| Status | `error.code` | Meaning |
+|---|---|---|
+| **429** | `rate_limited` | A budget is exhausted. The call was refused *before* the write ran, so nothing was saved. |
+| **503** | `write_conflict` | A concurrent write conflicted with the batch and the database rolled it back. **Nothing was saved** — not even the records that had already succeeded inside the call. |
+
+Both carry `error.retry_after`. Both mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes, addressing and retries](/writes-and-retries).
 
 <Mermaid chart={`
 flowchart TD
-  A["send a request"] --> B{"HTTP 429?"}
+  A["send a request"] --> B{"429 or 503?"}
   B -- no --> C["handle the response"]
   B -- yes --> D["read error.retry_after"]
   D --> E["wait that many seconds"]
   E --> A
 `} />
 
-## Retry handling
-
-On a 429, the call is retried after `error.retry_after` seconds. A 429 is raised before the write runs, so retrying *that* status is safe. A write is otherwise only replay-safe if it carried an `Idempotency-Key` — see [Writes, addressing and retries](/writes-and-retries).
-
 <CodeTabs>
 
 ```python title="Python"
 import time
 
+RETRYABLE = (429, 503)   # rate_limited, write_conflict — neither ever saved anything
+
 def call_with_retry(do_request, max_attempts=6):
     for attempt in range(max_attempts):
         r = do_request()
-        if r.status_code != 429:
+        if r.status_code not in RETRYABLE:
             return r
         body = r.json()
         wait = body.get("error", {}).get("retry_after") or (2 ** attempt)
@@ -71,11 +95,13 @@ def call_with_retry(do_request, max_attempts=6):
 ```
 
 ```javascript title="Node"
+const RETRYABLE = [429, 503];   // rate_limited, write_conflict — neither ever saved anything
+
 async function callWithRetry(doRequest, maxAttempts = 6) {
   let res;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     res = await doRequest();
-    if (res.status !== 429) return res;
+    if (!RETRYABLE.includes(res.status)) return res;
     const body = await res.clone().json();
     const wait = body?.error?.retry_after ?? 2 ** attempt;
     await new Promise((r) => setTimeout(r, wait * 1000));
@@ -88,12 +114,12 @@ async function callWithRetry(doRequest, maxAttempts = 6) {
 
 ## Spending the budget wisely
 
-- **Use bulk calls.** Up to 100 records are sent in one request, which spends only one unit of the request budget.
-- **Slow down large backfills.** For a one-time migration, a few requests per second is enough. Combined with bulk, thousands of records are loaded without hitting a 429.
+- **Use bulk calls, one at a time.** Up to 25 records are sent in one request, which spends only one unit of the request budget. Sending them in parallel does not go faster; it is refused.
+- **Slow down large backfills.** The daily volume budget, not the request rate, is the real ceiling on a backfill. A load larger than the daily budget is planned with Ops rather than attempted in one run.
 - **Cache repeated reads.** When the same lead is read again and again, the stored response is reused instead of fetched each time.
 
 :::note{title="Raising a budget"}
 
-A sustained integration that needs more than the defaults contacts TatvaCare Ops. Both budgets are set per key and can be raised.
+A sustained integration that needs more than the defaults contacts TatvaCare Ops. All three budgets are set per key and can be raised.
 
 :::

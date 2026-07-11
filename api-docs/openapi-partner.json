@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare Partner API",
     "version": "1.0.0",
-    "description": "The Partner API pushes leads, activities, files and calls into TatvaCare and reads their state back. One\nkey governs every entity: there is no per-entity enablement. The key determines which fields may be read\nand written, and which product line and group a record belongs to.\n\n## Identity — read this first\n\n**Every record is addressed by `name`.** A create returns the `name` of the row it created — the primary\nkey of the underlying table. It is stored by the caller and is the address used for every subsequent\nread, update and delete. It is the only address the API accepts.\n\n**Deduplication is performed by the CRM, never by the caller.** A lead is unique per\n`(mobile_no, product line, group)`. Re-sending the same patient updates that lead; the program is a\nmutable attribute and is not part of identity. A changed phone number is a new patient and mints a new\nlead. Activities, files and calls are **created** against a lead and are **updated by `name`** — they are\nnever deduplicated on a caller-supplied value, so a re-sent create produces a second record.\n\n**`external_id` is a label, not an address.** It is an optional, free-form reference of the caller's own\nchoosing, stored against the record and echoed back on every read so a caller can recognise their own\nrow. It is never interpreted, never deduplicated on, and never used to locate a record.\n\n**Retries are made safe with the `Idempotency-Key` header.** A write may carry one. The first request\nclaims the key and stores its response; a retry with the same key and the same body replays that stored\nresponse instead of writing again. The same key with a different body is rejected with a 422. This is the\nonly retry-safety mechanism, and it is unrelated to `external_id`.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays\n(such as `custom_lab_profile` and `custom_plan_profile`). There is no fixed payload: the schema is\ndiscovered at runtime. Every entity exposes a `*_schema` endpoint returning exactly what the calling key\nmay send and read, with each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. A field list is never\nhardcoded.\n\n## One envelope\n\nEvery response is emitted at the top level, with no `message` wrapper. A success carries\n`{\"status\": \"success\", \"action\": ..., \"data\": ...}`, where `action` is one of `created`, `updated`,\n`fetched` or `deleted`. A failure carries `{\"status\": \"error\", \"error\": {\"code\", \"message\"}}` with a\nnon-2xx status. Every bulk method returns `{\"status\": \"success\", \"summary\": {\"total\", \"succeeded\",\n\"failed\"}, \"results\": [...]}` — reads and writes alike — with `results` input-ordered and each row\ncarrying its own outcome. A bulk call returns 200 even when individual rows failed.\n\n## Limits\n\nBulk methods accept up to 100 records per call. Lists page at up to 200 rows. Two limits apply\nindependently: a call-rate limit and a daily record-volume quota. Single, bulk and list methods all charge\ntheir true row count against the volume quota. A breach of either returns 429 with `Retry-After`.\n",
+    "description": "The Partner API pushes leads, activities, files and calls into TatvaCare and reads their state back. One\nkey governs every entity: there is no per-entity enablement. The key determines which fields may be read\nand written, and which product line and group a record belongs to.\n\n## Identity — read this first\n\n**Every record is addressed by `name`.** A create returns the `name` of the row it created — the primary\nkey of the underlying table. It is stored by the caller and is the address used for every subsequent\nread, update and delete. It is the only address the API accepts.\n\n**Deduplication is performed by the CRM, never by the caller.** A lead is unique per\n`(mobile_no, product line, group)`. Re-sending the same patient updates that lead; the program is a\nmutable attribute and is not part of identity. A changed phone number is a new patient and mints a new\nlead. Activities, files and calls are **created** against a lead and are **updated by `name`** — they are\nnever deduplicated on a caller-supplied value, so a re-sent create produces a second record.\n\n**`external_id` is a label, not an address.** It is an optional, free-form reference of the caller's own\nchoosing, stored against the record and echoed back on every read so a caller can recognise their own\nrow. It is never interpreted, never deduplicated on, and never used to locate a record.\n\n**Retries are made safe with the `Idempotency-Key` header.** A write may carry one. The first request\nclaims the key and stores its response; a retry with the same key and the same body replays that stored\nresponse instead of writing again. The same key with a different body is rejected with a 422. This is the\nonly retry-safety mechanism, and it is unrelated to `external_id`.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays\n(such as `custom_lab_profile` and `custom_plan_profile`). There is no fixed payload: the schema is\ndiscovered at runtime. Every entity exposes a `*_schema` endpoint returning exactly what the calling key\nmay send and read, with each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. A field list is never\nhardcoded.\n\n## One envelope\n\nEvery response is emitted at the top level, with no `message` wrapper. A success carries\n`{\"status\": \"success\", \"action\": ..., \"data\": ...}`, where `action` is one of `created`, `updated`,\n`fetched` or `deleted`. A failure carries `{\"status\": \"error\", \"error\": {\"code\", \"message\"}}` with a\nnon-2xx status. Every bulk method returns `{\"status\": \"success\", \"summary\": {\"total\", \"succeeded\",\n\"failed\"}, \"results\": [...]}` — reads and writes alike — with `results` input-ordered and each row\ncarrying its own outcome. A bulk call returns 200 even when individual rows failed.\n\n## Limits\n\nBulk methods accept up to 25 records per call. Lists page at up to 200 rows. Two limits apply\nindependently: a call-rate limit and a daily record-volume quota. Single, bulk and list methods all charge\ntheir true row count against the volume quota. A breach of either returns 429 with `Retry-After`.\n",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -424,6 +424,7 @@
                   "not_found",
                   "duplicate",
                   "cannot_delete",
+                  "write_conflict",
                   "rate_limited",
                   "server_error"
                 ],
@@ -6162,6 +6163,21 @@
             }
           }
         }
+      },
+      "WriteConflict": {
+        "description": "A concurrent write conflicted with this batch and the database rolled it back (`error.code` is `write_conflict`). NOTHING was saved — not even the records that had already succeeded within the call. The whole call is retried after `error.retry_after` seconds. This is transient and expected under concurrency; it is not a fault in the request. Sending one bulk call at a time avoids it entirely.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PartnerError"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -7077,6 +7093,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -7191,6 +7210,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -7291,6 +7313,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -8065,6 +8090,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -8555,6 +8583,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -9058,6 +9089,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "parameters": [
@@ -9165,6 +9199,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "requestBody": {
@@ -9287,6 +9324,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "requestBody": {
@@ -9608,6 +9648,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "requestBody": {
@@ -10051,6 +10094,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "requestBody": {
@@ -10173,6 +10219,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
           }
         },
         "requestBody": {

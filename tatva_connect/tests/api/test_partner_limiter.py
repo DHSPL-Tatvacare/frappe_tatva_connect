@@ -160,6 +160,58 @@ class TestPartnerLimiter(unittest.TestCase):
 			"the global bucket should now be exactly empty (5 + 995 = 1000)",
 		)
 
+	# -- the bulk bucket ------------------------------------------------------
+
+	def test_a_bulk_call_is_charged_to_its_own_bucket_not_the_general_one(self):
+		"""Bulk has a SEPARATE bucket. It used to cost 1 against the 120/min call rate — the same as
+		reading one lead — so a partner could legally fire hundreds of bulk writes at once, and
+		concurrent bulk inserts deadlock on the lead dedup index. The two buckets must not be the
+		same bucket, or the tight bulk limit is spendable from the loose general budget."""
+		cfg = _base._cfg()
+		self.assertIn("bulk_rate", cfg)
+		self.assertIn("bulk_burst", cfg)
+		self.assertIn("bulk_window_seconds", cfg)
+
+		charged = []
+		with patch.object(_base, "_bucket_pair",
+		                  side_effect=lambda mp, cost, gn, gr, gb, tn, tr, tb, w:
+		                  charged.append({"global": gn, "token": tn, "rate": tr, "burst": tb, "window": w})):
+			_base._rate_check(1, self.mapping)
+			_base._bulk_rate_check(self.mapping)
+
+		general, bulk = charged
+		self.assertEqual(general["global"], "global", "the general rate charges the general bucket")
+		self.assertEqual(bulk["global"], "bulk:global", "a bulk call must charge the BULK bucket")
+		self.assertNotEqual(general["token"], bulk["token"],
+		                    "the per-token buckets must be distinct, or bulk is spendable from the "
+		                    "general budget and its tight limit means nothing")
+		self.assertEqual(bulk["burst"], cfg["bulk_burst"])
+		self.assertEqual(bulk["window"], cfg["bulk_window_seconds"])
+
+	def test_a_second_concurrent_bulk_call_is_refused(self):
+		"""The capacity is what matters, not the rate. A burst of 1 means ONE bulk write may be in
+		flight; the second is refused BEFORE it opens a transaction, which is what makes the deadlock
+		arithmetically impossible rather than merely unlikely."""
+		token = f"test:bulk:{frappe.generate_hash(length=8)}"
+		self._keys.add(token)
+
+		first = self._charge(1, 1, 1, 1, 1, window=5, token_key=token)
+		self.assertIsNone(first[0], "the first bulk call must be admitted")
+
+		second = self._charge(1, 1, 1, 1, 1, window=5, token_key=token)
+		self.assertIsNotNone(second[0], "the SECOND concurrent bulk call must be refused with a 429")
+		self.assertGreater(second[0], 0, "a refusal must tell the caller when to come back")
+
+	def test_the_shipped_bulk_defaults_admit_one_call_at_a_time(self):
+		"""The values that actually ship are what protect the database, so they are pinned here rather
+		than trusted. A burst above 1 would let two bulk writes race again."""
+		cfg = _base._cfg()
+		self.assertEqual(cfg["bulk_burst"], 1, "more than one bulk call in flight reopens the deadlock")
+		self.assertEqual(cfg["bulk_rate"], 1)
+		self.assertEqual(cfg["bulk_window_seconds"], 5)
+		self.assertLessEqual(cfg["bulk_max_records"], 25,
+		                     "a bulk call holds every record's locks for its whole transaction")
+
 	# -- exemption ------------------------------------------------------------
 
 	def test_a_caller_with_no_mapping_is_exempt(self):

@@ -15,6 +15,7 @@ Holds:
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
   * `_cfg`             — fresh read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
   * `_rate_check`      — per-token + global token-bucket limiter (cost = records)
+  * `_bulk_rate_check` — the SEPARATE bulk bucket: how many bulk writes may be in flight (capacity 1)
   * `_run_bulk`        — per-record savepoint -> partial success (writes)
   * `_bulk_read`       — per-record read -> the SAME partial-success envelope (reads)
   * `_list_ok`         — the ONE list envelope every entity emits
@@ -153,7 +154,14 @@ DEFAULTS = {
 	"per_token_burst": 240,
 	"global_rate": 300,
 	"global_burst": 600,
-	"bulk_max_records": 100,
+	# Bulk has its OWN bucket. A bulk call used to cost 1 against the general call rate — the same as
+	# reading one lead — so hundreds could legally run at once, and concurrent bulk inserts deadlock
+	# on the lead dedup index. A burst of 1 refuses the SECOND concurrent bulk call before it opens a
+	# transaction, so two can never collide.
+	"bulk_window_seconds": 5,
+	"bulk_rate": 1,
+	"bulk_burst": 1,
+	"bulk_max_records": 25,
 	"list_max_page": 200,
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
@@ -171,7 +179,7 @@ DEFAULTS = {
 # The DIMENSIONS: 0 here means "unlimited", and the limiter skips that bucket entirely. A burst is
 # NOT in this list — it is the bucket's capacity, so a 0 falls back to its DEFAULT (see the 0-rules).
 _UNLIMITED_WHEN_ZERO = (
-	"per_token_rate", "global_rate",
+	"per_token_rate", "global_rate", "bulk_rate",
 	"per_token_read_records", "global_read_records",
 	"per_token_write_records", "global_write_records",
 )
@@ -462,6 +470,22 @@ def _rate_check(cost, mapping):
 	)
 
 
+def _bulk_rate_check(mapping):
+	"""BULK RATE dimension — one call into the bulk buckets, on the bulk window.
+
+	Separate from the general call rate on purpose. A bulk write is not the same animal as a lead
+	read: it holds N rows' worth of locks for the length of its transaction, so what has to be
+	limited is how many of them can be IN FLIGHT, not how many arrive per minute. With a burst of 1,
+	the second concurrent bulk call is refused before it opens a transaction."""
+	cfg = _cfg()
+	window = cfg["bulk_window_seconds"] or DEFAULTS["bulk_window_seconds"]
+	return _bucket_pair(
+		mapping, 1,
+		"bulk:global", cfg["bulk_rate"], cfg["bulk_burst"],
+		f"bulk:tok:{frappe.session.user}", cfg["bulk_rate"], cfg["bulk_burst"], window,
+	)
+
+
 def _volume_check(rows, direction, mapping):
 	"""VOLUME dimension — `rows` into the read|write daily buckets (global + per-token). Burst =
 	the ceiling, so a partner may spend a whole day's budget in one bulk load. `direction` is
@@ -679,6 +703,10 @@ def _api(fn=None, *, bulk=False, read=False):
 				if _throttle_response(rate, mapping):
 					return
 				remaining = rate[1] if rate else None
+				# A bulk call pays the general rate AND its own, tighter, in-flight limit.
+				if bulk and _throttle_response(_bulk_rate_check(mapping), mapping,
+				                               reason=_("Bulk rate limit exceeded")):
+					return
 				if not bulk and _meter_volume(1, "read" if read else "write"):
 					return
 
@@ -773,7 +801,21 @@ def _run_bulk(items, fn):
 			results.append(fn(i, item))
 			ok += 1
 		except Exception as e:
-			frappe.db.rollback(save_point=sp)
+			try:
+				frappe.db.rollback(save_point=sp)
+			except Exception:
+				# A deadlock is resolved by the DATABASE rolling the whole transaction back, which
+				# destroys every savepoint in it — so rolling back to this one raises instead of
+				# undoing anything, and that used to escape as an opaque 500. Every record this call
+				# wrote is already gone, including the ones counted as succeeded, so a partial-success
+				# envelope would report rows that no longer exist. Fail the whole call, retryably.
+				frappe.db.rollback()
+				return _fail(
+					"write_conflict",
+					_("A concurrent write conflicted with this batch and it was rolled back. "
+					  "Nothing was saved. Retry the whole call."),
+					503, retry_after=_cfg()["bulk_window_seconds"],
+				)
 			_undo_side_effects(depth)  # the savepoint rolled back the DB; this undoes what it wrote to disk
 			results.append(_bulk_error(i, e, "bulk"))
 	_ok(summary={"total": len(items), "succeeded": ok, "failed": len(items) - ok}, results=results)

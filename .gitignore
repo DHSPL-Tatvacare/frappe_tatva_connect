@@ -99,3 +99,7 @@ tatva_connect/tests/authz/spikes/
 
 # PyCharm HTTP Client — holds the API key/secret. NEVER commit (this repo is public).
 api-docs/http-client.private.env.json
+
+# Load-test working set: LIVE patient data pulled from LSQ, plus run reports. Never committed.
+tatva_connect/tests/loadtest/data/
+tatva_connect/tests/loadtest/reports/
