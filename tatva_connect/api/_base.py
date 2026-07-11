@@ -223,11 +223,24 @@ def _norm_phone(raw):
 
 
 def _resolve_caller():
-	"""(user, mapping-or-None, is_sysmgr). Raises 403 if neither partner nor sysmgr.
-	The mapping row's name == partner_user (autoname field:partner_user).
+	"""(user, mapping-or-None, is_sysmgr) — the gate, memoised for the life of one request.
 
-	This is the SINGLE enablement gate for ALL entity APIs (leads/activities/files/
-	calls): one enabled `CRM Lead API Mapping` row + its grain governs every entity."""
+	The @_api preamble runs `_load_caller()` ONCE and stashes the result; every caller downstream (the
+	endpoint body, _meter_volume) comes through here and reads the stash, so the gate costs one DB
+	read per request rather than the three it used to. Outside the wrapper (a test, the console, a
+	job) there is no stash, so every call loads fresh and a mapping toggled mid-test is seen at once."""
+	ctx = getattr(frappe.local, "partner_ctx", None)
+	if ctx is not None:
+		return ctx
+	return _load_caller()
+
+
+def _load_caller():
+	"""The gate itself: resolve the caller, or raise 403. Called ONCE per request, by the preamble.
+
+	The mapping row's name == partner_user (autoname field:partner_user). This is the SINGLE enablement
+	gate for ALL entity APIs (leads/activities/files/calls): one enabled `CRM Lead API Mapping` row +
+	its grain governs every entity."""
 	user = frappe.session.user
 	mp = frappe.db.get_value(
 		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
@@ -284,6 +297,20 @@ def _read_list(data, key):
 	if not isinstance(val, list):
 		val = [val]
 	return val
+
+
+def _read_required_list(data, key):
+	"""A bulk body's array — REQUIRED. A missing key is a 400, never a silent success.
+
+	Every bulk WRITE used to apply `or []` to a missing key, and _run_bulk([]) emits a success
+	envelope: `POST lead_create_bulk {"lead": [...]}` (plural dropped) answered
+	200 {"summary":{"total":0,"succeeded":0,"failed":0}}. Nothing written, no error — a partner
+	shipped it and found out later. Every bulk READ already threw. This is the one reader both lanes
+	call, so they cannot disagree again."""
+	items = _read_list(data, key)
+	if items is None:
+		frappe.throw(_("{0} is required").format(key))
+	return items
 
 
 def _page(data):
@@ -345,11 +372,12 @@ def _classify(e, fn_name):
 	"""(code, http, message, fields) for an exception. Authored throws keep their
 	text; a child-write validation error carries the offending `fields` (else None);
 	anything unexpected is logged and returned generically as a 500."""
-	# A delete blocked by linked activity (LinkExistsError) -> a 409 conflict with a
-	# GENERIC message: its native text names the linking doctypes/docs, which would
-	# enumerate what exists on the line — so we replace it (never leak the link list).
+	# A delete blocked by a linked record (LinkExistsError) -> a 409 conflict with a GENERIC message:
+	# the native text names the linking doctypes and docs, which would enumerate what exists on the
+	# line, so we replace it (never leak the link list). "record", not "lead": _classify is the one
+	# error brain for all four entities, and this fired verbatim on an activity, a file or a call.
 	if isinstance(e, frappe.LinkExistsError):
-		return "cannot_delete", 409, _("This lead cannot be deleted because it has linked records."), None
+		return "cannot_delete", 409, _("This record cannot be deleted because it has linked records."), None
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
 			return code, http, (str(e) or _("Request failed")), getattr(e, "fields", None)
@@ -673,31 +701,39 @@ def _api(fn=None, *, bulk=False, read=False):
 	def wrapper(*args, **kwargs):
 		idem = None
 		try:
-			key = _idem_key()
-			if key and not read:  # a read is already idempotent; it never claims a key
-				action, idem = _idempotency_begin(frappe.session.user, key, fn.__name__)
-				if action != "run":
-					return  # replay / conflict response already set
-			mapping = None
+			# THE PREAMBLE. One order, every endpoint, every time: AUTHORIZE, then CHARGE, then
+			# DEDUPE THE RETRY, then act. It used to run backwards — the idempotency replay
+			# short-circuited ABOVE the gate, so a partner whose mapping had been disabled (the kill
+			# switch) still received a stored 200 for every key they had already used, and a client
+			# looping on a replayed key was never charged and never 429'd.
+
+			# 1. AUTHORIZE — unconditionally, and once. This is the gate, not a rate-limit detail; it
+			#    used to run only when the rate flag happened to be on. Stashed for the endpoint body
+			#    and _meter_volume to reuse, so the gate is one DB read per request, not three.
+			user, mapping, is_sysmgr = _load_caller()
+			frappe.local.partner_ctx = (user, mapping, is_sysmgr)
+
+			# 2. CHARGE — a replay costs what a call costs, so a retry loop cannot run free.
 			remaining = None
 			if automation.is_enabled(_RATE_ENFORCEMENT):
-				_user, mapping, _is_sysmgr = _resolve_caller()
 				rate = _rate_check(1, mapping)
-				denied = _throttle_response(rate, mapping)
-				if denied:
-					if idem:
-						_idempotency_release(idem)
+				if _throttle_response(rate, mapping):
 					return
 				remaining = rate[1] if rate else None
-				if not bulk:
-					denied = _meter_volume(1, "read" if read else "write")
-					if denied:
-						if idem:
-							_idempotency_release(idem)
-						return
+				if not bulk and _meter_volume(1, "read" if read else "write"):
+					return
+
+			# 3. DEDUPE THE RETRY — claimed only once the caller is authorized and has paid, so a
+			#    denial never has a claim to release.
+			key = _idem_key()
+			if key and not read:  # a read is already idempotent; it never claims a key
+				action, idem = _idempotency_begin(user, key, fn.__name__)
+				if action != "run":  # replay / conflict body already set
+					_ratelimit_headers(mapping, remaining=remaining)
+					return
+
 			result = fn(*args, **kwargs)
-			if mapping is not None:
-				_ratelimit_headers(mapping, remaining=remaining)
+			_ratelimit_headers(mapping, remaining=remaining)
 			if idem:
 				_idempotency_store(idem)
 			return result
@@ -716,6 +752,8 @@ def _api(fn=None, *, bulk=False, read=False):
 				_fail(code, message, http)
 			if idem:
 				_idempotency_release(idem)
+		finally:
+			frappe.local.partner_ctx = None  # the stash is per-request; never leak it across one
 
 	wrapper._partner_lane = {"bulk": bulk, "read": read}  # introspected by the drift lock in tests/api
 	return wrapper
@@ -748,6 +786,31 @@ def _bulk_guard(items, direction):
 	return _meter_volume(len(items), direction)
 
 
+def _undo_side_effects(depth):
+	"""Run the after_rollback callbacks a failed bulk record registered, and drop them.
+
+	`frappe.db.rollback(save_point=X)` issues ONLY `rollback to savepoint X` — it never drains the
+	after_rollback queue (database.py:1196-1215), and Frappe's own savepoint() docstring warns that
+	"rollback watchers can not work with save points". But `File.before_insert` writes the bytes to
+	disk and only THEN registers its deleter on that queue. So a bulk row that failed after
+	before_insert rolled the DB back cleanly and left the bytes orphaned on disk forever — no File
+	row, no owner, and Frappe ships no sweeper. This runs exactly the callbacks that row added.
+
+	HAND-ROLLED, JUSTIFIED: CallbackManager exposes only run() (drains everything) and reset()
+	(discards everything). Neither is correct here — the queue may already hold callbacks belonging to
+	rows that SUCCEEDED and must still fire if the whole request later rolls back. Draining by depth
+	is the only way to undo one record's side effects without touching another's."""
+	queue = frappe.db.after_rollback._functions
+	added = []
+	while len(queue) > depth:
+		added.append(queue.pop())
+	for func in reversed(added):
+		try:
+			func()
+		except Exception:
+			frappe.log_error(title="Partner API: bulk rollback callback failed")
+
+
 def _run_bulk(items, fn):
 	"""WRITE lane. Run `fn(index, item)` per record in its own savepoint -> partial success. A failing
 	record is rolled back and reported; the rest still commit."""
@@ -756,12 +819,14 @@ def _run_bulk(items, fn):
 	results, ok = [], 0
 	for i, item in enumerate(items):
 		sp = f"tc_bulk_{i}"
+		depth = len(frappe.db.after_rollback._functions)
 		frappe.db.savepoint(sp)
 		try:
 			results.append(fn(i, item))
 			ok += 1
 		except Exception as e:
 			frappe.db.rollback(save_point=sp)
+			_undo_side_effects(depth)  # the savepoint rolled back the DB; this undoes what it wrote to disk
 			results.append(_bulk_error(i, e, "bulk"))
 	_ok(summary={"total": len(items), "succeeded": ok, "failed": len(items) - ok}, results=results)
 

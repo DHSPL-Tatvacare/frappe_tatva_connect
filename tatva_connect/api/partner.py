@@ -52,6 +52,7 @@ from tatva_connect.api._base import (
 	_ok,
 	_page,
 	_read_list,
+	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
@@ -756,7 +757,7 @@ def lead_create_bulk(**_kwargs):
 	"""Create-or-update many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
-	leads = _read_list(frappe.form_dict, "leads") or []
+	leads = _read_required_list(frappe.form_dict, "leads")
 
 	def one(i, item):
 		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
@@ -771,7 +772,7 @@ def lead_create_bulk(**_kwargs):
 def lead_update_bulk(**_kwargs):
 	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
-	updates = _read_list(frappe.form_dict, "updates") or []
+	updates = _read_required_list(frappe.form_dict, "updates")
 
 	def one(i, item):
 		doc, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr, parent_fields, child_allow)
@@ -786,7 +787,7 @@ def lead_update_bulk(**_kwargs):
 def lead_delete_bulk(**_kwargs):
 	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
-	names = _read_list(frappe.form_dict, "names") or []
+	names = _read_required_list(frappe.form_dict, "names")
 
 	def one(i, name):
 		_delete_one(name, mp)

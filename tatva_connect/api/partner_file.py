@@ -48,6 +48,7 @@ from tatva_connect.api._base import (
 	_ok,
 	_page,
 	_read_list,
+	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
@@ -361,9 +362,7 @@ def file_get_bulk(**_kwargs):
 	"""Read many files by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names")
-	if not names:
-		frappe.throw(_("names is required"))
+	names = _read_required_list(frappe.form_dict, "names")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
@@ -372,7 +371,7 @@ def file_get_bulk(**_kwargs):
 def file_attach_bulk(**_kwargs):
 	"""Attach many files. Body: {"files":[{...}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	files = _read_list(frappe.form_dict, "files") or []
+	files = _read_required_list(frappe.form_dict, "files")
 
 	def one(i, item):
 		view, action = _create_one(item, mp, is_sysmgr)
@@ -386,7 +385,7 @@ def file_attach_bulk(**_kwargs):
 def file_delete_bulk(**_kwargs):
 	"""Delete many files. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names") or []
+	names = _read_required_list(frappe.form_dict, "names")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)

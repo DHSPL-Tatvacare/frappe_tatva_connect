@@ -51,7 +51,7 @@ from tatva_connect.api._base import (
 	_list_ok,
 	_ok,
 	_page,
-	_read_list,
+	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
@@ -116,6 +116,18 @@ def _activity_payload(name):
 	}
 
 
+def _resolve_task_type(lead, task_type):
+	"""A partner's `task_type` -> this lead's grain-scoped composite type PK. The ONE resolver every
+	path calls — create, update AND the list filter — so discovery, ingestion and query all speak the
+	same vocabulary. Accepts the human type name or the composite PK, exactly as the schema advertises.
+	An unavailable type is the same refusal everywhere; it is never silently coerced to a sentinel."""
+	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
+		resolved = activity_brain.resolve_type_for_lead(lead, task_type)
+	if not resolved:
+		frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
+	return resolved
+
+
 def _backdate(name, created_at):
 	"""Backdate the task's `creation` from a partner-supplied timestamp (historical load).
 	No-op on a blank/unparseable value, so live creates keep `now`."""
@@ -142,13 +154,8 @@ def _create_one(item, mp, is_sysmgr):
 	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
 
-	# task_type may be the human type name OR the composite grain PK: resolve to this lead's grain-scoped
-	# type (the SAME brain the schema advertises), so discovery equals ingestion. Then the brain computes
-	# and writes.
+	resolved = _resolve_task_type(lead, task_type)
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
-		resolved = activity_brain.resolve_type_for_lead(lead, task_type)
-		if not resolved:
-			frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
 		name = activity_brain.save_activity(lead, resolved, values, task=None)
 
 	stamp_external_id("CRM Task", name, item.get("external_id"))
@@ -165,10 +172,9 @@ def _update_one(name, item, mp, is_sysmgr):
 		frappe.throw(_("task_type is required"))
 	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
+
+	resolved = _resolve_task_type(row.reference_docname, task_type)
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
-		resolved = activity_brain.resolve_type_for_lead(row.reference_docname, task_type)
-		if not resolved:
-			frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
 		activity_brain.save_activity(row.reference_docname, resolved, values, task=name)
 	if item.get("external_id") is not None:
 		stamp_external_id("CRM Task", name, item.get("external_id"))
@@ -273,9 +279,7 @@ def activity_get_bulk(**_kwargs):
 	"""Read many activities by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names")
-	if not names:
-		frappe.throw(_("names is required"))
+	names = _read_required_list(frappe.form_dict, "names")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
@@ -285,7 +289,7 @@ def activity_create_bulk(**_kwargs):
 	"""Create many activities. Body: {"activities":[{...}, ...]} (<= 100).
 	Each record is enforced in its own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	activities = _read_list(frappe.form_dict, "activities") or []
+	activities = _read_required_list(frappe.form_dict, "activities")
 
 	def one(i, item):
 		return {"index": i, "status": "success", "action": ACTION_CREATED,
@@ -299,7 +303,7 @@ def activity_create_bulk(**_kwargs):
 def activity_update_bulk(**_kwargs):
 	"""Update many activities. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	updates = _read_list(frappe.form_dict, "updates") or []
+	updates = _read_required_list(frappe.form_dict, "updates")
 
 	def one(i, item):
 		return {"index": i, "status": "success", "action": ACTION_UPDATED,
@@ -313,7 +317,7 @@ def activity_update_bulk(**_kwargs):
 def activity_delete_bulk(**_kwargs):
 	"""Delete many activities. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names") or []
+	names = _read_required_list(frappe.form_dict, "names")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)
@@ -340,8 +344,12 @@ def activity_list(**_kwargs):
 		return
 	filters = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 	if data.get("task_type"):
-		tt = data.get("task_type")
-		filters["custom_task_type"] = tt if tt in activity_types else "__none__"
+		# The FILTER resolves through the SAME brain the CREATE does, so the two speak one vocabulary.
+		# It used to test membership in a set of composite grain PKs and, on a miss, substitute a
+		# sentinel that matches nothing — so filtering by the very type name activity_create had just
+		# accepted ("Welcome Call") returned a successful 200 with total: 0, and a typo behaved
+		# identically. An unavailable type is now the same refusal _create_one gives.
+		filters["custom_task_type"] = _resolve_task_type(lead, data.get("task_type"))
 	else:
 		filters["custom_task_type"] = ["in", list(activity_types)]
 	if data.get("status"):

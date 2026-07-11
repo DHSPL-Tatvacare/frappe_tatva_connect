@@ -482,6 +482,150 @@ class TestPartnerContract(unittest.TestCase):
 			"a rejected label must not leave a call log behind",
 		)
 
+	# -- P5: one preamble. Authorize, then charge, then dedupe the retry -----
+
+	def test_the_gate_runs_before_the_idempotency_replay(self):
+		"""THE KILL SWITCH. The replay used to short-circuit ABOVE the gate, so a partner whose mapping
+		had been disabled still received the stored 200 for every key they had already used -- for as
+		long as the row lived, which with the dormant purge job is forever."""
+		order = []
+		with patch.object(_base, "_load_caller",
+		                  side_effect=lambda: order.append("gate") or ("u", None, True)), \
+		     patch.object(_base, "_idem_key", return_value="K"), \
+		     patch.object(_base, "_idempotency_begin",
+		                  side_effect=lambda u, k, f: order.append("idem") or ("run", None)):
+
+			@_api
+			def probe(**_kwargs):
+				order.append("endpoint")
+
+			frappe.local.response = frappe._dict()
+			frappe.form_dict = frappe._dict()
+			probe()
+
+		self.assertEqual(
+			order, ["gate", "idem", "endpoint"],
+			"the authorization gate must run BEFORE the idempotency claim, not after it",
+		)
+
+	def test_a_revoked_partner_is_refused_even_on_a_replayed_key(self):
+		"""The gate is fail-closed: a 403 beats a stored response."""
+		with patch.object(_base, "_load_caller",
+		                  side_effect=frappe.PermissionError("mapping disabled")), \
+		     patch.object(_base, "_idem_key", return_value="ALREADY-USED"), \
+		     patch.object(_base, "_idempotency_begin") as begin:
+
+			@_api
+			def probe(**_kwargs):
+				self.fail("a revoked partner must never reach the endpoint")
+
+			frappe.local.response = frappe._dict()
+			frappe.form_dict = frappe._dict()
+			probe()
+
+		self.assertEqual(frappe.local.response["error"]["code"], "forbidden")
+		begin.assert_not_called()  # the key is never even claimed
+
+	def test_the_gate_costs_one_db_read_per_request(self):
+		"""_load_caller is the gate's only DB read. It used to run up to three times per request -- the
+		wrapper, the endpoint body and _meter_volume each resolved the caller independently."""
+		lead, _ = self._lead("+919812300098")
+		real, loads = _base._load_caller, []
+
+		with patch.object(_base, "_load_caller", side_effect=lambda: loads.append(1) or real()):
+			frappe.local.response = frappe._dict()
+			frappe.form_dict = frappe._dict({"lead": lead.name})
+			partner_call.call_list()
+
+		self.assertEqual(
+			len(loads), 1,
+			f"the gate hit the DB {len(loads)} times in one request; the preamble must resolve it once",
+		)
+
+	# -- P7: a bulk write cannot silently no-op -----------------------------
+
+	def test_a_mistyped_bulk_body_key_is_a_400_not_a_green_200(self):
+		"""`{"lead": [...]}` for `{"leads": [...]}` used to answer 200 {total:0} on every bulk WRITE --
+		nothing written, no error -- while every bulk READ correctly 400'd. Both lanes now agree."""
+		writes = (
+			(partner.lead_create_bulk, "leads"),
+			(partner.lead_update_bulk, "updates"),
+			(partner.lead_delete_bulk, "names"),
+			(partner_activity.activity_create_bulk, "activities"),
+			(partner_activity.activity_update_bulk, "updates"),
+			(partner_activity.activity_delete_bulk, "names"),
+			(partner_file.file_attach_bulk, "files"),
+			(partner_file.file_delete_bulk, "names"),
+			(partner_call.call_create_bulk, "calls"),
+			(partner_call.call_update_bulk, "updates"),
+			(partner_call.call_delete_bulk, "names"),
+		)
+		for endpoint, key in writes:
+			with self.subTest(endpoint=endpoint.__name__):
+				frappe.local.response = frappe._dict()
+				frappe.form_dict = frappe._dict({f"mistyped_{key}": []})
+				endpoint()
+				self.assertEqual(
+					frappe.local.response.get("status"), "error",
+					f"{endpoint.__name__} answered a mistyped body key with a SUCCESS envelope",
+				)
+				self.assertIn(key, frappe.local.response["error"]["message"])
+
+	# -- P9: discovery equals ingestion -------------------------------------
+
+	def test_the_list_filter_speaks_the_same_vocabulary_as_the_create(self):
+		"""Filtering by the exact task_type the create just accepted must find it. activity_list tested
+		membership in a set of composite grain PKs and, on a miss, substituted a sentinel matching
+		nothing -- so the filter returned a successful 200 with total: 0, and a typo looked identical."""
+		lead, _ = self._lead("+919812300099")
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name})
+		partner_activity.activity_schema()
+		types = frappe.local.response["data"]["task_types"]
+		if not types:
+			self.skipTest("no activity type is available for this lead's grain")
+
+		# the human name the schema advertises -- exactly what a partner would send
+		advertised = types[0]["name"]
+		created = partner_activity._create_one(
+			frappe._dict({"lead": lead.name, "task_type": advertised, "values": {}}),
+			self.mp, self.is_sysmgr)
+
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name, "task_type": advertised})
+		partner_activity.activity_list()
+		found = {a["name"] for a in frappe.local.response["data"]["activities"]}
+		self.assertIn(
+			created["name"], found,
+			f"activity_list?task_type={advertised!r} did not find the activity activity_create had "
+			f"just accepted under that very name",
+		)
+
+	def test_an_unavailable_task_type_is_refused_by_the_filter_not_silently_empty(self):
+		"""A typo must be a refusal, not a successful empty page. (@_api swallows the throw into the
+		error envelope, so the body is what a partner actually sees.)"""
+		lead, _ = self._lead("+919812300100")
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name, "task_type": "No Such Type"})
+		partner_activity.activity_list()
+
+		self.assertEqual(
+			frappe.local.response.get("status"), "error",
+			"an unavailable task_type returned a SUCCESSFUL page -- a typo is indistinguishable "
+			"from an empty result",
+		)
+		self.assertEqual(frappe.local.response["error"]["code"], "validation_error")
+
+	# -- P12: the error names the right entity -------------------------------
+
+	def test_cannot_delete_does_not_name_the_wrong_entity(self):
+		"""_classify is the one error brain for all four entities; its LinkExistsError branch said
+		"this LEAD cannot be deleted" while deleting an activity, a file or a call."""
+		code, http, message, _fields = _base._classify(frappe.LinkExistsError("x"), "activity_delete")
+		self.assertEqual((code, http), ("cannot_delete", 409))
+		self.assertNotIn("lead", message.lower(), "the shared message must not name one entity")
+		self.assertIn("record", message.lower())
+
 	# -- discovery -----------------------------------------------------------
 
 	def test_every_schema_states_identity_and_dedup(self):

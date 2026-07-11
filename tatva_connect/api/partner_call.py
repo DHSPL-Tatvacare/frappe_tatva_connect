@@ -47,6 +47,7 @@ from tatva_connect.api._base import (
 	_ok,
 	_page,
 	_read_list,
+	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
@@ -332,9 +333,7 @@ def call_get_bulk(**_kwargs):
 	"""Read many calls by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names")
-	if not names:
-		frappe.throw(_("names is required"))
+	names = _read_required_list(frappe.form_dict, "names")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
@@ -344,7 +343,7 @@ def call_create_bulk(**_kwargs):
 	"""Create many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record is enforced in its
 	own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	calls = _read_list(frappe.form_dict, "calls") or []
+	calls = _read_required_list(frappe.form_dict, "calls")
 
 	def one(i, item):
 		view, action = _create_one(item, mp, is_sysmgr)
@@ -358,7 +357,7 @@ def call_create_bulk(**_kwargs):
 def call_update_bulk(**_kwargs):
 	"""Update many calls. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	updates = _read_list(frappe.form_dict, "updates") or []
+	updates = _read_required_list(frappe.form_dict, "updates")
 
 	def one(i, item):
 		view, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr)
@@ -372,7 +371,7 @@ def call_update_bulk(**_kwargs):
 def call_delete_bulk(**_kwargs):
 	"""Delete many calls. Body: {"names":[...]} (<= 100). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_list(frappe.form_dict, "names") or []
+	names = _read_required_list(frappe.form_dict, "names")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)
