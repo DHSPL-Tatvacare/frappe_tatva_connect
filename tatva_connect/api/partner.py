@@ -544,7 +544,7 @@ def _stamp_label(doc, item):
 	doc.set(EXTERNAL_ID_FIELD, external_id)
 
 
-def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
+def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
 	"""Update one lead by CRM name. Returns (doc, 'updated'). Scope-checked for partners."""
 	if not name:
 		frappe.throw(_("name (the CRM Lead id) is required for an update"))
@@ -557,16 +557,26 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow):
 		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
+
+	# Program is a MUTABLE ATTRIBUTE, so an update transitions it — through the SAME resolver the
+	# create uses, so both paths validate against the key's allowed_programs identically. An update
+	# used to drop it silently: the caller got 200 and the program never changed, while lead_schema
+	# advertised the field as writable.
+	program = _resolve_program(item, mp, allowed_programs) if item.get("custom_current_program") else None
+	open_program = bool(mp and not mp.program)
+
 	grain = (
 		(mp.vertical if mp else doc.custom_vertical) or "",
 		(mp.crm_group if mp else doc.custom_group) or "",
-		(doc.custom_current_program or ""),
+		(program or doc.custom_current_program or ""),
 	)
 	parent, children = _resolve_picklists(parent, children, grain)
 	doc.update(parent)
 	_apply_children(doc, children)
 	if mp:
 		_force_routing(doc, mp)
+	if open_program and program:
+		doc.custom_current_program = program
 	doc.save(ignore_permissions=True)
 	_stamp_label(doc, item)
 	return doc, "updated"
@@ -750,8 +760,10 @@ def lead_create(**_kwargs):
 @_api
 def lead_update(**_kwargs):
 	"""Update a lead by CRM `name`. Partner scope-checked; can't move it to another line."""
-	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
-	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow)
+	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	allowed_programs = _allowed_programs(user, bool(mp))
+	doc, action = _update_one(frappe.form_dict.get("name"), frappe.form_dict, mp, is_sysmgr,
+	                          parent_fields, child_allow, allowed_programs)
 	_ok(action=action, data=_curate(doc, parent_fields, child_allow))
 
 
@@ -788,11 +800,13 @@ def lead_create_bulk(**_kwargs):
 @_api(bulk=True)
 def lead_update_bulk(**_kwargs):
 	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
-	_user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
+	allowed_programs = _allowed_programs(user, bool(mp))
 	updates = _read_required_list(frappe.form_dict, "updates")
 
 	def one(i, item):
-		doc, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr, parent_fields, child_allow)
+		doc, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr, parent_fields,
+		                          child_allow, allowed_programs)
 		return {"index": i, "status": "success", "action": action,
 		        "data": _curate(doc, parent_fields, child_allow)}
 

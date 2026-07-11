@@ -110,6 +110,7 @@ const config: ZudokuConfig = {
           label: "Working with the API",
           collapsed: false,
           items: [
+            { type: "doc", file: "writes-and-retries", label: "Writes, addressing and retries" },
             { type: "doc", file: "responses", label: "Response shapes" },
             { type: "doc", file: "reading-values", label: "Reading responses" },
             { type: "doc", file: "partner-errors", label: "Errors" },

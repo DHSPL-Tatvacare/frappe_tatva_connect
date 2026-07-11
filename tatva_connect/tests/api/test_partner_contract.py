@@ -475,6 +475,49 @@ class TestPartnerContract(unittest.TestCase):
 				self.assertTrue(meta.get_field("reference_doctype"))
 				self.assertTrue(meta.get_field("reference_docname"))
 
+	# -- P8/P9: create and update resolve the program through ONE brain -------
+
+	def test_an_update_transitions_the_program_through_the_same_brain_as_a_create(self):
+		"""lead_create resolved custom_current_program through _resolve_program; lead_update did not
+		read it at all, so a list-mode key sent a transition, got 200 updated, and the program never
+		changed -- while lead_schema advertised the field as writable."""
+		lead, _ = self._lead("+919812300105")
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if len(programs) < 2:
+			self.skipTest("need two CRM Programs to test a transition")
+		first, second = programs
+
+		# a LIST-mode key: line + group fixed, program chosen per lead from allowed_programs
+		mp = frappe._dict({"source": None, "vertical": VERTICAL, "crm_group": GROUP, "program": None})
+		_u, _m, _s, pf, ca = partner._caller_fields()
+
+		doc, _a = partner._update_one(
+			lead.name, frappe._dict({"custom_current_program": first}),
+			mp, False, pf, ca, allowed_programs=programs)
+		self.assertEqual(doc.custom_current_program, first, "an update must transition the program")
+
+		doc, _a = partner._update_one(
+			lead.name, frappe._dict({"custom_current_program": second}),
+			mp, False, pf, ca, allowed_programs=programs)
+		self.assertEqual(doc.custom_current_program, second, "a second transition must also land")
+
+	def test_an_update_refuses_a_program_the_key_is_not_permitted(self):
+		"""The update path validates through the same resolver the create does -- it does not blindly
+		write whatever was sent."""
+		lead, _ = self._lead("+919812300106")
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if not programs:
+			self.skipTest("no CRM Programs configured")
+
+		mp = frappe._dict({"source": None, "vertical": VERTICAL, "crm_group": GROUP, "program": None})
+		_u, _m, _s, pf, ca = partner._caller_fields()
+
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			partner._update_one(
+				lead.name, frappe._dict({"custom_current_program": "__not_permitted__"}),
+				mp, False, pf, ca, allowed_programs=programs)
+		self.assertIn("not permitted", str(ctx.exception))
+
 	# -- P3: the label is written the same way on every entity ---------------
 
 	def test_an_overlong_external_id_is_the_same_clean_400_on_every_entity(self):

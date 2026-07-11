@@ -52,7 +52,7 @@ flowchart TD
 
 ## Retry handling
 
-On a 429, the call is retried after `error.retry_after` seconds. Every write is idempotent, so a retry is always safe.
+On a 429, the call is retried after `error.retry_after` seconds. A 429 is raised before the write runs, so retrying *that* status is safe. A write is otherwise only replay-safe if it carried an `Idempotency-Key` — see [Writes, addressing and retries](/writes-and-retries).
 
 <CodeTabs>
 

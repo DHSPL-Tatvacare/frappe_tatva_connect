@@ -42,7 +42,7 @@ The response is a `data` object listing the `lead` fields, the `children` (each 
 
 ## 3. Create the first lead
 
-`lead_create` is the primary write. It is idempotent on the lead's identity (phone plus the key's business line), so it is always safe to retry. The minimal payload is a phone plus whatever the schema marks required.
+`lead_create` is the primary write. It deduplicates on the lead's identity (phone plus the key's business line), so it is always safe to retry. The minimal payload is a phone plus whatever the schema marks required.
 
 For a List-mode key, `custom_current_program` is required and must be one of the allowed programs:
 

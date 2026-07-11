@@ -1,0 +1,104 @@
+---
+title: Writes, addressing and retries
+description: How records are addressed, how deduplication works, and how a retry is made safe.
+---
+
+# Writes, addressing and retries
+
+Four rules govern every write in this API. They are stated here once. Every endpoint obeys them, and
+no endpoint page restates them.
+
+## 1. Every record is addressed by `name`
+
+A create returns the `name` of the row it created — the primary key of the underlying table. It is
+stored by the caller and used for every subsequent read, update and delete. It is the only address
+the API accepts.
+
+```json
+POST /api/method/tatva_connect.api.partner_call.call_create
+→ { "status": "success", "action": "created",
+    "data": { "name": "PARTNER-8ff74da862", ... } }
+```
+
+From then on: `call_get?name=PARTNER-8ff74da862`, `call_update` with `{"name": "...", ...}`,
+`call_delete?name=...`.
+
+In a **bulk** response the address is at `results[i].data.name` — not `results[i].name`.
+
+```json
+{ "status": "success",
+  "summary": { "total": 2, "succeeded": 2, "failed": 0 },
+  "results": [
+    { "index": 0, "status": "success", "action": "created",
+      "data": { "name": "CRM-LEAD-2026-00123", ... } }
+  ] }
+```
+
+`name` is always a **string**, on every entity.
+
+## 2. Deduplication is the CRM's, never the caller's
+
+**A lead is unique per `(mobile_no, product line, group)`.** Re-sending the same patient updates that
+lead; it never creates a second one. This is enforced by a unique index, so two concurrent creates
+for one patient converge on one lead rather than racing.
+
+The program is a **mutable attribute**, not part of identity: sending the same patient with a
+different `custom_current_program` transitions the same lead. Both `lead_create` and `lead_update`
+honour it, validated against the key's `allowed_programs` (see `lead_schema.routing`).
+
+**A changed phone number is a new patient and mints a new lead.** That is a deliberate, closed
+decision.
+
+**Activities, files and calls are created, never deduplicated.** A re-sent `activity_create`,
+`call_create` or `file_attach` produces a **second record**. There is no upsert on any
+caller-supplied value.
+
+## 3. `external_id` is a label, not an address
+
+It is optional. Send your own system's reference for a record and the CRM stores it and echoes it
+back on every read, so you can recognise your own row in a payload.
+
+It is **never interpreted**. It does not deduplicate. It does not locate a record — no endpoint
+accepts it as an address. A colliding `external_id` is inert: it creates your record and leaves
+anyone else's untouched.
+
+If you need to find a record again, keep the `name`.
+
+## 4. Retries are made safe with `Idempotency-Key`
+
+This header is the **only** retry-safety mechanism.
+
+Send it on any write. The first request with a given key runs and its response is stored. A retry
+with the **same key and the same body** replays that stored response instead of writing again.
+
+| Situation | Result |
+|---|---|
+| Same key, same body | The stored response is replayed. No second record. |
+| Same key, still in flight | `409 conflict` |
+| Same key, **different** body | `422 conflict` |
+| **No key**, retried create | A **second record** is created |
+
+```http
+POST /api/method/tatva_connect.api.partner_activity.activity_create
+Authorization: token <api_key>:<api_secret>
+Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
+Content-Type: application/json
+
+{ "lead": "CRM-LEAD-2026-00123", "task_type": "Welcome Call", "values": {} }
+```
+
+### The retry loop
+
+On a network fault, a 5xx, or a 429, retry with backoff **and the same `Idempotency-Key`**. Without
+the key, a create that timed out *after* the server committed will be duplicated by the retry.
+
+A 429 is raised before the write runs, so retrying that specific status is safe with or without a
+key. Do not generalise from it.
+
+## What this means in practice
+
+- A **nightly re-sync** of leads is safe: they dedup on phone.
+- A **nightly re-sync** of activities, files or calls is **not** safe: it duplicates. Either keep the
+  `name`s you were given, or send an `Idempotency-Key` that is stable per record.
+- A **parallel backfill** through `lead_create_bulk` is safe: the unique index converges concurrent
+  creates for one patient onto one lead.

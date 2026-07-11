@@ -117,7 +117,7 @@ body = r.json()
 print(body["summary"])                        # {"total":2,"succeeded":1,"failed":1}
 for row in body["results"]:                    # results[i] is the i-th input
     if row["status"] == "success":
-        print(row["index"], row["name"])       # results[i].name
+        print(row["index"], row["data"]["name"])   # results[i].data.name
     else:
         print(row["index"], row["error"]["code"])  # results[i].error.code
 ```
