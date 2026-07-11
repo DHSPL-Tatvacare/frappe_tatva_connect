@@ -61,7 +61,7 @@ def _gate_workspace_roles():
 			doc = frappe.get_doc("Workspace", workspace)
 			for role in missing:
 				doc.append("roles", {"role": role})
-			doc.save(ignore_permissions=True)
+			doc.save(ignore_permissions=True)  # authz-ok: tier-a — schema/UI setup, runs at migrate
 		frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()

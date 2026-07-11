@@ -111,7 +111,7 @@ def ensure_version(rule):
 			"definition_hash": digest,
 			"payload_json": _canonical(payload),
 			"action_count": len(payload["actions"]),
-		}).insert(ignore_permissions=True).name
+		}).insert(ignore_permissions=True).name  # authz-ok: tier-a — automation engine: immutable rule version, engine-written
 	_mark_current(rule.name, name)
 	return name
 

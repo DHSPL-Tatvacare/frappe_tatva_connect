@@ -31,7 +31,7 @@ def _retire_column(fieldname):
 	"""Drop a retired CRM Task field end to end: delete the Custom Field doc AND the physical column (deletion alone leaves the column); a Table field has no parent column, so only its doc is removed."""
 	cf = "CRM Task-" + fieldname
 	if frappe.db.exists("Custom Field", cf):
-		frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)
+		frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	if frappe.db.has_column(TASK, fieldname):
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path.
 		frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Task` DROP COLUMN `{fieldname}`")
@@ -57,4 +57,4 @@ def execute():
 	# 3) Drop the 4 dead archetype child doctypes + their tables (folders archived to archive/doctype/).
 	for dt in _DEAD_CHILD_DOCTYPES:
 		if frappe.db.exists("DocType", dt):
-			frappe.delete_doc("DocType", dt, ignore_permissions=True, force=True)
+			frappe.delete_doc("DocType", dt, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate

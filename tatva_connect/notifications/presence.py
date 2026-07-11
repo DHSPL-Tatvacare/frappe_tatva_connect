@@ -77,7 +77,7 @@ def absent_devices(user) -> list:
 
 def _user_tokens(user) -> list:
 	"""Every FCM token registered for the user — one batched read (presence keys on token)."""
-	return frappe.get_all(SUBSCRIPTION, filters={"user": user}, pluck="fcm_token", ignore_permissions=True)
+	return frappe.get_all(SUBSCRIPTION, filters={"user": user}, pluck="fcm_token", ignore_permissions=True)  # authz-ok: tier-a — presence heartbeat, engine-written
 
 
 def _decode(key) -> str:

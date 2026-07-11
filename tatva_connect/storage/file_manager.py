@@ -42,7 +42,7 @@ def save(
 		"attached_to_field": attached_to_field,
 		"is_private": 1 if private else 0,
 		**(meta or {}),
-	}).insert(ignore_permissions=True)
+	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 
 
 def link(file_url, *, attached_to_doctype, attached_to_name, private=True, meta=None):
@@ -55,7 +55,7 @@ def link(file_url, *, attached_to_doctype, attached_to_name, private=True, meta=
 		"attached_to_name": attached_to_name,
 		"is_private": 1 if private else 0,
 		**(meta or {}),
-	}).insert(ignore_permissions=True)
+	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 
 
 def find(**filters):

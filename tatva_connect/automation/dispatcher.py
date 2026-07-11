@@ -226,7 +226,7 @@ def _write_run_log(rule, rule_version, lead, trigger_doc, grain, success, failed
 				"details": details or "",
 				"duration_ms": duration_ms,
 			}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)  # authz-ok: tier-a — automation engine, scheduler/queue context
 	except Exception:
 		frappe.log_error("automation: run-log write failed")
 
@@ -275,7 +275,7 @@ def _purge_unreferenced_versions():
 	for row in frappe.get_all(versions.DOCTYPE, fields=["name", "rule", "is_current"]):
 		if row.name in referenced or (row.is_current and row.rule in live_rules):
 			continue
-		frappe.delete_doc(versions.DOCTYPE, row.name, ignore_permissions=True, delete_permanently=True)
+		frappe.delete_doc(versions.DOCTYPE, row.name, ignore_permissions=True, delete_permanently=True)  # authz-ok: tier-a — automation engine, scheduler/queue context
 
 
 def _retention_days():

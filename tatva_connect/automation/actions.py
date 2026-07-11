@@ -184,11 +184,11 @@ def _pin_review_file(task_name, file_name):
 	if payload.get("document") != file_doc.file_url:
 		payload["document"] = file_doc.file_url
 		task.custom_activity_payload = frappe.as_json(payload)
-		task.save(ignore_permissions=True)
+		task.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 	if file_doc.custom_review_status != "Pending" or file_doc.custom_review_task != task_name:
 		file_doc.custom_review_status = "Pending"
 		file_doc.custom_review_task = task_name
-		file_doc.save(ignore_permissions=True)
+		file_doc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _action_set_field(action, lead, context, axes, trigger_doc):
@@ -205,7 +205,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 		)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
 	tdoc.set(action.fieldname, _resolve_set_field_value(action, context))
-	tdoc.save(ignore_permissions=True)
+	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _resolve_write_target(action, lead_name, trigger_doc):
@@ -264,7 +264,7 @@ def _action_append_child(action, lead, context, axes, trigger_doc):
 	_assert_child_allowlisted(child_dt, child_table, set(values), axes)
 	tdoc = frappe.get_doc("CRM Lead", lead)
 	tdoc.append(child_table, values)
-	tdoc.save(ignore_permissions=True)
+	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _action_upsert_child(action, lead, context, axes, trigger_doc):
@@ -288,7 +288,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 			row.set(k, v)
 	else:
 		tdoc.append(child_table, {**match, **values})
-	tdoc.save(ignore_permissions=True)
+	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _action_call_webhook(action, lead, context, axes, trigger_doc):

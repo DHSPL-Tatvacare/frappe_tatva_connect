@@ -144,7 +144,7 @@ def apply(*_args, **_kwargs):
 					"delete": d,
 					"if_owner": if_owner,
 				}
-			).insert(ignore_permissions=True)
+			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	frappe.clear_cache()
 
 

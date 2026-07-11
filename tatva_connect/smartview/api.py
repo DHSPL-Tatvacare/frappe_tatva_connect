@@ -680,7 +680,7 @@ def upsert_view(view):
 	doc.pinned = 1 if view.get("pinned") else 0
 	if view.get("view_order") is not None:
 		doc.view_order = cint(view.get("view_order"))
-	doc.save(ignore_permissions=True)
+	doc.save(ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
 	return _smart_view_tab(doc)
 
 
@@ -693,5 +693,5 @@ def delete_view(name):
 	doc = frappe.get_doc("CRM Smart View", name)
 	if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not _is_operator():
 		frappe.throw(_("You can only delete your own views."), frappe.PermissionError)
-	frappe.delete_doc("CRM Smart View", name, ignore_permissions=True)
+	frappe.delete_doc("CRM Smart View", name, ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
 	return {"deleted": name}

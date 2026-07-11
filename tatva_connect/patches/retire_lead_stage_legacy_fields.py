@@ -19,7 +19,7 @@ def execute():
 	for fieldname in _STALE:
 		cf = "CRM Lead-" + fieldname
 		if frappe.db.exists("Custom Field", cf):
-			frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)
+			frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path; deleting the Custom Field leaves the column.
 		if frappe.db.has_column(LEAD, fieldname):
 			frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Lead` DROP COLUMN `{fieldname}`")

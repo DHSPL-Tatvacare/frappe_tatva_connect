@@ -37,4 +37,4 @@ def mirror_review_outcome(doc, method=None):
 		if file_doc.custom_review_status == outcome:
 			continue  # already mirrored — no-op
 		file_doc.custom_review_status = outcome
-		file_doc.save(ignore_permissions=True)
+		file_doc.save(ignore_permissions=True)  # authz-ok: tier-a — automation lane: mirrors the review outcome onto the file

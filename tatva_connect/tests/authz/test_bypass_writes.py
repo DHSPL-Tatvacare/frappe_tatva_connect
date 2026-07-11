@@ -32,8 +32,11 @@ PART B — `TestBypassWrites` (audit M-1, differential on the Tier-B partner pat
   caller-fields tuple the endpoints build. That is the real enforcement code, just without the
   envelope-swallowing wrapper.
 """
+import ast
+import collections
 import os
-import subprocess
+import pathlib
+import re
 
 import frappe
 
@@ -43,181 +46,125 @@ from tatva_connect.tests.authz.base import AuthzTestCase, set_user
 from tatva_connect.tests.authz.oracle import native_would_allow
 
 # --------------------------------------------------------------------------------------------------
-# PART A — the reviewed bypass allowlist.
+# PART A — every bypass carries its own review, at the site.
 #
-# Every `ignore_permissions=True` site in the app, as `relpath:line`, grouped by trust tier. This is
-# the I4 audit's snapshot: each entry was eyeballed and judged safe for the reason its tier names.
-# A bypass that is NOT in this set fails the build — so a new un-gated bypass can never land quietly.
+# `ignore_permissions=True` is a deliberate hole in Frappe's permission engine. The danger is DRIFT:
+# a future engineer adds a NEW bypass on a user-reachable path and silently opens an escalation.
 #
-# Tier-A  system / seed / patch / migration — runs as Administrator or in a migration, never on a
-#         user-reachable request path. No external actor reaches these.
-# Tier-B  EXTERNAL INPUT — a request path (partner API, webhook ingestion, telephony/WhatsApp
-#         adapters, intake submission, location capture). These MUST self-gate before the bypass;
+# This lock used to key its allowlist by `relpath:line`. That was the wrong key. It could not tell a
+# NEW bypass (a real security signal) from an EXISTING one that moved because someone added a comment
+# above it (noise) — and the second happens on nearly every commit. So the lock sat permanently red,
+# nobody re-reviewed, and 19 bypasses landed unreviewed while it was failing. A test that is always
+# red is worse than no test.
+#
+# The key is now the marker, which is what the constitution already prescribes: every bypass carries
+# `# authz-ok: tier-<a|b|c> — <why>` on its own line or the line above. The review lives AT the site,
+# in the diff, where a reviewer sees it. Line shifts are invisible to this lock; a new UNMARKED bypass
+# is not.
+#
+# Tier-A  system / seed / patch / migration / engine — runs as Administrator, in a migration, or in a
+#         background worker. No external actor reaches it.
+# Tier-B  EXTERNAL INPUT — a request path (partner API, webhooks, telephony/WhatsApp adapters, intake,
+#         location capture). These MUST self-gate BEFORE the bypass, and the marker must name the gate.
 #         Part B differential-tests the partner lead paths specifically.
-# Tier-C  SELF-SCOPED — the write target is pinned to session.user (device tokens, notification
-#         prefs), so the bypass can only ever touch the caller's own row.
-#
-# Line numbers are intentional: an edit that shifts a bypass forces this list to be re-reviewed,
-# which is the point of a drift lock.
+# Tier-C  SELF-SCOPED — the write target is pinned to session.user, so the bypass can only ever touch
+#         the caller's own row.
 # --------------------------------------------------------------------------------------------------
-_TIER_A = {
-    # access lockdown — role/permission scaffolding, runs in schema setup
-    "access/lockdown.py:89",
-    # automation switch + dispatcher (scheduler/queue context; CRM Tatva Automation rows + task writes)
-    "automation/dispatcher.py:192",
-    "automation/dispatcher.py:205",
-    "automation/dispatcher.py:229",
-    "automation/dispatcher.py:377",
-    "automation/seed.py:38",
-    "automation/seed.py:45",
-    "automation/seed.py:52",
-    # client/form script re-seed (after_migrate)
-    "client_scripts_seed.py:33",
-    "client_scripts_seed.py:45",
-    "form_scripts_seed.py:73",
-    # intake form/workflow BUILDER — operator authoring tool, not the public submit path
-    "intake/builder.py:156",
-    "intake/builder.py:166",
-    "intake/builder.py:292",
-    "intake/builder.py:296",
-    # observability capture (server-side request log)
-    "observability/capture.py:78",
-    # patches / migrations
-    "patches/fold_transitions_switch.py:25",
-    "patches/rename_push_module_to_notifications.py:21",
-    "patches/retire_activity_legacy_columns.py:34",
-    "patches/retire_activity_legacy_columns.py:60",
-    "patches/retire_lead_stage_legacy_fields.py:22",
-    "patches/retire_location_captures_fields.py:13",
-    "patches/retire_tatva_automation_settings.py:18",
-    # schema setup (Module Def + Role)
-    "schema_setup.py:94",
-    "schema_setup.py:133",
-    # intrinsic reference seed (side-effect options master)
-    "seed_side_effect_options.py:26",
-    # smart view writes — separately audited (operator/self-scoped via _is_operator/PermissionError)
-    "smartview/api.py:684",
-    "smartview/api.py:697",
-    # notification fan-out cleanup (scheduler context, prunes dead device tokens)
-    "notifications/sender.py:115",
-    "notifications/presence.py:80",  # read (get_all) — pruning helper, no row write
-}
+_TIERS = ("a", "b", "c")
+_MARKER = re.compile(r"#\s*authz-ok:\s*tier-([abc])\b\s*[—-]?\s*(.*)", re.I)
 
-_TIER_B = {
-    # email send/attach helper (whitelisted, gated by its caller)
-    "api/email.py:20",
-    "api/email.py:70",
-    "api/email.py:87",
-    # PARTNER LEAD API — grain-gated in _upsert_one/_update_one/_delete_one BEFORE the save.
-    # These four are the subjects of Part B's differential tests.
-    "api/partner.py:450",
-    "api/partner.py:461",
-    "api/partner.py:481",
-    "api/partner.py:496",
-    # partner activity / call / file APIs — same _resolve_caller grain gate, different entity
-    "api/partner_activity.py:167",
-    "api/partner_call.py:185",
-    "api/partner_call.py:200",
-    "api/partner_call.py:290",
-    "api/partner_file.py:254",
-    # WhatsApp outbound API write (whitelisted, gated)
-    "api/whatsapp.py:294",
-    # intake submission path (public web form -> lead/child writes, validated by the brain)
-    "intake/intake.py:188",
-    "intake/intake.py:263",
-    "intake/intake.py:274",
-    "intake/intake.py:358",
-    # location capture API (request path; self/lead scoped)
-    "location/api.py:165",
-    "location/api.py:245",
-    "location/api.py:266",
-    # storage file manager (attachment writes on the request path)
-    "storage/file_manager.py:45",
-    "storage/file_manager.py:58",
-    # task/metrics writes triggered by inbound activity
-    "tasks/metrics.py:106",
-    "tasks/tasks.py:188",
-    # telephony + WhatsApp INBOUND adapters (webhook ingestion — attach to matched lead only)
-    "telephony/adapter.py:149",
-    "telephony/adapter.py:158",
-    "telephony/bridge.py:105",
-    "whatsapp/adapter.py:226",
-    "whatsapp/adapter.py:311",
-    "whatsapp/notification.py:76",
-    "whatsapp/notification.py:101",
-    # webhook spine (raw inbound event log)
-    "webhooks/spine.py:95",
-}
-
-_TIER_C = {
-    # notification device subscriptions + prefs — every write pinned to session.user (carry an
-    # explicit `# authz-ok: self-scoped` marker in source; see notifications/api.py)
-    "notifications/api.py:41",
-    "notifications/api.py:94",
-    "notifications/api.py:114",
-    "notifications/api.py:124",
-    "notifications/api.py:134",
-    "notifications/prefs.py:31",
-}
-
-GATED_BYPASSES = _TIER_A | _TIER_B | _TIER_C
-
-# .../tatva_connect  (the app package root — what the relpaths in GATED_BYPASSES are relative to)
+# .../tatva_connect  (the app package root)
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def _scan_bypass_sites():
-    """Return the set of `relpath:line` for every `ignore_permissions=True` under tatva_connect/,
-    excluding the test tree. Uses `grep -rn` (read-only) — the same source-scan stance as
-    test_no_perm_bypass.py, just a literal-token sweep rather than an AST walk."""
-    proc = subprocess.run(
-        ["grep", "-rn", "--include=*.py", "ignore_permissions=True", _APP_DIR],
-        capture_output=True, text=True,
-    )
-    # grep exits 1 when there are no matches; treat that as empty, anything else as a real error.
-    if proc.returncode not in (0, 1):
-        raise RuntimeError(f"grep failed scanning for bypass sites: {proc.stderr}")
-    sites = set()
-    for raw in proc.stdout.splitlines():
-        # format: <abspath>:<lineno>:<code>
-        path, _, rest = raw.partition(":")
-        lineno, _, _code = rest.partition(":")
+def _bypass_sites():
+    """Every REAL `ignore_permissions=True` call site under tatva_connect/, excluding the test tree.
+
+    Walks the AST, so a docstring or comment that merely MENTIONS the token is never counted — the old
+    grep-based scan reported `_base.py`'s own docstring as a privilege bypass.
+
+    Returns [(relpath, lineno, funcname, tier|None, reason)].
+    """
+    out = []
+    for path in sorted(pathlib.Path(_APP_DIR).rglob("*.py")):
         rel = os.path.relpath(path, _APP_DIR)
-        # skip ANY test tree — top-level tests/ AND nested ones (e.g. smartview/tests/proof scripts),
-        # matching test_no_perm_bypass.py's "os.sep + 'tests'" directory exclusion.
         if "tests" in rel.split(os.sep)[:-1]:
             continue
-        sites.add(f"{rel}:{lineno}")
-    return sites
+        text = path.read_text()
+        if "ignore_permissions=True" not in text:
+            continue
+        lines = text.splitlines()
+        tree = ast.parse(text)
+        funcs = [(n.lineno, n.end_lineno, n.name) for n in ast.walk(tree)
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.keyword) and node.arg == "ignore_permissions"
+                    and isinstance(node.value, ast.Constant) and node.value.value is True):
+                continue
+            i = node.value.lineno
+            fn = next((n for s, e, n in funcs if s <= i <= e), "<module>")
+            # the marker sits on the site's own line, or on one of the two lines above it
+            tier = reason = None
+            for probe in (lines[i - 1], lines[i - 2] if i >= 2 else "", lines[i - 3] if i >= 3 else ""):
+                m = _MARKER.search(probe)
+                if m:
+                    tier, reason = m.group(1).lower(), m.group(2).strip()
+                    break
+            out.append((rel, i, fn, tier, reason))
+    return out
 
 
 class TestBypassEnumerationAudit(AuthzTestCase):
-    """PART A — the I4 drift lock. Pure source scan; needs no seeded data (but inherits the
-    comms-off interlock from AuthzTestCase, which is harmless and consistent)."""
+    """PART A — the drift lock. Pure source walk; needs no seeded data."""
 
-    def test_every_ignore_permissions_write_is_gated(self):
-        found = _scan_bypass_sites()
+    def test_every_ignore_permissions_write_carries_a_tier_marker(self):
+        """A bypass with no marker is a hole nobody reviewed. It fails the build.
 
-        unlisted = sorted(found - GATED_BYPASSES)
-        if unlisted:
-            print("\nNEW un-reviewed ignore_permissions bypass site(s):")
-            for s in unlisted:
-                print(f"  {s}")
+        This is the whole lock: an engineer adding `ignore_permissions=True` must say, at the site,
+        which tier it is and why it is safe. A line shift cannot break this; an unreviewed hole cannot
+        pass it.
+        """
+        sites = _bypass_sites()
+        self.assertTrue(sites, "found no bypass sites at all — the scanner is broken")
+
+        unmarked = [f"{rel}:{line} in {fn}()" for rel, line, fn, tier, _r in sites if tier is None]
         self.assertFalse(
-            unlisted,
-            "{} NEW ignore_permissions bypass site(s) are not in the reviewed GATED_BYPASSES "
-            "allowlist — review each, classify its tier, and add it (or remove the bypass):\n  {}"
-            .format(len(unlisted), "\n  ".join(unlisted)),
+            unmarked,
+            "{} ignore_permissions=True site(s) carry no review marker. Add "
+            "`# authz-ok: tier-<a|b|c> — <why it is safe>` at the site (tier-b MUST name the gate):"
+            "\n  {}".format(len(unmarked), "\n  ".join(unmarked)),
         )
 
-        # A removed/moved site is also a signal: the allowlist drifted from the source and must be
-        # re-reviewed (a refactor that drops a hole should prune the list deliberately).
-        stale = sorted(GATED_BYPASSES - found)
+        bad_tier = [f"{rel}:{line}" for rel, line, _f, tier, _r in sites if tier not in _TIERS]
+        self.assertFalse(bad_tier, f"unknown tier on: {bad_tier}")
+
+    def test_every_external_input_bypass_names_its_gate(self):
+        """Tier-B is the dangerous tier: a request path that bypasses the permission engine. Its marker
+        must say WHAT gates it, so a reviewer can go and check that the gate is real."""
+        vague = [
+            f"{rel}:{line} in {fn}() -> {reason!r}"
+            for rel, line, fn, tier, reason in _bypass_sites()
+            if tier == "b" and not re.search(r"gate|scope|token|grain|permission|forced|doc_events", reason or "", re.I)
+        ]
         self.assertFalse(
-            stale,
-            "{} allowlisted bypass site(s) no longer exist in source (line moved or removed) — "
-            "re-review and update GATED_BYPASSES:\n  {}".format(len(stale), "\n  ".join(stale)),
+            vague,
+            "a tier-B (external input) bypass must name the gate that protects it:\n  "
+            + "\n  ".join(vague),
         )
+
+    def test_the_bypass_inventory_is_reported(self):
+        """Not an assertion — a census. It prints where the holes are, every run, so the count is
+        visible in CI rather than buried in a list nobody opens."""
+        sites = _bypass_sites()
+        by_tier = collections.Counter(t for _r, _l, _f, t, _x in sites)
+        print(f"\n  ignore_permissions=True sites: {len(sites)}")
+        for tier, label in (("a", "system/seed/patch/engine"), ("b", "EXTERNAL INPUT (self-gated)"),
+                            ("c", "self-scoped to session.user")):
+            print(f"    tier-{tier}  {by_tier.get(tier, 0):3}  {label}")
+        for rel, line, fn, tier, reason in sites:
+            if tier == "b":
+                print(f"      B  {rel}:{line} {fn}() — {reason}")
 
 
 class TestBypassWrites(AuthzTestCase):

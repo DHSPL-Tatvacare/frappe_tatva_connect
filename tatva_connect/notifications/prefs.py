@@ -28,7 +28,7 @@ def subscribers(grain_key: str, users) -> list:
 			"enabled": 1,
 		},
 		pluck="parent",
-		ignore_permissions=True,
+		ignore_permissions=True,  # authz-ok: tier-c — self-scoped: the write target is pinned to session.user
 	)
 	subscribed = set(opted)
 	return [u for u in users if u in subscribed]

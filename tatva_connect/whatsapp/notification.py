@@ -73,7 +73,7 @@ class WATINotification(WhatsAppNotification):
 			}
 			if doc_data:
 				new_doc.update({"reference_doctype": doc_data.doctype, "reference_name": doc_data.name})
-			frappe.get_doc(new_doc).save(ignore_permissions=True)
+			frappe.get_doc(new_doc).save(ignore_permissions=True)  # authz-ok: tier-b — outbound send, gated by the account's own grain check
 
 			# Preserve upstream's set-property-after-alert behaviour.
 			if doc_data and self.set_property_after_alert and self.property_value:
@@ -99,7 +99,7 @@ class WATINotification(WhatsAppNotification):
 			meta = {"error": error_message} if not success else {"transport": "wati", "to": data.get("to")}
 			frappe.get_doc(
 				{"doctype": "WhatsApp Notification Log", "template": self.template, "meta_data": meta}
-			).insert(ignore_permissions=True)
+			).insert(ignore_permissions=True)  # authz-ok: tier-b — outbound send, gated by the account's own grain check
 
 	def _wati_params_from_meta(self, tpl, adapter):
 		"""Body params as WATI [{name, value}] — names by the template's real paramNames (one

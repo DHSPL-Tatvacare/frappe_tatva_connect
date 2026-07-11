@@ -59,7 +59,7 @@ def execute():
 
 	for old in (_WRITE, _WATCH):
 		if frappe.db.exists("DocType", old):
-			frappe.delete_doc("DocType", old, ignore_permissions=True, force=True)
+			frappe.delete_doc("DocType", old, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 			frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{old}`")  # force-delete leaves the tab table
 
 	frappe.db.commit()
@@ -81,14 +81,14 @@ def _upsert(doctype_name, fieldname, child_table_field=None, vertical=None, grou
 			doc.can_watch = 1 if (doc.can_watch or can_watch) else 0
 			doc.can_set = 1 if (doc.can_set or can_set) else 0
 			doc.is_row_key = 1 if (doc.is_row_key or is_row_key) else 0
-			doc.save(ignore_permissions=True)
+			doc.save(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 		else:
 			frappe.get_doc({
 				"doctype": _NEW, "doctype_name": doctype_name, "fieldname": fieldname,
 				"child_table_field": child_table_field or "", "vertical": vertical or "",
 				"group": group or "", "program": program or "",
 				"can_watch": can_watch, "can_set": can_set, "is_row_key": is_row_key, "enabled": enabled,
-			}).insert(ignore_permissions=True)
+			}).insert(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 		return True
 	except Exception:
 		frappe.log_error(

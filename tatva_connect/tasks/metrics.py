@@ -103,7 +103,7 @@ def _get_or_create_row(lead):
 			"parentdocname": lead,
 		}
 	)
-	child.insert(ignore_permissions=True)
+	child.insert(ignore_permissions=True)  # authz-ok: tier-b — task metrics roll-up, engine-written after the task's own gate
 	return child.name
 
 

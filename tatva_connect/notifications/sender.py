@@ -112,7 +112,7 @@ def send_to_tokens(tokens, title, body, data=None):
 			if resp.status_code == 404 or "UNREGISTERED" in resp.text:
 				name = frappe.db.get_value(SUBSCRIPTION, {"fcm_token": token}, "name")
 				if name:
-					frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)
+					frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)  # authz-ok: tier-a — notification fan-out, background worker
 			else:
 				frappe.log_error(f"FCM send failed [{resp.status_code}]: {resp.text[:300]}", "Notifications")
 		except Exception:

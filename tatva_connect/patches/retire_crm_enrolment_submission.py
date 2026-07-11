@@ -14,9 +14,9 @@ def execute():
 	# Any Web Form still bound to the retired sink is legacy (none in prod) — remove first so no
 	# public route resolves to a dropped doctype.
 	for wf in frappe.get_all("Web Form", filters={"doc_type": _DOCTYPE}, pluck="name"):
-		frappe.delete_doc("Web Form", wf, force=True, ignore_permissions=True)
+		frappe.delete_doc("Web Form", wf, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	if frappe.db.exists("DocType", _DOCTYPE):
-		frappe.delete_doc("DocType", _DOCTYPE, force=True, ignore_permissions=True)
+		frappe.delete_doc("DocType", _DOCTYPE, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	# force delete removes the DocType row but LEAVES the tab table orphaned — drop it explicitly.
 	# Constant identifier, no interpolation of any value. Idempotent (IF EXISTS).
 	frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{_DOCTYPE}`")  # sqli-ok: constant doctype name

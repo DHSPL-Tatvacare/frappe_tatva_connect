@@ -228,7 +228,7 @@ def _insert_inbound_row(event: dict, account, lead, wid, media=None, wid_media=N
 		doc.name = name
 		doc.flags.name_set = True
 	doc.flags.tatva_pinned_lead = lead  # restored in before_save (see pin_inbound_reference)
-	doc.insert(ignore_permissions=True)
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + phone+account attribution
 
 
 def _ingest_outbound(event: dict, account):
@@ -313,7 +313,7 @@ def _insert_outbound_row(event: dict, account, lead, wid, media=None, wid_media=
 	doc.name = name
 	doc.flags.name_set = True
 	doc.flags.tatva_ingested = True  # mirror of an existing WATI message — controller must not re-send
-	doc.insert(ignore_permissions=True)
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + phone+account attribution
 
 
 def _update_status(event: dict):

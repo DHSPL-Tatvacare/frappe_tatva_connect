@@ -102,7 +102,7 @@ def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, 
 		doc.reference_doctype = ref_doctype
 		doc.reference_docname = ref_name
 		doc.link_with_reference_doc(ref_doctype, ref_name)
-	doc.insert(ignore_permissions=True)
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated before the write
 	frappe.db.commit()
 	return doc
 

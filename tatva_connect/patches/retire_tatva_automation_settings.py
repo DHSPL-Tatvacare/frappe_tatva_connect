@@ -15,7 +15,7 @@ def execute():
 			new = frappe.db.get_value("Singles", {"doctype": _NEW, "field": field}, "value", order_by=None)
 			if new in (None, ""):  # don't overwrite an already-set WATI cap
 				frappe.db.set_single_value(_NEW, field, old)
-		frappe.delete_doc("DocType", _OLD, ignore_permissions=True, force=True)
+		frappe.delete_doc("DocType", _OLD, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	# Drop any lingering Singles rows (covers a prior partial run where the DocType was already gone).
 	frappe.db.delete("Singles", {"doctype": _OLD})
 	frappe.db.commit()

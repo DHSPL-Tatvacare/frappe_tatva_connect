@@ -38,7 +38,7 @@ def _stored_optins(user) -> dict:
 		"CRM Notification Subscription",
 		filters={"parenttype": PREFERENCE, "parent": name, "parentfield": "subscriptions"},
 		fields=["grain_key", "enabled"],
-		ignore_permissions=True,
+		ignore_permissions=True,  # authz-ok: tier-c — self-scoped: the write target is pinned to session.user
 	)
 	return {r.grain_key: bool(r.enabled) for r in rows}
 
@@ -91,7 +91,7 @@ def save_my_notification_prefs(prefs):
 	for grain_key, enabled in final.items():
 		if grain_key in known:  # drop rows for retired grains
 			doc.append("subscriptions", {"grain_key": grain_key, "channel": "live", "enabled": int(enabled)})
-	doc.save(ignore_permissions=True)  # authz-ok: self-scoped — doc.user pinned to session.user; writes only the caller's own prefs row
+	doc.save(ignore_permissions=True)  # authz-ok: tier-c — self-scoped: doc.user pinned to session.user; writes only the caller's own prefs row
 	return {"ok": True}
 
 
@@ -111,7 +111,7 @@ def register_token(fcm_token, device_label=None):
 		doc.user = user
 		doc.device_label = device_label or doc.device_label
 		doc.last_seen = now_datetime()
-		doc.save(ignore_permissions=True)  # authz-ok: self-scoped — user pinned to session.user; writes only the caller's own device row
+		doc.save(ignore_permissions=True)  # authz-ok: tier-c — self-scoped: user pinned to session.user; writes only the caller's own device row
 	else:
 		frappe.get_doc(
 			{
@@ -121,7 +121,7 @@ def register_token(fcm_token, device_label=None):
 				"device_label": device_label,
 				"last_seen": now_datetime(),
 			}
-		).insert(ignore_permissions=True)  # authz-ok: self-scoped — user pinned to session.user; creates only the caller's own device row
+		).insert(ignore_permissions=True)  # authz-ok: tier-c — self-scoped: user pinned to session.user; creates only the caller's own device row
 	return {"ok": True}
 
 
@@ -131,7 +131,7 @@ def unregister_token(fcm_token):
 	session user so a crafted token can only ever delete the caller's OWN device row."""
 	name = frappe.db.get_value(SUBSCRIPTION, {"fcm_token": fcm_token, "user": frappe.session.user}, "name")
 	if name:
-		frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)  # authz-ok: self-scoped — name resolved with {user: session.user}, deletes only the caller's own device row
+		frappe.delete_doc(SUBSCRIPTION, name, ignore_permissions=True, force=True)  # authz-ok: tier-c — self-scoped: name resolved with {user: session.user}, deletes only the caller's own device row
 	return {"ok": True}
 
 

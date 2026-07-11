@@ -79,7 +79,7 @@ def seed():
 		if doc.is_new():
 			doc.name = name
 		doc.update({"dt": dt, "view": view, "enabled": 1, "script": js})
-		doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 	for name in RETIRED:
 		if frappe.db.exists("CRM Form Script", name):
 			frappe.db.set_value("CRM Form Script", name, "enabled", 0)

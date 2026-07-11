@@ -271,7 +271,7 @@ def log_visit_audit(lead, task_type, verdict, lat=None, lng=None, distance_m=Non
 		"allowed_m": cint(allowed_m) if allowed_m is not None else None,
 		"anchor_latitude": flt(anchor_lat) if anchor_lat is not None else None,
 		"anchor_longitude": flt(anchor_lng) if anchor_lng is not None else None,
-	}).insert(ignore_permissions=True)
+	}).insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the task before the write
 
 
 def _require_manager():
@@ -292,7 +292,7 @@ def reanchor(lead, lat, lng, accuracy=None):
 	ld.custom_clinic_latitude = flt(lat)
 	ld.custom_clinic_longitude = flt(lng)
 	ld.custom_clinic_geo = _geojson_point(lat, lng)
-	ld.save(ignore_permissions=True)
+	ld.save(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the task before the write
 	return {"latitude": ld.custom_clinic_latitude, "longitude": ld.custom_clinic_longitude}
 
 

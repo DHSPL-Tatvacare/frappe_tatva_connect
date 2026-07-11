@@ -82,7 +82,7 @@ def log_request(response=None, request=None):
 			"status_code": code,
 			"is_error": 1 if code >= 400 else 0,
 			"duration_ms": duration_ms,
-		}).insert(ignore_permissions=True)
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator
 		# Commit the log row explicitly. By the time after_request runs, Frappe has already
 		# committed (success) or rolled back (error) the handler's own transaction, so the
 		# only pending write here is this log row — and the framework won't commit again
@@ -100,7 +100,7 @@ def apply_logging(enabled):
 	row = next((r for r in settings.logs_to_clear if r.ref_doctype == _RAW_LOG), None)
 	if enabled and not row:
 		settings.append("logs_to_clear", {"ref_doctype": _RAW_LOG, "days": _RETENTION_DAYS})
-		settings.save(ignore_permissions=True)
+		settings.save(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator
 	elif not enabled and row:
 		settings.remove(row)
-		settings.save(ignore_permissions=True)
+		settings.save(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator

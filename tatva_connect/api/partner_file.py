@@ -263,7 +263,7 @@ def _delete_one(name, mp, is_sysmgr):
 	"""Delete one file by `name`, scope-checked. The on_trash hook drops the Azure blob
 	(last reference)."""
 	doc = _scoped_file(name, mp, is_sysmgr)
-	frappe.delete_doc("File", doc.name, ignore_permissions=True)
+	frappe.delete_doc("File", doc.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
 
 
 def _read_one(name, mp, is_sysmgr):

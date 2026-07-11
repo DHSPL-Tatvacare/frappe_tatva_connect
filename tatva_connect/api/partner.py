@@ -507,7 +507,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	sp = f"lead_insert_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(sp)
 	try:
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 		frappe.db.rollback(save_point=sp)
 		winner = frappe.db.get_value("CRM Lead", anchor, "name")
@@ -529,7 +529,7 @@ def _merge_onto(name, parent, children, mp, program, open_program, item):
 		_force_routing(doc, mp)
 	if open_program and program:
 		doc.custom_current_program = program
-	doc.save(ignore_permissions=True)
+	doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
 	_stamp_label(doc, item)
 	return doc, "updated"
 
@@ -577,7 +577,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 		_force_routing(doc, mp)
 	if open_program and program:
 		doc.custom_current_program = program
-	doc.save(ignore_permissions=True)
+	doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
 	_stamp_label(doc, item)
 	return doc, "updated"
 
@@ -593,7 +593,7 @@ def _delete_one(name, mp):
 	doc = frappe.get_doc("CRM Lead", name)
 	if mp and (doc.custom_vertical != mp.vertical or doc.custom_group != mp.crm_group):
 		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
-	frappe.delete_doc("CRM Lead", name, ignore_permissions=True)
+	frappe.delete_doc("CRM Lead", name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
 
 
 # -- singular endpoints ------------------------------------------------------

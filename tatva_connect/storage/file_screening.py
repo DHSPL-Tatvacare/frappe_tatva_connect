@@ -192,7 +192,7 @@ def _log_scan(*, channel, source, verdict, signature, blocked, file_name, size,
 def _write_scan_log(**fields):
 	"""Worker: persist one CRM File Scan Log row in its own frappe-managed job transaction —
 	commits on success, rolls back on error, so a failed log is a missing row, never a partial one."""
-	frappe.get_doc(dict(doctype=_SCAN_LOG, **fields)).insert(ignore_permissions=True)
+	frappe.get_doc(dict(doctype=_SCAN_LOG, **fields)).insert(ignore_permissions=True)  # authz-ok: tier-a — scan-log row (background worker) / operator activator
 
 
 def apply_scan_logging(enabled):
@@ -202,7 +202,7 @@ def apply_scan_logging(enabled):
 	row = next((r for r in settings.logs_to_clear if r.ref_doctype == _SCAN_LOG), None)
 	if enabled and not row:
 		settings.append("logs_to_clear", {"ref_doctype": _SCAN_LOG, "days": _RETENTION_DAYS})
-		settings.save(ignore_permissions=True)
+		settings.save(ignore_permissions=True)  # authz-ok: tier-a — scan-log row (background worker) / operator activator
 	elif not enabled and row:
 		settings.remove(row)
-		settings.save(ignore_permissions=True)
+		settings.save(ignore_permissions=True)  # authz-ok: tier-a — scan-log row (background worker) / operator activator

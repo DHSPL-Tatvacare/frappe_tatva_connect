@@ -94,7 +94,7 @@ def _ensure_new_modules():
 			md = frappe.new_doc("Module Def")
 			md.module_name = module
 			md.app_name = "tatva_connect"
-			md.insert(ignore_permissions=True)
+			md.insert(ignore_permissions=True)  # authz-ok: tier-a — schema setup, runs at migrate
 			frappe.db.commit()
 			scrubbed = frappe.scrub(module)
 			dt_dir = os.path.join(app_path, scrubbed, "doctype")
@@ -133,7 +133,7 @@ def _ensure_field_map_role():
 			role = frappe.new_doc("Role")
 			role.role_name = "Field Map User"
 			role.desk_access = 0  # SPA-only role; no Desk surface
-			role.save(ignore_permissions=True)
+			role.save(ignore_permissions=True)  # authz-ok: tier-a — schema setup, runs at migrate
 			frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()

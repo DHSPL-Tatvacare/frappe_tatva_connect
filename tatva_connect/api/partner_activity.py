@@ -190,7 +190,7 @@ def _update_one(name, item, mp, is_sysmgr):
 def _delete_one(name, mp, is_sysmgr):
 	"""Delete one activity by CRM Task name, scope-checked (generic not-found)."""
 	row = _scoped_task(name, mp, is_sysmgr)
-	frappe.delete_doc("CRM Task", row.name, ignore_permissions=True)
+	frappe.delete_doc("CRM Task", row.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
 
 
 def _read_one(name, mp, is_sysmgr):

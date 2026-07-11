@@ -23,5 +23,5 @@ def execute():
 			continue
 		frappe.get_doc(
 			{"doctype": "CRM Side Effect Option", "option_name": option_name}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 	frappe.db.commit()

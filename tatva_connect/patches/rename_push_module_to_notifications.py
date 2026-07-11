@@ -18,4 +18,4 @@ def execute():
 		if frappe.db.exists("DocType", dt):
 			frappe.db.set_value("DocType", dt, "module", NEW)
 	if frappe.db.exists("Module Def", OLD) and not frappe.db.count("DocType", {"module": OLD}):
-		frappe.delete_doc("Module Def", OLD, force=True, ignore_permissions=True)
+		frappe.delete_doc("Module Def", OLD, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate

@@ -205,7 +205,7 @@ def _create_one(data, mp, is_sysmgr):
 	setattr(doc, "from", "")
 	doc.to = ""
 	_apply_fields(doc, data, lead_name)
-	doc.insert(ignore_permissions=True)
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save
 
 	stamp_external_id("CRM Call Log", doc.name, data.get("external_id"))
 	# Backdate creation from started_at (historical load), mirroring the activity API.
@@ -225,7 +225,7 @@ def _update_one(name, data, mp, is_sysmgr):
 	# lead/mobile_no leaves the existing link alone (it never silently re-attributes by phone).
 	lead_name = resolve_lead(mp, is_sysmgr, data) if (data.get("lead") or data.get("mobile_no")) else None
 	_apply_fields(doc, data, lead_name)
-	doc.save(ignore_permissions=True)
+	doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save
 	if data.get("external_id") is not None:
 		stamp_external_id("CRM Call Log", doc.name, data.get("external_id"))
 	return _call_view(frappe.get_doc("CRM Call Log", doc.name)), ACTION_UPDATED
@@ -234,7 +234,7 @@ def _update_one(name, data, mp, is_sysmgr):
 def _delete_one(name, mp, is_sysmgr):
 	"""Delete one call by `name`, scope-checked (generic not-found)."""
 	doc = _scoped_call(name, mp, is_sysmgr)
-	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)
+	frappe.delete_doc("CRM Call Log", doc.name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save
 
 
 def _read_one(name, mp, is_sysmgr):

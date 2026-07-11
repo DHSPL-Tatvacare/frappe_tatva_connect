@@ -146,7 +146,7 @@ def _process(payload: dict, direction: str, completed: bool, account_name=None):
 		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
 			doc.custom_telephony_account = account_name
-		doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 	else:
 		doc = frappe.new_doc("CRM Call Log")
 		doc.id = call_id
@@ -155,7 +155,7 @@ def _process(payload: dict, direction: str, completed: bool, account_name=None):
 		_apply(doc, payload, status=status, call_type=call_type, customer_number=customer_number, account_name=account_name)
 		if account_name:
 			doc.custom_telephony_account = account_name
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 
 	frappe.db.commit()
 

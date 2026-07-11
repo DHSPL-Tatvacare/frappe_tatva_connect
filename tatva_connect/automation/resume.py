@@ -47,7 +47,7 @@ def park(rule, rule_version, subject, resume_at, cursor, context, parked_at):
 		"resume_at": resume_at,
 		"context_json": frappe.as_json(context),
 		"status": "Pending",
-	}).insert(ignore_permissions=True)
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — automation engine, scheduler/queue context
 
 
 def sweep_resume():

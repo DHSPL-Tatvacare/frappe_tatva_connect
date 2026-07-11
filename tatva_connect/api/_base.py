@@ -606,7 +606,7 @@ def _idempotency_begin(user, key, fn_name):
 		doc.name = name
 		doc.flags.name_set = True
 		doc.update({"idempotency_key": key, "partner": user, "request_fingerprint": fp, "state": "pending"})
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-c — the claim row's `partner` is session.user
 		frappe.db.commit()
 		return "run", name
 	except frappe.DuplicateEntryError:

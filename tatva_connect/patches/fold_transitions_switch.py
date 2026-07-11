@@ -22,7 +22,7 @@ def _carry_switch():
 		doc = frappe.new_doc("CRM Tatva Automation")
 		doc.automation_key = UNIFIED
 		doc.enabled = enabled
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 
 
 def _drop_legacy_table():

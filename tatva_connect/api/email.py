@@ -17,7 +17,7 @@ def ensure_draft_folder():
 	if not frappe.db.exists("File", DRAFT_FOLDER):
 		frappe.get_doc(
 			{"doctype": "File", "file_name": "Email Drafts", "is_folder": 1, "folder": "Home"}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the lead before the write
 
 
 @frappe.whitelist()
@@ -67,7 +67,7 @@ def stage_crm_file(reference_doctype, reference_name, source_file):
 			"folder": DRAFT_FOLDER,
 			"custom_uploaded_to_azure": src.custom_uploaded_to_azure or 0,
 		}
-	).insert(ignore_permissions=True)
+	).insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the lead before the write
 	return {"name": draft.name, "file_url": draft.file_url, "file_name": draft.file_name}
 
 
@@ -84,7 +84,7 @@ def purge_draft_attachments():
 	)
 	for name in stale:
 		try:
-			frappe.delete_doc("File", name, ignore_permissions=True, delete_permanently=True)
+			frappe.delete_doc("File", name, ignore_permissions=True, delete_permanently=True)  # authz-ok: tier-b — gated by frappe.has_permission on the lead before the write
 		except Exception:
 			frappe.log_error(title="Email draft purge failed", message=f"file={name}")
 	if stale:

@@ -36,21 +36,21 @@ def sync_catalog():
 			for field, value in _structural_values(auto).items():
 				doc.set(field, value)
 			# NEVER touch `enabled` — config is the operator's, code only refreshes labels.
-			doc.save(ignore_permissions=True)
+			doc.save(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 		else:
 			doc = frappe.new_doc("CRM Tatva Automation")
 			doc.automation_key = auto.key
 			for field, value in _structural_values(auto).items():
 				doc.set(field, value)
 			doc.enabled = 0  # ships dormant (invariant 6); operator enables, it stays.
-			doc.insert(ignore_permissions=True)
+			doc.insert(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 
 	# Prune rows whose key left the registry (a retired automation). The catalog is the
 	# source of truth; an unreferenced row is a dead toggle — deleting it changes nothing.
 	live = {auto.key for auto in AUTOMATIONS}
 	for name in frappe.get_all("CRM Tatva Automation", pluck="name"):
 		if name not in live:
-			frappe.delete_doc("CRM Tatva Automation", name, ignore_permissions=True, force=True)
+			frappe.delete_doc("CRM Tatva Automation", name, ignore_permissions=True, force=True)  # authz-ok: tier-a — seed, runs at migrate
 
 
 def reconcile_activations():

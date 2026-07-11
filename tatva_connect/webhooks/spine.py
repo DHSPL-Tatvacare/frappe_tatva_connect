@@ -92,7 +92,7 @@ def _persist_raw(service, event, payload, account):
 				"status": "Queued",
 				"data": frappe.as_json(payload),
 			}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated before the write
 		frappe.db.commit()
 		return doc.name
 	except Exception:

@@ -172,7 +172,7 @@ def _ensure_doctype(cfg) -> str:
 				],
 			}
 		)
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 		return dt
 
 	# Re-sync: append any field the contract added since the last sync. Additive only.
@@ -182,7 +182,7 @@ def _ensure_doctype(cfg) -> str:
 		doc = frappe.get_doc("DocType", dt)
 		for f in missing:
 			doc.append("fields", f)
-		doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 	return dt
 
 
@@ -296,11 +296,11 @@ def _ensure_web_form(cfg, dt: str) -> str:
 	if existing:
 		wf = frappe.get_doc("Web Form", existing)
 		wf.update(values)
-		wf.save(ignore_permissions=True)
+		wf.save(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 		return wf.name
 
 	wf = frappe.get_doc(dict(doctype="Web Form", **values))
-	wf.insert(ignore_permissions=True)
+	wf.insert(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 	return wf.name
 
 

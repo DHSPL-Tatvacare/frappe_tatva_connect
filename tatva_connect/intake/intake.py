@@ -162,7 +162,7 @@ def _fold_submission_to_lead(doc, cfg):
 				"reference_doctype": "CRM Lead",
 				"reference_docname": doc_lead.name,
 			}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)  # authz-ok: tier-b — guest submit: routing is FORCED from the form, never the submitter
 
 	_attach_files(doc, doc_lead.name)
 
@@ -261,7 +261,7 @@ def _ensure_master(doctype, display_field, value):
 	# Governed growth (Phase 3): flag form-born rows for ops review/merge.
 	if frappe.get_meta(doctype).has_field("review_pending"):
 		d.set("review_pending", 1)
-	d.insert(ignore_permissions=True)
+	d.insert(ignore_permissions=True)  # authz-ok: tier-b — guest submit: routing is FORCED from the form, never the submitter
 	return d.get(display_field)
 
 

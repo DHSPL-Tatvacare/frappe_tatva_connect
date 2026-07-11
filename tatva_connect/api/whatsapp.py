@@ -307,7 +307,7 @@ def send_template_with_params(reference_doctype, reference_name, template, to, b
 			"body_param": body_param or None,
 		}
 	)
-	doc.insert(ignore_permissions=True)
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the lead before the write
 	return doc.name
 
 

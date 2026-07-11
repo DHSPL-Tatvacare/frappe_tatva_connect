@@ -30,7 +30,7 @@ def seed():
 	base = frappe.get_app_path("tatva_connect")
 	for name in _RETIRED:
 		if frappe.db.exists("Client Script", name):
-			frappe.delete_doc("Client Script", name, ignore_permissions=True)
+			frappe.delete_doc("Client Script", name, ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 	for name, dt, view, rel in SCRIPTS:
 		path = os.path.join(base, rel)
 		if not os.path.exists(path):
@@ -42,5 +42,5 @@ def seed():
 		if doc.is_new():
 			doc.name = name
 		doc.update({"dt": dt, "view": view, "enabled": 1, "script": js})
-		doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)  # authz-ok: tier-a — seed, runs at migrate
 	frappe.db.commit()

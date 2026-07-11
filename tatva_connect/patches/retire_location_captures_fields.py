@@ -10,4 +10,4 @@ _STALE = (
 def execute():
 	for name in _STALE:
 		if frappe.db.exists("Custom Field", name):
-			frappe.delete_doc("Custom Field", name, ignore_permissions=True, force=True)
+			frappe.delete_doc("Custom Field", name, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate

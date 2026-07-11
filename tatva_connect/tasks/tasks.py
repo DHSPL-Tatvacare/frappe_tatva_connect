@@ -224,7 +224,7 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 			"custom_automated": 1,
 		}
 	)
-	task.insert(ignore_permissions=True)
+	task.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the task before the write
 	return task.name
 
 
