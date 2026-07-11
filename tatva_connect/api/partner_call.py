@@ -7,7 +7,7 @@ envelope, error codes, rate limit, `_run_bulk` / `_bulk_read` partial-success en
 list envelope.
 
 Calls land in frappe/crm's native `CRM Call Log` — the SAME doctype the Acefone webhook adapter writes
-(`tatva_connect.telephony.adapter`). No parallel call store.
+(`tatva_connect.telephony.adapters.acefone`). No parallel call store.
 
 IDENTITY. A call is addressed by `name`, the CRM Call Log primary key, returned when it was created.
 That is the only address. `external_id` is the caller's own label (stored in `custom_external_id`):

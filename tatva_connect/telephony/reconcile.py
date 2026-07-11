@@ -10,11 +10,11 @@ window and:
   * (optionally) recovers calls that have no row at all (a missed webhook),
 
 by mapping each report row into the SAME payload shape the webhook adapter reads
-and feeding it through the idempotent `adapter._process` — so all the
+and feeding it through the idempotent `adapter.process` — so all the
 lead-linking / status / recording logic lives in one place.
 
 NOTE — deliberate adapter-entry asymmetry: this PULL path enters at the adapter's
-low-level `_process` (not the spine front door), because there is no live request,
+`process` entry (not the spine front door), because there is no live request,
 token or raw-log to replay — the Call Report API IS the trusted source. The webhook
 PUSH path enters via the spine. Don't "unify" these into one entry point; the
 asymmetry is by design.
@@ -27,7 +27,7 @@ that matches a webhook row to a report row must be pinned from a live capture
 import frappe
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
-from tatva_connect.telephony import adapter
+from tatva_connect.telephony.adapters import acefone as adapter
 from tatva_connect.telephony import api as acefone
 
 # How far on either side of a report's timestamp we accept a number-match to an
@@ -54,25 +54,31 @@ def _report_call_key(row: dict):
 
 
 def _report_to_payload(row: dict, direction: str) -> dict:
-	"""Map a Call Report row into the webhook payload keys `adapter._process` reads."""
+	"""Map a Call Report row into Acefone's own WEBHOOK key vocabulary.
+
+	Deliberately emits the provider's raw keys and lets `adapters.acefone.normalize` do the
+	direction logic, rather than pre-computing customer/DID here. One brain: the pull and the
+	push can never drift apart on which number is the customer.
+
+	The report carries no agent EMAIL — only a number — and the email is the only agent
+	identifier that resolves (see the adapter). So a reconciled row is unattributed by design;
+	the live webhook is what puts a rep's name on a call.
+	"""
 	src = row.get("source") or row.get("caller_id_number")
 	dst = row.get("destination") or row.get("call_to_number") or row.get("dest_num")
-	# Inbound: customer is the caller (source) -> our DID (destination).
-	# Outbound: our DID/caller is source -> customer is the destination.
-	customer = src if direction == "inbound" else dst
-	did = dst if direction == "inbound" else src
 	return {
 		"call_id": _report_call_key(row),
-		"customer_number": customer,
-		"did_number": did,
+		"direction": direction,
+		"caller_id_number": src,
 		"call_to_number": dst,
+		# Which leg is our DID flips with direction; `account_for_payload` reads this key.
+		"did_number": dst if direction == "inbound" else src,
 		"recording_url": row.get("recording_file_link") or row.get("recording_url"),
 		"call_status": row.get("status") or row.get("call_status"),
 		"hangup_cause": row.get("hangup_cause"),
 		"duration": row.get("duration") or row.get("call_duration") or row.get("total_call_duration"),
 		"start_stamp": row.get("connection_time") or row.get("start_stamp"),
 		"end_stamp": row.get("date") or row.get("end_stamp"),
-		"answered_agent_number": row.get("answered_agent_number") or row.get("call_answered_by"),
 	}
 
 
@@ -159,20 +165,29 @@ def reconcile_window(from_date=None, to_date=None, dry_run=True, create_missing=
 def _reconcile_one(row, dry_run, create_missing, summary):
 	direction = _norm_direction(row.get("call_hint") or row.get("call_type"))
 	payload = _report_to_payload(row, direction)
+
+	# Normalize once, through the SAME adapter the webhook uses, and read the customer number
+	# off the envelope rather than re-deriving it here — that re-derivation is exactly how a
+	# pull path drifts out of step with the push path.
+	cdr = adapter.normalize(payload)
+	if cdr is None:
+		summary["skipped_no_row"] += 1
+		return
+
 	when = payload.get("end_stamp") or payload.get("start_stamp")
-	existing = _existing_row(payload["call_id"], payload["customer_number"], when)
+	existing = _existing_row(cdr["call_key"], cdr["customer_number"], when)
 
 	if existing:
 		has_rec = bool(frappe.db.get_value("CRM Call Log", existing, "recording_url"))
-		if payload["recording_url"] and not has_rec:
+		if cdr["recording_url"] and not has_rec:
 			summary["recording_backfilled"] += 1
 			if not dry_run:
-				adapter._process(payload, direction=direction, completed=True)
+				adapter.process(payload)
 		return
 	if create_missing:
 		summary["created"] += 1
 		if not dry_run:
-			adapter._process(payload, direction=direction, completed=True)
+			adapter.process(payload)
 	else:
 		summary["skipped_no_row"] += 1
 

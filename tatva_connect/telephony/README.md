@@ -61,7 +61,7 @@ tatva_connect/telephony/doctype/
 
 Native `CRM Call Log` gains a Custom Field `custom_telephony_account` (which account handled the call) and an "Acefone" option on `telephony_medium` (Property Setter). `CRM Telephony Agent` gains `acefone_number` (the agent's originating line).
 
-## Vendor API (Acefone) — what we use
+## Provider API (Acefone) — what we use
 - Base `https://api.acefone.in/v1/`, auth **Bearer** (token from dashboard → API Connect → API Tokens; ask for a long-life token).
 - `POST /v1/click_to_call` — `{agent_number, destination_number, async:"1", caller_id?, custom_identifier?}` → `{success, message}` (no sync call id).
 - **Webhooks** (API Connect → Webhook), one per trigger (answered / hangup, inbound / outbound). CDR fields we read (confirmed via the OneHash integration): `uuid`, `call_id`, `customer_number`, `did_number`, `direction`, `call_status`, `recording_url`, `duration`, `start_stamp`/`answer_stamp`/`end_stamp`, `answered_agent_number`, `hangup_cause`, `custom_identifier`.

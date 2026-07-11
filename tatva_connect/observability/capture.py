@@ -23,7 +23,7 @@ from frappe.utils import now_datetime
 from tatva_connect import automation
 from tatva_connect.api._base import _PARTNER_PATH
 from tatva_connect.telephony import handler as _telephony_handler
-from tatva_connect.telephony.adapter import TELEPHONY_MEDIUM
+from tatva_connect.telephony.adapters.acefone import TELEPHONY_MEDIUM
 from tatva_connect.whatsapp import webhook as _whatsapp_webhook
 
 _LOGGING_KEY = "Observability::Requests::logging"

@@ -42,7 +42,7 @@ _ERROR_LOG_TABLE = "tabError Log"
 # Error Log, which has NO grain field at all; fabricating one would violate A.13/A.16, so every
 # Error Log row lands in the single shared `NO_GRAIN` bucket instead, classified by title prefix
 # (kept in sync with this app's actual `frappe.log_error(title=...)` call sites — see
-# `telephony/adapter.py`, `telephony/reconcile.py`, `api/telephony.py`, `api/_base.py`). Anything
+# `telephony/adapters/acefone.py`, `telephony/reconcile.py`, `api/telephony.py`, `api/_base.py`). Anything
 # that matches neither prefix tuple falls into the generic `error` column.
 LOG_SOURCES = ("automation", "partner", "telephony", "error")
 _TELEPHONY_TITLE_PREFIXES = ("telephony:", "Acefone")

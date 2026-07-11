@@ -27,7 +27,7 @@ PROVIDERS = {
 		"build_urls": lambda host, doc, token: [f"{host}/webhooks/whatsapp/wati/{token}"],
 	},
 	"Acefone": {
-		"adapter": "tatva_connect.telephony.adapter",
+		"adapter": "tatva_connect.telephony.adapters.acefone",
 		"account_doctype": "CRM Telephony Account",
 		"token_field": "webhook_token",
 		"build_urls": lambda host, doc, token: [

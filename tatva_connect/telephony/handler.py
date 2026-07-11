@@ -7,8 +7,8 @@ to frappe/crm's NATIVE `CRM Call Log` so calls render in the lead's Calls tab
 with zero extra glue. Two seams:
 
   * Inbound/outbound CDR webhooks  -> the shared webhook spine, which raw-logs,
-    fast-ACKs and enqueues; the per-vendor parse + idempotent CRM Call Log moves
-    live in `tatva_connect.telephony.adapter`.
+    fast-ACKs and enqueues; the per-provider parse + idempotent CRM Call Log moves
+    live in `tatva_connect.telephony.adapters.acefone`.
   * make_acefone_call(...)         -> create an Initiated Outgoing row, fire
     click-to-call carrying the row name as custom_identifier for correlation.
 
@@ -33,12 +33,13 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from tatva_connect.telephony import adapter, routing
+from tatva_connect.telephony import routing
+from tatva_connect.telephony.adapters import acefone as adapter
 from tatva_connect.telephony import api as acefone
 from tatva_connect.webhooks import spine
 
 # TATVA L2: removed the TELEPHONY_MEDIUM / _process re-export shims (Invariant 14).
-# reconcile.py + observability/capture.py now import these from telephony.adapter directly.
+# reconcile.py + observability/capture.py import these from telephony.adapters.acefone directly.
 
 
 # ---------------------------------------------------------------------------
