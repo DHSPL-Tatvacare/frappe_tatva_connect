@@ -48,7 +48,6 @@ from tatva_connect.api._base import (
 	_api,
 	_bulk_read,
 	_list_ok,
-	_meter_volume,
 	_norm_phone,
 	_ok,
 	_page,
@@ -581,7 +580,7 @@ def _audit_field(fieldname, label, meta):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def lead_schema(**_kwargs):
 	"""Discovery: the fields THIS caller may send/read + their routing mode.
 	Two partners hitting this get different field lists — driven by their grid."""
@@ -702,7 +701,7 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def lead_get(**_kwargs):
 	"""Read one lead by `name` or `mobile_no` (phone is the lead's natural key, so it is a valid
 	address here — no other entity has one). A partner only sees leads on their line, and only
@@ -794,7 +793,7 @@ def lead_delete_bulk(**_kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def lead_get_bulk(**_kwargs):
 	"""Read many leads by `names` OR `mobile_nos` (<= 100). Input-ordered; out-of-scope/unknown ids
 	are reported not_found in place."""
@@ -811,7 +810,7 @@ def lead_get_bulk(**_kwargs):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def lead_list(**_kwargs):
 	"""List leads on the caller's line, filtered + paginated. Curated fields only, no
 	children (use lead_get for the full record). Filters: status, created/updated date
@@ -830,10 +829,6 @@ def lead_list(**_kwargs):
 		filters.append(["mobile_no", "=", _norm_phone(data.get("mobile_no"))])
 
 	limit, offset = _page(data)
-	# The page's rows ARE the read volume — charged here so a list drains the read budget exactly
-	# like N single gets. @_api(bulk=True) already charged the 1-call rate cost.
-	if _meter_volume(limit, "read"):
-		return
 
 	# SELECT only real CRM Lead columns: a catalog fieldname that is a Smart-View-only alias (no column)
 	# would otherwise break the SQL. lead_schema/_curate already filter defensively via meta.get_field.

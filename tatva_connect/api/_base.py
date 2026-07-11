@@ -447,14 +447,6 @@ def _throttle_response(check, mapping, reason=None):
 	)
 
 
-def _direction():
-	"""Single-endpoint volume direction: read on a GET, write otherwise. (Bulk endpoints pass
-	their own direction explicitly — lead_get_bulk is a READ over POST, so method is unreliable there.)"""
-	req = _request()
-	method = ((req.method if req is not None else "GET") or "GET").upper()
-	return "read" if method == "GET" else "write"
-
-
 def _meter_volume(rows, direction):
 	"""Charge `rows` against the volume buckets (only when the enforcement switch is ON). Returns a
 	429 `_fail` response if the daily budget is exhausted, else None. Exempt callers pass. Bulk
@@ -523,13 +515,6 @@ def _idem_key():
 	req = _request()
 	hdr = req.headers.get(_IDEM_HEADER) if req is not None else None
 	return (hdr or frappe.form_dict.get("idempotency_key") or "").strip()
-
-
-def _is_write():
-	"""Writes carry idempotency; GETs are already idempotent."""
-	req = _request()
-	m = ((req.method if req is not None else "GET") or "GET").upper()
-	return m in ("POST", "PUT", "DELETE")
 
 
 def _idem_name(user, key):
@@ -612,21 +597,29 @@ def purge_idempotency_keys():
 	frappe.db.commit()
 
 
-def _api(fn=None, *, bulk=False):
-	"""Wrap an endpoint: enforce the rate + volume limits (when the switch is ON), run it, and
-	emit the unified contract on any failure (never a traceback). RATE = 1 call per request.
-	VOLUME = 1 row for a single endpoint (read on GET, write otherwise); a bulk endpoint
-	(`@_api(bulk=True)`) charges its own row count via _run_bulk (writes) or _meter_volume (reads).
+def _api(fn=None, *, bulk=False, read=False):
+	"""Wrap an endpoint: run the ONE preamble, run it, and emit the unified contract on any failure.
+
+	The lane is DECLARED here and never inferred from the request:
+	  `read=True` — this endpoint READS. It charges read volume and never claims an idempotency key
+	                (a read is already idempotent). Declared, not sniffed from the HTTP verb: the four
+	                `*_get_bulk` are reads over POST, so the verb lies — and outside an HTTP context
+	                (a test, a job, the scheduler) there is no verb to sniff at all.
+	  `bulk=True` — the endpoint charges its OWN row count (via _run_bulk / _bulk_read / _list_ok);
+	                the wrapper's 1-row charge is skipped.
+	`test_the_declared_lane_matches_the_http_verb` locks these declarations against the whitelist.
+
+	Volume: 1 row for a single endpoint; a bulk endpoint charges its true count. Rate: 1 call.
 	Sysmgr/no-mapping callers are exempt. The endpoint writes its body via _ok() and returns None."""
 	if fn is None:
-		return functools.partial(_api, bulk=bulk)
+		return functools.partial(_api, bulk=bulk, read=read)
 
 	@functools.wraps(fn)
 	def wrapper(*args, **kwargs):
 		idem = None
 		try:
 			key = _idem_key()
-			if key and _is_write():
+			if key and not read:  # a read is already idempotent; it never claims a key
 				action, idem = _idempotency_begin(frappe.session.user, key, fn.__name__)
 				if action != "run":
 					return  # replay / conflict response already set
@@ -642,7 +635,7 @@ def _api(fn=None, *, bulk=False):
 					return
 				remaining = rate[1] if rate else None
 				if not bulk:
-					denied = _meter_volume(1, _direction())
+					denied = _meter_volume(1, "read" if read else "write")
 					if denied:
 						if idem:
 							_idempotency_release(idem)
@@ -654,6 +647,13 @@ def _api(fn=None, *, bulk=False):
 				_idempotency_store(idem)
 			return result
 		except Exception as e:
+			# ROLL BACK FIRST. Swallowing the exception ends the request "normally", so Frappe's
+			# sync_database() would otherwise COMMIT whatever the failed endpoint already wrote —
+			# an insert that then failed validation would be told "400, nothing created" while the
+			# row survives. The bulk lane has always had per-record savepoints; this gives the
+			# singular lane the same all-or-nothing guarantee. The idempotency claim is committed on
+			# its own connection state by _idempotency_begin, so the release below still lands.
+			frappe.db.rollback()
 			code, http, message, fields = _classify(e, fn.__name__)
 			if fields:
 				_fail(code, message, http, fields=fields)
@@ -661,6 +661,8 @@ def _api(fn=None, *, bulk=False):
 				_fail(code, message, http)
 			if idem:
 				_idempotency_release(idem)
+
+	wrapper._partner_lane = {"bulk": bulk, "read": read}  # introspected by the drift lock in tests/api
 	return wrapper
 
 
@@ -728,7 +730,14 @@ def _bulk_read(names, load):
 
 def _list_ok(collection, rows, total, offset, limit):
 	"""The ONE list envelope every entity emits: {total, count, offset, limit, has_more, <collection>}.
-	`collection` is the entity's plural key (leads / activities / files / calls)."""
+	`collection` is the entity's plural key (leads / activities / files / calls).
+
+	This is ALSO where a list charges its read volume — the TRUE row count, not the requested page
+	size, so an over-wide `limit` or a page past the end costs what it actually returned. Metering
+	here (rather than at each call site) is why a list endpoint cannot be added that forgets to meter:
+	there is no way to emit a list body except through this function."""
+	if _meter_volume(len(rows), "read"):
+		return
 	_ok(action=ACTION_FETCHED, data={
 		"total": total, "count": len(rows), "offset": offset, "limit": limit,
 		"has_more": (offset + len(rows)) < total, collection: rows,

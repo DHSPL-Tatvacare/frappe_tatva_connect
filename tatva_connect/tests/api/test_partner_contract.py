@@ -19,16 +19,18 @@ adversarial coverage under tatva_connect/tests/authz (A13), which is the differe
 framework and stays the one place scoping is proven. This module pins the CONTRACT, not the gate.
 """
 import unittest
+from unittest.mock import patch
 
 import frappe
 
-from tatva_connect.api import partner, partner_activity, partner_call
+from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
 	EXTERNAL_ID_FIELD,
+	_api,
 	_bulk_read,
 	_list_ok,
 	_run_bulk,
@@ -54,7 +56,10 @@ class TestPartnerContract(unittest.TestCase):
 
 	def tearDown(self):
 		frappe.form_dict = self._form
-		frappe.db.rollback(save_point=self.sp)
+		try:
+			frappe.db.rollback(save_point=self.sp)
+		except Exception:
+			frappe.db.rollback()  # a test that asserts the FULL rollback discarded the savepoint; nothing to preserve
 
 	# -- helpers -------------------------------------------------------------
 
@@ -235,6 +240,128 @@ class TestPartnerContract(unittest.TestCase):
 			sorted(created), sorted(fetched),
 			"the create response and the get response must be the same shape",
 		)
+
+	# -- P4: one transaction boundary ---------------------------------------
+
+	def test_a_rejected_write_leaves_nothing_behind(self):
+		"""A throw AFTER a row has landed must roll the row back. Swallowing the exception ends the
+		request normally, so without an explicit rollback Frappe commits the failed write."""
+		probe_id = f"ROLLBACK-PROBE-{frappe.generate_hash(length=8)}"
+
+		@_api
+		def probe(**_kwargs):
+			doc = frappe.new_doc("CRM Call Log")
+			doc.id = probe_id
+			doc.type = "Incoming"
+			doc.status = "Completed"
+			setattr(doc, "from", "")
+			doc.to = ""
+			doc.insert(ignore_permissions=True)
+			frappe.throw("rejected after the row landed")
+
+		frappe.local.response = frappe._dict()
+		probe()
+
+		self.assertEqual(frappe.local.response["status"], "error", "the caller must be told it failed")
+		self.assertFalse(
+			frappe.db.exists("CRM Call Log", probe_id),
+			"a rejected write must leave NOTHING behind -- the caller was told 'nothing was created'",
+		)
+
+	# -- P6: one meter -------------------------------------------------------
+
+	def test_every_list_charges_its_true_row_count(self):
+		"""Every list meters the rows it actually returned, in the read direction. The charge lives in
+		_list_ok, so a list endpoint cannot be written that forgets it."""
+		lead, _ = self._lead("+919812300091")
+		self._call(lead.name)
+		self._call(lead.name)
+
+		lists = (
+			(partner_call.call_list, {"lead": lead.name}, 2),
+			(partner_file.file_list, {"lead": lead.name}, 0),
+			(partner_activity.activity_list, {"lead": lead.name}, 0),
+		)
+		for endpoint, args, expected_rows in lists:
+			with self.subTest(endpoint=endpoint.__name__):
+				charged = []
+				with patch.object(_base, "_meter_volume",
+				                  side_effect=lambda rows, direction: charged.append((rows, direction))):
+					frappe.local.response = frappe._dict()
+					frappe.form_dict = frappe._dict(args)
+					endpoint()
+				self.assertEqual(
+					charged, [(expected_rows, "read")],
+					f"{endpoint.__name__} must charge its TRUE row count once, in the read direction",
+				)
+
+	def test_a_list_charges_rows_returned_not_the_page_size_requested(self):
+		"""limit=200 over a lead holding 2 calls costs 2 rows, not 200."""
+		lead, _ = self._lead("+919812300092")
+		self._call(lead.name)
+		self._call(lead.name)
+
+		charged = []
+		with patch.object(_base, "_meter_volume",
+		                  side_effect=lambda rows, direction: charged.append((rows, direction))):
+			frappe.local.response = frappe._dict()
+			frappe.form_dict = frappe._dict({"lead": lead.name, "limit": 200})
+			partner_call.call_list()
+
+		self.assertEqual(charged, [(2, "read")], "an over-wide limit must not be billed as rows read")
+
+	# -- P10: the lane is declared, not sniffed ------------------------------
+
+	def test_a_bulk_read_never_claims_an_idempotency_key(self):
+		"""The four *_get_bulk are READS exposed over POST. Sniffing the verb would drop them into the
+		idempotency lane, so an SDK that stamps a key on every POST would replay a stale snapshot."""
+		lead, _ = self._lead("+919812300093")
+		one, _ = self._call(lead.name)
+
+		for endpoint, args, should_claim in (
+			(partner_call.call_get_bulk, {"names": [one["name"]]}, False),
+			(partner_call.call_create, {"lead": lead.name, "direction": "Inbound"}, True),
+		):
+			with self.subTest(endpoint=endpoint.__name__):
+				claimed = []
+				with patch.object(_base, "_idem_key", return_value="SDK-STAMPS-EVERY-POST"), \
+				     patch.object(_base, "_idempotency_begin",
+				                  side_effect=lambda u, k, f: claimed.append(f) or ("run", None)):
+					frappe.local.response = frappe._dict()
+					frappe.form_dict = frappe._dict(args)
+					endpoint()
+				self.assertEqual(
+					bool(claimed), should_claim,
+					f"{endpoint.__name__}: a read must NOT claim an idempotency key; a write MUST",
+				)
+
+	def test_the_declared_lane_matches_the_http_verb(self):
+		"""DRIFT LOCK. Every endpoint declares its lane on @_api; the declaration must agree with the
+		verb it is whitelisted under. A GET that forgets read=True would charge WRITE volume and claim
+		idempotency keys; a POST that wrongly claims read=True would skip the write meter. The four
+		*_get_bulk are the only reads exposed over POST and are named here on purpose -- a fifth one
+		cannot be added silently."""
+		reads_over_post = {"lead_get_bulk", "activity_get_bulk", "file_get_bulk", "call_get_bulk"}
+		modules = (partner, partner_activity, partner_file, partner_call)
+		checked = 0
+
+		for module in modules:
+			for name in dir(module):
+				fn = getattr(module, name)
+				lane = getattr(fn, "_partner_lane", None)
+				if lane is None:
+					continue
+				verbs = frappe.allowed_http_methods_for_whitelisted_func.get(fn)
+				self.assertTrue(verbs, f"{name} carries @_api but is not whitelisted")
+				expected_read = verbs == ["GET"] or name in reads_over_post
+				self.assertEqual(
+					lane["read"], expected_read,
+					f"{name} is whitelisted {verbs} but declares read={lane['read']}. "
+					f"A read must declare read=True; a write must not.",
+				)
+				checked += 1
+
+		self.assertEqual(checked, 38, "every partner endpoint must carry a declared lane")
 
 	# -- discovery -----------------------------------------------------------
 

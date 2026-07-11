@@ -245,7 +245,7 @@ def _read_one(name, mp, is_sysmgr):
 # -- discovery ---------------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def call_schema(**_kwargs):
 	"""Discovery: the call payload contract — every field a caller may send, its type, and whether it
 	is required. The shape is fixed (it does not vary by partner or grain), but it is discoverable, so
@@ -282,7 +282,7 @@ def call_schema(**_kwargs):
 # -- singular endpoints ------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def call_get(**_kwargs):
 	"""Read one call by `name`, grain-scoped (own line only). Out-of-scope/missing ->
 	the SAME generic not-found."""
@@ -324,7 +324,7 @@ def call_delete(**_kwargs):
 # -- bulk / query endpoints --------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def call_get_bulk(**_kwargs):
 	"""Read many calls by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
@@ -379,7 +379,7 @@ def call_delete_bulk(**_kwargs):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def call_list(**_kwargs):
 	"""List a lead's calls, paginated. Query: lead|mobile_no (grain-scoped), optional
 	direction (Inbound/Outbound) / status, limit (<=200, default 20), offset."""

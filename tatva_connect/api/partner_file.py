@@ -234,7 +234,7 @@ def _read_one(name, mp, is_sysmgr):
 # -- discovery ---------------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def file_schema(**_kwargs):
 	"""Discovery: the attach payload contract — every field a caller may send, its type, and whether
 	it is required. The shape is fixed (it does not vary by partner or grain), but it is discoverable,
@@ -270,7 +270,7 @@ def file_schema(**_kwargs):
 # -- singular endpoints ------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def file_get(**_kwargs):
 	"""Read one file by `name`, grain-scoped. Returns metadata + the proxy url."""
 	_user, mp, is_sysmgr = _resolve_caller()
@@ -302,7 +302,7 @@ def file_delete(**_kwargs):
 # -- bulk / query endpoints --------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def file_get_bulk(**_kwargs):
 	"""Read many files by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
@@ -342,7 +342,7 @@ def file_delete_bulk(**_kwargs):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def file_list(**_kwargs):
 	"""List a lead's files (optional `file_type`), paginated. Query: lead|mobile_no,
 	file_type?, limit (<=200, default 20), offset. Lead is grain-scoped via resolve_lead."""

@@ -188,7 +188,7 @@ def _read_one(name, mp, is_sysmgr):
 # -- discovery ---------------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def activity_schema(**_kwargs):
 	"""DISCOVERY BY LEAD: given `?lead=<name>` or `?mobile_no=`, return the activity
 	types available to that lead's grain, each with its field schema — how an integrator
@@ -227,7 +227,7 @@ def activity_schema(**_kwargs):
 # -- singular endpoints ------------------------------------------------------
 
 @frappe.whitelist(methods=["GET"])
-@_api
+@_api(read=True)
 def activity_get(**_kwargs):
 	"""Read one activity by CRM Task `name`, scoped to the caller's grain. Returns the
 	activity with `values` re-keyed to its schema fieldnames."""
@@ -265,7 +265,7 @@ def activity_delete(**_kwargs):
 # -- bulk / query endpoints --------------------------------------------------
 
 @frappe.whitelist(methods=["POST"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def activity_get_bulk(**_kwargs):
 	"""Read many activities by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
@@ -320,7 +320,7 @@ def activity_delete_bulk(**_kwargs):
 
 
 @frappe.whitelist(methods=["GET"])
-@_api(bulk=True)
+@_api(bulk=True, read=True)
 def activity_list(**_kwargs):
 	"""List activities on a lead, paginated. `?lead=` (or `?mobile_no=`) is required and
 	grain-scoped through resolve_lead; optional `task_type` / `status` filters."""
