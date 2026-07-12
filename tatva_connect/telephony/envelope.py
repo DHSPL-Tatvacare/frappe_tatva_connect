@@ -1,48 +1,29 @@
-"""The telephony envelope — the ONE interface every provider's adapter normalizes into.
+"""The normalized call — the one interface every provider adapter emits.
 
-An adapter's only job is `normalize(payload, event, account) -> Envelope | None`. Nothing
-downstream (the writer, grain resolution, agent resolution, the capture policy) ever sees a
-provider's field name again. Adding a provider is one adapter; nothing else moves.
+An adapter's only job is `normalize(payload, event, account) -> Envelope | None`. Nothing downstream
+reads a provider's field name. Adding a provider adds an adapter, and nothing else moves.
 
-Why this exists, concretely: Acefone is not internally consistent. A 179-CDR live capture
-(2026-07-11, `docs/plans/2026-07-11-telephony-multi-provider-intake.md`) showed ONE provider
-speaking two dialects on the same webhook — different timestamp formats, different phone
-formats, disjoint hangup vocabularies, different fields populated:
+Normalization is not a multi-provider luxury. A 179-CDR live capture showed Acefone speaking two
+dialects on one webhook: IVR-routed calls stamp `2026-07-11 20:39:28` with bare digits, Dialer-routed
+calls stamp `7/11/2026, 9:12:56 PM` with a +91 prefix. Absorbing that variance is the adapter's work.
 
-    direction "inbound"          -> '2026-07-11 20:39:28', bare digits,  billsec present
-    direction "Dialer (inbound)" -> '7/11/2026, 9:12:56 PM', +91 digits, billsec EMPTY
-
-So normalization is not a multi-provider luxury; a single provider already needs it. Absorbing
-that variance is the adapter's job — the envelope below is always the same shape.
-
-DIRECTION IS CARRIED, NOT INFERRED. The old code derived direction from *which URL was
-registered* (four endpoints, one per Acefone trigger), so a webhook pointed at the wrong URL
-silently inverted `from`/`to` with no error. Providers put direction in the body; read it
-there and treat the URL as a cross-check only.
+Direction is carried, never inferred from the registered URL. That inference silently inverted
+`from`/`to` whenever a webhook was pointed at the wrong endpoint.
 """
 import re
 from datetime import datetime
 
-# Timestamp formats seen in the wild. Acefone emits BOTH — the first on IVR-routed calls, the
-# second on Dialer-routed ones, same webhook, same account.
-_TS_FORMATS = (
-	"%Y-%m-%d %H:%M:%S",        # 2026-07-11 20:39:28
-	"%m/%d/%Y, %I:%M:%S %p",    # 7/11/2026, 9:12:56 PM
-	"%Y-%m-%dT%H:%M:%SZ",       # ISO 8601 (offered by the dashboard; not currently selected)
-)
+from frappe.utils import get_datetime
 
-# A phone we will act on must carry a full subscriber number. Shorter is a provider glitch or
-# an internal extension, and suffix-matching on it would match hundreds of leads — see
-# `resolve` / the attribution rule. Fail closed instead.
+# Below this a value is a provider glitch or an internal extension, not a subscriber number.
+# Suffix-matching on it would match a large slice of the lead table, so it is rejected instead.
 PHONE_MIN_DIGITS = 10
+
+_EPOCH_MIN_DIGITS = 9
 
 
 class Envelope(dict):
-	"""One normalized call. A dict so it stays trivially serialisable into the raw log."""
-
-	@property
-	def is_inbound(self) -> bool:
-		return self.get("direction") == "inbound"
+	"""One normalized call. A dict, so it serialises into the raw log unchanged."""
 
 
 def build(
@@ -65,7 +46,7 @@ def build(
 	recording_url=None,
 	raw=None,
 ) -> Envelope:
-	"""Assemble an envelope. Adapters call this; nobody else constructs one by hand."""
+	"""Assemble an envelope. Called by adapters; never constructed by hand."""
 	return Envelope(
 		provider=provider,
 		account=account,
@@ -76,9 +57,8 @@ def build(
 		did_number=did_number,
 		status=status,
 		connected=bool(connected),
-		# The id WE gave the provider when we placed an outbound call, echoed back — the only
-		# way to tie a CDR to the row we pre-created. Acefone echoes nothing (empty on all 179
-		# captured CDRs); Ozonetel echoes `uui`. None means fall back to number+recency.
+		# The id handed to a provider on an outbound call and echoed back on its CDR. Acefone echoes
+		# nothing (empty on all 179 captured CDRs); Ozonetel echoes `uui`.
 		correlation_key=correlation_key,
 		agent_key=agent_key,
 		agent_name=agent_name,
@@ -91,44 +71,34 @@ def build(
 
 
 def phone_digits(value) -> str:
-	"""A phone reduced to its last-10 subscriber digits, or '' if it isn't one.
+	"""Reduce a number to its last-10 subscriber digits; '' when it is not a full number.
 
-	One provider sends the SAME number both ways — '9911232686' on an IVR call and
-	'+919911232686' on a Dialer call. Normalising at the envelope boundary means nothing
-	downstream ever sees two spellings of one number.
-
-	Returns '' (never a short suffix) below PHONE_MIN_DIGITS: `LIKE '%<suffix>'` on a 2-digit
-	suffix matches half the lead table.
+	A provider sends the same number both ways — '9911232686' and '+919911232686' — so normalizing
+	at the envelope boundary keeps two spellings of one number out of everything below.
 	"""
-	d = re.sub(r"\D", "", str(value or ""))
-	return d[-10:] if len(d) >= PHONE_MIN_DIGITS else ""
+	digits = re.sub(r"\D", "", str(value or ""))
+	return digits[-10:] if len(digits) >= PHONE_MIN_DIGITS else ""
 
 
 def parse_timestamp(value):
-	"""Parse a provider timestamp into a naive datetime, or None.
-
-	Tries each known provider format, then epoch seconds. Returns None rather than guessing —
-	an unparseable stamp leaves the field empty instead of inventing a time.
-	"""
+	"""Parse a provider timestamp, or None when it cannot be read. Never guessed."""
 	if value in (None, "", "0"):
 		return None
-	s = str(value).strip()
-	if s.isdigit() and len(s) >= 9:
+	text = str(value).strip()
+	# Epoch seconds, which the Acefone dashboard offers as an alternative to a formatted stamp.
+	if text.isdigit() and len(text) >= _EPOCH_MIN_DIGITS:
 		try:
-			return datetime.fromtimestamp(int(s))
+			return datetime.fromtimestamp(int(text))
 		except (ValueError, OSError, OverflowError):
 			return None
-	for fmt in _TS_FORMATS:
-		try:
-			return datetime.strptime(s, fmt)
-		except ValueError:
-			continue
-	return None
+	try:
+		return get_datetime(text)
+	except Exception:
+		return None
 
 
 def to_int(value) -> int:
-	"""Seconds as an int; 0 when the provider sends blank/garbage (a 0s call is real — an
-	instant hangup — so 0 is a legitimate value, not a sentinel for 'missing')."""
+	"""Seconds as an int. A 0s call is real — an instant hangup — so 0 is a value, not a sentinel."""
 	try:
 		return int(float(value))
 	except (TypeError, ValueError):

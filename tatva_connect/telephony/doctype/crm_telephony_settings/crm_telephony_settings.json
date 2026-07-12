@@ -6,9 +6,29 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_break_capture",
+  "capture_rules",
+  "section_break_behaviour",
   "record_call"
  ],
  "fields": [
+  {
+   "fieldname": "section_break_capture",
+   "fieldtype": "Section Break",
+   "label": "Capture Policy"
+  },
+  {
+   "description": "Which calls become CRM Call Logs. EMPTY CAPTURES NOTHING -- this table decides, and it ships blank on purpose. To start logging inbound Dialer calls, add one row: Acefone / Inbound / Dialer / Capture. A call that no rule captures is still logged raw (Integration Request) and stays replayable; it just does not become a Call Log. A call on a number that is not in CRM Telephony DID is dropped regardless of this table -- that is what keeps other businesses off a shared provider account out of this CRM.",
+   "fieldname": "capture_rules",
+   "fieldtype": "Table",
+   "label": "Capture Rules",
+   "options": "CRM Telephony Capture Rule"
+  },
+  {
+   "fieldname": "section_break_behaviour",
+   "fieldtype": "Section Break",
+   "label": "Behaviour"
+  },
   {
    "default": "0",
    "description": "Ask Acefone to record outgoing (click-to-call) calls.",

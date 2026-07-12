@@ -1,21 +1,18 @@
 """Envelope -> CRM Call Log. The one brain, shared by every provider.
 
-This is the only module that writes a Call Log from a CDR. It knows nothing about Acefone,
-Ozonetel, or any provider's field name — it reads the envelope and nothing else.
-
-Direction is the ONLY thing it branches on, and it branches once:
+The only module that writes a Call Log from a CDR, and the only one that branches on direction:
 
     inbound   type=Incoming  from=customer  to=DID       agent -> receiver
     outbound  type=Outgoing  from=DID       to=customer  agent -> caller
 
-frappe/crm's `parse_call_log` already reads `receiver` for an Incoming call and `caller` for
-an Outgoing one, and CallArea.vue already picks the icon and the verb off `type`. So getting
-the envelope right is the whole job: the Lead's Calls tab needs no UI work.
+frappe/crm's `parse_call_log` already reads `receiver` for an Incoming call and `caller` for an
+Outgoing one, and CallArea.vue picks its icon and verb off `type`. A correct envelope is therefore
+the whole job — the lead's Calls tab needs no UI work.
 """
 import frappe
+from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect.telephony import envelope as env
-from tatva_connect.telephony import routing
+from tatva_connect.telephony import resolve
 
 CALL_LOG = "CRM Call Log"
 
@@ -27,9 +24,8 @@ OUTBOUND_MATCH_WINDOW_MIN = 5
 def write(cdr) -> str:
 	"""Create or update the Call Log row for one envelope. Returns the row name.
 
-	Idempotent on `call_key`: the provider re-sends the same call (10 repeats in a 179-CDR
-	capture), and an answered-live trigger is later superseded by the hangup CDR. Both land on
-	the same row.
+	Idempotent: a provider re-sends the same call (10 repeats in a 179-CDR capture), and an
+	answered-live trigger is later superseded by its hangup CDR. Both land on the same row.
 	"""
 	existing = _find_row(cdr)
 	doc = frappe.get_doc(CALL_LOG, existing) if existing else frappe.new_doc(CALL_LOG)
@@ -38,10 +34,9 @@ def write(cdr) -> str:
 		doc.id = cdr["call_key"]
 		doc.telephony_medium = cdr["provider"]
 
-	# Direction can only be established once — a provider never reverses it mid-call, and letting
-	# it flip would silently swap `from`/`to` on an existing row.
+	# Established once. A provider never reverses direction mid-call, and letting it flip would
+	# silently swap `from`/`to` on a row that already exists.
 	doc.type = "Incoming" if cdr["direction"] == "inbound" else "Outgoing"
-
 	_apply(doc, cdr)
 
 	if existing:
@@ -50,56 +45,13 @@ def write(cdr) -> str:
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 
 	frappe.db.commit()
-	# Post-commit, so a live listener reads a durable row rather than an in-flight one.
+	# Emitted post-commit, so a live listener reads a durable row rather than an in-flight one.
 	frappe.publish_realtime("telephony_call", cdr.get("raw") or {})
 	return doc.name
 
 
-def _find_row(cdr):
-	"""The existing Call Log row this CDR updates, or None for a fresh one.
-
-	1. Same `call_key`  — the normal path, and the only one inbound ever needs.
-	2. `correlation_key` — the row WE pre-created when placing an outbound call, if the
-	   provider echoed our id back.
-	3. Outbound only: the most recent still-Initiated row we placed to this number inside the
-	   match window. The fallback for a provider that echoes nothing — which is Acefone: the
-	   `custom_identifier` we send never comes back (empty on all 179 captured CDRs).
-
-	Without 2 and 3, an outbound CDR would create a SECOND row and orphan the Initiated one
-	`bridge.make_a_call` wrote.
-	"""
-	if frappe.db.exists(CALL_LOG, cdr["call_key"]):
-		return cdr["call_key"]
-
-	if cdr["direction"] != "outbound":
-		return None
-
-	ident = cdr.get("correlation_key")
-	if ident and frappe.db.exists(CALL_LOG, ident):
-		return ident
-
-	phone = cdr.get("customer_number")
-	if not phone:
-		return None
-	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-OUTBOUND_MATCH_WINDOW_MIN)
-	rows = frappe.get_all(
-		CALL_LOG,
-		filters={
-			"telephony_medium": cdr["provider"],
-			"type": "Outgoing",
-			"status": "Initiated",
-			"to": ["like", f"%{phone}"],
-			"creation": [">=", cutoff],
-		},
-		order_by="creation desc",
-		limit=1,
-		pluck="name",
-	)
-	return rows[0] if rows else None
-
-
 def _apply(doc, cdr) -> None:
-	"""Overlay the envelope onto the doc. Same code on the create and the update path."""
+	"""Overlay an envelope onto a doc. The same code on the create and the update path."""
 	customer = cdr["customer_number"]
 	did = cdr["did_number"]
 	inbound = cdr["direction"] == "inbound"
@@ -120,78 +72,61 @@ def _apply(doc, cdr) -> None:
 	if cdr.get("ended_at"):
 		doc.end_time = cdr["ended_at"]
 
-	# Only assign when we actually resolved someone: a later CDR for the same call must never
-	# blank out an agent an earlier one established.
-	user = resolve_agent(cdr)
+	# The DID's grain drives both remaining questions: which lead, and whether the rep who answered
+	# actually works this grain.
+	grain = resolve.grain_for(cdr)
+
+	# Assigned only when someone resolves. A later CDR for the same call must not blank out a rep an
+	# earlier one established.
+	user = resolve.user_for(cdr, grain)
 	if user:
 		if inbound:
 			doc.receiver = user
 		else:
 			doc.caller = user
 
-	link_lead(doc, cdr)
+	# `reference_*` only. `crm.api.activities.get_linked_calls` unions a `reference_docname` query
+	# with a `Dynamic Link` join, so also calling `link_with_reference_doc()` returned the same call
+	# twice and rendered it twice in the lead's Calls tab.
+	lead = resolve.lead_for(cdr, grain)
+	if lead:
+		doc.reference_doctype = "CRM Lead"
+		doc.reference_docname = lead
 
 
-def resolve_agent(cdr):
-	"""The envelope's agent key -> a Frappe user, or None.
+def _find_row(cdr):
+	"""The existing row a CDR updates, or None for a fresh one.
 
-	The key is an email — that is what BOTH providers give us (Acefone's `answered_agent[].email`,
-	Ozonetel's agent identifier in its User-Agent mapping). Provider-local identifiers like
-	Acefone's `Extension-0602141810347` are deliberately NOT matched here: they are not phone
-	numbers, and the old code's attempt to treat them as such could never resolve.
-
-	Unresolved is not an error. The call is still logged, just unattributed — only an unmapped
-	DID drops a call, never an unmapped agent.
+	Matched on the call key, then on a correlation id the provider echoed back, then — outbound only
+	— on the most recent still-Initiated row placed to this number inside the match window. The last
+	fallback exists because Acefone echoes nothing: the `custom_identifier` sent on a click-to-call
+	never returns. Without it an outbound CDR would create a second row and orphan the Initiated one.
 	"""
-	email = (cdr.get("agent_key") or "").strip().lower()
-	if not email:
+	if frappe.db.exists(CALL_LOG, cdr["call_key"]):
+		return cdr["call_key"]
+
+	if cdr["direction"] != "outbound":
 		return None
-	return frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
 
+	correlation = cdr.get("correlation_key")
+	if correlation and frappe.db.exists(CALL_LOG, correlation):
+		return correlation
 
-def link_lead(doc, cdr) -> None:
-	"""Attach the call to exactly one lead, or leave it unlinked.
-
-	The rule, and it is the only one: `(DID -> grain) + customer phone` must resolve to a
-	SINGLE lead. Two facts that are each ambiguous alone intersect at one lead — a person with
-	four leads across four programs has four rows with the same phone, and the DID is what says
-	which of the four this call belongs to.
-
-	Sets `reference_*` ONLY, deliberately. `crm.api.activities.get_linked_calls` unions a
-	`reference_docname` query with a `Dynamic Link` join, so also calling
-	`link_with_reference_doc()` — as the old adapter did — returned the same call TWICE and
-	rendered it twice in the Lead's Calls tab.
-	"""
-	lead = _lead_for(cdr)
-	if not lead:
-		return
-	doc.reference_doctype = "CRM Lead"
-	doc.reference_docname = lead
-
-
-def _lead_for(cdr):
-	"""The one lead this call belongs to, or None. Never a best guess."""
 	phone = cdr.get("customer_number")
-	account = cdr.get("account")
-	# `phone_digits` already returns '' below 10 digits, so a garbage number can never become a
-	# short suffix that matches half the lead table.
-	if not phone or len(phone) < env.PHONE_MIN_DIGITS or not account:
+	if not phone:
 		return None
-
-	# Suffix-anchored: a lead's stored number may carry a +91 prefix, but the match must be on
-	# the tail, never `%...%` on both ends (which would match a number merely CONTAINING these
-	# digits).
-	candidates = frappe.get_all("CRM Lead", filters={"mobile_no": ["like", f"%{phone}"]}, pluck="name")
-	if not candidates:
-		return None
-
-	scoped = routing.leads_for_number_and_account(candidates, account)
-	if len(scoped) == 1:
-		return scoped[0]
-	if len(scoped) > 1:
-		# Two leads sharing a phone inside one grain is a data defect, not a routing choice.
-		# Surface it; do not pick one.
-		frappe.logger("telephony").warning(
-			f"telephony: {len(scoped)} leads share {phone} on account {account}; call left unlinked"
-		)
-	return None
+	cutoff = add_to_date(now_datetime(), minutes=-OUTBOUND_MATCH_WINDOW_MIN)
+	rows = frappe.get_all(
+		CALL_LOG,
+		filters={
+			"telephony_medium": cdr["provider"],
+			"type": "Outgoing",
+			"status": "Initiated",
+			"to": ["like", f"%{phone}"],
+			"creation": [">=", cutoff],
+		},
+		order_by="creation desc",
+		limit=1,
+		pluck="name",
+	)
+	return rows[0] if rows else None

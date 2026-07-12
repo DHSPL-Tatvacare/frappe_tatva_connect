@@ -1,61 +1,57 @@
 """The Acefone adapter — CDR -> Envelope -> CRM Call Log.
 
-Implements the webhook-spine contract (is_relevant / already_processed / handle /
-account_for_payload) plus `normalize`, which is the only Acefone-specific code in the app.
-Everything downstream (`telephony.writer`) is provider-blind.
+Implements the webhook-spine contract plus `normalize`, which is the only Acefone-specific code in
+the app. Everything downstream is provider-blind.
 
-Every mapping below is grounded in a 179-CDR live capture (2026-07-11, 19 DIDs, 76 minutes).
-Where a branch is NOT backed by a captured payload it says so — because the first version of
-this adapter was written from Acefone's documentation and was wrong in three places, each of
-which the live capture disproved:
+Every mapping is grounded in a 363-CDR live capture across both directions. Where a branch is not
+backed by a captured payload it says so, because the first version of this adapter was written from
+Acefone's documentation and the capture disproved three of its assumptions:
 
-  * `answered_agent_email` does not exist as an Acefone variable. The email is inside
-    `answered_agent`, which is an ARRAY of objects. (8/8 answered calls carried it.)
-  * `answered_agent_number` is an EXTENSION ("Extension-0602141810347"), not a phone. The old
-    code fed it to a phone matcher, which could never resolve and could false-positive on a
-    10-digit suffix collision.
-  * `answered_agent_name` is a FIRST name ("Prafull"), so matching `User.full_name` never fires.
+  * `answered_agent_email` is not an Acefone variable. The email sits inside `answered_agent`, an
+    array of objects, and was present on every answered call.
+  * `answered_agent_number` is an extension ("Extension-0602141810347"), not a phone. The old code
+    fed it to a phone matcher, which could never resolve and could collide on a 10-digit suffix.
+  * `hangup_cause` never carries "busy" or "cancel", so both status branches were unreachable.
 
-Observed vocabularies (nothing outside these appeared in 179 payloads):
-  direction    : "inbound" (131) · "Dialer (inbound)" (38)  -- every ANSWERED call was Dialer
-  call_status  : "missed" (161) · "answered" (8)            -- lowercase, despite the docs
+Observed vocabularies, and nothing outside them:
+  direction    : inbound · Dialer (inbound) · Dialer (outbound)   -- only Dialer calls are answered
+  call_status  : missed · answered                                -- lowercase, despite the docs
   hangup_cause : NormalClearing · destination_hangup · destination_not_set
                  disconnected_by_caller · disconnected_by_callee · hangup_as_per_destination
 """
 import frappe
+from frappe import parse_json
 
 from tatva_connect.telephony import envelope as env
-from tatva_connect.telephony import routing, writer
+from tatva_connect.telephony import resolve, routing, writer
 
 PROVIDER = "Acefone"
 
-# Back-compat alias: `CRM Call Log.telephony_medium` stores the provider name, and
-# observability/reconcile still speak of it as the "medium".
+# `CRM Call Log.telephony_medium` stores the provider name; observability and reconcile call it the
+# medium. Aliased rather than duplicated.
 TELEPHONY_MEDIUM = PROVIDER
 
-# CRM Call Log status vocabulary (frappe/crm):
-#   Initiated · Ringing · In Progress · Completed · Failed · Busy · No Answer · Queued · Canceled
 _ANSWERED_LIVE = "In Progress"
 _ANSWERED_DONE = "Completed"
 _MISSED = "No Answer"
 
 
-# ---------------------------------------------------------------------------
-# Spine contract
-# ---------------------------------------------------------------------------
 def is_relevant(payload, event, account) -> bool:
-	"""Cheap front-door pre-filter, inline before enqueue. A CDR we cannot key is not a call
-	we can build a row from. The raw payload is already persisted by the time we run, so
-	returning False stores it without acting on it."""
-	return bool(payload.get("call_id") or payload.get("uuid"))
+	"""Front-door pre-filter, run inline before the job is enqueued.
+
+	Both gates are answered here — is the call of a wanted kind, and is it on a number that is ours.
+	A no is not a loss: the spine persists the raw payload before this runs, so an ignored or foreign
+	call stays auditable and replayable once its DID is mapped.
+	"""
+	cdr = normalize(payload, event=event, account=account)
+	return bool(cdr and resolve.is_ours(cdr))
 
 
 def already_processed(payload, event, account) -> bool:
-	"""True only when a COMPLETED row already exists for this call. An answered-live trigger
-	leaves an In Progress row that the later hangup CDR must still update, so we never
-	short-circuit those.
+	"""True only when a completed row already exists for this call.
 
-	Acefone genuinely re-sends: the 179-CDR capture contained 10 repeats of calls already seen.
+	An answered-live trigger leaves an In Progress row that the later hangup CDR must still update,
+	so those are never short-circuited.
 	"""
 	call_key = payload.get("call_id") or payload.get("uuid")
 	if not call_key:
@@ -64,14 +60,12 @@ def already_processed(payload, event, account) -> bool:
 
 
 def handle(payload, event, account) -> None:
-	"""Parse + write. Runs in the spine worker; exceptions propagate to the RQ failed registry
-	(the DLQ) and are replayable. No swallow-as-200."""
+	"""Parse and write. Runs in the spine worker; a failure reaches the DLQ and stays replayable."""
 	process(payload, event=event, account=account)
 
 
 def account_for_payload(payload, event):
-	"""Re-derive the receiving account from a STORED payload, for `spine.replay()` (which has
-	no live request token). None if the DID matches no account — attribution then fails closed."""
+	"""Re-derive the receiving account from a stored payload, for replay, which carries no token."""
 	try:
 		return routing.account_for_did(payload.get("did_number") or payload.get("call_to_number"))
 	except Exception:
@@ -80,23 +74,24 @@ def account_for_payload(payload, event):
 
 
 def process(payload: dict, event=None, account=None):
-	"""The one entry point, shared by the webhook and the reconcile pull. Returns the Call Log
-	row name, or None when the CDR carries no usable key."""
+	"""The one entry point, shared by the webhook worker, the reconcile pull and replay.
+
+	The gates are re-asked here rather than trusted from `is_relevant`. Replay calls this directly,
+	with no front door ahead of it, so a gate living only in `is_relevant` could be walked past by
+	replaying a stored foreign payload.
+	"""
 	if account is None:
 		account = account_for_payload(payload, event)
 	cdr = normalize(payload, event=event, account=account)
-	if cdr is None:
+	if cdr is None or not resolve.is_ours(cdr):
 		return None
 	return writer.write(cdr)
 
 
-# ---------------------------------------------------------------------------
-# Acefone CDR -> Envelope. The only provider-specific code in the app.
-# ---------------------------------------------------------------------------
 def normalize(payload: dict, event=None, account=None):
 	"""One Acefone CDR -> one Envelope. None when the CDR carries no usable key."""
-	# `call_id` is STABLE across every trigger of one call; `uuid` varies per leg. Key on
-	# call_id so a transferred call stays one row.
+	# `call_id` is stable across every trigger of one call; `uuid` varies per leg. Keying on call_id
+	# keeps a transferred call on one row.
 	call_key = payload.get("call_id") or payload.get("uuid")
 	if not call_key:
 		return None
@@ -114,18 +109,15 @@ def normalize(payload: dict, event=None, account=None):
 		did_number=did_number,
 		status=_status(payload, event),
 		connected=str(payload.get("call_connected") or "").strip() == "1",
-		# Acefone echoes NOTHING back: `custom_identifier` is not among its webhook variables at
-		# all, and `ref_id` — the closest candidate — was empty on all 179 captured CDRs. Read
-		# both anyway (an account may be configured differently) and let the writer fall back to
-		# number+recency when, as expected, it comes back None.
+		# Read from both candidates, though neither ever returns: `custom_identifier` is not an
+		# Acefone webhook variable and `ref_id` was empty on all 363 captured CDRs.
 		correlation_key=(payload.get("custom_identifier") or payload.get("ref_id") or "").strip() or None,
 		agent_key=_agent_email(payload),
 		agent_name=(payload.get("answered_agent_name") or "").strip() or None,
 		started_at=env.parse_timestamp(payload.get("start_stamp")),
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),
-		# Total call time INCLUDING time in the IVR — not talk time. Acefone exposes no agent
-		# talk-time field: `billsec` is empty on every answered call, and on missed calls it is
-		# just duration-minus-the-ring-second (the IVR answers, not a human).
+		# Total call time including the IVR, not talk time. Acefone exposes no agent talk-time field:
+		# `billsec` is empty on every answered call.
 		duration_sec=env.to_int(payload.get("duration")),
 		recording_url=payload.get("recording_url") or None,
 		raw=payload,
@@ -133,22 +125,18 @@ def normalize(payload: dict, event=None, account=None):
 
 
 def _direction_channel(payload: dict, event):
-	"""Direction and channel, from the payload's own `direction` field.
+	"""Direction and channel, read from the payload's own `direction` field.
 
-	Acefone qualifies direction with the routing channel — "inbound" vs "Dialer (inbound)" —
-	and the two are genuinely different payload shapes, so the channel is worth carrying: it is
-	what the capture policy will filter on.
-
-	The URL trigger (`event`) is a CROSS-CHECK only. It used to be the source of truth, which
-	meant a webhook registered against the wrong URL silently inverted `from`/`to`.
+	Acefone qualifies direction with the routing channel — "inbound" against "Dialer (inbound)" — and
+	the two are genuinely different payload shapes, so the channel is carried: it is what the capture
+	policy filters on. The URL trigger is a cross-check only.
 	"""
-	raw = (payload.get("direction") or "").strip().lower()
+	raw = (payload.get("direction") or "").strip().casefold()
 	if raw:
 		direction = "outbound" if "outbound" in raw else "inbound"
 		channel = "Dialer" if "dialer" in raw else "IVR"
 	else:
-		# No direction in the body (an operator omitted it from the dashboard JSON). Fall back
-		# to the URL trigger rather than dropping the call, and say so.
+		# Absent from the body, so the URL trigger is used rather than dropping the call.
 		direction = "outbound" if (event or "").startswith("outbound") else "inbound"
 		channel = "IVR"
 		frappe.logger("telephony").warning(
@@ -156,8 +144,8 @@ def _direction_channel(payload: dict, event):
 		)
 
 	if event and not event.startswith(direction):
-		# The webhook is registered against the opposite-direction URL. Not fatal — the payload
-		# wins — but the Acefone dashboard is misconfigured and someone should know.
+		# The webhook is registered against the opposite-direction URL. The payload wins, but the
+		# provider dashboard is misconfigured and someone should know.
 		frappe.logger("telephony").warning(
 			f"Acefone direction mismatch: payload says {direction!r}, URL trigger says {event!r}"
 		)
@@ -167,17 +155,10 @@ def _direction_channel(payload: dict, event):
 def _numbers(payload: dict, direction: str):
 	"""(customer, DID), each reduced to last-10 digits.
 
-	The two Acefone fields have direction-INDEPENDENT meanings:
-	    call_to_number   = the number that was DIALLED
-	    caller_id_number = the number shown as the ORIGIN
-
-	Inbound, that makes call_to_number our DID and caller_id_number the customer — confirmed on
-	all 179 captured CDRs. Outbound, the platform dials the customer and presents our DID, so
-	the two swap roles.
-
-	The outbound branch is UNPROVEN: the capture contains zero outbound CDRs. It is the reading
-	that Acefone's own field definitions and LeadSquared's documented Source/Destination
-	semantics both imply, but no live payload has exercised it.
+	The two Acefone fields have direction-independent meanings: `call_to_number` is the number that
+	was dialled, `caller_id_number` the number shown as the origin. Inbound, that makes call_to_number
+	the DID and caller_id_number the customer. Outbound the platform dials the customer and presents
+	the DID, so the two swap roles. Both readings are confirmed against live CDRs.
 	"""
 	dialled = payload.get("call_to_number") or payload.get("did_number")
 	origin = payload.get("caller_id_number") or payload.get("caller_id")
@@ -194,14 +175,12 @@ def _numbers(payload: dict, direction: str):
 def _status(payload: dict, event) -> str:
 	"""CDR -> CRM Call Log status.
 
-	`call_status` arrives LOWERCASE ("missed"/"answered") despite the docs promising title case,
-	so compare case-insensitively rather than relying on that accident.
-
-	No Busy/Canceled branch: `hangup_cause` never carried "busy" or "cancel" in 179 CDRs. The
-	old code mapped those from the documentation and they were unreachable.
+	`call_status` arrives lowercase despite the docs promising title case, so it is folded rather than
+	compared as sent. There is no Busy or Canceled branch: `hangup_cause` never carried either word in
+	363 CDRs, and the branches mapped from the documentation were unreachable.
 	"""
-	call_status = (payload.get("call_status") or "").strip().lower()
-	# We register hangup triggers, so a CDR is terminal unless the URL says it is the
+	call_status = (payload.get("call_status") or "").strip().casefold()
+	# Only hangup triggers are registered, so a CDR is terminal unless the URL names the
 	# answered-but-still-live trigger.
 	live = (event or "").endswith("answered")
 
@@ -210,29 +189,25 @@ def _status(payload: dict, event) -> str:
 	if call_status == "missed":
 		return _MISSED
 
-	# Never observed. Surface it rather than silently inventing an outcome.
 	frappe.logger("telephony").warning(f"Acefone CDR with unmapped call_status {call_status!r}")
 	return _ANSWERED_LIVE if live else "Failed"
 
 
 def _agent_email(payload: dict):
-	"""The agent's email, out of the `answered_agent` ARRAY. The only identifier that resolves.
+	"""The agent's email, taken from the `answered_agent` array. The only identifier that resolves.
 
-	Shape (8/8 answered CDRs):
-	    [{"id": "...", "name": "Prafull", "number": "Extension-06021...",
-	      "email": "prafull.chobe@...", "is_transferred_agent": "No"}]
-
-	Take the LAST entry: on a transfer the array carries every agent that touched the call, and
-	the final one is who actually handled it.
+	The last entry is used: on a transfer the array carries every agent that touched the call, and the
+	final one handled it.
 	"""
 	agents = payload.get("answered_agent")
 	if isinstance(agents, str):
 		# A form-urlencoded body delivers the array as a JSON string.
-		agents = frappe.parse_json(agents) if agents.strip().startswith("[") else None
+		agents = parse_json(agents) if agents.strip().startswith("[") else None
 	if isinstance(agents, dict):
 		agents = [agents]
-	if isinstance(agents, list):
-		for entry in reversed(agents):
-			if isinstance(entry, dict) and (entry.get("email") or "").strip():
-				return entry["email"].strip().lower()
+	if not isinstance(agents, list):
+		return None
+	for entry in reversed(agents):
+		if isinstance(entry, dict) and (entry.get("email") or "").strip():
+			return entry["email"].strip().casefold()
 	return None
