@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "did_number",
+  "label",
+  "telephony_account",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "A number this grain owns. Stored as its last 10 digits: a provider sends the same DID two ways ('9240276210' on an IVR call, '+919240276210' on a Dialer call), so it is normalized on save and matched on the normalized form.",
+   "fieldname": "did_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "DID Number",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "columns": 3,
+   "description": "Only when this number lives on a DIFFERENT account from the one this rule dials out on — a grain served by two providers. Blank means the rule's own account.",
+   "fieldname": "telephony_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account Override",
+   "options": "CRM Telephony Account"
+  },
+  {
+   "columns": 1,
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Telephony",
+ "name": "CRM Telephony Routing DID",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

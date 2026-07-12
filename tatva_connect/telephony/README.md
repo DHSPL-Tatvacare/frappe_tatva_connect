@@ -61,7 +61,8 @@ The Acefone tenant is **shared** with other businesses (Visit, ICICI Lombard, Qu
 across four-plus companies interleave on one account. So relevance is decided before anything is
 written.
 
-- The **token authenticates the account.** The **DID selects the grain** (`CRM Telephony DID`).
+- The **token authenticates the account.** The **DID selects the grain** — a number is a row on the
+  `CRM Telephony Routing` rule for the grain that owns it, so a mapped DID cannot exist without a route.
 - **A DID that is not mapped is dropped**, and the reason is written onto the row. No best-guess
   attribution, ever — that is what keeps another company's customer PII out of this CRM.
 - The **lead** is matched on `(DID -> grain) + phone`, so one phone number across several leads still
@@ -110,11 +111,17 @@ that reads a provider's payload when the provider calls us. Different questions,
 | Doctype | What the operator puts in it |
 |---|---|
 | `CRM Telephony Account` | One per provider account: creds, `webhook_token`, HMAC/IP settings. |
-| `CRM Telephony DID` | **DID -> grain.** The relevance gate. Unmapped = dropped. |
+| `CRM Telephony Routing` | **The one map.** Grain -> account (outbound), plus the grain's **DIDs** as a child table (inbound). A number listed nowhere is dropped. |
 | `CRM Telephony Agent Map` | Agent email -> CRM user, for agents whose email does not auto-resolve. |
 | `CRM Telephony Capture Rule` | Which direction/channel is captured. Child of Settings. Empty = nothing. |
-| `CRM Telephony Routing` | Grain -> account, for **outbound** click-to-call only. |
 | `CRM Telephony Settings` | The kill-switch, rate limits, capture rules. |
+
+There was a second table once, `CRM Telephony DID`, holding number -> grain for inbound while Routing
+held grain -> account for outbound. Nothing made them agree and they did not: a grain carried four DIDs
+and no routing rule, so its calls were attributed on the way in but every pull for its leads resolved no
+account and did nothing. They are one table now. A number is a child row of the grain that owns it, so a
+mapped DID without a route is no longer expressible. A number whose account differs from its rule's — a
+grain reached by two providers — carries a per-number **Account Override**.
 
 `CRM Call Log` gains a Custom Field `custom_telephony_account` and an "Acefone" option on
 `telephony_medium` (Property Setter).
@@ -167,8 +174,6 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
   captured. It is written from the inbound corpus and the record API, not proven.
 - **`scheduled_reconcile` is not wired** to `hooks.scheduler_events`, deliberately: anything that runs by
   itself needs a dormant automation toggle and a go-live checklist row first. Reconcile is manual today.
-- **`CRM Telephony Routing` (outbound) and `CRM Telephony DID` (inbound) are two independent maps** and
-  nothing validates that they agree.
 - **`refresh_calls` has no button.** It is whitelisted and callable, but the Desk workspace does not
   surface it.
 
@@ -178,8 +183,9 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
 2. **Generate the webhook token** on the account form and **register the four webhook URLs** on the
    Acefone dashboard (API Connect → Webhook), one per trigger. The token authenticates the caller and
    identifies the receiving account.
-3. **CRM Telephony DID** — map every DID you own to its grain. **A DID that is missing here is dropped.**
+3. **CRM Telephony Routing** — one rule per grain: the account it dials out on, and every DID it owns in
+   the **Numbers** table. **A number listed on no rule is dropped**, and a grain with no rule has no
+   reconcile.
 4. **CRM Telephony Capture Rule** — say what to capture. **Empty captures nothing.**
 5. **CRM Telephony Agent Map** — only for agents whose email does not auto-resolve.
-6. Turn on the **`Telephony::Acefone::calls`** switch. For outbound, also enable the Exotel slot and add
-   **CRM Telephony Routing** rules.
+6. Turn on the **`Telephony::Acefone::calls`** switch. For outbound, also enable the Exotel slot.

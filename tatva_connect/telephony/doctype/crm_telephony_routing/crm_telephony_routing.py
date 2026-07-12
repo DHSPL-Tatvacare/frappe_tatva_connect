@@ -5,8 +5,12 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.telephony import envelope as env
+
 # Axes that form the composite-unique key + the autoname `format:` string.
 _KEY_FIELDS = ("vertical", "psp_group", "program")
+
+DID_CHILD = "CRM Telephony Routing DID"
 
 
 def _canonicalize(doc):
@@ -60,3 +64,51 @@ class CRMTelephonyRouting(Document):
 					).format(other.name),
 					title=_("Duplicate routing rule"),
 				)
+
+		self._validate_dids()
+
+	def _validate_dids(self):
+		"""Normalize each number, and hold the rule that a number belongs to exactly one grain.
+
+		The number was the primary key of its own doctype, which enforced this for free. It is a child
+		row now, so it is enforced here instead: the same DID on two rules would attribute one call to
+		two grains, and which one won would depend on row order.
+		"""
+		seen = {}
+		for row in self.dids or []:
+			digits = env.phone_digits(row.did_number)
+			if not digits:
+				frappe.throw(
+					_("{0} is not a full phone number. A DID needs at least {1} digits.").format(
+						frappe.bold(row.did_number or ""), env.PHONE_MIN_DIGITS
+					),
+					title=_("Invalid DID"),
+				)
+			if digits in seen:
+				frappe.throw(
+					_("DID {0} is listed twice on this rule.").format(frappe.bold(digits)),
+					title=_("Duplicate DID"),
+				)
+			seen[digits] = row
+			row.did_number = digits
+
+		if not seen:
+			return
+
+		clash = frappe.get_all(
+			DID_CHILD,
+			filters={
+				"did_number": ["in", list(seen)],
+				"parenttype": self.doctype,
+				"parent": ["!=", self.name or ""],
+			},
+			fields=["did_number", "parent"],
+			limit=1,
+		)
+		if clash:
+			frappe.throw(
+				_("DID {0} is already mapped to {1}. A number can belong to only one grain.").format(
+					frappe.bold(clash[0].did_number), clash[0].parent
+				),
+				title=_("DID already mapped"),
+			)

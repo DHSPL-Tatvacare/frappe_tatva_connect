@@ -48,7 +48,7 @@ class TestTelephonyGates(FrappeTestCase):
 
 	def setUp(self):
 		_set_rules([])
-		_clear("CRM Telephony DID")
+		_clear_dids()
 		_clear("CRM Telephony Agent Map")
 		_clear_calls()
 
@@ -208,10 +208,32 @@ def _set_rules(rules):
 	frappe.clear_cache(doctype="CRM Telephony Settings")
 
 
-def _map_did(digits, enabled=1):
-	doc = frappe.new_doc("CRM Telephony DID")
-	doc.update({"did_number": f"+91{digits}", "telephony_account": ACCOUNT, "enabled": enabled, **GRAIN})
+def _rule_doc():
+	"""The routing rule for the suite's grain, created once. The DID map is a child table on it."""
+	name = frappe.db.get_value("CRM Telephony Routing", {"vertical": GRAIN["vertical"]}, "name")
+	if name:
+		return frappe.get_doc("CRM Telephony Routing", name)
+	doc = frappe.new_doc("CRM Telephony Routing")
+	doc.update({"telephony_account": ACCOUNT, **GRAIN})
 	doc.insert(ignore_permissions=True)
+	return doc
+
+
+def _map_did(digits, enabled=1):
+	"""Map a number onto the suite's grain. A DID is a row on the rule that owns it, so mapping one
+	cannot leave it without a route."""
+	rule = _rule_doc()
+	rule.append("dids", {"did_number": f"+91{digits}", "enabled": enabled})
+	rule.save(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _clear_dids():
+	"""Drop the suite's routing rule, and its numbers with it."""
+	for name in frappe.get_all(
+		"CRM Telephony Routing", filters={"telephony_account": ACCOUNT}, pluck="name"
+	):
+		frappe.delete_doc("CRM Telephony Routing", name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
 

@@ -10,7 +10,9 @@
   "vertical",
   "psp_group",
   "program",
-  "telephony_account"
+  "telephony_account",
+  "section_break_dids",
+  "dids"
  ],
  "fields": [
   {
@@ -35,12 +37,25 @@
    "options": "CRM Program"
   },
   {
+   "description": "The account this grain dials OUT on, and the account its DIDs belong to unless a DID overrides it.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Telephony Account",
    "options": "CRM Telephony Account",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_break_dids",
+   "fieldtype": "Section Break",
+   "label": "Numbers (DIDs)"
+  },
+  {
+   "description": "The numbers this grain owns. An inbound call on a number listed here is attributed to this grain; a call on a number listed nowhere is DROPPED. That is what keeps another business's traffic off a shared provider account out of this CRM. Leave empty for an outbound-only rule.",
+   "fieldname": "dids",
+   "fieldtype": "Table",
+   "label": "Numbers (DIDs)",
+   "options": "CRM Telephony Routing DID"
   }
  ],
  "grid_page_length": 50,

@@ -13,7 +13,7 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-07-12 17:38:36.138937",
+ "modified": "2026-07-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -76,8 +76,8 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Step 2 - Numbers (DIDs)",
-   "link_to": "CRM Telephony DID",
+   "label": "Step 2 - Routing & Numbers",
+   "link_to": "CRM Telephony Routing",
    "stats_filter": "[]",
    "type": "DocType"
   },

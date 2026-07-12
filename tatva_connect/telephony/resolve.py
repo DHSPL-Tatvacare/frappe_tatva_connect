@@ -11,12 +11,17 @@ The agent map decides WHO is credited. It never drops a call. A missed call carr
 
 A dropped call is not a lost call. The spine persists every raw payload before any of this runs, so
 anything dropped stays auditable and replayable once its DID is mapped.
+
+The DID map IS the routing table. A number is a child row of the grain that owns it, so a mapped DID
+cannot exist without a route, and the two cannot disagree. They were separate tables once, and they
+did disagree: a grain carried four DIDs and no routing rule, which left every pull for its leads dead.
 """
 import frappe
 
 from tatva_connect.telephony import envelope as env
 
-DID_DOCTYPE = "CRM Telephony DID"
+ROUTING_DOCTYPE = "CRM Telephony Routing"
+DID_CHILD = "CRM Telephony Routing DID"
 AGENT_MAP_DOCTYPE = "CRM Telephony Agent Map"
 SETTINGS = "CRM Telephony Settings"
 
@@ -107,18 +112,36 @@ def _capture_rules():
 def grain_for(cdr):
 	"""The grain a call belongs to, or None when the number is not ours.
 
-	A DID row is named by its last-10 digits, so this is a primary-key hit rather than a LIKE scan —
-	which matters, because it runs inline on every inbound webhook.
+	The number is stored as its last-10 digits and the column is indexed, so this is an indexed lookup
+	on each of two tables. It runs inline on every inbound webhook.
+
+	The account is the rule's, unless the number declares its own — which is how one grain reached by
+	two providers is expressed, the DID being the only thing that knows which of them carried the call.
 	"""
 	digits = cdr.get("did_number")
 	if not digits or len(digits) < env.PHONE_MIN_DIGITS:
 		return None
-	return frappe.db.get_value(
-		DID_DOCTYPE,
-		{"name": digits, "enabled": 1},
+
+	did = frappe.db.get_value(
+		DID_CHILD,
+		{"did_number": digits, "enabled": 1, "parenttype": ROUTING_DOCTYPE},
+		["parent", "telephony_account"],
+		as_dict=True,
+	)
+	if not did:
+		return None
+
+	grain = frappe.db.get_value(
+		ROUTING_DOCTYPE,
+		did.parent,
 		["vertical", "psp_group", "program", "telephony_account"],
 		as_dict=True,
-	) or None
+	)
+	if not grain:
+		return None
+
+	grain["telephony_account"] = did.telephony_account or grain.telephony_account
+	return grain
 
 
 def lead_for(cdr, grain):
