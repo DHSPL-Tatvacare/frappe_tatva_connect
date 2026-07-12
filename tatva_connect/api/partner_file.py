@@ -292,7 +292,7 @@ def file_schema(**_kwargs):
 		        for fn, label, ftype, required in FILE_FIELDS],
 		bytes=(
 			"The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as "
-			"`content_base64`. Exactly one is sent. The maximum download size is {0} MB.".format(
+			"`content_base64`. Exactly one is sent. The maximum download size is {} MB.".format(
 				cfg["file_download_max_mb"])
 		),
 		screening=(

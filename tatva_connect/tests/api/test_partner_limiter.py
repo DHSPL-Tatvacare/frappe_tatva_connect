@@ -105,7 +105,7 @@ class TestPartnerLimiter(unittest.TestCase):
 
 	def test_zero_on_a_rate_means_unlimited_and_sends_no_headers(self):
 		"""0 on a DIMENSION is an explicit 'unlimited'. It must not be reported as a budget of nothing."""
-		for i in range(50):
+		for _ in range(50):
 			self.assertIsNone(self._charge(1, 0, 0, 0, 0)[0], "an unlimited dimension must never deny")
 
 		frappe.local.response_headers = frappe._dict()

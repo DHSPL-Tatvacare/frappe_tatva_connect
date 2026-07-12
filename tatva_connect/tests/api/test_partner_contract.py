@@ -804,7 +804,7 @@ class TestPartnerContract(unittest.TestCase):
 				self.assertEqual(data["entity"], entity)
 				self.assertEqual(data["identity"]["addressed_by"], "name")
 				self.assertIn("does not deduplicate", data["dedup"])
-				ext = [f for f in data["fields"] if f["fieldname"] == "external_id"][0]
+				ext = next(f for f in data["fields"] if f["fieldname"] == "external_id")
 				self.assertEqual(ext["behavior"], "OPTIONAL")
 				self.assertFalse(ext["required"], "external_id is OPTIONAL on every entity, always")
 
@@ -819,6 +819,6 @@ class TestPartnerContract(unittest.TestCase):
 			with self.subTest(field=f["fieldname"]):
 				self.assertIn(f["behavior"], ("REQUIRED", "OPTIONAL", "OUTPUT_ONLY"))
 				self.assertIsInstance(f["required"], bool)
-		direction = [f for f in fields if f["fieldname"] == "direction"][0]
+		direction = next(f for f in fields if f["fieldname"] == "direction")
 		self.assertTrue(direction["required"], "direction is the call's one required field")
 		self.assertEqual(direction["allowed_values"], ["Inbound", "Outbound"])

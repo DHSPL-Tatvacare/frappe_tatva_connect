@@ -27,7 +27,6 @@ from tatva_connect.webhooks import ingress, spine
 from tatva_connect.whatsapp import adapter, roles, routing
 from tatva_connect.whatsapp import api as wati
 
-
 # Per-minute cap per caller IP, tunable in CRM WhatsApp Settings.
 _rate_limit = ingress.rate_limit_for("CRM WhatsApp Settings", 600)
 

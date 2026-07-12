@@ -97,7 +97,7 @@ class TestAcefoneCorpus(unittest.TestCase):
 	def test_direction_comes_from_the_payload_not_the_url(self):
 		"""Feed every CDR through the OPPOSITE URL trigger. Direction must not budge — it is
 		read from the body. Under the old design this silently inverted `from`/`to`."""
-		for payload, truth in zip(self.payloads, self.cdrs):
+		for payload, truth in zip(self.payloads, self.cdrs, strict=True):
 			flipped = acefone.normalize(payload, event="outbound_complete")
 			self.assertEqual(flipped["direction"], truth["direction"], truth["call_key"])
 			self.assertEqual(flipped["customer_number"], truth["customer_number"])
