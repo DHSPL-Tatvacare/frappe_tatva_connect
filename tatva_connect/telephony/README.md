@@ -23,8 +23,10 @@ PUSH   Acefone POSTs a CDR
        -> handler.py            4 guest endpoints, one per trigger; direction rides in the URL
        -> webhooks/spine.py     authenticate -> kill-switch -> screen -> raw-log -> ACK -> enqueue
                                   |
-PULL   we GET /v1/call/records   |
-       -> reconcile.py          maps the record into the provider's own webhook vocabulary
+PULL   start from a LEAD          |
+       -> reconcile.py          routing: the lead's grain -> its account   (routing.py)
+                                GET /v1/call/records, keep the lead's number
+                                map the record into the provider's webhook vocabulary
                                   |
                                   v
        -> adapters/acefone.py :: process()      THE SHARED ENTRY
@@ -32,6 +34,16 @@ PULL   we GET /v1/call/records   |
                                   normalize -> one Envelope            (envelope.py)
                                   write   -> CRM Call Log              (writer.py)
 ```
+
+This is the same shape as `whatsapp/backfill.py`, deliberately: a pull starts from a lead, resolves the
+account through `routing`, and re-enters the live handler. Both integrations set up the same way.
+
+**Reconcile never deletes.** `CRM Call Log` is a MIXED table — rows written from a provider, keyed on the
+provider's `call_id`, sit beside rows a rep typed by hand (`telephony_medium = Manual`, no provider key).
+On a live bench the manual rows are the large majority. Clearing a window and refetching it — the obvious
+way to write a reconciler, and safe when the provider is the only source — would destroy the reps' own
+work irrecoverably, and would look like a success while doing it. The pull is strictly an upsert on the
+provider's key. `tests/telephony/test_reconcile_never_deletes.py` holds this, by AST, not by hope.
 
 Everything below `process()` is provider-blind and is asked the same questions whether the call was
 pushed or pulled — the gates, the field mapping, the lead-linking, the status, the agent, the recording.

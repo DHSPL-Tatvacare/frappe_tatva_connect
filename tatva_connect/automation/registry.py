@@ -79,6 +79,21 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Telephony::Acefone::reconcile",
+		fires_on="Schedule",
+		trigger_detail="operator-armed · call records pull",
+		purpose=(
+			"Tops up a lead's call log from Acefone's call records — pulls the calls on the lead's "
+			"routed line and writes in any the live webhook missed, de-duplicated by the provider's "
+			"call id. Calls a rep logged by hand are never touched. Dormant and unscheduled by "
+			"default; the operator arms it with a cron when a gap needs filling.\n"
+			"Example: the webhook was down for an afternoon; running the reconcile brings that "
+			"afternoon's calls onto the lead's call log."
+		),
+		backs=["tatva_connect.telephony.reconcile.scheduled_reconcile"],
+		requires="Telephony::Acefone::calls",
+	),
+	Auto(
 		key="Storage::Azure::offload",
 		fires_on="Doc Event",
 		trigger_detail="File · after_insert + on_trash",
