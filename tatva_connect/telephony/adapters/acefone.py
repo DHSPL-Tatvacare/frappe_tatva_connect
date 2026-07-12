@@ -63,9 +63,10 @@ def already_processed(payload, event, account) -> bool:
 	so those are never short-circuited.
 	"""
 	call_key = payload.get("call_id") or payload.get("uuid")
-	if not call_key:
+	row = writer.row_for_key(call_key)
+	if not row:
 		return False
-	return frappe.db.get_value("CRM Call Log", call_key, "status") == _ANSWERED_DONE
+	return frappe.db.get_value("CRM Call Log", row, "status") == _ANSWERED_DONE
 
 
 def handle(payload, event, account) -> None:

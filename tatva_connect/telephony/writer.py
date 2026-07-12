@@ -16,9 +16,25 @@ from tatva_connect.telephony import resolve
 
 CALL_LOG = "CRM Call Log"
 
+# The provider's call id, held in its own column and never read from the row's `name`. crm names a Call
+# Log `field:id`, but the naming series is the app's to change; every telephony path dedupes on this
+# field so that a change to naming cannot break call ingestion.
+CALL_KEY_FIELD = "custom_provider_call_id"
+
 # How recent a still-Initiated outbound row may be to count as the same call when the provider
 # echoed no correlation id back.
 OUTBOUND_MATCH_WINDOW_MIN = 5
+
+
+def row_for_key(call_key):
+	"""The Call Log row carrying this provider call id, or None.
+
+	The one way a call is found by its key. A row logged by hand carries no provider key, so it can
+	never be selected here.
+	"""
+	if not call_key:
+		return None
+	return frappe.db.get_value(CALL_LOG, {CALL_KEY_FIELD: call_key}, "name")
 
 
 def write(cdr) -> str:
@@ -31,8 +47,14 @@ def write(cdr) -> str:
 	doc = frappe.get_doc(CALL_LOG, existing) if existing else frappe.new_doc(CALL_LOG)
 
 	if not existing:
+		# crm's autoname is `field:id`, so a new row still needs one, and crm's own Twilio and Exotel
+		# handlers set it the same way. Nothing in this app reads it back.
 		doc.id = cdr["call_key"]
 		doc.telephony_medium = cdr["provider"]
+
+	# Written on update as well: a row matched by correlation carries the placeholder the bridge minted,
+	# which the real provider id supersedes once the CDR arrives with one.
+	setattr(doc, CALL_KEY_FIELD, cdr["call_key"])
 
 	# Established once. A provider never reverses direction mid-call, and letting it flip would
 	# silently swap `from`/`to` on a row that already exists.
@@ -101,16 +123,19 @@ def _find_row(cdr):
 	— on the most recent still-Initiated row placed to this number inside the match window. The last
 	fallback exists because Acefone echoes nothing: the `custom_identifier` sent on a click-to-call
 	never returns. Without it an outbound CDR would create a second row and orphan the Initiated one.
+
+	Both key lookups read the provider-call-id column, never the row's `name`.
 	"""
-	if frappe.db.exists(CALL_LOG, cdr["call_key"]):
-		return cdr["call_key"]
+	existing = row_for_key(cdr["call_key"])
+	if existing:
+		return existing
 
 	if cdr["direction"] != "outbound":
 		return None
 
-	correlation = cdr.get("correlation_key")
-	if correlation and frappe.db.exists(CALL_LOG, correlation):
-		return correlation
+	correlated = row_for_key(cdr.get("correlation_key"))
+	if correlated:
+		return correlated
 
 	phone = cdr.get("customer_number")
 	if not phone:

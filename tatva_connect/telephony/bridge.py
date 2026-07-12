@@ -15,7 +15,7 @@ from urllib.parse import quote
 import frappe
 from frappe import _
 
-from tatva_connect.telephony import providers, routing
+from tatva_connect.telephony import providers, routing, writer
 
 MEDIUM = "Acefone"
 RECORDING_ENDPOINT = "/api/method/tatva_connect.api.telephony.recording"
@@ -54,7 +54,9 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 		destination_number=to_number,
 		agent_number=agent_number,
 		caller_id=account.caller_id,
-		custom_identifier=call_log.name,
+		# The placeholder key, not the row's name: the CDR echoes this back and the writer matches it
+		# against the same column it dedupes every other call on.
+		custom_identifier=call_log.get(writer.CALL_KEY_FIELD),
 	)
 	if not (resp or {}).get("success"):
 		call_log.db_set("status", "Failed")
@@ -90,7 +92,11 @@ def _agent_number(account):
 
 def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium):
 	doc = frappe.new_doc("CRM Call Log")
-	doc.id = frappe.generate_hash(length=12)
+	# The provider returns no call id on a click-to-call, so a placeholder is minted and sent for it to
+	# echo back. The hangup CDR replaces it with the real id.
+	placeholder = frappe.generate_hash(length=12)
+	doc.id = placeholder
+	setattr(doc, writer.CALL_KEY_FIELD, placeholder)
 	doc.type = "Outgoing"
 	doc.status = "Initiated"
 	doc.telephony_medium = medium

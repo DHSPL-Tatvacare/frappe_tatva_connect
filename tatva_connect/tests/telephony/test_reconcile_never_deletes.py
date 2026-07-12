@@ -14,12 +14,14 @@ These tests are the guard. They fail if a pull ever removes a row, or writes ove
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.telephony import reconcile
+from tatva_connect.telephony import reconcile, writer
 
 ACCOUNT = "_TestTelephonyAcct"
 LEAD_PHONE = "9000012345"
 MANUAL_ID = "_test-manual-call-entry"
 PROVIDER_ID = "_test-provider-call-entry"
+
+KEY = writer.CALL_KEY_FIELD
 
 
 def _record(call_id, client_number=LEAD_PHONE, did="9000007179"):
@@ -43,8 +45,8 @@ def _record(call_id, client_number=LEAD_PHONE, did="9000007179"):
 
 class TestReconcileNeverDeletes(FrappeTestCase):
 	def setUp(self):
-		for name in (MANUAL_ID, PROVIDER_ID):
-			frappe.db.delete("CRM Call Log", {"name": name})
+		frappe.db.delete("CRM Call Log", {"id": ["in", (MANUAL_ID, PROVIDER_ID)]})
+		frappe.db.delete("CRM Call Log", {KEY: ["in", (MANUAL_ID, PROVIDER_ID)]})
 		frappe.db.commit()
 
 		# What a rep typed. No provider key, and the provider could never recreate it.
@@ -55,10 +57,11 @@ class TestReconcileNeverDeletes(FrappeTestCase):
 		})
 		manual.insert(ignore_permissions=True)
 		frappe.db.commit()
+		self.manual = manual.name
 
 	def tearDown(self):
-		for name in (MANUAL_ID, PROVIDER_ID):
-			frappe.db.delete("CRM Call Log", {"name": name})
+		frappe.db.delete("CRM Call Log", {"id": ["in", (MANUAL_ID, PROVIDER_ID)]})
+		frappe.db.delete("CRM Call Log", {KEY: ["in", (MANUAL_ID, PROVIDER_ID)]})
 		frappe.db.commit()
 
 	def test_a_pull_never_removes_a_manual_row(self):
@@ -67,14 +70,37 @@ class TestReconcileNeverDeletes(FrappeTestCase):
 		summary = {"scanned": 0, "new": 0, "existing": 0, "declined": 0, "failed": 0}
 		reconcile._reconcile_one(_record(PROVIDER_ID), ACCOUNT, dry_run=False, summary=summary)
 
-		self.assertTrue(frappe.db.exists("CRM Call Log", MANUAL_ID), "the manual row was deleted")
+		self.assertTrue(frappe.db.exists("CRM Call Log", self.manual), "the manual row was deleted")
 		self.assertEqual(
-			frappe.db.get_value("CRM Call Log", MANUAL_ID, "telephony_medium"), "Manual",
+			frappe.db.get_value("CRM Call Log", self.manual, "telephony_medium"), "Manual",
 			"the manual row was written over",
 		)
-		self.assertEqual(frappe.db.get_value("CRM Call Log", MANUAL_ID, "duration"), 120)
+		self.assertEqual(frappe.db.get_value("CRM Call Log", self.manual, "duration"), 120)
 		# Nothing was removed. The count may rise if the record is captured; it may never fall.
 		self.assertGreaterEqual(frappe.db.count("CRM Call Log"), before)
+
+	def test_a_call_is_found_by_its_key_column_not_by_the_row_name(self):
+		"""The naming series is the app's to change, so nothing may key a call on its `name`.
+
+		The row is renamed out from under the provider's id; the pull must still find it, update it, and
+		add nothing. This fails the moment a lookup goes back to reading `name`.
+		"""
+		summary = {"scanned": 0, "new": 0, "existing": 0, "declined": 0, "failed": 0}
+		reconcile._reconcile_one(_record(PROVIDER_ID), ACCOUNT, dry_run=False, summary=summary)
+
+		row = writer.row_for_key(PROVIDER_ID)
+		self.assertTrue(row, "the provider's call was not written")
+
+		renamed = frappe.rename_doc("CRM Call Log", row, "_test-renamed-by-a-naming-series", force=True)
+		frappe.db.commit()
+		self.addCleanup(lambda: frappe.db.delete("CRM Call Log", {"name": renamed}))
+
+		self.assertNotEqual(renamed, PROVIDER_ID)
+		self.assertEqual(writer.row_for_key(PROVIDER_ID), renamed, "the call is keyed on its name")
+
+		after = frappe.db.count("CRM Call Log")
+		reconcile._reconcile_one(_record(PROVIDER_ID), ACCOUNT, dry_run=False, summary=summary)
+		self.assertEqual(frappe.db.count("CRM Call Log"), after, "a renamed call was duplicated")
 
 	def test_reconcile_calls_nothing_destructive(self):
 		"""Behaviour is checked above; this pins the source, so the destructive idiom cannot creep back
@@ -104,8 +130,7 @@ class TestReconcileNeverDeletes(FrappeTestCase):
 		reconcile._reconcile_one(_record(PROVIDER_ID), ACCOUNT, dry_run=False, summary=summary)
 		self.assertEqual(frappe.db.count("CRM Call Log"), after_first, "the re-pull duplicated a call")
 
-	def test_a_manual_row_is_not_addressable_by_the_provider_key(self):
-		"""A manual row carries no provider key, so a pull cannot select it even by accident."""
-		self.assertFalse(
-			frappe.db.exists("CRM Call Log", {"name": MANUAL_ID, "telephony_medium": "Acefone"})
-		)
+	def test_a_manual_row_carries_no_provider_key(self):
+		"""A hand-logged call has nothing in the key column, so the pull's only lookup cannot reach it."""
+		self.assertFalse(frappe.db.get_value("CRM Call Log", self.manual, KEY))
+		self.assertIsNone(writer.row_for_key(MANUAL_ID))

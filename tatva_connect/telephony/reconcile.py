@@ -29,7 +29,7 @@ from frappe.utils import add_to_date, now_datetime
 from tatva_connect import automation
 from tatva_connect.telephony import api as acefone
 from tatva_connect.telephony import envelope as env
-from tatva_connect.telephony import routing
+from tatva_connect.telephony import routing, writer
 from tatva_connect.telephony.adapters import acefone as adapter
 
 CALL_LOG = "CRM Call Log"
@@ -189,8 +189,7 @@ def _reconcile_one(row, account, dry_run, summary):
 	logged is updated rather than duplicated.
 	"""
 	payload = _report_to_payload(row, _norm_direction(row))
-	call_key = payload.get("call_id") or payload.get("uuid")
-	known = bool(call_key) and frappe.db.exists(CALL_LOG, call_key)
+	known = bool(writer.row_for_key(payload.get("call_id") or payload.get("uuid")))
 
 	if dry_run:
 		wanted, _reason = adapter.screen(payload, None, account)
