@@ -100,7 +100,7 @@ class TestPartnerLimiter(unittest.TestCase):
 
 		# Even if a 0 reaches the bucket, the Lua clamps burst up to the rate rather than deadlocking.
 		for i in range(3):
-			retry_after, _rem = self._charge(1, grate=0, gburst=0, trate=10, tburst=0)
+			retry_after, _rem, _shared = self._charge(1, grate=0, gburst=0, trate=10, tburst=0)
 			self.assertIsNone(retry_after, f"call {i + 1} was 429'd by a zero-capacity bucket")
 
 	def test_zero_on_a_rate_means_unlimited_and_sends_no_headers(self):
@@ -122,7 +122,7 @@ class TestPartnerLimiter(unittest.TestCase):
 		"""3 calls of burst, then the 4th is refused with a Retry-After."""
 		for i in range(3):
 			self.assertIsNone(self._charge(1, 1000, 1000, 3, 3)[0], f"call {i + 1} must be allowed")
-		retry_after, remaining = self._charge(1, 1000, 1000, 3, 3)
+		retry_after, remaining, _shared = self._charge(1, 1000, 1000, 3, 3)
 		self.assertIsNotNone(retry_after, "the 4th call must be refused")
 		self.assertGreater(retry_after, 0, "a refusal must say when to retry")
 		self.assertEqual(remaining, 0)
@@ -201,6 +201,62 @@ class TestPartnerLimiter(unittest.TestCase):
 		second = self._charge(1, 1, 1, 1, 1, window=5, token_key=token)
 		self.assertIsNotNone(second[0], "the SECOND concurrent bulk call must be refused with a 429")
 		self.assertGreater(second[0], 0, "a refusal must tell the caller when to come back")
+
+	def test_a_shared_capacity_refusal_is_503_not_429(self):
+		"""Whose fault it is decides the code, because the standards treat them differently.
+
+		429 is a CLIENT-side signal (RFC 6585): you sent too many. A partner refused because ANOTHER
+		partner holds the shared bulk slot sent one call and exceeded nothing — telling them they hit a
+		rate limit is false, and a well-built client responds to a 429 by reducing concurrency, which
+		does not help when the constraint is not theirs. A temporary server-side unavailability is 503
+		(RFC 9110). The limiter already knows which bucket denied; it now says so."""
+		frappe.local.response = frappe._dict()
+
+		# The caller's own bucket is fine (huge); the SHARED one is empty. Nobody's fault but ours.
+		shared = f"test:shared:{frappe.generate_hash(length=8)}"
+		self._keys.add(shared)
+		self.g = shared
+		self._charge(1, 1, 1, 10_000, 10_000)                 # drain the shared bucket
+		denial = self._charge(1, 1, 1, 10_000, 10_000)
+		self.assertIsNotNone(denial[0], "the shared bucket must refuse the second call")
+		self.assertTrue(denial[2], "the limiter must report that the SHARED bucket denied it")
+
+		_base._throttle_response(denial, self.mapping)
+		body = frappe.local.response
+		self.assertEqual(body["http_status_code"], 503)
+		self.assertEqual(body["error"]["code"], "server_busy")
+		self.assertGreater(body["error"]["retry_after"], 0,
+		                   "a real number of seconds, computed from the bucket, never guessed")
+		self.assertNotIn("partner", body["error"]["message"].lower(),
+		                 "the message must not disclose that another caller exists")
+
+	def test_the_callers_own_budget_is_still_a_429(self):
+		"""The other direction: when the caller really did send too many, 429 remains correct."""
+		frappe.local.response = frappe._dict()
+		token = f"test:own:{frappe.generate_hash(length=8)}"
+		self._keys.add(token)
+		self._charge(1, 10_000, 10_000, 1, 1, token_key=token)   # spend the caller's OWN bucket
+		denial = self._charge(1, 10_000, 10_000, 1, 1, token_key=token)
+		self.assertIsNotNone(denial[0])
+		self.assertFalse(denial[2], "the caller's own bucket denied this, not the shared one")
+
+		_base._throttle_response(denial, self.mapping)
+		body = frappe.local.response
+		self.assertEqual(body["http_status_code"], 429)
+		self.assertEqual(body["error"]["code"], "rate_limited")
+
+	def test_a_refused_call_spends_nothing(self):
+		"""The 503 says the budget was not consumed. That has to be TRUE, not a comforting sentence."""
+		token = f"test:nospend:{frappe.generate_hash(length=8)}"
+		self._keys.add(token)
+		self.g = f"test:shared:{frappe.generate_hash(length=8)}"
+		self._keys.add(self.g)
+
+		self._charge(1, 1, 1, 100, 100, token_key=token)         # shared bucket now empty
+		before = self._charge(1, 1, 1, 100, 100, token_key=token)[1]
+		after = self._charge(1, 1, 1, 100, 100, token_key=token)[1]
+		self.assertEqual(before, after,
+		                 "a call refused for shared capacity must not debit the caller's own budget")
 
 	def test_a_file_carries_bytes_so_it_has_its_own_ceiling(self):
 		"""A file is not a row. Every other bulk record is a few hundred bytes and a couple of INSERTs;

@@ -41,6 +41,7 @@ flowchart TD
 | `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
 | `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |
 | `server_error` | 500 | Unexpected, and logged server-side. | Retry with exponential backoff. If it persists, the request and response are sent to Ops. |
+| `server_busy` | 503 | The server is overloaded. **This is not a rate limit.** The key's own budget was not exceeded and was not consumed. | `error.retry_after` seconds are waited, then the **same call** is retried unchanged. It is a real number, not an estimate. Slowing down does not help and is not the fix. |
 | `write_conflict` | 503 | A concurrent write conflicted with a bulk call and the database rolled it back. **Nothing was saved**, not even the records that had already succeeded inside the call. | `error.retry_after` seconds are waited, then the **whole call** is retried. Transient and expected under concurrency; it is not a fault in the request. Sending bulk calls one at a time avoids it. See [Rate limits](/rate-limits). |
 
 :::caution{title="Not-found is intentionally vague"}

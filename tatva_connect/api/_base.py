@@ -443,8 +443,9 @@ ERROR_CODES = frozenset({
 	"conflict",           # 409 — an Idempotency-Key is in flight; 422 — reused with a different body
 	"duplicate",          # 409 — a unique constraint was violated
 	"cannot_delete",      # 409 — the record has linked records
-	"rate_limited",       # 429 — a budget is exhausted
+	"rate_limited",       # 429 — the CALLER's own budget is exhausted
 	"server_error",       # 500 — unexpected, and logged
+	"server_busy",        # 503 — the service is at capacity; not the caller's fault, nothing spent
 	"write_conflict",     # 503 — a concurrent write rolled the batch back; nothing was saved
 })
 
@@ -519,7 +520,13 @@ commit(t, allowed == 1)
 
 local remaining = -1
 if t ~= nil then remaining = math.floor(t.tokens) end
-return {allowed, math.max(gd, td), remaining}
+
+-- WHICH bucket denied decides what the caller is told. Their own bucket means they sent too many
+-- (429). The shared one means the service is at capacity through no fault of theirs (503).
+local by_shared = 0
+if allowed == 0 and td == 0 then by_shared = 1 end
+
+return {allowed, math.max(gd, td), remaining, by_shared}
 """
 _RL_SHA = None
 
@@ -533,7 +540,7 @@ def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, wind
 	if not mapping:
 		return None
 	if grate <= 0 and trate <= 0:
-		return None, None  # both dimensions unlimited — nothing to test
+		return None, None, False  # both dimensions unlimited — nothing to test
 	global _RL_SHA
 	import redis as _redis
 
@@ -551,8 +558,9 @@ def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, wind
 		frappe.log_error(title="Partner API limiter failed (allowed)")
 		return None
 	allowed, retry_after, remaining = int(res[0]), int(res[1]), int(res[2])
+	by_shared = bool(int(res[3])) if len(res) > 3 else False
 	remaining = None if remaining < 0 else remaining
-	return (None if allowed else retry_after), remaining
+	return (None if allowed else retry_after), remaining, by_shared
 
 
 def _rate_check(cost, mapping):
@@ -609,14 +617,30 @@ def _volume_check(rows, direction, mapping):
 
 
 def _throttle_response(check, mapping, reason=None):
-	"""Given a `_bucket_pair` result, set the RateLimit-* headers + return the 429 `_fail` response
-	when denied, else None. One place both dimensions funnel their throttle response through."""
+	"""Given a `_bucket_pair` result, set the RateLimit-* headers + return the refusal, else None.
+
+	WHICH bucket denied decides the answer, because they are different conditions and the standards
+	treat them differently. The caller's OWN bucket means they sent too many: that is a client fault
+	and RFC 6585 gives it 429. The SHARED bucket means the service is at capacity — the caller did
+	nothing wrong, there is nothing for them to slow down, and RFC 9110 gives a temporary server-side
+	unavailability 503. A 429 there would tell a partner on their first call of the day that they had
+	exceeded a limit they never touched, and a well-built client would respond by reducing its
+	concurrency, which does not help.
+
+	`retry_after` is real in both cases: the limiter computes the exact seconds until the bucket holds
+	enough tokens to pay, and a refused call never spends any."""
 	if check is None:
 		return None
-	retry_after, remaining = check
+	retry_after, remaining, by_shared = check
 	if retry_after is None:
 		return None
 	_ratelimit_headers(mapping, remaining=remaining, retry_after=retry_after)
+	if by_shared:
+		return _fail(
+			"server_busy",
+			_("Server overloaded. Please try again after {0}s.").format(retry_after),
+			503, retry_after=retry_after,
+		)
 	return _fail(
 		"rate_limited",
 		_("{0}. Retry in {1}s.").format(reason or _("Rate limit exceeded"), retry_after),

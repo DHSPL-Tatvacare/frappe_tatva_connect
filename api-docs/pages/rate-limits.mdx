@@ -31,7 +31,7 @@ When any budget is exceeded, the next call returns **HTTP 429** with this body:
 
 A bulk write is not the same animal as a lead read. It holds every record's row locks for the length of its transaction, so what has to be limited is not how many bulk calls arrive per minute, but **how many are allowed to run at the same time**. That number is **one**.
 
-A second bulk call sent while the first is still running is refused with a 429 before it reaches the database. Two bulk writes are therefore never in flight together, and the write conflicts that concurrency would otherwise cause do not arise.
+A second bulk call sent while the first is still running is refused **before it reaches the database**. Two bulk writes are therefore never in flight together, and the write conflicts that concurrency would otherwise cause do not arise.
 
 The practical rule is simple:
 
@@ -39,11 +39,11 @@ The practical rule is simple:
 
 Single-record calls are unaffected. They may be sent concurrently, up to the request rate.
 
-The bulk budget is enforced **at platform level**, not per key. While one integration runs a large
-backfill, another integration's bulk call waits its turn and is told how long to wait. This is
-deliberate: the constraint being protected is a single database index that every key writes through,
-so a per-key limit alone would not protect it. A backfill that must not be delayed by another one is
-scheduled with Ops.
+The bulk budget is enforced **at platform level**, not per key: the constraint being protected is a single database index that every key writes through, so a per-key limit alone would not protect it.
+
+That has a consequence worth stating plainly. A bulk call can be refused while the key is **well inside its own budget** — because the server is busy, not because the key did anything wrong. That is **not a rate limit**, and it is not reported as one. It returns **`503 server_busy`** — *"Server overloaded. Please try again after Ns."* — with a `Retry-After`. The key's budget is neither exceeded nor consumed, and the correct response is to wait the stated number of seconds and send **the same call again**. Slowing down does not help.
+
+A **`429 rate_limited`** on a bulk call means something different: the key really did exceed its own bulk budget. There, slowing down is exactly the fix.
 
 ## Bulk still saves the request budget
 
@@ -66,14 +66,17 @@ Every response reports the current state of the request budget, so a client can 
 
 ## Retry handling
 
-Two statuses are retried, and both are safe to retry:
+Three statuses are retried, and all three are safe to retry. What differs is **whose** problem they are, and that changes what a client should do.
 
-| Status | `error.code` | Meaning |
-|---|---|---|
-| **429** | `rate_limited` | A budget is exhausted. The call was refused *before* the write ran, so nothing was saved. |
-| **503** | `write_conflict` | A concurrent write conflicted with the batch and the database rolled it back. **Nothing was saved** — not even the records that had already succeeded inside the call. |
+| Status | `error.code` | Whose problem | What to do |
+|---|---|---|---|
+| **429** | `rate_limited` | **Yours.** A budget is exhausted. | Wait `retry_after`, then **slow down**. Reduce concurrency or spread the calls out. |
+| **503** | `server_busy` | **Nobody's.** The server is overloaded. Your budget was neither exceeded nor consumed. | Wait `retry_after`, then retry the **same call unchanged**. Slowing down does not help. |
+| **503** | `write_conflict` | **Nobody's.** A concurrent write rolled the batch back. | Wait `retry_after`, then retry the **whole call**. Nothing was saved, not even the records that had already succeeded inside it. |
 
-Both carry `error.retry_after`. Both mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes, addressing and retries](/writes-and-retries).
+All three carry `error.retry_after`, and it is a real number: the exact seconds until the budget refills or the server frees up, computed rather than estimated.
+
+All three mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes, addressing and retries](/writes-and-retries).
 
 <Mermaid chart={`
 flowchart TD
@@ -89,7 +92,7 @@ flowchart TD
 ```python title="Python"
 import time
 
-RETRYABLE = (429, 503)   # rate_limited, write_conflict — neither ever saved anything
+RETRYABLE = (429, 503)   # rate_limited, server_busy, write_conflict — none ever saved anything
 
 def call_with_retry(do_request, max_attempts=6):
     for attempt in range(max_attempts):
@@ -103,7 +106,7 @@ def call_with_retry(do_request, max_attempts=6):
 ```
 
 ```javascript title="Node"
-const RETRYABLE = [429, 503];   // rate_limited, write_conflict — neither ever saved anything
+const RETRYABLE = [429, 503];   // rate_limited, server_busy, write_conflict — none ever saved anything
 
 async function callWithRetry(doRequest, maxAttempts = 6) {
   let res;

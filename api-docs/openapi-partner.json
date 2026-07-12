@@ -427,7 +427,8 @@
                   "cannot_delete",
                   "write_conflict",
                   "rate_limited",
-                  "server_error"
+                  "server_error",
+                  "server_busy"
                 ],
                 "description": "Stable machine-readable code. Branch on this, not on the message text."
               },
@@ -6179,6 +6180,21 @@
             }
           }
         }
+      },
+      "ServerBusy": {
+        "description": "The server is overloaded (`error.code` is `server_busy`). This is NOT a rate limit: the caller's own budget was not exceeded and was not consumed. Nothing was saved, so the same call is simply retried after `error.retry_after` seconds, which is a real number rather than an estimate. Reducing the request rate does not help and is not the fix.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PartnerError"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -6999,6 +7015,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
           }
         }
       }
@@ -7996,6 +8015,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
           }
         }
       }
@@ -9532,6 +9554,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
           }
         },
         "requestBody": {
@@ -9978,6 +10003,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
           }
         },
         "requestBody": {
