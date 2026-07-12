@@ -297,6 +297,16 @@ fixtures = [
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
+		# No transactional doctype mints its name from an application counter. A naming_series name comes
+		# from ONE row in tabSeries whose lock is held until commit, so concurrent creates deadlock on it:
+		# 1 of 32 survived a 32-way burst, against 32 of 32 with a hash. autoincrement stays as it is — it
+		# uses MariaDB's own sequence, which releases immediately and does not deadlock. Masters and
+		# CRM Call Log (whose id is the telephony provider's) are untouched.
+		# See patches/hash_name_transactional_doctypes.py.
+		"CRM Lead-main-autoname",
+		"CRM Lead-main-naming_rule",
+		"CRM Deal-main-autoname",
+		"CRM Deal-main-naming_rule",
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
 		"CRM Drug Program Profile-nivo_indication-fieldtype",
 		"CRM Drug Program Profile-nivo_indication-options",

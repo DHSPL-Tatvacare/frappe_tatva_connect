@@ -29,11 +29,16 @@ class TestDormantLocationWritesNothing(unittest.TestCase):
 	@classmethod
 	def setUpClass(cls):
 		frappe.set_user("Administrator")
+		# A type scoped to a PROGRAM only applies to a lead already on that program. The probe lead
+		# carries none, so the type it is completed with must carry none either — picking any type on
+		# the grain works only for as long as the first one happens to be unscoped.
 		cls.task_type = frappe.db.get_value(
-			"CRM Task Type", {"name": ["like", f"{VERTICAL}::{GROUP}::%"]}, "name"
+			"CRM Task Type",
+			{"name": ["like", f"{VERTICAL}::{GROUP}::%"], "program": ["in", ["", None]]},
+			"name",
 		)
 		if not cls.task_type:
-			raise unittest.SkipTest(f"no seeded task type on {VERTICAL}::{GROUP}")
+			raise unittest.SkipTest(f"no program-agnostic task type on {VERTICAL}::{GROUP}")
 
 	def setUp(self):
 		self.sp = f"dormant_loc_{frappe.generate_hash(length=6)}"

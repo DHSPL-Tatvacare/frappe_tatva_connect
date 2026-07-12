@@ -155,5 +155,6 @@ tatva_connect.patches.add_call_log_reference_index     # post — index (referen
 # tatva_connect.patches.fix_custom_group_field_name      # post — custom_psp_group -> custom_group
 tatva_connect.patches.backfill_webhook_token_digests      # post — derive the indexed token digest for inbound auth
 tatva_connect.patches.add_integration_request_index         # post — (service, status) on the webhook log; the DLQ replay scans without it
+tatva_connect.patches.hash_name_transactional_doctypes
 tatva_connect.patches.backfill_provider_call_id             # post — provider call id out of the row name, into its own column
 tatva_connect.patches.merge_did_into_routing                # post — DID map folded into the routing rule; one table, one grain

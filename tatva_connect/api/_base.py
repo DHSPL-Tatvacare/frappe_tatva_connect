@@ -422,6 +422,14 @@ _ERROR_MAP = {
 	ValueError: ("validation_error", 400),
 	TypeError: ("validation_error", 400),
 }
+# A deadlock or a lock-wait timeout is TRANSIENT, not a fault in the request: the database picked one
+# of two contending transactions and rolled it back so the other could proceed. Retrying the identical
+# call succeeds, so it is 503 server_busy — the same retryable answer shared capacity gets — never an
+# opaque 500 the caller cannot act on.
+if hasattr(frappe, "QueryDeadlockError"):
+	_ERROR_MAP[frappe.QueryDeadlockError] = ("server_busy", 503)
+if hasattr(frappe, "QueryTimeoutError"):
+	_ERROR_MAP[frappe.QueryTimeoutError] = ("server_busy", 503)
 if hasattr(frappe, "DuplicateEntryError"):
 	_ERROR_MAP[frappe.DuplicateEntryError] = ("duplicate", 409)
 if hasattr(frappe, "RateLimitExceededError"):
@@ -859,10 +867,12 @@ def _api(fn=None, *, bulk=False, read=False):
 			# already wrote. _idempotency_begin commits its claim separately, so the release still lands.
 			frappe.db.rollback()
 			code, http, message, fields = _classify(e, fn.__name__)
-			if fields:
-				_fail(code, message, http, fields=fields)
-			else:
-				_fail(code, message, http)
+			extra = {"fields": fields} if fields else {}
+			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a
+			# retryable failure must never do.
+			if http == 503:
+				extra["retry_after"] = _cfg()["bulk_window_seconds"]
+			_fail(code, message, http, **extra)
 			if idem:
 				_idempotency_release(idem)
 		finally:
