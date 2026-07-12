@@ -69,6 +69,11 @@ MARKER = "guest-ok:"
 #     caller can never enumerate DRAFT catalog rows via a crafted filter (VAPT Jun'26, Mode 2).
 #   _lms_privileged         — the same module's LMS privilege check (get_job_details): strips the
 #     creator email (`owner`) for a non-privileged caller. A real per-caller narrowing gate.
+#   _published_course_from_referer — learning.outline's course recovery: the shim reads the course
+#     from the Referer, which is CLIENT-SUPPLIED and so forgeable, and therefore honours it only for
+#     a course the caller could already reach — published only for a non-privileged one (it reuses
+#     _lms_privileged), the same bound _force_published puts on the catalog. A crafted Referer
+#     cannot read a DRAFT course's outline.
 GUEST_GATE_TOKENS = (
 	"spine.receive",
 	"_receive",
@@ -79,6 +84,7 @@ GUEST_GATE_TOKENS = (
 	"_grain_from_form",
 	"_force_published",
 	"_lms_privileged",
+	"_published_course_from_referer",
 )
 
 

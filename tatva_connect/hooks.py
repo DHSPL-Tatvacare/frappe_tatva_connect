@@ -73,6 +73,9 @@ override_whitelisted_methods = {
 	"lms.lms.utils.get_courses": "tatva_connect.access.native_guards.get_courses",
 	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
 	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
+	# Upstream LMS race (2.55.0, unfixed on develop): CourseOverview calls this with no course, so a
+	# student sees "Course Content coming soon!" on every course. Shim recovers it from the Referer.
+	"lms.lms.utils.get_course_outline": "tatva_connect.learning.outline.get_course_outline",
 }
 
 # Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.
