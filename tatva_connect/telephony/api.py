@@ -10,9 +10,10 @@ to use (resolved upstream by telephony/routing.py). The only GLOBAL state is the
 writes a CRM Call Log — that lives in handler.py. Mirrors the kill-switch +
 defensive-POST conventions of tatva_connect/wati/api.py.
 
-Click-to-call returns only {"success": bool, "message": str} (no synchronous
-call id), so correlation back to a CRM Call Log row is carried via
-`custom_identifier` (echoed in the webhook) — see handler.py.
+Click-to-call returns only {"success": bool, "message": str} — no synchronous call id. It is sent a
+`custom_identifier` to echo back, but Acefone echoes nothing: the field was empty on all 363 captured
+CDRs, as was `ref_id`. There is therefore NO correlation key from a placed call back to its CDR, and
+outbound-from-CRM cannot be built on one.
 """
 import re
 from urllib.parse import urlencode
@@ -128,18 +129,22 @@ def _get(account, endpoint: str, params: dict) -> dict:
 		return {"success": False, "message": str(e)[:400]}
 
 
-def get_call_report(account, from_date=None, to_date=None, page=1, limit=100, **filters) -> dict:
-	"""GET /v1/call-report on `account` — the authoritative PULL source for calls.
+def get_call_records(account, from_date=None, to_date=None, page=1, limit=100, **filters) -> dict:
+	"""GET /v1/call/records — the Call Detail Records API, and the authoritative pull source.
 
-	Each record carries `recording_file_link` (the recording URL) and `unique_id`
-	(the call's unique id), plus `call_hint` (direction), `source`/`destination`,
-	`call_answered_by`, `status`, and timestamps. Filterable by from_date/to_date,
-	`call_id`, `did`, `dest_num`, `call_status`; paginated (`page`, `limit`).
+	The endpoint was `/v1/call-report` here and had never run, because no account carried an API
+	token. Against a live token it answers 403 through AWS API Gateway: no such route. The real path
+	is `/v1/call/records`, confirmed against account 214181.
 
-	Dates are passed through verbatim — the caller formats them to Acefone's
-	expected 'YYYY-MM-DD HH:MM:SS'. Returns Acefone's parsed body (shape pinned on
-	the first live capture — see reconcile.py).
+	A record names its parties explicitly, which the webhook does not: `client_number` is always the
+	customer and `did_number` always ours, whichever way the call went. It also carries `call_id` (the
+	same key the webhook sends), `direction`, `status`, `call_duration`, `date` + `time`, `end_stamp`,
+	`hangup_cause`, `recording_url`, `aws_call_recording_identifier`, and a `call_flow` whose Agent
+	entries carry the agent's email.
+
+	Dates go through verbatim, formatted 'YYYY-MM-DD HH:MM:SS' by the caller. Paginated; filterable by
+	`call_id`, `did_number`, `direction`, `call_type`.
 	"""
 	params = {"from_date": from_date, "to_date": to_date, "page": page, "limit": limit}
 	params.update(filters)
-	return _get(account, "call-report", params)
+	return _get(account, "call/records", params)

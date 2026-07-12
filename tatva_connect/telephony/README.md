@@ -1,90 +1,173 @@
-# Telephony integration (`tatva_connect.telephony`) — Acefone provider
+# Telephony (`tatva_connect.telephony`) — Acefone today, any provider tomorrow
 
-Logs phone calls into the CRM and lets agents click-to-call a lead — all through **Acefone** (our cloud telephony provider), via **clean backend overrides only, no crm fork**. Sibling of the WATI WhatsApp integration: same app, same dev-first discipline, same multi-account routing.
+Logs phone calls onto the lead and lets an agent click-to-call, through **clean backend overrides only,
+no crm fork**. Acefone is the first provider; the module is shaped so the second one writes an adapter
+and nothing else.
 
-Acefone API mechanics were adapted from the MIT-licensed [`sanskar-onehash/crm_acefone_integration`](https://github.com/sanskar-onehash/crm_acefone_integration); the write target was changed to crm's **native `CRM Call Log`** so calls render in the lead's Calls tab with no glue.
+Acefone API mechanics were adapted from the MIT-licensed
+[`sanskar-onehash/crm_acefone_integration`](https://github.com/sanskar-onehash/crm_acefone_integration);
+the write target was changed to crm's **native `CRM Call Log`** so calls render in the lead's Calls tab
+with no glue.
 
 ## Binding rule
-**No `frappe/crm` (or any app) source edits.** Everything is `override_whitelisted_methods` + config + our own `tatva_connect` code.
 
-## The core idea: ride the native call UI
+**No `frappe/crm` (or any app) source edits.** Everything is `override_whitelisted_methods` + config +
+our own `tatva_connect` code.
 
-crm's call UI (the **phone icon** on a lead/deal/contact, "Make a Call", the call popup, the inline **"Listen"** recording player) only appears when a telephony integration's settings are *enabled* (`callEnabled` = `is_call_integration_enabled()` returns any true). Acefone is **not** in crm's hardcoded set (Twilio/Exotel only), and there is **no provider-registration hook**. So we:
+## Two front doors, one brain
 
-1. **Enable the Exotel "slot"** (CRM Exotel Settings → Enabled; no Exotel creds needed) → the native phone icon lights up everywhere.
-2. **Override the two backend methods** that UI calls, so the native UI drives **Acefone**:
+A call reaches the CRM two ways, and the distinction is deliberate.
 
-| crm method (replaced) | our handler (`acefone/bridge.py`) | effect |
-|---|---|---|
-| `crm.integrations.exotel.handler.make_a_call` | `make_a_call` | the native phone icon places an **Acefone bridge call** (account chosen by routing) |
-| `crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log` | `get_call_log` | for Acefone calls, overwrites `recording_url_path` with our streaming proxy → the native **"Listen"** player works inline |
+```
+PUSH   Acefone POSTs a CDR
+       -> handler.py            4 guest endpoints, one per trigger; direction rides in the URL
+       -> webhooks/spine.py     authenticate -> kill-switch -> screen -> raw-log -> ACK -> enqueue
+                                  |
+PULL   we GET /v1/call/records   |
+       -> reconcile.py          maps the record into the provider's own webhook vocabulary
+                                  |
+                                  v
+       -> adapters/acefone.py :: process()      THE SHARED ENTRY
+                                  screen  -> is this call ours?        (resolve.py)
+                                  normalize -> one Envelope            (envelope.py)
+                                  write   -> CRM Call Log              (writer.py)
+```
 
-The CRM never reaches Exotel — `make_a_call` is fully replaced. `get_call_log` delegates to the original crm function and only augments Acefone rows (Twilio/Exotel untouched).
+Everything below `process()` is provider-blind and is asked the same questions whether the call was
+pushed or pulled — the gates, the field mapping, the lead-linking, the status, the agent, the recording.
+A pulled call therefore cannot disagree with the pushed one.
 
-> **What is a "bridge"?** Acefone calls the agent's phone first, then dials the patient, then connects (bridges) the two real phone lines. The audio is on the phones, never in the browser — so a true in-browser softphone/dialer is **impossible** for Acefone (that's a WebRTC/Twilio-only thing). The most any bridge provider gets is a status popup. (Acefone *does* have a WebRTC softphone, but only as their standalone AceConnect app / Chrome extension — **no embeddable SDK**, so it can't live inside our CRM.)
+The **front doors stay separate on purpose.** A webhook arrives over HTTP from an untrusted caller, so
+it is authenticated, raw-logged as an `Integration Request` and made replayable. A record is fetched by
+us, with our own token, from the source of truth: there is no delivery to authenticate and none to
+replay, and routing the pull through the webhook spine would fabricate both. Sharing the *front door*
+is not the goal; sharing the *logic* is.
 
-## What it does
+## Resolution — two factors, fail-closed
 
-1. **Inbound + call logging** — Acefone POSTs call events (CDRs) to our webhook → we create/update a `CRM Call Log` (`telephony_medium="Acefone"`), match the caller's number to a lead, link it. Renders in the Calls tab automatically.
-2. **Outbound click-to-call** — native phone icon → `make_a_call` → resolve account by routing → Acefone `click_to_call` → log the call. No sync call id, so we correlate the later webhook via a `custom_identifier` passthrough (fallback: number + recency).
-3. **Recordings** — play **inline** in the Calls tab via the native "Listen" badge; streamed on demand through our proxy (no storage — only the URL lives on the Call Log).
-4. **Multi-account routing** — multiple Acefone accounts, routed by the lead's Product Line / Group / Program (same model as WATI).
-5. **Kill-switch** — the `Telephony::Acefone::calls` automation switch. Off = no calls, no inbound logging.
+The Acefone tenant is **shared** with other businesses (Visit, ICICI Lombard, Quest, Star AHC): 19 DIDs
+across four-plus companies interleave on one account. So relevance is decided before anything is
+written.
+
+- The **token authenticates the account.** The **DID selects the grain** (`CRM Telephony DID`).
+- **A DID that is not mapped is dropped**, and the reason is written onto the row. No best-guess
+  attribution, ever — that is what keeps another company's customer PII out of this CRM.
+- The **lead** is matched on `(DID -> grain) + phone`, so one phone number across several leads still
+  attributes to the right one.
+- The **agent** is matched on email: a corporate address auto-resolves, anything else needs a
+  `CRM Telephony Agent Map` row. An unmapped agent leaves the rep **blank** and the call is still kept —
+  relevance and attribution are separate questions. Answered-but-unattributed renders as **External**.
+- **`CRM Telephony Capture Rule`** decides which direction/channel combinations are captured at all. An
+  empty rule table captures nothing.
 
 ## Folder / file map
 
 ```
 tatva_connect/telephony/
-├── api.py        Acefone HTTP client (the provider adapter). Account-driven (each call
-│                 takes a Telephony Account doc → its base_url + Bearer api_token).
-│                 click_to_call(), get_call_report() (CDR pull), kill-switch helpers.
-├── providers.py  provider -> adapter registry (Acefone today); adapter_for(account).
-├── bridge.py     The two crm overrides (make_a_call, get_call_log) + small helpers.
-│                 THIS is the native-UI piggyback; dispatches via providers.adapter_for.
-├── handler.py    Inbound webhook (4 guest endpoints, one per Acefone trigger) ->
-│                 _process -> CRM Call Log (idempotent on call_id). Per-account token
-│                 auth + identity. make_acefone_call is a thin by-reference API wrapper.
-├── routing.py    Pick the Telephony account for a lead (outbound), a DID or a webhook
-│                 token (inbound). Most-specific wins; no global default.
-├── reconcile.py  Call-report pull (recording backfill / missed-call recovery; dormant).
-├── client_scripts/telephony_account.js   webhook setup affordances on the account form.
-└── README.md     this file
+├── adapters/acefone.py  THE ONLY Acefone-specific code, and the template for the next provider.
+│                        screen / already_processed / handle / account_for_payload / normalize.
+│                        process() is the shared entry the webhook worker AND reconcile both call.
+├── envelope.py   The provider-neutral Envelope every adapter emits. One interface.
+├── resolve.py    The gates: account_for_did · grain_for · should_capture · lead_for · user_for.
+├── writer.py     Envelope -> CRM Call Log. Branches once, on direction.
+├── api.py        Acefone HTTP client, account-driven (base_url + Bearer api_token per account).
+│                 click_to_call() · get_call_records() (the CDR pull) · kill-switch helpers.
+├── handler.py    The 4 inbound guest endpoints -> spine.receive(). Plus make_acefone_call.
+├── reconcile.py  The API pull. Same adapter entry, its own front door. Manual, dry-run by default.
+├── providers.py  OUTBOUND registry: provider -> the module that speaks its API. Used by bridge.py.
+├── routing.py    OUTBOUND only: pick the account for a lead's grain. Most-specific wins, no default.
+├── bridge.py     The two crm overrides that make the native call UI drive Acefone.
+└── permissions.py
 
-tatva_connect/api/telephony.py   recording(call_log) — streams ONE recording on
-                 demand (proxied with the account token; nothing stored).
+tatva_connect/webhooks/          shared by Acefone AND WATI — not a telephony thing
+├── spine.py      The one webhook front door: auth -> kill-switch -> screen -> log -> ACK -> enqueue.
+│                 Plus replay() / replay_service() — the DLQ is a button.
+├── ingress.py    The one auth gate: token by SHA-256 digest, optional HMAC, optional IP allowlist.
+├── registry.py   INBOUND registry: service -> adapter, account doctype, token field, URL builder.
+└── urls.py
 
-tatva_connect/telephony/doctype/
-├── crm_telephony_account/   one record per account (provider + creds + DID + webhook_token)
-├── crm_telephony_routing/   taxonomy -> account rules (+ duplicate guard, no global default)
-└── crm_telephony_settings/  global single: record-outgoing-calls toggle
+tatva_connect/api/telephony.py   recording(call_log) — streams one recording on demand, nothing stored.
 ```
 
-Native `CRM Call Log` gains a Custom Field `custom_telephony_account` (which account handled the call) and an "Acefone" option on `telephony_medium` (Property Setter). `CRM Telephony Agent` gains `acefone_number` (the agent's originating line).
+`providers.py` and `webhooks/registry.py` are both provider maps and are deliberately **not** merged:
+one picks the module that speaks a provider's API when the CRM places a call, the other picks the module
+that reads a provider's payload when the provider calls us. Different questions, different data.
 
-## Provider API (Acefone) — what we use
-- Base `https://api.acefone.in/v1/`, auth **Bearer** (token from dashboard → API Connect → API Tokens; ask for a long-life token).
-- `POST /v1/click_to_call` — `{agent_number, destination_number, async:"1", caller_id?, custom_identifier?}` → `{success, message}` (no sync call id).
-- **Webhooks** (API Connect → Webhook), one per trigger (answered / hangup, inbound / outbound). CDR fields we read (confirmed via the OneHash integration): `uuid`, `call_id`, `customer_number`, `did_number`, `direction`, `call_status`, `recording_url`, `duration`, `start_stamp`/`answer_stamp`/`end_stamp`, `answered_agent_number`, `hangup_cause`, `custom_identifier`.
-- `recording_url` arrives **in the hangup CDR** (also pullable via `GET /v1/call/records`).
-- Docs: https://docs.acefone.in/
+## Doctypes
 
-## Setup (multi-account)
-1. **CRM Telephony Account** (Desk → New): provider (Acefone), enabled, base_url (`https://api.acefone.in`), api_token, agent_number, caller_id (DID). Or via API: `POST /api/resource/CRM Telephony Account`.
-2. **CRM Telephony Routing** rules: vertical / psp_group / program → Telephony Account. Most-specific wins; duplicates rejected; no global default.
-3. **CRM Telephony Agent** → set each agent's `acefone_number`.
-4. **Enable the Exotel slot** (CRM Exotel Settings → Enabled) so the phone icon appears, and turn on the **`Telephony::Acefone::calls`** automation switch (kill-switch on).
-5. **Register webhooks** per account on the Acefone dashboard (one per trigger). Generate the token and copy the URLs from the Telephony Account form (**Generate Webhook Token** / **Copy Webhook URLs**): `https://<host>/webhooks/telephony/acefone/<token>/{inbound_answered,inbound_complete,outbound_answered,outbound_complete}`, where `<token>` = that account's `webhook_token` — it both authenticates the caller and identifies the receiving account. (Dev server without nginx: use the native form `…/api/method/tatva_connect.telephony.handler.<event>?token=<token>`.)
+| Doctype | What the operator puts in it |
+|---|---|
+| `CRM Telephony Account` | One per provider account: creds, `webhook_token`, HMAC/IP settings. |
+| `CRM Telephony DID` | **DID -> grain.** The relevance gate. Unmapped = dropped. |
+| `CRM Telephony Agent Map` | Agent email -> CRM user, for agents whose email does not auto-resolve. |
+| `CRM Telephony Capture Rule` | Which direction/channel is captured. Child of Settings. Empty = nothing. |
+| `CRM Telephony Routing` | Grain -> account, for **outbound** click-to-call only. |
+| `CRM Telephony Settings` | The kill-switch, rate limits, capture rules. |
 
-## Credentials to provide (to go live)
-1. **API Token** (long-life) → `CRM Telephony Account.api_token`.
-2. **Agent number** → `CRM Telephony Agent.acefone_number`.
-3. **A DID** → `CRM Telephony Account.caller_id`.
+`CRM Call Log` gains a Custom Field `custom_telephony_account` and an "Acefone" option on
+`telephony_medium` (Property Setter).
 
-## Quirks / things to know
-- **No browser dialer** — Acefone is a bridge; only a status popup is possible (physics, not our limitation).
-- **Exotel slot is enabled but never used** — it's only there to turn on `callEnabled`; `make_a_call` is fully overridden, so no Exotel call is ever placed. The medium dropdown shows "Exotel" cosmetically.
-- **Recordings: crm's `get_call_log` always points `recording_url_path` at its own Twilio/Exotel-only proxy**, so our override must **overwrite** it for Acefone — not just fill when empty.
-- **Triple error toasts** — a frappe-ui quirk (its `frappeRequest` calls `onError` twice + re-throws), so one backend error shows ~3 toasts. Affects all of crm, not just us; not fixable without forking the frontend bundle. Left as-is.
-- **Calls tab does not auto-refresh** after a call — crm only has a `whatsapp_message` socket listener, none for calls. A new call appears on reload. (No-fork fix possible via a form-script socket listener; not yet wired.)
-- **Inbound is per-account token-authenticated** — a request with an unknown or blank token is rejected (fail-closed); generate + register each account's `webhook_token` to receive.
-- **Open items to verify on real creds:** exact `start_stamp` format / `duration` unit, whether `custom_identifier` round-trips, and whether the recording URL needs the Bearer token (the proxy already sends it).
+## The native call UI (outbound)
+
+crm's phone icon only appears when a telephony integration is enabled, and Acefone is not in crm's
+hardcoded set (Twilio/Exotel only), with no provider-registration hook. So the **Exotel slot** is enabled
+(no Exotel creds needed) to light up the icon, and the two backend methods it calls are overridden:
+
+| crm method (replaced) | ours (`bridge.py`) | effect |
+|---|---|---|
+| `crm.integrations.exotel.handler.make_a_call` | `make_a_call` | the phone icon places an **Acefone** bridge call |
+| `…crm_call_log.get_call_log` | `get_call_log` | points the native "Listen" player at our streaming proxy |
+
+No Exotel call is ever placed. `get_call_log` delegates to crm's and only augments Acefone rows.
+
+> **A bridge is not a softphone.** Acefone rings the agent's phone, then dials the patient, then connects
+> the two real lines. The audio is on the phones, never the browser — an in-browser dialer is impossible
+> for a bridge provider. The most any of them supports is a status popup.
+
+## What the live traffic proved (and the docs got wrong)
+
+The first adapter was written from Acefone's documentation and a 363-CDR capture disproved it:
+
+- **`answered_agent_email` does not exist.** The email sits inside `answered_agent`, an **array**. The
+  old code resolved zero agents.
+- **`answered_agent_number` is an extension** (`Extension-0602141810277`), not a phone. It was being fed
+  to a phone matcher, where it could never match and could collide on a 10-digit suffix.
+- **`custom_identifier` and `ref_id` are empty on every payload.** There is **no correlation key** from a
+  placed call back to its CDR. Outbound-from-CRM cannot be built on one.
+- **`hangup_cause` never says "busy" or "cancel"** — both documented status branches were unreachable.
+- **`call_status` is lowercase** despite the docs.
+- **Acefone speaks two dialects on one webhook.** IVR `inbound` and `Dialer (inbound)` differ in
+  timestamp format, phone format and hangup vocabulary. One provider already needs normalization — which
+  is the whole argument for the envelope.
+- **Every call a human answered was a Dialer call.** Plain IVR inbound has a 0% answer rate.
+- **Duration is not talk time.** `duration` includes IVR time; `billsec` is empty on answered calls.
+  Acefone exposes **no agent talk-time field**.
+- **Acefone re-sends CDRs.** Keying the row on `call_id` handles it; `uuid` varies per leg and must not
+  be the key.
+
+## Known open items
+
+- **Recordings do not play, and the fault is Acefone's.** `recording_url` returns **404 HTML
+  server-side** — unauthenticated, with a Bearer token, and even when the URL is handed to us by
+  Acefone's own authenticated API. Six URLs tested, all 404. Call recording is most likely not enabled on
+  the account. With the provider.
+- **The outbound `normalize()` branch has never seen a live payload.** No outbound webhook event was ever
+  captured. It is written from the inbound corpus and the record API, not proven.
+- **`scheduled_reconcile` is not wired** to `hooks.scheduler_events`, deliberately: anything that runs by
+  itself needs a dormant automation toggle and a go-live checklist row first. Reconcile is manual today.
+- **`CRM Telephony Routing` (outbound) and `CRM Telephony DID` (inbound) are two independent maps** and
+  nothing validates that they agree.
+- **`refresh_calls` has no button.** It is whitelisted and callable, but the Desk workspace does not
+  surface it.
+
+## Setup
+
+1. **CRM Telephony Account** — provider, enabled, `base_url` (`https://api.acefone.in`), `api_token`.
+2. **Generate the webhook token** on the account form and **register the four webhook URLs** on the
+   Acefone dashboard (API Connect → Webhook), one per trigger. The token authenticates the caller and
+   identifies the receiving account.
+3. **CRM Telephony DID** — map every DID you own to its grain. **A DID that is missing here is dropped.**
+4. **CRM Telephony Capture Rule** — say what to capture. **Empty captures nothing.**
+5. **CRM Telephony Agent Map** — only for agents whose email does not auto-resolve.
+6. Turn on the **`Telephony::Acefone::calls`** switch. For outbound, also enable the Exotel slot and add
+   **CRM Telephony Routing** rules.
