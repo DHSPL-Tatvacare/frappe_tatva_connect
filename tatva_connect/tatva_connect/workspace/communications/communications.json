@@ -1,7 +1,7 @@
 {
  "app": "tatva_connect",
  "charts": [],
- "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 6}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 6}}]",
+ "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 6}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 6}}, {\"id\": \"telhdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Telephony Setup</b></span>\", \"col\": 12}}, {\"id\": \"telintro\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Four steps, in order. Every provider names these differently &mdash; Acefone calls a number a <i>My Number</i>, Ozonetel calls it a <i>Virtual Number</i> &mdash; but they are the same four things, so a new provider reuses this screen.</span>\", \"col\": 12}}, {\"id\": \"tel1\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Telephony Account</b> &mdash; one per provider tenant. Its webhook token is what authenticates the provider; HMAC and an IP allowlist are optional and off until you turn them on.\", \"col\": 12}}, {\"id\": \"tel2\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Numbers (DIDs)</b> &mdash; one row per number the business gives you, and the grain it belongs to. <b>A number that is not listed here is dropped.</b> That is what keeps other businesses off a shared provider account out of this CRM. Type the number; pick the grain &mdash; it must match the grain on the leads, or a call attaches to nothing.\", \"col\": 12}}, {\"id\": \"tel3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Agents</b> &mdash; only for agents whose provider email is <i>not</i> their CRM login. Staff whose email matches a CRM user resolve on their own and need no row. An unmapped agent never costs you the call; it only leaves the rep blank.\", \"col\": 12}}, {\"id\": \"tel4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Capture Rules</b> &mdash; inside Telephony Settings. Which calls become Call Logs, by direction and channel. <b>Empty captures nothing</b>; telephony is on once you add a rule.\", \"col\": 12}}, {\"id\": \"telafter\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Every delivery is logged either way. A call that is dropped or declined is recorded in <b>Integration Request</b> with the reason &mdash; fix the reason, replay the row, and the call lands.</span>\", \"col\": 12}}, {\"id\": \"telsc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Step 1 - Telephony Accounts\", \"col\": 3}}, {\"id\": \"telsc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Step 2 - Numbers (DIDs)\", \"col\": 3}}, {\"id\": \"telsc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Step 3 - Agents\", \"col\": 3}}, {\"id\": \"telsc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Step 4 - Capture Rules\", \"col\": 3}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,7 +13,7 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-07-09 15:30:00.000000",
+ "modified": "2026-07-12 17:38:36.138937",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -44,7 +44,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Telephony Accounts",
+   "label": "Step 1 - Telephony Accounts",
    "link_to": "CRM Telephony Account",
    "stats_filter": "[]",
    "type": "DocType"
@@ -70,6 +70,30 @@
    "doc_view": "List",
    "label": "WhatsApp Messages",
    "link_to": "WhatsApp Message",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Step 2 - Numbers (DIDs)",
+   "link_to": "CRM Telephony DID",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Step 3 - Agents",
+   "link_to": "CRM Telephony Agent Map",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Step 4 - Capture Rules",
+   "link_to": "CRM Telephony Settings",
    "stats_filter": "[]",
    "type": "DocType"
   }
