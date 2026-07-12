@@ -58,14 +58,23 @@ def _lead_axes(lead):
 
 def is_location_tracked(lead):
 	"""Allowed radius (metres) if this lead's grain is location-tracked, else None. Grain-scoped
-	via the shared brain (blank axis = wildcard). Dormant: kill-switch off or no grains -> None."""
-	s = _settings()
+	via the shared brain (blank axis = wildcard). Dormant: kill-switch off or no grains -> None.
+
+	Every activity save asks this, so it must be cheap and it must not raise on an operator's sloppy
+	config. Duplicate rows for the SAME grain are deduped before resolve_scoped sees them: twelve
+	identical rows are one scope entered twelve times, not twelve ambiguous ones, and letting that
+	throw would break every activity save on the site. A genuine ambiguity — two DIFFERENT grains that
+	are equally specific — still raises, because that one an operator has to fix."""
 	if not automation.is_enabled("Location::Google::capture"):
 		return None
-	grains = [
-		{"vertical": r.vertical, "group": r.group, "program": r.program, "radius_m": r.radius_m}
-		for r in s.location_tracked_grains
-	]
+	seen, grains = set(), []
+	for r in _settings().location_tracked_grains:
+		key = (r.vertical or "", r.group or "", r.program or "")
+		if key in seen:
+			continue
+		seen.add(key)
+		grains.append({"vertical": r.vertical, "group": r.group, "program": r.program,
+		               "radius_m": r.radius_m})
 	if not grains:
 		return None
 	winner = resolve_scoped(grains, *_lead_axes(lead))

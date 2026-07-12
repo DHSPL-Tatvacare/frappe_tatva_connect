@@ -268,15 +268,24 @@ def compute_activity(lead, task_type, values, task=None):
 	# anchor/radius rule live once in location.api (one brain); this just feeds them.
 	from tatva_connect.location.api import (
 		_reverse_geocode,
+		is_location_tracked,
 		location_fields,
 		location_required,
 		log_visit_audit,
 		set_or_check_anchor,
 	)
 
+	# A dormant feature writes NOTHING. Location tracking off (kill switch, or this grain is not a
+	# tracked one) means there is no visit trail to keep, so no audit row is written — and with no
+	# audit row to point at a task, save_activity does not need to insert a shell first either. That
+	# is two of the three writes every activity used to pay for a switch that was never on.
+	if is_location_tracked(lead) is None:
+		return fields
+
+	# Tracking IS live on this grain. A phone or office activity still records that it legitimately
+	# needed no fix: with the feature on, "Not Required" is a real entry in the trail, not noise.
 	radius = location_required(task_type, lead, values)
 	if radius is None:
-		# Phone / office activity — location was not required for this submission.
 		log_visit_audit(lead, task_type, "Not Required", task=task)
 		return fields
 
@@ -306,31 +315,51 @@ def compute_activity_fields(lead, task_type, values):
 
 @frappe.whitelist()
 def save_activity(lead, task_type, values, task=None):
-	"""THE one writer for completing/updating an activity (board completion + ad-hoc punch). For a new
-	punch (no `task`) it inserts the task SHELL first, so the location audit logged inside
-	compute_activity carries the new task's exact id — then both paths share one compute → update →
-	save. Exact identity on every path, one audit brain. Returns the task name.
+	"""THE one writer for completing/updating an activity (board completion + ad-hoc punch). Returns
+	the task name.
+
+	A NEW punch on a location-tracked grain inserts the task SHELL first, so the visit audit logged
+	inside compute_activity carries the new task's exact id, and then computes and saves onto it. That
+	costs two writes to the same row, and it buys exactly one thing: an audit that can name its task.
+	Where location is NOT tracked there is no audit, so there is nothing to name, and the task is
+	inserted ONCE — already carrying its computed fields. Same writer, same compute, one row.
 
 	The shell insert is in the same request transaction as the guard: an out-of-range throw rolls the
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
+	from tatva_connect.location.api import is_location_tracked
+
 	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
 		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
-	if not task:
-		# title = the clean type_name (display), never the composite PK.
-		title = frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type
-		# Trusted (partner/system) write has no caller-assignee: leave unassigned for the Assignment Rule.
-		shell = frappe.get_doc({
-			"doctype": "CRM Task",
-			"title": title,
-			"custom_task_type": task_type,
-			"assigned_to": None if frappe.flags.ignore_permissions else frappe.session.user,
-			"reference_doctype": "CRM Lead",
-			"reference_docname": lead,
-		})
+
+	if task:
+		fields = compute_activity(lead, task_type, values, task=task)
+		doc = frappe.get_doc("CRM Task", task)
+		doc.update(fields)
+		doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+		return doc.name
+
+	# title = the clean type_name (display), never the composite PK.
+	title = frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type
+	# Trusted (partner/system) write has no caller-assignee: leave unassigned for the Assignment Rule.
+	shell = frappe.get_doc({
+		"doctype": "CRM Task",
+		"title": title,
+		"custom_task_type": task_type,
+		"assigned_to": None if frappe.flags.ignore_permissions else frappe.session.user,
+		"reference_doctype": "CRM Lead",
+		"reference_docname": lead,
+	})
+
+	if is_location_tracked(lead) is None:
+		# No audit will be written, so nothing needs the task's id before it exists: compute first,
+		# then insert once, fully formed.
+		shell.update(compute_activity(lead, task_type, values, task=None))
 		shell.insert(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
-		task = shell.name
-	fields = compute_activity(lead, task_type, values, task=task)
-	doc = frappe.get_doc("CRM Task", task)
+		return shell.name
+
+	shell.insert(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+	fields = compute_activity(lead, task_type, values, task=shell.name)
+	doc = frappe.get_doc("CRM Task", shell.name)
 	doc.update(fields)
 	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
 	return doc.name
