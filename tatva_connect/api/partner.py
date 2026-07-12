@@ -58,6 +58,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	is_writable,
+	resolve_lead,
 	stamp_external_id,
 	validate_external_id,
 )
@@ -461,6 +462,21 @@ LEAD_OPTIONAL = ("first_name", "status")
 _LEAD_REQUIRED = {LEAD_IDENTITY: True, **{fn: False for fn in LEAD_OPTIONAL}}
 
 
+# -- scope helper ------------------------------------------------------------
+
+def _scoped_lead(name, mp, is_sysmgr):
+	"""Resolve one lead by name, grain-scoped — the lead's `_scoped_*` gate, matching the one every
+	other entity uses (_scoped_task, _scoped_call, _scoped_file).
+
+	Delegates to the SHARED resolve_lead brain rather than re-implementing the grain filter. Both the
+	update and the delete used to hand-roll `custom_vertical != mp.vertical or custom_group !=
+	mp.crm_group` — the same rule, written twice, in a file whose siblings all call one resolver. A
+	change to what a grain means would have had to be made in three places and would have been missed
+	in one. Missing and out-of-scope still return the SAME generic not-found: resolve_lead is where
+	that guarantee already lives."""
+	return resolve_lead(mp, is_sysmgr, {"lead": name})
+
+
 # -- per-record core (shared by singular + bulk) -----------------------------
 
 def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
@@ -548,13 +564,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 	"""Update one lead by CRM name. Returns (doc, 'updated'). Scope-checked for partners."""
 	if not name:
 		frappe.throw(_("name (the CRM Lead id) is required for an update"))
-	# Missing AND out-of-scope return the SAME generic not-found (no ID, no "scope"
-	# hint) so a partner can't probe which lead ids exist on another line.
-	if not frappe.db.exists("CRM Lead", name):
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
-	doc = frappe.get_doc("CRM Lead", name)
-	if mp and (doc.custom_vertical != mp.vertical or doc.custom_group != mp.crm_group):
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+	doc = frappe.get_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr))
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 
@@ -582,18 +592,11 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 	return doc, "updated"
 
 
-def _delete_one(name, mp):
+def _delete_one(name, mp, is_sysmgr=False):
 	"""Delete one lead by CRM name. Scope-checked for partners."""
 	if not name:
 		frappe.throw(_("name (the CRM Lead id) is required to delete"))
-	# Missing AND out-of-scope return the SAME generic not-found (no ID, no "scope"
-	# hint) so a partner can't probe which lead ids exist on another line.
-	if not frappe.db.exists("CRM Lead", name):
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
-	doc = frappe.get_doc("CRM Lead", name)
-	if mp and (doc.custom_vertical != mp.vertical or doc.custom_group != mp.crm_group):
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
-	frappe.delete_doc("CRM Lead", name, ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + the grain filter, before the save
+	frappe.delete_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr), ignore_permissions=True)  # authz-ok: tier-b — gated by _scoped_lead, before the delete
 
 
 # -- singular endpoints ------------------------------------------------------
@@ -772,9 +775,9 @@ def lead_update(**_kwargs):
 def lead_delete(**_kwargs):
 	"""Delete a lead by CRM `name`. Partner scope-checked (own line only). A lead with
 	linked activity raises LinkExistsError — so a partner can't nuke a worked lead."""
-	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
+	_user, mp, is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	name = frappe.form_dict.get("name")
-	_delete_one(name, mp)
+	_delete_one(name, mp, is_sysmgr)
 	_ok(action=ACTION_DELETED, data={"name": name})
 
 
@@ -817,11 +820,11 @@ def lead_update_bulk(**_kwargs):
 @_api(bulk=True)
 def lead_delete_bulk(**_kwargs):
 	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
-	_user, mp, _is_sysmgr, _parent_fields, _child_allow = _caller_fields()
+	_user, mp, is_sysmgr, _parent_fields, _child_allow = _caller_fields()
 	names = _read_required_list(frappe.form_dict, "names")
 
 	def one(i, name):
-		_delete_one(name, mp)
+		_delete_one(name, mp, is_sysmgr)
 		return {"index": i, "status": "success", "action": ACTION_DELETED, "data": {"name": name}}
 
 	return _run_bulk(names, one)

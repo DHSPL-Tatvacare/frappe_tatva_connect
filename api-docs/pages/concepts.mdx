@@ -20,6 +20,16 @@ Business line details (Product and Group) are assigned automatically from the AP
 
 Each lead has a unique ID, returned as `name` (for example `CRM-LEAD-2026-00123`), which is used to read, update, or delete it.
 
+## What a key can reach
+
+An API key is bound to one business line. Everything reachable through it — leads, activities, calls and files, read or written, single or bulk — is confined to that line. The rule is applied identically on every endpoint and every HTTP method; there is no endpoint on which it is relaxed.
+
+A record on another business line is not merely refused. It is reported as **`404 not_found`**, exactly as a record that does not exist at all. The two cases are deliberately indistinguishable, so the existence of another line's records cannot be probed by testing IDs. Code must not attempt to tell them apart.
+
+The scope is resolved from the record's own lead on every call, and never from anything the caller sends. An activity, a call or a file is reachable only when the lead it hangs from is reachable, which means a record cannot be reassigned onto another line by supplying a different ID.
+
+**Deletion follows the same rule and adds nothing to it.** A record is deletable only when it is already reachable, so a key can delete only what sits on its own business line. A lead that has been worked — one carrying activities, calls or notes — is refused with `409 cannot_delete` rather than being silently removed along with its history.
+
 <Mermaid chart={`
 flowchart LR
   P["mobile_no"] --> K{{"one lead"}}

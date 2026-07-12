@@ -5800,24 +5800,24 @@
           "status": "success",
           "summary": {
             "total": 2,
-            "succeeded": 0,
-            "failed": 2
+            "succeeded": 2,
+            "failed": 0
           },
           "results": [
             {
               "index": 0,
-              "status": "error",
-              "error": {
-                "code": "cannot_delete",
-                "message": "This record cannot be deleted because it has linked records."
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "50114"
               }
             },
             {
               "index": 1,
-              "status": "error",
-              "error": {
-                "code": "cannot_delete",
-                "message": "This record cannot be deleted because it has linked records."
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "50115"
               }
             }
           ]
@@ -6099,6 +6099,16 @@
           "action": "deleted",
           "data": {
             "name": "cc4222aa54"
+          }
+        }
+      },
+      "ActivityDeleteResponse": {
+        "summary": "ActivityDeleteResponse — a real response from the API",
+        "value": {
+          "status": "success",
+          "action": "deleted",
+          "data": {
+            "name": "50111"
           }
         }
       }
@@ -7894,6 +7904,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/ActivityDeleteResponse"
+                  }
                 }
               }
             }
