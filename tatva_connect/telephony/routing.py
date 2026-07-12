@@ -46,23 +46,6 @@ def resolve_account_for_lead(lead):
 	)
 
 
-def leads_for_number_and_account(lead_names, account):
-	"""Inbound attribution: of the candidate leads sharing a phone, return those
-	whose taxonomy routes to `account`. The inverse of resolve_account_for_lead — it
-	scopes an inbound call to exactly the leads on the receiving account's line, never
-	across accounts. Returns [] if account is falsy. Thin wrapper over the shared engine.
-
-	`lead_names` are already-anchored candidates (same last-10 phone) — the Acefone
-	phone-match seam lives in the adapter."""
-	return engine.leads_for_number_and_account(
-		lead_names,
-		account,
-		routing_doctype=_ROUTING_DOCTYPE,
-		account_link_field=_ACCOUNT_LINK_FIELD,
-		active_names=_active_account_names(),
-	)
-
-
 def resolve_for_reference(reference_doctype, reference_name):
 	"""Resolve the CRM Telephony Account for an outbound call from a CRM record.
 
@@ -92,21 +75,3 @@ def resolve_for_reference(reference_doctype, reference_name):
 
 	return None
 
-
-def account_for_did(did_number):
-	"""Inbound: resolve which CRM Telephony Account owns the DID a call landed on.
-
-	Matches a CRM Telephony Account whose `caller_id` digits equal the CDR's
-	`did_number` digits (last-10 LIKE). With
-	2+ accounts and no DID match we return None rather than guess and misattribute
-	to the wrong tenant — there is deliberately no single-account fallback.
-	"""
-	from tatva_connect.telephony import api as acefone
-
-	digits = acefone.normalize_number(did_number)
-	if not digits:
-		return None
-	account = frappe.db.get_value(
-		"CRM Telephony Account", {"caller_id": ["like", f"%{digits[-10:]}%"]}, "name"
-	)
-	return account or None

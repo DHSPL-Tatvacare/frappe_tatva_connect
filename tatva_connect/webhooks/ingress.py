@@ -30,10 +30,32 @@ import ipaddress
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from tatva_connect.webhooks import registry
 
 _SUPPORTED_ALGOS = ("sha256", "sha512", "sha1")
+
+# The operator-tunable cap, on each provider's settings Single.
+RATE_LIMIT_FIELD = "webhook_rate_limit_per_minute"
+
+
+def rate_limit_for(settings_doctype: str, fallback: int):
+	"""A per-minute cap an operator can tune, as a callable for `frappe.rate_limit`.
+
+	Frappe evaluates the limit per request, so the setting takes effect without a deploy. It is read
+	off a Single, which Frappe caches. A blank or zero setting means the built-in default rather than
+	"no calls allowed" — a knob left untouched must never lock a provider out.
+	"""
+
+	def limit():
+		try:
+			return cint(frappe.db.get_single_value(settings_doctype, RATE_LIMIT_FIELD)) or fallback
+		except Exception:
+			# The setting is unreadable (mid-migrate, say). A webhook must not fail on a missing knob.
+			return fallback
+
+	return limit
 
 
 def token_digest(token: str) -> str:
@@ -79,15 +101,21 @@ def _account_for_token(cfg, token):
 		(field(cfg, "token_previous"), field(cfg, "token_previous_hash")),
 	)
 	for token_field, hash_field in pairs:
-		account = _match(cfg["account_doctype"], token_field, hash_field, token)
+		account = _match(cfg, token_field, hash_field, token)
 		if account:
 			return account
 	return None
 
 
-def _match(doctype, token_field, hash_field, token):
-	"""Narrow by indexed digest, then confirm the secret in constant time. Fail-closed on ambiguity."""
-	names = frappe.get_all(doctype, filters={hash_field: token_digest(token)}, pluck="name", limit=2)
+def _match(cfg, token_field, hash_field, token):
+	"""Narrow by indexed digest, then confirm the secret in constant time. Fail-closed on ambiguity.
+
+	A disabled account is not a candidate: turning an integration off must stop its traffic, not merely
+	hide it from a list.
+	"""
+	doctype = cfg["account_doctype"]
+	filters = {hash_field: token_digest(token), **cfg.get("active_filter", {})}
+	names = frappe.get_all(doctype, filters=filters, pluck="name", limit=2)
 	if len(names) != 1:
 		# Two accounts sharing a token is a misconfiguration, not a routing choice.
 		return None

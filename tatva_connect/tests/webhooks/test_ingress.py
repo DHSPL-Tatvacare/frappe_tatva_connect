@@ -9,6 +9,8 @@ import hmac
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from tatva_connect.webhooks import ingress, registry
 
@@ -212,6 +214,53 @@ class TestWebhookIngress(FrappeTestCase):
 			frappe.delete_doc("CRM Telephony Account", twin, force=True, ignore_permissions=True)
 			frappe.db.commit()
 
+	def test_a_disabled_account_authenticates_nothing(self):
+		"""Turning an integration off must stop its traffic, not merely hide it from a list."""
+		self._configure(enabled=0)
+		try:
+			self._request()
+			with self.assertRaises(frappe.PermissionError):
+				ingress.verify("Acefone")
+		finally:
+			self._configure(enabled=1)
+
+	def test_hmac_holds_against_a_real_request(self):
+		"""Driven through a REAL werkzeug request, not a stub.
+
+		The two things that could actually break here are the ones a stub hides: whether the raw body
+		survives Frappe parsing it into form_dict, and whether the signature header is found regardless
+		of the case the provider sent it in. Both are exercised only by a real request object.
+		"""
+		self._configure(
+			webhook_auth_mode="Token + HMAC",
+			webhook_hmac_secret=SECRET,
+			webhook_hmac_header="X-Signature",
+			webhook_hmac_encoding="Hex",
+			webhook_hmac_prefix="",
+		)
+		signature = hmac.new(SECRET.encode(), BODY, "sha256").hexdigest()
+
+		builder = EnvironBuilder(
+			method="POST",
+			query_string={"token": TOKEN},
+			data=BODY,
+			content_type="application/json",
+			# Deliberately lower-cased: HTTP headers are case-insensitive and a provider may send any case.
+			headers={"x-signature": signature},
+		)
+		request = Request(builder.get_environ())
+
+		frappe.local.request = request
+		frappe.local.request_ip = "203.0.113.10"
+		# Frappe reads the body into form_dict before a handler runs. Reproduced here, because if that
+		# consumed the stream the signature could never be recomputed.
+		frappe.local.form_dict = frappe._dict(frappe.parse_json(request.get_data(as_text=True)))
+		frappe.local.form_dict.token = TOKEN
+		_ = request.form
+
+		self.assertEqual(request.get_data(), BODY, "the raw body must survive form parsing")
+		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+
 	def test_every_provider_declares_an_ingress_prefix(self):
 		"""The one knob a new provider sets. Without it the whole auth surface silently misses."""
 		for service, cfg in registry.PROVIDERS.items():
@@ -219,4 +268,8 @@ class TestWebhookIngress(FrappeTestCase):
 			self.assertEqual(
 				ingress.field(cfg, "token"), cfg["token_field"],
 				f"{service}: the prefix must derive the same token field the registry declares",
+			)
+			self.assertTrue(
+				cfg.get("active_filter"),
+				f"{service}: must declare what makes an account live, or a disabled one still authenticates",
 			)

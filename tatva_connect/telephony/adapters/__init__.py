@@ -3,7 +3,7 @@
 A PROVIDER is the company (the value in `CRM Telephony Account.provider`); an ADAPTER is the module
 that speaks to it. One module per provider, named for the provider.
 
-Each adapter implements the webhook-spine contract — `is_relevant`, `already_processed`, `handle`,
+Each adapter implements the webhook-spine contract — `screen`, `already_processed`, `handle`,
 `account_for_payload` — plus the one function that makes it multi-provider:
 
     normalize(payload, event, account) -> Envelope | None

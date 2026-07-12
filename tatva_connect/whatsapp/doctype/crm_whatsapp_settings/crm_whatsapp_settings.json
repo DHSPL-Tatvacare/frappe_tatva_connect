@@ -6,11 +6,25 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_break_ingress",
+  "webhook_rate_limit_per_minute",
   "section_template_caps",
   "template_cap_per_hour",
   "template_cap_per_day"
  ],
  "fields": [
+  {
+   "fieldname": "section_break_ingress",
+   "fieldtype": "Section Break",
+   "label": "Webhook Ingress"
+  },
+  {
+   "fieldname": "webhook_rate_limit_per_minute",
+   "fieldtype": "Int",
+   "label": "Webhook Rate Limit (per minute, per caller IP)",
+   "description": "Deliveries accepted from one caller address per minute, per endpoint. Above it, Frappe answers 429 and the provider backs off. 0 falls back to the built-in default.",
+   "default": "600"
+  },
   {
    "fieldname": "section_template_caps",
    "fieldtype": "Section Break",

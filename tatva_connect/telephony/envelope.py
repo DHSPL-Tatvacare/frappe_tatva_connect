@@ -11,9 +11,9 @@ Direction is carried, never inferred from the registered URL. That inference sil
 `from`/`to` whenever a webhook was pointed at the wrong endpoint.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
-from frappe.utils import get_datetime
+from frappe.utils import convert_utc_to_system_timezone, get_datetime
 
 # Below this a value is a provider glitch or an internal extension, not a subscriber number.
 # Suffix-matching on it would match a large slice of the lead table, so it is rejected instead.
@@ -85,10 +85,12 @@ def parse_timestamp(value):
 	if value in (None, "", "0"):
 		return None
 	text = str(value).strip()
-	# Epoch seconds, which the Acefone dashboard offers as an alternative to a formatted stamp.
+	# Epoch seconds, which the Acefone dashboard offers as an alternative to a formatted stamp. Read as
+	# UTC and converted to the SITE's timezone -- `datetime.fromtimestamp` would use whatever timezone
+	# the worker container happens to run in, which is not a property of the call.
 	if text.isdigit() and len(text) >= _EPOCH_MIN_DIGITS:
 		try:
-			return datetime.fromtimestamp(int(text))
+			return convert_utc_to_system_timezone(datetime.fromtimestamp(int(text), tz=timezone.utc))
 		except (ValueError, OSError, OverflowError):
 			return None
 	try:

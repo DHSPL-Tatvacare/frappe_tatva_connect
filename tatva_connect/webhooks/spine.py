@@ -1,14 +1,16 @@
 """Shared inbound-webhook spine — one front door for every provider.
 
-Every inbound webhook takes the same five moves:
+Every inbound webhook takes the same moves, in this order:
 
-  kill-switch (default OFF) -> authenticate (webhooks.ingress; token, optional HMAC, optional IP)
-  -> decide the outcome -> persist the raw payload ONCE, with that outcome
+  authenticate (webhooks.ingress; token, optional HMAC, optional IP)
+  -> kill-switch (default OFF) -> screen -> persist the raw payload ONCE, with the outcome
   -> fast 2xx ACK + enqueue.
 
-The order matters. Persisting first and deciding second is what left every ignored call sitting at
-`Queued` for ever, indistinguishable from one that was genuinely stuck. Deciding first costs the same
-single INSERT and makes the status truthful.
+The order is load-bearing. Authentication is first so that an unauthenticated flood can never write a
+row, and the kill-switch is second so that a dormant integration still keeps an audit trail rather
+than destroying what arrives. Screening before persisting is what makes the status truthful: it used
+to persist Queued and only then decide, leaving every declined delivery parked at Queued for ever,
+indistinguishable from one that was genuinely stuck. Deciding first costs the same single INSERT.
 
 Frappe's own log doctype does the storage, and Frappe's own helpers do the writing — a webhook is an
 Integration Request, and `frappe.integrations.utils.create_request_log` creates one. The status
@@ -23,14 +25,14 @@ Retention is Frappe's too: `Integration Request` is registered in frappe's own
 `default_log_clearing_doctypes` at 90 days, so nothing is registered here.
 
 Adapter contract (duck-typed module, no ABC):
-  * is_relevant(payload, event, account)        -> cheap front-door pre-filter
-  * already_processed(payload, event, account)  -> idempotency vs the target doctype
-  * handle(payload, event, account)             -> parse + DB moves + fail-closed attribution
-  * account_for_payload(payload, event)         -> re-derive the account on replay
-  * irrelevance_reason(payload, event, account) -> OPTIONAL. Why a call was declined, in one line,
-    for the operator reading the log. Cold path only; an adapter that omits it just reads generic.
+  * screen(payload, event, account)            -> (wanted, reason). Asked once, at the front door and
+    again on replay. The reason is written onto a declined row so an operator can act on it.
+  * already_processed(payload, event, account) -> idempotency vs the target doctype
+  * handle(payload, event, account)            -> parse + DB moves + fail-closed attribution
+  * account_for_payload(payload, event)        -> re-derive the account on replay and reconcile
 """
 import frappe
+from frappe import _
 from frappe.integrations.utils import create_request_log
 
 from tatva_connect.webhooks import ingress, registry
@@ -43,18 +45,28 @@ _GENERIC_DECLINE = "not accepted by this provider's pre-filter"
 def receive(service, *, enabled, adapter, event=None):
 	"""Shared front door. Authenticates, decides, logs once, then ACKs fast.
 
+	Authentication comes FIRST, before the kill-switch. That ordering is deliberate: a dormant
+	integration must still keep an audit trail of what arrived — a switch that is off means "do not
+	act on this", not "destroy it" — but only an authenticated caller may write a row, or an
+	unauthenticated flood could fill the log table.
+
 	`enabled` is the provider's kill-switch callback; `adapter` is its module, passed in so the front
-	door never imports one. Authentication is deliberately not a callback: it is the same three
-	factors for every provider and lives in `webhooks.ingress`.
+	door never imports one. Authentication is not a callback: it is the same three factors for every
+	provider and lives in `webhooks.ingress`.
 	"""
-	if not enabled():                       # kill-switch, fresh read, default OFF
-		return "ok"
 	account = ingress.verify(service)       # token digest -> HMAC -> IP; raises, fail-closed
 	payload = _request_payload()            # form_dict minus cmd/token
 
-	relevant, reason = _verdict(adapter, payload, event, account)
-	log = _persist(service, event, payload, relevant, reason)
-	if not relevant:
+	if not enabled():                       # kill-switch, fresh read, default OFF
+		# Recorded, not discarded. Providers retry very few times — Acefone twice — so a call dropped
+		# while the switch was off would be gone for good. Logged Cancelled, it is replayable the
+		# moment the integration is turned on.
+		_persist(service, event, payload, False, "the integration is switched off")
+		return "ok"
+
+	wanted, reason = _screen(adapter, payload, event, account)
+	log = _persist(service, event, payload, wanted, reason)
+	if not wanted:
 		return "ok"
 
 	frappe.enqueue(
@@ -88,6 +100,10 @@ def process(service, payload, account, vendor_event=None, log=None):
 			return
 		adapter.handle(payload, vendor_event, account)
 	except Exception:
+		# Rolled back BEFORE the status is written. A half-finished handler must not have its partial
+		# writes flushed by the very commit that records the failure — the row would then be replayed
+		# over state it had already half-created.
+		frappe.db.rollback()
 		_mark(log, "Failed", error=frappe.get_traceback())
 		raise
 	_mark(log, "Completed")
@@ -96,33 +112,22 @@ def process(service, payload, account, vendor_event=None, log=None):
 # ---------------------------------------------------------------------------
 # Outcome, decided before anything is written.
 # ---------------------------------------------------------------------------
-def _verdict(adapter, payload, event, account):
-	"""(relevant, reason). A raising pre-filter is treated as relevant so the call is never dropped
-	on a bug — the worker will surface the failure properly, with a traceback."""
-	try:
-		if adapter.is_relevant(payload, event, account):
-			return True, None
-	except Exception:
-		frappe.log_error(title="webhook spine: pre-filter raised", message=frappe.get_traceback())
-		return True, None
-	return False, _irrelevance_reason(adapter, payload, event, account)
+def _screen(adapter, payload, event, account):
+	"""(wanted, reason), from the adapter's one screening call.
 
-
-def _irrelevance_reason(adapter, payload, event, account):
-	"""Why a call was declined, for the operator reading the log. Optional per adapter.
-
-	Coerced to a string and never allowed to raise: an adapter that misbehaves here must not be able
-	to break the logging that would have recorded its misbehaviour.
+	A screen that raises is treated as wanted, so a bug in a filter can never silently discard a
+	delivery: the worker will surface it properly, with a traceback, on a row an operator can replay.
+	The reason is coerced to a string — a misbehaving adapter must not be able to break the logging
+	that would have recorded its misbehaviour.
 	"""
-	describe = getattr(adapter, "irrelevance_reason", None)
-	if not describe:
-		return _GENERIC_DECLINE
 	try:
-		reason = describe(payload, event, account)
+		wanted, reason = adapter.screen(payload, event, account)
 	except Exception:
-		frappe.log_error(title="webhook spine: irrelevance_reason raised", message=frappe.get_traceback())
-		return _GENERIC_DECLINE
-	return str(reason) if reason else _GENERIC_DECLINE
+		frappe.log_error(title="webhook spine: screen raised", message=frappe.get_traceback())
+		return True, None
+	if wanted:
+		return True, None
+	return False, str(reason) if reason else _GENERIC_DECLINE
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +166,17 @@ def _persist(service, event, payload, relevant, reason):
 def _mark(log, status, output=None, error=None):
 	"""Flip the log row's status, and record why. Never raises — best-effort bookkeeping.
 
-	`IntegrationRequest.handle_success/handle_failure` do this natively, but through `db_set`, which
-	bumps `modified`; the doctype carries `track_changes`, so that writes a Version row per webhook.
-	On a table taking thousands of deliveries a day that cost is not worth paying, so the same fields
-	are set through `frappe.db.set_value` with the timestamp left alone.
+	`frappe.db.set_value` writes exactly the columns given, and `update_modified=False` leaves the
+	timestamp alone so the row keeps saying when the delivery actually arrived rather than when its
+	status was last touched.
 	"""
 	if not log:
+		# The raw log never got written, so there is nowhere to record this. A traceback still has to
+		# survive somewhere the operator can find it.
+		if error:
+			frappe.log_error(title="webhook spine: handler failed with no log row", message=error)
 		return
+
 	values = {"status": status}
 	if output is not None:
 		values["output"] = frappe.as_json(output)
@@ -200,14 +209,20 @@ def _request_payload():
 # ---------------------------------------------------------------------------
 # Replay — re-run the worker over stored raw payloads. System Manager only.
 # ---------------------------------------------------------------------------
+REPLAYABLE = ("Failed", "Cancelled")
+
+
 @frappe.whitelist()
 def replay(integration_request):
-	"""Re-run process() over one stored raw payload.
+	"""Re-run one stored delivery.
 
-	The row's service selects the adapter and its description carries the event the front door wrote.
-	The account is re-derived from the payload by the adapter, because a replay has no live request
-	token. Replaying a Cancelled row is the point of the Cancelled status: map a DID, replay, and the
-	call that was dropped lands.
+	Replaying a Cancelled row is the point of the Cancelled status: map the DID the reason names,
+	replay, and the call that was dropped lands.
+
+	The delivery is re-screened first, against today's configuration. If it is still not wanted the
+	row stays Cancelled and its reason is refreshed — a replay that did nothing must never be able to
+	report success, or the act of trying to recover dropped calls would quietly destroy the list of
+	them.
 	"""
 	frappe.only_for("System Manager")
 	row = frappe.get_doc(LOG_DOCTYPE, integration_request)
@@ -215,19 +230,29 @@ def replay(integration_request):
 	payload = frappe.parse_json(row.data) or {}
 	event = _event_from_description(service, row.request_description)
 	account = _account_for_replay(service, payload, event)
+
+	wanted, reason = _screen(_adapter_for(service), payload, event, account)
+	if not wanted:
+		_mark(row.name, "Cancelled", output={"outcome": "not captured", "reason": reason})
+		return reason
+
 	process(service, payload, account, vendor_event=event, log=row.name)
 	return "ok"
 
 
 @frappe.whitelist()
-def replay_failed(service, since=None):
-	"""Re-enqueue every Failed row for a service, optionally only those since a timestamp.
+def replay_service(service, status="Failed", since=None):
+	"""Re-enqueue a service's replayable rows: Failed (the worker raised) or Cancelled (declined).
 
-	A row is Failed only when its worker actually raised, so replay never re-runs still-in-flight
-	work. The rows stay; each re-run flips its own status.
+	Cancelled is the one an operator reaches for after fixing configuration — map a DID, then replay
+	everything that was dropped for want of it. A row is Failed only once its worker actually raised,
+	so this never re-runs still-in-flight work. The rows stay; each re-run flips its own status.
 	"""
 	frappe.only_for("System Manager")
-	filters = {"integration_request_service": service, "status": "Failed"}
+	if status not in REPLAYABLE:
+		frappe.throw(_("Only {0} deliveries can be replayed.").format(" or ".join(REPLAYABLE)))
+
+	filters = {"integration_request_service": service, "status": status}
 	if since:
 		filters["creation"] = [">=", since]
 	names = frappe.get_all(LOG_DOCTYPE, filters=filters, pluck="name")  # authz-ok: operator-only DLQ replay over system Integration Request rows, not user records

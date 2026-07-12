@@ -50,7 +50,7 @@ class TestWebhookSpine(FrappeTestCase):
 	def setUp(self):
 		# A relevant-by-default adapter; individual tests override its methods.
 		self.adapter = MagicMock()
-		self.adapter.is_relevant.return_value = True
+		self.adapter.screen.return_value = (True, None)
 		self.adapter.already_processed.return_value = False
 		# Front door reads the token off the (faked) request + form_dict payload.
 		frappe.local.request = _fake_request(_TOKEN)
@@ -63,22 +63,17 @@ class TestWebhookSpine(FrappeTestCase):
 
 	# --- (a) kill-switch OFF -> 'ok', nothing enqueued, nothing logged ----
 
-	def test_killswitch_off_is_ok_noop(self):
-		"""Default-OFF dormancy: a disabled integration returns 'ok' fast and does ZERO
-		work — no account resolve, no raw log, no enqueue."""
-		with patch.object(spine, "_persist") as persist, \
-		     patch.object(spine.ingress, "verify") as verify, \
+	def test_killswitch_off_acks_and_does_no_work(self):
+		"""Default-OFF dormancy: a disabled integration ACKs fast, screens nothing and enqueues nothing.
+
+		It DOES still record what arrived — see test_the_kill_switch_records_what_it_declined_to_act_on.
+		"""
+		with patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
 		     patch("frappe.enqueue") as enqueue:
-			result = spine.receive(
-				"WATI",
-				enabled=lambda: False,
-				adapter=self.adapter,
-			)
+			result = spine.receive("WATI", enabled=lambda: False, adapter=self.adapter)
 		self.assertEqual(result, "ok")
-		verify.assert_not_called()
-		persist.assert_not_called()
 		enqueue.assert_not_called()
-		self.adapter.is_relevant.assert_not_called()
+		self.adapter.screen.assert_not_called()
 
 	# --- (b) bad token -> PermissionError (fail-closed) -------------------
 
@@ -154,8 +149,7 @@ class TestWebhookSpine(FrappeTestCase):
 		It used to be written as 'Queued' and left there for ever, which made a call dropped on
 		purpose indistinguishable from one that was stuck. It is now 'Cancelled', with the reason on
 		the row, and it stays replayable from the stored payload."""
-		self.adapter.is_relevant.return_value = False
-		self.adapter.irrelevance_reason.return_value = "DID 9240276221 is not mapped to a grain"
+		self.adapter.screen.return_value = (False, "DID 9240276221 is not mapped to a grain")
 		before = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
 		with patch("frappe.enqueue") as enqueue, \
 		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT):
@@ -239,7 +233,7 @@ class TestWebhookSpine(FrappeTestCase):
 
 	def test_handler_exception_marks_log_failed(self):
 		"""M1: when handle() raises, process() must mark its Integration Request 'Failed'
-		(truthful DLQ row) and THEN re-raise — so replay_failed can later target it and the
+		(truthful DLQ row) and THEN re-raise — so replay_service can later target it and the
 		exception still reaches the RQ failed registry. The Queued->Failed flip is asserted
 		on a real stored row."""
 		log = frappe.get_doc(
@@ -265,10 +259,85 @@ class TestWebhookSpine(FrappeTestCase):
 		self.assertEqual(status, "Failed", "a raised handle() must leave a truthful 'Failed' DLQ row")
 		self.assertIn("Acefone CDR exploded", error or "", "the traceback belongs on the row, not only in Redis")
 
-	# --- (h) M2: replay_failed re-enqueues ONLY status=='Failed' rows -----
+	# --- (i) a replay that does nothing must not claim it did -------------
 
-	def test_replay_failed_targets_only_failed_rows(self):
-		"""M2: replay_failed must re-enqueue exactly the Failed rows for a service and skip
+	def test_a_replay_that_still_declines_stays_cancelled(self):
+		"""A replay that changed nothing must not report success.
+
+		It used to mark the row Completed regardless — so the act of trying to recover a dropped call
+		quietly destroyed the operator's list of dropped calls, with no way back.
+		"""
+		log = frappe.get_doc(
+			{
+				"doctype": "Integration Request",
+				"integration_request_service": "WATI",
+				"request_description": "WATI",
+				"status": "Cancelled",
+				"data": json.dumps(_WATI_INBOUND, default=str),
+				"output": json.dumps({"outcome": "not captured", "reason": "an old reason"}),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		self.adapter.screen.return_value = (False, "still not mapped")
+		with patch.object(spine, "_adapter_for", return_value=self.adapter), \
+		     patch.object(spine, "process") as proc:
+			spine.replay(log.name)
+
+		proc.assert_not_called()
+		status, output = frappe.db.get_value("Integration Request", log.name, ["status", "output"])
+		self.assertEqual(status, "Cancelled", "a declined replay must not become Completed")
+		self.assertIn("still not mapped", output, "and its reason must be refreshed")
+
+	def test_a_replay_that_now_qualifies_is_processed(self):
+		"""The other half: once the configuration is fixed, the same row goes through."""
+		log = frappe.get_doc(
+			{
+				"doctype": "Integration Request",
+				"integration_request_service": "WATI",
+				"request_description": "WATI",
+				"status": "Cancelled",
+				"data": json.dumps(_WATI_INBOUND, default=str),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		self.adapter.screen.return_value = (True, None)
+		self.adapter.account_for_payload.return_value = _ACCOUNT
+		with patch.object(spine, "_adapter_for", return_value=self.adapter), \
+		     patch.object(spine, "process") as proc:
+			spine.replay(log.name)
+
+		proc.assert_called_once()
+
+	# --- (j) a dormant integration keeps an audit trail -------------------
+
+	def test_the_kill_switch_records_what_it_declined_to_act_on(self):
+		"""A switch that is off means "do not act on this", not "destroy it".
+
+		Providers retry very few times, so a delivery dropped while the switch was off would be gone for
+		good. Logged Cancelled, it is replayable the moment the integration is turned on.
+		"""
+		before = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
+		with patch.object(spine.ingress, "verify", return_value=_ACCOUNT), \
+		     patch("frappe.enqueue") as enqueue:
+			result = spine.receive("WATI", enabled=lambda: False, adapter=self.adapter)
+
+		self.assertEqual(result, "ok")
+		enqueue.assert_not_called()
+		self.adapter.screen.assert_not_called()
+
+		after = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
+		self.assertEqual(after - before, 1, "a dormant integration still records what arrived")
+
+		row = frappe.get_last_doc("Integration Request", filters={"integration_request_service": "WATI"})
+		self.assertEqual(row.status, "Cancelled")
+		self.assertIn("switched off", row.output)
+
+	# --- (h) M2: replay_service re-enqueues ONLY the requested status -----
+
+	def test_replay_service_targets_only_the_requested_status(self):
+		"""M2: replay_service must re-enqueue exactly the Failed rows for a service and skip
 		Queued/Completed ones — a still-in-flight (Queued) row is never replayed. Asserted via
 		the names actually handed to enqueue (one per matching row)."""
 		svc = "ReplayScopeSvc"
@@ -294,7 +363,7 @@ class TestWebhookSpine(FrappeTestCase):
 		frappe.db.commit()
 
 		with patch("frappe.enqueue") as enqueue:
-			count = spine.replay_failed(svc)
+			count = spine.replay_service(svc)
 
 		self.assertEqual(count, 1, "only the single Failed row is in scope")
 		self.assertEqual(enqueue.call_count, 1)

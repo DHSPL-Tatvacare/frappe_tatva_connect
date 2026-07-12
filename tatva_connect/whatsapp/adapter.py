@@ -7,7 +7,7 @@ moved here unchanged from the old `whatsapp/webhook.py` handler — the 1,519 ca
 WATI payloads ingest byte-identically.
 
 Duck-typed adapter contract (no ABC):
-  * is_relevant(payload, event, account) -> bool      — cheap front-door pre-filter
+  * screen(payload, event, account) -> (wanted, reason)  — the front-door filter
   * already_processed(payload, event, account) -> bool — idempotency vs WhatsApp Message
   * handle(payload, event, account) -> None            — dispatch on eventType + clean DB moves
   * account_for_payload(payload, event) -> account|None — re-derive account on replay (fail-closed)
@@ -71,22 +71,37 @@ def _lead_for_number(wa_digits: str):
 # ---------------------------------------------------------------------------
 # Adapter contract — duck-typed, called by the spine.
 # ---------------------------------------------------------------------------
-def is_relevant(payload, event=None, account=None) -> bool:
-	"""Cheap membership filter — runs inline before we enqueue anything."""
+def screen(payload, event=None, account=None):
+	"""(wanted, reason). The membership filter, run inline before anything is enqueued.
+
+	The reason is written onto the declined delivery's log row, so an operator can see why an event
+	was not ingested instead of finding a row stuck at Queued with no explanation.
+	"""
 	ev = payload.get("eventType")
+	number = wati.normalize_number(payload.get("waId"))
+
 	if ev == "message" and _falsy(payload.get("owner")):
-		return bool(_lead_for_number(wati.normalize_number(payload.get("waId"))))
+		if _lead_for_number(number):
+			return True, None
+		return False, f"no CRM lead holds the number {number or '(none)'}"
+
 	if ev in OUTBOUND_SENT_EVENTS:
-		# Either a status confirmation for a row WE sent (matched by localMessageId), or a
-		# portal/bot message to ingest (matched by a CRM lead on the number). The precise,
-		# account-scoped routing happens in the worker — this is just the cheap pre-filter.
+		# Either a status confirmation for a row we sent (matched by localMessageId), or a portal/bot
+		# message to ingest (matched by a CRM lead on the number). The precise, account-scoped routing
+		# happens in the worker; this is only the cheap filter.
 		lmid = payload.get("localMessageId")
 		if lmid and frappe.db.exists("WhatsApp Message", {"message_id": lmid}):
-			return True
-		return bool(_lead_for_number(wati.normalize_number(payload.get("waId"))))
+			return True, None
+		if _lead_for_number(number):
+			return True, None
+		return False, f"neither a message we sent nor a number any CRM lead holds ({number or 'none'})"
+
 	if payload.get("localMessageId"):
-		return bool(frappe.db.exists("WhatsApp Message", {"message_id": payload.get("localMessageId")}))
-	return False
+		if frappe.db.exists("WhatsApp Message", {"message_id": payload.get("localMessageId")}):
+			return True, None
+		return False, "a status update for a message this CRM did not send"
+
+	return False, f"eventType {ev or '(none)'} is not ingested"
 
 
 def already_processed(payload, event=None, account=None) -> bool:
@@ -111,7 +126,7 @@ def already_processed(payload, event=None, account=None) -> bool:
 def handle(payload, event=None, account=None) -> None:
 	"""Persist one CRM-relevant WATI event. Dispatch on the payload's eventType to the
 	per-direction ingest. Runs in the worker (privileged); the spine already gated what
-	reaches here via the token + is_relevant pre-filter."""
+	reaches here via the token + the screen."""
 	ev = payload.get("eventType")
 	if ev == "message" and _falsy(payload.get("owner")):
 		_ingest_inbound(payload, account)

@@ -37,7 +37,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Channel",
-   "options": "Any\nDialer\nIVR\nClickToCall\nBroadcast",
+   "options": "Any\nDialer\nIVR",
    "reqd": 1
   },
   {

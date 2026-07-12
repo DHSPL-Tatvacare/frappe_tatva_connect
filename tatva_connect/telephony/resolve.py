@@ -30,8 +30,36 @@ _GRAIN_AXES = (
 
 
 def is_ours(cdr) -> bool:
-	"""Both gates, as the front door asks them: a call of a wanted kind, on a number that is ours."""
-	return bool(should_capture(cdr) and grain_for(cdr))
+	"""Both gates: a call of a wanted kind, on a number that is ours.
+
+	The DID's account must also agree with the account that authenticated the delivery. They can only
+	disagree through misconfiguration, and the consequence would be one tenant's token writing another
+	tenant's calls — so a mismatch is refused rather than reconciled.
+	"""
+	grain = grain_for(cdr)
+	if not grain or not should_capture(cdr):
+		return False
+
+	sender = cdr.get("account")
+	owner = grain.get("telephony_account")
+	if sender and owner and sender != owner:
+		frappe.logger("telephony").warning(
+			f"telephony: DID {cdr['did_number']} belongs to {owner}, but the delivery authenticated "
+			f"as {sender}; refused"
+		)
+		return False
+	return True
+
+
+def account_for_did(did_number):
+	"""The account a number belongs to, or None. The one DID -> account resolver.
+
+	Read off the DID map, which is where an operator declares it. The live webhook already knows the
+	account from the token; this is what the replay and reconcile paths use, and it must agree with
+	the token or the two paths would attribute the same call to different accounts.
+	"""
+	grain = grain_for({"did_number": env.phone_digits(did_number)})
+	return grain.get("telephony_account") if grain else None
 
 
 def should_capture(cdr) -> bool:

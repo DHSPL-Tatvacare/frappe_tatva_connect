@@ -7,6 +7,9 @@ account-doctype option. Nothing else in the trunk changes.
 Each entry describes a provider once:
   * adapter         — dotted path of its adapter module, lazy-imported by the spine
   * account_doctype — the doctype holding that provider's accounts
+  * active_filter   — what makes one of its accounts live. A disabled account's token must not
+                      authenticate, and providers spell "live" differently (a Check on ours, a Select
+                      on an upstream one), so it is declared rather than branched on.
   * ingress_prefix  — the fieldname prefix its account doctype uses for the ingress settings.
                       Owned doctypes carry the fields directly; an upstream doctype carries them as
                       Custom Fields, which Frappe requires to be `custom_`-prefixed. One knob, and
@@ -27,6 +30,7 @@ PROVIDERS = {
 	"WATI": {
 		"adapter": "tatva_connect.whatsapp.adapter",
 		"account_doctype": "WhatsApp Account",
+		"active_filter": {"status": "Active"},
 		"ingress_prefix": "custom_",
 		"token_field": "custom_webhook_token",
 		"build_urls": lambda host, doc, token: [f"{host}/webhooks/whatsapp/wati/{token}"],
@@ -34,6 +38,7 @@ PROVIDERS = {
 	"Acefone": {
 		"adapter": "tatva_connect.telephony.adapters.acefone",
 		"account_doctype": "CRM Telephony Account",
+		"active_filter": {"enabled": 1},
 		"ingress_prefix": "",
 		"token_field": "webhook_token",
 		"build_urls": lambda host, doc, token: [

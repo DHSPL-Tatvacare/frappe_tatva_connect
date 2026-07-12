@@ -126,6 +126,42 @@ class TestTelephonyGates(FrappeTestCase):
 		name = acefone.process(_foreign_payload(), event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
 
+	def test_replay_and_reconcile_resolve_the_same_account_as_the_live_delivery(self):
+		"""The account is read off the DID map, which is where an operator declares it.
+
+		It used to be re-derived from the account's `caller_id` — one number per account, but many DIDs
+		per account — so every replayed and every reconciled call was written under no account at all.
+		That silently killed agent attribution and broke recording playback, which needs the account to
+		find its API token.
+		"""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+		payload = _foreign_payload()
+
+		# No account passed, exactly as replay and reconcile call it.
+		self.assertEqual(acefone.account_for_payload(payload, "inbound_complete"), ACCOUNT)
+
+		name = acefone.process(payload, event="inbound_complete", account=None)
+		self.assertEqual(
+			frappe.db.get_value("CRM Call Log", name, "custom_telephony_account"),
+			ACCOUNT,
+			"a replayed call must carry the same account a live one does",
+		)
+
+	def test_a_did_belonging_to_another_account_is_refused(self):
+		"""The DID's owner must agree with the account that authenticated the delivery.
+
+		They can only disagree through misconfiguration, and the consequence would be one tenant's token
+		writing another tenant's calls.
+		"""
+		_set_rules([_rule("Inbound", "Dialer")])
+		_map_did(BUSY_DID)
+
+		payload = _foreign_payload()
+		wanted, reason = acefone.screen(payload, "inbound_complete", "_TestSomeOtherAccount")
+		self.assertFalse(wanted)
+		self.assertIn("different telephony account", reason)
+
 	def test_a_disabled_did_reads_as_unmapped(self):
 		"""Disabling a DID must drop its calls, not merely hide the row."""
 		_set_rules([_rule("Inbound", "Dialer")])

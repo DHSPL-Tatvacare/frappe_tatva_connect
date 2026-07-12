@@ -23,7 +23,7 @@ import frappe
 from frappe import parse_json
 
 from tatva_connect.telephony import envelope as env
-from tatva_connect.telephony import resolve, routing, writer
+from tatva_connect.telephony import resolve, writer
 
 PROVIDER = "Acefone"
 
@@ -36,31 +36,24 @@ _ANSWERED_DONE = "Completed"
 _MISSED = "No Answer"
 
 
-def is_relevant(payload, event, account) -> bool:
-	"""Front-door pre-filter, run inline before the job is enqueued.
+def screen(payload, event, account):
+	"""(wanted, reason). One question, asked once, so the payload is parsed once.
 
-	Both gates are answered here — is the call of a wanted kind, and is it on a number that is ours.
-	A no is not a loss: the spine persists the raw payload before this runs, so an ignored or foreign
-	call stays auditable and replayable once its DID is mapped.
-	"""
-	cdr = normalize(payload, event=event, account=account)
-	return bool(cdr and resolve.is_ours(cdr))
-
-
-def irrelevance_reason(payload, event, account):
-	"""Why a call was declined, in one line, for the operator reading the log.
-
-	Cold path only — the spine asks after `is_relevant` has already said no. It is what makes a
-	Cancelled row actionable: mapping the DID it names and replaying the row lands the call.
+	The reason is what makes a declined row actionable: an operator reads it, maps the DID it names,
+	replays the row, and the call lands. A no is never a loss — the spine persists the payload either
+	way.
 	"""
 	cdr = normalize(payload, event=event, account=account)
 	if cdr is None:
-		return "no call_id or uuid to key the call on"
+		return False, "no call_id or uuid to key the call on"
+	if resolve.is_ours(cdr):
+		return True, None
+
 	if not resolve.grain_for(cdr):
-		return f"DID {cdr['did_number'] or '(none)'} is not mapped to a grain"
+		return False, f"DID {cdr['did_number'] or '(none)'} is not mapped to a grain"
 	if not resolve.should_capture(cdr):
-		return f"no capture rule captures {cdr['direction']} {cdr['channel']} calls"
-	return None
+		return False, f"no capture rule captures {cdr['direction']} {cdr['channel']} calls"
+	return False, f"DID {cdr['did_number']} belongs to a different telephony account"
 
 
 def already_processed(payload, event, account) -> bool:
@@ -81,27 +74,33 @@ def handle(payload, event, account) -> None:
 
 
 def account_for_payload(payload, event):
-	"""Re-derive the receiving account from a stored payload, for replay, which carries no token."""
+	"""Re-derive the receiving account from a stored payload, for replay and reconcile, which carry no
+	token.
+
+	Resolved off the DID map, the same table the grain comes from, so a replayed call is attributed to
+	exactly the account the live delivery was. Reading it from anywhere else is how the two paths drift
+	apart and start writing calls under different accounts.
+	"""
 	try:
-		return routing.account_for_did(payload.get("did_number") or payload.get("call_to_number"))
+		return resolve.account_for_did(payload.get("did_number") or payload.get("call_to_number"))
 	except Exception:
 		frappe.log_error(title="Acefone: DID -> account match failed", message=frappe.get_traceback())
 		return None
 
 
 def process(payload: dict, event=None, account=None):
-	"""The one entry point, shared by the webhook worker, the reconcile pull and replay.
+	"""Write the call. Returns the Call Log row name, or None when the call is not ours.
 
-	The gates are re-asked here rather than trusted from `is_relevant`. Replay calls this directly,
-	with no front door ahead of it, so a gate living only in `is_relevant` could be walked past by
-	replaying a stored foreign payload.
+	Shared by the webhook worker, the reconcile pull and replay. The gates are re-asked here rather
+	than trusted from the front door: replay and reconcile call this directly, with no front door
+	ahead of them, so a gate living only at the front door could be walked straight past.
 	"""
 	if account is None:
 		account = account_for_payload(payload, event)
-	cdr = normalize(payload, event=event, account=account)
-	if cdr is None or not resolve.is_ours(cdr):
+	wanted, _reason = screen(payload, event, account)
+	if not wanted:
 		return None
-	return writer.write(cdr)
+	return writer.write(normalize(payload, event=event, account=account))
 
 
 def normalize(payload: dict, event=None, account=None):
