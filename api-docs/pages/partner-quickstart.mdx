@@ -55,14 +55,14 @@ curl -X POST -H 'Authorization: token <api_key>:<api_secret>' \
 
 A Forced-mode key omits the program, which is stamped by the key. A None-mode key has no program. The mode is reported by [`lead_schema`](/discover-schema).
 
-The response is top-level `status`, `action`, and `data`. `data.name` is the lead's unique ID (for example `CRM-LEAD-2026-00123`) and is used to update or read the lead later.
+The response is top-level `status`, `action`, and `data`. `data.name` is the lead's unique ID (for example `a7f3c9e12b`) and is used to update or read the lead later.
 
 ```json
 {
   "status": "success",
   "action": "created",
   "data": {
-    "name": "CRM-LEAD-2026-00123",
+    "name": "a7f3c9e12b",
     "source": "…",
     "vertical": "…",
     "group": "…",
@@ -83,7 +83,7 @@ Re-sending the same phone with a different `custom_current_program` updates the 
 
 ```bash
 curl -H 'Authorization: token <api_key>:<api_secret>' \
-     "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123"
+     "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b"
 ```
 
 The lead is returned with the key's allowed fields, and any child tables inlined as arrays (empty here, since no rows were sent). Values are read by their dotted path; see [Reading responses](/reading-values).

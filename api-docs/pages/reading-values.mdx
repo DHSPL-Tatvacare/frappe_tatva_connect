@@ -29,7 +29,7 @@ The latest HbA1c is read from a `lead_get` response. `$BASE_URL` is the base URL
 
 ```bash title="curl + jq"
 curl -s -H 'Authorization: token KEY:SECRET' \
-  "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123" \
+  "$BASE_URL/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b" \
   | jq '.data.custom_lab_profile[0].hba1c'
 ```
 
@@ -41,7 +41,7 @@ BASE_URL = os.environ["BASE_URL"]
 r = requests.get(
     f"{BASE_URL}/api/method/tatva_connect.api.partner.lead_get",
     headers={"Authorization": "token KEY:SECRET"},
-    params={"name": "CRM-LEAD-2026-00123"},
+    params={"name": "a7f3c9e12b"},
 )
 body = r.json()
 if body["status"] == "success":
@@ -53,7 +53,7 @@ if body["status"] == "success":
 ```javascript title="Node"
 const BASE_URL = process.env.BASE_URL;
 const res = await fetch(
-  `${BASE_URL}/api/method/tatva_connect.api.partner.lead_get?name=CRM-LEAD-2026-00123`,
+  `${BASE_URL}/api/method/tatva_connect.api.partner.lead_get?name=a7f3c9e12b`,
   { headers: { Authorization: "token KEY:SECRET" } },
 );
 const body = await res.json();
@@ -124,6 +124,6 @@ for row in body["results"]:                    # results[i] is the i-th input
 
 :::note{title="Partner responses are top-level"}
 
-These dotted paths read straight from the top of the body; there is no wrapper to unwrap. Native Frappe REST responses elsewhere nest results under `message` or `data`; the partner methods do not.
+These dotted paths read straight from the top of the body; there is no wrapper to unwrap. The partner methods never nest a result inside an envelope of their own.
 
 :::

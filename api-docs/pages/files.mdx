@@ -1,0 +1,113 @@
+---
+title: Files
+description: How a document is attached, how it is scanned, and how it is read back.
+---
+
+# Files
+
+A document is attached to a lead, or to one of that lead's activities or notes. It is scanned for
+malware before it is stored, and it is always private once it is.
+
+## Attaching a document
+
+The bytes are supplied in one of two ways, and exactly one of them is sent:
+
+| Field | Meaning |
+|---|---|
+| `content_base64` | the bytes, base64-encoded, in the request body |
+| `file_url` | a URL the server fetches the bytes from |
+
+`filename` is required. Everything else — `lead`, `activity`, `note`, `file_type`, `external_id` — is
+described by [`file_schema`](/discover-schema), which is read rather than assumed.
+
+```http
+POST /api/method/tatva_connect.api.partner_file.file_attach
+Authorization: token <api_key>:<api_secret>
+Content-Type: application/json
+
+{
+  "lead": "a7f3c9e12b",
+  "filename": "prescription.pdf",
+  "file_type": "prescription",
+  "content_base64": "JVBERi0xLjQKJ..."
+}
+```
+
+The response carries the `name` the file is addressed by from then on.
+
+## Every document is scanned for malware
+
+A document is passed through an antivirus service **before** it is stored. The scan runs on the bytes
+themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches
+on the caller's behalf.
+
+A document that fails the scan is **rejected outright, and nothing is written**:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "validation_error",
+    "message": "This file failed a security scan and was not accepted."
+  }
+}
+```
+
+The response is a **400**. The document is not quarantined and cannot be retrieved afterwards; there
+is nothing to fetch, because nothing was stored. A clean copy is sent instead.
+
+The scan is the reason a file attach is measurably slower than any other write — roughly a second
+against tens of milliseconds. That cost is expected, and it is why files carry their own, smaller
+[bulk ceiling](/rate-limits).
+
+## Every document is private
+
+`is_private` always reads true. It cannot be turned off, and it is not a field a caller may set.
+
+The `file_url` returned is always a proxied URL, never a raw storage key and never a path on disk. It
+is resolved through the API on each read, which means a URL cannot be shared to grant access outside
+the key that owns it.
+
+## Where a document is attached
+
+By default a document is attached to its lead. It may instead be homed on one of that lead's records:
+
+| Field | The document is attached to |
+|---|---|
+| *(none)* | the lead |
+| `activity` | that activity |
+| `note` | that note |
+
+The activity or note must belong to the **same lead**. One that does not is reported as
+`404 not_found` — the same answer a record that does not exist receives — so what exists elsewhere
+cannot be probed.
+
+## A document's bytes are immutable
+
+There is no update. Replacing a document means attaching the new one and deleting the old one, in
+that order, so nothing is lost in between.
+
+## Size and volume
+
+| | Limit |
+|---|---|
+| One document | 25 MB |
+| Documents per bulk call | 5 |
+| Documents per call, all other entities | 25 |
+
+A file is not a row. Each one is decoded, scanned and written to storage, so a bulk call carrying
+twenty-five of them would run far longer than any gateway waits. The ceiling that applies is published
+in `bulk.max_per_call` by [`file_schema`](/discover-schema), and it is the number the API enforces.
+
+## Reading documents back
+
+| Endpoint | Returns |
+|---|---|
+| `file_get` | one document's metadata and its proxied URL |
+| `file_get_bulk` | many, addressed by `name` |
+| `file_list` | every document on a lead, a page at a time |
+| `file_delete` | removes one document |
+| `file_delete_bulk` | removes many |
+
+A document is only reachable when its lead is reachable, so the scope rule described in
+[Lead identity](/concepts) applies here unchanged.

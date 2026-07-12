@@ -3,7 +3,7 @@
   "info": {
     "title": "TatvaCare Partner API",
     "version": "1.0.0",
-    "description": "The Partner API pushes leads, activities, files and calls into TatvaCare and reads their state back. One\nkey governs every entity: there is no per-entity enablement. The key determines which fields may be read\nand written, and which product line and group a record belongs to.\n\n## Identity — read this first\n\n**Every record is addressed by `name`.** A create returns the `name` of the row it created — the primary\nkey of the underlying table. It is stored by the caller and is the address used for every subsequent\nread, update and delete. It is the only address the API accepts.\n\n**Deduplication is performed by the CRM, never by the caller.** A lead is unique per\n`(mobile_no, product line, group)`. Re-sending the same patient updates that lead; the program is a\nmutable attribute and is not part of identity. A changed phone number is a new patient and mints a new\nlead. Activities, files and calls are **created** against a lead and are **updated by `name`** — they are\nnever deduplicated on a caller-supplied value, so a re-sent create produces a second record.\n\n**`external_id` is a label, not an address.** It is an optional, free-form reference of the caller's own\nchoosing, stored against the record and echoed back on every read so a caller can recognise their own\nrow. It is never interpreted, never deduplicated on, and never used to locate a record.\n\n**Retries are made safe with the `Idempotency-Key` header.** A write may carry one. The first request\nclaims the key and stores its response; a retry with the same key and the same body replays that stored\nresponse instead of writing again. The same key with a different body is rejected with a 422. This is the\nonly retry-safety mechanism, and it is unrelated to `external_id`.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays\n(such as `custom_lab_profile` and `custom_plan_profile`). There is no fixed payload: the schema is\ndiscovered at runtime. Every entity exposes a `*_schema` endpoint returning exactly what the calling key\nmay send and read, with each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. A field list is never\nhardcoded.\n\n## One envelope\n\nEvery response is emitted at the top level, with no `message` wrapper. A success carries\n`{\"status\": \"success\", \"action\": ..., \"data\": ...}`, where `action` is one of `created`, `updated`,\n`fetched` or `deleted`. A failure carries `{\"status\": \"error\", \"error\": {\"code\", \"message\"}}` with a\nnon-2xx status. Every bulk method returns `{\"status\": \"success\", \"summary\": {\"total\", \"succeeded\",\n\"failed\"}, \"results\": [...]}` — reads and writes alike — with `results` input-ordered and each row\ncarrying its own outcome. A bulk call returns 200 even when individual rows failed.\n\n## Limits\n\nBulk methods accept up to 25 records per call. Lists page at up to 200 rows. Two limits apply\nindependently: a call-rate limit and a daily record-volume quota. Single, bulk and list methods all charge\ntheir true row count against the volume quota. A breach of either returns 429 with `Retry-After`.\n",
+    "description": "The Partner API pushes leads, activities, files and calls into TatvaCare and reads their state back. One\nkey governs every entity: there is no per-entity enablement. The key determines which fields may be read\nand written, and which product line and group a record belongs to.\n\n## Identity — read this first\n\n**Every record is addressed by `name`.** A create returns the `name` of the record it created — an opaque\nidentifier that carries no meaning and follows no pattern. It is stored by the caller and is the address used for every subsequent\nread, update and delete. It is the only address the API accepts.\n\n**Deduplication is performed by the CRM, never by the caller.** A lead is unique per\n`(mobile_no, product line, group)`. Re-sending the same patient updates that lead; the program is a\nmutable attribute and is not part of identity. A changed phone number is a new patient and mints a new\nlead. Activities, files and calls are **created** against a lead and are **updated by `name`** — they are\nnever deduplicated on a caller-supplied value, so a re-sent create produces a second record.\n\n**`external_id` is a label, not an address.** It is an optional, free-form reference of the caller's own\nchoosing, stored against the record and echoed back on every read so a caller can recognise their own\nrow. It is never interpreted, never deduplicated on, and never used to locate a record.\n\n**Retries are made safe with the `Idempotency-Key` header.** A write may carry one. The first request\nclaims the key and stores its response; a retry with the same key and the same body replays that stored\nresponse instead of writing again. The same key with a different body is rejected with a 422. This is the\nonly retry-safety mechanism, and it is unrelated to `external_id`.\n\n## The shape\n\nA lead has top-level fields (such as `first_name`, `mobile_no`, `status`) and child tables sent as arrays\n(such as `custom_lab_profile` and `custom_plan_profile`). There is no fixed payload: the schema is\ndiscovered at runtime. Every entity exposes a `*_schema` endpoint returning exactly what the calling key\nmay send and read, with each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. A field list is never\nhardcoded.\n\n## One envelope\n\nEvery response is emitted at the top level, with no `message` wrapper. A success carries\n`{\"status\": \"success\", \"action\": ..., \"data\": ...}`, where `action` is one of `created`, `updated`,\n`fetched` or `deleted`. A failure carries `{\"status\": \"error\", \"error\": {\"code\", \"message\"}}` with a\nnon-2xx status. Every bulk method returns `{\"status\": \"success\", \"summary\": {\"total\", \"succeeded\",\n\"failed\"}, \"results\": [...]}` — reads and writes alike — with `results` input-ordered and each row\ncarrying its own outcome. A bulk call returns 200 even when individual rows failed.\n\n## Limits\n\nBulk methods accept up to 25 records per call. Lists page at up to 200 rows. Two limits apply\nindependently: a call-rate limit and a daily record-volume quota. Single, bulk and list methods all charge\ntheir true row count against the volume quota. A breach of either returns 429 with `Retry-After`.",
     "contact": {
       "name": "TatvaCare CRM Ops"
     }
@@ -85,9 +85,9 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The lead's unique id, in the form `CRM-LEAD-YYYY-NNNNN`. Read-only: the server generates it, so never send it on a create.",
+            "description": "The lead's unique id — an opaque identifier the server generates. It carries no meaning, follows no pattern, and is never sent on a create.",
             "readOnly": true,
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           "first_name": {
             "type": "string",
@@ -388,7 +388,7 @@
               "name": {
                 "type": "string",
                 "description": "CRM Lead id to update.",
-                "example": "CRM-LEAD-2026-00123"
+                "example": "a7f3c9e12b"
               }
             }
           }
@@ -680,7 +680,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The Frappe fieldtype (Data, Select, Link, Datetime, ...)."
+            "description": "The field's data type (Data, Select, Link, Datetime, ...)."
           },
           "behavior": {
             "type": "string",
@@ -748,7 +748,7 @@
           "lead": {
             "type": "string",
             "description": "The CRM Lead this activity hangs off.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           "task_type": {
             "type": "string",
@@ -777,7 +777,7 @@
           "lead": {
             "type": "string",
             "description": "CRM Lead id. Send this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           "mobile_no": {
             "type": "string",
@@ -862,7 +862,7 @@
           "lead": {
             "type": "string",
             "description": "CRM Lead id. Send this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           "mobile_no": {
             "type": "string",
@@ -974,7 +974,7 @@
           "lead": {
             "type": "string",
             "description": "Optional CRM Lead id to attach to (line-scoped). If sent with `mobile_no`, `lead` wins.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           "mobile_no": {
             "type": "string",
@@ -1284,7 +1284,7 @@
           "status": "success",
           "action": "created",
           "data": {
-            "name": "CRM-LEAD-2026-00123",
+            "name": "a7f3c9e12b",
             "source": "Program D",
             "vertical": "Product Line B",
             "group": "Group B",
@@ -1298,7 +1298,7 @@
           "status": "success",
           "action": "updated",
           "data": {
-            "name": "CRM-LEAD-2026-00056",
+            "name": "a7f3c9e12b",
             "source": "Program D",
             "vertical": "Product Line B",
             "group": "Group B",
@@ -3182,7 +3182,7 @@
             "first_name": "Example",
             "mobile_no": "+919000000001",
             "status": "New",
-            "name": "CRM-LEAD-2026-00123",
+            "name": "a7f3c9e12b",
             "source": "Program D",
             "custom_vertical": "Metabolic",
             "custom_group": "Program D",
@@ -3206,7 +3206,7 @@
       "LeadUpdateRequest": {
         "summary": "lead_update: flip status on a known lead",
         "value": {
-          "name": "CRM-LEAD-2026-00123",
+          "name": "a7f3c9e12b",
           "status": "Contacted",
           "custom_lab_profile": [
             {
@@ -3269,7 +3269,7 @@
             "status": "New",
             "substage": null,
             "website": null,
-            "name": "CRM-LEAD-2026-02876",
+            "name": "a7f3c9e12b",
             "external_id": "V-1",
             "source": null,
             "custom_vertical": "GoodFlip Care",
@@ -3290,7 +3290,7 @@
           "status": "success",
           "action": "deleted",
           "data": {
-            "name": "CRM-LEAD-2026-02894"
+            "name": "a7f3c9e12b"
           }
         }
       },
@@ -3320,11 +3320,11 @@
         "value": {
           "updates": [
             {
-              "name": "CRM-LEAD-2026-00123",
+              "name": "a7f3c9e12b",
               "status": "Contacted"
             },
             {
-              "name": "CRM-LEAD-2026-00124",
+              "name": "c93e2f6a18",
               "custom_lab_profile": [
                 {
                   "hba1c": 6.5
@@ -3338,8 +3338,8 @@
         "summary": "lead_delete_bulk: delete by name",
         "value": {
           "names": [
-            "CRM-LEAD-2026-00123",
-            "CRM-LEAD-2026-00124"
+            "a7f3c9e12b",
+            "c93e2f6a18"
           ]
         }
       },
@@ -3357,7 +3357,7 @@
               "index": 0,
               "status": "success",
               "action": "created",
-              "name": "CRM-LEAD-2026-00125"
+              "name": "d41c8b7e05"
             },
             {
               "index": 1,
@@ -3384,13 +3384,13 @@
               "index": 0,
               "status": "success",
               "action": "deleted",
-              "name": "CRM-LEAD-2026-00123"
+              "name": "a7f3c9e12b"
             },
             {
               "index": 1,
               "status": "success",
               "action": "deleted",
-              "name": "CRM-LEAD-2026-00124"
+              "name": "c93e2f6a18"
             }
           ]
         }
@@ -3399,8 +3399,8 @@
         "summary": "lead_get_bulk: by names",
         "value": {
           "names": [
-            "CRM-LEAD-2026-00123",
-            "CRM-LEAD-2026-00124"
+            "a7f3c9e12b",
+            "c93e2f6a18"
           ]
         }
       },
@@ -3471,7 +3471,7 @@
                 "mobile_no": "+919900020001",
                 "status": "New",
                 "website": null,
-                "name": "CRM-LEAD-2026-02876",
+                "name": "a7f3c9e12b",
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
                 "custom_group": "Anaya",
@@ -3524,7 +3524,7 @@
                 "mobile_no": "+919900012001",
                 "status": "New",
                 "website": null,
-                "name": "CRM-LEAD-2026-02857",
+                "name": "a7f3c9e12b",
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
                 "custom_group": "Anaya",
@@ -3577,7 +3577,7 @@
                 "mobile_no": "+919900014001",
                 "status": "New",
                 "website": null,
-                "name": "CRM-LEAD-2026-02861",
+                "name": "a7f3c9e12b",
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
                 "custom_group": "Anaya",
@@ -3630,7 +3630,7 @@
                 "mobile_no": "+919900013001",
                 "status": "New",
                 "website": null,
-                "name": "CRM-LEAD-2026-02859",
+                "name": "a7f3c9e12b",
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
                 "custom_group": "Anaya",
@@ -3683,7 +3683,7 @@
                 "mobile_no": "+919900011200",
                 "status": "New",
                 "website": null,
-                "name": "CRM-LEAD-2026-02856",
+                "name": "a7f3c9e12b",
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
                 "custom_group": "Anaya",
@@ -3717,7 +3717,7 @@
               "list_page_max": 200,
               "list_page_default": 20
             },
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "task_types": [
               {
                 "name": "GoodFlip Care::Anaya::::Chemo Readiness",
@@ -4451,7 +4451,7 @@
       "ActivityCreateRequest": {
         "summary": "activity_create: log a welcome call (deduped on external_id)",
         "value": {
-          "lead": "CRM-LEAD-2026-00123",
+          "lead": "a7f3c9e12b",
           "task_type": "Welcome Call",
           "external_id": "LSQ-ACT-88231",
           "values": {
@@ -4506,7 +4506,7 @@
             "activities": [
               {
                 "name": "9390",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": "V-A1",
@@ -4519,7 +4519,7 @@
               },
               {
                 "name": "9378",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4532,7 +4532,7 @@
               },
               {
                 "name": "9377",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4545,7 +4545,7 @@
               },
               {
                 "name": "9376",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": "V-A1",
@@ -4558,7 +4558,7 @@
               },
               {
                 "name": "9146",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4571,7 +4571,7 @@
               },
               {
                 "name": "9145",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4584,7 +4584,7 @@
               },
               {
                 "name": "9144",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": "V-A1",
@@ -4597,7 +4597,7 @@
               },
               {
                 "name": "9143",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4610,7 +4610,7 @@
               },
               {
                 "name": "9142",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -4623,7 +4623,7 @@
               },
               {
                 "name": "9141",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": "V-A1",
@@ -4641,7 +4641,7 @@
       "FileAttachRequestUrl": {
         "summary": "file_attach: by file_url (server downloads it)",
         "value": {
-          "lead": "CRM-LEAD-2026-00123",
+          "lead": "a7f3c9e12b",
           "external_id": "LSQ-ATT-5521",
           "file_type": "Lab Report",
           "filename": "hba1c-2026-05.pdf",
@@ -4668,10 +4668,10 @@
             "file_type": "Prescription",
             "external_id": "V-F1",
             "filename": "v.txt",
-            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/CRM-LEAD-2026-02876/c2dca7b4a6_v.txt",
+            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
             "is_private": true,
             "attached_to_doctype": "CRM Lead",
-            "attached_to_name": "CRM-LEAD-2026-02876"
+            "attached_to_name": "a7f3c9e12b"
           }
         }
       },
@@ -4692,10 +4692,10 @@
                 "file_type": "Prescription",
                 "external_id": "V-F1",
                 "filename": "v.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/CRM-LEAD-2026-02876/c2dca7b4a6_v.txt",
+                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
                 "is_private": true,
                 "attached_to_doctype": "CRM Lead",
-                "attached_to_name": "CRM-LEAD-2026-02876"
+                "attached_to_name": "a7f3c9e12b"
               }
             ]
           }
@@ -4725,7 +4725,7 @@
       "CallCreateRequest": {
         "summary": "call_create: explicit lead, inbound",
         "value": {
-          "lead": "CRM-LEAD-2026-00123",
+          "lead": "a7f3c9e12b",
           "external_id": "LSQ-CALL-9001",
           "direction": "Inbound",
           "from_number": "+919000000001",
@@ -4755,7 +4755,7 @@
           "data": {
             "name": "PARTNER-6a7de85c9f",
             "external_id": "V-C1",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "direction": "Inbound",
             "from_number": "9900020001",
             "to_number": "9000000000",
@@ -4801,7 +4801,7 @@
               {
                 "name": "PARTNER-6a7de85c9f",
                 "external_id": "V-C1",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "direction": "Inbound",
                 "from_number": "9900020001",
                 "to_number": "9000000000",
@@ -4975,6 +4975,7 @@
               }
             ],
             "bytes": "The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent. The maximum download size is 25 MB.",
+            "screening": "Every file is scanned for malware before it is stored. A file that fails the scan is rejected outright and nothing is written: the response is a 400 with `error.code` `validation_error` and the message \"This file failed a security scan and was not accepted.\" The scan runs on the bytes themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches. A rejected file is not quarantined and cannot be retrieved; a clean copy is sent instead.",
             "privacy": "Every file attached through this API is private. `is_private` always reads true and `file_url` is always a proxy url, never a raw storage key or a local path.",
             "target": "A file is attached to its lead by default. Passing `activity` (a CRM Task name) homes it on that activity; passing `note` (an FCRM Note name) homes it on that note. Either must belong to the same lead.",
             "immutable": "A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old."
@@ -5152,7 +5153,7 @@
           "action": "created",
           "data": {
             "name": "9390",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
             "status": "Done",
             "external_id": "V-A1",
@@ -5217,7 +5218,7 @@
             "status": "New",
             "substage": null,
             "website": null,
-            "name": "CRM-LEAD-2026-02894",
+            "name": "a7f3c9e12b",
             "external_id": null,
             "source": null,
             "custom_vertical": "GoodFlip Care",
@@ -5284,7 +5285,7 @@
             "status": "New",
             "substage": null,
             "website": null,
-            "name": "CRM-LEAD-2026-02876",
+            "name": "a7f3c9e12b",
             "external_id": "V-1",
             "source": null,
             "custom_vertical": "GoodFlip Care",
@@ -5360,7 +5361,7 @@
                 "status": "New",
                 "substage": null,
                 "website": null,
-                "name": "CRM-LEAD-2026-02893",
+                "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
@@ -5425,7 +5426,7 @@
                 "status": "New",
                 "substage": null,
                 "website": null,
-                "name": "CRM-LEAD-2026-02894",
+                "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
@@ -5503,7 +5504,7 @@
                 "status": "New",
                 "substage": null,
                 "website": null,
-                "name": "CRM-LEAD-2026-02893",
+                "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
@@ -5589,7 +5590,7 @@
                 "status": "New",
                 "substage": null,
                 "website": null,
-                "name": "CRM-LEAD-2026-02893",
+                "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
                 "custom_vertical": "GoodFlip Care",
@@ -5611,8 +5612,8 @@
         "value": {
           "status": "success",
           "summary": {
-            "total": 2,
-            "succeeded": 2,
+            "total": 1,
+            "succeeded": 1,
             "failed": 0
           },
           "results": [
@@ -5621,15 +5622,7 @@
               "status": "success",
               "action": "deleted",
               "data": {
-                "name": "CRM-LEAD-2026-02893"
-              }
-            },
-            {
-              "index": 1,
-              "status": "success",
-              "action": "deleted",
-              "data": {
-                "name": "CRM-LEAD-2026-02894"
+                "name": "d41c8b7e05"
               }
             }
           ]
@@ -5642,7 +5635,7 @@
           "action": "fetched",
           "data": {
             "name": "9390",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
             "status": "Done",
             "external_id": "V-A1",
@@ -5662,7 +5655,7 @@
           "action": "updated",
           "data": {
             "name": "9390",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
             "status": "Done",
             "external_id": "V-A1",
@@ -5691,7 +5684,7 @@
               "action": "created",
               "data": {
                 "name": "9391",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -5709,7 +5702,7 @@
               "action": "created",
               "data": {
                 "name": "9392",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -5740,7 +5733,7 @@
               "action": "fetched",
               "data": {
                 "name": "9391",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -5779,7 +5772,7 @@
               "action": "updated",
               "data": {
                 "name": "9391",
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
                 "status": "Done",
                 "external_id": null,
@@ -5831,7 +5824,7 @@
           "data": {
             "name": "PARTNER-6a7de85c9f",
             "external_id": "V-C1",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "direction": "Inbound",
             "from_number": "9900020001",
             "to_number": "9000000000",
@@ -5850,7 +5843,7 @@
           "data": {
             "name": "PARTNER-6a7de85c9f",
             "external_id": "V-C1",
-            "lead": "CRM-LEAD-2026-02876",
+            "lead": "a7f3c9e12b",
             "direction": "Inbound",
             "from_number": "9900020001",
             "to_number": "9000000000",
@@ -5878,7 +5871,7 @@
               "data": {
                 "name": "PARTNER-55acf41fb9",
                 "external_id": null,
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "direction": "Inbound",
                 "from_number": "9900020001",
                 "to_number": "9000000001",
@@ -5908,7 +5901,7 @@
               "data": {
                 "name": "PARTNER-55acf41fb9",
                 "external_id": null,
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "direction": "Inbound",
                 "from_number": "9900020001",
                 "to_number": "9000000001",
@@ -5946,7 +5939,7 @@
               "data": {
                 "name": "PARTNER-55acf41fb9",
                 "external_id": null,
-                "lead": "CRM-LEAD-2026-02876",
+                "lead": "a7f3c9e12b",
                 "direction": "Inbound",
                 "from_number": "9900020001",
                 "to_number": "9000000001",
@@ -6000,10 +5993,10 @@
             "file_type": "Prescription",
             "external_id": "V-F1",
             "filename": "v.txt",
-            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/CRM-LEAD-2026-02876/c2dca7b4a6_v.txt",
+            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
             "is_private": true,
             "attached_to_doctype": "CRM Lead",
-            "attached_to_name": "CRM-LEAD-2026-02876"
+            "attached_to_name": "a7f3c9e12b"
           }
         }
       },
@@ -6026,10 +6019,10 @@
                 "file_type": null,
                 "external_id": null,
                 "filename": "v28bbf87.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/CRM-LEAD-2026-02876/d2bda27fcb_v28bbf87.txt",
+                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/d2bda27fcb_v28bbf87.txt",
                 "is_private": true,
                 "attached_to_doctype": "CRM Lead",
-                "attached_to_name": "CRM-LEAD-2026-02876"
+                "attached_to_name": "a7f3c9e12b"
               }
             }
           ]
@@ -6054,10 +6047,10 @@
                 "file_type": null,
                 "external_id": null,
                 "filename": "v28bbf87.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/CRM-LEAD-2026-02876/d2bda27fcb_v28bbf87.txt",
+                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/d2bda27fcb_v28bbf87.txt",
                 "is_private": true,
                 "attached_to_doctype": "CRM Lead",
-                "attached_to_name": "CRM-LEAD-2026-02876"
+                "attached_to_name": "a7f3c9e12b"
               }
             },
             {
@@ -6145,7 +6138,7 @@
     },
     "responses": {
       "RateLimited": {
-        "description": "Rate limit exceeded (`error.code` is `rate_limited`). Every budget is enforced twice — per key, and at platform level across all keys — and the call is refused if either is exhausted. `Retry-After` or `error.retry_after` seconds are waited, then the call is retried; a 429 is raised before the write runs, so nothing was saved and retrying is safe. Bulk writes have their own, much tighter budget: one call at a time, platform-wide.",
+        "description": "A budget is exhausted. `error.retry_after` gives the seconds to wait; nothing was saved.",
         "headers": {
           "RateLimit-Limit": {
             "$ref": "#/components/headers/RateLimit-Limit"
@@ -6177,7 +6170,7 @@
         }
       },
       "WriteConflict": {
-        "description": "A concurrent write conflicted with this batch and the database rolled it back (`error.code` is `write_conflict`). NOTHING was saved — not even the records that had already succeeded within the call. The whole call is retried after `error.retry_after` seconds. This is transient and expected under concurrency; it is not a fault in the request. Sending one bulk call at a time avoids it entirely.",
+        "description": "A concurrent write rolled the whole call back. Nothing was saved. Retry the whole call.",
         "headers": {
           "Retry-After": {
             "$ref": "#/components/headers/Retry-After"
@@ -6192,7 +6185,7 @@
         }
       },
       "ServerBusy": {
-        "description": "The server is overloaded (`error.code` is `server_busy`). This is NOT a rate limit: the caller's own budget was not exceeded and was not consumed. Nothing was saved, so the same call is simply retried after `error.retry_after` seconds, which is a real number rather than an estimate. Reducing the request rate does not help and is not the fix.",
+        "description": "The server is overloaded. Not a rate limit: no budget was spent. Retry the same call.",
         "headers": {
           "Retry-After": {
             "$ref": "#/components/headers/Retry-After"
@@ -6237,7 +6230,7 @@
         "description": "Confirms the `Authorization` header is correct by returning the account the key belongs to. Suitable as the first call when integrating, and as a health check in CI: anything other than `200` means the auth is wrong. Setup: [Authentication](/partner-validate-key).",
         "responses": {
           "200": {
-            "description": "Authenticated: the key is valid.",
+            "description": "Success.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6258,7 +6251,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key (HTTP 401)."
+            "description": "The API key is missing or invalid."
           }
         }
       }
@@ -6272,7 +6265,7 @@
         "description": "Returns the exact fields the key may send and read, which of them are required, the routing mode, and how each child table behaves. Called instead of hardcoding a field list, since two keys return different schemas. Full walkthrough: [Schema discovery](/discover-schema).",
         "responses": {
           "200": {
-            "description": "The caller's allowed fields + routing mode under `data` (no `message` wrapper).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6298,7 +6291,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6308,7 +6301,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6318,7 +6311,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6339,7 +6332,7 @@
           "Leads"
         ],
         "summary": "Get Lead Data",
-        "description": "Fetches one lead by `name` (its unique id, e.g. `CRM-LEAD-2026-00123`) or by `mobile_no`. Returns the key's allowed fields plus read-only routing, with child profiles inlined. Only leads on the caller's own line are visible; an out-of-scope lookup returns `404 not_found`.",
+        "description": "Fetches one lead by `name` (its unique id, e.g. `a7f3c9e12b`) or by `mobile_no`. Returns the key's allowed fields plus read-only routing, with child profiles inlined. Only leads on the caller's own line are visible; an out-of-scope lookup returns `404 not_found`.",
         "parameters": [
           {
             "name": "name",
@@ -6348,8 +6341,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123` (returned by Create Lead). Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "description": "The lead's unique ID, e.g. `a7f3c9e12b` (returned by Create Lead). Use this OR `mobile_no`.",
+            "example": "a7f3c9e12b"
           },
           {
             "name": "mobile_no",
@@ -6364,7 +6357,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The curated lead (top-level `status`/`action:fetched`/`data`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6390,7 +6383,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6400,7 +6393,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6410,7 +6403,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call, or the lead is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6420,7 +6413,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6540,7 +6533,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of curated leads under `data` (no children, use `lead_get` for the full record).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6566,7 +6559,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6576,7 +6569,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6586,7 +6579,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6637,7 +6630,7 @@
         },
         "responses": {
           "200": {
-            "description": "Lead created or updated (top-level `status`/`action`/`data`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6663,7 +6656,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6673,7 +6666,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6683,7 +6676,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or the lead is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6709,7 +6702,7 @@
           "Leads"
         ],
         "summary": "Update Lead",
-        "description": "Updates a lead by `name` (its unique id, e.g. `CRM-LEAD-2026-00123`). Fields that are sent are updated, fields that are omitted are left alone, and child profiles merge field by field, so a partial write never wipes a row. Only leads on the caller's own line can be updated.",
+        "description": "Updates a lead by `name` (its unique id, e.g. `a7f3c9e12b`). Fields that are sent are updated, fields that are omitted are left alone, and child profiles merge field by field, so a partial write never wipes a row. Only leads on the caller's own line can be updated.",
         "requestBody": {
           "required": true,
           "content": {
@@ -6727,7 +6720,7 @@
         },
         "responses": {
           "200": {
-            "description": "Lead updated (top-level `status`/`action`/`data`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6753,7 +6746,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6763,7 +6756,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6773,7 +6766,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or the lead is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6783,7 +6776,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6825,8 +6818,8 @@
             "schema": {
               "type": "string"
             },
-            "description": "The lead's unique ID, e.g. `CRM-LEAD-2026-00123`, to delete (may also be sent in the JSON body).",
-            "example": "CRM-LEAD-2026-00123"
+            "description": "The lead's unique ID, e.g. `a7f3c9e12b`, to delete (may also be sent in the JSON body).",
+            "example": "a7f3c9e12b"
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -6834,7 +6827,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Lead deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6860,7 +6853,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6870,7 +6863,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6880,7 +6873,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or the lead is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6890,7 +6883,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6907,7 +6900,7 @@
             }
           },
           "409": {
-            "description": "Lead has linked activity, `cannot_delete` (generic message by design).",
+            "description": "The record cannot be created or removed in its current state.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6942,7 +6935,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `CRM-LEAD-2026-00123`). Use this OR `mobile_nos`."
+                    "description": "Up to 100 lead IDs (e.g. `a7f3c9e12b`). Use this OR `mobile_nos`."
                   },
                   "mobile_nos": {
                     "type": "array",
@@ -6968,7 +6961,7 @@
         },
         "responses": {
           "200": {
-            "description": "Leads found (input-ordered `results[]`; missing/out-of-scope rows report `not_found`).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -6994,7 +6987,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7004,7 +6997,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7014,7 +7007,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7066,7 +7059,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7092,7 +7085,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7102,7 +7095,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7112,7 +7105,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7163,7 +7156,7 @@
                             "name": {
                               "type": "string",
                               "description": "CRM Lead id to update.",
-                              "example": "CRM-LEAD-2026-00123"
+                              "example": "a7f3c9e12b"
                             }
                           }
                         }
@@ -7183,7 +7176,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7209,7 +7202,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7219,7 +7212,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7229,7 +7222,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or a record is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7272,7 +7265,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `CRM-LEAD-2026-00123`) to delete."
+                    "description": "Up to 100 lead IDs (e.g. `a7f3c9e12b`) to delete."
                   }
                 }
               },
@@ -7286,7 +7279,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7312,7 +7305,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7322,7 +7315,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7332,7 +7325,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted, or a record is outside the caller's line.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7371,7 +7364,7 @@
               "type": "string"
             },
             "description": "CRM Lead id. Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           {
             "name": "mobile_no",
@@ -7386,7 +7379,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The activity types + field schemas available to this lead.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7412,7 +7405,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7422,7 +7415,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7432,7 +7425,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7468,7 +7461,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The activity (top-level `status`/`action:fetched`/`data`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7494,7 +7487,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7504,7 +7497,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7514,7 +7507,7 @@
             }
           },
           "404": {
-            "description": "Activity not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7545,7 +7538,7 @@
               "type": "string"
             },
             "description": "CRM Lead id. Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           {
             "name": "mobile_no",
@@ -7599,7 +7592,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of the lead's activities under `data`.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7625,7 +7618,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7635,7 +7628,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7645,7 +7638,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7684,7 +7677,7 @@
         },
         "responses": {
           "200": {
-            "description": "The activity was created. Its `name` is returned — the address used from now on.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7710,7 +7703,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7720,7 +7713,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7730,7 +7723,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7740,7 +7733,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7791,7 +7784,7 @@
         },
         "responses": {
           "200": {
-            "description": "Activity updated (`action: updated`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7817,7 +7810,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7827,7 +7820,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7837,7 +7830,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7847,7 +7840,7 @@
             }
           },
           "404": {
-            "description": "Activity not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7888,7 +7881,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Activity deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7914,7 +7907,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7924,7 +7917,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7934,7 +7927,7 @@
             }
           },
           "404": {
-            "description": "Activity not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7973,7 +7966,7 @@
         },
         "responses": {
           "200": {
-            "description": "Activities found (input-ordered `results[]`; missing/out-of-scope rows report `not_found`).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -7999,7 +7992,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8009,7 +8002,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8019,7 +8012,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8071,7 +8064,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8097,7 +8090,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8107,7 +8100,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8117,7 +8110,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8160,7 +8153,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The file metadata + proxy url.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8186,7 +8179,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8196,7 +8189,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8206,7 +8199,7 @@
             }
           },
           "404": {
-            "description": "File not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8237,7 +8230,7 @@
               "type": "string"
             },
             "description": "CRM Lead id. Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           {
             "name": "mobile_no",
@@ -8282,7 +8275,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of the lead's files under `data`.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8308,7 +8301,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8318,7 +8311,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8328,7 +8321,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8370,7 +8363,7 @@
         },
         "responses": {
           "200": {
-            "description": "File attached (`action: attached`) or already present (`action: exists`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8396,7 +8389,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8406,7 +8399,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8416,7 +8409,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8426,7 +8419,7 @@
             }
           },
           "404": {
-            "description": "Lead/activity not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8469,7 +8462,7 @@
         ],
         "responses": {
           "200": {
-            "description": "File deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8495,7 +8488,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8505,7 +8498,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8515,7 +8508,7 @@
             }
           },
           "404": {
-            "description": "File not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8564,7 +8557,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8590,7 +8583,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8600,7 +8593,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8610,7 +8603,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8653,7 +8646,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The call (top-level `status`/`action:fetched`/`data`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8679,7 +8672,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8689,7 +8682,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8699,7 +8692,7 @@
             }
           },
           "404": {
-            "description": "Call not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8730,7 +8723,7 @@
               "type": "string"
             },
             "description": "CRM Lead id. Use this OR `mobile_no`.",
-            "example": "CRM-LEAD-2026-00123"
+            "example": "a7f3c9e12b"
           },
           {
             "name": "mobile_no",
@@ -8788,7 +8781,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of the lead's calls under `data`.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8814,7 +8807,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8824,7 +8817,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8834,7 +8827,7 @@
             }
           },
           "404": {
-            "description": "Lead not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8876,7 +8869,7 @@
         },
         "responses": {
           "200": {
-            "description": "Call created or updated. **Read `data.lead`**, it is `null` when attribution found no/ambiguous match (the call is unlinked).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -8902,7 +8895,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8912,7 +8905,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8922,7 +8915,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8932,7 +8925,7 @@
             }
           },
           "404": {
-            "description": "An explicitly-sent lead or mobile_no was not found, or is outside the caller's line (identical, to prevent enumeration). Server-attribution misses do not 404; they return `lead: null`.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8975,7 +8968,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Call deleted (`status:success`, `action:deleted`, `data:{name}`).",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9001,7 +8994,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9011,7 +9004,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9021,7 +9014,7 @@
             }
           },
           "404": {
-            "description": "Call not found or outside the caller's line (identical, to prevent enumeration).",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9070,7 +9063,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch ran, partial success. Inspect `summary` + `results[].status` (HTTP 200 even if some rows failed).",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9096,7 +9089,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9106,7 +9099,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9116,7 +9109,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9148,7 +9141,7 @@
         "description": "Up to 100 activities are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9174,7 +9167,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9184,7 +9177,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9194,7 +9187,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9204,7 +9197,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9214,7 +9207,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9229,7 +9222,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9273,7 +9266,7 @@
         "description": "Up to 100 activities are deleted, each addressed by its `name`. Each record is handled in its own savepoint. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9299,7 +9292,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9309,7 +9302,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9319,7 +9312,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9329,7 +9322,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9339,7 +9332,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9354,7 +9347,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9398,7 +9391,7 @@
         "description": "Discovery. The attach payload contract is returned: every field the caller may send, its type, and whether it is required. The shape is fixed — it does not vary by key or grain — but it is discoverable, so a field list is never hardcoded.",
         "responses": {
           "200": {
-            "description": "The file payload contract.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9424,7 +9417,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9434,7 +9427,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9444,7 +9437,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9459,7 +9452,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9480,7 +9473,7 @@
         "description": "Up to 100 files are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A file that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9506,7 +9499,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9516,7 +9509,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9526,7 +9519,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9536,7 +9529,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9546,7 +9539,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9561,7 +9554,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9600,7 +9593,7 @@
         "description": "Up to 100 files are deleted, each addressed by its `name`. Each record is handled in its own savepoint. The stored blob is dropped with its last reference.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9626,7 +9619,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9636,7 +9629,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9646,7 +9639,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9656,7 +9649,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9666,7 +9659,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9681,7 +9674,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9725,7 +9718,7 @@
         "description": "Discovery. The call payload contract is returned: every field the caller may send, its type, and whether it is required. The shape is fixed — it does not vary by key or grain — but it is discoverable, so a field list is never hardcoded.",
         "responses": {
           "200": {
-            "description": "The call payload contract.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9751,7 +9744,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9761,7 +9754,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9771,7 +9764,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9786,7 +9779,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9807,7 +9800,7 @@
         "description": "A call is updated, addressed by its `name` — the id returned when it was created. Only the fields present in the body are changed. The lead link is left alone unless `lead` or `mobile_no` is supplied, so an update never silently re-attributes a call by phone.",
         "responses": {
           "200": {
-            "description": "The updated call is returned in full.",
+            "description": "Success.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9833,7 +9826,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9843,7 +9836,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9853,7 +9846,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9863,7 +9856,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9873,7 +9866,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9888,7 +9881,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9929,7 +9922,7 @@
         "description": "Up to 100 calls are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A call that does not exist, lies outside the key's line and group, or is unlinked reports the same generic not-found in place.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -9955,7 +9948,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9965,7 +9958,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9975,7 +9968,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9985,7 +9978,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9995,7 +9988,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10010,7 +10003,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10049,7 +10042,7 @@
         "description": "Up to 100 calls are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -10075,7 +10068,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10085,7 +10078,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10095,7 +10088,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10105,7 +10098,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10115,7 +10108,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10130,7 +10123,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10174,7 +10167,7 @@
         "description": "Up to 100 calls are deleted, each addressed by its `name`. Each record is handled in its own savepoint.",
         "responses": {
           "200": {
-            "description": "The batch ran. Individual rows may still have failed — `results[].status` is inspected per row.",
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
@@ -10200,7 +10193,7 @@
             }
           },
           "400": {
-            "description": "Validation error or malformed body (`validation_error` / `bad_request`).",
+            "description": "The request was rejected. `error.code` says why.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10210,7 +10203,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key.",
+            "description": "The API key is missing or invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10220,7 +10213,7 @@
             }
           },
           "403": {
-            "description": "The key is not permitted to make this call.",
+            "description": "The key may not make this call.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10230,7 +10223,7 @@
             }
           },
           "404": {
-            "description": "The record does not exist, or lies outside the key's line and group. Both return the same generic not-found; existence is never disclosed.",
+            "description": "No such record on this key's business line.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10240,7 +10233,7 @@
             }
           },
           "429": {
-            "description": "Rate limit or daily record quota exceeded (`rate_limited`). `Retry-After` states when to retry.",
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10255,7 +10248,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error (`server_error`). The detail is logged server-side and never returned.",
+            "description": "Unexpected, and logged. Retry with backoff.",
             "content": {
               "application/json": {
                 "schema": {

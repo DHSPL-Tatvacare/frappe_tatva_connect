@@ -31,7 +31,7 @@ flowchart TD
 
 | `error.code` | HTTP | Meaning | Handling |
 |---|---|---|---|
-| `validation_error` | 400 | A field failed validation. | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. |
+| `validation_error` | 400 | A field failed validation. **A document that fails the malware scan is reported here too.** | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. A document rejected by the scan carries the message "This file failed a security scan and was not accepted"; it is not stored, and a clean copy is sent instead. See [Files](/files). |
 | `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
@@ -81,7 +81,7 @@ A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry ca
   "status": "success",
   "summary": { "total": 2, "succeeded": 1, "failed": 1 },
   "results": [
-    { "index": 0, "status": "success", "action": "created", "name": "CRM-LEAD-2026-00125" },
+    { "index": 0, "status": "success", "action": "created", "name": "d41c8b7e05" },
     { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
   ]
 }

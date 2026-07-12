@@ -113,6 +113,7 @@ const config: ZudokuConfig = {
             { type: "doc", file: "writes-and-retries", label: "Writes, addressing and retries" },
             { type: "doc", file: "responses", label: "Response shapes" },
             { type: "doc", file: "reading-values", label: "Reading responses" },
+            { type: "doc", file: "files", label: "Files" },
             { type: "doc", file: "partner-errors", label: "Errors" },
             { type: "doc", file: "rate-limits", label: "Rate limits" },
             { type: "doc", file: "conventions", label: "Conventions" },

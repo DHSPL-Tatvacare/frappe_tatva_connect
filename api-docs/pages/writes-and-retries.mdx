@@ -10,9 +10,11 @@ no endpoint page restates them.
 
 ## 1. Every record is addressed by `name`
 
-A create returns the `name` of the row it created — the primary key of the underlying table. It is
-stored by the caller and used for every subsequent read, update and delete. It is the only address
-the API accepts.
+A create returns the `name` of the record it created — an opaque identifier. It is stored by the
+caller and used for every subsequent read, update and delete. It is the only address the API accepts.
+
+An identifier carries no meaning and follows no pattern: it is never parsed, never incremented, and
+never constructed by a caller. It is echoed back and sent back, and nothing more.
 
 ```json
 POST /api/method/tatva_connect.api.partner_call.call_create
@@ -30,7 +32,7 @@ In a **bulk** response the address is at `results[i].data.name` — not `results
   "summary": { "total": 2, "succeeded": 2, "failed": 0 },
   "results": [
     { "index": 0, "status": "success", "action": "created",
-      "data": { "name": "CRM-LEAD-2026-00123", ... } }
+      "data": { "name": "a7f3c9e12b", ... } }
   ] }
 ```
 
@@ -104,7 +106,7 @@ Authorization: token <api_key>:<api_secret>
 Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
 Content-Type: application/json
 
-{ "lead": "CRM-LEAD-2026-00123", "task_type": "Welcome Call", "values": {} }
+{ "lead": "a7f3c9e12b", "task_type": "Welcome Call", "values": {} }
 ```
 
 ### What a retry looks like
@@ -123,9 +125,9 @@ Content-Type: application/json
 
 | Attempt | Response | What was written |
 |---|---|---|
-| 1 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | the lead |
-| 2 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | **nothing** |
-| 3 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | **nothing** |
+| 1 | `"action": "created"`, `"name": "a7f3c9e12b"` | the lead |
+| 2 | `"action": "created"`, `"name": "a7f3c9e12b"` | **nothing** |
+| 3 | `"action": "created"`, `"name": "a7f3c9e12b"` | **nothing** |
 
 Three calls, one lead. Attempts 2 and 3 are not writes at all: the response stored by attempt 1 is
 returned verbatim, which is why `action` still reads `created`. The `name` is the proof — it is the

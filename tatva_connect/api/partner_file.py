@@ -295,6 +295,14 @@ def file_schema(**_kwargs):
 			"`content_base64`. Exactly one is sent. The maximum download size is {0} MB.".format(
 				cfg["file_download_max_mb"])
 		),
+		screening=(
+			"Every file is scanned for malware before it is stored. A file that fails the scan is "
+			"rejected outright and nothing is written: the response is a 400 with `error.code` "
+			"`validation_error` and the message \"This file failed a security scan and was not "
+			"accepted.\" The scan runs on the bytes themselves, so it applies equally to a "
+			"`content_base64` upload and to a `file_url` the server fetches. A rejected file is not "
+			"quarantined and cannot be retrieved; a clean copy is sent instead."
+		),
 		privacy=(
 			"Every file attached through this API is private. `is_private` always reads true and "
 			"`file_url` is always a proxy url, never a raw storage key or a local path."
