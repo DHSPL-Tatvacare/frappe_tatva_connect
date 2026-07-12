@@ -71,6 +71,26 @@ This header is the **only** retry-safety mechanism.
 Send it on any write. The first request with a given key runs and its response is stored. A retry
 with the **same key and the same body** replays that stored response instead of writing again.
 
+### The key is chosen by the caller
+
+The API never issues one. The value is any string the caller invents, subject to two rules:
+
+- it is **unique to one request**, and
+- it is **identical on every retry of that request**.
+
+Anything satisfying both works — a UUID generated per request, the caller's own record ID, or a hash
+of it. What must not be used is a value that changes between attempts, such as a timestamp: a retry
+carrying a new key is a new request, and it writes a second record.
+
+A key that is derived from the record being sent needs no bookkeeping, because the same record always
+produces the same key:
+
+```
+Idempotency-Key = sha1("lead:" + <the caller's own patient id>)
+```
+
+A key is remembered for **24 hours** and then forgotten. A retry after that window is a new request.
+
 | Situation | Result |
 |---|---|
 | Same key, same body | The stored response is replayed. No second record. |
@@ -86,6 +106,33 @@ Content-Type: application/json
 
 { "lead": "CRM-LEAD-2026-00123", "task_type": "Welcome Call", "values": {} }
 ```
+
+### What a retry looks like
+
+A patient is uploaded, the connection drops before the response arrives, and the same call is sent
+again — twice more, unchanged, carrying the same key:
+
+```http
+POST /api/method/tatva_connect.api.partner.lead_create
+Authorization: token <api_key>:<api_secret>
+Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
+Content-Type: application/json
+
+{ "mobile_no": "+919877700001", "first_name": "Asha", "custom_current_program": "Nivolumab" }
+```
+
+| Attempt | Response | What was written |
+|---|---|---|
+| 1 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | the lead |
+| 2 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | **nothing** |
+| 3 | `"action": "created"`, `"name": "CRM-LEAD-2026-04080"` | **nothing** |
+
+Three calls, one lead. Attempts 2 and 3 are not writes at all: the response stored by attempt 1 is
+returned verbatim, which is why `action` still reads `created`. The `name` is the proof — it is the
+same lead, not a new one. **The response is a recording, not a fresh result.**
+
+Without the header, those same three calls would have produced **three separate leads for one
+patient**.
 
 ### The retry loop
 
