@@ -202,6 +202,21 @@ class TestPartnerLimiter(unittest.TestCase):
 		self.assertIsNotNone(second[0], "the SECOND concurrent bulk call must be refused with a 429")
 		self.assertGreater(second[0], 0, "a refusal must tell the caller when to come back")
 
+	def test_a_file_carries_bytes_so_it_has_its_own_ceiling(self):
+		"""A file is not a row. Every other bulk record is a few hundred bytes and a couple of INSERTs;
+		one file is base64-decoded, virus-scanned and written to disk — measured at about a second each
+		on real patient documents. Twenty-five of them is a 20-35 second request, which is what a
+		gateway kills with a 502. The ceiling is therefore per entity, and `bulk_max` is the ONE
+		resolver both the guard and the schema read, so the number advertised is the number enforced."""
+		self.assertEqual(_base.bulk_max("file"), _base.DEFAULTS["file_bulk_max_records"])
+		self.assertEqual(_base.bulk_max("lead"), _base.DEFAULTS["bulk_max_records"])
+		self.assertEqual(_base.bulk_max(), _base.DEFAULTS["bulk_max_records"],
+		                 "an entity that carries no bytes shares the general row ceiling")
+		self.assertLess(_base.bulk_max("file"), _base.bulk_max(),
+		                "a file ceiling at or above the row ceiling defeats the point")
+		self.assertLessEqual(_base.DEFAULTS["file_bulk_max_records"], 5,
+		                     "at ~1s per file, more than five is a request the gateway will not wait for")
+
 	def test_the_shipped_bulk_defaults_admit_one_call_at_a_time(self):
 		"""The values that actually ship are what protect the database, so they are pinned here rather
 		than trusted. A burst above 1 would let two bulk writes race again."""

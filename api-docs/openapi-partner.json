@@ -4895,7 +4895,7 @@
             },
             "dedup": "None. Every POST attaches a new file and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
             "bulk": {
-              "max_per_call": 100,
+              "max_per_call": 5,
               "list_page_max": 200,
               "list_page_default": 20
             },

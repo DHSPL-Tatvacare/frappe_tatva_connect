@@ -79,11 +79,12 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 	# Discovery before ingestion — for EVERY entity, not just the lead. Reading lead_schema and
 	# assuming the rest is how 3,844 calls were sent with LSQ's word for a direction (Incoming) when
 	# call_schema plainly publishes the two the API takes (Inbound, Outbound).
+	#
+	# activity_schema is not here: it is discovery BY LEAD (the types available depend on the lead's
+	# grain and program), so it needs a lead that exists. It is fetched after the lead phase.
 	schemas = {}
-	for entity, module in (("lead", "partner"), ("activity", "partner_activity"),
-	                       ("call", "partner_call"), ("file", "partner_file")):
-		params = {"lead": bundles[0]["prospect_id"]} if entity == "activity" else {}
-		call, body = api.get(module, f"{entity}_schema", params)
+	for entity, module in (("lead", "partner"), ("call", "partner_call"), ("file", "partner_file")):
+		call, body = api.get(module, f"{entity}_schema", {})
 		if not call.ok:
 			raise SystemExit(f"[{account}] {entity}_schema failed: {call.code} {call.message}")
 		schemas[entity] = body["data"]
@@ -156,7 +157,20 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 		lead_items.append(body)
 	lead_name = run_phase("partner", "lead_create_bulk", "leads", lead_items, "lead", "lead", batch_size)
 
-	# 2. ACTIVITIES.
+	# 2. ACTIVITIES. Their schema is discovery BY LEAD, so it is asked for now that a lead exists —
+	#    and it names the task types this grain actually accepts, which is the vocabulary the shaper
+	#    is about to send. Checking it here is the same rule that would have caught the call bug.
+	if lead_name:
+		probe = next(iter(lead_name.values()))
+		call, body = api.get("partner_activity", "activity_schema", {"lead": probe})
+		if not call.ok:
+			raise SystemExit(f"[{account}] activity_schema failed: {call.code} {call.message}")
+		schemas["activity"] = body["data"]
+		offered = {t["name"] for t in schemas["activity"].get("task_types") or []}
+		wanted = set(fmap["activity_task_types"].values())
+		print(f"  activity types: {len(offered)} offered by the API for this grain, "
+		      f"{len(wanted)} in the field map")
+
 	activity_items = []
 	for bundle in bundles:
 		name = lead_name.get(bundle["prospect_id"])

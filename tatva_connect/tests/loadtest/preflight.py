@@ -198,8 +198,45 @@ def cmd_quota_restore():
 	return 0
 
 
+PARTNERS = ("partner-api-anaya@tatvacare.in", "partner-api-tp@tatvacare.in")
+
+
+def cmd_wipe():
+	"""Delete what the partner API wrote, and the idempotency keys that remember it.
+
+	Scoped by owner: these grains also carry leads and tasks from earlier migration trials and from
+	ordinary CRM use, owned by real people. Those are not ours and are never touched.
+
+	The keys matter as much as the rows. A key stores the RESPONSE of the call that first used it, so
+	deleting the leads but leaving the keys means the next run replays a stored response naming a lead
+	that no longer exists — the API is right to replay it, and the run then fails on a lead it thinks
+	it just created. Set-based, not doc-by-doc: 26k delete_doc calls exhaust the connection.
+	"""
+	holes = ", ".join(["%s"] * len(PARTNERS))
+	before = {dt: frappe.db.count(dt) for dt in
+	          ("CRM Lead", "CRM Task", "CRM Visit Audit", "CRM Call Log", "CRM Partner API Idempotency")}
+
+	frappe.db.sql(f"""DELETE va FROM `tabCRM Visit Audit` va
+	                  JOIN `tabCRM Task` t ON t.name = va.task
+	                  WHERE t.owner IN ({holes})""", PARTNERS)
+	frappe.db.sql(f"""DELETE f FROM `tabFile` f JOIN `tabCRM Task` t ON t.name = f.attached_to_name
+	                  WHERE f.attached_to_doctype = 'CRM Task' AND t.owner IN ({holes})""", PARTNERS)
+	frappe.db.sql(f"""DELETE f FROM `tabFile` f JOIN `tabCRM Lead` l ON l.name = f.attached_to_name
+	                  WHERE f.attached_to_doctype = 'CRM Lead' AND l.owner IN ({holes})""", PARTNERS)
+	for table in ("tabCRM Call Log", "tabCRM Task", "tabCRM Lead"):
+		frappe.db.sql(f"DELETE FROM `{table}` WHERE owner IN ({holes})", PARTNERS)
+	frappe.db.sql(f"DELETE FROM `tabCRM Partner API Idempotency` WHERE partner IN ({holes})", PARTNERS)
+	frappe.db.commit()
+
+	after = {dt: frappe.db.count(dt) for dt in before}
+	print("deleted (written by the partner API):")
+	for dt in before:
+		print(f"  {dt:<32} {before[dt]:>7,} -> {after[dt]:>7,}   (-{before[dt] - after[dt]:,})")
+	return 0
+
+
 COMMANDS = {"check": cmd_check, "off": cmd_off, "restore": cmd_restore,
-            "quota": cmd_quota, "quota-restore": cmd_quota_restore}
+            "quota": cmd_quota, "quota-restore": cmd_quota_restore, "wipe": cmd_wipe}
 
 
 def main():

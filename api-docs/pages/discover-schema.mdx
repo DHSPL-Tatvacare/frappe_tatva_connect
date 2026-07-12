@@ -46,7 +46,7 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
       }
     },
     "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
-    "bulk": { "max_per_call": 100, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
+    "bulk": { "max_per_call": 25, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
     "routing": {
       "mode": "list",
       "source": "…", "vertical": "…", "group": "…",

@@ -355,7 +355,10 @@ def file_get_bulk(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def file_attach_bulk(**_kwargs):
-	"""Attach many files. Body: {"files":[{...}, ...]} (<= 100). Partial success."""
+	"""Attach many files. Body: {"files":[{...}, ...]}. Partial success.
+
+	The ceiling is the FILE ceiling, not the row one: a file is bytes to decode, scan and write, not a
+	row. file_schema publishes the number this enforces."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	files = _read_required_list(frappe.form_dict, "files")
 
@@ -363,13 +366,14 @@ def file_attach_bulk(**_kwargs):
 		view, action = _create_one(item, mp, is_sysmgr)
 		return {"index": i, "status": "success", "action": action, "data": view}
 
-	return _run_bulk(files, one)
+	return _run_bulk(files, one, entity="file")
 
 
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def file_delete_bulk(**_kwargs):
-	"""Delete many files. Body: {"names":[...]} (<= 100). Partial success."""
+	"""Delete many files. Body: {"names":[...]}. Partial success. A delete moves no bytes, so it
+	shares the general row ceiling."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	names = _read_required_list(frappe.form_dict, "names")
 

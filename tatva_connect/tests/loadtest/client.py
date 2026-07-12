@@ -108,15 +108,34 @@ class Partner:
 		return self._record(endpoint, resp, ms)
 
 	def get(self, module, fn, params):
+		"""One read. A 429 is honoured here exactly as it is on a write: the docs tell a partner to
+		wait error.retry_after and retry, and a client that only backs off on writes is not the client
+		the docs describe. A read that gave up on the first throttle is a bug in the caller."""
 		url = f"{BASE_URL}{METHOD}.{module}.{fn}"
 		endpoint = f"{module}.{fn}"
-		started = time.perf_counter()
-		try:
-			resp = self.session.get(url, headers=self.headers, params=params, timeout=self.timeout)
-		except requests.RequestException as exc:
+
+		resp, ms = None, 0.0
+		for attempt in range(5):
+			started = time.perf_counter()
+			try:
+				resp = self.session.get(url, headers=self.headers, params=params, timeout=self.timeout)
+			except requests.RequestException as exc:
+				ms = (time.perf_counter() - started) * 1000
+				call = Call(endpoint, 0, ms, code="transport", message=f"{type(exc).__name__}: {exc}"[:200])
+				self.calls.append(call)
+				return call, {}
 			ms = (time.perf_counter() - started) * 1000
-			call = Call(endpoint, 0, ms, code="transport", message=f"{type(exc).__name__}: {exc}"[:200])
-			self.calls.append(call)
-			return call, {}
-		ms = (time.perf_counter() - started) * 1000
+
+			if resp.status_code == 429 and attempt < 4:
+				retry_after = 2
+				try:
+					retry_after = int((resp.json().get("error") or {}).get("retry_after") or 2)
+				except (ValueError, TypeError):
+					pass
+				self.calls.append(Call(endpoint, 429, ms, code="rate_limited"))
+				time.sleep(min(retry_after, 10))
+				continue
+
+			return self._record(endpoint, resp, ms)
+
 		return self._record(endpoint, resp, ms)

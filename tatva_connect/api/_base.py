@@ -162,6 +162,8 @@ DEFAULTS = {
 	"bulk_rate": 1,
 	"bulk_burst": 1,
 	"bulk_max_records": 25,
+	# A file is not a row: measured ~1s each, so 25 of them is a 20-35s request the gateway kills.
+	"file_bulk_max_records": 5,
 	"list_max_page": 200,
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
@@ -199,7 +201,7 @@ _LOOSER_WHEN_HIGHER = (
 	"per_token_rate", "per_token_burst", "global_rate", "global_burst", "bulk_rate",
 	"per_token_read_records", "global_read_records",
 	"per_token_write_records", "global_write_records",
-	"bulk_max_records", "list_max_page", "list_default_page",
+	"bulk_max_records", "file_bulk_max_records", "list_max_page", "list_default_page",
 	"file_download_timeout_seconds", "file_download_max_mb", "idempotency_window_hours",
 )
 _LOOSER_WHEN_LOWER = ("window_seconds", "records_window_seconds", "bulk_window_seconds")
@@ -860,16 +862,23 @@ def _bulk_error(i, e, fn_name):
 	return {"index": i, "status": "error", "error": err}
 
 
-def _bulk_guard(items, direction):
+def bulk_max(entity=None):
+	"""The per-call ceiling for an entity. Enforcement (_bulk_guard) and discovery (_schema_ok) both
+	read THIS, so the number advertised is always the number enforced."""
+	cfg = _cfg()
+	return cfg["file_bulk_max_records"] if entity == "file" else cfg["bulk_max_records"]
+
+
+def _bulk_guard(items, direction, entity=None):
 	"""Shared preamble for both bulk lanes: assert a JSON array, enforce the per-call ceiling, and
 	charge VOLUME = len(items) rows in `direction`. Returns the 429 `_fail` sentinel when the daily
 	budget is exhausted (the caller bare-`return`s), else None. The 1-call RATE cost was already
 	charged by @_api(bulk=True)."""
 	if not isinstance(items, list):
 		frappe.throw(_("Expected a JSON array"))
-	bulk_max = _cfg()["bulk_max_records"]
-	if len(items) > bulk_max:
-		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(bulk_max, len(items)))
+	ceiling = bulk_max(entity)
+	if len(items) > ceiling:
+		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(ceiling, len(items)))
 	return _meter_volume(len(items), direction)
 
 
@@ -892,10 +901,10 @@ def _undo_side_effects(depth):
 			frappe.log_error(title="Partner API: bulk rollback callback failed")
 
 
-def _run_bulk(items, fn):
+def _run_bulk(items, fn, entity=None):
 	"""WRITE lane. Run `fn(index, item)` per record in its own savepoint -> partial success. A failing
 	record is rolled back and reported; the rest still commit."""
-	if _bulk_guard(items, "write"):
+	if _bulk_guard(items, "write", entity):
 		return
 	results, ok = [], 0
 	for i, item in enumerate(items):
@@ -926,12 +935,12 @@ def _run_bulk(items, fn):
 	_ok(summary={"total": len(items), "succeeded": ok, "failed": len(items) - ok}, results=results)
 
 
-def _bulk_read(names, load):
+def _bulk_read(names, load, entity=None):
 	"""READ lane. Load each record by `name` via `load(name)` -> the SAME partial-success envelope the
 	write lane emits ({total, succeeded, failed} + input-ordered results). Results are input-ordered:
 	results[i] is the i-th requested name, found or not. Charges the true row count as READ volume —
 	a bulk read drains the read budget exactly like N single gets."""
-	if _bulk_guard(names, "read"):
+	if _bulk_guard(names, "read", entity):
 		return
 	results, ok = [], 0
 	for i, name in enumerate(names):
@@ -974,7 +983,7 @@ def _schema_ok(entity, dedup, fields=None, **extra):
 		"entity": entity,
 		"identity": {"addressed_by": "name", "note": _ADDRESSING},
 		"dedup": dedup,
-		"bulk": {"max_per_call": cfg["bulk_max_records"],
+		"bulk": {"max_per_call": bulk_max(entity),
 		         "list_page_max": cfg["list_max_page"],
 		         "list_page_default": cfg["list_default_page"]},
 	}
