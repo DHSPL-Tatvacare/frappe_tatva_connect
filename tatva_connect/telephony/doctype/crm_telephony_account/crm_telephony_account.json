@@ -18,8 +18,21 @@
   "api_token",
   "column_break_api",
   "click_to_call_api_key",
-  "section_break_webhook",
+  "webhook_section_ingress",
   "webhook_token",
+  "webhook_token_previous",
+  "webhook_token_hash",
+  "webhook_token_previous_hash",
+  "webhook_column_ingress",
+  "webhook_auth_mode",
+  "webhook_hmac_secret",
+  "webhook_hmac_header",
+  "webhook_hmac_algo",
+  "webhook_hmac_encoding",
+  "webhook_hmac_prefix",
+  "webhook_section_ip",
+  "webhook_enforce_ip",
+  "webhook_ip_allowlist",
   "section_break_ssrf",
   "recording_host_allowlist"
  ],
@@ -42,7 +55,7 @@
   },
   {
    "default": "0",
-   "description": "Enable this Acefone account for send/receive. Starts OFF \u2014 tick once the account is fully configured.",
+   "description": "Enable this Acefone account for send/receive. Starts OFF — tick once the account is fully configured.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -94,11 +107,6 @@
    "label": "Click-to-Call API Key"
   },
   {
-   "fieldname": "section_break_webhook",
-   "fieldtype": "Section Break",
-   "label": "Inbound Webhook"
-  },
-  {
    "fieldname": "webhook_token",
    "fieldtype": "Password",
    "label": "Webhook Token",
@@ -116,6 +124,105 @@
    "label": "Recording Host Allowlist (SSRF)",
    "options": "CRM Account Trusted Host",
    "description": "Optional SSRF allowlist for recording fetches — pick the host(s) this account's recording URLs live on, e.g. the Acefone CDN (from CRM Trusted Fetch Host). If set, recordings are fetched ONLY from these hosts or their sub-domains. Blank = any public host (fetches to private/internal IPs are always blocked)."
+  },
+  {
+   "fieldname": "webhook_section_ingress",
+   "fieldtype": "Section Break",
+   "label": "Webhook Ingress (inbound authentication)"
+  },
+  {
+   "description": "Set during a rotation. Both tokens authenticate until this is cleared, so rotating a secret never rejects a live call. Providers retry very few times -- Acefone retries twice -- so a call rejected mid-rotation is lost for good.",
+   "fieldname": "webhook_token_previous",
+   "fieldtype": "Password",
+   "label": "Previous Webhook Token"
+  },
+  {
+   "description": "Derived, never entered. A Password field cannot be indexed, so this digest is what makes authentication one read rather than a scan and decrypt of every account.",
+   "fieldname": "webhook_token_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Token Digest",
+   "length": 64,
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "webhook_token_previous_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Previous Token Digest",
+   "length": 64,
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "webhook_column_ingress",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Token",
+   "description": "The token is always enforced. HMAC is added only when the provider signs its payloads; Acefone and WATI do not.",
+   "fieldname": "webhook_auth_mode",
+   "fieldtype": "Select",
+   "label": "Authentication",
+   "options": "Token\nToken + HMAC"
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_secret",
+   "fieldtype": "Password",
+   "label": "HMAC Signing Secret"
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "description": "The header carrying the provider's signature, e.g. X-Signature.",
+   "fieldname": "webhook_hmac_header",
+   "fieldtype": "Data",
+   "label": "Signature Header"
+  },
+  {
+   "default": "sha256",
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_algo",
+   "fieldtype": "Select",
+   "label": "Signature Algorithm",
+   "options": "sha256\nsha512\nsha1"
+  },
+  {
+   "default": "Hex",
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_encoding",
+   "fieldtype": "Select",
+   "label": "Signature Encoding",
+   "options": "Hex\nBase64"
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "description": "Stripped before comparison, e.g. 'sha256='. Left blank when the provider sends a bare signature.",
+   "fieldname": "webhook_hmac_prefix",
+   "fieldtype": "Data",
+   "label": "Signature Prefix"
+  },
+  {
+   "fieldname": "webhook_section_ip",
+   "fieldtype": "Section Break",
+   "label": "Caller IP Allowlist (optional)"
+  },
+  {
+   "default": "0",
+   "description": "Left off unless the provider publishes its egress addresses. When on, a call from any other address is rejected.",
+   "fieldname": "webhook_enforce_ip",
+   "fieldtype": "Check",
+   "label": "Enforce IP Allowlist"
+  },
+  {
+   "depends_on": "eval:doc.webhook_enforce_ip",
+   "description": "One address or CIDR range per line, as published by the provider. Text after a # is ignored.",
+   "fieldname": "webhook_ip_allowlist",
+   "fieldtype": "Small Text",
+   "label": "Allowed Addresses"
   }
  ],
  "grid_page_length": 50,

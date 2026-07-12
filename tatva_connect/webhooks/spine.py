@@ -20,21 +20,20 @@ Adapter contract (duck-typed module, no ABC):
 """
 import frappe
 
-from tatva_connect.webhooks import registry
+from tatva_connect.webhooks import ingress, registry
 
 
-def receive(service, *, enabled, resolve_account, adapter, event=None):
-	"""Shared front door. Authenticates, raw-logs, optimistically pre-filters, then
-	enqueues the worker and returns 'ok' fast (< 5s, before any heavy work).
+def receive(service, *, enabled, adapter, event=None):
+	"""Shared front door. Authenticates, raw-logs, pre-filters, then enqueues the worker and ACKs
+	fast — well before any heavy work, because providers give up quickly.
 
-	`enabled`/`resolve_account` are vendor callbacks; `adapter` is the vendor module
-	(passed in so the front door doesn't import it — the worker resolves it lazily)."""
+	`enabled` is the provider's kill-switch callback; `adapter` is its module, passed in so the front
+	door never imports one. Authentication is deliberately NOT a callback: it is the same three
+	factors for every provider — token, optional HMAC, optional IP allowlist — and it lives in
+	`webhooks.ingress`, which is where a new provider inherits it for free."""
 	if not enabled():                       # kill-switch, fresh read, default OFF
 		return "ok"
-	token = _request_token()                # nginx maps /.../<token> -> ?token=
-	account = resolve_account(token)        # auth + scope in one (fail-closed)
-	if not account:
-		raise frappe.PermissionError(f"Invalid {service} webhook token")
+	account = ingress.verify(service)       # token digest -> HMAC -> IP; raises, fail-closed
 	payload = _request_payload()            # form_dict minus cmd/token
 	log = _persist_raw(service, event, payload, account)   # ALWAYS-ON Integration Request
 	if not adapter.is_relevant(payload, event, account):   # cheap optimistic pre-filter
@@ -127,14 +126,6 @@ def _adapter_for(service):
 # ---------------------------------------------------------------------------
 # Request helpers — mirror the current WATI/Acefone handlers exactly.
 # ---------------------------------------------------------------------------
-def _request_token():
-	"""The receiving account's secret, carried in the URL: nginx maps
-	/.../<token> -> ?token=<token>. For a JSON POST the body is in form_dict, so read
-	the token from request.args (the query) first, then fall back to form_dict."""
-	token = frappe.request.args.get("token") if frappe.request else None
-	return token or frappe.form_dict.get("token")
-
-
 def _request_payload():
 	"""The vendor payload as a plain dict — form_dict minus Frappe/query keys."""
 	return {k: v for k, v in frappe.form_dict.items() if k not in ("cmd", "token")}

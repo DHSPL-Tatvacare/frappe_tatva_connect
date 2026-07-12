@@ -34,6 +34,10 @@ override_doctype_class = {
 	# their clean display_label in the SPA list — the SAME title_field brain the Data tab uses. 100% stock otherwise.
 	"CRM Lead": "tatva_connect.lead.crm_lead_override.TatvaCRMLead",
 	"CRM Task": "tatva_connect.tasks.crm_task_override.TatvaCRMTask",
+	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
+	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
+	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
+	"WhatsApp Account": "tatva_connect.whatsapp.account.WATIWhatsAppAccount",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI (read-only mirror), not Meta — for the desk button and any caller.

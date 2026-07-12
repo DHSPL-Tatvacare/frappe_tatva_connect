@@ -20,12 +20,16 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	backfill_webhook_token_digests,
 	add_crm_task_metrics_index,
 	add_observability_indexes,
 	add_resume_index,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
 	rekey_task_types_composite,
+	# Inbound auth resolves an account by digest in one indexed read; a Password field cannot be
+	# indexed, so the digest is derived. Without it an existing account would fail to authenticate.
+	backfill_webhook_token_digests,
 	retire_activity_legacy_columns,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,

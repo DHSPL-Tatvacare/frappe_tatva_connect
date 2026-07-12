@@ -46,25 +46,25 @@ from tatva_connect.webhooks import spine
 # Guest webhook endpoints (one per Acefone trigger) — thin spine front doors
 # ---------------------------------------------------------------------------
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(limit=120, seconds=60, ip_based=True)
 def inbound_answered(**kwargs):
 	return _receive("inbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(limit=120, seconds=60, ip_based=True)
 def inbound_complete(**kwargs):
 	return _receive("inbound_complete")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(limit=120, seconds=60, ip_based=True)
 def outbound_answered(**kwargs):
 	return _receive("outbound_answered")
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: Acefone CDR webhook, no session — spine verifies a shared token/DID before acting (A.16)
-@rate_limit(key="token", limit=120, seconds=60, ip_based=True)
+@rate_limit(limit=120, seconds=60, ip_based=True)
 def outbound_complete(**kwargs):
 	return _receive("outbound_complete")
 
@@ -76,7 +76,6 @@ def _receive(event: str):
 	return spine.receive(
 		"Acefone",
 		enabled=acefone.is_enabled,
-		resolve_account=routing.account_by_webhook_token,
 		adapter=adapter,
 		event=event,
 	)
