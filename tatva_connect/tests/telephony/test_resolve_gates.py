@@ -35,7 +35,16 @@ class TestTelephonyGates(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		cls.payloads = _corpus()
+		# The capture rules live on a Single, so a test that sets them overwrites whatever the site
+		# already had. They are stashed and given back, or running this suite against a configured bench
+		# would silently destroy the operator's telephony configuration.
+		cls.saved_rules = _current_rules()
 		_ensure_fixtures()
+
+	@classmethod
+	def tearDownClass(cls):
+		_set_rules(cls.saved_rules)
+		super().tearDownClass()
 
 	def setUp(self):
 		_set_rules([])
@@ -179,6 +188,16 @@ def _rule(direction, channel, action="Capture"):
 	}
 
 
+def _current_rules():
+	"""The site's capture rules as plain dicts, so they can be put back exactly as they were."""
+	settings = frappe.get_single("CRM Telephony Settings")
+	return [
+		{"provider": r.provider, "direction": r.direction, "channel": r.channel,
+		 "action": r.action, "enabled": r.enabled}
+		for r in (settings.capture_rules or [])
+	]
+
+
 def _set_rules(rules):
 	settings = frappe.get_single("CRM Telephony Settings")
 	settings.set("capture_rules", [])
@@ -216,7 +235,9 @@ def _foreign_payload():
 
 
 def _clear(doctype):
-	for name in frappe.get_all(doctype, pluck="name"):
+	"""Drop only the rows this suite owns. An unfiltered delete here would take the operator's DID and
+	agent maps with it, and the whole point of the DID map is that losing it drops live calls."""
+	for name in frappe.get_all(doctype, filters={"telephony_account": ACCOUNT}, pluck="name"):
 		frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
