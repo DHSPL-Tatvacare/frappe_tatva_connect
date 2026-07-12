@@ -11,6 +11,7 @@ from collections import Counter
 
 import frappe
 from crm.api.activities import get_activities as _native_get_activities
+from frappe import _
 
 from tatva_connect.activity.api import _blob_key, lead_timeline
 
@@ -102,9 +103,36 @@ def _curate_native(activities, doc_keys):
 	return out
 
 
+# A call the provider says was answered. Anything else was never handled by a person.
+_ANSWERED = ("Completed", "In Progress")
+
+
+def _label_external_agents(calls):
+	"""Name the rep 'External' when a call was answered by someone outside the CRM.
+
+	A provider account can be shared: agents from another company answer some of these calls, and they
+	will never be CRM users. Their call still belongs on the lead, but `parse_call_log` leaves the rep
+	label empty, which renders as a blank avatar — indistinguishable from a call nobody answered.
+
+	The two are very different things, so the answered-but-unattributed case says so. Derived from what
+	is already stored; no field is added and the fork is untouched.
+	"""
+	# Translated per request, not at import: the locale is not set when the module loads.
+	external = _("External")
+	for call in calls:
+		if call.get("status") not in _ANSWERED:
+			continue
+		if call.get("type") == "Incoming" and not call.get("receiver"):
+			call.setdefault("_receiver", {})["label"] = external
+		elif call.get("type") == "Outgoing" and not call.get("caller"):
+			call.setdefault("_caller", {})["label"] = external
+	return calls
+
+
 @frappe.whitelist()
 def get_activities(name: str):
 	activities, calls, notes, tasks, attachments = _native_get_activities(name)
+	calls = _label_external_agents(list(calls))
 	logged = lead_timeline(name)
 	logged_names = {e["name"] for e in logged}
 	plain_tasks = [t for t in tasks if t.get("name") not in logged_names]
