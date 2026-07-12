@@ -13,15 +13,12 @@ contract is asserted independent of WATI/Acefone DB moves. WATI event shapes are
 verified live ones from docs/plans/2026-06-19-webhook-ingress-spine.md.
 """
 import json
-import socket
-import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect import routing, utils
 from tatva_connect.webhooks import spine
 
 # --- WATI event shapes (verified live samples; see the plan) ---------------
@@ -69,17 +66,16 @@ class TestWebhookSpine(FrappeTestCase):
 	def test_killswitch_off_is_ok_noop(self):
 		"""Default-OFF dormancy: a disabled integration returns 'ok' fast and does ZERO
 		work — no account resolve, no raw log, no enqueue."""
-		resolve = MagicMock()
-		with patch.object(spine, "_persist_raw") as persist, \
+		with patch.object(spine, "_persist") as persist, \
+		     patch.object(spine.ingress, "verify") as verify, \
 		     patch("frappe.enqueue") as enqueue:
 			result = spine.receive(
 				"WATI",
 				enabled=lambda: False,
-				resolve_account=resolve,
 				adapter=self.adapter,
 			)
 		self.assertEqual(result, "ok")
-		resolve.assert_not_called()
+		verify.assert_not_called()
 		persist.assert_not_called()
 		enqueue.assert_not_called()
 		self.adapter.is_relevant.assert_not_called()
@@ -87,15 +83,15 @@ class TestWebhookSpine(FrappeTestCase):
 	# --- (b) bad token -> PermissionError (fail-closed) -------------------
 
 	def test_bad_token_raises_permission_error(self):
-		"""An unresolvable token (resolve_account returns None) is rejected before any
+		"""An unresolvable token is rejected before any
 		payload work — fail-closed, never 'ok'."""
-		with patch.object(spine, "_persist_raw") as persist, \
+		with patch.object(spine, "_persist") as persist, \
+		     patch.object(spine.ingress, "verify", side_effect=frappe.PermissionError), \
 		     patch("frappe.enqueue") as enqueue:
 			with self.assertRaises(frappe.PermissionError):
 				spine.receive(
 					"WATI",
 					enabled=lambda: True,
-					resolve_account=lambda token: None,
 					adapter=self.adapter,
 				)
 		persist.assert_not_called()
@@ -107,11 +103,11 @@ class TestWebhookSpine(FrappeTestCase):
 		"""Happy path: resolve -> persist exactly one Integration Request -> enqueue the
 		worker exactly once -> return 'ok'. The raw log is real (asserted in the DB)."""
 		before = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
-		with patch("frappe.enqueue") as enqueue:
+		with patch("frappe.enqueue") as enqueue, \
+		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT):
 			result = spine.receive(
 				"WATI",
 				enabled=lambda: True,
-				resolve_account=lambda token: _ACCOUNT if token == _TOKEN else None,
 				adapter=self.adapter,
 			)
 		self.assertEqual(result, "ok")
@@ -140,11 +136,11 @@ class TestWebhookSpine(FrappeTestCase):
 		frappe.form_dict.clear()
 		frappe.local.request = _fake_request(_TOKEN)
 		frappe.form_dict.update({"token": _TOKEN, "call_id": "ACE-001"})
-		with patch("frappe.enqueue") as enqueue:
+		with patch("frappe.enqueue") as enqueue, \
+		     patch.object(spine.ingress, "verify", return_value="Acefone Test Account"):
 			spine.receive(
 				"Acefone",
 				enabled=lambda: True,
-				resolve_account=lambda token: "Acefone Test Account",
 				adapter=self.adapter,
 				event="inbound_complete",
 			)
@@ -152,24 +148,31 @@ class TestWebhookSpine(FrappeTestCase):
 		self.assertEqual(kwargs["vendor_event"], "inbound_complete")
 		self.assertNotIn("event", kwargs)
 
-	def test_irrelevant_event_acks_without_enqueue(self):
-		"""The cheap pre-filter (adapter.is_relevant=False) still raw-logs but skips the
-		enqueue — an optimistic drop that stays replayable from the stored payload."""
+	def test_irrelevant_event_is_logged_as_cancelled_with_a_reason(self):
+		"""A declined delivery is still logged, and the log says so.
+
+		It used to be written as 'Queued' and left there for ever, which made a call dropped on
+		purpose indistinguishable from one that was stuck. It is now 'Cancelled', with the reason on
+		the row, and it stays replayable from the stored payload."""
 		self.adapter.is_relevant.return_value = False
+		self.adapter.irrelevance_reason.return_value = "DID 9240276221 is not mapped to a grain"
 		before = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
-		with patch("frappe.enqueue") as enqueue:
+		with patch("frappe.enqueue") as enqueue, \
+		     patch.object(spine.ingress, "verify", return_value=_ACCOUNT):
 			result = spine.receive(
 				"WATI",
 				enabled=lambda: True,
-				resolve_account=lambda token: _ACCOUNT,
 				adapter=self.adapter,
 			)
 		self.assertEqual(result, "ok")
-		# Still logged (replayable) ...
-		after = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
-		self.assertEqual(after - before, 1)
-		# ... but nothing enqueued.
 		enqueue.assert_not_called()
+
+		after = frappe.db.count("Integration Request", {"integration_request_service": "WATI"})
+		self.assertEqual(after - before, 1, "a declined delivery is still logged")
+
+		row = frappe.get_last_doc("Integration Request", filters={"integration_request_service": "WATI"})
+		self.assertEqual(row.status, "Cancelled")
+		self.assertIn("not mapped to a grain", row.output)
 
 	# --- (d) adapter dedupe -> second identical event is a no-op ----------
 
@@ -258,11 +261,9 @@ class TestWebhookSpine(FrappeTestCase):
 				spine.process("Acefone", {"call_id": "ACE-001"}, "Acefone Test Account",
 				              vendor_event="inbound_complete", log=log.name)
 
-		self.assertEqual(
-			frappe.db.get_value("Integration Request", log.name, "status"),
-			"Failed",
-			"a raised handle() must leave a truthful 'Failed' DLQ row",
-		)
+		status, error = frappe.db.get_value("Integration Request", log.name, ["status", "error"])
+		self.assertEqual(status, "Failed", "a raised handle() must leave a truthful 'Failed' DLQ row")
+		self.assertIn("Acefone CDR exploded", error or "", "the traceback belongs on the row, not only in Redis")
 
 	# --- (h) M2: replay_failed re-enqueues ONLY status=='Failed' rows -----
 
@@ -271,6 +272,8 @@ class TestWebhookSpine(FrappeTestCase):
 		Queued/Completed ones — a still-in-flight (Queued) row is never replayed. Asserted via
 		the names actually handed to enqueue (one per matching row)."""
 		svc = "ReplayScopeSvc"
+		for stale in frappe.get_all("Integration Request", filters={"integration_request_service": svc}, pluck="name"):
+			frappe.delete_doc("Integration Request", stale, force=True, ignore_permissions=True)
 		failed = frappe.get_doc(
 			{
 				"doctype": "Integration Request",
@@ -298,98 +301,3 @@ class TestWebhookSpine(FrappeTestCase):
 		_args, kwargs = enqueue.call_args
 		self.assertEqual(_args[0], "tatva_connect.webhooks.spine.replay")
 		self.assertEqual(kwargs["integration_request"], failed.name)
-
-
-class TestAccountByToken(unittest.TestCase):
-	"""H1: the shared, provider-agnostic token resolver fails CLOSED on a duplicate token —
-	the SAME engine that backs BOTH providers, so the property holds for WATI and Acefone by
-	construction. We drive it with each provider's real (account_doctype, token_field) config
-	and stub the DB (get_all + get_cached_doc) so it runs without a bench."""
-
-	# (account_doctype, token_field) for each provider — the only per-vendor inputs to the engine.
-	_WATI_CFG = ("WhatsApp Account", "custom_webhook_token")
-	_ACE_CFG = ("CRM Telephony Account", "webhook_token")
-
-	def _run(self, cfg, token, stored_by_account):
-		"""Resolve `token` against accounts whose stored secret is given by
-		`stored_by_account` (name -> stored token or None), using provider `cfg`."""
-		account_doctype, token_field = cfg
-		names = list(stored_by_account)
-
-		def fake_cached_doc(_doctype, name):
-			doc = MagicMock()
-			doc.get_password.return_value = stored_by_account[name]
-			return doc
-
-		with patch("frappe.get_all", return_value=names), \
-		     patch("frappe.get_cached_doc", side_effect=fake_cached_doc):
-			return routing.account_by_token(account_doctype, token_field, token)
-
-	def test_unique_match_returns_account_wati(self):
-		"""Exactly one account holds the token -> that account is returned (WATI config)."""
-		out = self._run(self._WATI_CFG, "tok-aaa",
-		                {"WA-One": "tok-aaa", "WA-Two": "tok-bbb"})
-		self.assertEqual(out, "WA-One")
-
-	def test_unique_match_returns_account_acefone(self):
-		"""Exactly one account holds the token -> that account is returned (Acefone config)."""
-		out = self._run(self._ACE_CFG, "tok-ddd",
-		                {"ACE-One": "tok-ccc", "ACE-Two": "tok-ddd"})
-		self.assertEqual(out, "ACE-Two")
-
-	def test_duplicate_token_fails_closed_wati(self):
-		"""H1 (WATI): two accounts share the token -> resolve None, never best-guess one and
-		cross-attribute a tenant's inbound traffic."""
-		out = self._run(self._WATI_CFG, "tok-dup",
-		                {"WA-One": "tok-dup", "WA-Two": "tok-dup"})
-		self.assertIsNone(out)
-
-	def test_duplicate_token_fails_closed_acefone(self):
-		"""H1 (Acefone): same fail-closed-on-duplicate property holds for telephony config —
-		one shared engine, so the fix lands on both providers by construction."""
-		out = self._run(self._ACE_CFG, "tok-dup",
-		                {"ACE-One": "tok-dup", "ACE-Two": "tok-dup"})
-		self.assertIsNone(out)
-
-	def test_no_match_returns_none(self):
-		"""No account holds the token -> None (fail-closed; unknown caller rejected)."""
-		out = self._run(self._WATI_CFG, "tok-zzz",
-		                {"WA-One": "tok-aaa", "WA-Two": "tok-bbb"})
-		self.assertIsNone(out)
-
-	def test_blank_token_returns_none(self):
-		"""A blank/whitespace token short-circuits to None without scanning accounts."""
-		self.assertIsNone(routing.account_by_token("WhatsApp Account", "custom_webhook_token", "   "))
-
-
-class TestAssertSafePublicUrl(unittest.TestCase):
-	"""M3: the single positive `is_global` SSRF test. We stub socket.getaddrinfo so a host
-	resolves to a chosen IP and assert CGNAT (100.64.0.0/10) is blocked while a normal public
-	host passes."""
-
-	@staticmethod
-	def _addrinfo(ip):
-		"""A getaddrinfo()-shaped return: one (family, type, proto, canonname, sockaddr)
-		5-tuple whose sockaddr (info[4][0]) is `ip` — the only field assert_safe_public_url reads."""
-		return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0))]
-
-	def test_cgnat_host_is_blocked(self):
-		"""A host resolving to a 100.64.0.0/10 carrier-NAT address is non-global -> blocked.
-		This is the range the old six-flag blocklist missed; the is_global rule catches it."""
-		with patch("tatva_connect.utils.socket.getaddrinfo",
-		           return_value=self._addrinfo("100.64.0.1")):
-			with self.assertRaises(frappe.ValidationError):
-				utils.assert_safe_public_url("https://cgnat.example.com/cdr.mp3")
-
-	def test_public_host_passes(self):
-		"""A host resolving to a normal global address passes (no exception)."""
-		with patch("tatva_connect.utils.socket.getaddrinfo",
-		           return_value=self._addrinfo("93.184.216.34")):
-			try:
-				utils.assert_safe_public_url("https://example.com/cdr.mp3")
-			except frappe.ValidationError:
-				self.fail("a public host must not be blocked")
-
-
-if __name__ == "__main__":
-	unittest.main()

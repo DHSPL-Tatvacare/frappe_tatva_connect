@@ -110,19 +110,6 @@ def resolve_for_message(msg):
 	return None
 
 
-def account_by_token(token):
-	"""Inbound auth + identity in ONE lookup: the WATI WhatsApp Account whose webhook
-	token matches. Each tenant registers a URL carrying its own token
-	(/webhooks/whatsapp/wati/<token>), so the token both authenticates the caller and
-	names the receiving account — no dependence on a payload field (WATI inbound carries
-	no reliable tenant id; channelPhoneNumber is present on ~13% of message events,
-	tenantId on 0%). Returns the account name, or None if the token matches no WATI
-	account (caller rejects). Fail-closed on ambiguity. Thin wrapper over the shared
-	engine."""
-	return engine.account_by_token("WhatsApp Account", "custom_webhook_token", token)
-
-
-@frappe.whitelist()
 def lead_has_route(reference_doctype=None, reference_name=None):
 	"""Does a WATI account route to this lead? Reuses the SAME resolver used to
 	send (resolve_account_for_lead) — single source of truth. The WhatsApp tab/UI

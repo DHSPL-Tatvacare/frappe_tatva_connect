@@ -47,6 +47,22 @@ def is_relevant(payload, event, account) -> bool:
 	return bool(cdr and resolve.is_ours(cdr))
 
 
+def irrelevance_reason(payload, event, account):
+	"""Why a call was declined, in one line, for the operator reading the log.
+
+	Cold path only — the spine asks after `is_relevant` has already said no. It is what makes a
+	Cancelled row actionable: mapping the DID it names and replaying the row lands the call.
+	"""
+	cdr = normalize(payload, event=event, account=account)
+	if cdr is None:
+		return "no call_id or uuid to key the call on"
+	if not resolve.grain_for(cdr):
+		return f"DID {cdr['did_number'] or '(none)'} is not mapped to a grain"
+	if not resolve.should_capture(cdr):
+		return f"no capture rule captures {cdr['direction']} {cdr['channel']} calls"
+	return None
+
+
 def already_processed(payload, event, account) -> bool:
 	"""True only when a completed row already exists for this call.
 

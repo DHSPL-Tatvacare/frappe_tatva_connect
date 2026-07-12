@@ -17,7 +17,7 @@ Register on each WATI dashboard the pretty, provider-uniform URL:
     https://<host>/webhooks/whatsapp/wati/<token>
 where <token> == that account's `custom_webhook_token`. nginx rewrites the trailing
 segment to `?token=` (see nginx/frappe.conf.template); the token both authenticates the
-caller and identifies the receiving account (routing.account_by_token) — inbound never
+caller and identifies the receiving account (webhooks.ingress.verify) — inbound never
 depends on a WATI payload field. Setup: vault runbook 02-operations/runbooks/09.
 """
 import frappe

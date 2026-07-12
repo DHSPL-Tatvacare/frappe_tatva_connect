@@ -20,16 +20,14 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
-	backfill_webhook_token_digests,
 	add_crm_task_metrics_index,
+	add_integration_request_index,
 	add_observability_indexes,
 	add_resume_index,
+	backfill_webhook_token_digests,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
 	rekey_task_types_composite,
-	# Inbound auth resolves an account by digest in one indexed read; a Password field cannot be
-	# indexed, so the digest is derived. Without it an existing account would fail to authenticate.
-	backfill_webhook_token_digests,
 	retire_activity_legacy_columns,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
@@ -43,6 +41,9 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
+	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter
+	# select on both, and frappe declares no index on a table it keeps for 90 days.
+	add_integration_request_index,
 	# Composite index (status, resume_at) on the Wait-park queue — backs sweep_resume()'s query.
 	add_resume_index,
 	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
@@ -52,6 +53,10 @@ _STEPS = (
 	# install-app baselines patches.txt without running it, so this is the path that lands the
 	# carry on an existing DB's first redeploy; a fresh install has blank tokens (clean no-op).
 	migrate_webhook_tokens_to_password,
+	# Inbound auth resolves an account by digest in one indexed read; a Password field cannot be
+	# indexed, so the digest is derived. Runs AFTER the token carry above, which is what puts a
+	# token in the Password store for it to digest.
+	backfill_webhook_token_digests,
 )
 
 

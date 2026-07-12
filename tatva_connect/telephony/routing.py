@@ -93,16 +93,6 @@ def resolve_for_reference(reference_doctype, reference_name):
 	return None
 
 
-def account_by_webhook_token(token):
-	"""Inbound auth + identity in ONE lookup: the Telephony Account whose `webhook_token`
-	matches. Each tenant registers its webhook URLs carrying its own token
-	(/webhooks/telephony/<provider>/<token>/<event>), so the token both authenticates the
-	caller and names the receiving account — no dependence on the CDR's did_number for auth.
-	Fail-closed on ambiguity (two accounts sharing a token -> None, not a best guess).
-	Thin wrapper over the shared engine."""
-	return engine.account_by_token("CRM Telephony Account", "webhook_token", token)
-
-
 def account_for_did(did_number):
 	"""Inbound: resolve which CRM Telephony Account owns the DID a call landed on.
 

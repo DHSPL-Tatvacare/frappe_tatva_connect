@@ -26,7 +26,7 @@ generate the token and copy the URLs from the Telephony Account form):
     https://<host>/webhooks/telephony/<provider>/<token>/outbound_complete
 where <token> == that Telephony Account's `webhook_token`. nginx rewrites the path to the
 native endpoint with ?token=; the token both authenticates the caller and names the receiving
-account (routing.account_by_webhook_token) — auth + identity in one, mirroring the WhatsApp
+account (webhooks.ingress.verify) — auth + identity in one, mirroring the WhatsApp
 webhook. No dependence on the CDR's did_number for auth.
 """
 import frappe

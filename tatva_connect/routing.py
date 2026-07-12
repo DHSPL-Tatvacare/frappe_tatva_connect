@@ -16,7 +16,6 @@ EVERY axis it specifies matches; among matching rules the MOST SPECIFIC wins
 an unmatched lead resolves to None and the caller blocks rather than route
 through the wrong tenant.
 """
-import hmac
 
 import frappe
 from frappe import _
@@ -77,35 +76,6 @@ def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, activ
 			title=_("Ambiguous route"),
 		)
 	return best
-
-
-def account_by_token(account_doctype, token_field, token):
-	"""Inbound auth + identity in ONE lookup: the account whose webhook token
-	matches `token`. Each tenant registers a URL carrying its own token, so the
-	token both authenticates the caller and names the receiving account — no
-	dependence on a payload field.
-
-	The token is a Password field (encrypted store), so we read each account's via
-	`get_password(..., raise_exception=False)` and compare with
-	`hmac.compare_digest` — constant-time, so a wrong token can't be discovered
-	byte-by-byte through timing.
-
-	FAIL-CLOSED on ambiguity: collect ALL matches and return the account only if
-	exactly one matched, else None. If two accounts somehow share a token
-	(operator copy-paste), we surface the misconfiguration rather than best-guess
-	one and cross-attribute a tenant's inbound traffic (invariant: no best-guess
-	on attribution). A handful of rows (one per tenant), cheap on the firehose."""
-	token = (token or "").strip()
-	if not token:
-		return None
-	matches = []
-	for acc in frappe.get_all(account_doctype, pluck="name"):
-		stored = frappe.get_cached_doc(account_doctype, acc).get_password(
-			token_field, raise_exception=False
-		)
-		if stored and hmac.compare_digest(str(stored), token):
-			matches.append(acc)
-	return matches[0] if len(matches) == 1 else None
 
 
 def leads_for_number_and_account(

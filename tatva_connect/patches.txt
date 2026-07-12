@@ -154,3 +154,4 @@ tatva_connect.patches.add_call_log_reference_index     # post — index (referen
 # tatva_connect.patches.fix_group_layout_slot            # post — repoint group layout slot
 # tatva_connect.patches.fix_custom_group_field_name      # post — custom_psp_group -> custom_group
 tatva_connect.patches.backfill_webhook_token_digests      # post — derive the indexed token digest for inbound auth
+tatva_connect.patches.add_integration_request_index         # post — (service, status) on the webhook log; the DLQ replay scans without it

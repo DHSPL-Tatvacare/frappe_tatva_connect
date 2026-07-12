@@ -81,6 +81,10 @@ def _bypasses(func):
 		name = fn.attr if isinstance(fn, ast.Attribute) else fn.id if isinstance(fn, ast.Name) else None
 		if name == "get_all":  # frappe.get_all / frappe.db.get_all / bare get_all
 			yield "get_all", sub.lineno, sub.end_lineno
+		# Frappe's own log-row creator inserts with ignore_permissions INSIDE frappe, so an AST scan
+		# for the kwarg would see nothing while the bypass still happens. Watched by name.
+		if name == "create_request_log":
+			yield "create_request_log", sub.lineno, sub.end_lineno
 		for kw in sub.keywords:
 			if kw.arg != "ignore_permissions":
 				continue

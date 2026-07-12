@@ -189,6 +189,29 @@ class TestWebhookIngress(FrappeTestCase):
 			self._configure(webhook_auth_mode="Token + HMAC", webhook_hmac_secret="", webhook_hmac_header="")
 		frappe.db.rollback()
 
+	def test_two_accounts_sharing_a_token_authenticate_neither(self):
+		"""Fail closed on an ambiguous secret. An operator copy-pasting a token across two accounts
+		must surface as a rejection, never as a silent guess that cross-attributes one tenant's
+		inbound traffic to the other."""
+		twin = "_TestIngressTwin"
+		if not frappe.db.exists("CRM Telephony Account", twin):
+			frappe.get_doc(
+				{"doctype": "CRM Telephony Account", "account_name": twin, "provider": "Acefone", "enabled": 1}
+			).insert(ignore_permissions=True)
+		doc = frappe.get_doc("CRM Telephony Account", twin)
+		doc.webhook_token = TOKEN          # the same secret as ACCOUNT
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.clear_cache(doctype="CRM Telephony Account")
+
+		try:
+			self._request(token=TOKEN)
+			with self.assertRaises(frappe.PermissionError):
+				ingress.verify("Acefone")
+		finally:
+			frappe.delete_doc("CRM Telephony Account", twin, force=True, ignore_permissions=True)
+			frappe.db.commit()
+
 	def test_every_provider_declares_an_ingress_prefix(self):
 		"""The one knob a new provider sets. Without it the whole auth surface silently misses."""
 		for service, cfg in registry.PROVIDERS.items():
