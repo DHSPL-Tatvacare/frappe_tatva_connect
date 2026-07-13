@@ -33,6 +33,8 @@ present (one small helper, A.8 - no per-column duplicated DDL).
 """
 import frappe
 
+from tatva_connect.patches import _schema
+
 _RULE = "CRM Automation Rule"
 _RULE_TABLE = "tab" + _RULE
 _CRITERION = "CRM Automation Criterion"
@@ -82,9 +84,9 @@ def _migrate_rules():
 
 	# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper (the JSON hasn't synced yet).
 	if not _column_exists(_RULE_TABLE, "on_doctype"):
-		frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `on_doctype` varchar(140)")
+		_schema.ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `on_doctype` varchar(140)", f"{_RULE_TABLE}")
 	if not _column_exists(_RULE_TABLE, "event"):
-		frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `event` varchar(140)")
+		_schema.ddl(f"ALTER TABLE `{_RULE_TABLE}` ADD COLUMN `event` varchar(140)", f"{_RULE_TABLE}")
 
 	# task_type/watch_doctype may already be individually absent on a site whose columns drifted
 	# ahead of trigger_type (e.g. a partially-cleaned dev DB) — select NULL in their place rather
@@ -141,7 +143,7 @@ def _drop_legacy_columns():
 			# ALLOWLIST: raw DROP COLUMN DDL, same idiom as the ADD COLUMN above - schema-only,
 			# no value interpolation (S.2). Runs AFTER the row-count reconcile guard, i.e. only
 			# once every value has been confirmed migrated onto the v2 columns.
-			frappe.db.sql_ddl(f"ALTER TABLE `{_RULE_TABLE}` DROP COLUMN `{col}`")
+			_schema.ddl(f"ALTER TABLE `{_RULE_TABLE}` DROP COLUMN `{col}`", f"{_RULE_TABLE}")
 	finally:
 		frappe.db.sql("SET SESSION innodb_strict_mode = ON")
 

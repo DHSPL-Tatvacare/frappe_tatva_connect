@@ -1,6 +1,8 @@
 """Collapse the activity engine onto 9 promoted CRM Task columns: merge/rename legacy columns into the new fixture columns and retire the dead archetype child tables; order-safe (skips merges before the target syncs), idempotent, forward-only."""
 import frappe
 
+from tatva_connect.patches import _schema
+
 TASK = "CRM Task"
 
 # old column -> merged target; merge runs only when BOTH columns exist, copying only where the target is empty (type-safe via CAST+NULLIF).
@@ -34,7 +36,7 @@ def _retire_column(fieldname):
 		frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	if frappe.db.has_column(TASK, fieldname):
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path.
-		frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Task` DROP COLUMN `{fieldname}`")
+		_schema.ddl(f"ALTER TABLE `tabCRM Task` DROP COLUMN `{fieldname}`", "tabCRM Task")
 
 
 def execute():

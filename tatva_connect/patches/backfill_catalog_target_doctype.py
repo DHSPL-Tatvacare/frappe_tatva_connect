@@ -1,6 +1,8 @@
 """Backfill CRM Lead API Field.target_doctype from the retired child_doctype, then DROP the orphan column (Frappe never auto-drops); guarded by has_column, idempotent."""
 import frappe
 
+from tatva_connect.patches import _schema
+
 CATALOG = "CRM Lead API Field"
 
 
@@ -16,4 +18,4 @@ def execute():
 		  AND COALESCE(target_doctype, '') = ''
 		"""
 	)
-	frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead API Field` DROP COLUMN `child_doctype`")
+	_schema.ddl("ALTER TABLE `tabCRM Lead API Field` DROP COLUMN `child_doctype`", "tabCRM Lead API Field")

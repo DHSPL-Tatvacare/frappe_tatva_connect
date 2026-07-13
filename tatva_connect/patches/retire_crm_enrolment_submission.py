@@ -7,6 +7,8 @@ idempotently; nothing in production ever shipped on it.
 """
 import frappe
 
+from tatva_connect.patches import _schema
+
 _DOCTYPE = "CRM Enrolment Submission"
 
 
@@ -19,4 +21,4 @@ def execute():
 		frappe.delete_doc("DocType", _DOCTYPE, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	# force delete removes the DocType row but LEAVES the tab table orphaned — drop it explicitly.
 	# Constant identifier, no interpolation of any value. Idempotent (IF EXISTS).
-	frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{_DOCTYPE}`")  # sqli-ok: constant doctype name
+	_schema.ddl(f"DROP TABLE IF EXISTS `tab{_DOCTYPE}`", f"tab{_DOCTYPE}")  # sqli-ok: constant doctype name

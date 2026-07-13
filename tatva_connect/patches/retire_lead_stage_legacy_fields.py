@@ -1,6 +1,8 @@
 """Retire dead CRM Lead lifecycle fields superseded by grain-scoped custom_stage: remove BOTH the Custom Field doc and the physical column (fixture sync drops neither); idempotent, forward-only."""
 import frappe
 
+from tatva_connect.patches import _schema
+
 LEAD = "CRM Lead"
 _STALE = (
 	"custom_program_lifecycle_stage",
@@ -22,4 +24,4 @@ def execute():
 			frappe.delete_doc("Custom Field", cf, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 		# sql_ddl, not sql: a bare ALTER trips frappe's implicit-commit guard on the after_migrate path; deleting the Custom Field leaves the column.
 		if frappe.db.has_column(LEAD, fieldname):
-			frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Lead` DROP COLUMN `{fieldname}`")
+			_schema.ddl(f"ALTER TABLE `tabCRM Lead` DROP COLUMN `{fieldname}`", "tabCRM Lead")

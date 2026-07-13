@@ -12,6 +12,8 @@ anywhere in the engine (describe/dispatcher/validator all ignored them). Data ty
 """
 import frappe
 
+from tatva_connect.patches import _schema
+
 _WRITE = "CRM Automatable Field"
 _WATCH = "CRM Automation Watchable Field"
 _NEW = "CRM Automation Field"
@@ -60,7 +62,7 @@ def execute():
 	for old in (_WRITE, _WATCH):
 		if frappe.db.exists("DocType", old):
 			frappe.delete_doc("DocType", old, ignore_permissions=True, force=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
-			frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{old}`")  # force-delete leaves the tab table
+			_schema.ddl(f"DROP TABLE IF EXISTS `tab{old}`", f"tab{old}")  # force-delete leaves the tab table
 
 	frappe.db.commit()
 

@@ -2,6 +2,8 @@
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 
+from tatva_connect.patches import _schema
+
 _DOCTYPE_RENAMES = [
 	("CRM WATI Account Routing", "CRM WhatsApp Routing"),
 	("CRM WATI Settings", "CRM WhatsApp Settings"),
@@ -56,4 +58,4 @@ def _migrate_provider_field():
 		# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 		if _column_exists("tabWhatsApp Account", "custom_is_wati"):
 			# ALLOWLIST: raw DROP COLUMN DDL — no Frappe helper
-			frappe.db.sql_ddl("ALTER TABLE `tabWhatsApp Account` DROP COLUMN `custom_is_wati`")
+			_schema.ddl("ALTER TABLE `tabWhatsApp Account` DROP COLUMN `custom_is_wati`", "tabWhatsApp Account")

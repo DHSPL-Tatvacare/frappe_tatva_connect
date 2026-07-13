@@ -1,6 +1,8 @@
 """Split the legacy free-text `target` ("plan:field") on CRM Intake Field Map into the structured (target_table, target_field) pair before the JSON drops it (pre-model-sync, format-only); guarded, idempotent."""
 import frappe
 
+from tatva_connect.patches import _schema
+
 _DT = "CRM Intake Field Map"
 _TABLE = "tab" + _DT
 
@@ -27,11 +29,11 @@ def execute():
 	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_table"):
 		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
-		frappe.db.sql_ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_table` varchar(140)")
+		_schema.ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_table` varchar(140)", f"{_TABLE}")
 	# ALLOWLIST: has_column cache is stale after raw DDL in the same migrate
 	if not _column_exists(_TABLE, "target_field"):
 		# ALLOWLIST: raw ADD COLUMN DDL pre-model-sync — no Frappe helper
-		frappe.db.sql_ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_field` varchar(140)")
+		_schema.ddl(f"ALTER TABLE `{_TABLE}` ADD COLUMN `target_field` varchar(140)", f"{_TABLE}")
 
 	rows = frappe.db.sql(
 		f"""
