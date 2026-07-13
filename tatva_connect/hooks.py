@@ -253,8 +253,10 @@ after_migrate = [
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
-	# LMS/Wiki desktop-icon rollout: gate the "Learning"/"Wiki" workspaces' roles (fixtures can only
-	# add rows, never a table's own permission gate) + hide the auto-generated orphan tile.
+	# Desk tiles — the four things the desktop_icon/ fixtures cannot express: gate the "Learning"/"Wiki"
+	# workspaces' roles, hide the auto-generated orphan tile, hide wiki's role-gated App tile, and hold
+	# every grouping tile at icon_type App (a Folder draws nothing). Runs after sync_all/sync_fixtures,
+	# so it corrects rows the fixture import declined to touch. Idempotent; re-asserted every migrate.
 	"tatva_connect.desktop_icon_reconcile.reconcile",
 ]
 
