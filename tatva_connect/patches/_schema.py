@@ -13,3 +13,17 @@ def ddl(sql: str, table: str):
 	"""Run a raw DDL statement and immediately un-cache the table's columns."""
 	frappe.db.sql_ddl(sql)
 	refresh(table)
+
+
+def rename_column(doctype: str, old: str, new: str):
+	"""frappe.db.rename_column ALTERs the table and leaves the cached column list stale — go through here."""
+	frappe.db.rename_column(doctype, old, new)
+	refresh(f"tab{doctype}")
+
+
+def rename_field(doctype: str, old: str, new: str):
+	"""frappe.model.utils.rename_field ALTERs the table too, and copies: same staleness, same door."""
+	from frappe.model.utils.rename_field import rename_field as _rename_field
+
+	_rename_field(doctype, old, new)
+	refresh(f"tab{doctype}")

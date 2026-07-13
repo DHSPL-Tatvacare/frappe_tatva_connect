@@ -10,6 +10,5 @@ def execute():
 	if frappe.db.has_column("WhatsApp Message", "custom_wati_id") and not frappe.db.has_column(
 		"WhatsApp Message", "custom_provider_message_id"
 	):
-		frappe.db.rename_column("WhatsApp Message", "custom_wati_id", "custom_provider_message_id")
-		_schema.refresh("tabWhatsApp Message")
+		_schema.rename_column("WhatsApp Message", "custom_wati_id", "custom_provider_message_id")
 	frappe.db.commit()

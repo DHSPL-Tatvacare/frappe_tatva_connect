@@ -15,4 +15,4 @@ def execute():
 		# ALLOWLIST: raw DROP COLUMN DDL — no Frappe helper
 		_schema.ddl(f"ALTER TABLE `{TABLE}` DROP COLUMN `first_class_target`", f"{TABLE}")
 		return
-	frappe.db.rename_column(DT, "first_class_target", "target")
+	_schema.rename_column(DT, "first_class_target", "target")

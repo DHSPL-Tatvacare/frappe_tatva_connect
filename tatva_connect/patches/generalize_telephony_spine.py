@@ -24,16 +24,14 @@ def _rename_fields():
 	if frappe.db.has_column("CRM Telephony Routing", "acefone_account") and not frappe.db.has_column(
 		"CRM Telephony Routing", "telephony_account"
 	):
-		frappe.db.rename_column("CRM Telephony Routing", "acefone_account", "telephony_account")
-		_schema.refresh("tabCRM Telephony Routing")
+		_schema.rename_column("CRM Telephony Routing", "acefone_account", "telephony_account")
 	# Call Log: our Custom Field — drop the old Custom Field doc (not the column), then rename the column so data carries to the fixture-recreated custom_telephony_account.
 	if frappe.db.exists("Custom Field", "CRM Call Log-custom_acefone_account"):
 		frappe.delete_doc("Custom Field", "CRM Call Log-custom_acefone_account", force=True)
 	if frappe.db.has_column("CRM Call Log", "custom_acefone_account") and not frappe.db.has_column(
 		"CRM Call Log", "custom_telephony_account"
 	):
-		frappe.db.rename_column("CRM Call Log", "custom_acefone_account", "custom_telephony_account")
-		_schema.refresh("tabCRM Call Log")
+		_schema.rename_column("CRM Call Log", "custom_acefone_account", "custom_telephony_account")
 
 
 def _seed_provider():

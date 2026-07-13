@@ -1,164 +1,67 @@
+# HOW TO WRITE A PATCH HERE — three rules, and a migrate that broke UAT for each one ignored.
+# 1. ONE DDL DOOR. Never call frappe.db.sql_ddl / rename_column / rename_field directly: go through
+#    patches/_schema.py. Frappe caches a table's column list and a raw ALTER never invalidates it, so the
+#    next has_column() reads a pre-DDL lie — that is how a patch came to DROP a column another patch had
+#    already dropped (1091). Locked by tests/static/test_patch_ddl_lock.py.
+# 2. DECLARE AN END STATE; ASSUME NOTHING ABOUT WHAT RAN BEFORE. Check live reality, no-op when it is
+#    already true, and be safe to run twice. A patch is not a script that runs once — it is an assertion.
+# 3. AN APPLIED PATCH IS DEAD. Once Patch Log records it, it NEVER runs again on that site. Editing it
+#    fixes nothing on UAT/prod; to correct a site that already ran it, ship a NEW patch.
+# PROVE IT the way prod will run it — replay the whole chain against an ALREADY-MIGRATED database, twice:
+#   bench --site <site> console: frappe.db.sql("DELETE FROM `tabPatch Log` WHERE patch LIKE '%tatva_connect%'"); frappe.db.commit()
+#   bench --site <site> migrate   (twice — zero errors both times)
+# A fresh site proves nothing: most patches no-op there. Prod is not a fresh site.
+
 [pre_model_sync]
-# Patches added in this section will be executed before doctypes are migrated
-# Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
-# Register modules.txt -> Module Def FIRST, before any doctype sync (migrate on an
-# existing site doesn't; add_module_defs runs only at install-app). Idempotent.
-tatva_connect.patches.register_modules
-# The `Push Notifications` module collapsed into the unified `Notifications` module (push is
-# one transport, not a domain — mirrors whatsapp/). Repoint the Module Def + its existing
-# doctypes on an existing site BEFORE its doctypes sync. Idempotent; no-op on fresh install.
-tatva_connect.patches.rename_push_module_to_notifications
-# Same story for the Observability module (CRM API Request Log / Metric / Metric Settings):
-# register its Module Def before its doctypes sync on an existing site. Idempotent.
-tatva_connect.patches.register_observability_module
-# Provider-neutral WhatsApp spine: rename CRM WATI Account Routing -> CRM WhatsApp Routing and
-# CRM WATI Settings -> CRM WhatsApp Settings, and replace custom_is_wati with the custom_provider
-# Select (data preserved). Runs before model sync so the new names/field exist when JSON syncs.
-tatva_connect.patches.generalize_whatsapp_spine
-# Provider-neutral telephony spine: rename CRM Acefone Account/Routing/Settings -> CRM Telephony
-# Account/Routing/Settings, rename the acefone_account / custom_acefone_account fields, and seed
-# the provider Select. Data preserved; runs before model sync so the new names exist when JSON syncs.
-tatva_connect.patches.generalize_telephony_spine
-# Neutralise the WhatsApp Message provider-id field: custom_wati_id -> custom_provider_message_id
-# (shared doctype; a neutral name lets a future provider reuse it). Data preserved; idempotent.
-tatva_connect.patches.neutralize_wati_message_id_field
-# Activity engine 9-column collapse: rename CRM Task Type Field.first_class_target -> target before
-# the doctype JSON syncs, so the renamed field map carries existing values (no orphan column).
-# Idempotent; no-op on a fresh install. See docs/plans/2026-06-21-activity-engine-unified-design.md.
-tatva_connect.patches.rename_task_field_target
-# CRM Lead API Field drops the redundant `child_doctype` column (target_doctype is now the single
-# source). Carry existing child rows' child_doctype onto target_doctype BEFORE the JSON syncs and
-# drops the column, so the smartview composer keeps its child join target. MUST be pre_model_sync.
-# Idempotent; guarded no-op once the column is gone / on a fresh install.
-tatva_connect.patches.backfill_catalog_target_doctype
-# Intake mapping contract: split the legacy free-text CRM Intake Field Map.target ("plan:nivo_dosage")
-# into the structured target_table + target_field pair BEFORE the new JSON drops `target`. Format-only
-# (does NOT remap plan->drug; that's Phase-D). Idempotent; no-op once the legacy column is gone / fresh.
-tatva_connect.patches.migrate_intake_field_map_target
-# Automation engine v2 (Task 1, big-bang reshape): CRM Automation Rule's flat trigger_type/task_type/
-# watch_doctype/watch_field -> the two-axis trigger (on_doctype, event); CRM Automation Criterion's
-# old operator SYMBOLS -> the frozen v2 WORD operators. MUST be pre_model_sync (reads the old columns
-# before the new JSON drops them). Idempotent; row-count reconciled. See
-# docs/plans/2026-07-08-automation-engine-v2-unified-vocabulary.md Part C Task 1.
-tatva_connect.patches.reshape_automation_triggers
+tatva_connect.patches.register_modules  # modules.txt -> Module Def, before any doctype syncs (add_module_defs runs only at install-app)
+tatva_connect.patches.rename_push_module_to_notifications  # The `Push Notifications` module collapsed into the unified `Notifications` module (push is one transport, not a domain — mirrors whatsapp/)
+tatva_connect.patches.register_observability_module  # Same story for the Observability module (CRM API Request Log / Metric / Metric Settings): register its Module Def before its doctypes sync on an existing site
+tatva_connect.patches.generalize_whatsapp_spine  # Provider-neutral WhatsApp spine: rename CRM WATI Account Routing -> CRM WhatsApp Routing and CRM WATI Settings -> CRM WhatsApp Settings, and replace custom_is_wati with the custom_provider Select (data preserved)
+tatva_connect.patches.generalize_telephony_spine  # Provider-neutral telephony spine: rename CRM Acefone Account/Routing/Settings -> CRM Telephony Account/Routing/Settings, rename the acefone_account / custom_acefone_account fields, and seed the provider Select
+tatva_connect.patches.neutralize_wati_message_id_field  # Neutralise the WhatsApp Message provider-id field: custom_wati_id -> custom_provider_message_id (shared doctype; a neutral name lets a future provider reuse it)
+tatva_connect.patches.rename_task_field_target  # Activity engine 9-column collapse: rename CRM Task Type Field.first_class_target -> target before the doctype JSON syncs, so the renamed field map carries existing values (no orphan column)
+tatva_connect.patches.backfill_catalog_target_doctype  # CRM Lead API Field drops the redundant `child_doctype` column (target_doctype is now the single source)
+tatva_connect.patches.migrate_intake_field_map_target  # Intake mapping contract: split the legacy free-text CRM Intake Field Map.target ("plan:nivo_dosage") into the structured target_table + target_field pair BEFORE the new JSON drops `target`
+tatva_connect.patches.reshape_automation_triggers  # Automation engine v2 (Task 1, big-bang reshape): CRM Automation Rule's flat trigger_type/task_type/ watch_doctype/watch_field -> the two-axis trigger (on_doctype, event); CRM Automation Criterion's old operator SYMBOLS -> the frozen v2 WORD operators
 
 [post_model_sync]
-# Patches added in this section will be executed after doctypes are migrated
-tatva_connect.patches.add_whatsapp_message_id_unique_index
+tatva_connect.patches.add_whatsapp_message_id_unique_index  # UNIQUE index on WhatsApp Message.message_id
 tatva_connect.patches.add_acefone_telephony_medium
 tatva_connect.patches.seed_india_cities
-# B5: shared-number fix — replace the global message_id unique index with a composite
-# (message_id, reference_name) so one number can mirror onto multiple leads (same patient,
-# two programs) without DuplicateEntryError on refresh / inbound.
-tatva_connect.patches.recreate_whatsapp_message_id_index_composite
-# Activity/location rebuild: drop the superseded CRM Lead "Location Captures" section + HTML field
-# (collapsed into the unified "Activity & Location" view). Idempotent; also runs on after_migrate.
-tatva_connect.patches.retire_location_captures_fields
-# Lead stage native: drop the redundant lifecycle fields (custom_program_lifecycle_stage,
-# custom_lsq_lead_stage_legacy) superseded by the grain-scoped custom_stage. Idempotent;
-# also runs on after_migrate.
-tatva_connect.patches.retire_lead_stage_legacy_fields
-# Orphan cleanup: move WhatsApp template caps onto CRM WATI Settings and delete the misnamed
-# `Tatva Automation Settings` single (lost its only switch in the automation-seam refactor).
-# Copy-forward preserves tuned caps; idempotent (no-op once gone / on a fresh install).
-tatva_connect.patches.retire_tatva_automation_settings
-# Automation registry rekey: rename CRM Tatva Automation rows from flat keys (wati, acefone, …)
-# to grain-scoped composite `::` keys (WhatsApp::WATI::messaging, …). Preserves operators'
-# Enabled state across the PK rename. Idempotent; no-op on a fresh install.
-tatva_connect.patches.migrate_automation_to_composite_keys
-# CRM Task Type rekey: name-keyed (type_name) -> grain composite `::` keys
-# (vertical::group::program::type_name) so a type_name can carry a different schema per grain (ADR).
-# Grain moves from the scope child table onto the parent. Cascades the custom_task_type Link.
-# Idempotent; no-op on a fresh install (seeds create composite keys directly).
-tatva_connect.patches.rekey_task_types_composite
-# Observability: composite indexes on CRM API Metric (granularity+bucket_start,
-# granularity+endpoint+bucket_start) — can't be declared in doctype JSON. Idempotent;
-# also runs on after_migrate via schema_setup.
-tatva_connect.patches.add_observability_indexes
-# Composite index on CRM Task (reference_docname, custom_task_type, status) — backs the
-# activity-metrics recompute count. Can't be declared in doctype JSON. Idempotent; also runs
-# on after_migrate via schema_setup. See docs/plans/2026-06-26-lead-data-model-MASTER-build.md §7.
-tatva_connect.patches.add_crm_task_metrics_index
-# Fold the legacy task-transition engine into the unified automation engine: the
-# `CRM Task Type Transition` child doctype + the `transitions` field on CRM Task Type +
-# activity.automation.apply_transitions are removed (doctype archived to archive/doctype/).
-# Existing transition rows are migrated to CRM Automation Rule by the operator-run db-seeds SQL
-# (db-seeds/2026-06-18-*-migrate-transitions-to-automation-rules.sql) BEFORE this deploy. This
-# patch only carries the legacy master switch (Task::CRM Task::transitions) onto the unified one
-# (Task::Automation::rules) so on stays on / off stays off; the orphaned legacy registry row is
-# then pruned by seed.sync_catalog on after_migrate.
-tatva_connect.patches.fold_transitions_switch
-# Webhook secrets Data->Password: the inbound webhook tokens (WhatsApp Account.custom_webhook_token,
-# CRM Telephony Account.webhook_token) flip to Password. Carry each existing plaintext into the
-# encrypted store so values survive the field-type switch (merge-not-clobber; column placeholder is
-# the idempotency guard). Idempotent; also runs on after_migrate via schema_setup.
-tatva_connect.patches.migrate_webhook_tokens_to_password
-# Activity engine 9-column collapse: custom_visit_status -> custom_outcome, custom_next_visit_at ->
-# custom_followup_at, custom_demo_scheduled_at -> custom_scheduled_at (values carried forward), the
-# old single custom_key_date -> custom_key_date_1..4, custom_reference added — all via fixtures. This
-# patch drops the stale columns and the 4 dead archetype child doctypes (CRM Task Order/Clinical/Call/
-# Doc Detail — defined, never written; folders archived to archive/doctype/). Idempotent; also runs on
-# after_migrate via schema_setup. See docs/plans/2026-06-21-activity-engine-unified-design.md.
-tatva_connect.patches.retire_activity_legacy_columns
-# Nivolumab mapping fix (Phase D): the live Nivolumab CRM Intake Field Map rows map
-# nivo_dosage / nivo_indication to target_table='plan', but those fields live on the `drug`
-# child (custom_drug_program_profile) — silently dropped under the old fold, and now FAIL the
-# Phase-B validate(). Repoint those rows' target_table 'plan' -> 'drug'. Data-only: does NOT
-# repoint the live Web Form's doc_type and does NOT drop any submission table (the public URL
-# keeps working; the full re-platform is a manual runbook step). Idempotent; no-op once fixed /
-# on a fresh install. See docs/plans/intake-form-builder-runbook.md.
-tatva_connect.patches.fix_nivolumab_drug_mapping
-# Retire the legacy shared intake staging doctype `CRM Enrolment Submission`. Intake is now 100%
-# per-form (each CRM Intake Form scaffolds its own runtime sink; the wildcard route_submission
-# processes it). Drops the orphan doctype + any Web Form still bound to it. Idempotent; nothing
-# shipped to production on it.
-tatva_connect.patches.retire_crm_enrolment_submission
-# Merge the two automation field allowlists — CRM Automatable Field (write) + CRM Automation Watchable
-# Field (read) -> one CRM Automation Field with can_set/can_watch flags. Carries any dev/staging rows,
-# then retires both old doctypes (delete_doc + DROP TABLE IF EXISTS). Idempotent; no-op on a fresh
-# install (old doctypes archived, never sync). See docs/plans/2026-07-07-automation-spine-merge-and-subjects.md.
-tatva_connect.patches.merge_automation_field_allowlists
-tatva_connect.patches.widen_lsq_attachment_id           # post — File.custom_lsq_attachment_id varchar(140)->500 (long S3 paths failed the migration File save)
-# Composite indexes on the CRM Automation Resume Wait-park queue + the UNIQUE (rule, definition_hash)
-# on CRM Automation Rule Version. Can't be declared in doctype JSON. Idempotent; also runs on
-# after_migrate via schema_setup. See docs/plans/2026-07-09-automation-rule-versioning.md.
-tatva_connect.patches.add_resume_index
-# Bind every already-parked execution to an immutable CRM Automation Rule Version, translating the old
-# effect-lane `next_action_idx` into the new all-lanes `cursor`. A running execution must never depend
-# on a mutable definition — a reordered or deleted action used to re-route or orphan a parked lead.
-# Runs AFTER add_resume_index (needs the version table). Idempotent; no-op on a fresh install / empty
-# queue. A row that can't be translated is marked Failed and logged — never guessed.
-tatva_connect.patches.migrate_resume_to_versions
-tatva_connect.patches.add_lead_dedup_unique_index      # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
-tatva_connect.patches.add_call_log_reference_index     # post — index (reference_doctype, reference_docname): call_list full-scanned without it
+tatva_connect.patches.recreate_whatsapp_message_id_index_composite  # B5: shared-number fix — replace the global message_id unique index with a composite (message_id, reference_name) so one number can mirror onto multiple leads (same patient, two programs) without DuplicateEntryError on refresh / inbound
+tatva_connect.patches.retire_location_captures_fields  # Activity/location rebuild: drop the superseded CRM Lead "Location Captures" section + HTML field (collapsed into the unified "Activity & Location" view)
+tatva_connect.patches.retire_lead_stage_legacy_fields  # Lead stage native: drop the redundant lifecycle fields (custom_program_lifecycle_stage, custom_lsq_lead_stage_legacy) superseded by the grain-scoped custom_stage
+tatva_connect.patches.retire_tatva_automation_settings  # Orphan cleanup: move WhatsApp template caps onto CRM WATI Settings and delete the misnamed `Tatva Automation Settings` single (lost its only switch in the automation-seam refactor)
+tatva_connect.patches.migrate_automation_to_composite_keys  # Automation registry rekey: rename CRM Tatva Automation rows from flat keys (wati, acefone, …) to grain-scoped composite `::` keys (WhatsApp::WATI::messaging, …)
+tatva_connect.patches.rekey_task_types_composite  # CRM Task Type rekey: name-keyed (type_name) -> grain composite `::` keys (vertical::group::program::type_name) so a type_name can carry a different schema per grain (ADR)
+tatva_connect.patches.add_observability_indexes  # Observability: composite indexes on CRM API Metric (granularity+bucket_start, granularity+endpoint+bucket_start) — can't be declared in doctype JSON
+tatva_connect.patches.add_crm_task_metrics_index  # Composite index on CRM Task (reference_docname, custom_task_type, status) — backs the activity-metrics recompute count
+tatva_connect.patches.fold_transitions_switch  # Fold the legacy task-transition engine into the unified automation engine: the `CRM Task Type Transition` child doctype + the `transitions` field on CRM Task Type + activity.automation.apply_transitions are removed (doctype archived to archive/doctype/)
+tatva_connect.patches.migrate_webhook_tokens_to_password  # Webhook secrets Data->Password: the inbound webhook tokens (WhatsApp Account.custom_webhook_token, CRM Telephony Account.webhook_token) flip to Password
+tatva_connect.patches.retire_activity_legacy_columns  # Activity engine 9-column collapse: custom_visit_status -> custom_outcome, custom_next_visit_at -> custom_followup_at, custom_demo_scheduled_at -> custom_scheduled_at (values carried forward), the old single custom_key_date -> custom_key_date_1..4, custom_reference added — all via fixtures
+tatva_connect.patches.fix_nivolumab_drug_mapping  # Nivolumab mapping fix (Phase D): the live Nivolumab CRM Intake Field Map rows map nivo_dosage / nivo_indication to target_table='plan', but those fields live on the `drug` child (custom_drug_program_profile) — silently dropped under the old fold, and now FAIL the Phase-B validate()
+tatva_connect.patches.retire_crm_enrolment_submission  # Retire the legacy shared intake staging doctype `CRM Enrolment Submission`
+tatva_connect.patches.merge_automation_field_allowlists  # Merge the two automation field allowlists — CRM Automatable Field (write) + CRM Automation Watchable Field (read) -> one CRM Automation Field with can_set/can_watch flags
+tatva_connect.patches.widen_lsq_attachment_id  # post — File.custom_lsq_attachment_id varchar(140)->500 (long S3 paths failed the migration File save)
+tatva_connect.patches.add_resume_index  # Composite indexes on the CRM Automation Resume Wait-park queue + the UNIQUE (rule, definition_hash) on CRM Automation Rule Version
+tatva_connect.patches.migrate_resume_to_versions  # Bind every already-parked execution to an immutable CRM Automation Rule Version, translating the old effect-lane `next_action_idx` into the new all-lanes `cursor`
+tatva_connect.patches.add_lead_dedup_unique_index  # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
+tatva_connect.patches.add_call_log_reference_index  # post — index (reference_doctype, reference_docname): call_list full-scanned without it
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field
 # orphans harmlessly; field sync drops it on the next migrate. Noted here for file-level history.
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ARCHIVED — DO NOT RUN. One-time legacy migrations, moved to archive/legacy-patches/
-# (gitignored, on disk for bookkeeping). Each "skips if old absent", so they no-op on a
-# clean install. Kept here commented for file-level history. To restore for an IN-PLACE
-# upgrade of an old-schema prod DB: move the file back into tatva_connect/patches/ and
-# uncomment the line (renames belong in [pre_model_sync], the rest in [post_model_sync]).
-# tatva_connect.patches.register_push_notifications_module  # pre  — superseded by rename_push_module_to_notifications
-# tatva_connect.patches.rename_doctypes_partner_api      # pre  — Lead API * -> CRM Lead API *
-# tatva_connect.patches.rename_doctypes_whatsapp         # pre  — WATI * -> CRM WATI *
-# tatva_connect.patches.rename_doctypes_telephony        # pre  — Acefone * -> CRM Acefone *
-# tatva_connect.patches.converge_entity_masters          # post — rekey Doctor/Hospital/City
-# tatva_connect.patches.normalize_lead_phones            # post — normalize existing lead phones
-# tatva_connect.patches.canonicalize_lead_routing        # post — canonicalize existing routing
-# tatva_connect.patches.split_plan_profile               # post — P9: Plan Profile -> child sections
-# tatva_connect.patches.rename_to_naming_standard        # post — hash rows -> composite :: keys
-# tatva_connect.patches.fix_group_layout_slot            # post — repoint group layout slot
-# tatva_connect.patches.fix_custom_group_field_name      # post — custom_psp_group -> custom_group
-tatva_connect.patches.backfill_webhook_token_digests      # post — derive the indexed token digest for inbound auth
-tatva_connect.patches.add_integration_request_index         # post — (service, status) on the webhook log; the DLQ replay scans without it
+# ARCHIVED — one-time legacy migrations for an OLD-schema DB. The modules live in
+# archive/legacy-patches/ (gitignored, not on disk here), so these cannot run and must not be
+# uncommented as-is. Restore a file into patches/ and add its line back ONLY for an in-place
+# upgrade of a pre-rename database. The names are in git history; they are not needed here.
+tatva_connect.patches.backfill_webhook_token_digests  # post — derive the indexed token digest for inbound auth
+tatva_connect.patches.add_integration_request_index  # post — (service, status) on the webhook log; the DLQ replay scans without it
 tatva_connect.patches.hash_name_transactional_doctypes
-tatva_connect.patches.merge_did_into_routing                # post — DID map folded into the routing rule; one table, one grain
-tatva_connect.patches.reimport_communications_desk        # post — the DID shortcut/sidebar survived merge_did_into_routing on sites whose workspace doc looked newer than the file
-tatva_connect.patches.rename_notification_grain_to_event   # post — notification 'grain' (a notifiable moment) renamed to 'event'; it collided with the business grain
-tatva_connect.patches.drop_stale_notification_grain_key       # post — rename_field copies; the dead grain_key column would let a re-run wipe every opt-in
-tatva_connect.patches.reimport_communications_desk_labels     # post — the workspace content still named the old shortcut labels, so four telephony tiles rendered empty
-tatva_connect.patches.restore_grain_field_permlevel           # post — two property setters unlocked Product Line/Group for every rep; the permlevel-1 grant in access/lockdown.py replaces them
+tatva_connect.patches.merge_did_into_routing  # post — DID map folded into the routing rule; one table, one grain
+tatva_connect.patches.reimport_communications_desk  # post — the DID shortcut/sidebar survived merge_did_into_routing on sites whose workspace doc looked newer than the file
+tatva_connect.patches.rename_notification_grain_to_event  # post — notification 'grain' (a notifiable moment) renamed to 'event'; it collided with the business grain
+tatva_connect.patches.drop_stale_notification_grain_key  # post — rename_field copies; the dead grain_key column would let a re-run wipe every opt-in
+tatva_connect.patches.reimport_communications_desk_labels  # post — the workspace content still named the old shortcut labels, so four telephony tiles rendered empty
+tatva_connect.patches.restore_grain_field_permlevel  # post — two property setters unlocked Product Line/Group for every rep; the permlevel-1 grant in access/lockdown.py replaces them
