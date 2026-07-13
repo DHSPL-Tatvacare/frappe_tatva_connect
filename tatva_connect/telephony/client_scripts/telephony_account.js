@@ -6,12 +6,15 @@
 //      https://<host>/webhooks/telephony/<provider>/<token>/<event> (one per Acefone trigger).
 // The token is a Password field (masked as `***` after save), so the URLs are fetched from the
 // server (tatva_connect.webhooks.urls.get_account_webhook_urls), never built from frm.doc.<token>.
-// The token generator + URL-banner renderer are the shared Desk helpers (public/js/webhook_account_form.js).
+// The token generator + URL-banner renderer are the shared Desk helpers (public/js/tatva_connect.bundle.js).
 // Shown once a provider is set. The token both authenticates the caller and identifies the
 // receiving account (telephony.routing.account_by_webhook_token). No fork — a Client Script.
 
 frappe.ui.form.on('CRM Telephony Account', {
   refresh(frm) {
+    // Every secret on this form gets the same working eye toggle (a saved Password field holds only asterisks).
+    tatva_enable_secret_reveal(frm, ['api_token', 'click_to_call_api_key', 'webhook_token', 'webhook_token_previous']);
+
     if (!frm.doc.provider) return;
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {
@@ -38,8 +41,8 @@ frappe.ui.form.on('CRM Telephony Account', {
 function telephony_show_webhook_urls(frm) {
   if (!frm.doc.provider) return;
   tatva_render_webhook_urls(frm, {
-    single_label: 'Inbound webhook URL (Acefone trigger)',
-    multi_label: 'Inbound webhook URLs (one per Acefone trigger)',
-    register_hint: 'register these on the Acefone dashboard (use the Copy Webhook URLs button).',
+    single_label: 'Register this webhook on the Acefone dashboard',
+    multi_label: 'Register these webhooks on the Acefone dashboard',
+    register_hint: 'Acefone → Webhooks → Add: Channel Voice, Content Type JSON, keep the default payload template, Retry webhook ON. Outbound answered has no Acefone trigger and is not listed.',
   });
 }

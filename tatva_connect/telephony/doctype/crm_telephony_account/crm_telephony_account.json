@@ -43,7 +43,8 @@
    "in_list_view": 1,
    "label": "Account Name",
    "reqd": 1,
-   "unique": 1
+   "unique": 1,
+   "description": "The operator's name for this provider tenant, e.g. 'Acefone TatvaPractice'."
   },
   {
    "fieldname": "provider",
@@ -51,11 +52,13 @@
    "label": "Provider",
    "options": "Acefone",
    "in_list_view": 1,
-   "description": "Telephony provider that places and receives this account's calls."
+   "description": "The provider that places and receives this account's calls; an account whose provider has no registered adapter is never routed to.",
+   "reqd": 1,
+   "default": "Acefone"
   },
   {
    "default": "0",
-   "description": "Enable this Acefone account for send/receive. Starts OFF — tick once the account is fully configured.",
+   "description": "Ticked, this account can place and receive calls, and its webhook token authenticates. Left off, it is inert — the switch is per account, not per provider.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -66,52 +69,56 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The originating line that click-to-call rings (account-level default; overridden per agent by CRM Telephony Agent.acefone_number when set).",
+   "description": "The line the provider rings first on a click-to-call, before it dials the patient. Optional: a CRM Telephony Agent Map row overrides it per agent. Any format — the number is reduced to its last 10 digits before use.",
    "fieldname": "agent_number",
    "fieldtype": "Data",
-   "label": "Agent Number"
+   "label": "Agent Callback Number"
   },
   {
-   "description": "The DID shown to the customer on outbound calls AND the match key for inbound CDRs (did_number).",
+   "description": "The number shown to the patient on an outbound call. Inbound calls are NOT matched on this — a DID is mapped to its grain in CRM Telephony Routing. Any format — reduced to its last 10 digits before use.",
    "fieldname": "caller_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Caller ID / DID"
+   "label": "Caller ID (outbound)",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_api",
    "fieldtype": "Section Break",
    "hide_border": 1,
-   "label": "API"
+   "label": "Provider Credentials (outbound — the CRM calls the provider)"
   },
   {
-   "description": "Acefone API base URL (no trailing slash). Blank = code default (https://api.acefone.in).",
+   "description": "The provider's API base URL, without a trailing slash. Blank uses the code default (Acefone: https://api.acefone.in).",
    "fieldname": "base_url",
    "fieldtype": "Data",
    "label": "Base URL"
   },
   {
-   "description": "Bearer token for the Acefone REST API (click-to-call etc.) for this tenant.",
+   "description": "The provider's API bearer token for this tenant, taken from the vault; every outbound call is authenticated with it.",
    "fieldname": "api_token",
    "fieldtype": "Password",
-   "label": "API Token"
+   "label": "API Token",
+   "length": 1000,
+   "reqd": 1
   },
   {
    "fieldname": "column_break_api",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Optional separate key for the Acefone 'Support' click-to-call variant.",
+   "description": "Only for Acefone's separate 'Support' click-to-call variant. Left blank otherwise.",
    "fieldname": "click_to_call_api_key",
    "fieldtype": "Password",
-   "label": "Click-to-Call API Key"
+   "label": "Click-to-Call API Key",
+   "length": 1000
   },
   {
    "fieldname": "webhook_token",
    "fieldtype": "Password",
    "label": "Webhook Token",
    "no_copy": 1,
-   "description": "Per-account inbound webhook secret. Appears in this account's webhook URL (/webhooks/telephony/<provider>/<token>/<event>) and both authenticates the caller and identifies the receiving account. Use a unique random value per account; blank = inbound disabled."
+   "description": "Created by the 'Generate Webhook Token' button above: click it, save, then use 'Copy Webhook URLs' and register them with the provider. It proves the caller is the provider and tells the CRM which account the call arrived on. Blank means inbound is off."
   },
   {
    "fieldname": "section_break_ssrf",
@@ -123,15 +130,15 @@
    "fieldtype": "Table",
    "label": "Recording Host Allowlist (SSRF)",
    "options": "CRM Account Trusted Host",
-   "description": "Optional SSRF allowlist for recording fetches — pick the host(s) this account's recording URLs live on, e.g. the Acefone CDN (from CRM Trusted Fetch Host). If set, recordings are fetched ONLY from these hosts or their sub-domains. Blank = any public host (fetches to private/internal IPs are always blocked)."
+   "description": "The provider's webhook carries a URL, and the CRM downloads the call recording from it. Listing the provider's recording hosts here means the CRM downloads from those hosts only, so a forged webhook cannot point the server at a URL of the attacker's choosing. Blank allows any public host (private and internal addresses are always blocked)."
   },
   {
    "fieldname": "webhook_section_ingress",
    "fieldtype": "Section Break",
-   "label": "Webhook Ingress (inbound authentication)"
+   "label": "Inbound Webhook (the provider calls the CRM)"
   },
   {
-   "description": "Set during a rotation. Both tokens authenticate until this is cleared, so rotating a secret never rejects a live call. Providers retry very few times -- Acefone retries twice -- so a call rejected mid-rotation is lost for good.",
+   "description": "Set during a rotation; both tokens authenticate until this one is cleared. Acefone retries a rejected delivery only twice, so a call rejected mid-rotation is lost for good.",
    "fieldname": "webhook_token_previous",
    "fieldtype": "Password",
    "label": "Previous Webhook Token"
@@ -163,7 +170,7 @@
   },
   {
    "default": "Token",
-   "description": "The token is always enforced. HMAC is added only when the provider signs its payloads; Acefone and WATI do not.",
+   "description": "The token is always enforced. HMAC is added only for a provider that signs its payloads, which Acefone does not.",
    "fieldname": "webhook_auth_mode",
    "fieldtype": "Select",
    "label": "Authentication",
@@ -173,7 +180,9 @@
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
    "fieldname": "webhook_hmac_secret",
    "fieldtype": "Password",
-   "label": "HMAC Signing Secret"
+   "label": "HMAC Signing Secret",
+   "length": 1000,
+   "description": "The shared secret the provider signs its payloads with."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
@@ -188,7 +197,8 @@
    "fieldname": "webhook_hmac_algo",
    "fieldtype": "Select",
    "label": "Signature Algorithm",
-   "options": "sha256\nsha512\nsha1"
+   "options": "sha256\nsha512\nsha1",
+   "description": "The hash the provider signs with."
   },
   {
    "default": "Hex",
@@ -196,7 +206,8 @@
    "fieldname": "webhook_hmac_encoding",
    "fieldtype": "Select",
    "label": "Signature Encoding",
-   "options": "Hex\nBase64"
+   "options": "Hex\nBase64",
+   "description": "How the provider encodes the signature it sends."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
@@ -212,14 +223,14 @@
   },
   {
    "default": "0",
-   "description": "Left off unless the provider publishes its egress addresses. When on, a call from any other address is rejected.",
+   "description": "Rejects any inbound call that does not come from an address listed below. Leave it off unless the provider publishes fixed addresses — a wrong list silently drops every call. It cannot be turned on while the list is empty.",
    "fieldname": "webhook_enforce_ip",
    "fieldtype": "Check",
    "label": "Enforce IP Allowlist"
   },
   {
    "depends_on": "eval:doc.webhook_enforce_ip",
-   "description": "One address or CIDR range per line, as published by the provider. Text after a # is ignored.",
+   "description": "One IP address or CIDR range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Anything after a # is ignored. Read only when Enforce IP Allowlist is ticked.",
    "fieldname": "webhook_ip_allowlist",
    "fieldtype": "Small Text",
    "label": "Allowed Addresses"

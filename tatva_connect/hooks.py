@@ -113,6 +113,8 @@ doc_events = {
 			# mirror the latest lab row's headline metrics up to the core Lead fields
 			"tatva_connect.lead.leads.sync_headline_metrics",
 		],
+		# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
+		"on_update": "tatva_connect.notifications.events.on_lead_stage_changed",
 	},
 	"CRM Task": {
 		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
@@ -147,6 +149,8 @@ doc_events = {
 	"WhatsApp Message": {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone; runs after crm validate, before db_insert; inbound-only (flag-gated).
 		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
+		# tell the rep a patient replied (crm writes the tray row itself; this adds only the live channel)
+		"after_insert": "tatva_connect.notifications.events.on_whatsapp_received",
 		# The inbound follow-up task is RETIRED here — WhatsApp Message is now an automation subject, so
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
@@ -188,6 +192,10 @@ doc_events = {
 		"on_trash": "tatva_connect.intake.intake.bust_intake_doctype_cache",
 	},
 	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
+	"CRM Call Log": {
+		# tell the rep an inbound call went unanswered (only the save that moves the status notifies)
+		"on_update": "tatva_connect.notifications.events.on_call_missed",
+	},
 	"ToDo": {
 		"after_insert": [
 			"tatva_connect.tasks.tasks.on_lead_assignment",
@@ -220,6 +228,8 @@ scheduler_events = {
 		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
 		# Every 15 min: resume any automation rule fire parked at a Wait step whose time has arrived.
 		"*/15 * * * *": ["tatva_connect.automation.resume.sweep_resume"],
+		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
+		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
 	},
 }
 
@@ -354,6 +364,18 @@ fixtures = [
 		"WhatsApp Account-app_id-hidden",
 		"WhatsApp Account-business_id-hidden",
 		"WhatsApp Account-phone_id-hidden",
+		"WhatsApp Account-version-hidden",
+		# crm's tray types are Mention/Task/Assignment/WhatsApp; a missed call and a stage move are neither, so the Select is EXTENDED (never rewritten) and the SPA renders them with the default avatar.
+		"CRM Notification-type-options",
+		# insert_after moves a custom field, never a standard one — only field_order lifts upstream's url/token out of our ingress section into their own credentials section.
+		"WhatsApp Account-main-field_order",
+		"WhatsApp Account-url-label",
+		"WhatsApp Account-url-description",
+		"WhatsApp Account-token-label",
+		"WhatsApp Account-token-description",
+		# Provider + url + token is the minimum that can send; gated on the provider so a non-WATI account is never forced to carry WATI's fields.
+		"WhatsApp Account-url-mandatory_depends_on",
+		"WhatsApp Account-token-mandatory_depends_on",
 		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our WATI text-template path doesn't use, so the form shows just template + variable mapping + account.
 		"WhatsApp Notification-code-hidden",
 		"WhatsApp Notification-attach_document_print-hidden",
@@ -396,7 +418,8 @@ required_apps = ["crm", "frappe_whatsapp"]
 # include js, css files in header of desk.html
 # app_include_css = "/assets/tatva_connect/css/tatva_connect.css"
 # Shared Desk helpers for the webhook account forms (token generator + URL banner); both account Client Scripts call this one asset.
-app_include_js = "/assets/tatva_connect/js/webhook_account_form.js"
+# A bundle, not a raw /assets path: esbuild hashes the filename, so a deploy can never leave a browser on a cached copy.
+app_include_js = "tatva_connect.bundle.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/tatva_connect/css/tatva_connect.css"

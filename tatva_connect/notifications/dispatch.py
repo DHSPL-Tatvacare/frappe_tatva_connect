@@ -2,22 +2,26 @@
 
 Single linear chain, early-return fail-closed:
 
-    notify(grain_key, users, title, body, data):
-        grain = catalog.get(grain_key)                       # unknown -> return
-        if not automation.is_enabled(grain.automation_key):  # the ONE global gate -> return
+    notify(event_key, users, title, body, data):
+        event = catalog.get(event_key)                       # unknown -> return
+        if not automation.is_enabled(event.automation_key):  # the ONE global gate -> return
             return
-        recipients = prefs.subscribers(grain_key, users)     # opt-in filter (default OFF)
+        recipients = prefs.subscribers(event_key, users)     # opt-in filter (default OFF)
         for user in recipients:
-            if grain.urgency == "always_push": push ALL devices
+            if event.urgency == "always_push": push ALL devices
             elif presence.is_present(user):    toast the live socket (in-app, no push)
             else:                              FCM to the rep's ABSENT devices only
 
-The bell row + its badge are NATIVE CRM's: `crm.api.todo.notify_user` writes a CRM
-Notification on every assignment (ungated) — that is the persistent history layer, and we
-never duplicate it. Dispatch owns ONLY the opt-in-gated LIVE channel; presence picks exactly
-ONE of realtime / FCM per user, so there is never a double-banner.
+The bell row is crm's. crm writes one itself on an assignment and on an inbound WhatsApp
+message (ungated) — those events carry no `bell_type` here and we never write a second row.
+An event crm knows nothing about (a missed call, a task falling due, a stage moving) has no
+bell row at all, and a push with nowhere to land is a push a rep cannot act on: for those,
+and ONLY those, dispatch writes the row through crm's OWN writer (`notify_user`), so the
+tray is extended and never forked. Presence then picks exactly one live channel, so a rep is
+never banner-ed twice.
 """
 import frappe
+from crm.fcrm.doctype.crm_notification.crm_notification import notify_user
 
 from tatva_connect import automation
 from tatva_connect.notifications import catalog, prefs, presence
@@ -54,19 +58,40 @@ def _push(tokens, title, body, data):
 	)
 
 
-def notify(grain_key, users, title, body, data=None):
-	grain = catalog.get(grain_key)
-	if not grain:
+def _bell(event, user, actor, text, source, target):
+	"""One persistent tray row, written by crm's OWN writer — only for an event crm does not
+	already bell itself. `notify_user` skips a rep notifying themselves and de-dupes an identical
+	row, so a re-run cannot double-post."""
+	notify_user(
+		{
+			"owner": actor,
+			"assigned_to": user,
+			"notification_type": event.bell_type,
+			"message": text,
+			"notification_text": text,
+			"reference_doctype": source[0],
+			"reference_docname": source[1],
+			"redirect_to_doctype": target[0],
+			"redirect_to_docname": target[1],
+		}
+	)
+
+
+def notify(event_key, users, title, body, data=None, bell=None):
+	event = catalog.get(event_key)
+	if not event:
 		return
-	if not automation.is_enabled(grain.automation_key):
+	if not automation.is_enabled(event.automation_key):
 		return
-	recipients = prefs.subscribers(grain_key, users)
+	recipients = prefs.subscribers(event_key, users)
 	if not recipients:
 		return
 
 	for user in recipients:
+		if event.bell_type and bell:
+			_bell(event, user, bell["actor"], bell["text"], bell["source"], bell["target"])
 		# One linear chain, presence picks exactly one live channel (no double-banner).
-		if grain.urgency == "always_push":
+		if event.urgency == "always_push":
 			_push(presence.all_devices(user), title, body, data)
 		elif presence.is_present(user):
 			_toast(user, title, body, data)

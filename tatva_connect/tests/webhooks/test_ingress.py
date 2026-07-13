@@ -42,7 +42,7 @@ class TestWebhookIngress(FrappeTestCase):
 				{
 					"doctype": "CRM Telephony Account",
 					"account_name": ACCOUNT,
-					"provider": "Acefone",
+					"provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002",
 					"enabled": 1,
 				}
 			).insert(ignore_permissions=True)
@@ -198,7 +198,7 @@ class TestWebhookIngress(FrappeTestCase):
 		twin = "_TestIngressTwin"
 		if not frappe.db.exists("CRM Telephony Account", twin):
 			frappe.get_doc(
-				{"doctype": "CRM Telephony Account", "account_name": twin, "provider": "Acefone", "enabled": 1}
+				{"doctype": "CRM Telephony Account", "account_name": twin, "provider": "Acefone", "api_token": "ingress-test-token", "caller_id": "919000100002", "enabled": 1}
 			).insert(ignore_permissions=True)
 		doc = frappe.get_doc("CRM Telephony Account", twin)
 		doc.webhook_token = TOKEN          # the same secret as ACCOUNT

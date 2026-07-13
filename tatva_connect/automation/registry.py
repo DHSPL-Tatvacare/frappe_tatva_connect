@@ -200,6 +200,73 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Notify::WhatsApp::received",
+		fires_on="Doc Event",
+		trigger_detail="WhatsApp Message · after_insert",
+		purpose=(
+			"Notifies the rep a lead is assigned to when the patient replies on WhatsApp — in-app while "
+			"they're online, a mobile push when they're away. The rep opts in per notification.\n"
+			"Example: a patient answers a template message; the rep is told rather than finding it on their next visit to the tab."
+		),
+		backs=[
+			"tatva_connect.notifications.events.on_whatsapp_received",
+		],
+	),
+	Auto(
+		key="Notify::Telephony::missed",
+		fires_on="Doc Event",
+		trigger_detail="CRM Call Log · on_update (status -> No Answer, inbound)",
+		purpose=(
+			"Notifies the rep a lead is assigned to when the patient's call went unanswered — always pushed, "
+			"since a missed call is only useful before the patient gives up. The rep opts in per notification.\n"
+			"Example: a patient rings the program's number and nobody picks up; the rep sees it at once."
+		),
+		backs=[
+			"tatva_connect.notifications.events.on_call_missed",
+		],
+	),
+	Auto(
+		key="Notify::Task::due-soon",
+		fires_on="Schedule",
+		trigger_detail="every 5 min · tasks falling due inside the operator's lead time",
+		purpose=(
+			"Warns a rep that a task assigned to them is about to fall due. The lead time is the operator's "
+			"(CRM Notification Settings); each task is warned once per due date, so a rescheduled task warns again.\n"
+			"Example: a call is due in an hour; the rep is reminded while there is still time to make it."
+		),
+		requires="Notify::Task::assigned",
+		backs=[
+			"tatva_connect.notifications.events.sweep_task_due",
+		],
+	),
+	Auto(
+		key="Notify::Task::overdue",
+		fires_on="Schedule",
+		trigger_detail="every 5 min · tasks past their due date and not done",
+		purpose=(
+			"Tells a rep a task assigned to them has passed its due date and is still not done. Each task is "
+			"told once per due date, so a rescheduled task can tell again — a task never nags every sweep.\n"
+			"Example: yesterday's follow-up call was never made; the rep is told rather than the lead going cold."
+		),
+		requires="Notify::Task::assigned",
+		backs=[
+			"tatva_connect.notifications.events.sweep_task_due",
+		],
+	),
+	Auto(
+		key="Notify::Lead::stage-changed",
+		fires_on="Doc Event",
+		trigger_detail="CRM Lead · on_update (custom_substage changed)",
+		purpose=(
+			"Notifies the rep a lead is assigned to when its stage is moved — by a manager, an automation rule, "
+			"or an integration. The rep opts in per notification.\n"
+			"Example: a manager moves a lead to Consent Pending; the rep is told the ball is in their court."
+		),
+		backs=[
+			"tatva_connect.notifications.events.on_lead_stage_changed",
+		],
+	),
+	Auto(
 		key="Notify::Task::assigned",
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · after_insert",

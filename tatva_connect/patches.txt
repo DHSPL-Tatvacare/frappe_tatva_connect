@@ -157,3 +157,5 @@ tatva_connect.patches.backfill_webhook_token_digests      # post — derive the 
 tatva_connect.patches.add_integration_request_index         # post — (service, status) on the webhook log; the DLQ replay scans without it
 tatva_connect.patches.hash_name_transactional_doctypes
 tatva_connect.patches.merge_did_into_routing                # post — DID map folded into the routing rule; one table, one grain
+tatva_connect.patches.reimport_communications_desk        # post — the DID shortcut/sidebar survived merge_did_into_routing on sites whose workspace doc looked newer than the file
+tatva_connect.patches.rename_notification_grain_to_event   # post — notification 'grain' (a notifiable moment) renamed to 'event'; it collided with the business grain

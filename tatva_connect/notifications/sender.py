@@ -1,5 +1,5 @@
 """FCM HTTP v1 transport — straight to Firebase, no relay. A DUMB sender: enablement
-(the global per-grain gate) and opt-in filtering live upstream in
+(the global per-event gate) and opt-in filtering live upstream in
 `notifications/dispatch.py`; here we only fan a notification out to devices.
 
 google-auth mints a short-lived OAuth2 access token from the service-account JSON

@@ -15,15 +15,16 @@ Each entry describes a provider once:
                       Custom Fields, which Frappe requires to be `custom_`-prefixed. One knob, and
                       the whole auth surface (token, rotation, HMAC, IP allowlist) follows.
   * token_field     — the Password field carrying the per-account webhook secret
-  * build_urls      — (host, account_doc, token) -> the pretty URL(s) to register
+  * targets         — (host, account_doc, token) -> each URL to register, with the provider-dashboard config it belongs to
 """
 
-# Acefone POSTs a distinct URL per call trigger; one webhook URL is registered per event.
-_TELEPHONY_EVENTS = (
-	"inbound_answered",
-	"inbound_complete",
-	"outbound_answered",
-	"outbound_complete",
+# Every trigger Acefone's dashboard can bind to a URL, with the endpoint it belongs on. `outbound_answered`
+# has NO trigger to bind to — Acefone offers a live "answered" trigger inbound only — so the endpoint stays
+# live (a payload arriving there is still ingested) but is never advertised on the form.
+_TELEPHONY_TARGETS = (
+	("inbound_complete", "Inbound · Call hangup (Missed or Answered)", "required"),
+	("outbound_complete", "Outbound · Call hangup (Missed or Answered) · Call Type: Click to call", "required"),
+	("inbound_answered", "Inbound · Call answered by Agent", "optional — the call shows as In Progress while it is live"),
 )
 
 PROVIDERS = {
@@ -33,7 +34,13 @@ PROVIDERS = {
 		"active_filter": {"status": "Active"},
 		"ingress_prefix": "custom_",
 		"token_field": "custom_webhook_token",
-		"build_urls": lambda host, doc, token: [f"{host}/webhooks/whatsapp/wati/{token}"],
+		"targets": lambda host, doc, token: [
+			{
+				"url": f"{host}/webhooks/whatsapp/wati/{token}",
+				"register_as": "WATI dashboard · Webhooks — one URL carries every event",
+				"note": "required",
+			}
+		],
 	},
 	"Acefone": {
 		"adapter": "tatva_connect.telephony.adapters.acefone",
@@ -41,12 +48,21 @@ PROVIDERS = {
 		"active_filter": {"enabled": 1},
 		"ingress_prefix": "",
 		"token_field": "webhook_token",
-		"build_urls": lambda host, doc, token: [
-			f"{host}/webhooks/telephony/{(doc.get('provider') or '').lower()}/{token}/{ev}"
-			for ev in _TELEPHONY_EVENTS
+		"targets": lambda host, doc, token: [
+			{
+				"url": f"{host}/webhooks/telephony/{(doc.get('provider') or '').lower()}/{token}/{ev}",
+				"register_as": register_as,
+				"note": note,
+			}
+			for ev, register_as, note in _TELEPHONY_TARGETS
 		],
 	},
 }
+
+
+def urls_of(cfg, host, doc, token):
+	"""Just the URLs of a provider's targets — for a caller that wants the links, not the guidance."""
+	return [t["url"] for t in cfg["targets"](host, doc, token)]
 
 
 def by_service(service):

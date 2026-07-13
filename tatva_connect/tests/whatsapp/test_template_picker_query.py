@@ -5,6 +5,7 @@ must describe each template with its account and the grains that route to it, so
 template with the account and grain in front of them. Real Frappe engine as the oracle (S.6): a real
 account, real routing rows, real (mirrored) templates, and the real permission layer for the gate.
 """
+import hashlib
 import unittest
 
 import frappe
@@ -18,13 +19,18 @@ _GRAIN_1 = GRAINS[1]
 _PROBE_USER = "template-picker-probe@example.com"
 
 
+
+def _channel_number(name):
+	"""A distinct WABA number per account — the field is unique."""
+	return f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}"
+
 def _make_wati_account(name):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
 		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
 		"url": "https://live-mt-server.wati.io/000003", "token": "template-picker-test-token",
-		"custom_provider": "WATI",
+		"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
 	}).insert(ignore_permissions=True).name
 
 

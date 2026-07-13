@@ -44,7 +44,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Step 1 - Telephony Accounts",
+   "label": "Telephony Accounts",
    "link_to": "CRM Telephony Account",
    "stats_filter": "[]",
    "type": "DocType"
@@ -76,7 +76,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Step 2 - Routing & Numbers",
+   "label": "Telephony Routing",
    "link_to": "CRM Telephony Routing",
    "stats_filter": "[]",
    "type": "DocType"
@@ -84,7 +84,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Step 3 - Agents",
+   "label": "User Mapping",
    "link_to": "CRM Telephony Agent Map",
    "stats_filter": "[]",
    "type": "DocType"
@@ -92,7 +92,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Step 4 - Capture Rules",
+   "label": "Capture Rules",
    "link_to": "CRM Telephony Settings",
    "stats_filter": "[]",
    "type": "DocType"

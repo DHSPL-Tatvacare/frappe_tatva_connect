@@ -9,6 +9,7 @@ actual delivery function `sends._deliver_whatsapp` is tested directly with a spi
 engine as the oracle (S.6) - real routing rows, a real rule fired through the real dispatcher for the
 through-the-dispatcher cases.
 """
+import hashlib
 import unittest
 
 import frappe
@@ -23,7 +24,8 @@ _RUN_LOG = "CRM Automation Run Log"
 _DT = "CRM Automation Rule"
 _FIELD = field_allowlist.DOCTYPE
 _GRAIN_A = GRAINS[0]
-_GRAIN_B = GRAINS[1]
+# The two grains must differ by product line + group, not only by program: both leads carry ONE number, and `ix_lead_dedup_unique` is (mobile, vertical, group). Two programs inside one group cannot hold the same patient — the case this suite proves is one patient enrolled in two businesses.
+_GRAIN_B = GRAINS[2]
 _AXES_A = (_GRAIN_A["vertical"], _GRAIN_A["group"], _GRAIN_A["program"])
 _PREFIX = "RoutingGuard-"
 _DELIVER_METHOD = "tatva_connect.automation.sends._deliver_whatsapp"
@@ -40,13 +42,18 @@ def _make_lead(grain, **extra):
 	return frappe.get_doc(payload).insert(ignore_permissions=True)
 
 
+
+def _channel_number(name):
+	"""A distinct WABA number per account — the field is unique."""
+	return f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}"
+
 def _make_wati_account(name):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
 		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
 		"url": "https://live-mt-server.wati.io/000001", "token": "routing-guard-test-token",
-		"custom_provider": "WATI",
+		"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
 	}).insert(ignore_permissions=True).name
 
 

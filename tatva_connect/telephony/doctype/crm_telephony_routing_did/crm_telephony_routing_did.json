@@ -14,7 +14,7 @@
  "fields": [
   {
    "columns": 3,
-   "description": "A number this grain owns. Stored as its last 10 digits: a provider sends the same DID two ways ('9240276210' on an IVR call, '+919240276210' on a Dialer call), so it is normalized on save and matched on the normalized form.",
+   "description": "One number patients dial, e.g. 9240276210. Any format is accepted — it is stored and matched as its last 10 digits, because a provider sends the same number both ways ('9240276210' and '+919240276210'). One number per row, and a number may belong to only one rule.",
    "fieldname": "did_number",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -27,11 +27,12 @@
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Label"
+   "label": "Label",
+   "description": "What this number is used for, e.g. 'Niva Bupa hotline'. Read by people only; nothing routes on it."
   },
   {
    "columns": 3,
-   "description": "Only when this number lives on a DIFFERENT account from the one this rule dials out on — a grain served by two providers. Blank means the rule's own account.",
+   "description": "Set only when this number lives on a DIFFERENT provider account from the one the rule dials out on — the case of one grain reached through two providers. Left blank, the rule's account carries it.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -44,7 +45,8 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Enabled"
+   "label": "Enabled",
+   "description": "Unticked, an inbound call on this number is no longer attributed to this grain — it is dropped, as any unmapped number is."
   }
  ],
  "grid_page_length": 50,

@@ -22,7 +22,7 @@
    "unique": 1
   },
   {
-   "description": "One opt-in row per notification grain the rep has subscribed to. Absence = not subscribed (default OFF).",
+   "description": "One row per notification the rep has opted into. An absent row means not subscribed — every notification ships off. The rep's own Notifications panel writes these rows; this form is the storage behind it.",
    "fieldname": "subscriptions",
    "fieldtype": "Table",
    "label": "Subscriptions",

@@ -19,43 +19,52 @@
    "in_list_view": 1,
    "label": "Provider",
    "options": "Acefone",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2,
+   "description": "The provider whose calls this row decides on.",
+   "default": "Acefone"
   },
   {
-   "default": "Any",
+   "default": "Inbound",
    "fieldname": "direction",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Direction",
    "options": "Any\nInbound\nOutbound",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2,
+   "description": "Inbound is a call a patient placed; Outbound is one a rep placed from the CRM. Any matches both, and scores as the least specific."
   },
   {
-   "default": "Any",
-   "description": "How the call was routed. Every human-answered call in a 363-CDR capture was Dialer-routed; the plain IVR path never reached a person.",
+   "default": "Dialer",
+   "description": "How the call was routed by the provider: Dialer is an agent-dialled leg, IVR a call that came through a menu or queue. Any matches both. Every human-answered call in 363 captured CDRs arrived as Dialer.",
    "fieldname": "channel",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Channel",
    "options": "Any\nDialer\nIVR",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2
   },
   {
    "default": "Capture",
-   "description": "Ignore still logs the raw payload -- it only declines to build a Call Log from it. Nothing is lost; an ignored call can be replayed if you change your mind.",
+   "description": "Capture writes the call as a CRM Call Log. Ignore declines to — the raw payload is still stored and remains replayable. At equal specificity Ignore wins, so an exception can be carved out of a broader Capture row.",
    "fieldname": "action",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action",
    "options": "Capture\nIgnore",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Enabled"
+   "label": "Enabled",
+   "columns": 1,
+   "description": "Unticked, this row is not considered at all."
   }
  ],
  "grid_page_length": 50,

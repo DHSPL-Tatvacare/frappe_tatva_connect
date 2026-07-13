@@ -10,6 +10,7 @@ are spied (never a mocked verdict on the gate/routing logic itself). The switch 
 a test-scoped monkeypatch of `sends.sends_enabled`, never a persisted DB write (brief, Part D) — the
 crux is that dormant-by-default suppresses for real, not that a test remembered to reset a row.
 """
+import hashlib
 import unittest
 
 import frappe
@@ -47,13 +48,18 @@ def _make_lead(**extra):
 	return frappe.get_doc(payload).insert(ignore_permissions=True)
 
 
+
+def _channel_number(name):
+	"""A distinct WABA number per account — the field is unique."""
+	return f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}"
+
 def _make_wati_account(name):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
 		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
 		"url": "https://live-mt-server.wati.io/000000", "token": "sends-gate-test-token",
-		"custom_provider": "WATI",
+		"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
 	}).insert(ignore_permissions=True).name
 
 

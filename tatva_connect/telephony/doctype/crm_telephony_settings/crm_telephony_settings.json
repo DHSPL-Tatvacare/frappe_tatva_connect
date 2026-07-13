@@ -17,22 +17,22 @@
   {
    "fieldname": "section_break_ingress",
    "fieldtype": "Section Break",
-   "label": "Webhook Ingress"
+   "label": "Webhook Ingress (inbound rate limit)"
   },
   {
    "fieldname": "webhook_rate_limit_per_minute",
    "fieldtype": "Int",
    "label": "Webhook Rate Limit (per minute, per caller IP)",
-   "description": "Deliveries accepted from one caller address per minute, per endpoint. Above it, Frappe answers 429 and the provider backs off. 0 falls back to the built-in default.",
+   "description": "Inbound deliveries accepted from one caller address in a minute, on each webhook endpoint. Past the cap the provider is answered 429 and backs off, and its own retry re-delivers the call, so nothing is dropped. Left at 0 the built-in default applies (120 for telephony).",
    "default": "120"
   },
   {
    "fieldname": "section_break_capture",
    "fieldtype": "Section Break",
-   "label": "Capture Policy"
+   "label": "Capture Policy (which calls become Call Logs)"
   },
   {
-   "description": "Which calls become CRM Call Logs. EMPTY CAPTURES NOTHING -- this table decides, and it ships blank on purpose. To start logging inbound Dialer calls, add one row: Acefone / Inbound / Dialer / Capture. A call that no rule captures is still logged raw (Integration Request) and stays replayable; it just does not become a Call Log. A call on a number that is not listed on any CRM Telephony Routing rule is dropped regardless of this table -- that is what keeps other businesses off a shared provider account out of this CRM.",
+   "description": "A provider reports every call it carries. This table decides which of them are written as a CRM Call Log a rep can see. It ships blank, and a blank table captures nothing — so telephony is turned on by adding a row, never by a default. Two rows cover the normal setup: Acefone / Inbound / Dialer / Capture, and Acefone / Outbound / Dialer / Capture. Dialer is the leg a person handled; IVR is the menu or queue leg, so capturing IVR would write call logs for calls no rep took. The most specific matching row wins, and Ignore beats Capture at equal specificity, so a narrow exception can be carved out of a broader rule. An ignored or unmatched call is still logged raw (Integration Request) and stays replayable — it simply does not become a Call Log. A call on a number listed on no CRM Telephony Routing rule is dropped whatever this table says. Every column is a dropdown; open a row with the pencil for the full note on each.",
    "fieldname": "capture_rules",
    "fieldtype": "Table",
    "label": "Capture Rules",
@@ -45,7 +45,7 @@
   },
   {
    "default": "0",
-   "description": "Ask Acefone to record outgoing (click-to-call) calls.",
+   "description": "Asks the provider to record outgoing click-to-call calls. The recording is fetched from the URL in the provider's webhook, and only from a host on the account's Recording Host Allowlist when one is set.",
    "fieldname": "record_call",
    "fieldtype": "Check",
    "label": "Record Outgoing Calls"

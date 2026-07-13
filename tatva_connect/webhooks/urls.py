@@ -35,5 +35,7 @@ def get_account_webhook_urls(account_doctype, name):
 	doc = frappe.get_cached_doc(account_doctype, name)
 	token = doc.get_password(cfg["token_field"], raise_exception=False)
 	if not token:
-		return {"token_set": False, "urls": []}
-	return {"token_set": True, "urls": cfg["build_urls"](get_url().rstrip("/"), doc, token)}
+		return {"token_set": False, "urls": [], "targets": []}
+	# `targets` carries the provider-dashboard config each URL belongs to; `urls` stays a plain list for the Copy button and the back-compat caller.
+	targets = cfg["targets"](get_url().rstrip("/"), doc, token)
+	return {"token_set": True, "urls": [t["url"] for t in targets], "targets": targets}

@@ -180,7 +180,7 @@ class TestTelephonyGates(FrappeTestCase):
 
 def _rule(direction, channel, action="Capture"):
 	return {
-		"provider": "Acefone",
+		"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001",
 		"direction": direction,
 		"channel": channel,
 		"action": action,
@@ -281,7 +281,7 @@ def _ensure_fixtures():
 			{
 				"doctype": "CRM Telephony Account",
 				"account_name": ACCOUNT,
-				"provider": "Acefone",
+				"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001",
 				"enabled": 1,
 			}
 		).insert(ignore_permissions=True)

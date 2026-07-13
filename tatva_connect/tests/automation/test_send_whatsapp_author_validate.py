@@ -7,6 +7,7 @@ is not an authoring error - the rule saves with a warning, and the send-time gua
 (see test_send_whatsapp_routing_guard.py). Real Frappe engine as the oracle (S.6): a real rule
 insert/save through the real controller, a real routing row, a real (mirrored) template.
 """
+import hashlib
 import unittest
 
 import frappe
@@ -19,13 +20,18 @@ _GRAIN = GRAINS[0]
 _PREFIX = "AuthorValidate-"
 
 
+
+def _channel_number(name):
+	"""A distinct WABA number per account — the field is unique."""
+	return f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}"
+
 def _make_wati_account(name):
 	if frappe.db.exists("WhatsApp Account", name):
 		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
 		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
 		"url": "https://live-mt-server.wati.io/000002", "token": "author-validate-test-token",
-		"custom_provider": "WATI",
+		"custom_provider": "WATI", "custom_wati_channel_number": _channel_number(name),
 	}).insert(ignore_permissions=True).name
 
 

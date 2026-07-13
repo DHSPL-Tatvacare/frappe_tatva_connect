@@ -21,34 +21,37 @@
   {
    "fieldname": "section_server",
    "fieldtype": "Section Break",
-   "label": "Server — FCM HTTP v1"
+   "label": "Server (the CRM sends the push)"
   },
   {
-   "description": "Firebase service-account key (Project Settings → Service accounts → Generate new private key). Paste the JSON minified to one line, or its base64. Stored encrypted. project_id is read from inside it — no separate field.",
+   "description": "The service-account key the CRM signs its push calls with, from Firebase: Project Settings → Service accounts → Generate new private key. Paste the JSON on one line, or its base64. It is stored encrypted, and the project id is read from inside it — there is no separate field for it.",
    "fieldname": "service_account_json",
    "fieldtype": "Password",
-   "label": "Service Account JSON"
+   "label": "Firebase Service Account JSON"
   },
   {
    "description": "Public Firebase web-app config the browser SDK needs to register a device token. Not secret (ships in client code). Project Settings → General → Your apps (Web).",
    "fieldname": "section_web",
    "fieldtype": "Section Break",
-   "label": "Web Push — Browser SDK"
+   "label": "Browser (the rep's browser registers for push)"
   },
   {
    "fieldname": "web_api_key",
    "fieldtype": "Password",
-   "label": "Web API Key"
+   "label": "Web API Key",
+   "description": "From Firebase: Project Settings → General → Your apps → Web. Public by design — it ships in the browser and identifies the project; it grants nothing on its own."
   },
   {
    "fieldname": "web_auth_domain",
    "fieldtype": "Data",
-   "label": "Auth Domain"
+   "label": "Auth Domain",
+   "description": "The same Web app config, field authDomain, e.g. my-project.firebaseapp.com."
   },
   {
    "fieldname": "web_project_id",
    "fieldtype": "Data",
-   "label": "Project ID"
+   "label": "Project ID",
+   "description": "The same Web app config, field projectId. It must name the same Firebase project as the service account above."
   },
   {
    "fieldname": "column_break_web",
@@ -57,18 +60,20 @@
   {
    "fieldname": "web_messaging_sender_id",
    "fieldtype": "Data",
-   "label": "Messaging Sender ID"
+   "label": "Messaging Sender ID",
+   "description": "The same Web app config, field messagingSenderId — the numeric sender the browser registers against."
   },
   {
    "fieldname": "web_app_id",
    "fieldtype": "Data",
-   "label": "Web App ID"
+   "label": "Web App ID",
+   "description": "The same Web app config, field appId."
   },
   {
-   "description": "Web Push certificate key pair (Cloud Messaging → Web configuration → Key pair).",
+   "description": "The public key of the Web Push certificate pair, from Firebase: Cloud Messaging → Web configuration → Key pair. Without it a browser cannot be issued a device token, so no rep receives a push.",
    "fieldname": "vapid_key",
    "fieldtype": "Password",
-   "label": "VAPID Key"
+   "label": "VAPID Key (Web Push certificate)"
   }
  ],
  "grid_page_length": 50,

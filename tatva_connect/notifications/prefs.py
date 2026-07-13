@@ -10,8 +10,8 @@ PREFERENCE = "CRM Notification Preference"
 SUBSCRIPTION = "CRM Notification Subscription"
 
 
-def subscribers(grain_key: str, users) -> list:
-	"""Return the subset of `users` opted into `grain_key` (any enabled channel).
+def subscribers(event_key: str, users) -> list:
+	"""Return the subset of `users` opted into `event_key` (any enabled channel).
 
 	One batched query over the child table joined to its parent — no per-user read.
 	"""
@@ -24,7 +24,7 @@ def subscribers(grain_key: str, users) -> list:
 			"parenttype": PREFERENCE,
 			"parentfield": "subscriptions",
 			"parent": ["in", users],
-			"grain_key": grain_key,
+			"event_key": event_key,
 			"enabled": 1,
 		},
 		pluck="parent",

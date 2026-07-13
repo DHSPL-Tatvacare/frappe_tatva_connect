@@ -16,28 +16,28 @@
   {
    "fieldname": "section_break_ingress",
    "fieldtype": "Section Break",
-   "label": "Webhook Ingress"
+   "label": "Webhook Ingress (inbound rate limit)"
   },
   {
    "fieldname": "webhook_rate_limit_per_minute",
    "fieldtype": "Int",
    "label": "Webhook Rate Limit (per minute, per caller IP)",
-   "description": "Deliveries accepted from one caller address per minute, per endpoint. Above it, Frappe answers 429 and the provider backs off. 0 falls back to the built-in default.",
+   "description": "Inbound deliveries accepted from one caller address in a minute, on each webhook endpoint. Past the cap the provider is answered 429 and backs off, and its own retry re-delivers the message, so nothing is dropped. Left at 0 the built-in default applies (600 for WhatsApp).",
    "default": "600"
   },
   {
    "fieldname": "section_template_caps",
    "fieldtype": "Section Break",
-   "label": "Template Rate Caps"
+   "label": "Template Rate Caps (manual sends, per lead)"
   },
   {
-   "description": "Max manual template sends per lead in a rolling hour. Blank or 0 disables (default 5).",
+   "description": "Manual template sends allowed to one lead in a rolling hour — the chat-box picker only, so automated and rule-driven sends are never throttled. Left blank the default of 5 applies; an explicit 0 removes the cap.",
    "fieldname": "template_cap_per_hour",
    "fieldtype": "Int",
    "label": "Template Cap / Hour"
   },
   {
-   "description": "Max manual template sends per lead in a rolling 24 hours. Blank or 0 disables (default 10).",
+   "description": "The same cap over a rolling 24 hours, so a lead cannot be drip-messaged all day inside the hourly limit. Left blank the default of 10 applies; an explicit 0 removes the cap.",
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day"

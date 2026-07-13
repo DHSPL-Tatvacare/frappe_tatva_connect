@@ -6,17 +6,19 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "grain_key",
+  "event_key",
   "channel",
   "enabled"
  ],
  "fields": [
   {
-   "fieldname": "grain_key",
+   "fieldname": "event_key",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Grain",
-   "reqd": 1
+   "label": "Event",
+   "reqd": 1,
+   "columns": 6,
+   "description": "The moment the rep is told about, e.g. Lead::Assignment::assigned. Written by the rep's Notifications panel from the notification catalog — a value typed by hand that is not in the catalog matches nothing and notifies no one."
   },
   {
    "default": "live",
@@ -25,14 +27,18 @@
    "in_list_view": 1,
    "label": "Channel",
    "options": "live",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 3,
+   "description": "live delivers in-app while the rep has the app open, and a mobile push when they are away."
   },
   {
    "default": "0",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Enabled"
+   "label": "Enabled",
+   "columns": 1,
+   "description": "Unticked, the rep is not subscribed to this event."
   }
  ],
  "grid_page_length": 50,
