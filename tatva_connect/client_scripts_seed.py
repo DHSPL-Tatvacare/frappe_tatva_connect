@@ -24,6 +24,7 @@ SCRIPTS = [
 	("CRM Push Settings Helpers", "CRM Push Settings", "Form", "notifications/client_scripts/push_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
 	("CRM Intake Form Builder", "CRM Intake Form", "Form", "intake/client_scripts/crm_intake_form.js"),
+	("CRM Tatva Automation Description", "CRM Tatva Automation", "Form", "automation/client_scripts/crm_tatva_automation.js"),
 	("Webhook Delivery Replay", "Integration Request", "Form", "webhooks/client_scripts/integration_request.js"),
 	("Webhook Delivery Replay (List)", "Integration Request", "List", "webhooks/client_scripts/integration_request_list.js"),
 ]

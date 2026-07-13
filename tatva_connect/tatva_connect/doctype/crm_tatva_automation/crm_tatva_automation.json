@@ -7,17 +7,25 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_what",
   "automation_key",
-  "description",
   "area",
   "fires_on",
   "trigger_detail",
   "enabled",
   "requires",
-  "scheduled_job"
+  "scheduled_job",
+  "description"
  ],
  "fields": [
   {
+   "fieldname": "section_what",
+   "fieldtype": "Section Break",
+   "label": "What This Automation Does",
+   "description": "What this automation does while it is enabled, what stands in its place while it is not, and one example of the moment a user meets it."
+  },
+  {
+   "description": "The automation's name and its identity, read as Area::Subject::Behaviour. It is owned by the code catalog and cannot be renamed or created by hand.",
    "fieldname": "automation_key",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -28,6 +36,7 @@
    "unique": 1
   },
   {
+   "description": "The part of the CRM this automation acts on, taken from the first segment of the key. It is derived, not chosen, and is what the list groups by.",
    "fieldname": "area",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -35,6 +44,7 @@
    "read_only": 1
   },
   {
+   "description": "What makes this automation run: a Doc Event (a record is saved, created or deleted), a Schedule (a background job on a clock), a Provider call (a request to or from an outside service), or a Permission check (a list or a record is read).",
    "fieldname": "fires_on",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -43,7 +53,7 @@
    "read_only": 1
   },
   {
-   "description": "Read as DocType · event — the record(s) and moment(s) that make this automation fire (e.g. CRM Task · validate = when a task is saved).",
+   "description": "The exact record and moment that make it fire, read as DocType · event. CRM Task · validate, for instance, means it rides every save of a task.",
    "fieldname": "trigger_detail",
    "fieldtype": "Data",
    "label": "Trigger Detail",
@@ -51,27 +61,31 @@
   },
   {
    "default": "0",
-   "description": "The ONE operator-owned field. ON = the tatva_connect hook rides and enforces; OFF = dormant, native frappe/crm behaviour stands. Toggle here or inline in the list; your choice survives every deploy.",
+   "description": "The one field an operator owns. Ticked, the tatva_connect hook rides and enforces what the description below sets out; unticked, the automation is dormant and native frappe/crm behaviour stands in its place. It can be toggled here or inline in the list, and the choice survives every deploy.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled"
   },
   {
+   "description": "The automation this one leans on. It stays dormant until that one is enabled as well, however this switch is set, so the dependency is enabled first.",
    "fieldname": "requires",
    "fieldtype": "Data",
    "label": "Requires",
    "read_only": 1
   },
   {
+   "description": "The background job a scheduled automation runs on. It is blank for every automation that fires on a doc event, a provider call or a permission check.",
    "fieldname": "scheduled_job",
    "fieldtype": "Data",
    "label": "Scheduled Job",
    "read_only": 1
   },
   {
+   "description": "What this automation does while it is enabled, what stands in its place while it is not, and one example of the moment a user meets it. Code-owned reference text, re-seeded on every deploy.",
    "fieldname": "description",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Description",
    "read_only": 1
   }

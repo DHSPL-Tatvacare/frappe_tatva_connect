@@ -3,24 +3,33 @@
  "allow_rename": 0,
  "autoname": "format:{doctype_name}::{child_table_field}::{fieldname}::{vertical}::{group}::{program}",
  "creation": "2026-07-07 00:00:00.000000",
- "description": "Fail-closed field allowlist for the Automation engine (read + write in one table). can_read = a rule criterion may test it; can_watch = a change to it may fire a rule (implies can_read); can_set = an action may write it (grain-scoped). Ships EMPTY - a field not listed here can neither be tested, watched nor set. System Manager curates; ops author rules within it.",
+ "description": "The allowlist the automation engine reads before it goes near a field. It ships empty and is fail-closed: a field that is not listed here can neither be tested by a rule, nor watched for changes, nor written to by one. A System Manager curates the list; ops then author rules inside it.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_field",
   "doctype_name",
   "fieldname",
+  "enabled",
+  "section_permissions",
   "can_read",
   "can_watch",
   "can_set",
+  "section_child",
   "child_table_field",
   "is_row_key",
+  "section_grain",
   "vertical",
   "group",
-  "program",
-  "enabled"
+  "program"
  ],
  "fields": [
+  {
+   "fieldname": "section_field",
+   "fieldtype": "Section Break",
+   "label": "The Field"
+  },
   {
    "fieldname": "doctype_name",
    "fieldtype": "Link",
@@ -28,7 +37,7 @@
    "options": "DocType",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The doctype the field lives on."
+   "description": "The record the field lives on — CRM Lead, CRM Task, and so on. A field is allowlisted per doctype, so status on a task and status on a lead are two separate rows and are permitted separately."
   },
   {
    "fieldname": "fieldname",
@@ -36,66 +45,7 @@
    "label": "Fieldname",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The field."
-  },
-  {
-   "fieldname": "can_read",
-   "fieldtype": "Check",
-   "label": "Can Read",
-   "in_list_view": 1,
-   "description": "A rule criterion may test this field. Criterion doctypes: CRM Lead / CRM Task."
-  },
-  {
-   "fieldname": "can_watch",
-   "fieldtype": "Check",
-   "label": "Can Watch",
-   "in_list_view": 1,
-   "description": "A change to this field may fire a rule, and a transition operator may test it. Implies Can Read."
-  },
-  {
-   "fieldname": "can_set",
-   "fieldtype": "Check",
-   "label": "Can Set",
-   "in_list_view": 1,
-   "description": "This field may be written by a Set Field / child-row action."
-  },
-  {
-   "fieldname": "child_table_field",
-   "fieldtype": "Data",
-   "label": "Child Table Field",
-   "depends_on": "eval:doc.can_set",
-   "description": "Set-only: the parent's child-table field to write into. Blank = a parent field."
-  },
-  {
-   "fieldname": "is_row_key",
-   "fieldtype": "Check",
-   "label": "Is Row Key",
-   "depends_on": "eval:doc.can_set && doc.child_table_field",
-   "description": "Set-only: this child field is the upsert match key."
-  },
-  {
-   "fieldname": "vertical",
-   "fieldtype": "Link",
-   "options": "CRM Vertical",
-   "label": "Vertical",
-   "depends_on": "eval:doc.can_set",
-   "description": "Set-only grain scope. Blank = wildcard."
-  },
-  {
-   "fieldname": "group",
-   "fieldtype": "Link",
-   "options": "CRM Group",
-   "label": "Group",
-   "depends_on": "eval:doc.can_set",
-   "description": "Set-only grain scope. Blank = wildcard."
-  },
-  {
-   "fieldname": "program",
-   "fieldtype": "Link",
-   "options": "CRM Program",
-   "label": "Program",
-   "depends_on": "eval:doc.can_set",
-   "description": "Set-only grain scope. Blank = wildcard."
+   "description": "The field's internal name rather than the label a rep sees — status, custom_substage, outcome. It is the name a rule refers to, so a typo here does not error; the rule simply never matches anything."
   },
   {
    "default": "1",
@@ -103,7 +53,86 @@
    "fieldtype": "Check",
    "label": "Enabled",
    "in_list_view": 1,
-   "description": "Fail-closed: active only while ticked."
+   "description": "Unticked, the row is ignored altogether and the field goes back to being disallowed — the allowlist is fail-closed, so withdrawing a field is a matter of unticking it rather than deleting the row and losing its grain scope."
+  },
+  {
+   "fieldname": "section_permissions",
+   "fieldtype": "Section Break",
+   "label": "What Rules May Do With It",
+   "description": "Nothing is permitted until it is ticked here. The three permissions are independent and are granted one at a time: a field can be safe to read and still be dangerous to write."
+  },
+  {
+   "fieldname": "can_read",
+   "fieldtype": "Check",
+   "label": "Can Read",
+   "in_list_view": 1,
+   "description": "A rule may test this field in its criteria — 'status is Done', 'city is Pune'. Reading lets a rule look at the field and nothing more: a change to it starts nothing, and no rule can write to it."
+  },
+  {
+   "fieldname": "can_watch",
+   "fieldtype": "Check",
+   "label": "Can Watch",
+   "in_list_view": 1,
+   "description": "A change to this field may start a rule, and a rule may test the change itself — 'status moved from Open to Done'. This is what turns the field into a trigger rather than a condition. Watching implies reading, so a watched field can always be tested as well."
+  },
+  {
+   "fieldname": "can_set",
+   "fieldtype": "Check",
+   "label": "Can Set",
+   "in_list_view": 1,
+   "description": "A rule's Set Field action may write this field. It is the only tick that lets an automation change patient data, so it is the one to be sparing with — once granted, any rule inside the grain below can overwrite the field on every record it covers."
+  },
+  {
+   "fieldname": "section_child",
+   "fieldtype": "Section Break",
+   "label": "Where A Set Writes",
+   "depends_on": "eval:doc.can_set",
+   "description": "By default a Set writes the field on the record itself. Fill these in only when it should write into a child table instead."
+  },
+  {
+   "fieldname": "child_table_field",
+   "fieldtype": "Data",
+   "label": "Child Table Field",
+   "depends_on": "eval:doc.can_set",
+   "description": "The table on the parent record to write into — left blank, the Set writes the parent's own field. Named, the Set writes into a row of that table, and Fieldname above is read as a column inside it."
+  },
+  {
+   "fieldname": "is_row_key",
+   "fieldtype": "Check",
+   "label": "Is Row Key",
+   "depends_on": "eval:doc.can_set && doc.child_table_field",
+   "description": "The column a child-row Set matches on to decide whether it is updating a row that already exists or adding a new one. With no row key, every run of the rule adds another row."
+  },
+  {
+   "fieldname": "section_grain",
+   "fieldtype": "Section Break",
+   "label": "Which Grains May Set It",
+   "depends_on": "eval:doc.can_set",
+   "description": "The write is confined to the grain named here. Each level left blank is a wildcard, and a row left wholly blank lets any grain's rule write the field. Reading and watching are never scoped this way — the grain governs writes alone."
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "options": "CRM Vertical",
+   "label": "Vertical",
+   "depends_on": "eval:doc.can_set",
+   "description": "The product line a rule must belong to before it may write this field. Blank is a wildcard."
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "options": "CRM Group",
+   "label": "Group",
+   "depends_on": "eval:doc.can_set",
+   "description": "Narrows the write further, to one group inside that vertical. Blank is a wildcard."
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "options": "CRM Program",
+   "label": "Program",
+   "depends_on": "eval:doc.can_set",
+   "description": "The narrowest scope of the three: only a rule under this program may write the field. Blank is a wildcard."
   }
  ],
  "index_web_pages_for_search": 1,
