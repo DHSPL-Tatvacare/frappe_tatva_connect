@@ -81,7 +81,7 @@
     "schemas": {
       "CRMLeadUniversal": {
         "type": "object",
-        "description": "Universal fields on the lead itself. The top-level fields a key may send and read live here, and child tables embed as arrays. The exact fields a key is granted are listed by `lead_schema`.",
+        "description": "The lead's own top-level fields. The exact set a key may send and read is listed by `lead_schema`.",
         "properties": {
           "name": {
             "type": "string",
@@ -323,7 +323,7 @@
       },
       "PlanProfile": {
         "type": "object",
-        "description": "A plan, subscription, or program profile row, sent as a JSON array under `custom_plan_profile`. The exact fields available are key-specific and are discovered via `lead_schema` (`data.children.custom_plan_profile.fields`). A field list must not be hardcoded.",
+        "description": "A plan or programme profile row, sent as an array under `custom_plan_profile`. Its fields are key-specific: discover them with [`lead_schema`](/discover-schema).",
         "additionalProperties": true,
         "properties": {
           "name": {
@@ -334,7 +334,7 @@
       },
       "LabProfile": {
         "type": "object",
-        "description": "A lab-values and vitals profile row, sent as a JSON array under `custom_lab_profile`. The exact fields available are key-specific and are discovered via `lead_schema` (`data.children.custom_lab_profile.fields`). A field list must not be hardcoded.",
+        "description": "A lab-values and vitals profile row, sent as an array under `custom_lab_profile`. Its fields are key-specific: discover them with [`lead_schema`](/discover-schema).",
         "additionalProperties": true,
         "properties": {
           "name": {
@@ -345,7 +345,7 @@
       },
       "CareProvidersProfile": {
         "type": "object",
-        "description": "A care-team and providers profile row, sent as a JSON array under `custom_care_providers_profile`. The exact fields available are key-specific and are discovered via `lead_schema` (`data.children.custom_care_providers_profile.fields`). A field list must not be hardcoded.",
+        "description": "A care-team profile row, sent as an array under `custom_care_providers_profile`. Its fields are key-specific: discover them with [`lead_schema`](/discover-schema).",
         "additionalProperties": true,
         "properties": {
           "name": {
@@ -356,7 +356,7 @@
       },
       "UpsertLeadRequest": {
         "type": "object",
-        "description": "Request body for `lead_create`. Only `mobile_no` is strictly required (the dedup anchor); `first_name` and `status` are default-filled if missing (`(no name)` and `New`). All other fields are optional and must be within the fields the key is allowed to send (`lead_schema` lists them). Routing is never sent; it is set server-side. Profile children embed as arrays and merge field by field.",
+        "description": "Request body for `lead_create`. Only `mobile_no` is strictly required. See [Writes and retries](/writes-and-retries).",
         "allOf": [
           {
             "$ref": "#/components/schemas/CRMLeadUniversal"
@@ -377,7 +377,7 @@
       },
       "LeadUpdateRequest": {
         "type": "object",
-        "description": "Request body for `lead_update`. Carries the CRM `name` (the id `lead_create` returned) plus any allowed fields to change. Parent fields that are sent are updated, fields that are omitted are left alone, and profile children merge field by field. Routing cannot be changed; it is fixed to the key.",
+        "description": "Request body for `lead_update`, addressed by the CRM `name`. Omitted fields are left alone.",
         "allOf": [
           {
             "$ref": "#/components/schemas/CRMLeadUniversal"
@@ -402,7 +402,7 @@
       },
       "PartnerError": {
         "type": "object",
-        "description": "The single error envelope returned by every failure. Branch on `error.code`; the full `error.code`-to-HTTP map is on the [Errors](/partner-errors) page.",
+        "description": "The single error envelope returned by every failure. Branch on `error.code`; the full map is on the [Errors](/partner-errors) page.",
         "properties": {
           "status": {
             "type": "string",
@@ -453,7 +453,7 @@
       },
       "PartnerWriteResponse": {
         "type": "object",
-        "description": "Success envelope from every single-record write and read. It is emitted at the top level; there is no `message` wrapper. `status` is read first, then `action`, then `data`. A failure instead returns the PartnerError envelope with a non-2xx status.",
+        "description": "Success envelope from every single-record write and read. See [Responses](/responses).",
         "properties": {
           "status": {
             "type": "string",
@@ -485,7 +485,7 @@
       },
       "PartnerReadResponse": {
         "type": "object",
-        "description": "Success envelope from `lead_get` / `lead_list`. Top-level (no `message` wrapper). `action` is `fetched`; `data` carries the curated lead (`lead_get`) or the page object (`lead_list`).",
+        "description": "Success envelope from `lead_get` and `lead_list`. See [Responses](/responses).",
         "properties": {
           "status": {
             "type": "string",
@@ -506,7 +506,7 @@
       },
       "PartnerSchemaResponse": {
         "type": "object",
-        "description": "Success envelope from every `*_schema` discovery method. `data` carries the SAME four blocks on every entity: `entity`, `identity` (how records are addressed), `dedup` (how uniqueness is decided, always by the CRM and never by an `external_id`), and `bulk` (the per-call and page ceilings). `fields` carries the field descriptors, each marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. Entity-specific blocks are added alongside.",
+        "description": "Success envelope from every `*_schema` discovery method. See [Schema discovery](/discover-schema).",
         "properties": {
           "status": {
             "type": "string",
@@ -568,7 +568,7 @@
       },
       "PartnerBulkResultEntry": {
         "type": "object",
-        "description": "One record's outcome inside a bulk response. `status` is `success` or `error` per row. A success carries `action` and `data` (the full record; a delete carries `{name}`). An error carries the same `error: {code, message}` block as the top-level PartnerError.",
+        "description": "One record's outcome inside a bulk response. See [Responses](/responses).",
         "properties": {
           "index": {
             "type": "integer",
@@ -615,7 +615,7 @@
       },
       "PartnerBulkResponse": {
         "type": "object",
-        "description": "Partial-success envelope shared by EVERY bulk method — reads and writes alike. It is emitted at the top level; there is no `message` wrapper. Each record is handled independently: a write runs in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered, so `results[i]` is the i-th record of the request. The HTTP status is 200 even when individual rows failed; `results[].status` is inspected per row.",
+        "description": "Partial-success envelope shared by every bulk method, read and write alike. See [Responses](/responses).",
         "properties": {
           "status": {
             "type": "string",
@@ -670,7 +670,7 @@
           "behavior",
           "required"
         ],
-        "description": "One field a caller may send, as every `*_schema` endpoint describes it. `behavior` is the AIP-203 field behavior and `required` is the boolean a client branches on. There is no `reqd`.",
+        "description": "One field a caller may send, as every `*_schema` method describes it. See [Schema discovery](/discover-schema).",
         "properties": {
           "fieldname": {
             "type": "string"
@@ -712,7 +712,7 @@
       },
       "ActivityType": {
         "type": "object",
-        "description": "One line-scoped activity type available to a lead, returned by `activity_schema`. Pick a `name` and send its `fields` under `values`.",
+        "description": "One line-scoped activity type available to a lead, returned by `activity_schema`.",
         "properties": {
           "name": {
             "type": "string",
@@ -738,7 +738,7 @@
       },
       "Activity": {
         "type": "object",
-        "description": "The partner-facing shape of an activity. `values` is re-keyed to the type's schema `fieldname`s; read and write activity data through `values`, never internal fields.",
+        "description": "The partner-facing shape of an activity. Its data is read and written through `values`.",
         "properties": {
           "name": {
             "type": "string",
@@ -772,7 +772,7 @@
       },
       "ActivityUpsertRequest": {
         "type": "object",
-        "description": "Body for `activity_create` and `activity_update`. On a create, the lead is targeted by `lead` (its CRM `name`) OR `mobile_no`. On an update, the activity is targeted by its own `name`. `task_type` names the activity type, and `values` carries the data keyed by the type's `fieldname`s, as advertised by `activity_schema` for that lead.\n\nA create does NOT deduplicate: a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record. Optional `created_at` backdates the activity for a historical load.",
+        "description": "Body for `activity_create` and `activity_update`. See [Writes and retries](/writes-and-retries).",
         "properties": {
           "lead": {
             "type": "string",
@@ -814,7 +814,7 @@
       },
       "File": {
         "type": "object",
-        "description": "The partner-facing shape of a file on a lead (or a scoped activity task). Files are **always private**; `file_url` is a proxy URL, never a raw storage key or local path.",
+        "description": "The partner-facing shape of a file on a lead. Every file is private. See [Files](/files).",
         "properties": {
           "name": {
             "type": "string",
@@ -857,7 +857,7 @@
       },
       "FileAttachRequest": {
         "type": "object",
-        "description": "Body for `file_attach`. The lead is targeted by `lead` OR `mobile_no`, and the file optionally homed on a scoped `activity` (a CRM Task) or `note` on that lead. The bytes are supplied as a downloadable `file_url` OR as `content_base64` — exactly one is sent.\n\nAn attach does NOT deduplicate: re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.",
+        "description": "Body for `file_attach`. The bytes are supplied as `file_url` or `content_base64`, exactly one. See [Files](/files).",
         "properties": {
           "lead": {
             "type": "string",
@@ -904,7 +904,7 @@
       },
       "Call": {
         "type": "object",
-        "description": "The partner-facing shape of a call log. **`lead` may be `null`** when no phone match or an ambiguous (2+) match was found; fail-closed attribution never attaches a call to the wrong lead. Always read `lead` to know whether the call was linked.",
+        "description": "The partner-facing shape of a call log. `lead` is `null` when attribution found no match or an ambiguous one.",
         "properties": {
           "name": {
             "type": "string",
@@ -957,7 +957,7 @@
       },
       "CallUpsertRequest": {
         "type": "object",
-        "description": "Body for `call_create` and `call_update`. `direction` (Inbound or Outbound) is required on a create. On an update, the call is targeted by its own `name`.\n\nAttribution: `lead` or `mobile_no` targets a lead explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound) within the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`.\n\nA create does NOT deduplicate: a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record. Optional `started_at` backdates the call on insert.",
+        "description": "Body for `call_create` and `call_update`. See [Writes and retries](/writes-and-retries).",
         "properties": {
           "external_id": {
             "type": "string",
@@ -1016,7 +1016,7 @@
       },
       "EntityListResponse": {
         "type": "object",
-        "description": "Success envelope from every list method (`lead_list` / `activity_list` / `file_list` / `call_list`). It is emitted at the top level; there is no `message` wrapper, and `action` is `fetched`. `data` is a page object carrying the SAME five keys on every entity, plus the entity array under its own plural name (`leads` / `activities` / `files` / `calls`).",
+        "description": "Success envelope from every list method. See [Responses](/responses).",
         "properties": {
           "status": {
             "type": "string",
@@ -1071,7 +1071,7 @@
       },
       "EntityReadResponse": {
         "type": "object",
-        "description": "Success envelope from every single-record endpoint of an entity (`*_schema`, `*_get`, `*_create`, `*_update`, `*_delete`). It is emitted at the top level; there is no `message` wrapper. Every write returns the FULL record in `data`, so a create, an update and a get can never hand back different shapes.",
+        "description": "Success envelope from every single-record endpoint of an entity. See [Responses](/responses).",
         "properties": {
           "status": {
             "type": "string",
