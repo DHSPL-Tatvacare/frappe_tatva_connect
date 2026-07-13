@@ -185,6 +185,9 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 
 	def setUp(self):
 		self._orig_is_enabled = dispatch.automation.is_enabled
+		# The sweep is site-wide: any OTHER user opted into these events would drag their own overdue tasks
+		# into the pass and into these assertions. Only the probe user is subscribed for the duration.
+		frappe.db.delete("CRM Notification Subscription", {"parenttype": "CRM Notification Preference"})
 		_optin(self.user, "Task::Due::soon", "Task::Due::overdue")
 
 	def tearDown(self):
@@ -235,6 +238,58 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		with _Spy() as spy:
 			events.sweep_task_due()
 		self.assertEqual(spy.bells, [])
+
+	def test_a_canceled_task_is_never_swept(self):
+		"""crm spells it `Canceled`, one L. A tuple that says `Cancelled` matches nothing, and a rep is
+		chased about a task they cancelled — which is exactly what shipped."""
+		_gates(**{"Notify::Task::overdue": True})
+		task = self._task(add_to_date(now_datetime(), minutes=-60))
+		frappe.db.set_value("CRM Task", task.name, "status", "Canceled")
+		with _Spy() as spy:
+			events.sweep_task_due()
+		self.assertEqual(spy.bells, [], "a cancelled task must never be called overdue")
+		self.assertEqual(spy.toasts + spy.pushes, [])
+
+	def test_an_overdue_task_older_than_the_floor_is_left_alone(self):
+		"""Without a floor the first pass after the switch is armed announces the whole historical backlog."""
+		_gates(**{"Notify::Task::overdue": True})
+		self._task(add_to_date(now_datetime(), days=-90))  # older than the 7-day default floor
+		with _Spy() as spy:
+			events.sweep_task_due()
+		self.assertEqual(spy.bells, [])
+
+	def test_a_task_whose_rep_has_not_opted_in_is_never_stamped(self):
+		"""The stamp must record that a rep was TOLD. Stamping a task nobody was told about would silence
+		it forever — the rep opts in tomorrow and never hears about it."""
+		_gates(**{"Notify::Task::overdue": True})
+		frappe.db.delete("CRM Notification Subscription", {"parent": self.user})  # opted out of everything
+		task = self._task(add_to_date(now_datetime(), minutes=-60))
+		with _Spy() as spy:
+			events.sweep_task_due()
+		self.assertEqual(spy.bells, [])
+		self.assertIsNone(frappe.db.get_value("CRM Task", task.name, "custom_overdue_notified_for"))
+
+		_optin(self.user, "Task::Due::overdue")  # the rep changes their mind
+		with _Spy() as spy:
+			events.sweep_task_due()
+		self.assertEqual(len(spy.bells), 1, "opting in must not cost the rep the tasks already swept")
+
+	def test_a_task_with_no_lead_gets_no_tray_row(self):
+		"""A row whose click routes to CRM Lead/None is worse than no row; the live channel still fires."""
+		_gates(**{"Notify::Task::overdue": True})
+		frappe.get_doc(
+			{
+				"doctype": "CRM Task",
+				"title": "NotifProbe standalone",
+				"status": "Todo",
+				"assigned_to": self.user,
+				"due_date": add_to_date(now_datetime(), minutes=-60),
+			}
+		).insert(ignore_permissions=True)
+		with _Spy() as spy:
+			events.sweep_task_due()
+		self.assertEqual(spy.bells, [], "no reference -> no tray row")
+		self.assertEqual(len(spy.toasts) + len(spy.pushes), 1, "the rep is still told")
 
 	def test_switch_off_sweeps_nothing(self):
 		_gates()  # both off

@@ -12,3 +12,6 @@ def execute():
 		return
 	frappe.reload_doc("notifications", "doctype", "crm_notification_subscription")
 	rename_field(DOCTYPE, "grain_key", "event_key")
+	# rename_field COPIES: it leaves grain_key behind, now NULL. Left there, a second run would copy those
+	# NULLs over event_key and wipe every rep's opt-ins — so the old column goes, and the guard above can bite.
+	frappe.db.sql_ddl(f"ALTER TABLE `tab{DOCTYPE}` DROP COLUMN `grain_key`")

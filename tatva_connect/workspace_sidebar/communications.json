@@ -211,6 +211,19 @@
    "show_arrow": 0,
    "type": "Link",
    "idx": 17
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "settings",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Notification Settings",
+   "link_to": "CRM Notification Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link",
+   "idx": 18
   }
  ],
  "modified": "2026-07-12 12:00:00.000000",

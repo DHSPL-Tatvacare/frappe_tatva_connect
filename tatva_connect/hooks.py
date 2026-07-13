@@ -191,11 +191,11 @@ doc_events = {
 		],
 		"on_trash": "tatva_connect.intake.intake.bust_intake_doctype_cache",
 	},
-	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
 	"CRM Call Log": {
 		# tell the rep an inbound call went unanswered (only the save that moves the status notifies)
 		"on_update": "tatva_connect.notifications.events.on_call_missed",
 	},
+	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
 		"after_insert": [
 			"tatva_connect.tasks.tasks.on_lead_assignment",

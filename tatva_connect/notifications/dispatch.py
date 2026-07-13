@@ -59,9 +59,10 @@ def _push(tokens, title, body, data):
 
 
 def _bell(event, user, actor, text, source, target):
-	"""One persistent tray row, written by crm's OWN writer — only for an event crm does not
-	already bell itself. `notify_user` skips a rep notifying themselves and de-dupes an identical
-	row, so a re-run cannot double-post."""
+	"""One persistent tray row, written by crm's OWN writer — only for an event crm does not already bell
+	itself. `notify_user` skips a rep notifying themselves; its de-dupe does NOT work (its filter keeps the
+	`doctype` key, so `exists()` swallows the column error and returns None), so re-entry is OUR job to
+	prevent — the doc events fire once by construction and the sweep stamps what it told."""
 	notify_user(
 		{
 			"owner": actor,
@@ -77,15 +78,17 @@ def _bell(event, user, actor, text, source, target):
 	)
 
 
-def notify(event_key, users, title, body, data=None, bell=None):
+def notify(event_key, users, title, body, data=None, bell=None) -> list:
+	"""Returns the reps actually told — the sweep stamps a task only when that list is non-empty, so a
+	stamp records that a rep was TOLD, never merely that a row was looked at."""
 	event = catalog.get(event_key)
 	if not event:
-		return
+		return []
 	if not automation.is_enabled(event.automation_key):
-		return
+		return []
 	recipients = prefs.subscribers(event_key, users)
 	if not recipients:
-		return
+		return []
 
 	for user in recipients:
 		if event.bell_type and bell:
@@ -97,3 +100,4 @@ def notify(event_key, users, title, body, data=None, bell=None):
 			_toast(user, title, body, data)
 		else:
 			_push(presence.absent_devices(user), title, body, data)
+	return recipients

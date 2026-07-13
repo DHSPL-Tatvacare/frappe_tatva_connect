@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "section_due",
-  "due_soon_lead"
+  "due_soon_lead",
+  "overdue_floor"
  ],
  "fields": [
   {
@@ -22,6 +23,14 @@
    "fieldtype": "Select",
    "label": "Warn Before Due",
    "options": "5 minutes\n15 minutes\n30 minutes\n1 hour\n3 hours\n24 hours"
+  },
+  {
+   "default": "7 days",
+   "description": "How far back an overdue task is still news. Without a floor, the first sweep after the switch is armed announces the site's entire historical backlog — every task ever left open — in one pass. Older tasks are not notified; they are still there, on the rep's list.",
+   "fieldname": "overdue_floor",
+   "fieldtype": "Select",
+   "label": "Only Tell About Tasks Overdue Within",
+   "options": "1 day\n3 days\n7 days\n30 days\nEvery overdue task"
   }
  ],
  "grid_page_length": 50,

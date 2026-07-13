@@ -56,7 +56,6 @@ def get_my_notification_prefs():
 	return [
 		{
 			"event_key": g.key,
-			"grain_key": g.key,  # deprecated alias — a built frontend older than the rename still reads this; drop once every deployed bundle sends event_key
 			"label": g.label,
 			"description": g.description,
 			"available": g.automation_key in enabled_keys,
@@ -81,7 +80,7 @@ def save_my_notification_prefs(prefs):
 	available = {g.key for g in catalog.all_events() if g.automation_key in _enabled_automation_keys()}
 	final = _stored_optins(user)  # start from what's stored (preserves disabled-event opt-ins)
 	for p in prefs:
-		key = p.get("event_key") or p.get("grain_key")  # grain_key: a built frontend older than the rename still sends this
+		key = p.get("event_key")
 		if key in available:  # only operator-enabled events are the rep's to change
 			final[key] = bool(p.get("enabled"))
 

@@ -1,12 +1,7 @@
-// Shared Desk helpers for the webhook account forms (WhatsApp Account, CRM Telephony
-// Account). Loaded on every Desk page via hooks.py `app_include_js`. Both forms' Client
-// Scripts call these instead of carrying their own copy.
-//
+// Shared Desk helpers for the account + settings forms (WhatsApp Account, CRM Telephony Account, CRM Push Settings), loaded on every Desk page via hooks.py `app_include_js` as a content-hashed bundle.
+// `tatva_enable_secret_reveal(frm, fieldnames)` — make the eye on a Password field reveal the real secret (a saved one holds only asterisks).
 // `tatva_webhook_random_token()` — generate a URL-safe-ish secret for a fresh token.
-// `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) from the server (the
-//   token is a Password field, masked as `***` after save, so the URL can NOT be built
-//   from frm.doc.<token>) and paint the headline banner; remembers the URLs on the form
-//   so the Copy button can read them back. Re-fetches on each refresh / token change.
+// `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) server-side and paint the banner; remembers them for the Copy button.
 
 // A saved Password field holds only asterisks, so the eye must fetch the plaintext from the server to reveal anything.
 window.tatva_enable_secret_reveal = function tatva_enable_secret_reveal(frm, fieldnames) {
@@ -22,7 +17,15 @@ window.tatva_bind_secret_reveal = function tatva_bind_secret_reveal(frm, fieldna
     return;
   }
 
+  // Frappe's Password control scores every keystroke against frappe.core...test_password_strength — on a
+  // REVEALED field that would POST the provider's secret to a user-password endpoint, so the check is off.
+  if (ctrl.disable_password_checks) ctrl.disable_password_checks();
+
+  // Its keyup handler also re-hides the eye whenever the value contains a '*', which is every saved secret:
+  // one keystroke and the toggle would vanish until reload. Keep it shown after the native handler runs.
   ctrl.toggle_password.removeClass('hidden');
+  ctrl.$input.on('keyup', () => setTimeout(() => ctrl.toggle_password.removeClass('hidden'), 600));
+
   ctrl.toggle_password.off('click').on('click', () => {
     if (ctrl.$input.attr('type') === 'text') {
       ctrl.$input.val(ctrl.value || '').attr('type', 'password');

@@ -18,7 +18,7 @@ REVEALABLE = {
 }
 
 
-# POST-only (a GET puts the secret in the URL, and so in history and every access log); the cap bounds a stolen session and is fixed in code, since a knob for it is only a way to switch it off.
+# POST-only, because a GET puts the secret in the URL and so in history and every access log. The cap is per caller IP (frappe.rate_limit), so it slows a scripted sweep from one address — it does not bound a stolen session, and core's own frappe.client.get_password already exposes any Password field to a System Manager. The allowlist here is ergonomics and blast-radius, not a boundary.
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=10, seconds=60)
 def reveal(doctype: str, name: str, fieldname: str) -> dict:

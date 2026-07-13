@@ -18,9 +18,7 @@ Each entry describes a provider once:
   * targets         — (host, account_doc, token) -> each URL to register, with the provider-dashboard config it belongs to
 """
 
-# Every trigger Acefone's dashboard can bind to a URL, with the endpoint it belongs on. `outbound_answered`
-# has NO trigger to bind to — Acefone offers a live "answered" trigger inbound only — so the endpoint stays
-# live (a payload arriving there is still ingested) but is never advertised on the form.
+# Acefone binds one URL per trigger; `outbound_answered` has no trigger to bind to (its live-answered trigger is inbound-only), so that endpoint stays live but is never advertised.
 _TELEPHONY_TARGETS = (
 	("inbound_complete", "Inbound · Call hangup (Missed or Answered)", "required"),
 	("outbound_complete", "Outbound · Call hangup (Missed or Answered) · Call Type: Click to call", "required"),
@@ -59,10 +57,6 @@ PROVIDERS = {
 	},
 }
 
-
-def urls_of(cfg, host, doc, token):
-	"""Just the URLs of a provider's targets — for a caller that wants the links, not the guidance."""
-	return [t["url"] for t in cfg["targets"](host, doc, token)]
 
 
 def by_service(service):

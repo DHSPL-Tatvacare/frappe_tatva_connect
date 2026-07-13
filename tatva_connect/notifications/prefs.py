@@ -32,3 +32,20 @@ def subscribers(event_key: str, users) -> list:
 	)
 	subscribed = set(opted)
 	return [u for u in users if u in subscribed]
+
+
+def subscriber_users(event_key: str) -> list:
+	"""Every user opted into `event_key`. The sweep narrows its query to these, so a task nobody can be
+	told about never enters the result set — it is not selected, capped, or stamped, and it is told the
+	day its rep opts in. Same table, same rule, one reader."""
+	return frappe.get_all(
+		SUBSCRIPTION,
+		filters={
+			"parenttype": PREFERENCE,
+			"parentfield": "subscriptions",
+			"event_key": event_key,
+			"enabled": 1,
+		},
+		pluck="parent",
+		ignore_permissions=True,  # authz-ok: tier-a — scheduler: reads the opt-in table to narrow its own sweep
+	)

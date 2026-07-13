@@ -13,13 +13,17 @@ gate, the opt-in filter, the bell row, presence routing and FCM transport all li
 
 Firing once is the doc event's own job: `after_insert` runs once per row, and `has_value_changed`
 is true only on the save that changed the field. The sweep has no such guarantee — it re-reads the
-same task every 5 minutes — so it stamps the due date it notified for and skips a task already
-stamped for that date. A rescheduled task carries a new due date, so it is warned again.
+same task every 5 minutes — so it stamps the due date it TOLD a rep about, and skips a task already
+stamped for that date. A rescheduled task carries a new due date, so it is told again. The sweep only
+ever selects tasks whose rep has opted in, so a task nobody can be told about is never selected, never
+capped and never stamped — it is told the day its rep opts in.
 """
 import frappe
+from crm.api.doc import get_assigned_users
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect.notifications import dispatch
+from tatva_connect.notifications import dispatch, prefs
+from tatva_connect.tasks.tasks import CLOSED_STATUSES
 
 SETTINGS = "CRM Notification Settings"
 
@@ -34,8 +38,18 @@ _LEAD_MINUTES = {
 }
 _LEAD_DEFAULT = 60
 
-# A task in one of these is finished; its due date no longer concerns anyone.
-_CLOSED_TASK_STATUS = ("Done", "Cancelled")
+# One pass never tells more than this; the rest are told five minutes later (oldest first, so a pass always makes progress).
+_SWEEP_CAP = 200
+
+# The operator's overdue floor (CRM Notification Settings) -> days back. None = every overdue task, however old.
+_FLOOR_DAYS = {
+	"1 day": 1,
+	"3 days": 3,
+	"7 days": 7,
+	"30 days": 30,
+	"Every overdue task": None,
+}
+_FLOOR_DEFAULT_DAYS = 7
 
 
 def _route(doctype, name) -> str:
@@ -51,16 +65,25 @@ def _route_for_task(doc) -> str:
 
 
 def _assignees(doctype, name) -> list:
-	"""The users a document is assigned to — Frappe's own `_assign`, the same list crm reads."""
+	"""Who is told about this document — crm's OWN resolver, so the bell row crm writes and the push we
+	send always reach the same people. A lead with an owner but no assignment (an LSQ or partner-API
+	import) falls back to `lead_owner` through crm's own `default_assigned_to`, the rule the automation
+	plane already applies (automation/actions.py)."""
 	if not doctype or not name:
 		return []
-	return frappe.parse_json(frappe.db.get_value(doctype, name, "_assign") or "[]")
+	owner = frappe.db.get_value("CRM Lead", name, "lead_owner") if doctype == "CRM Lead" else None
+	return list(get_assigned_users(doctype, name, default_assigned_to=owner) or [])
 
 
 def _lead_of_message(doc):
-	"""The lead a WhatsApp message hangs off (a Deal answers through its originating lead)."""
-	if doc.get("reference_doctype") == "CRM Lead":
-		return doc.get("reference_name")
+	"""The lead a WhatsApp message hangs off. A Deal answers through its originating lead — the hop the
+	WhatsApp router already makes (whatsapp/routing.py) — so a reply on a Deal reaches the same reps crm
+	bells for it, rather than nobody."""
+	dt, dn = doc.get("reference_doctype"), doc.get("reference_name")
+	if dt == "CRM Lead":
+		return dn
+	if dt == "CRM Deal" and dn:
+		return frappe.db.get_value("CRM Deal", dn, "lead")
 	return None
 
 
@@ -69,9 +92,7 @@ def _text(html: str) -> str:
 	return f'<div class="mb-2 leading-5 text-ink-gray-5">{html}</div>'
 
 
-# ---------------------------------------------------------------------------
 # Doc events — each fires exactly once, by construction.
-# ---------------------------------------------------------------------------
 def on_task_created(doc, method=None):
 	if not doc.get("assigned_to"):
 		return
@@ -163,72 +184,94 @@ def on_lead_stage_changed(doc, method=None):
 	)
 
 
-# ---------------------------------------------------------------------------
 # Schedule — nothing fires when a due date simply passes, so it is swept.
-# ---------------------------------------------------------------------------
 def _lead_minutes() -> int:
 	return _LEAD_MINUTES.get(frappe.db.get_single_value(SETTINGS, "due_soon_lead"), _LEAD_DEFAULT)
 
 
-def _notify_due(task, event_key, stamp_field, title, phrase):
-	"""Tell the assignee once for this due date, then stamp the date so the next sweep passes it by."""
-	dispatch.notify(
+def _overdue_floor(now):
+	"""The oldest overdue task worth telling a rep about. Without a floor, the first pass after the switch
+	is armed announces the site's entire historical backlog; the operator says how far back is still news."""
+	days = _FLOOR_DAYS.get(frappe.db.get_single_value(SETTINGS, "overdue_floor"), _FLOOR_DEFAULT_DAYS)
+	return None if days is None else add_to_date(now, days=-days)
+
+
+def _notify_due(task, event_key, stamp_field, title, phrase) -> bool:
+	"""Tell the assignee, and stamp the due date ONLY if they were actually told. A task with no lead or
+	deal behind it gets no tray row — a row whose click routes nowhere is worse than no row."""
+	bell = None
+	if task.reference_doctype and task.reference_docname:
+		bell = {
+			"actor": "Administrator",
+			"text": _text(f"<span>{phrase}</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(task.title or task.name)}</span>"),
+			"source": ("CRM Task", task.name),
+			"target": (task.reference_doctype, task.reference_docname),
+		}
+	told = dispatch.notify(
 		event_key,
 		[task.assigned_to],
 		title=title,
 		body=task.title or "You have a task",
 		data={"doctype": "CRM Task", "name": task.name, "route": _route(task.reference_doctype, task.reference_docname)},
-		bell={
-			"actor": "Administrator",
-			"text": _text(f"<span>{phrase}</span> <span class='font-medium text-ink-gray-9'>{frappe.utils.escape_html(task.title or task.name)}</span>"),
-			"source": ("CRM Task", task.name),
-			"target": (task.reference_doctype or "CRM Lead", task.reference_docname),
-		},
+		bell=bell,
 	)
+	if not told:
+		return False
 	frappe.db.set_value("CRM Task", task.name, stamp_field, task.due_date, update_modified=False)
+	return True
 
 
 def sweep_task_due():
 	"""Every 5 minutes: warn about a task about to fall due, and tell a rep about one that already has.
 
-	Both switches are read per pass, so either can be off without the other paying for it. A task is
-	stamped with the due date it was told about — the next sweep sees the stamp and passes it by, and a
-	rescheduled task carries a new due date, so it is told again. Nothing here notifies twice.
+	Each switch is read per pass, so either can be off without the other paying for it. The query is
+	narrowed to reps who have opted in, so a task nobody can be told about is never selected, never
+	capped and never stamped — and it is told the day its rep opts in. A pass tells at most `_SWEEP_CAP`
+	reps and logs what it left; the rest are told five minutes later, so no backlog is silently dropped.
 	"""
 	from tatva_connect import automation
 
-	due_soon = automation.is_enabled("Notify::Task::due-soon")
-	overdue = automation.is_enabled("Notify::Task::overdue")
-	if not (due_soon or overdue):
-		return
-
 	now = now_datetime()
 
-	if due_soon:
+	if automation.is_enabled("Notify::Task::due-soon"):
 		horizon = add_to_date(now, minutes=_lead_minutes())
-		for task in _pending("custom_due_soon_notified_for", after=now, before=horizon):
-			_notify_due(task, "Task::Due::soon", "custom_due_soon_notified_for", "Task due soon", "Due soon:")
+		_run_pass("Task::Due::soon", "custom_due_soon_notified_for", "Task due soon", "Due soon:", before=horizon, after=now)
 
-	if overdue:
-		for task in _pending("custom_overdue_notified_for", before=now):
-			_notify_due(task, "Task::Due::overdue", "custom_overdue_notified_for", "Task overdue", "Overdue:")
+	if automation.is_enabled("Notify::Task::overdue"):
+		_run_pass("Task::Due::overdue", "custom_overdue_notified_for", "Task overdue", "Overdue:", before=now, after=_overdue_floor(now))
 
 
-def _pending(stamp_field, before, after=None):
-	"""Open, assigned tasks whose due date falls in the window and whose stamp does not already name
-	that due date. The stamp is compared to `due_date` COLUMN to COLUMN — a task told about at 5pm and
-	then rescheduled to 6pm no longer matches its stamp, so it is told again; an untouched one never is.
-	`frappe.get_all` filters cannot compare two columns, so this is the query builder."""
+def _run_pass(event_key, stamp_field, title, phrase, before, after):
+	subscribed = prefs.subscriber_users(event_key)
+	if not subscribed:
+		return
+	tasks = _pending(stamp_field, subscribed, before=before, after=after)
+	for task in tasks[:_SWEEP_CAP]:
+		_notify_due(task, event_key, stamp_field, title, phrase)
+	if len(tasks) > _SWEEP_CAP:
+		frappe.logger("notifications").info(
+			f"{event_key}: capped at {_SWEEP_CAP} this pass; more remain and are told by the next sweep"
+		)
+
+
+def _pending(stamp_field, subscribed, before, after=None):
+	"""Open tasks assigned to an OPTED-IN rep whose due date falls in the window and whose stamp does not
+	already name that due date. The stamp is compared to `due_date` COLUMN to COLUMN — a task told about at
+	5pm and then rescheduled to 6pm no longer matches its stamp, so it is told again; an untouched one never
+	is. `frappe.get_all` filters cannot compare two columns, so this is the query builder. Oldest first, so
+	a capped pass always makes progress."""
 	Task = frappe.qb.DocType("CRM Task")
 	stamp = Task[stamp_field]
 	q = (
 		frappe.qb.from_(Task)
 		.select(Task.name, Task.title, Task.assigned_to, Task.due_date, Task.reference_doctype, Task.reference_docname)
-		.where(Task.status.notin(_CLOSED_TASK_STATUS))
-		.where(Task.assigned_to.isnotnull() & (Task.assigned_to != ""))
+		.where(Task.status.notin(CLOSED_STATUSES))
+		.where(Task.assigned_to.isin(subscribed))
 		.where(Task.due_date.isnotnull())
 		.where(Task.due_date < before)
 		.where(stamp.isnull() | (stamp != Task.due_date))
+		.orderby(Task.due_date)
+		.limit(_SWEEP_CAP + 1)
 	)
 	if after is not None:
 		q = q.where(Task.due_date > after)
