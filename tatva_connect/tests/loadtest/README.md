@@ -44,6 +44,28 @@ The replay is the point, not a formality. Every write carries an `Idempotency-Ke
 source record's own id, so a second pass must create nothing and replay the stored responses instead.
 If the row counts move, retry safety is broken.
 
+## Against a real deployment (UAT)
+
+`uat.py` is the same core aimed somewhere else. It fuses the pull and the load into one command, takes
+the target as a flag, and runs from the laptop — no bench, no container, no Frappe import. It is how the
+API gets exercised from outside the network, as a partner actually reaches it.
+
+```bash
+# one terminal per grain; run them together and the concurrency is real
+.venv/bin/python -m tatva_connect.tests.loadtest.uat --grain anaya         --leads 50 --base https://<uat> --site <uat-host>
+.venv/bin/python -m tatva_connect.tests.loadtest.uat --grain tatvapractice --leads 50 --base https://<uat> --site <uat-host>
+```
+
+Tokens come from `.creds/partner-api-tokens.uat.json` (`--tokens` to point elsewhere); a deployment's
+keys are its own and are never mixed with the bench's. A non-local target must be confirmed by typing
+the host before anything is written.
+
+Two things the local run has and this one does not, by construction: `preflight.py` cannot gate egress
+or silence comms on a site it has no handle to, and `validate.py` cannot read the database to see what
+truly landed — the API's own read-back is the only evidence available. **The run creates and does not
+delete.** Every lead it made is written to `reports/<grain>.uat.load.json` under `created_leads`, which
+is the only record of what to clean up.
+
 ## Why the pull is activity-first
 
 Asking LSQ for leads and then their activities selects the wrong slice: most leads carry no activity
@@ -71,3 +93,4 @@ record lands owned by the partner user. Do not read a green run as a migration r
 | `shape.py` | LSQ record -> partner API request body |
 | `client.py` | partner API client: envelope, idempotency, stopwatch |
 | `run.py` | per-lead sequential load, latency percentiles, error taxonomy |
+| `uat.py` | pull + load in one command against a real deployment, from the laptop |

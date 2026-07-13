@@ -42,9 +42,13 @@ class Call:
 
 
 class Partner:
-	def __init__(self, token, timeout=300):
+	def __init__(self, token, timeout=300, base=None, host=None):
+		"""The target is an argument, not a constant: the same client addresses a local bench and a real
+		deployment, and which one it is talking to is the caller's decision to make and to print."""
+		self.base = base or BASE_URL
+		self.host = host or SITE_HOST
 		self.headers = {
-			"Host": SITE_HOST,
+			"Host": self.host,
 			"Authorization": token,
 			"Content-Type": "application/json",
 		}
@@ -75,7 +79,7 @@ class Partner:
 
 	def post(self, module, fn, payload, idem=None):
 		"""One write. A 429 is retried with the same key, because a throttle is raised before the write."""
-		url = f"{BASE_URL}{METHOD}.{module}.{fn}"
+		url = f"{self.base}{METHOD}.{module}.{fn}"
 		headers = dict(self.headers)
 		if idem:
 			headers["Idempotency-Key"] = idem
@@ -111,7 +115,7 @@ class Partner:
 		"""One read. A 429 is honoured here exactly as it is on a write: the docs tell a partner to
 		wait error.retry_after and retry, and a client that only backs off on writes is not the client
 		the docs describe. A read that gave up on the first throttle is a bug in the caller."""
-		url = f"{BASE_URL}{METHOD}.{module}.{fn}"
+		url = f"{self.base}{METHOD}.{module}.{fn}"
 		endpoint = f"{module}.{fn}"
 
 		resp, ms = None, 0.0

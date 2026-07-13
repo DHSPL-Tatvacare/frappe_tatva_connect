@@ -20,6 +20,10 @@ REPORTS = HERE / "reports"
 BASE_URL = os.environ.get("LOADTEST_BASE_URL", "http://localhost:8080")
 SITE_HOST = os.environ.get("LOADTEST_SITE", "dev.localhost")
 
+# A deployment's tokens are its own. The local bench's keys are not UAT's keys, so the file is named
+# per environment rather than overwritten, and a run says which one it read.
+TOKENS_FILE = os.environ.get("LOADTEST_TOKENS", "partner-api-tokens.local.json")
+
 ACCOUNTS = ("anaya", "tatvapractice")
 
 # The partner user whose token each account's traffic is sent as. One key per grain.
@@ -63,9 +67,9 @@ def lsq_creds(account):
 	return out
 
 
-def partner_token(account):
+def partner_token(account, tokens_file=None):
 	"""The Authorization header value for this account's grain-scoped partner key."""
-	path = CREDS / "partner-api-tokens.local.json"
+	path = CREDS / (tokens_file or TOKENS_FILE)
 	if not path.exists():
 		raise SystemExit(f"missing partner tokens: {path}")
 	users = json.loads(path.read_text())["users"]

@@ -129,13 +129,17 @@ def get_assignment_rules_list():
 
 
 @frappe.whitelist()
-def get_views(doctype):
-	# Native is self-scoped (own/shared views) but ungated; gate on read of the target doctype so a
-	# no-access user can't probe another doctype's view settings.
-	frappe.has_permission(doctype, "read", throw=True)
+def get_views(doctype=None):
+	# doctype is OPTIONAL to native and the frontend calls it bare: gating a blank one raised DoesNotExist -> 404 for every non-Administrator.
 	from crm.api.views import get_views as _native
 
-	return _native(doctype)
+	if doctype:
+		frappe.has_permission(doctype, "read", throw=True)
+		return _native(doctype)
+
+	# Native annotates doctype as `str` and frappe enforces it, so an unnamed call passes "" — never None.
+	# Unnamed: keep native's contract but drop views whose doctype the caller cannot read.
+	return [v for v in _native("") if frappe.has_permission(v.get("dt"), "read")]
 
 
 # --- Helpdesk (agent-only internal) ------------------------------------------------------------

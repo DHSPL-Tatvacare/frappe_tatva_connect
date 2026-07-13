@@ -59,7 +59,8 @@ def _batch_key(account, entity, batch):
 	return idempotency_key(account, entity, "|".join(str(b.get("_source_id", "")) for b in batch))
 
 
-def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, workers):
+def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, workers,
+              base=None, host=None, tokens=None, env=None, files=True):
 	"""The backfill path: the same records, sent through the bulk endpoints.
 
 	A partner moving a hundred thousand records does not send a hundred thousand requests. The bulk
@@ -68,8 +69,8 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 	batch. That partial-success contract is exactly what needs proving at scale.
 	"""
 	fmap = field_map(account)
-	token, grain = partner_token(account)
-	api = Partner(token)
+	token, grain = partner_token(account, tokens)
+	api = Partner(token, base=base, host=host)
 	pacer = Pacer(per_minute)
 
 	bundles = [json.loads(line) for line in (account_dir(account) / "bundles.jsonl").open()]
@@ -96,6 +97,7 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 	acts = sum(len(b.get("activities") or []) for b in bundles)
 	print(f"[{account}] grain={grain}  {len(bundles)} lead(s), {acts} source activities  "
 	      f"BULK x{batch_size} paced at {per_minute}/min  {'REPLAY' if replay else 'LOAD'}")
+	print(f"[{account}] target {api.base}  (Host: {api.host})")
 
 	actions = Counter()
 	dropped = defaultdict(int)
@@ -190,25 +192,28 @@ def load_bulk(account, limit, replay, per_minute, batch_size, file_batch, worker
 	# 4. FILES. Each file is a download plus a virus scan, so the batch is deliberately smaller: a
 	#    hundred of them in one request is a request that runs for minutes.
 	file_items = []
-	for bundle in bundles:
-		name = lead_name.get(bundle["prospect_id"])
-		if name:
-			file_items += shape.file_bodies(bundle, fmap, name, activity_name)
-	run_phase("partner_file", "file_attach_bulk", "files", file_items, "file", "file", file_batch)
+	if files:
+		for bundle in bundles:
+			name = lead_name.get(bundle["prospect_id"])
+			if name:
+				file_items += shape.file_bodies(bundle, fmap, name, activity_name)
+		run_phase("partner_file", "file_attach_bulk", "files", file_items, "file", "file", file_batch)
 
 	return {
 		"account": account, "grain": grain, "replay": replay, "leads": len(bundles),
 		"elapsed_s": round(time.time() - started, 1), "actions": dict(actions),
 		"dropped_rows": dict(dropped), "failures": failures, "calls": api.calls,
+		"env": env, "target": api.base, "created_leads": dict(lead_name),
 		"offered": {"lead": len(lead_items), "activity": len(activity_items),
 		            "call": len(call_items), "file": len(file_items)},
 	}
 
 
-def load_account(account, limit, replay, workers, per_minute):
+def load_account(account, limit, replay, workers, per_minute,
+                 base=None, host=None, tokens=None, env=None, files=True):
 	fmap = field_map(account)
-	token, grain = partner_token(account)
-	api = Partner(token)
+	token, grain = partner_token(account, tokens)
+	api = Partner(token, base=base, host=host)
 	pacer = Pacer(per_minute)
 
 	bundles_path = account_dir(account) / "bundles.jsonl"
@@ -229,10 +234,12 @@ def load_account(account, limit, replay, workers, per_minute):
 	acts = sum(len(b.get("activities") or []) for b in bundles)
 	print(f"[{account}] grain={grain}  {len(bundles)} lead(s), {acts} source activities  "
 	      f"{workers} workers paced at {per_minute}/min  {'REPLAY' if replay else 'LOAD'}")
+	print(f"[{account}] target {api.base}  (Host: {api.host})")
 
 	actions = Counter()
 	dropped = defaultdict(int)
 	failures = []
+	created = {}
 	lock = threading.Lock()
 	done = [0]
 	started = time.time()
@@ -259,6 +266,8 @@ def load_account(account, limit, replay, workers, per_minute):
 		if not record("lead", pid, pid, call):
 			return
 		lead_name = body["data"]["name"]
+		with lock:
+			created[str(pid)] = lead_name
 
 		activity_names = {}
 		for item in shape.activity_bodies(bundle, fmap, lead_name):
@@ -274,7 +283,7 @@ def load_account(account, limit, replay, workers, per_minute):
 			                       idem=idempotency_key(account, "call", item["_source_id"]))
 			record("call", pid, item["_source_id"], call)
 
-		for item in shape.file_bodies(bundle, fmap, lead_name, activity_names):
+		for item in (shape.file_bodies(bundle, fmap, lead_name, activity_names) if files else ()):
 			pacer.take()
 			call, _body = api.post("partner_file", "file_attach", _payload(item),
 			                       idem=idempotency_key(account, "file", item["_source_id"]))
@@ -301,6 +310,9 @@ def load_account(account, limit, replay, workers, per_minute):
 		"dropped_rows": dict(dropped),
 		"failures": failures,
 		"calls": api.calls,
+		"env": env,
+		"target": api.base,
+		"created_leads": created,
 	}
 
 
@@ -324,6 +336,8 @@ def report(result):
 	print()
 	print(f"===== {result['account']} ({'replay' if result['replay'] else 'load'}) =====")
 	print(f"  {result['leads']} leads, {len(result['calls'])} API calls, {result['elapsed_s']}s")
+	if result.get("target"):
+		print(f"  target: {result['target']}")
 	print()
 	print("  outcome:")
 	for key in sorted(result["actions"]):
@@ -356,10 +370,13 @@ def report(result):
 
 	REPORTS.mkdir(parents=True, exist_ok=True)
 	suffix = "replay" if result["replay"] else "load"
-	path = REPORTS / f"{result['account']}.{suffix}.json"
+	env = result.get("env")
+	stem = f"{result['account']}.{env}.{suffix}" if env else f"{result['account']}.{suffix}"
+	path = REPORTS / f"{stem}.json"
 	path.write_text(json.dumps({
 		"account": result["account"],
 		"grain": result["grain"],
+		"target": result.get("target"),
 		"leads": result["leads"],
 		"elapsed_s": result["elapsed_s"],
 		"actions": result["actions"],
@@ -367,6 +384,9 @@ def report(result):
 		"latency_ms": {e: _percentiles(v) for e, v in by_endpoint.items()},
 		"failures": result["failures"][:200],
 		"failure_total": len(result["failures"]),
+		# The run creates and does not clean up. On a shared deployment the only way to find what it
+		# left behind is to have written it down, so it is written down.
+		"created_leads": result.get("created_leads") or {},
 	}, indent=2) + "\n")
 	print(f"  written: {path}")
 
