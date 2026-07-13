@@ -629,3 +629,73 @@ class TestByteAccessThroughOverride(FileLayerCase):
 		doc = frappe.get_doc("File", f.name)
 		doc.make_thumbnail()
 		self.assertTrue(doc.thumbnail_url, "no thumbnail was generated for an offloaded image")
+
+
+class TestOwnedAtBirth(FileLayerCase):
+	"""M1: an upload names its parent, so no file is ever born unowned.
+
+	The six SPA uploaders (avatar, lead/contact/org image, brand assets, WhatsApp media) uploaded with no
+	doctype even though the record was on screen — 17 rows on this site are the sole reference to a blob
+	nothing can ever reclaim. They now pass doctype/docname, which is Frappe's own native way to say who
+	owns a file: `upload_file` attaches it at insert, before our linker is ever consulted. The linker
+	stays as the fallback for a record that does not exist yet (an attach inside a create modal).
+	"""
+
+	def test_upload_with_a_parent_is_bonded_at_insert(self):
+		lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": "M1-LEAD", "status": "New"}).insert(
+			ignore_permissions=True
+		)
+		f, key = self.upload(
+			file_name="m1-owned.png", attached_to_doctype="CRM Lead", attached_to_name=lead.name
+		)
+		self.assertEqual(f.attached_to_doctype, "CRM Lead", "the upload did not name its parent")
+		self.assert_in_azure(key, "owned at birth")
+
+	def test_an_owned_file_is_reclaimed_with_its_record(self):
+		# The whole point of ownership: the blob cannot outlive the record.
+		lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": "M1-DEL", "status": "New"}).insert(
+			ignore_permissions=True
+		)
+		f, key = self.upload(
+			file_name="m1-reclaim.png", attached_to_doctype="CRM Lead", attached_to_name=lead.name
+		)
+		frappe.delete_doc("CRM Lead", lead.name, force=True, ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("File", f.name))
+		self.assertFalse(self.store.exists(key), "the blob outlived the record that owned it")
+
+
+class TestOverrideCoversCore(FileLayerCase):
+	"""The tripwire: FileOverride must keep covering every way core reaches a file's bytes.
+
+	Frappe's next upgrade is the threat model. If core renames one of these, or grows a new byte/path
+	reader we do not cover, the failure today is SILENT — a 404, an unsent email, an import that reads
+	nothing — and we find out from a user six weeks later. This test turns that into a red build.
+	"""
+
+	_COVERED = ("get_content", "get_full_path", "exists_on_disk", "validate_file_on_disk", "make_thumbnail")
+
+	def test_every_covered_method_still_exists_on_core(self):
+		from frappe.core.doctype.file.file import File
+
+		for name in self._COVERED:
+			self.assertTrue(
+				hasattr(File, name),
+				f"core File no longer has {name}() — our override is now dead code, and the readers it "
+				f"protected are silently broken again",
+			)
+
+	def test_our_override_actually_overrides_them(self):
+		from frappe.core.doctype.file.file import File
+
+		from tatva_connect.storage.file_override import FileOverride
+
+		for name in self._COVERED:
+			self.assertIsNot(
+				getattr(FileOverride, name), getattr(File, name),
+				f"FileOverride.{name}() is no longer overriding core — Azure-backed files fall back to disk",
+			)
+
+	def test_the_override_is_the_one_bound_to_the_doctype(self):
+		# hooks.py must still bind it, or every override above is inert.
+		doc = frappe.get_doc("File", {"custom_uploaded_to_azure": 1, "is_folder": 0})
+		self.assertEqual(type(doc).__name__, "FileOverride", "hooks.py no longer binds our File class")
