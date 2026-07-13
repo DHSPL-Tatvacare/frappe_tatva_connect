@@ -24,6 +24,22 @@ vocabulary is that doctype's, not an invented one:
 Retention is Frappe's too: `Integration Request` is registered in frappe's own
 `default_log_clearing_doctypes` at 90 days, so nothing is registered here.
 
+Concurrency is handled HERE, once, for every provider — no adapter writes a line for it:
+
+  * A provider re-sends. One live Acefone CDR arrived ELEVEN times, byte for byte. Every copy became
+    its own job, and `queue-short` and `queue-long` BOTH drain the short queue, so the copies wrote the
+    same call simultaneously. The enqueue is therefore keyed on the delivery's own content
+    (`_delivery_key`) and deduplicated: identical copies collapse into one job. A trigger that carries
+    something new — a hangup after an answer — hashes differently and still runs.
+  * What still collides is re-run, not failed. Two different deliveries of one call can reach the
+    writer together; the loser raises `frappe.RetryBackgroundJobError`, Frappe's own signal, and
+    `execute_job` re-runs the job. The next pass finds the winner's committed row through the adapter's
+    `already_processed` and completes. That is what keeps the DLQ replay usable: it fires one job per
+    stored row, so replaying a call delivered eleven times fires eleven jobs at once.
+
+Neither is a telephony concern. Every adapter — Acefone, Ozonetel, WATI, whatever comes next — inherits
+both by coming through this door.
+
 Adapter contract (duck-typed module, no ABC):
   * screen(payload, event, account)            -> (wanted, reason). Asked once, at the front door and
     again on replay. The reason is written onto a declined row so an operator can act on it.
@@ -31,6 +47,9 @@ Adapter contract (duck-typed module, no ABC):
   * handle(payload, event, account)            -> parse + DB moves + fail-closed attribution
   * account_for_payload(payload, event)        -> re-derive the account on replay and reconcile
 """
+import hashlib
+import json
+
 import frappe
 from frappe import _
 from frappe.integrations.utils import create_request_log
@@ -40,6 +59,19 @@ from tatva_connect.webhooks import ingress, registry
 LOG_DOCTYPE = "Integration Request"
 
 _GENERIC_DECLINE = "not accepted by this provider's pre-filter"
+
+# A write that lost a race with another worker handling the SAME delivery. Not a failure: the four are
+# the ways one collision surfaces — the winner still in flight (a deadlock, or MariaDB's 1020 snapshot
+# conflict), the winner already committed and this one hit the primary key, or a unique column.
+#
+# Measured, not assumed: eleven concurrent workers writing one real Acefone CDR produced one row and
+# nine of these.
+CONFLICT = (
+	frappe.QueryDeadlockError,
+	frappe.QueryTimeoutError,
+	frappe.DuplicateEntryError,
+	frappe.UniqueValidationError,
+)
 
 
 def receive(service, *, enabled, adapter, event=None):
@@ -69,9 +101,16 @@ def receive(service, *, enabled, adapter, event=None):
 	if not wanted:
 		return "ok"
 
-	frappe.enqueue(
+	job = frappe.enqueue(
 		"tatva_connect.webhooks.spine.process",
 		queue="short",
+		# A provider re-sends: one live Acefone CDR arrived ELEVEN times, byte for byte. Each copy was
+		# its own job, and two worker containers drain this queue, so all eleven wrote the same call at
+		# once. Keyed on the delivery's own content, the copies collapse to one job and the rest are
+		# never queued. A trigger that carries something new — a hangup after an answer — hashes
+		# differently and still runs.
+		job_id=_delivery_key(service, event, payload),
+		deduplicate=True,
 		service=service,
 		payload=payload,
 		account=account,
@@ -81,7 +120,24 @@ def receive(service, *, enabled, adapter, event=None):
 		vendor_event=event,
 		log=log,
 	)
+	if job is None:
+		# Frappe refused it: an identical delivery is queued or running. Said plainly on the row, so a
+		# copy nobody needed is never mistaken for one that was lost.
+		_mark(log, "Cancelled", output={
+			"outcome": "not captured",
+			"reason": "an identical delivery is already in flight",
+		})
 	return "ok"
+
+
+def _delivery_key(service, event, payload) -> str:
+	"""A stable id for THIS delivery — the provider, its trigger, and the bytes it sent.
+
+	Provider-blind: the payload is the identity, so no adapter has to declare one. Two deliveries that
+	say exactly the same thing are the same delivery and only one need run.
+	"""
+	body = json.dumps(payload, sort_keys=True, default=str)
+	return f"{service}:{event or '-'}:{hashlib.sha256(body.encode()).hexdigest()[:24]}"
 
 
 def process(service, payload, account, vendor_event=None, log=None):
@@ -99,6 +155,18 @@ def process(service, payload, account, vendor_event=None, log=None):
 			_mark(log, "Completed", output={"outcome": "already processed"})
 			return
 		adapter.handle(payload, vendor_event, account)
+	except CONFLICT as e:
+		# Another worker is writing this same call. Nothing is wrong with this delivery, so it is not a
+		# failure — it is re-run. `RetryBackgroundJobError` is Frappe's own signal for that: execute_job
+		# catches it, rolls back, and re-runs the job (its own budget, five attempts). On the next pass
+		# `already_processed` sees the winner's committed row and the delivery completes.
+		#
+		# The DLQ replay reaches this too. It enqueues one job per stored row, so replaying a call that
+		# was delivered eleven times fires eleven jobs at once — and without this they would collide and
+		# be marked Failed all over again, leaving the operator's recovery button unable to recover.
+		frappe.db.rollback()
+		_mark(log, "Failed", error=frappe.get_traceback())
+		raise frappe.RetryBackgroundJobError from e
 	except Exception:
 		# Rolled back BEFORE the status is written. A half-finished handler must not have its partial
 		# writes flushed by the very commit that records the failure — the row would then be replayed
