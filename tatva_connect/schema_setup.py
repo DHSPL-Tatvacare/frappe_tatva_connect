@@ -25,6 +25,7 @@ from tatva_connect.patches import (
 	add_observability_indexes,
 	add_resume_index,
 	backfill_webhook_token_digests,
+	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
 	rekey_task_types_composite,
@@ -49,6 +50,8 @@ _STEPS = (
 	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
 	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
 	rekey_task_types_composite,
+	# A naming_series name is minted from ONE tabSeries row whose lock is held to commit, so concurrent creates deadlock (1 of 32 survived a 32-way burst; the partner API turned that into 124 HTTP 500s). A patch alone would never reach a fresh site — install-app baselines it — so the rule is applied here too. Idempotent: it skips a doctype already named by hash.
+	hash_name_transactional_doctypes,
 	# Carry existing webhook tokens into the Password store after the Data->Password flip.
 	# install-app baselines patches.txt without running it, so this is the path that lands the
 	# carry on an existing DB's first redeploy; a fresh install has blank tokens (clean no-op).
