@@ -32,7 +32,8 @@
    "label": "Remove Local Copy After Upload"
   },
   {
-   "description": "Doctypes whose attachments may be PUBLIC (one per line). Everything else is private by default (fail-closed). *Settings doctypes (logos) are always public. Leave blank unless a doctype's files must render without login.",
+   "default": "User\nContact\nCRM Organization\nFCRM Settings",
+   "description": "The only doctypes whose attachments may be PUBLIC, one per line. Everything else is private, whatever the uploader ticked in the upload dialog — a rep cannot make a patient's document public by choosing to. These four are here because their images are display assets a browser must fetch without permission on the record: profile photos, contact photos, organisation logos, and the brand logo and favicon (which the login page fetches with no session at all). Removing one does not break a save; it makes that image 403 for anyone who cannot read the record it hangs off.",
    "fieldname": "public_attachment_doctypes",
    "fieldtype": "Small Text",
    "label": "Public Attachment Doctypes"

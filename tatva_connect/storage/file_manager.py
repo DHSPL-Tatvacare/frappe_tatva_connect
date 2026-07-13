@@ -27,12 +27,15 @@ def save(
 	attached_to_doctype=None,
 	attached_to_name=None,
 	attached_to_field=None,
-	private=True,
 	meta=None,
 ):
 	"""Create + persist a File from bytes. The doc_events apply the fail-closed privacy policy and
 	offload to Azure — this only assembles the row. `meta` sets extra File fields (e.g.
-	{"custom_wa_message_id": id}). Returns the File doc."""
+	{"custom_wa_message_id": id}). Returns the File doc.
+
+	Privacy is NOT a parameter. apply_privacy_policy (File.validate) overwrites is_private from the ONE
+	checkpoint, so a `private=` argument here only looked like a decision — a caller could ask for public
+	on a patient document and be silently overruled. Ask the checkpoint, not the caller."""
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_name": filename,
@@ -40,20 +43,19 @@ def save(
 		"attached_to_doctype": attached_to_doctype,
 		"attached_to_name": attached_to_name,
 		"attached_to_field": attached_to_field,
-		"is_private": 1 if private else 0,
 		**(meta or {}),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 
 
-def link(file_url, *, attached_to_doctype, attached_to_name, private=True, meta=None):
+def link(file_url, *, attached_to_doctype, attached_to_name, meta=None):
 	"""Surface an already-stored file on a record — a File row pointing at an existing blob URL (no
-	re-upload), so the file also shows in that record's attachments. The privacy policy still runs."""
+	re-upload), so the file also shows in that record's attachments. Privacy is decided by the checkpoint
+	on File.validate, never by the caller (see save())."""
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_url": file_url,
 		"attached_to_doctype": attached_to_doctype,
 		"attached_to_name": attached_to_name,
-		"is_private": 1 if private else 0,
 		**(meta or {}),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 
@@ -82,11 +84,17 @@ def by_blob_key(blob_key):
 	return frappe.db.exists("File", {"file_url": ["like", f"%?file_name={esc}"]})
 
 
-def rehome(file, attached_to_doctype, attached_to_name, *, private=True, meta=None):
+def rehome(file, attached_to_doctype, attached_to_name, *, meta=None):
 	"""Re-attach an existing File to a record and re-key its blob into that record's folder (one folder
 	per record in the container). Idempotent — a file already in the target folder only re-points its
 	row. Returns the (possibly new) proxy URL. Centralises WhatsApp's outbound 'adopt' so the re-key
-	rule lives once."""
+	rule lives once.
+
+	Privacy is NOT an argument here. This writes with db.set_value, which skips File.validate and so
+	skips the privacy checkpoint — a `private=` flag would have been a second authority deciding what is
+	public. It calls the ONE checkpoint (file_events.may_be_public) instead, exactly as validate does."""
+	from tatva_connect.storage.file_events import may_be_public
+
 	new_url = file.file_url
 	if getattr(file, "custom_uploaded_to_azure", 0):
 		store = BlobStore()
@@ -102,7 +110,7 @@ def rehome(file, attached_to_doctype, attached_to_name, *, private=True, meta=No
 			"attached_to_doctype": attached_to_doctype,
 			"attached_to_name": attached_to_name,
 			"attached_to_field": None,
-			"is_private": 1 if private else 0,
+			"is_private": 0 if may_be_public(attached_to_doctype) else 1,
 			"file_url": new_url,
 			**(meta or {}),
 		},

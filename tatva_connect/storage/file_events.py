@@ -31,22 +31,31 @@ def _public_attachment_doctypes() -> set:
 	return {line.strip() for line in raw.replace(",", "\n").splitlines() if line.strip()}
 
 
-def apply_privacy_policy(doc, method=None):
-	"""Fail-closed file privacy (runs on File.validate): an attachment is PRIVATE unless its
-	doctype is operator-listed public in CRM Azure Storage Settings (Public Attachment
-	Doctypes). Unattached files keep the uploader's choice. is_private only gates serving
-	(see storage/api.download_file); storage is one private container either way.
+def may_be_public(attached_to_doctype) -> bool:
+	"""A file may be public ONLY if its record's doctype is on the operator's allowlist and the toggle is
+	on. An unattached file belongs to no doctype, so it can never qualify — the floor, not a guess."""
+	return bool(attached_to_doctype) and automation.is_enabled("Storage::File::privacy") \
+		and attached_to_doctype in _public_attachment_doctypes()
 
-	The toggle (Storage::File::privacy) governs ONLY whether the operator's PUBLIC exceptions
-	are honored. The private floor is unconditional — OFF can only make a file MORE private,
-	never leak one (invariant 15 is fail-closed, never operator-disableable into a leak).
-	Privacy is decided ONLY by the explicit operator allowlist — never inferred from a doctype
-	name — so a doctype the operator never listed always defaults private."""
-	dt = doc.attached_to_doctype
-	if not dt:
+
+def _is_external_link(file_url) -> bool:
+	"""A file we do not hold: the "Web Link" tab points at somebody else's URL — no bytes ever reach us."""
+	return bool(file_url) and not blob_store.is_local_url(file_url) \
+		and not blob_store.blob_key_from_url(file_url)
+
+
+def apply_privacy_policy(doc, method=None):
+	"""THE privacy checkpoint (File.validate): private unless the doctype is on the operator's allowlist.
+
+	The caller never decides — a rep cannot make a patient document public by ticking a box, and no other
+	code may write is_private. Unattached = no doctype = private (the floor); the allowlist is re-applied
+	by link_attach_fields the moment the bond is made and the doctype is finally known. The floor governs
+	the files we STORE: an external link is not ours to lock. Toggle OFF removes the public exceptions
+	only — it can make a file MORE private, never leak one (invariant 15, fail-closed)."""
+	if _is_external_link(doc.file_url):
+		doc.is_private = 0  # not ours to lock — say so plainly rather than draw a padlock over a public URL
 		return
-	allow_public = automation.is_enabled("Storage::File::privacy") and dt in _public_attachment_doctypes()
-	doc.is_private = 0 if allow_public else 1
+	doc.is_private = 0 if may_be_public(doc.attached_to_doctype) else 1
 
 
 def offload(doc) -> bool:
@@ -140,6 +149,39 @@ def after_insert(doc, method=None):
 				title="Azure offload failed (file left local)",
 				message=f"file={doc.name}\n{frappe.get_traceback()}",
 			)
+
+
+def link_attach_fields(doc, method=None):
+	"""M1: bond an offloaded file to the record whose Attach field names it — core's linker (file/utils.py:325)
+	skips remote URLs by design, so the bond is ours. Same lookups and idempotency as core's, one guard changed."""
+	if doc.doctype == "File":
+		return
+	for df in doc.meta.get("fields", {"fieldtype": ["in", ["Attach", "Attach Image"]]}):
+		value = doc.get(df.fieldname)
+		if not blob_store.blob_key_from_url(value):
+			continue  # local /files value (core links it) or empty
+		if frappe.db.exists("File", {
+			"file_url": value,
+			"attached_to_name": doc.name,
+			"attached_to_doctype": doc.doctype,
+			"attached_to_field": df.fieldname,
+		}):
+			continue  # already bonded — idempotent, this hook rides every save
+		unattached = frappe.db.exists("File", {
+			"file_url": value,
+			"attached_to_name": None,
+			"attached_to_doctype": None,
+			"attached_to_field": None,
+		})
+		if unattached:  # bond ONLY a free row: an email/comment alias of the same blob is already spoken for
+			frappe.db.set_value("File", unattached, {
+				"attached_to_name": doc.name,
+				"attached_to_doctype": doc.doctype,
+				"attached_to_field": df.fieldname,
+				# The bond is the first moment the doctype is known, so it is where the allowlist can finally
+				# be applied: an avatar/logo comes back out public, everything else stays on the floor.
+				"is_private": 0 if may_be_public(doc.doctype) else 1,
+			})
 
 
 def on_trash(doc, method=None):

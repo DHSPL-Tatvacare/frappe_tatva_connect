@@ -243,7 +243,7 @@ def _create_one(data, mp, is_sysmgr):
 		attached_to_doctype=target_doctype, attached_to_name=target_name,
 		source_ip=getattr(frappe.local, "request_ip", None),
 	)
-	# ALWAYS private (Invariant #15) — file_manager.save defaults private=True; the File
+	# ALWAYS private (Invariant #15) — the privacy checkpoint on File.validate decides it; the File
 	# doc_events enforce the private floor regardless. The category + the caller's label go
 	# via meta so both land on the row in one insert.
 	doc = file_manager.save(
@@ -251,7 +251,6 @@ def _create_one(data, mp, is_sysmgr):
 		filename=filename,
 		attached_to_doctype=target_doctype,
 		attached_to_name=target_name,
-		private=True,
 		meta={"custom_file_type": data.get("file_type"),
 		      EXTERNAL_ID_FIELD: data.get("external_id"),
 		      "custom_source": "Partner API"},

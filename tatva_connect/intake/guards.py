@@ -70,13 +70,19 @@ def _is_enrolment_webform():
 
 # -- File screening (File before_insert, intake activation) ------------------
 
+def _is_public_upload():
+	"""An unauthenticated upload can only have come from a public intake form — every CRM Intake Form is
+	published with login_required=0, and no other upload surface in the product is reachable by Guest."""
+	return frappe.session.user == "Guest"
+
+
 def guard_file(doc, method=None):
-	"""Intake activation of the shared file screener (`storage.file_screening.screen`): scoped to
-	enrolment-submission attachments, it screens the uploaded bytes and logs the verdict. All
-	scan/log logic AND activation gating live in the shared brain; this is a thin adapter that only
-	supplies intake context (web form, phone). Size, extension, unsafe-PDF and privacy are native
-	(see module docstring) and untouched."""
-	if doc.attached_to_doctype not in _intake_sinks():
+	"""Intake activation of the shared file screener: screen the bytes, log the verdict, block on a fail.
+
+	The channel is the REQUEST, not the attachment — screening runs at before_insert, and a Web Form upload
+	arrives unattached (attach.js:80 sends no doctype), so gating on attached_to_doctype skipped every
+	patient upload. All scan/log logic and activation gating live in the shared brain."""
+	if doc.attached_to_doctype not in _intake_sinks() and not _is_public_upload():
 		return
 	if doc.is_folder or getattr(doc, "content", None) is None:
 		return  # folders / links (no in-memory bytes) — nothing to screen

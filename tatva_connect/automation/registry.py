@@ -111,9 +111,12 @@ AUTOMATIONS = [
 			"Example: a prescription photo attached to a lead is held in Azure and served back "
 			"through a proxy link rather than kept on the server."
 		),
+		# link_attach_fields is part of the offload's contract, not a switch of its own: an offloaded URL is
+		# remote, so core's linker declines it and the file<->record bond is ours to make.
 		backs=[
 			"tatva_connect.storage.file_events.after_insert",
 			"tatva_connect.storage.file_events.on_trash",
+			"tatva_connect.storage.file_events.link_attach_fields",
 		],
 	),
 	Auto(

@@ -177,6 +177,8 @@ doc_events = {
 		],
 		"on_update": [
 			"tatva_connect.automation.router.on_updated",
+			# Bond an offloaded file to the record whose Attach field names it — core's linker skips remote URLs.
+			"tatva_connect.storage.file_events.link_attach_fields",
 		],
 		"on_trash": [
 			"tatva_connect.automation.router.on_deleted",
