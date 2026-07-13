@@ -16,10 +16,16 @@ The fixture layer (desktop_icon/ + workspace_sidebar/) ships the "LMS"/"LMS Admi
      customization) — that scope is load-bearing, not incidental.
   3. The wiki app's own "Wiki" App tile is gated by `wiki.utils.check_app_permission`, which
      requires the `Wiki Manager` role — so plain readers never reach it and can't see the Wiki
-     group under it. We surface the group under OUR OWN "Wiki Space" Folder tile instead (a
-     Folder is always permitted; ships as a fixture, label "Wiki" so the children's label-match
-     grouping lands on it). This hides the wiki App tile so there's no Wiki-Manager gate blocking
-     readers and no duplicate "Wiki" tile for Wiki Managers. Hides only — never forks wiki (A.1).
+     group under it. We surface the group under OUR OWN "Wiki Space" tile instead (it carries no
+     roles, so it is always permitted). This hides the wiki App tile so there's no Wiki-Manager
+     gate blocking readers and no duplicate "Wiki" tile for Wiki Managers. Hides only — never
+     forks wiki (A.1).
+
+     "Wiki Space" is icon_type App, NOT Folder. `desktop.js:render_folder_thumbnail` only adds the
+     `.folder-icon` class under `if (icon_type == "App")` nested inside `if (icon_type == "Folder")`
+     — a dead branch — so a Folder's child grid renders at full size (374x450) inside a 54px
+     overflow:hidden slot and is clipped to nothing. An App tile with children opens the same
+     grouping modal (`setup_click` treats App and Folder alike) and renders its own logo.
 """
 
 import frappe
@@ -40,6 +46,7 @@ def reconcile():
 	_gate_workspace_roles()
 	_hide_orphan_icons()
 	_hide_wiki_app_tile()
+	_assert_grouping_tiles_are_apps()
 	# Roles/hidden flags above affect every user's cached tile list — drop it site-wide.
 	frappe.cache.delete_key("desktop_icons")
 	frappe.cache.delete_key("bootinfo")
@@ -88,6 +95,35 @@ def _hide_orphan_icons():
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "desktop_icon_reconcile: hide_orphan_icons")
+
+
+def _assert_grouping_tiles_are_apps():
+	"""Force every tile of ours that groups children to icon_type App. A Folder renders as nothing.
+
+	`desktop.js:render_folder_thumbnail` adds the `.folder-icon` class — the one that shrinks a folder's
+	child grid into a thumbnail — inside `if (icon_type == "App")`, nested within `if (icon_type ==
+	"Folder")`. That inner branch is unreachable, so the class is never applied, the child grid renders
+	at full size (374x450) inside a 54px `overflow: hidden` slot, and is clipped away entirely. An App
+	tile with children opens the same grouping modal (`setup_click` treats App and Folder alike) and
+	renders its own logo, so App is the shape that works.
+
+	Enforced here rather than left to the fixture: a standard doc is only re-imported when the FILE's
+	`modified` is newer than the row's, so a row touched on the site (by an operator, or by any
+	`db.set_value` that stamps `modified`) pins the old value and migrate skips it, silently. This runs
+	unconditionally on every migrate and is idempotent.
+	"""
+	try:
+		stale = frappe.get_all(
+			"Desktop Icon",
+			filters={"app": "tatva_connect", "icon_type": "Folder"},
+			pluck="name",
+		)
+		for name in stale:
+			frappe.db.set_value("Desktop Icon", name, "icon_type", "App", update_modified=False)
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "desktop_icon_reconcile: assert_grouping_tiles_are_apps")
 
 
 def _hide_wiki_app_tile():
