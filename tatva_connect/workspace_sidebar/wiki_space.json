@@ -1,0 +1,29 @@
+{
+ "app": "tatva_connect",
+ "creation": "2026-07-14 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "book-open",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "book-open",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Handbook",
+   "link_type": "URL",
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/crm-handbook/getting-started/overview"
+  }
+ ],
+ "modified": "2026-07-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "Wiki Space",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Wiki Space"
+}
