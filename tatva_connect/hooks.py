@@ -260,6 +260,11 @@ after_migrate = [
 	# every grouping tile at icon_type App (a Folder draws nothing). Runs after sync_all/sync_fixtures,
 	# so it corrects rows the fixture import declined to touch. Idempotent; re-asserted every migrate.
 	"tatva_connect.desktop_icon_reconcile.reconcile",
+	# Drop wiki's install-time demo space ("Wiki" at /docs): it sorts above the handbook in wiki's own
+	# space switcher, and /docs is the API reference site. A patch cannot do this — install_app marks
+	# patches completed WITHOUT running them, so a fresh site would keep it for ever. Idempotent; the
+	# space is left alone if anyone has written a real page under it.
+	"tatva_connect.wiki_reconcile.reconcile",
 ]
 
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
