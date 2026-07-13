@@ -19,7 +19,7 @@ the visibility brain — not this module. This module is purely the doctype-leve
 """
 import frappe
 from frappe import _
-from frappe.permissions import reset_perms
+from frappe.permissions import add_permission, reset_perms, update_permission_property
 
 from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
 
@@ -120,6 +120,39 @@ _WHATSAPP = {
 
 LOCKED_MATRIX = {**_CRM_CORE, **_HELPDESK, **_WHATSAPP}
 
+# doctype -> {permlevel: {role: (read, write)}}. A permlevel-1 field is INVISIBLE to a role holding no
+# permlevel-1 read — so without these rows the lock is a blackout, not a lock, and that is why the grain
+# fields were quietly dropped to permlevel 0 (361a71e) to get them back on screen. The grant is what makes
+# the lock usable: a rep SEES the lead's product line and group, only a manager may move the lead between
+# them, and neither depends on an automation switch being on.
+FIELD_LEVELS = {
+	"CRM Lead": {
+		1: {
+			"System Manager": (1, 1),
+			"Sales Manager": (1, 1),
+			"Sales User": (1, 0),
+		}
+	},
+}
+
+
+def apply_field_levels():
+	"""Grant the permlevel rows FIELD_LEVELS declares. `add_permission` copies the doctype's stock matrix
+	into Custom DocPerm first (frappe.permissions.copy_perms, every flag), so adding a level never costs a
+	role the access crm granted it — the trap that makes a hand-rolled Custom DocPerm row catastrophic."""
+	for doctype, levels in FIELD_LEVELS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		for permlevel, roles in levels.items():
+			for role, (read, write) in roles.items():
+				if not frappe.db.exists(
+					"Custom DocPerm", {"parent": doctype, "role": role, "permlevel": permlevel}
+				):
+					add_permission(doctype, role, permlevel)
+				for ptype, value in (("read", read), ("write", write)):
+					update_permission_property(doctype, role, permlevel, ptype, value, validate=False)
+	frappe.clear_cache()
+
 
 def apply(*_args, **_kwargs):
 	"""Rebuild each locked doctype's permission matrix to exactly LOCKED_MATRIX (after_migrate)."""
@@ -145,6 +178,7 @@ def apply(*_args, **_kwargs):
 					"if_owner": if_owner,
 				}
 			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
+	apply_field_levels()
 	frappe.clear_cache()
 
 

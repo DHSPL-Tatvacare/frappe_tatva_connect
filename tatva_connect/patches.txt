@@ -161,3 +161,4 @@ tatva_connect.patches.reimport_communications_desk        # post — the DID sho
 tatva_connect.patches.rename_notification_grain_to_event   # post — notification 'grain' (a notifiable moment) renamed to 'event'; it collided with the business grain
 tatva_connect.patches.drop_stale_notification_grain_key       # post — rename_field copies; the dead grain_key column would let a re-run wipe every opt-in
 tatva_connect.patches.reimport_communications_desk_labels     # post — the workspace content still named the old shortcut labels, so four telephony tiles rendered empty
+tatva_connect.patches.restore_grain_field_permlevel           # post — two property setters unlocked Product Line/Group for every rep; the permlevel-1 grant in access/lockdown.py replaces them
