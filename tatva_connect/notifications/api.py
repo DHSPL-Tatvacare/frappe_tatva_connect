@@ -100,8 +100,20 @@ def save_my_notification_prefs(prefs):
 
 
 @frappe.whitelist()
+@rate_limit(limit=20, seconds=60)
 def register_token(fcm_token, device_label=None):
-	"""Upsert one subscription row for (this user, this device token)."""
+	"""Bind this browser's FCM token to the caller.
+
+	A token identifies a BROWSER, not a person, and the SPA does not unregister on logout — so when a
+	second rep signs in on a shared machine Firebase hands back the SAME token. The row therefore CHANGES
+	HANDS to the caller, deliberately: leave it with the previous rep and their patient notifications
+	would be pushed to a screen someone else is now sitting in front of. That is the leak this prevents.
+
+	The takeover is not a hole to close: the token IS the capability — whoever holds it receives what is
+	pushed to it — and nothing the server does can change that. It is protected by never being handed
+	out (CRM Push Subscription is System Manager only, and the token is never logged); knowing one means
+	already holding the browser. The cap here only stops a scripted sweep.
+	"""
 	user = frappe.session.user
 	if not fcm_token or user == "Guest":
 		return {"ok": False}
@@ -109,10 +121,10 @@ def register_token(fcm_token, device_label=None):
 	name = frappe.db.get_value(SUBSCRIPTION, {"fcm_token": fcm_token}, "name")
 	if name:
 		doc = frappe.get_doc(SUBSCRIPTION, name)
-		doc.user = user
+		doc.user = user  # the browser changed hands; the row follows it (see the docstring)
 		doc.device_label = device_label or doc.device_label
 		doc.last_seen = now_datetime()
-		doc.save(ignore_permissions=True)  # authz-ok: tier-c — self-scoped: user pinned to session.user; writes only the caller's own device row
+		doc.save(ignore_permissions=True)  # authz-ok: tier-c — the row is pinned to session.user; the previous owner is unsubscribed by the same write, never left pointing at a browser they no longer hold
 	else:
 		frappe.get_doc(
 			{
