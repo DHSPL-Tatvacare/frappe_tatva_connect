@@ -7,8 +7,14 @@ DOCTYPE = "CRM Notification Subscription"
 
 
 def execute():
+	# The rename patch drops grain_key with a raw ALTER, which does NOT invalidate frappe's
+	# `table_columns::` cache (database.py:1334) — so has_column() below would read a stale list, claim the
+	# column is still there, and DROP a column that is already gone (1091). Frappe busts this key itself
+	# before reading columns after a schema change (model/meta.py:976).
+	frappe.client_cache.delete_value(f"table_columns::tab{DOCTYPE}")
 	if not frappe.db.has_column(DOCTYPE, "grain_key"):
 		return
 	if not frappe.db.has_column(DOCTYPE, "event_key"):
 		return  # the rename has not run here; that patch owns the move.
 	frappe.db.sql_ddl(f"ALTER TABLE `tab{DOCTYPE}` DROP COLUMN `grain_key`")
+	frappe.client_cache.delete_value(f"table_columns::tab{DOCTYPE}")
