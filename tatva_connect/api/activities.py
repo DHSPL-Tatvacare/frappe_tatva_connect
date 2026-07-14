@@ -14,7 +14,6 @@ from crm.api.activities import get_activities as _native_get_activities
 from frappe import _
 
 from tatva_connect.activity.api import _blob_key, lead_timeline
-from tatva_connect.taxonomy import labels
 
 # Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage)
 # or auto-synced headline mirrors (the latest-lab snapshot). Keeps the signal, drops the churn.
@@ -30,10 +29,10 @@ def _full_name(user):
 
 
 def _stage_label(pk):
-	"""A CRM Lead Stage PK (`{program}::{stage}`) -> the stage a human reads. Through the one brain, so
-	it asks the doctype for its title_field rather than hardcoding `stage` — the two agree today only
-	because CRM Lead Stage.validate copies `stage` into `display_label`."""
-	return labels.label(pk, "CRM Lead Stage")
+	"""A CRM Lead Stage PK (`{program}::{stage}`) to the stage name. Reads `stage`, NOT the title_field:
+	title_field is `display_label`, which on 24 of 276 rows is a picker breadcrumb ("Niva Bupa / Archived
+	/ RNR after 3 attempts"), not the stage. The audit line wants the stage, so this is not label drift."""
+	return (pk and frappe.db.get_value("CRM Lead Stage", pk, "stage")) or pk or ""
 
 
 def _activity_events(entries):
@@ -44,7 +43,7 @@ def _activity_events(entries):
 		"owner": e["owner"],
 		"owner_name": e["owner_name"],
 		"verb": "completed" if e.get("done") else "created",
-		# The headline a rep reads — the clean type_name, never the composite PK it is keyed by.
+		# The headline a rep reads: the clean type_name, never the composite PK it is keyed by.
 		"subject": e["activity_type_label"] or e["activity_type"],
 		"status": e.get("status") or "",
 		"location": e.get("location"),

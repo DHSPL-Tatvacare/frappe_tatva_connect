@@ -30,10 +30,6 @@ override_doctype_class = {
 	"File": "tatva_connect.storage.file_override.FileOverride",
 	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain lead; stock otherwise.
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
-	# Additive parse_list_data ONLY: render composite-`::`-PK Link columns (lead stage / task type) as
-	# their clean display_label in the SPA list — the SAME title_field brain the Data tab uses. 100% stock otherwise.
-	"CRM Lead": "tatva_connect.lead.crm_lead_override.TatvaCRMLead",
-	"CRM Task": "tatva_connect.tasks.crm_task_override.TatvaCRMTask",
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.

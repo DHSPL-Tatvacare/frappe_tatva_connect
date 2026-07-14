@@ -17,7 +17,7 @@ from frappe.utils import flt, format_datetime, formatdate
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 
-# PK is the composite `{vertical}::{group}::{program}::{type_name}` — resolve it through taxonomy.labels, never show it raw.
+# PK is the composite `{vertical}::{group}::{program}::{type_name}`. Resolve it through taxonomy.labels; never show it raw.
 TASK_TYPE = "CRM Task Type"
 
 # The 9 promoted CRM Task columns an activity field may route to (the schema field's `target`).

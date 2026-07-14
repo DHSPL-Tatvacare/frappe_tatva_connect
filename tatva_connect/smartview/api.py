@@ -165,7 +165,7 @@ def _smart_view_tab(d):
 		"name": d.name,
 		"label": d.label,
 		"base_object": d.base_object,
-		# The PK stays — the view FILTERS on it. The clean label rides beside it, for display.
+		# The PK stays: the view filters on it. The label sits beside it, for display.
 		"activity_type": d.activity_type,
 		"activity_type_label": labels.label(d.activity_type, "CRM Task Type"),
 		"color": d.color,

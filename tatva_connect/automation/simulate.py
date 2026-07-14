@@ -113,8 +113,20 @@ def _would_create_task(action, context, subject_name, axes):
 	return f"Create Task {labels.label(action.task_type, 'CRM Task Type') or '?'} {when}{note}"
 
 
+def _shown(target_doctype, fieldname, value):
+	"""A field value as the operator should read it: a Link to a grain master stores a composite `::`
+	primary key, so show the target's title instead. Any other field passes through."""
+	if not (target_doctype and fieldname and isinstance(value, str) and value):
+		return value
+	df = frappe.get_meta(target_doctype).get_field(fieldname)
+	if not df or df.fieldtype != "Link" or not df.options:
+		return value
+	return labels.title_of(df.options, value) or value
+
+
 def _would_update_field(action, context, subject_name, axes):
 	value = actions._resolve_set_field_value(action, context)
+	value = _shown(action.target_doctype, action.fieldname, value)
 	return f"Set {action.fieldname or '?'} on {action.target_doctype or '?'} = {value!r}"
 
 

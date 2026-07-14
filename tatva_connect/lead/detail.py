@@ -173,12 +173,11 @@ def _value(doc, row):
 
 
 def _display_label(df, value):
-	"""Docfield-shaped adapter over the ONE label brain (taxonomy.labels) — for the callers that
-	already hold a docfield (this panel, the two parse_list_data projections). Returns None for a
-	non-Link field, which tells the panel to show the raw value."""
+	"""The panel's label for a Link value. None for a non-Link field, which tells the panel to render
+	the raw value."""
 	if not (df and df.fieldtype == "Link" and df.options and value):
 		return None
-	return labels.label(value, df.options)
+	return labels.title_of(df.options, value)
 
 
 def _group_key(section_key):

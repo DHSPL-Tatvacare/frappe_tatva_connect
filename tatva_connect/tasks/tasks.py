@@ -4,6 +4,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
+from tatva_connect.taxonomy import labels
 
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
@@ -212,7 +213,7 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	task = frappe.get_doc(
 		{
 			"doctype": "CRM Task",
-			"title": title or frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type,
+			"title": title or labels.label(task_type, "CRM Task Type"),
 			"custom_task_type": task_type,
 			"status": "Todo",
 			"due_date": due_date,

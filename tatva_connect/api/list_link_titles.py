@@ -12,6 +12,8 @@ per-surface, or fork code. Delegates to the unchanged native `get_data` (same pa
 """
 import frappe
 
+from tatva_connect.taxonomy import labels
+
 
 @frappe.whitelist()
 def get_data(**kwargs):
@@ -74,10 +76,9 @@ def _attach_link_titles(result, doctype=None):
 
 
 def _resolve_title(target_dt, value):
-	"""The ONE Link title resolver: the target doctype's title_field for `value` when it opts into
-	show_title_field_in_link (framework flag) AND the caller may read it — else None (no clean title).
-	Shared by the list `_link_titles` map and the single-value `get_link_title` (detail / side panel),
-	so every surface strips the composite `::` PK the same way, from the same source."""
+	"""The title for a `_link_titles` entry: the framework's two gates (the target opts in via
+	show_title_field_in_link, and the caller may read it), then the shared lookup. The title_field read
+	itself lives in taxonomy.labels.title_of, so there is one implementation of it, not two."""
 	if not (target_dt and value):
 		return None
 	try:
@@ -88,7 +89,7 @@ def _resolve_title(target_dt, value):
 		return None
 	if not frappe.has_permission(target_dt, "read", doc=value):
 		return None
-	return frappe.get_cached_value(target_dt, value, meta.title_field) or value
+	return labels.title_of(target_dt, value) or value
 
 
 @frappe.whitelist()

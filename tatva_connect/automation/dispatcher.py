@@ -112,7 +112,7 @@ def run_effects(subject, rule_version, trigger_doc, axes, grain, field_types, co
 	details = []
 	deferred = []
 	parked = None
-	idx, action = cursor, None
+	idx, action, label = cursor, None, ""
 	save_point = f"tc_auto_rule_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
@@ -120,8 +120,10 @@ def run_effects(subject, rule_version, trigger_doc, axes, grain, field_types, co
 			action = definition.actions[idx]
 			if _lane(action) != "effect":
 				continue  # a guard-lane action ran synchronously in validate
-			result = _run_action(action, subject, context, axes, trigger_doc)
+			# Built BEFORE the action runs: it reads the DB, and the except branch below runs after a
+			# rollback, where a second query can raise and lose the real error with it.
 			label = actions._action_label(action)
+			result = _run_action(action, subject, context, axes, trigger_doc)
 			success += 1
 			if callable(result):
 				deferred.append(result)  # a deferred thunk (e.g. Call Webhook) - fires only after commit
@@ -141,14 +143,14 @@ def run_effects(subject, rule_version, trigger_doc, axes, grain, field_types, co
 		frappe.db.release_savepoint(save_point)
 		success += 1
 		parked = frappe._dict(
-			parked_at=signal.parked_at, resume_at=signal.resume_at, cursor=idx + 1, label=actions._action_label(action)
+			parked_at=signal.parked_at, resume_at=signal.resume_at, cursor=idx + 1, label=label
 		)
 	except Exception as e:
 		frappe.db.rollback(save_point=save_point)
 		deferred = []
-		success = 0  # the whole segment rolled back — NOTHING durably ran, so the outcome is Failed, not Partial
+		success = 0  # the whole segment rolled back, NOTHING durably ran, so the outcome is Failed, not Partial
 		errors.append(f"{action.action_type}: {e}")
-		details.append(f"{idx + 1}. {actions._action_label(action)}: FAILED — {e} · segment rolled back (all its actions undone)")
+		details.append(f"{idx + 1}. {label}: FAILED: {e} · segment rolled back (all its actions undone)")
 		_log_error(definition.rule, action.action_type, grain, e)
 
 	if parked:
