@@ -306,7 +306,10 @@ function action_phrase(a) {
 			const due = a.due_mode === "Expression"
 				? ` due ${mono(frappe.utils.escape_html(a.due_expression || "?"))}`
 				: (a.due_from ? ` due from ${mono(frappe.utils.escape_html(a.due_from))}` : "");
-			return `create a <b>${frappe.utils.escape_html(a.task_type || "?")}</b> task${due}`;
+			// A task type's PK is the composite `v::g::p::type_name`. getdoc ships _link_titles for every
+			// child-table Link whose target sets show_title_field_in_link, and CRM Task Type does.
+			const type_name = frappe.utils.get_link_title("CRM Task Type", a.task_type) || a.task_type;
+			return `create a <b>${frappe.utils.escape_html(type_name || "?")}</b> task${due}`;
 		}
 		case "Update Field": {
 			let src;

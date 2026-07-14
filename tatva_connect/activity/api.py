@@ -14,7 +14,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt, format_datetime, formatdate
 
+from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
+
+# An activity type's PK is the composite `{vertical}::{group}::{program}::{type_name}` — never shown
+# raw. `taxonomy.labels` resolves it to the title_field; see that module for the payload contract.
+TASK_TYPE = "CRM Task Type"
 
 # The 9 promoted CRM Task columns an activity field may route to (the schema field's `target`).
 # Anything else in the schema goes to the JSON payload (display-only). See
@@ -132,7 +137,7 @@ def open_activity_tasks(lead):
 	types = _activity_type_names()
 	if not types:
 		return []
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"CRM Task",
 		filters={
 			"reference_docname": lead,
@@ -142,6 +147,10 @@ def open_activity_tasks(lead):
 		fields=["name", "title", "custom_task_type"],
 		order_by="creation desc",
 	)
+	type_names = labels.labels([r.custom_task_type for r in rows], TASK_TYPE)
+	for r in rows:
+		r["custom_task_type_label"] = type_names.get(r.custom_task_type, "")
+	return rows
 
 
 @frappe.whitelist()
@@ -339,7 +348,7 @@ def save_activity(lead, task_type, values, task=None):
 		return doc.name
 
 	# title = the clean type_name (display), never the composite PK.
-	title = frappe.db.get_value("CRM Task Type", task_type, "type_name") or task_type
+	title = labels.label(task_type, TASK_TYPE)
 	# Trusted (partner/system) write has no caller-assignee: leave unassigned for the Assignment Rule.
 	shell = frappe.get_doc({
 		"doctype": "CRM Task",
@@ -399,12 +408,11 @@ def lead_task_board(lead):
 	) if task_names else Counter()
 
 	types = {}
-	type_names = {}  # composite PK -> clean type_name (display label, never the PK)
 	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
 		cfg = _type_config(tn)
 		if cfg:
 			types[tn] = cfg
-		type_names[tn] = frappe.db.get_value("CRM Task Type", tn, "type_name") or tn
+	type_names = labels.labels([r.custom_task_type for r in rows], TASK_TYPE)
 
 	tasks = []
 	for r in rows:
@@ -495,7 +503,7 @@ def task_detail(task):
 			"title": r.title,
 			"description": r.description,
 			"task_type": r.custom_task_type or "",  # composite PK (the key)
-			"task_type_label": (frappe.db.get_value("CRM Task Type", r.custom_task_type, "type_name") or r.custom_task_type) if r.custom_task_type else "",
+			"task_type_label": labels.label(r.custom_task_type, TASK_TYPE),
 			"status": r.status,
 			"priority": r.priority,
 			"due_date": str(r.due_date) if r.due_date else None,
@@ -618,6 +626,7 @@ def lead_timeline(lead):
 		order_by="creation desc",
 	)
 	cfgs = {tn: _type_config(tn) for tn in {t.custom_task_type for t in tasks if t.custom_task_type}}
+	type_names = labels.labels([t.custom_task_type for t in tasks], TASK_TYPE)
 	files_by_key = _lead_files(lead)
 	out = []
 	for t in tasks:
@@ -633,6 +642,7 @@ def lead_timeline(lead):
 			"owner": who,
 			"owner_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"activity_type": t.custom_task_type,
+			"activity_type_label": type_names.get(t.custom_task_type, ""),
 			"status": t.custom_outcome or t.status,
 			"done": (t.status or "") in ("Done", "Completed"),
 			"automated": bool(t.custom_automated),

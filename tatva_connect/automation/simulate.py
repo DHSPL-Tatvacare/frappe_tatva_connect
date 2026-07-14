@@ -21,6 +21,7 @@ from frappe import _
 
 from tatva_connect.automation import actions, expr, rules, subjects
 from tatva_connect.automation.router import _context_for, _field_types_for
+from tatva_connect.taxonomy import labels
 
 
 @frappe.whitelist()
@@ -109,7 +110,7 @@ def _would_create_task(action, context, subject_name, axes):
 
 		if not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
 			note = " — NOTE: this task type is not in the sample's grain, would be blocked"
-	return f"Create Task {action.task_type or '?'} {when}{note}"
+	return f"Create Task {labels.label(action.task_type, 'CRM Task Type') or '?'} {when}{note}"
 
 
 def _would_update_field(action, context, subject_name, axes):

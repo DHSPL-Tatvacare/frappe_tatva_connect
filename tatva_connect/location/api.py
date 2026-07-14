@@ -22,6 +22,7 @@ from frappe import _
 from frappe.utils import cint, flt, format_datetime
 
 from tatva_connect import automation
+from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -551,7 +552,7 @@ def lead_location_view(lead):
 	anchor; phone/office activities show as plain log lines (NOT fake (0,0) coordinates — `located` is
 	keyed off custom_location_captured_at, which is set only on a real capture). One brain; map images
 	stream through the key-safe static_map proxy."""
-	from tatva_connect.activity.api import _activity_type_names
+	from tatva_connect.activity.api import TASK_TYPE, _activity_type_names
 
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	ld = frappe.get_doc("CRM Lead", lead)
@@ -575,6 +576,7 @@ def lead_location_view(lead):
 					"custom_location_longitude", "custom_location_captured_at"],
 			order_by="modified desc",
 		)
+		type_names = labels.labels([t.custom_task_type for t in rows], TASK_TYPE)
 		for t in rows:
 			who = t.assigned_to or t.owner
 			located = bool(t.custom_location_captured_at)  # the reliable marker — phone activities have none
@@ -586,6 +588,7 @@ def lead_location_view(lead):
 			activities.append({
 				"task": t.name,
 				"type": t.custom_task_type or "",
+				"type_label": type_names.get(t.custom_task_type, ""),
 				"status": t.custom_outcome or t.status or "",
 				"rep": (who and frappe.db.get_value("User", who, "full_name")) or who or "",
 				"date": format_datetime(when, "d MMM, h:mm a"),

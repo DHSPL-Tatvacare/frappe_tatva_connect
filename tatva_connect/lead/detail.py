@@ -28,6 +28,7 @@ import frappe
 from frappe import _
 
 from tatva_connect.access import entitlement
+from tatva_connect.taxonomy import labels
 
 # section_key -> (display label, sort order). Sections are DISPLAY GROUPS only — the catalog
 # decides which fields exist for a grain; there is no world/applicability gate. `drug` and
@@ -172,17 +173,12 @@ def _value(doc, row):
 
 
 def _display_label(df, value):
-	"""Clean label for a Link value = the target doctype's title_field (e.g. `display_label`), so the
-	grain-scoped `::` composite PK never reaches the UI — the SAME source as the header stage pill
-	(TatvaStagePill's `clean = s.display_label || …`). Returns None for non-Link fields (the panel
-	then shows the raw value) and falls back to the raw value if no title_field / label resolves."""
-	if df and df.fieldtype == "Link" and df.options and value:
-		try:
-			tf = frappe.get_meta(df.options).title_field
-			return (frappe.db.get_value(df.options, value, tf) or value) if tf else None
-		except Exception:
-			return None
-	return None
+	"""Docfield-shaped adapter over the ONE label brain (taxonomy.labels) — for the callers that
+	already hold a docfield (this panel, the two parse_list_data projections). Returns None for a
+	non-Link field, which tells the panel to show the raw value."""
+	if not (df and df.fieldtype == "Link" and df.options and value):
+		return None
+	return labels.label(value, df.options)
 
 
 def _group_key(section_key):

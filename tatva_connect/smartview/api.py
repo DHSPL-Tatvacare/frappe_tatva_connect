@@ -25,6 +25,7 @@ from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
 from tatva_connect.access import entitlement
+from tatva_connect.taxonomy import labels
 
 LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
@@ -164,7 +165,9 @@ def _smart_view_tab(d):
 		"name": d.name,
 		"label": d.label,
 		"base_object": d.base_object,
+		# The PK stays — the view FILTERS on it. The clean label rides beside it, for display.
 		"activity_type": d.activity_type,
+		"activity_type_label": labels.label(d.activity_type, "CRM Task Type"),
 		"color": d.color,
 		"icon": d.icon,
 		"order": cint(d.view_order),
@@ -215,6 +218,7 @@ def get_view(name):
 		"label": d.label,
 		"base_object": d.base_object,
 		"activity_type": d.activity_type,
+		"activity_type_label": labels.label(d.activity_type, "CRM Task Type"),
 		"vertical": d.vertical,
 		"group": d.group,
 		"program": d.program,

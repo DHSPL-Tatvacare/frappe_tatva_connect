@@ -16,12 +16,14 @@ from frappe import _
 from frappe.utils import flt
 
 from tatva_connect.automation import fields
+from tatva_connect.taxonomy import labels
 
 
 def _action_label(a):
 	"""Short human label of an action for the per-action audit trail in the run log."""
 	if a.action_type == "Create Task":
-		return "Create Task {}".format(a.task_type or "?")
+		# The operator reads this line in the run log — name the type, not its composite PK.
+		return "Create Task {}".format(labels.label(a.task_type, "CRM Task Type") or "?")
 	if a.action_type == "Update Field":
 		return "Update Field {}".format(a.fieldname or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):

@@ -82,7 +82,7 @@ frappe.ui.form.on("CRM Lead", {
             for (const a of acts) {
               const meta =
                 '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' +
-                '<div style="font-size:13px;font-weight:600">' + esc(a.type) +
+                '<div style="font-size:13px;font-weight:600">' + esc(a.type_label || a.type) +
                 (a.status ? ' <span style="font-weight:400;color:var(--text-muted)">· ' + esc(a.status) + "</span>" : "") + "</div>" +
                 '<div style="font-size:12px;color:var(--text-muted)">' + esc(a.rep) + " · " + esc(a.date) +
                 (a.located && a.distance_m != null
