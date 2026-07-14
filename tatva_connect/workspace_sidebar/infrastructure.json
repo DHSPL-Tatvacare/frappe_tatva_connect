@@ -42,6 +42,30 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "shield-check",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "File Screening",
+   "link_to": "CRM File Screening Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "scroll-text",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "File Scan Log",
+   "link_to": "CRM File Scan Log",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "map-pin",
@@ -65,7 +89,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-06-18 23:00:00.000000",
+ "modified": "2026-07-14 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Infrastructure",

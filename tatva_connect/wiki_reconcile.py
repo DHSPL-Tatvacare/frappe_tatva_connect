@@ -53,10 +53,10 @@ def _drop_stock_wiki_space():
 		# The tree first, then its root, then the space — a Wiki Document is a nested-set node and a
 		# space deleted out from under one leaves it orphaned and unreachable.
 		for page in pages:
-			frappe.delete_doc("Wiki Document", page.name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Wiki Document", page.name, force=True, ignore_permissions=True)  # authz-ok: tier-a — after_migrate, runs as Administrator
 		if space.root_group:
-			frappe.delete_doc("Wiki Document", space.root_group, force=True, ignore_permissions=True)
-		frappe.delete_doc("Wiki Space", space.name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Wiki Document", space.root_group, force=True, ignore_permissions=True)  # authz-ok: tier-a — after_migrate, runs as Administrator
+		frappe.delete_doc("Wiki Space", space.name, force=True, ignore_permissions=True)  # authz-ok: tier-a — after_migrate, runs as Administrator
 		frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()

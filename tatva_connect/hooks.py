@@ -222,6 +222,8 @@ scheduler_events = {
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 		# Daily: prune automation Run Log rows past the retention window.
 		"0 3 * * *": ["tatva_connect.automation.dispatcher.sweep_run_log"],
+		# Daily: trim logs/monitor.json.log — the one log frappe appends to without rotating (1 GB or 30 days, whichever first).
+		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
 		# Daily: drop expired partner-API idempotency records.
 		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
 		# Every 15 min: resume any automation rule fire parked at a Wait step whose time has arrived.
@@ -246,6 +248,8 @@ after_migrate = [
 	"tatva_connect.automation.drift.assert_registered",
 	# Every notification grain must point at a real automation row (the ONE global gate); a drifting catalog fails the migrate.
 	"tatva_connect.notifications.drift.assert_registered",
+	# M2 guard: a file's bytes are in Azure, so a new call site that reads one off the local disk fails the migrate — ask FileOverride, never the disk.
+	"tatva_connect.storage.drift.assert_no_disk_reads",
 	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
 	"tatva_connect.access.lockdown.assert_locked",
 	"tatva_connect.form_scripts_seed.seed",
@@ -266,6 +270,7 @@ after_migrate = [
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
 fixtures = [
 	# Desk STRUCTURE (Workspace + Workspace Sidebar) is NOT fixtures — migrate's remove_orphan_entities() prunes any standard space with no backing FILE, so each ships as STANDARD FILES (model-sync auto-imports them). Only dashboard CONTENT below stays fixtures.
+	# EDITING ONE: bump its `modified` in the JSON, or the edit does NOT ship. import_file.py:141 skips a standard file whose `modified` is <= the DB row's, so a Workspace/Workspace Sidebar edit migrates silently green and changes nothing. DocTypes are EXEMPT from that skip (they compare by migration_hash, import_file.py:130), which is why doctype JSONs need no bump.
 	# Observability dashboard records — charts/cards aren't in IMPORTABLE_DOCTYPES (no module-folder sync), so they ship as name-scoped fixtures (the Dashboard Chart SOURCE is module-standard and syncs on migrate); name-filtered so export never vacuums other apps'.
 	# "Automation Run Log by Outcome" is the automation engine's Run Log chart (Task 12, A.17 — the LAYOUT ships here, rows never seeded).
 	# Workspace-P1: native grain lens (Run Log grain/outcome/trigger_doctype/rule) + Partner API leads-by-vertical
@@ -599,12 +604,16 @@ before_request = [
 after_request = [
 	"tatva_connect.api._base.normalise_partner_response",
 	"tatva_connect.observability.capture.log_request",
+	# M2: delete the temp copies get_full_path() hydrated for this request — the other half of "cached per request".
+	"tatva_connect.storage.file_override.discard_hydrated",
 ]
 
 # Job Events
 # ----------
-# before_job = ["tatva_connect.utils.before_job"]
-# after_job = ["tatva_connect.utils.after_job"]
+# M2: a worker hydrates too (offload, imports, exports) — the same cleanup, or the bytes outlive the job.
+after_job = [
+	"tatva_connect.storage.file_override.discard_hydrated",
+]
 
 # User Data Protection
 # --------------------

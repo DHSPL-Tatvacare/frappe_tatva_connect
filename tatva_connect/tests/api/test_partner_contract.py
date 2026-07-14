@@ -24,7 +24,7 @@ from unittest.mock import patch
 import frappe
 
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file
+from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file, partner_note
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -82,6 +82,14 @@ class TestPartnerContract(unittest.TestCase):
 			data["external_id"] = external_id
 		frappe.form_dict = frappe._dict(data)
 		return partner_call._create_one(frappe.form_dict, self.mp, self.is_sysmgr)
+
+	def _partner_note(self, lead, external_id=None, **extra):
+		# NOT `_note` — that name is taken by the raw-doc helper the file-homing test uses.
+		data = {"lead": lead, "content": "<p>contract test note</p>", **extra}
+		if external_id is not None:
+			data["external_id"] = external_id
+		frappe.form_dict = frappe._dict(data)
+		return partner_note._create_one(frappe.form_dict, self.mp, self.is_sysmgr)
 
 	# -- axiom 2: dedup is OURS ---------------------------------------------
 
@@ -152,8 +160,10 @@ class TestPartnerContract(unittest.TestCase):
 		lead, _ = self._lead("+919812300104")
 		call, _ = self._call(lead.name)
 		file_view, _ = self._attach(lead.name)
+		note, _ = self._partner_note(lead.name)
 
-		addresses = {"lead": lead.name, "call": call["name"], "file": file_view["name"]}
+		addresses = {"lead": lead.name, "call": call["name"], "file": file_view["name"],
+		             "note": note["name"]}
 
 		frappe.local.response = frappe._dict()
 		frappe.form_dict = frappe._dict({"lead": lead.name})
@@ -172,6 +182,36 @@ class TestPartnerContract(unittest.TestCase):
 					f"{entity} returned a {type(name).__name__} address; every entity must return a "
 					f"string, and the OpenAPI declares `name` a string",
 				)
+
+	def test_note_create_creates_it_does_not_upsert(self):
+		"""A note follows the SAME rule as every other sub-entity: a POST creates. The label never
+		deduplicates, so a re-sent create is a SECOND note, and a retry is made safe with Idempotency-Key."""
+		lead, _ = self._lead("+919812300110")
+		first, a1 = self._partner_note(lead.name, external_id="SAME-LABEL")
+		second, a2 = self._partner_note(lead.name, external_id="SAME-LABEL")
+		self.assertEqual((a1, a2), (ACTION_CREATED, ACTION_CREATED))
+		self.assertNotEqual(first["name"], second["name"],
+		                    "external_id must never deduplicate a note")
+
+	def test_a_note_is_never_orphaned_or_guessed_onto_a_lead(self):
+		"""A call that cannot be attributed is kept unlinked — a note is REFUSED. A clinical note on the
+		wrong patient, or on none, is worse than a refused write, so notes have no phone-guess fallback."""
+		frappe.form_dict = frappe._dict({"content": "<p>no lead named</p>"})
+		with self.assertRaises(
+			Exception,
+			msg="a note that names no reachable lead must be refused, never left unattached",
+		):
+			partner_note._create_one(frappe.form_dict, self.mp, self.is_sysmgr)
+
+	def test_a_note_title_is_built_never_derived_from_the_body(self):
+		"""FCRM Note.title is mandatory but OPTIONAL in the contract: a caller with no title concept gets
+		a metadata header. It must never be the body echoed back — that would just print the note twice."""
+		lead, _ = self._lead("+919812300111")
+		view, _ = self._partner_note(lead.name, content="<p>Patient reports fatigue.</p>",
+		                     created_at="2026-05-30 10:15:00")
+		self.assertTrue(view["title"], "a note always carries a title")
+		self.assertNotIn("<p>", view["title"], "the title must never be derived from the content")
+		self.assertNotIn("fatigue", view["title"].lower())
 
 	def test_external_id_is_stored_echoed_and_never_resolves(self):
 		"""The label round-trips on every read, and is NOT an address: no endpoint takes it."""

@@ -47,6 +47,7 @@ tatva_connect.patches.add_resume_index  # Composite indexes on the CRM Automatio
 tatva_connect.patches.migrate_resume_to_versions  # Bind every already-parked execution to an immutable CRM Automation Rule Version, translating the old effect-lane `next_action_idx` into the new all-lanes `cursor`
 tatva_connect.patches.add_lead_dedup_unique_index  # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
 tatva_connect.patches.add_call_log_reference_index  # post — index (reference_doctype, reference_docname): call_list full-scanned without it
+tatva_connect.patches.reimport_infrastructure_desk  # post — File Screening + File Scan Log had no route from any workspace; the standard import skips a desk doc whose DB copy looks newer than the file, so force it (same reason as reimport_communications_desk)
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field

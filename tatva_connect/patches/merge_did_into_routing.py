@@ -49,13 +49,13 @@ def execute():
 				row.telephony_account if row.telephony_account != rule.telephony_account else None
 			),
 		})
-		rule.save(ignore_permissions=True)
+		rule.save(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 
 	frappe.db.commit()
 
 	# The table goes only once every row is on a rule. A failure above leaves the old doctype in place
 	# and the patch re-runnable, rather than dropping numbers that never landed.
-	frappe.delete_doc("DocType", OLD, force=True, ignore_permissions=True)
+	frappe.delete_doc("DocType", OLD, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	frappe.db.commit()
 
 
@@ -77,5 +77,5 @@ def _rule_for(row):
 		"program": row.program or None,
 		"telephony_account": row.telephony_account,
 	})
-	rule.insert(ignore_permissions=True)
+	rule.insert(ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	return rule

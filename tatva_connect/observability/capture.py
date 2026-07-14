@@ -18,6 +18,7 @@ break a response, so the whole thing is wrapped and any failure is logged, not r
 import time
 
 import frappe
+from frappe.monitor import get_trace_id
 from frappe.utils import now_datetime
 
 from tatva_connect import automation
@@ -72,6 +73,10 @@ def log_request(response=None, request=None):
 		# last dotted segment of the method path, e.g. ...partner.lead_create -> lead_create
 		endpoint = path.rstrip("/").rsplit("/", 1)[-1].rsplit(".", 1)[-1] or path
 
+		# The API already decided WHY it refused — `_fail` put the code+message on the response envelope
+		# before this hook runs. Read it; never re-derive it, or the log and the caller tell two stories.
+		error = (getattr(frappe.local, "response", None) or {}).get("error") or {}
+
 		frappe.get_doc({
 			"doctype": "CRM API Request Log",
 			"request_time": now_datetime(),
@@ -82,6 +87,9 @@ def log_request(response=None, request=None):
 			"status_code": code,
 			"is_error": 1 if code >= 400 else 0,
 			"duration_ms": duration_ms,
+			"trace_id": get_trace_id(),
+			"error_code": error.get("code"),
+			"error_message": (error.get("message") or "")[:500] or None,
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator
 		# Commit the log row explicitly. By the time after_request runs, Frappe has already
 		# committed (success) or rolled back (error) the handler's own transaction, so the

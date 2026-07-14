@@ -54,8 +54,8 @@ def assert_registered():
 	   on `hooks.doc_events["*"]` for after_insert/on_update/on_trash - see `_assert_router_wired`.
 
 	Walks ONLY doc_events + scheduler_events - override_whitelisted_methods,
-	override_doctype_class, permission_query_conditions, has_permission, after_migrate
-	and after_request are NOT automations and are intentionally excluded.
+	override_doctype_class, permission_query_conditions, has_permission, after_migrate,
+	after_request and after_job are NOT automations and are intentionally excluded.
 	"""
 	registered = _registered_paths()
 	for path in sorted(_hooked_paths()):

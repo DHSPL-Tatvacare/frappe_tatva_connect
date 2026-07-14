@@ -1,9 +1,15 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""Generic file screening — the ONE brain for magic-byte sniff + ClamAV virus scan on inbound
-uploads, plus the per-upload verdict log (CRM File Scan Log). Channel-agnostic: it takes bytes +
-context, never a File doc or a request, so every ingress calls the SAME `screen()`.
+"""Generic file screening — the ONE brain for the extension allowlist + magic-byte sniff + ClamAV virus
+scan on inbound uploads, plus the per-upload verdict log (CRM File Scan Log). Channel-agnostic: it takes
+bytes + context, never a File doc or a request, so every ingress calls the SAME `screen()`.
+
+Three checks, cheapest first, one verdict: is the extension one the operator accepts, do the bytes match
+the extension they claim, and is the content free of malware. The allowlist is deliberately NOT frappe's
+`allowed_file_extensions` (System Settings): that one is global (it would police desk uploads to gate a
+partner) and it silently returns early when there is no request (`file.py:458`), so migrations and jobs
+would bypass it. One screener, one operator page, every channel.
 
 Activated at exactly two call sites (there is NO universal File hook — internal/Desk uploads are
 untouched):
@@ -19,6 +25,7 @@ policy) lives in the same Single; blanks fall back to DEFAULTS. Needs the `clama
 """
 import frappe
 from frappe import _
+from frappe.monitor import get_trace_id
 from frappe.utils import now_datetime
 
 from tatva_connect import automation
@@ -31,6 +38,7 @@ _RETENTION_DAYS = 90
 # Verdicts (also the CRM File Scan Log `verdict` Select options).
 _CLEAN = "Clean"
 _INFECTED = "Infected"
+_DISALLOWED = "Type Not Allowed"
 _MISMATCH = "Type Mismatch"
 _UNAVAILABLE = "Scanner Unavailable"
 
@@ -94,8 +102,11 @@ def screen(*, file_name, raw, channel, source, attached_to_doctype=None, attache
 # -- classify (pure, no side effects) ----------------------------------------
 
 def _classify(file_name, raw):
-	"""Decide the verdict without acting. Sniff first (cheap, local), then ClamAV. Returns
-	(verdict, signature); signature is the clamd match name for an infection, else ''."""
+	"""Decide the verdict without acting. Cheapest first: the extension the operator allows, then the
+	bytes behind it, then ClamAV. Returns (verdict, signature); signature is the clamd match name for
+	an infection, else ''."""
+	if not _allowed(file_name):
+		return _DISALLOWED, ""
 	if not _sniff(file_name, raw):
 		return _MISMATCH, ""
 	status, signature = _scan(raw)
@@ -105,7 +116,7 @@ def _classify(file_name, raw):
 def _is_blocked(verdict):
 	"""Block a hard fail, or an unavailable scanner under the fail-closed `block` policy.
 	Unavailable + operator policy `allow` is accepted (still logged, never thrown)."""
-	if verdict in (_MISMATCH, _INFECTED):
+	if verdict in (_DISALLOWED, _MISMATCH, _INFECTED):
 		return True
 	if verdict == _UNAVAILABLE:
 		return (_cfg("scanner_unavailable") or "block") == "block"
@@ -114,6 +125,8 @@ def _is_blocked(verdict):
 
 def _block_notice(verdict):
 	"""Patient/caller-facing (message, title) for a blocked upload."""
+	if verdict == _DISALLOWED:
+		return _("This file type is not accepted."), _("Invalid file")
 	if verdict == _MISMATCH:
 		return _("This file's contents don't match its type."), _("Invalid file")
 	if verdict == _INFECTED:
@@ -121,11 +134,29 @@ def _block_notice(verdict):
 	return _("File could not be security-scanned. Please try again later."), _("Upload failed")
 
 
+def _extension(file_name):
+	"""The claimed extension, lowercased, without the dot. '' when the name carries none."""
+	return (file_name.rsplit(".", 1)[-1] if "." in (file_name or "") else "").lower()
+
+
+def _allowed(file_name):
+	"""True if the operator accepts this extension. The allowlist is the FIRST gate and the only one
+	that can refuse a type outright: the magic-byte sniff below can prove a .pdf is really an .html, but
+	it cannot refuse an .exe that genuinely is one, because there is no fingerprint to contradict.
+
+	Blank = every extension is accepted (the dormant default — a config, never a code, decision). The
+	operator fills this in before go-live; the go-live checklist names it."""
+	allowed = _cfg("allowed_extensions")
+	if not allowed:
+		return True
+	listed = {line.strip().lstrip(".").lower() for line in str(allowed).splitlines() if line.strip()}
+	return _extension(file_name) in listed
+
+
 def _sniff(file_name, raw):
 	"""True if the leading bytes match the claimed extension (or the extension is not one we
 	fingerprint). False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf."""
-	ext = (file_name.rsplit(".", 1)[-1] if "." in (file_name or "") else "").lower()
-	sigs = _MAGIC.get(ext)
+	sigs = _MAGIC.get(_extension(file_name))
 	return not sigs or any(raw.startswith(s) for s in sigs)
 
 
@@ -184,6 +215,9 @@ def _log_scan(*, channel, source, verdict, signature, blocked, file_name, size,
 			web_form=web_form,
 			source_ip=source_ip,
 			phone=phone,
+			# Read HERE, in the request. _write_scan_log runs in a worker, where get_trace_id() would
+			# answer with the JOB's id — and the verdict would join to nothing.
+			trace_id=get_trace_id(),
 		)
 	except Exception:
 		frappe.log_error(title="File scan log enqueue failed", message=frappe.get_traceback())

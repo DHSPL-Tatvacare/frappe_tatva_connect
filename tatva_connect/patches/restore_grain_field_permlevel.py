@@ -12,5 +12,5 @@ STALE = (
 def execute():
 	for name in STALE:
 		if frappe.db.exists("Property Setter", name):
-			frappe.delete_doc("Property Setter", name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Property Setter", name, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	frappe.clear_cache()

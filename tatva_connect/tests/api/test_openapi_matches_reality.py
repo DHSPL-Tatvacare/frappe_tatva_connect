@@ -25,11 +25,15 @@ from pathlib import Path
 
 import frappe
 
-from tatva_connect.api import partner, partner_activity, partner_call, partner_file
+from tatva_connect.api import partner, partner_activity, partner_call, partner_file, partner_note
 from tatva_connect.api._base import ERROR_CODES
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
-MODULES = (partner, partner_activity, partner_call, partner_file)
+MODULES = (partner, partner_activity, partner_call, partner_file, partner_note)
+
+# Endpoints _drive() deliberately does not exercise, each with the reason. EMPTY, and verified empty:
+# all 48 are driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
+UNDRIVEN = frozenset()
 VERTICAL, GROUP = "GoodFlip Care", "Anaya"
 
 
@@ -168,6 +172,17 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 				missing.append(dotted)
 			elif not succeeded:
 				unexercisable.append(f"{dotted} -> {driven.get(dotted, {}).get('error', {}).get('code', '?')}")
+
+		# An endpoint _drive() never exercises is checked by NOTHING: not this test, and not the lie
+		# detector, which iterates the driven map. A whole resource was once added to MODULES without
+		# being driven, and every one of its examples was wrong while the lock stayed green. Silence is
+		# not a pass, so an undriven endpoint fails here unless it is named in UNDRIVEN with a reason.
+		undriven = sorted(d for d in self.code if d not in driven and d not in UNDRIVEN)
+		self.assertFalse(
+			undriven,
+			f"{len(undriven)} endpoint(s) are never driven by _drive(), so their examples are checked by "
+			f"nothing and could say anything. Drive them, or add them to UNDRIVEN with the reason: {undriven}",
+		)
 
 		if unexercisable:
 			print("\n  endpoints that cannot succeed against the seeded data (documented, not skipped):")
@@ -325,6 +340,23 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			    updates=[{"name": c1, "duration": 7}])
 			hit(partner_call.call_delete_bulk, "tatva_connect.api.partner_call.call_delete_bulk", names=[c1])
 			hit(partner_call.call_delete, "tatva_connect.api.partner_call.call_delete", name=cal)
+
+			hit(partner_note.note_schema, "tatva_connect.api.partner_note.note_schema")
+			r = hit(partner_note.note_create, "tatva_connect.api.partner_note.note_create",
+			        lead=lead, content="<p>spec</p>")
+			nt = r["data"]["name"]
+			hit(partner_note.note_get, "tatva_connect.api.partner_note.note_get", name=nt)
+			hit(partner_note.note_update, "tatva_connect.api.partner_note.note_update",
+			    name=nt, content="<p>spec revised</p>")
+			hit(partner_note.note_list, "tatva_connect.api.partner_note.note_list", lead=lead, limit=10)
+			r = hit(partner_note.note_create_bulk, "tatva_connect.api.partner_note.note_create_bulk",
+			        notes=[{"lead": lead, "content": "<p>bulk</p>"}])
+			n1 = r["results"][0]["data"]["name"]
+			hit(partner_note.note_get_bulk, "tatva_connect.api.partner_note.note_get_bulk", names=[n1])
+			hit(partner_note.note_update_bulk, "tatva_connect.api.partner_note.note_update_bulk",
+			    updates=[{"name": n1, "content": "<p>bulk revised</p>"}])
+			hit(partner_note.note_delete_bulk, "tatva_connect.api.partner_note.note_delete_bulk", names=[n1])
+			hit(partner_note.note_delete, "tatva_connect.api.partner_note.note_delete", name=nt)
 
 			hit(partner_file.file_schema, "tatva_connect.api.partner_file.file_schema")
 			r = hit(partner_file.file_attach, "tatva_connect.api.partner_file.file_attach",

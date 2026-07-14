@@ -557,6 +557,159 @@ Authorization: token {{token}}
     });
 %}
 
+# ────────────────────────────────────────────────────────────────── NOTES
+
+### Note Schema
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_schema
+Authorization: token {{token}}
+
+> {%
+    client.test("discovery states that a note does NOT dedup", function () {
+        const d = response.body.data;
+        client.assert(d.entity === "note");
+        client.assert(d.identity.addressed_by === "name");
+        client.assert(d.dedup.indexOf("does not deduplicate") >= 0, "dedup rule must say so plainly");
+    });
+    client.test("content is the one required field", function () {
+        const c = response.body.data.fields.filter(f => f.fieldname === "content")[0];
+        client.assert(c.required === true);
+    });
+%}
+
+### Create Note
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "content": "<p>Counselled on cycle 3. Reports mild fatigue, no fever.</p>",
+  "external_id": "HTTPC-NOTE-1"
+}
+
+> {%
+    client.test("a note is created and attached", function () {
+        client.assert(response.body.action === "created");
+        client.assert(response.body.data.lead === client.global.get("leadName"));
+    });
+    client.test("title is built when none is sent -- never the body echoed back", function () {
+        const t = response.body.data.title;
+        client.assert(t && t.length > 0, "a note always carries a title");
+        client.assert(t.indexOf("<p>") < 0, "the title must never be derived from the content");
+    });
+    client.global.set("noteName", response.body.data.name);
+%}
+
+### A note with NO reachable lead is REFUSED. Never orphaned, never guessed onto a wrong patient.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "content": "<p>no lead named</p>",
+  "external_id": "HTTPC-NOTE-ORPHAN"
+}
+
+> {%
+    client.test("attribution is strict -- unlike a call, a note is never left unlinked", function () {
+        client.assert(response.status >= 400, "a note that names no reachable lead must be refused");
+    });
+%}
+
+### Re-send the SAME external_id. A create CREATES. This must be a SECOND note.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_create
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "lead": "{{leadName}}",
+  "content": "<p>Counselled on cycle 3.</p>",
+  "external_id": "HTTPC-NOTE-1"
+}
+
+> {%
+    client.test("external_id does NOT dedup: a re-sent create yields a second record", function () {
+        client.assert(response.body.action === "created");
+        client.assert(response.body.data.name !== client.global.get("noteName"),
+            "external_id must never deduplicate; use Idempotency-Key to make a retry safe");
+    });
+    client.global.set("noteName2", response.body.data.name);
+%}
+
+### Retry safety. The SAME body twice under one Idempotency-Key must yield ONE note.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_create
+Authorization: token {{token}}
+Content-Type: application/json
+Idempotency-Key: httpc-note-retry-1
+
+{
+  "lead": "{{leadName}}",
+  "content": "<p>Retry-safety probe.</p>"
+}
+
+> {%
+    client.test("the first call under the key creates", function () {
+        client.assert(response.body.action === "created");
+    });
+    client.global.set("noteRetryName", response.body.data.name);
+%}
+
+### The SAME key again: the stored response is replayed, and no second note is written.
+POST {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_create
+Authorization: token {{token}}
+Content-Type: application/json
+Idempotency-Key: httpc-note-retry-1
+
+{
+  "lead": "{{leadName}}",
+  "content": "<p>Retry-safety probe.</p>"
+}
+
+> {%
+    client.test("a retry under the same key replays, it does not create a second note", function () {
+        client.assert(response.body.data.name === client.global.get("noteRetryName"),
+            "the Idempotency-Key must replay the first response, never mint a new record");
+    });
+%}
+
+### Update Note. Only the fields present in the body change.
+PUT {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_update
+Authorization: token {{token}}
+Content-Type: application/json
+
+{
+  "name": "{{noteName}}",
+  "content": "<p>Fatigue resolved at review.</p>"
+}
+
+> {%
+    client.test("updated, and the lead link is left alone", function () {
+        client.assert(response.body.action === "updated");
+        client.assert(response.body.data.lead === client.global.get("leadName"));
+    });
+%}
+
+### List a lead's Notes
+GET {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_list?lead={{leadName}}&limit=10
+Authorization: token {{token}}
+
+> {%
+    client.test("the created note appears in the lead's list", function () {
+        const names = response.body.data.notes.map(n => n.name);
+        client.assert(names.indexOf(client.global.get("noteName")) >= 0);
+    });
+%}
+
+### Delete Note
+DELETE {{baseUrl}}/api/method/tatva_connect.api.partner_note.note_delete?name={{noteName}}
+Authorization: token {{token}}
+
+> {%
+    client.test("deleted", function () {
+        client.assert(response.body.action === "deleted");
+    });
+%}
+
 # ───────────────────────────────────────────────── THE CONTRACT, ADVERSARIALLY
 
 ### A mistyped bulk body key must be a 400 — NOT a green 200 that silently writes nothing

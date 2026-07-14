@@ -54,6 +54,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	scoped_by_lead,
 	validate_external_id,
 )
 from tatva_connect.storage import file_manager, file_screening
@@ -169,16 +170,8 @@ def _scoped_file(name, mp, is_sysmgr):
 	if not doc:
 		frappe.throw(_("File not found"), frappe.DoesNotExistError)
 
-	lead_name = _file_lead(doc)
-	if not lead_name:
-		frappe.throw(_("File not found"), frappe.DoesNotExistError)
-	if mp:
-		# resolve_lead re-applies the partner's forced vertical+group filter -> a file whose
-		# lead is on another line resolves to not-found, never leaking it.
-		try:
-			resolve_lead(mp, is_sysmgr, {"lead": lead_name})
-		except frappe.DoesNotExistError:
-			frappe.throw(_("File not found"), frappe.DoesNotExistError)
+	# A file finds its lead indirectly: through the task or note it hangs off, or from the lead itself.
+	scoped_by_lead(_file_lead(doc), mp, is_sysmgr, "File")
 	return doc
 
 

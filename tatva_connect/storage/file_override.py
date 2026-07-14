@@ -17,6 +17,7 @@ is a deviation. Privacy has ONE checkpoint (`file_events.may_be_public`) and the
 """
 
 import os
+import shutil
 import tempfile
 
 import frappe
@@ -27,6 +28,27 @@ from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
 _HYDRATED = "_tatva_hydrated_files"  # per-request temp paths, so one download serves every reader
 
 
+def discard_hydrated(**_kwargs):
+	"""Delete the temp copies `get_full_path` made, at the end of the request or job that made them.
+
+	Hydration is deliberate (M2): a path-reader in frappe, lms, insights or wiki cannot be handed bytes,
+	so the blob is written to a real path for the life of one request. The path was cached per request
+	but the temp DIRECTORY was never removed, so every hydration left a plaintext patient file on the app
+	server for good. This is the other half of "cached per request": the cache dies with frappe.local,
+	and now the bytes die with it too.
+
+	Registered on after_request AND after_job, because imports and the offload run in workers. Kwargs are
+	absorbed because frappe calls the two hooks with different ones. `ignore_errors` keeps a failed
+	cleanup from failing a request that already succeeded.
+	"""
+	cache = getattr(frappe.local, _HYDRATED, None)
+	if not cache:
+		return
+	for path in cache.values():
+		shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+	setattr(frappe.local, _HYDRATED, {})
+
+
 class FileOverride(File):
 	def before_insert(self):
 		self._inherit_file_name()  # before core's set_file_name() (file.py:112) carves a name out of the URL
@@ -35,6 +57,23 @@ class FileOverride(File):
 	def validate(self):
 		self._guard_private_url_reference()
 		super().validate()
+
+	def check_content(self):
+		"""Core reads a PDF's structure here to refuse embedded JavaScript (file.py:471, pdf_contains_js).
+
+		A truncated or corrupt PDF makes that parse RAISE (pypdf), and the exception escaped as a 500: the
+		caller's bad bytes reported as our fault. A file that claims to be a PDF and cannot be parsed as
+		one is refused in the caller's language, like any other invalid upload.
+
+		Only pypdf's own errors are caught. A bare `except Exception` would relabel a PermissionError or a
+		frappe throw as a type mismatch, and PermissionError does not subclass ValidationError.
+		"""
+		from pypdf.errors import PdfReadError
+
+		try:
+			super().check_content()
+		except PdfReadError:
+			frappe.throw(frappe._("This file's contents don't match its type."), frappe.ValidationError)
 
 	def _inherit_file_name(self):
 		"""A copy carries the human filename, not our storage hash (core would derive it from the URL)."""

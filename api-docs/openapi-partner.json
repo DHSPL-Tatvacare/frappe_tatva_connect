@@ -75,6 +75,10 @@
       "name": "Calls",
       "description": "Calls are logged on a lead. A call is stored in the same call log the telephony integration writes to. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `call_schema` | Discovery: the call payload contract. |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | List a lead's calls, filtered and paginated. |\n| POST | `call_create` | Create a call log; returns its `name`. |\n| PUT | `call_update` | Update a call by `name`. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `call_create_bulk` | `{\"calls\":[...]}` (up to 100). |\n| PUT | `call_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `call_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Attribution: `lead` is always read\n\n`lead` or `mobile_no` attaches the call explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`, never on the wrong lead. `lead` is always read back to confirm whether the call was linked.\n\n### Identity\n\nA call is addressed by `name`, returned when it was created — which is NOT the `external_id`. A POST **creates**: it does not deduplicate, so a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `started_at` backdates the call on insert.",
       "x-zudoku-collapsed": true
+    },
+    {
+      "name": "Notes",
+      "description": "Free-text notes on a lead. A note is addressed by `name`, the id returned when it was created. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n**Attribution is strict.** Unlike a call, a note is never left unattached and is never matched by guesswork: `lead` or `mobile_no` must name a lead on the caller's line, or the write is refused. A clinical note on the wrong patient is worse than a refused write.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `note_schema` | The note payload contract |\n| GET | `note_get` | One note by `name` |\n| GET | `note_list` | A lead's notes, paginated |\n| POST | `note_create` | Create a note |\n| PUT | `note_update` | Update a note by `name` |\n| DELETE | `note_delete` | Delete a note by `name` |\n| POST | `note_get_bulk` | Read up to 100 by `names` |\n| POST | `note_create_bulk` | Create up to 100 |\n| PUT | `note_update_bulk` | Update up to 100 |\n| DELETE | `note_delete_bulk` | Delete up to 100 |\n"
     }
   ],
   "components": {
@@ -1147,6 +1151,93 @@
               "$ref": "#/components/schemas/CallUpsertRequest"
             },
             "description": "Each entry carries the call's `name` plus the fields to change."
+          }
+        }
+      },
+      "Note": {
+        "type": "object",
+        "description": "The partner-facing shape of a note. `lead` is always set — a note is never unattached.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The FCRM Note id (the autonamed row name; NOT the `external_id`)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          },
+          "lead": {
+            "type": "string",
+            "description": "The lead this note is attached to."
+          },
+          "title": {
+            "type": "string",
+            "description": "A short label. When the caller sends none, a metadata header is built (`Note added on <date>`) — it is never derived from the body."
+          },
+          "content": {
+            "type": "string",
+            "description": "The note body. HTML is accepted and sanitised on write."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the note was created. Send it on create to backdate a historical note; omit it and the server stamps now."
+          }
+        }
+      },
+      "NoteUpsertRequest": {
+        "type": "object",
+        "description": "Body for `note_create` and `note_update`. See [Writes and retries](/writes-and-retries).",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The note's `name`, returned when it was created. Required on an update; it is the only address the API accepts. Omitted on a create."
+          },
+          "lead": {
+            "type": "string",
+            "description": "The lead to attach the note to, scoped to the caller's line. Required unless `mobile_no` is sent."
+          },
+          "mobile_no": {
+            "type": "string",
+            "description": "Attach by the lead's mobile number instead of its `name`, scoped to the caller's line."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "**Optional label.** The caller's own reference for this record, stored and echoed back on every read. It is never interpreted, never deduplicated on, and never used to locate a record — records are addressed by `name`. Retries are made safe with the `Idempotency-Key` header, not with this field."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional. A short label; when it is omitted, one is built."
+          },
+          "content": {
+            "type": "string",
+            "description": "**Required.** The note body. HTML is accepted and sanitised on write."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional. Backdates the note's creation for a historical load."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "NoteUpdateBulkRequest": {
+        "type": "object",
+        "required": [
+          "updates"
+        ],
+        "description": "A batch of note updates, each addressed by `name`. Up to 100 per call.",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/NoteUpsertRequest"
+            },
+            "description": "Each entry carries the note's `name` plus the fields to change."
           }
         }
       }
@@ -6104,6 +6195,308 @@
             "name": "50111"
           }
         }
+      },
+      "NoteCreateRequest": {
+        "summary": "note_create: explicit lead",
+        "value": {
+          "lead": "a7f3c9e12b",
+          "external_id": "LSQ-NOTE-5001",
+          "title": "Counselling call summary",
+          "content": "<p>Patient counselled on cycle 3. Reports mild fatigue, no fever.</p>",
+          "created_at": "2026-05-30T10:15:00"
+        }
+      },
+      "NoteCreateRequestByMobile": {
+        "summary": "note_create: attach by mobile_no, title omitted",
+        "value": {
+          "mobile_no": "+919000000001",
+          "external_id": "LSQ-NOTE-5002",
+          "content": "<p>Left voicemail; will retry tomorrow.</p>"
+        }
+      },
+      "NoteCreateResponse": {
+        "summary": "note_create",
+        "value": {
+          "status": "success",
+          "action": "created",
+          "data": {
+            "name": "n7kq2wx94p",
+            "external_id": "LSQ-NOTE-5001",
+            "lead": "a7f3c9e12b",
+            "title": "Note added on 30 May 2026",
+            "content": "<p>Patient counselled on cycle 3. Reports mild fatigue, no fever.</p>",
+            "created_at": "2026-05-30 10:15:00"
+          }
+        }
+      },
+      "NoteGetResponse": {
+        "summary": "note_get",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "name": "n7kq2wx94p",
+            "external_id": "LSQ-NOTE-5001",
+            "lead": "a7f3c9e12b",
+            "title": "Note added on 30 May 2026",
+            "content": "<p>Patient counselled on cycle 3. Reports mild fatigue, no fever.</p>",
+            "created_at": "2026-05-30 10:15:00"
+          }
+        }
+      },
+      "NoteUpdateRequest": {
+        "summary": "note_update: revise the body",
+        "value": {
+          "name": "n7kq2wx94p",
+          "content": "<p>Patient counselled on cycle 3. Fatigue resolved at review.</p>"
+        }
+      },
+      "NoteUpdateResponse": {
+        "summary": "note_update",
+        "value": {
+          "status": "success",
+          "action": "updated",
+          "data": {
+            "name": "n7kq2wx94p",
+            "external_id": "LSQ-NOTE-5001",
+            "lead": "a7f3c9e12b",
+            "title": "Note added on 30 May 2026",
+            "content": "<p>Fatigue resolved at review.</p>",
+            "created_at": "2026-05-30 10:15:00"
+          }
+        }
+      },
+      "NoteDeleteResponse": {
+        "summary": "note_delete",
+        "value": {
+          "status": "success",
+          "action": "deleted",
+          "data": {
+            "name": "n7kq2wx94p"
+          }
+        }
+      },
+      "NoteListResponse": {
+        "summary": "note_list",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "total": 1,
+            "count": 1,
+            "offset": 0,
+            "limit": 10,
+            "has_more": false,
+            "notes": [
+              {
+                "name": "n7kq2wx94p",
+                "external_id": "LSQ-NOTE-5001",
+                "lead": "a7f3c9e12b",
+                "title": "Note added on 30 May 2026",
+                "content": "<p>Fatigue resolved at review.</p>",
+                "created_at": "2026-05-30 10:15:00"
+              }
+            ]
+          }
+        }
+      },
+      "NoteSchemaResponse": {
+        "summary": "note_schema",
+        "value": {
+          "status": "success",
+          "action": "fetched",
+          "data": {
+            "entity": "note",
+            "identity": {
+              "addressed_by": "name",
+              "note": "Every record is addressed by `name` — the primary key of its underlying table, returned when the record is created. It is stored by the caller and is the only address the API accepts. `external_id` is a label of the caller's own choosing: it is stored and echoed back on every read, is never interpreted, and is never used to locate a record. Retries are made safe with the Idempotency-Key header, not with any identifier in the body."
+            },
+            "dedup": "None. Every POST creates a new note and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
+            "bulk": {
+              "max_per_call": 25,
+              "list_page_max": 200,
+              "list_page_default": 20
+            },
+            "fields": [
+              {
+                "fieldname": "lead",
+                "label": "Lead",
+                "type": "Dynamic Link",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "mobile_no",
+                "label": "Mobile No",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "external_id",
+                "label": "External ID",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "title",
+                "label": "Title",
+                "type": "Data",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              },
+              {
+                "fieldname": "content",
+                "label": "Content",
+                "type": "Text Editor",
+                "behavior": "REQUIRED",
+                "required": true,
+                "options": null
+              },
+              {
+                "fieldname": "created_at",
+                "label": "Created At",
+                "type": "Datetime",
+                "behavior": "OPTIONAL",
+                "required": false,
+                "options": null
+              }
+            ],
+            "attribution": "`lead` or `mobile_no` attaches the note to a lead on the caller's line. A note is never left unattached and is never matched by guesswork: a payload that names no reachable lead is refused."
+          }
+        }
+      },
+      "NoteCreateBulkRequest": {
+        "summary": "note_create_bulk",
+        "value": {
+          "notes": [
+            {
+              "lead": "a7f3c9e12b",
+              "external_id": "LSQ-NOTE-5001",
+              "content": "<p>Cycle 3 counselling done.</p>"
+            },
+            {
+              "mobile_no": "+919000000001",
+              "external_id": "LSQ-NOTE-5002",
+              "content": "<p>Voicemail left.</p>"
+            }
+          ]
+        }
+      },
+      "NoteCreateBulkResponse": {
+        "summary": "note_create_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "created",
+              "data": {
+                "name": "n7kq2wx94p",
+                "external_id": null,
+                "lead": "a7f3c9e12b",
+                "title": "Note",
+                "content": "<p>Cycle 3 counselling done.</p>",
+                "created_at": "2026-07-14 15:25:37.262005"
+              }
+            }
+          ]
+        }
+      },
+      "NoteGetBulkResponse": {
+        "summary": "note_get_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "fetched",
+              "data": {
+                "name": "n7kq2wx94p",
+                "external_id": null,
+                "lead": "a7f3c9e12b",
+                "title": "Note",
+                "content": "<p>Cycle 3 counselling done.</p>",
+                "created_at": "2026-07-14 15:25:37.262005"
+              }
+            }
+          ]
+        }
+      },
+      "NoteUpdateBulkRequest": {
+        "summary": "note_update_bulk",
+        "value": {
+          "updates": [
+            {
+              "name": "n7kq2wx94p",
+              "content": "<p>Revised after review.</p>"
+            }
+          ]
+        }
+      },
+      "NoteUpdateBulkResponse": {
+        "summary": "note_update_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "updated",
+              "data": {
+                "name": "n7kq2wx94p",
+                "external_id": null,
+                "lead": "a7f3c9e12b",
+                "title": "Note",
+                "content": "<p>Revised after review.</p>",
+                "created_at": "2026-07-14 15:25:37.262005"
+              }
+            }
+          ]
+        }
+      },
+      "NoteDeleteBulkResponse": {
+        "summary": "note_delete_bulk",
+        "value": {
+          "status": "success",
+          "summary": {
+            "total": 1,
+            "succeeded": 1,
+            "failed": 0
+          },
+          "results": [
+            {
+              "index": 0,
+              "status": "success",
+              "action": "deleted",
+              "data": {
+                "name": "n7kq2wx94p"
+              }
+            }
+          ]
+        }
       }
     },
     "headers": {
@@ -10214,6 +10607,1064 @@
           },
           "403": {
             "description": "The key may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_schema": {
+      "get": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Note Schema",
+        "description": "Discovery. The note payload contract is returned: every field the caller may send, its type, and whether it is required. The shape is fixed (it does not vary by partner or grain), but it is discoverable, so a field list is never hardcoded.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerSchemaResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteSchemaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_get": {
+      "get": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Get Note",
+        "description": "Reads one note by `name`, scoped to the caller's line. Out-of-scope or missing returns the same generic not-found.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Note Log id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteGetResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_list": {
+      "get": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "List Notes",
+        "description": "Lists a lead's notes, newest first, paginated. `lead` (or `mobile_no`) is required and line-scoped.",
+        "parameters": [
+          {
+            "name": "lead",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRM Lead id. Use this OR `mobile_no`.",
+            "example": "a7f3c9e12b"
+          },
+          {
+            "name": "mobile_no",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "example": "9000000001"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 200
+            },
+            "description": "Page size. Default 20, max 200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip (paging). Alias `limit_start` is also accepted."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityListResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteListResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_create": {
+      "post": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Create Note",
+        "description": "A note is created and its `name` is returned — the address used for every subsequent read, update and delete. `content` is required.\n\nA POST **creates**. It does not deduplicate on any caller-supplied value, so a re-sent create produces a second note. A retry is made safe with the `Idempotency-Key` header.\n\n**Attribution is strict and a note is never unlinked.** `lead` or `mobile_no` must name a lead on the caller's line. A call that cannot be attributed is kept unlinked; a note is refused — a clinical note on the wrong patient, or on none, is worse than a refused write.\n\n`title` is optional. When none is sent, a metadata header is built (`Note added on <date>`); it is never derived from the body.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUpsertRequest"
+              },
+              "examples": {
+                "Explicit lead": {
+                  "$ref": "#/components/examples/NoteCreateRequest"
+                },
+                "Attach by mobile_no": {
+                  "$ref": "#/components/examples/NoteCreateRequestByMobile"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteCreateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_update": {
+      "put": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Update Note",
+        "description": "Updates a note by `name`. Only the fields present in the body change; an omitted field is left alone. Scope-checked.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteUpdateResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUpsertRequest"
+              },
+              "examples": {
+                "Correct a duration": {
+                  "$ref": "#/components/examples/NoteUpdateRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_delete": {
+      "delete": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Delete Note",
+        "description": "Deletes one note by `name`, scoped to the caller's line. Out-of-scope or missing returns the same generic not-found.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CRM Note Log id to delete (may also be sent in the JSON body)."
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityReadResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteDeleteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_get_bulk": {
+      "post": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Bulk Read Notes",
+        "description": "Reads many notes by `names` (max 100). Input-ordered; out-of-scope or unknown names are reported `not_found` in place.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteGetBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServerBusy"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkNamesRequest"
+              },
+              "examples": {
+                "Three names": {
+                  "$ref": "#/components/examples/BulkNamesRequestExample"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_create_bulk": {
+      "post": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Bulk Create Notes",
+        "description": "Creates many notes (max 100). Each record is enforced in its own savepoint, so one bad record does not sink the batch — partial success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "notes": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/NoteUpsertRequest"
+                    },
+                    "description": "Up to 100 note payloads (same shape as `note_create`)."
+                  }
+                }
+              },
+              "examples": {
+                "Two notes": {
+                  "$ref": "#/components/examples/NoteCreateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteCreateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_update_bulk": {
+      "put": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Bulk Update Notes",
+        "description": "Updates many notes (max 100). Partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteUpdateBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this key's business line.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A budget is exhausted. `error.retry_after` says when to retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected, and logged. Retry with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/WriteConflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUpdateBulkRequest"
+              },
+              "examples": {
+                "Two updates": {
+                  "$ref": "#/components/examples/NoteUpdateBulkRequest"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/api/method/tatva_connect.api.partner_note.note_delete_bulk": {
+      "delete": {
+        "tags": [
+          "Notes"
+        ],
+        "summary": "Bulk Delete Notes",
+        "description": "Deletes many notes (max 100). Partial success.",
+        "responses": {
+          "200": {
+            "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
+            "headers": {
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBulkResponse"
+                },
+                "examples": {
+                  "Live response": {
+                    "$ref": "#/components/examples/NoteDeleteBulkResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was rejected. `error.code` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The API key is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key may not make this note.",
             "content": {
               "application/json": {
                 "schema": {

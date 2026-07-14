@@ -15,7 +15,10 @@
   "http_method",
   "status_code",
   "is_error",
-  "duration_ms"
+  "duration_ms",
+  "trace_id",
+  "error_code",
+  "error_message"
  ],
  "fields": [
   {"fieldname": "request_time", "fieldtype": "Datetime", "label": "Request Time", "in_list_view": 1, "read_only": 1, "search_index": 1},
@@ -25,7 +28,10 @@
   {"fieldname": "http_method", "fieldtype": "Data", "label": "HTTP Method", "read_only": 1},
   {"fieldname": "status_code", "fieldtype": "Int", "label": "Status Code", "in_list_view": 1, "read_only": 1},
   {"fieldname": "is_error", "fieldtype": "Check", "label": "Is Error", "read_only": 1},
-  {"fieldname": "duration_ms", "fieldtype": "Int", "label": "Duration (ms)", "in_list_view": 1, "read_only": 1}
+  {"fieldname": "duration_ms", "fieldtype": "Int", "label": "Duration (ms)", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "trace_id", "fieldtype": "Data", "label": "Trace ID", "read_only": 1, "search_index": 1, "description": "Frappe's own per-request id (frappe.monitor). The same id is stamped on CRM File Scan Log and on Error Log, so one call, the verdict that refused it, and its traceback are read together."},
+  {"fieldname": "error_code", "fieldtype": "Data", "label": "Error Code", "read_only": 1, "search_index": 1, "description": "The partner-API error code returned to the caller (validation_error, not_found, rate_limited). Blank on a success."},
+  {"fieldname": "error_message", "fieldtype": "Small Text", "label": "Error Message", "read_only": 1, "description": "The message returned to the caller. The status code says a call failed; this says why."}
  ],
  "index_web_pages_for_search": 0,
  "links": [],

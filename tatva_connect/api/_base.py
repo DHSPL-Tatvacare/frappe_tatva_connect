@@ -342,6 +342,24 @@ def resolve_lead(mp, is_sysmgr, data):
 	return lead_name
 
 
+def scoped_by_lead(lead_name, mp, is_sysmgr, label):
+	"""The ONE visibility rule every sub-entity obeys: a record is visible if, and only if, the lead it
+	hangs off is on the caller's line. A record with no lead, and a record on someone else's line, both
+	answer with the SAME generic not-found, so an id is never confirmed by the shape of a refusal.
+
+	Each resource keeps its own loader, because they genuinely differ (a call and a note carry their lead
+	on reference_docname, an activity is read as a row, a file finds its lead through the task or note it
+	hangs off). What must NOT differ, and used to be written out once per resource, is this decision.
+	Returns the lead name so a caller can reuse it.
+	"""
+	if not lead_name:
+		frappe.throw(_("{0} not found").format(label), frappe.DoesNotExistError)
+	try:
+		return resolve_lead(mp, is_sysmgr, {"lead": lead_name})
+	except frappe.DoesNotExistError:
+		frappe.throw(_("{0} not found").format(label), frappe.DoesNotExistError)
+
+
 # -- request-arg helpers -----------------------------------------------------
 
 def _read_list(data, key):
@@ -471,6 +489,7 @@ def _classify(e, fn_name):
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
 			return code, http, (str(e) or _("Request failed")), getattr(e, "fields", None)
+	# The caller rolls back before classifying, then commits this row on its own; deferring it to redis instead would lose it on an eviction and re-stamp its creation at flush time.
 	frappe.log_error(title=f"Partner API error: {fn_name}")
 	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
 
@@ -867,6 +886,12 @@ def _api(fn=None, *, bulk=False, read=False):
 			# already wrote. _idempotency_begin commits its claim separately, so the release still lands.
 			frappe.db.rollback()
 			code, http, message, fields = _classify(e, fn.__name__)
+			# _classify wrote an Error Log row for an unexpected failure. The rollback above cleared every
+			# other pending write, so this commit persists that row and nothing else - the same reason
+			# observability.capture.log_request commits its own row here. Without it the traceback dies with
+			# the transaction and a 500 reaches the partner with no trace of why on our side.
+			if code == "server_error":
+				frappe.db.commit()
 			extra = {"fields": fields} if fields else {}
 			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a
 			# retryable failure must never do.
@@ -1088,8 +1113,15 @@ def normalise_partner_response(response=None, request=None):
 		code, http, message = _normalise_partner_error(
 			request, response.status_code, (body or {}).get("exc_type")
 		)
+		error = {"code": code, "message": _(message)}
 		response.status_code = http
-		response.set_data(frappe.as_json({"status": "error", "error": {"code": code, "message": _(message)}}))
+		response.set_data(frappe.as_json({"status": "error", "error": error}))
 		response.headers["Content-Type"] = "application/json"
+		# Write the SAME envelope onto frappe.local.response, not just the werkzeug one. A framework-layer
+		# failure never reaches _api, so nothing else put an `error` there, and observability.log_request
+		# (the next after_request hook) reads it from there: without this, the request log of a bad-key 401
+		# records that the call failed but never why.
+		if getattr(frappe.local, "response", None) is not None:
+			frappe.local.response["error"] = error
 	except Exception:
 		frappe.log_error(title="normalise_partner_response failed")

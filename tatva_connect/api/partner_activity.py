@@ -57,6 +57,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	scoped_by_lead,
 	stamp_external_id,
 	trusted_permissions,
 	validate_external_id,
@@ -81,15 +82,9 @@ def _scoped_task(name, mp, is_sysmgr):
 		["name", "reference_doctype", "reference_docname", "custom_task_type", "status"],
 		as_dict=True,
 	)
-	if not row or row.reference_doctype != "CRM Lead" or not row.reference_docname:
+	if not row or row.reference_doctype != "CRM Lead":
 		frappe.throw(_("Activity not found"), frappe.DoesNotExistError)
-	# Re-resolve the lead under the caller's grain — out-of-line tasks vanish.
-	# resolve_lead({"lead": X}) returns X if the caller can reach it, else throws; an
-	# out-of-scope lead therefore surfaces as the SAME generic not-found (no probing).
-	try:
-		resolve_lead(mp, is_sysmgr, {"lead": row.reference_docname})
-	except frappe.DoesNotExistError:
-		frappe.throw(_("Activity not found"), frappe.DoesNotExistError)
+	scoped_by_lead(row.reference_docname, mp, is_sysmgr, "Activity")
 	return row
 
 

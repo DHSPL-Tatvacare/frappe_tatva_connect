@@ -679,6 +679,20 @@ AUTOMATIONS = [
 		requires="Observability::Requests::logging",
 		activator="tatva_connect.observability.rollup.apply_rollup",
 	),
+	Auto(
+		key="Observability::Monitor::log-sweep",
+		fires_on="Schedule",
+		trigger_detail="daily 03:30",
+		purpose=(
+			"Trims the request monitor's log file each night, to whichever limit is reached first: 1 GB "
+			"or 30 days. It is the one log frappe never rotates, because it is written with a plain "
+			"append rather than through the rotating logger. Off, the file grows without bound on the "
+			"app server's disk.\n"
+			"Example: a night on which logs/monitor.json.log has passed 1 GB, it is compressed to an "
+			"archive and emptied, and archives older than 30 days are deleted."
+		),
+		backs=["tatva_connect.observability.monitor_log.sweep"],
+	),
 ]
 
 

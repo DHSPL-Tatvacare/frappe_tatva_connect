@@ -20,13 +20,14 @@
   "phone",
   "web_form",
   "attached_to_doctype",
-  "attached_to_name"
+  "attached_to_name",
+  "trace_id"
  ],
  "fields": [
   {"fieldname": "scan_time", "fieldtype": "Datetime", "label": "Scan Time", "in_list_view": 1, "read_only": 1, "search_index": 1},
   {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Intake\nPartner API", "in_list_view": 1, "read_only": 1},
   {"fieldname": "source", "fieldtype": "Data", "label": "Source", "in_list_view": 1, "read_only": 1},
-  {"fieldname": "verdict", "fieldtype": "Select", "label": "Verdict", "options": "Clean\nInfected\nType Mismatch\nScanner Unavailable", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "verdict", "fieldtype": "Select", "label": "Verdict", "options": "Clean\nInfected\nType Not Allowed\nType Mismatch\nScanner Unavailable", "in_list_view": 1, "read_only": 1},
   {"fieldname": "action", "fieldtype": "Select", "label": "Action", "options": "Accepted\nBlocked", "in_list_view": 1, "read_only": 1},
   {"fieldname": "signature", "fieldtype": "Data", "label": "Signature", "read_only": 1},
   {"fieldname": "file_name", "fieldtype": "Data", "label": "File Name", "in_list_view": 1, "read_only": 1},
@@ -35,7 +36,8 @@
   {"fieldname": "phone", "fieldtype": "Data", "label": "Phone", "read_only": 1},
   {"fieldname": "web_form", "fieldtype": "Data", "label": "Web Form", "read_only": 1},
   {"fieldname": "attached_to_doctype", "fieldtype": "Data", "label": "Attached To Doctype", "read_only": 1},
-  {"fieldname": "attached_to_name", "fieldtype": "Data", "label": "Attached To Name", "read_only": 1}
+  {"fieldname": "attached_to_name", "fieldtype": "Data", "label": "Attached To Name", "read_only": 1},
+  {"fieldname": "trace_id", "fieldtype": "Data", "label": "Trace ID", "read_only": 1, "search_index": 1, "description": "Frappe's own per-request id (frappe.monitor). Joins this verdict to the CRM API Request Log row of the call that carried the file, and to any Error Log row it raised."}
  ],
  "index_web_pages_for_search": 0,
  "links": [],

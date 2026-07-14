@@ -53,6 +53,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	field_descriptor,
 	resolve_lead,
+	scoped_by_lead,
 	stamp_external_id,
 	validate_external_id,
 )
@@ -140,15 +141,10 @@ def _scoped_call(name, mp, is_sysmgr):
 	doc = frappe.db.exists("CRM Call Log", name) and frappe.get_doc("CRM Call Log", name)
 	if not doc:
 		frappe.throw(_("Call not found"), frappe.DoesNotExistError)
-	# A call the caller can see is one whose lead is on their line. An UNLINKED call (no
-	# lead) is never visible to a partner — only a trusted sysmgr (no mapping) sees it.
+	# An UNLINKED call is never visible to a partner; a trusted sysmgr (no mapping) still sees it.
 	if mp:
-		if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
-			frappe.throw(_("Call not found"), frappe.DoesNotExistError)
-		try:
-			resolve_lead(mp, is_sysmgr, {"lead": doc.reference_docname})
-		except frappe.DoesNotExistError:
-			frappe.throw(_("Call not found"), frappe.DoesNotExistError)
+		lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
+		scoped_by_lead(lead, mp, is_sysmgr, "Call")
 	return doc
 
 

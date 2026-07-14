@@ -7,6 +7,8 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "types_section",
+  "allowed_extensions",
   "scanner_section",
   "clamav_host",
   "clamav_port",
@@ -15,6 +17,8 @@
   "active_channels"
  ],
  "fields": [
+  {"fieldname": "types_section", "fieldtype": "Section Break", "label": "Allowed File Types"},
+  {"fieldname": "allowed_extensions", "fieldtype": "Small Text", "label": "Allowed Extensions", "description": "One extension per line, without the dot (pdf, png, jpg, jpeg). An upload whose extension is not listed is refused before its bytes are scanned. Blank = every extension is accepted, which is the default."},
   {"fieldname": "scanner_section", "fieldtype": "Section Break", "label": "Virus Scanner (ClamAV)"},
   {"fieldname": "clamav_host", "fieldtype": "Data", "label": "ClamAV Host", "description": "clamd host. Blank = clamav (the compose service)."},
   {"fieldname": "clamav_port", "fieldtype": "Int", "label": "ClamAV Port", "description": "clamd TCP port. Blank = 3310."},
