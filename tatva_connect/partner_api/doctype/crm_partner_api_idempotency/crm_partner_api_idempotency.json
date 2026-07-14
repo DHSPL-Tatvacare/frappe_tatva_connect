@@ -29,7 +29,8 @@
  "name": "CRM Partner API Idempotency",
  "owner": "Administrator",
  "permissions": [
-  {"read": 1, "role": "System Manager"}
+  {"read": 1, "role": "System Manager"},
+  {"read": 1, "role": "Automation Manager"}
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
