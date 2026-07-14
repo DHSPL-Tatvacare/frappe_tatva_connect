@@ -48,8 +48,9 @@ class TestFilePrivacy(FrappeTestCase):
 		self.assertEqual(self._decide("CRM WhatsApp Settings", toggle_on=False,
 									   listed_doctypes="CRM WhatsApp Settings"), 1)
 
-	def test_unattached_file_keeps_uploader_choice(self):
-		# No attached_to_doctype -> the policy does not touch is_private (stays as uploaded).
+	def test_unattached_file_is_private(self):
+		# No attached_to_doctype -> belongs to no allowlisted record -> the floor forces PRIVATE, whatever
+		# the uploader chose (the SPA's bare uploader chooses public; the floor overrules it).
 		doc = frappe._dict(attached_to_doctype=None, is_private=0)
 		file_events.apply_privacy_policy(doc)
-		self.assertEqual(doc.is_private, 0)
+		self.assertEqual(doc.is_private, 1)

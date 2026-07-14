@@ -195,13 +195,18 @@ class TestVAPTAuthz(FrappeTestCase):
 
 	# ---------- File: profile-picture private-blob BAC ----------
 	def test_file_no_role_cannot_reference_private_blob(self):
-		victim = frappe.get_doc({"doctype": "File", "file_name": "zvapt_secret.txt", "is_private": 1,
-								 "content": b"secret", "attached_to_doctype": "User", "attached_to_name": "Administrator"})
+		# The victim must be GENUINELY private. Attach it to a CRM Lead (patient data, NOT on the public
+		# allowlist) — not to User, which the allowlist makes public for avatars, so a User-attached file is
+		# public by design and referencing it is no breach.
+		lead = self._lead("Administrator")
+		victim = frappe.get_doc({"doctype": "File", "file_name": "zvapt_secret.txt",
+								 "content": b"secret", "attached_to_doctype": "CRM Lead", "attached_to_name": lead})
 		victim.insert(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("File", victim.name, "is_private"), 1, "victim must be private")
 		with self.assertRaises(frappe.PermissionError, msg="FILE BREACH: no-role forged a File referencing another's private blob"):
 			self._as(NOROLE, lambda: frappe.get_doc({
 				"doctype": "File", "file_url": victim.file_url, "is_private": 1,
-				"attached_to_doctype": "User", "attached_to_name": NOROLE}).insert())
+				"attached_to_doctype": "CRM Lead", "attached_to_name": lead}).insert())
 
 	# ---------- fixtures ----------
 	def _user(self, email, roles):
