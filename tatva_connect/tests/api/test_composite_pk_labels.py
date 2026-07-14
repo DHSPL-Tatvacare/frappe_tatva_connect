@@ -8,14 +8,16 @@ Six doctypes carry a `format:` autoname built from the grain, so their primary k
 
 Two mechanisms keep it out of the UI, and they are tested separately here:
 
-  the list      the framework's `_link_titles` map (api/list_link_titles). The row keeps the PK, which
-                is what the list filters, sorts and groups by, and the map carries the title beside it.
+  the list      the framework's `_link_titles` map (api/list_link_titles), which also titles the Kanban
+  and Kanban    columns. The row keeps the PK, which is what the client filters, sorts and groups by,
+                and the map carries the title beside it.
   hand-built    payloads assembled by our own whitelisted endpoints, which have no such map and must
   payloads      resolve the label themselves through taxonomy.labels.
 
-WHAT THIS FILE DOES NOT COVER, so nobody reads a green run as more than it is: the Kanban board's
-column headers, push notifications, the partner API, and WhatsApp template params all still emit raw
-composite PKs. They are known and untouched.
+Every surface that shows a stage or an activity type to a person is covered below: the list, the
+Kanban board, the Activity tab, the Desk timeline, the Tasks board, the pickers, the automation run
+log and rule preview, the push notification a rep gets on their phone, the WhatsApp text a patient
+gets, and the partner API's type catalogue.
 """
 import json
 import unittest
@@ -111,6 +113,29 @@ class TestTheListKeepsThePrimaryKey(IntegrationTestCase):
 			self.assertIn("::", pk, "the row must keep the composite PK the list filters on")
 			title = titles.get(f"CRM Lead Stage::{pk}")
 			self.assertTrue(title, f"_link_titles carries no title for {pk!r}")
+			self.assertNotIn("::", title)
+
+	def test_every_kanban_column_header_has_a_title(self):
+		"""A column's `name` IS a primary key, so the board printed `Sigrima::Treatment on Hold` as a
+		header. The column keeps its key (it is the drag target); the title rides in the map."""
+		from tatva_connect.api.list_link_titles import get_data
+
+		frappe.set_user("Administrator")
+		frappe.local.form_dict = frappe._dict()
+		result = get_data(
+			doctype="CRM Lead", view={"view_type": "kanban", "group_by_field": "custom_substage"},
+			filters={}, order_by="modified desc", page_length=5, column_field="custom_substage",
+		)
+		columns = result.get("kanban_columns") or []
+		if not columns:
+			raise unittest.SkipTest("no kanban columns on this site")
+
+		titles = result.get("_link_titles") or {}
+		for column in columns:
+			pk = column["name"]
+			self.assertIn("::", pk, "the column must keep the key the board drags onto")
+			title = titles.get(f"CRM Lead Stage::{pk}")
+			self.assertTrue(title, f"the board would print {pk!r} as a header")
 			self.assertNotIn("::", title)
 
 
@@ -220,3 +245,50 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 
 		name = create_followup_task(self.lead.name, self.task_type, throttle=False)
 		self.assertEqual(frappe.db.get_value("CRM Task", name, "title"), self.type_name)
+
+	def test_the_partner_api_type_catalogue(self):
+		"""A partner POSTs `name` back, so the key stays; without `label` their menu is `::` strings."""
+		from tatva_connect.activity.api import list_types_for_lead
+
+		for t in list_types_for_lead(self.lead.name):
+			self.assertIn("::", t["name"], "the key a partner posts back must stay a key")
+			self.assertNotIn("::", t["label"])
+
+
+class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
+	"""The two surfaces that leave the app: a rep's lock screen and a patient's phone."""
+
+	def setUp(self):
+		self.addCleanup(frappe.db.rollback)
+		frappe.set_user("Administrator")
+		self.stage = frappe.db.get_value("CRM Lead Stage", {"name": ["like", "%::%"]}, "name")
+		if not self.stage:
+			raise unittest.SkipTest("no composite lead stage on this site")
+
+	def test_a_stage_change_push_names_the_stage(self):
+		"""The body lands on a lock screen: "moved to Treatment on Hold", never "Ujvira::Treatment on Hold"."""
+		from tatva_connect.notifications import events
+
+		sent = {}
+		with patch.object(events.dispatch, "notify", lambda *a, **kw: sent.update(kw)):
+			doc = frappe.get_doc({
+				"doctype": "CRM Lead", "first_name": "Push Probe",
+				"mobile_no": f"+9198125{frappe.generate_hash(length=5)[:5]}",
+			}).insert(ignore_permissions=True)
+			doc.custom_substage = self.stage
+			events.on_lead_stage_changed(doc)
+
+		self.assertTrue(sent, "the stage change did not dispatch")
+		self._assert_clean(sent.get("body"), "the push notification body")
+		self._assert_clean(sent.get("bell", {}).get("text"), "the bell feed text")
+
+	def test_a_whatsapp_param_names_the_stage(self):
+		"""A Link param would otherwise send the composite key to a patient."""
+		from tatva_connect.taxonomy import labels
+
+		shown = labels.shown("CRM Lead", "custom_substage", self.stage)
+		self._assert_clean(shown, "a WhatsApp template param")
+
+	def _assert_clean(self, text, screen):
+		self.assertTrue(text, f"{screen} produced nothing")
+		self.assertNotIn("::", str(text), f"{screen} carries a raw composite PK: {text!r}")

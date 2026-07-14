@@ -27,6 +27,10 @@ this replaced. Callers have already gated the record the value was read off.
 """
 import frappe
 
+# The grain masters whose primary key is a composite. Named here so no call site spells them itself.
+TASK_TYPE = "CRM Task Type"
+LEAD_STAGE = "CRM Lead Stage"
+
 
 def title_of(doctype, value):
 	"""The target's title_field for one value, or None when there is no title to read. Never raises:
@@ -56,3 +60,18 @@ def labels(values, doctype):
 	reads, not 100. Build this once above the loop rather than calling `label()` inside it."""
 	wanted = {v for v in (values or []) if v}
 	return {v: label(v, doctype) for v in wanted}
+
+
+def shown(doctype, fieldname, value):
+	"""A field's value as a human should read it: a Link to a grain master holds a composite key, so
+	show the target's title. Any other fieldtype passes through untouched. For the callers that hold a
+	doctype and a fieldname rather than a Link target: notifications, WhatsApp params, rule previews."""
+	if not (doctype and fieldname and isinstance(value, str) and value):
+		return value
+	try:
+		df = frappe.get_meta(doctype).get_field(fieldname)
+	except Exception:
+		return value
+	if not df or df.fieldtype != "Link" or not df.options:
+		return value
+	return label(value, df.options)

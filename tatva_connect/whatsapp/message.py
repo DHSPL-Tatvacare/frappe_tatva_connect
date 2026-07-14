@@ -18,6 +18,7 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message i
 	WhatsAppMessage,
 )
 
+from tatva_connect.taxonomy import labels
 from tatva_connect.whatsapp import providers
 
 
@@ -207,12 +208,20 @@ class WATIWhatsAppMessage(WhatsAppMessage):
 		field_names = (template.field_names or "").split(",") if template.field_names else []
 		if not field_names:
 			return []
+		# A Link field holds the target's primary key, and for a grain master that key is a composite
+		# `::` string. These values go to a patient's phone, so resolve them to the title first.
 		if self.flags.get("custom_ref_doc"):
 			cv = self.flags.custom_ref_doc
-			values = [cv.get(fn.strip()) for fn in field_names]
+			values = [
+				labels.shown(self.reference_doctype, fn.strip(), cv.get(fn.strip()))
+				for fn in field_names
+			]
 		elif self.reference_doctype and self.reference_name:
 			ref = frappe.get_doc(self.reference_doctype, self.reference_name)
-			values = [ref.get_formatted(fn.strip()) for fn in field_names]
+			values = [
+				labels.shown(self.reference_doctype, fn.strip(), ref.get_formatted(fn.strip()))
+				for fn in field_names
+			]
 		else:
 			return []
 		return [

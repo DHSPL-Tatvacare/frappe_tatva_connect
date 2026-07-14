@@ -14,6 +14,8 @@ from crm.api.activities import get_activities as _native_get_activities
 from frappe import _
 
 from tatva_connect.activity.api import _blob_key, lead_timeline
+from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy.labels import LEAD_STAGE
 
 # Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage)
 # or auto-synced headline mirrors (the latest-lab snapshot). Keeps the signal, drops the churn.
@@ -29,10 +31,8 @@ def _full_name(user):
 
 
 def _stage_label(pk):
-	"""A CRM Lead Stage PK (`{program}::{stage}`) to the stage name. Reads `stage`, NOT the title_field:
-	title_field is `display_label`, which on 24 of 276 rows is a picker breadcrumb ("Niva Bupa / Archived
-	/ RNR after 3 attempts"), not the stage. The audit line wants the stage, so this is not label drift."""
-	return (pk and frappe.db.get_value("CRM Lead Stage", pk, "stage")) or pk or ""
+	"""A CRM Lead Stage PK (`{program}::{stage}`) to the stage a human reads."""
+	return labels.label(pk, LEAD_STAGE)
 
 
 def _activity_events(entries):

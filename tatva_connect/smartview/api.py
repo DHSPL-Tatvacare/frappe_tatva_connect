@@ -167,7 +167,7 @@ def _smart_view_tab(d):
 		"base_object": d.base_object,
 		# The PK stays: the view filters on it. The label sits beside it, for display.
 		"activity_type": d.activity_type,
-		"activity_type_label": labels.label(d.activity_type, "CRM Task Type"),
+		"activity_type_label": labels.label(d.activity_type, labels.TASK_TYPE),
 		"color": d.color,
 		"icon": d.icon,
 		"order": cint(d.view_order),
@@ -218,7 +218,7 @@ def get_view(name):
 		"label": d.label,
 		"base_object": d.base_object,
 		"activity_type": d.activity_type,
-		"activity_type_label": labels.label(d.activity_type, "CRM Task Type"),
+		"activity_type_label": labels.label(d.activity_type, labels.TASK_TYPE),
 		"vertical": d.vertical,
 		"group": d.group,
 		"program": d.program,

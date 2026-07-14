@@ -211,7 +211,10 @@ def activity_schema(**_kwargs):
 		for t in activity_brain.list_types_for_lead(lead):
 			schema = activity_brain.get_schema(t["name"])
 			types.append({
+				# `name` is the composite key the caller POSTs back; `label` is the same clean type_name
+				# the picker already resolved. Without it the integrator's menu is a list of `::` strings.
 				"name": t["name"],
+				"label": t.get("label") or t["name"],
 				"is_logged_complete": int(t.get("is_logged_complete") or 0),
 				"fields": [
 					field_descriptor(f["fieldname"], f["label"], f["fieldtype"], f.get("reqd"), f.get("options"))

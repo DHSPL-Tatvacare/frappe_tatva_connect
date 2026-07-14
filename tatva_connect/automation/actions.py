@@ -23,7 +23,7 @@ def _action_label(a):
 	"""Short human label of an action for the per-action audit trail in the run log."""
 	if a.action_type == "Create Task":
 		# The run log is read by an operator, so name the type, not its composite PK.
-		return "Create Task {}".format(labels.label(a.task_type, "CRM Task Type") or "?")
+		return "Create Task {}".format(labels.label(a.task_type, labels.TASK_TYPE) or "?")
 	if a.action_type == "Update Field":
 		return "Update Field {}".format(a.fieldname or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):

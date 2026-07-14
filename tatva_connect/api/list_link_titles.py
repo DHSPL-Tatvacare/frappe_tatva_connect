@@ -1,14 +1,18 @@
 """TATVA override of `crm.api.doc.get_data`.
 
-Attaches Frappe's standard `_link_titles` map ({target_doctype}::{value} -> title) for every Link
-field whose target doctype declares `show_title_field_in_link`. The list/Kanban/group-by surfaces are
-all fed by this one method, so the map rides everywhere — the cell shows the clean title (the
-doctype's `title_field`, e.g. `CRM Lead Stage.display_label`) instead of the composite `::` primary
-key, while the stored PK is untouched (filter/sort/group still work on it).
+Attaches the framework's `_link_titles` map ({target_doctype}::{value} -> title) for every Link field
+whose target declares `show_title_field_in_link`. The list, Kanban and group-by surfaces are all fed
+by this one method, so the map rides everywhere: the cell shows the target's `title_field` in place of
+the composite `::` primary key, and the row keeps the key, which is what the client filters, sorts and
+groups by. Resolving the title INTO the row instead would break all three.
 
-ONE generic place, driven by the framework's own `show_title_field_in_link` flag — no per-field,
-per-surface, or fork code. Delegates to the unchanged native `get_data` (same pattern as
-`access/native_guards`).
+Two sources feed the map. Row values cover the list and group-by. Kanban columns do not: the board's
+columns are the group field's master rows, so a column's `name` is itself a primary key and never
+appears in `data`. `_add_kanban_columns` titles those.
+
+One generic place, driven by the framework's own flag, no per-field or per-surface code. Delegates to
+the unchanged native `get_data` (same pattern as `access/native_guards`), and the title_field read
+itself lives once, in `taxonomy.labels.title_of`.
 """
 import frappe
 
@@ -33,8 +37,6 @@ def _native_get_data(**kwargs):
 
 def _attach_link_titles(result, doctype=None):
 	rows = result.get("data") or []
-	if not rows:
-		return
 
 	# Static Link fields (target doctype is fixed) from the result's field list.
 	link_fields = {}  # fieldname -> fixed target doctype
@@ -49,9 +51,6 @@ def _attach_link_titles(result, doctype=None):
 		for f in frappe.get_meta(doctype).fields:
 			if f.fieldtype == "Dynamic Link" and f.options:
 				dynamic_fields[f.fieldname] = f.options
-
-	if not link_fields and not dynamic_fields:
-		return
 
 	titles = result.setdefault("_link_titles", {})
 
@@ -68,11 +67,30 @@ def _attach_link_titles(result, doctype=None):
 		if title is not None:
 			titles[key] = title
 
+	# Kanban columns are the group field's master rows, not row values, so they are not reachable from
+	# `data`. Each column is titled by its own `name`, which for a grain master is the composite key.
+	_add_kanban_columns(result, doctype, add)
+
 	for row in rows:
 		for fieldname, target_dt in link_fields.items():
 			add(target_dt, row.get(fieldname))
 		for fieldname, options_field in dynamic_fields.items():
 			add(row.get(options_field), row.get(fieldname))
+
+
+def _add_kanban_columns(result, doctype, add):
+	"""Title every Kanban column. The board groups by a Link field, so a column's `name` is the target's
+	primary key: on the Lead board by stage that is `Sigrima::Treatment on Hold`, printed as the column
+	header. The rows the board holds are titled by the caller's normal Link-field pass."""
+	columns = result.get("kanban_columns") or []
+	column_field = result.get("column_field")
+	if not (columns and column_field and doctype):
+		return
+	df = frappe.get_meta(doctype).get_field(column_field)
+	if not df or df.fieldtype != "Link" or not df.options:
+		return
+	for column in columns:
+		add(df.options, column.get("name"))
 
 
 def _resolve_title(target_dt, value):

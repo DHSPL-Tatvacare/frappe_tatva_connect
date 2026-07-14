@@ -552,7 +552,8 @@ def lead_location_view(lead):
 	anchor; phone/office activities show as plain log lines (NOT fake (0,0) coordinates — `located` is
 	keyed off custom_location_captured_at, which is set only on a real capture). One brain; map images
 	stream through the key-safe static_map proxy."""
-	from tatva_connect.activity.api import TASK_TYPE, _activity_type_names
+	from tatva_connect.activity.api import _activity_type_names
+	from tatva_connect.taxonomy.labels import TASK_TYPE
 
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	ld = frappe.get_doc("CRM Lead", lead)

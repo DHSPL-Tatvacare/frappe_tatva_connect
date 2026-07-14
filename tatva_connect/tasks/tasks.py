@@ -213,7 +213,7 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	task = frappe.get_doc(
 		{
 			"doctype": "CRM Task",
-			"title": title or labels.label(task_type, "CRM Task Type"),
+			"title": title or labels.label(task_type, labels.TASK_TYPE),
 			"custom_task_type": task_type,
 			"status": "Todo",
 			"due_date": due_date,

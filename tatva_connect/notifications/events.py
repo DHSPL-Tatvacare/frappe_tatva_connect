@@ -24,6 +24,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.notifications import dispatch, prefs
 from tatva_connect.tasks.tasks import CLOSED_STATUSES
+from tatva_connect.taxonomy import labels
 
 SETTINGS = "CRM Notification Settings"
 
@@ -166,7 +167,8 @@ def on_lead_stage_changed(doc, method=None):
 	their own lead is skipped by crm's writer (a rep is never told about their own action)."""
 	if doc.is_new() or not doc.has_value_changed("custom_substage"):
 		return
-	stage = doc.get("custom_substage")
+	# The stored value is the composite key; this text lands on a rep's lock screen, so name the stage.
+	stage = labels.label(doc.get("custom_substage"), labels.LEAD_STAGE)
 	if not stage:
 		return
 	dispatch.notify(
