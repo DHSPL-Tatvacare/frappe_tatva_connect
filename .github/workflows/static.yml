@@ -5,7 +5,7 @@
 #
 # ONE umbrella: the whole gate is `pytest tatva_connect/tests/static` — lint (ruff) + SAST (bandit) +
 # deps (pip-audit) + secrets (detect-secrets) + semgrep + the AST source-locks. The exact same checks
-# `tcsec static` runs locally, because both read ONE definition: tatva_connect/security/static_checks.py.
+# `tcsec static` runs locally, because both read ONE definition: tatva_connect/tests/security/static_checks.py.
 # So local and CI can never drift. (The bench test suite — behaviour + authz — is a separate lane the
 # developer runs locally; it is not wired here yet.)
 name: Static checks
@@ -29,10 +29,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Pinned tool versions — the SAME single source `tcsec` installs (tatva_connect/security/requirements.txt),
+      # Pinned tool versions — the SAME single source `tcsec` installs (tatva_connect/tests/security/requirements.txt),
       # so the gate is byte-for-byte reproducible between a developer's machine and CI.
       - name: Install pinned scanners
-        run: pip install -r tatva_connect/security/requirements.txt
+        run: pip install -r tatva_connect/tests/security/requirements.txt
       # lint + sast + deps + secrets + semgrep + AST locks, defined once in static_checks.py.
       - name: Static gate
         run: pytest tatva_connect/tests/static -q

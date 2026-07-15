@@ -25,11 +25,12 @@ from pathlib import Path
 
 import frappe
 
-from tatva_connect.api import partner, partner_activity, partner_call, partner_file, partner_note
+from tatva_connect.api import (partner, partner_activity, partner_bulk_job, partner_call, partner_file,
+                               partner_note)
 from tatva_connect.api._base import ERROR_CODES
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
-MODULES = (partner, partner_activity, partner_call, partner_file, partner_note)
+MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, partner_bulk_job)
 
 # Endpoints _drive() deliberately does not exercise, each with the reason. EMPTY, and verified empty:
 # all 48 are driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
@@ -97,11 +98,14 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 		cls.spec = load_spec()
 		cls.code = _code_endpoints()
 		cls._mint_partner()
+		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled", 1)  # drive the async tier
+		frappe.db.commit()
 		frappe.set_user(PARTNER)
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
+		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled", 0)  # back to dormant
 		for dt, name in (("CRM Lead API Mapping", PARTNER), ("User", PARTNER)):
 			if frappe.db.exists(dt, name):
 				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
@@ -370,6 +374,16 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			hit(partner_file.file_get_bulk, "tatva_connect.api.partner_file.file_get_bulk", names=[f1])
 			hit(partner_file.file_delete_bulk, "tatva_connect.api.partner_file.file_delete_bulk", names=[f1])
 			hit(partner_file.file_delete, "tatva_connect.api.partner_file.file_delete", name=fil)
+
+			# Async bulk-job tier: driven in the transaction (the worker is not run here, so the job stays
+			# UploadComplete and the final rollback cleans it up — no committed leads, no worker needed).
+			bj = hit(partner_bulk_job.create, "tatva_connect.api.partner_bulk_job.create",
+			         operation="lead_create", format="inline",
+			         records=[{"mobile_no": "+919812399050", "first_name": "SpecBulk"}])
+			bjob = bj["data"]["job_id"]
+			hit(partner_bulk_job.get, "tatva_connect.api.partner_bulk_job.get", job_id=bjob)
+			hit(partner_bulk_job.results, "tatva_connect.api.partner_bulk_job.results", job_id=bjob)
+			hit(partner_bulk_job.cancel, "tatva_connect.api.partner_bulk_job.cancel", job_id=bjob)
 
 			# A lead carrying a linked activity cannot be deleted, and neither can the activity (every
 			# task type on this grain is is_logged_complete, so an audit record links to it). Both

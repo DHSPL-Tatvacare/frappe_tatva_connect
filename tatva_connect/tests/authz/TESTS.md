@@ -168,13 +168,18 @@ tatva_connect/tests/authz/
 ├── test_self_validation.py     runs mutation.py → asserts the suite goes RED (no FN)
 │
 │  ── PLAYWRIGHT (break it through the real browser) ──
-└── playwright/
+└── (moved) → tatva_connect/tests/live/browser/
     ├── auth.setup.ts       reads creds.json → logs every persona in
     ├── leads.spec.ts       each grain user sees only in-grain leads/tasks
     ├── smartview.spec.ts   Smart View columns ⊆ grain∩role; no out-of-grain row data
     └── escalation.spec.ts  active attacks: URL-tamper to another grain's lead, forge
                             params, hit a hidden field, call a guarded method raw
 ```
+
+> The browser specs now live in the security harness's LIVE lane
+> (`tatva_connect/tests/live/browser/`), alongside the load and partner-API pentest runners —
+> one hood for everything that hits a running deployment. They still consume the same
+> `authz_creds.json` this generator writes; only their folder changed.
 
 **Each registry case has a stable ID** (e.g. `A2-grain4-lead-read-list`) so it is individually traceable in the report and the confusion matrix. Add a case = add data, not a file.
 

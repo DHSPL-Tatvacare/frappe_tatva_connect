@@ -35,7 +35,7 @@ Phone numbers use E.164: `+<country code><digits>`, no spaces or hyphens, for ex
 | bulk variants | Yes. Each record is addressed by key, so a replay converges. Only the failed rows from `results[]` need re-sending. |
 | reads (`lead_get`, `lead_list`, `lead_get_bulk`) | Yes, always. |
 
-A retry after a network fault or a `5xx` is only safe if the request carried an `Idempotency-Key`. Without one, a create that timed out after the server committed will be duplicated by the retry. See [Writes, addressing and retries](/writes-and-retries).
+A retry after a network fault or a `5xx` is only safe if the request carried an `Idempotency-Key`. Without one, a create that timed out after the server committed will be duplicated by the retry. See [Writes and retries](/writes-and-retries).
 
 ## Partial updates never clobber
 

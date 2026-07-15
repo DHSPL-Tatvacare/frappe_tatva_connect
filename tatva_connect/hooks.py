@@ -156,6 +156,10 @@ doc_events = {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
 		"on_trash": "tatva_connect.api.partner.clear_catalog_cache",
 	},
+	# SSRF-guard a partner's bulk-job completion webhook URL (scoped to CRM Bulk Job webhooks only).
+	"Webhook": {
+		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
+	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
 	# Automation engine (Task 5): the GUARD lane rides validate, synchronous, BEFORE the save commits -
@@ -170,14 +174,20 @@ doc_events = {
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
 			"tatva_connect.automation.router.on_created",
+			# Workflow engine (Phase 2): start an Instance when a Created-entry Definition's grain matches.
+			"tatva_connect.workflow_engine.triggers.on_created",
 		],
 		"on_update": [
 			"tatva_connect.automation.router.on_updated",
 			# Bond an offloaded file to the record whose Attach field names it — core's linker skips remote URLs.
 			"tatva_connect.storage.file_events.link_attach_fields",
+			"tatva_connect.workflow_engine.triggers.on_updated",
+			# Workflow engine (Phase 3): a CRM Task flipping to Done delivers `review_done` to the parked journey (a lifecycle event AS a signal source, §12); dormant + in_workflow-guarded, cheap early-return otherwise.
+			"tatva_connect.workflow_engine.triggers.on_task_done",
 		],
 		"on_trash": [
 			"tatva_connect.automation.router.on_deleted",
+			"tatva_connect.workflow_engine.triggers.on_trash",
 		],
 	},
 	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache on any form add/toggle/remove so it never serves a stale set.
@@ -226,8 +236,16 @@ scheduler_events = {
 		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
 		# Daily: drop expired partner-API idempotency records.
 		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
+		# Hourly: fail any async bulk job stranded InProgress past its worker timeout (worker died).
+		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
+		# Daily: purge finished async bulk jobs + results + payload past the retention window.
+		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
 		# Every 15 min: resume any automation rule fire parked at a Wait step whose time has arrived.
-		"*/15 * * * *": ["tatva_connect.automation.resume.sweep_resume"],
+		"*/15 * * * *": [
+			"tatva_connect.automation.resume.sweep_resume",
+			# Workflow engine (Phase 2): wake due-timer Instances + reconcile lost wakeups (F5).
+			"tatva_connect.workflow_engine.wakeups.sweep",
+		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
 	},
@@ -245,6 +263,8 @@ after_migrate = [
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
 	"tatva_connect.automation.seed.reconcile_activations",
+	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
+	"tatva_connect.scheduler_denylist.apply",
 	"tatva_connect.automation.drift.assert_registered",
 	# Every notification grain must point at a real automation row (the ONE global gate); a drifting catalog fails the migrate.
 	"tatva_connect.notifications.drift.assert_registered",

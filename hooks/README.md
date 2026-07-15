@@ -1,7 +1,7 @@
 # hooks/ — local git hooks (enforcement moved off GitHub Actions)
 
 These run the repo's security/quality gate **locally** so GitHub Actions costs nothing. Same checks,
-same single source (`tatva_connect/security/static_checks.py` via `tcsec`), so local == the old CI.
+same single source (`tatva_connect/tests/security/static_checks.py` via `tcsec`), so local == the old CI.
 
 ## The split (speed-tiered)
 | Hook | Runs | Cost | What |
@@ -20,7 +20,7 @@ Requires the security venv (the hook tells you if it's missing) — create it wi
 location with `TCSEC_VENV`):
 ```bash
 uv venv "$HOME/.venvs/venv-python-frappe-sec" --python 3.12
-uv pip install --python "$HOME/.venvs/venv-python-frappe-sec/bin/python" -r tatva_connect/security/requirements.txt
+uv pip install --python "$HOME/.venvs/venv-python-frappe-sec/bin/python" -r tatva_connect/tests/security/requirements.txt
 ```
 
 ## Notes

@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-15 00:00:00.000000",
+ "description": "An IMMUTABLE, content-addressed snapshot of one CRM Workflow Definition's graph, keyed by definition_hash. A running Instance binds to a version, never to the mutable Definition - so editing a Definition can never re-route, duplicate or orphan an Instance already executing it. Minted by workflow_engine.versions on Definition save; runtime data, never seeded.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow",
+  "version_no",
+  "is_current",
+  "node_count",
+  "definition_hash",
+  "payload_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "label": "Workflow",
+   "options": "CRM Workflow Definition",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Links the frozen definition to its workflow. Reporting only - the interpreter reads the payload, never this."
+  },
+  {
+   "fieldname": "version_no",
+   "fieldtype": "Int",
+   "label": "Version No",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "1, 2, 3 ... per workflow, to order its versions. For humans; identity is the content hash."
+  },
+  {
+   "fieldname": "is_current",
+   "fieldtype": "Check",
+   "label": "Is Current",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Marks the version a new Instance binds to. Exactly one per workflow; reverting a Definition re-flags that version rather than minting a duplicate."
+  },
+  {
+   "fieldname": "node_count",
+   "fieldtype": "Int",
+   "label": "Node Count",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Nodes in the frozen graph."
+  },
+  {
+   "fieldname": "definition_hash",
+   "fieldtype": "Data",
+   "label": "Definition Hash",
+   "length": 64,
+   "reqd": 1,
+   "read_only": 1,
+   "description": "sha256 of the canonical payload; an unchanged save reuses the matching version instead of minting a duplicate. Unique per workflow."
+  },
+  {
+   "fieldname": "payload_json",
+   "fieldtype": "Long Text",
+   "label": "Definition (JSON)",
+   "reqd": 1,
+   "read_only": 1,
+   "description": "Stores the immutable, canonical graph an Instance executes; a running Instance reads this, never the editable Definition."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-07-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Version",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "role": "Automation Manager"},
+  {"read": 1, "report": 1, "export": 1, "role": "System Manager"}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

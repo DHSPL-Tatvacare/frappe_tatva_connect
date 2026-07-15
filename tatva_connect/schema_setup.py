@@ -20,18 +20,23 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_clinic_anchor_index,
 	add_crm_task_metrics_index,
 	add_integration_request_index,
 	add_observability_indexes,
 	add_resume_index,
+	add_workflow_instance_indexes,
+	add_workflow_signal_indexes,
 	backfill_webhook_token_digests,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
 	rekey_task_types_composite,
 	retire_activity_legacy_columns,
+	retire_lead_import_coordinates,
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
+	retire_nearme_map_provider,
 )
 
 _STEPS = (
@@ -47,6 +52,12 @@ _STEPS = (
 	add_integration_request_index,
 	# Composite index (status, resume_at) on the Wait-park queue — backs sweep_resume()'s query.
 	add_resume_index,
+	# Composite + UNIQUE(active_key) indexes on CRM Workflow Instance — the timer/signal/scope/retention
+	# queries and the single-live-instance guard, none expressible in doctype JSON.
+	add_workflow_instance_indexes,
+	# Composite (subject_name, signal_name, status) + (creation) on the CRM Workflow Signal inbox — the
+	# _consume_signal / reconciler lookup and retention; a composite is not expressible in doctype JSON.
+	add_workflow_signal_indexes,
 	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
 	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
 	rekey_task_types_composite,
@@ -60,6 +71,13 @@ _STEPS = (
 	# indexed, so the digest is derived. Runs AFTER the token carry above, which is what puts a
 	# token in the Password store for it to digest.
 	backfill_webhook_token_digests,
+	# CRM Lead's dead custom_latitude/custom_longitude pair — a duplicate of the clinic anchor the
+	# TatvaPractice load actually writes; the fixture sync never drops a field, so remove it here too.
+	retire_lead_import_coordinates,
+	# Composite (clinic lat, clinic lng) — Near Me's bounding-box prefilter scanned the table without it.
+	add_clinic_anchor_index,
+	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
+	retire_nearme_map_provider,
 )
 
 

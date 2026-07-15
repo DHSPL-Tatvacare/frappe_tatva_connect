@@ -9,6 +9,7 @@ Every call returns one of three top-level shapes.
 Returned by `lead_create`, `lead_update`, `lead_delete`, and `lead_get`:
 
 ```json
+// HTTP 200
 {
   "status": "success",
   "action": "created",
@@ -27,6 +28,7 @@ On a delete, `data` carries only `{ "name": "…" }`.
 `lead_list` returns a page object under `data`:
 
 ```json
+// HTTP 200
 {
   "status": "success",
   "action": "fetched",
@@ -41,11 +43,12 @@ On a delete, `data` carries only `{ "name": "…" }`.
 Every bulk method returns HTTP 200 even when some rows fail. `summary` is read first, then `results[]` is walked:
 
 ```json
+// HTTP 200
 {
   "status": "success",
   "summary": { "total": 2, "succeeded": 1, "failed": 1 },
   "results": [
-    { "index": 0, "status": "success", "action": "created", "name": "d41c8b7e05" },
+    { "index": 0, "status": "success", "action": "created", "data": { "name": "d41c8b7e05" } },
     { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
   ]
 }
@@ -53,6 +56,7 @@ Every bulk method returns HTTP 200 even when some rows fail. `summary` is read f
 
 - `summary` is `{total, succeeded, failed}` for writes, or `{requested, found, not_found}` for `lead_get_bulk`.
 - `results[]` is input-ordered, so `results[i]` is the outcome of the i-th item sent.
+- A successful row carries its record under `data` — the address is `results[i].data.name`, never `results[i].name`.
 - Each row carries its own `status`; a failed row carries the same `error` block as a single-call failure.
 
 :::caution{title="A 200 does not mean every row landed"}
@@ -66,7 +70,8 @@ On bulk, each `results[].status` must be checked, not only the top-level one. On
 Any failure returns this shape, with a matching HTTP status:
 
 ```json
+// HTTP 400
 { "status": "error", "error": { "code": "validation_error", "message": "…" } }
 ```
 
-`error.code` is stable and is the value to branch on; `error.message` is human-readable. The full per-code table is on [Errors](/partner-errors), and [Reading responses](/reading-values) covers reading any value by its path.
+`error.code` is stable and is the value to branch on; `error.message` is human-readable. The full per-code table is on [Errors](/partner-errors), and [Reading values](/reading-values) covers reading any value by its path.

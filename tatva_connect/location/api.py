@@ -40,6 +40,13 @@ def _api_key():
 	return _settings().get_password("google_maps_api_key", raise_exception=False)
 
 
+def _region():
+	"""The ISO-2 country the address search is biased to (CRM Maps Settings → Address Search Country),
+	lowercased for Google. Blank = worldwide: the operator's country is config, never a constant in the
+	code — a doctor in the UAE is not findable by a search hardcoded to India."""
+	return (_settings().get("geocoding_region") or "").strip().lower()
+
+
 DEFAULT_RADIUS_M = 100
 
 # How the clinic anchor was established (custom_clinic_source on CRM Lead).
@@ -398,8 +405,11 @@ def geocode_search(query):
 	if not (key and query):
 		return []
 	try:
-		r = requests.get(GEOCODE_URL, params={"address": query, "key": key, "components": "country:in"},
-						 timeout=_TIMEOUT)
+		params = {"address": query, "key": key}
+		region = _region()
+		if region:
+			params["components"] = f"country:{region}"
+		r = requests.get(GEOCODE_URL, params=params, timeout=_TIMEOUT)
 		out = []
 		for res in (r.json() or {}).get("results", [])[:5]:
 			loc = res["geometry"]["location"]
@@ -417,15 +427,19 @@ PLACES_DETAILS_URL = "https://places.googleapis.com/v1/places/"
 @frappe.whitelist()
 def place_autocomplete(query):
 	"""Places API (New) autocomplete proxy (key server-side). Returns [{place_id, description}] for the
-	Desk 'Set Clinic Location' type-ahead. India-biased."""
+	Desk 'Set Clinic Location' type-ahead. Biased to the operator's country (blank = worldwide)."""
 	key = _api_key()
 	if not (key and query):
 		return []
 	try:
+		body = {"input": query}
+		region = _region()
+		if region:
+			body["includedRegionCodes"] = [region]
 		r = requests.post(
 			PLACES_AUTOCOMPLETE_URL,
 			headers={"Content-Type": "application/json", "X-Goog-Api-Key": key},
-			json={"input": query, "includedRegionCodes": ["in"]},
+			json=body,
 			timeout=_TIMEOUT,
 		)
 		out = []
@@ -634,31 +648,34 @@ def _resolve_provider(pref, default, google_ok):
 
 @frappe.whitelist()
 def map_config():
-	"""The in-app map display config for the SPA: which provider renders each surface, already resolved
-	for availability. ONE source so EVERY map surface — card thumbnail, detail-modal map, block/receipt
-	dialogs, AND the interactive Near Me map — obeys the operator switches (CRM Maps Settings → Map
-	Display). Blank field = code default (thumbnails OSM, dialogs Google, Near Me OSM). Geocoding + Desk
-	history stay Google regardless.
+	"""The in-app map display config for the SPA — ONE source, fetched once (composables/mapConfig.js),
+	so every map surface obeys the operator switches (CRM Maps Settings → Map Display) and no client
+	re-declares a default the server already resolved.
 
-	Two kinds of Google here:
-	  • STATIC surfaces (thumbnail/dialog) use the key-safe `static_map` proxy — `google_ok` gates them
-	    (capture switch on + server key set); the key never reaches the browser.
-	  • The INTERACTIVE Near Me map uses the Google Maps JavaScript API, which by design runs in the
-	    browser and needs a key there — so it's gated on a SEPARATE, referrer-restricted browser key
-	    (`google_maps_browser_key`), never the server key. No browser key => Near Me stays OSM."""
+	Two kinds of Google, and they are not interchangeable:
+	  • The STATIC task mini-maps (thumbnail/dialog) render through the key-safe `static_map` proxy —
+	    `google_ok` gates them (capture switch on + server key set); the key never reaches the browser.
+	    Their OSM alternative is a Leaflet tile map, so they keep a provider choice and `tile_url`.
+	  • The INTERACTIVE Near Me map is Google, always. It uses the Maps JavaScript API, which by design
+	    runs in the browser and needs a key there — a SEPARATE, referrer-restricted browser key
+	    (`google_maps_browser_key`), never the server key. There is no OSM Near Me any more, so there is
+	    no provider to choose: no browser key => `browser_key` is blank and the page says the map is not
+	    configured, rather than silently drawing something else.
+
+	Geocoding + the Desk history stay Google regardless."""
 	s = _settings()
 	google_ok = bool(automation.is_enabled("Location::Google::capture") and _api_key())
-	browser_key = (s.get_password("google_maps_browser_key", raise_exception=False) or "").strip()
-	nearme = _resolve_provider(s.get("nearme_map_provider"), "osm", bool(browser_key))
 	return {
 		"thumbnail": _resolve_provider(s.get("thumbnail_map_provider"), "osm", google_ok),
 		"dialog": _resolve_provider(s.get("dialog_map_provider"), "google", google_ok),
-		"nearme": nearme,
 		"zoom": cint(s.static_map_zoom) or 16,
 		"tile_url": (s.get("osm_tile_url") or "").strip() or DEFAULT_OSM_TILES,
 		"google_available": google_ok,
-		# Only handed to the browser when Near Me actually resolves to Google (minimise exposure).
-		"browser_key": browser_key if nearme == "google" else "",
+		"browser_key": (s.get_password("google_maps_browser_key", raise_exception=False) or "").strip(),
+		# Google's clustered AdvancedMarkerElement pins require a Map ID; DEMO_MAP_ID is Google's own
+		# stand-in so an unconfigured bench still draws a map (unstyled, not for production).
+		"map_id": (s.get("google_maps_map_id") or "").strip() or "DEMO_MAP_ID",
+		"region": _region(),
 	}
 
 

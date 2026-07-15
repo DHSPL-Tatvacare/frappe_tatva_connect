@@ -1,6 +1,6 @@
 """The static (no-bench) security gate, as pytest tests.
 
-Runs the scanners defined ONCE in tatva_connect/security/static_checks.py and asserts each is clean.
+Runs the scanners defined ONCE in tatva_connect/tests/security/static_checks.py and asserts each is clean.
 Together with the AST locks in this folder, ``pytest tatva_connect/tests/static`` IS the full static
 gate — the same checks ``tcsec`` runs, minus the UI. No bench, no frappe.
 
@@ -22,7 +22,7 @@ except ImportError:  # a bench (no pytest) -> this no-bench lane is simply absen
 
 
 if pytest is not None:
-	from tatva_connect.security import static_checks
+	from tatva_connect.tests.security import static_checks
 
 	_ROOT = static_checks.repo_root()
 	_WORKDIR = tempfile.mkdtemp(prefix="tc-static-")

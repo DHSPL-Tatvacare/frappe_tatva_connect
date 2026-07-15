@@ -48,6 +48,10 @@ tatva_connect.patches.migrate_resume_to_versions  # Bind every already-parked ex
 tatva_connect.patches.add_lead_dedup_unique_index  # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
 tatva_connect.patches.add_call_log_reference_index  # post — index (reference_doctype, reference_docname): call_list full-scanned without it
 tatva_connect.patches.reimport_infrastructure_desk  # post — File Screening + File Scan Log had no route from any workspace; the standard import skips a desk doc whose DB copy looks newer than the file, so force it (same reason as reimport_communications_desk)
+tatva_connect.patches.reimport_partner_api_desk  # post — the async bulk-jobs tile (CRM Bulk Job shortcut) never appears on a site whose Partner API workspace looks newer than the file, so force-reimport it (same reason as the two above)
+tatva_connect.patches.add_workflow_instance_indexes  # post — composite indexes on CRM Workflow Instance the timer/signal/scope/retention queries need + UNIQUE (active_key) for the single-live-instance guard; can't be declared in doctype JSON
+tatva_connect.patches.add_workflow_signal_indexes  # post — composite (subject_name, signal_name, status) + (creation) on the CRM Workflow Signal inbox; the consume/reconciler lookup needs them and doctype JSON can't declare a composite
+tatva_connect.patches.reimport_automations_desk  # post — the workflow-engine config surfaces (Action Groups, Workflows) + queue/log views were added to the Automations workspace + sidebar; the standard import skips a desk doc whose DB copy looks newer than the file, so force both (same reason as the reimports above)
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the
 # spine raw-logs always-on), zero readers. No patch needed: an unused single-doctype field
@@ -66,3 +70,7 @@ tatva_connect.patches.rename_notification_grain_to_event  # post — notificatio
 tatva_connect.patches.drop_stale_notification_grain_key  # post — rename_field copies; the dead grain_key column would let a re-run wipe every opt-in
 tatva_connect.patches.reimport_communications_desk_labels  # post — the workspace content still named the old shortcut labels, so four telephony tiles rendered empty
 tatva_connect.patches.restore_grain_field_permlevel  # post — two property setters unlocked Product Line/Group for every rep; the permlevel-1 grant in access/lockdown.py replaces them
+tatva_connect.patches.retire_lead_import_coordinates  # post — CRM Lead's dead custom_latitude/custom_longitude pair; the load writes the clinic anchor, which is what Near Me and the geofence read
+tatva_connect.patches.add_clinic_anchor_index  # post — composite (clinic lat, clinic lng); leads_within_radius claimed an indexed box prefilter and had none
+tatva_connect.patches.retire_nearme_map_provider  # post — Near Me is one Google map now; the provider Select controlled nothing (Single => the dead value sits in tabSingles)
+tatva_connect.patches.refresh_manager_dashboard_layout  # post — reshape the untouched stock Manager Dashboard to the leads-first ops layout; a customised board is left alone

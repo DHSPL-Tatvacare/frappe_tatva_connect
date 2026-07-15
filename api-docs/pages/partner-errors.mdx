@@ -5,6 +5,7 @@ title: Errors
 Every failure returns the same envelope, so there is only one to handle. A stack trace or raw framework error is never returned, even for the earliest failures such as a bad key or malformed JSON.
 
 ```json
+// HTTP 400
 {
   "status": "error",
   "error": {
@@ -36,7 +37,7 @@ flowchart TD
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
 | `not_found` | 404 | The lead does not exist, or is outside the caller's business line. | The two cases are identical by design. The unique ID should be re-checked. Only leads on the caller's own business line are visible. |
-| `conflict` | 409 / 422 | An `Idempotency-Key` collided. **409**: a request with that key is still in flight. **422**: that key was reused with a *different* body. | On 409, wait and retry the same call. On 422, a new key is used for a new body — a key belongs to exactly one request. See [Writes, addressing and retries](/writes-and-retries). |
+| `conflict` | 409 / 422 | An `Idempotency-Key` collided. **409**: a request with that key is still in flight. **422**: that key was reused with a *different* body. | On 409, wait and retry the same call. On 422, a new key is used for a new body — a key belongs to exactly one request. See [Writes and retries](/writes-and-retries). |
 | `duplicate` | 409 | A concurrent write hit the same unique key. | Retry the call. `lead_create` deduplicates on phone, product line and group, so a plain re-send updates the existing lead and never creates a second one. |
 | `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
 | `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |
@@ -55,6 +56,7 @@ A lead that does not exist and a lead on another business line both return the s
 When a write fails validation, `error.fields` names the offending field:
 
 ```json
+// HTTP 400
 {
   "status": "error",
   "error": {
@@ -77,11 +79,12 @@ The most common causes are:
 A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry carries its own `status`, and a failed row carries the same `error` block:
 
 ```json
+// HTTP 200
 {
   "status": "success",
   "summary": { "total": 2, "succeeded": 1, "failed": 1 },
   "results": [
-    { "index": 0, "status": "success", "action": "created", "name": "d41c8b7e05" },
+    { "index": 0, "status": "success", "action": "created", "data": { "name": "d41c8b7e05" } },
     { "index": 1, "status": "error", "error": { "code": "validation_error", "message": "mobile_no is required" } }
   ]
 }
@@ -89,4 +92,4 @@ A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry ca
 
 The top-level `status` is checked, then `results[].status` is walked per row; a 200 does not mean every row landed. The failed row is rolled back while the rest still commit, so re-sending only the failed rows is safe.
 
-[Reading responses](/reading-values) covers pulling `error.code` and `error.fields` out by path, and [Rate limits](/rate-limits) covers handling a 429.
+[Reading values](/reading-values) covers pulling `error.code` and `error.fields` out by path, and [Rate limits](/rate-limits) covers handling a 429.

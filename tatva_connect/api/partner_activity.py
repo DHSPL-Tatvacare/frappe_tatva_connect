@@ -287,6 +287,14 @@ def activity_get_bulk(**_kwargs):
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
+def bulk_creator(mp, is_sysmgr):
+	"""The per-record create closure, shared by the sync bulk endpoint and the async worker (one brain)."""
+	def one(i, item):
+		return {"index": i, "status": "success", "action": ACTION_CREATED,
+		        "data": _create_one(item, mp, is_sysmgr)}
+	return one
+
+
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def activity_create_bulk(**_kwargs):
@@ -294,12 +302,7 @@ def activity_create_bulk(**_kwargs):
 	Each record is enforced in its own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
 	activities = _read_required_list(frappe.form_dict, "activities")
-
-	def one(i, item):
-		return {"index": i, "status": "success", "action": ACTION_CREATED,
-		        "data": _create_one(item, mp, is_sysmgr)}
-
-	return _run_bulk(activities, one)
+	return _run_bulk(activities, bulk_creator(mp, is_sysmgr))
 
 
 @frappe.whitelist(methods=["PUT"])

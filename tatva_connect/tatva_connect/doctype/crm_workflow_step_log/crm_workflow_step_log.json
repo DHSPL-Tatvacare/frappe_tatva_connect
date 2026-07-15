@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "autoincrement",
+ "creation": "2026-07-15 00:00:00.000000",
+ "description": "Audit log: one row per node execution in a workflow Instance - node id, type, outcome, detail, duration. Written in the interpreter's transaction and committed at the suspension boundary with everything else. Retention by age.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_instance",
+  "subject_name",
+  "node_id",
+  "node_type",
+  "outcome",
+  "detail",
+  "duration_ms"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow_instance",
+   "fieldtype": "Link",
+   "label": "Workflow Instance",
+   "options": "CRM Workflow Instance",
+   "in_list_view": 1,
+   "read_only": 1,
+   "reqd": 1,
+   "description": "The Instance this node execution belongs to."
+  },
+  {
+   "fieldname": "subject_name",
+   "fieldtype": "Data",
+   "label": "Subject Name",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "The subject record the Instance is about - denormalised for quick filtering."
+  },
+  {
+   "fieldname": "node_id",
+   "fieldtype": "Data",
+   "label": "Node ID",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "The node that ran."
+  },
+  {
+   "fieldname": "node_type",
+   "fieldtype": "Data",
+   "label": "Node Type",
+   "read_only": 1,
+   "description": "The node's type - Step, Branch, Assign, Wait, or Terminal."
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Data",
+   "label": "Outcome",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "What happened - ok, parked, resumed, done, or failed."
+  },
+  {
+   "fieldname": "detail",
+   "fieldtype": "Small Text",
+   "label": "Detail",
+   "read_only": 1,
+   "description": "Human-readable detail of the outcome, e.g. the branch taken or a failure message."
+  },
+  {
+   "fieldname": "duration_ms",
+   "fieldtype": "Int",
+   "label": "Duration (ms)",
+   "read_only": 1,
+   "description": "Wall-clock time the node took."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-07-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Step Log",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "export": 1, "role": "Sales Manager"},
+  {"read": 1, "report": 1, "role": "Automation Manager"},
+  {"create": 1, "delete": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

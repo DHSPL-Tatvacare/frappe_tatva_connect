@@ -20,7 +20,13 @@ from tatva_connect.location.api import leads_within_radius
 
 SWITCH = "Location::NearMe::directory"
 ROLE = "Field Map User"
-DEFAULT_RADIUS_KM = 15.0
+# First load asks for no radius and the server walks this ladder, stopping at the first ring that holds
+# a doctor. A fixed default cannot be right in both a dense city and a sparse territory: 15 km showed an
+# empty panel on a rep whose nearest doctor was further out, and widening the default to fit that rep
+# would scan a needless disc everywhere else. The rung that answered is returned, and the dropdown
+# (RADIUS_CHOICES) remains the user's override.
+RADIUS_LADDER = (15.0, 30.0, 60.0, 120.0)
+DEFAULT_RADIUS_KM = RADIUS_LADDER[0]
 
 
 def _can_access() -> bool:
@@ -44,35 +50,50 @@ def near_me_access():
 	return {"visible": _can_access()}
 
 
+_FIELDS = ["name", "lead_name", "mobile_no", "image", "source",
+		   "custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
+		   "custom_stage", "status", "custom_vertical"]
+
+
+def _search(lat, lng, radius_km):
+	"""One ring. get_all (NOT get_list): the territory view deliberately bypasses per-lead read scope —
+	access is owned by _assert_access. Box+haversine math is the shared location.leads_within_radius."""
+	return leads_within_radius(lat, lng, radius_km, fields=_FIELDS, query=frappe.get_all)
+
+
 @frappe.whitelist()
-def doctors_in_territory(lat, lng, radius_km=DEFAULT_RADIUS_KM):
-	"""Every doctor lead with a clinic anchor within `radius_km` of (lat,lng), nearest first —
-	cross-grain, all owners. A bounding-box prefilter (indexed clinic lat/lng) narrows the set,
-	then haversine refines to a true circle. `frappe.get_all` (NOT get_list) is deliberate: the
-	territory view bypasses per-lead read scope — access is owned by `_assert_access` above."""
+def doctors_in_territory(lat, lng, radius_km=None):
+	"""Every doctor lead with a clinic anchor near (lat,lng), nearest first — cross-grain, all owners.
+
+	`radius_km` given (the user picked one) => that ring, exactly. Omitted (first load) => walk
+	RADIUS_LADDER and stop at the first ring that holds a doctor, so the page never opens on an empty
+	list where doctors merely sit further out than one hardcoded default. Either way the radius that
+	answered comes back with the rows — the panel and the map circle both read it, so what the user is
+	told matches what was searched."""
 	_assert_access()
-	# get_all (not get_list): the territory view deliberately bypasses per-lead read scope — access
-	# is owned by _assert_access above. Box+haversine math is the shared location.leads_within_radius.
-	near = leads_within_radius(
-		lat, lng, flt(radius_km) or DEFAULT_RADIUS_KM,
-		fields=["name", "lead_name", "mobile_no", "image", "source",
-				"custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
-				"custom_stage", "status", "custom_vertical"],
-		query=frappe.get_all,
-	)
-	return [
-		{
-			"name": r.name,
-			"title": r.lead_name or r.name,
-			"mobile_no": r.mobile_no or "",
-			"image": r.image or "",
-			"lat": r.custom_clinic_latitude,
-			"lng": r.custom_clinic_longitude,
-			"address": r.custom_clinic_address or "",
-			"stage": r.custom_stage or r.status or "",
-			"source": r.source or "",
-			"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
-			"distance_m": dist,
-		}
-		for r, dist in near
-	]
+	rungs = [flt(radius_km)] if flt(radius_km) > 0 else list(RADIUS_LADDER)
+	used, near = rungs[-1], []
+	for rung in rungs:
+		near = _search(lat, lng, rung)
+		if near:
+			used = rung
+			break
+	return {
+		"radius_km": used,
+		"doctors": [
+			{
+				"name": r.name,
+				"title": r.lead_name or r.name,
+				"mobile_no": r.mobile_no or "",
+				"image": r.image or "",
+				"lat": r.custom_clinic_latitude,
+				"lng": r.custom_clinic_longitude,
+				"address": r.custom_clinic_address or "",
+				"stage": r.custom_stage or r.status or "",
+				"source": r.source or "",
+				"grain": r.custom_vertical or "",  # business-line label (display only, never a filter)
+				"distance_m": dist,
+			}
+			for r, dist in near
+		],
+	}

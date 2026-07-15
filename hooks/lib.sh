@@ -17,13 +17,13 @@ tcsec_run() {
   fi
   local py; py="$(_venv_python)"
   if [ -x "$py" ]; then
-    "$py" tatva_connect/security/tcsec.py "$@"; return
+    "$py" tatva_connect/tests/security/tcsec.py "$@"; return
   fi
   cat >&2 <<EOF
 ✖ tcsec / security venv not found ($VENV_DIR).
   Set it up once with uv:
      uv venv "$VENV_DIR" --python 3.12
-     uv pip install --python "$VENV_DIR/bin/python" -r tatva_connect/security/requirements.txt
+     uv pip install --python "$VENV_DIR/bin/python" -r tatva_connect/tests/security/requirements.txt
   Emergency bypass (use sparingly): git commit/push --no-verify
 EOF
   return 1

@@ -1,0 +1,165 @@
+---
+title: Async bulk jobs
+description: The asynchronous tier for high-volume creates — submit a batch, poll it to completion, reconcile the results.
+---
+
+A second, **asynchronous** tier sits alongside the synchronous endpoints for one purpose: creating a
+large number of records in a single submission. A batch is handed over, a job id is returned at once,
+and a dedicated background worker drains the batch through the **same** validation, grain and
+deduplication rules the synchronous create uses. Nothing new is validated; only the delivery differs.
+
+## When to use it
+
+| | Synchronous create / bulk | Bulk job |
+| --- | --- | --- |
+| Shape | one record, or up to 100 per call | thousands per submission |
+| Response | the outcome, in the same call | a job id; the outcome is polled |
+| Input | JSON body | inline JSON, or an uploaded CSV / JSONL file |
+| Best for | interactive writes, small batches | backfills and periodic loads |
+
+Reach for a bulk job when a load is large enough that sending it as synchronous calls would take many
+minutes of request traffic. For a handful of records, the synchronous endpoints are simpler — the
+outcome comes back in the same call.
+
+## Submitting a job
+
+A job is submitted to `partner_bulk_job.create`. It declares an `operation` and a `format`:
+
+- **operation** — `lead_create` or `activity_create`. The same create the synchronous tier performs.
+- **format** — `inline` (records in the JSON body), or `jsonl` / `csv` (an uploaded file). CSV is
+  accepted only for a flat `lead_create`; anything with nested fields uses JSONL.
+
+An inline job carries its records in the body:
+
+```http
+POST /api/method/tatva_connect.api.partner_bulk_job.create
+Authorization: token <api_key>:<api_secret>
+Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
+Content-Type: application/json
+
+{ "operation": "lead_create", "format": "inline",
+  "records": [ { "mobile_no": "9000000001", "first_name": "Asha" } ] }
+```
+
+```json
+// HTTP 202
+{ "status": "success", "action": "created",
+  "data": { "job_id": "9f2c1ab77e", "status": "UploadComplete" } }
+```
+
+A file job uploads the batch instead — either as a multipart file field, or base64 in
+`content_base64`. A JSONL file is one JSON record per line; a CSV file is a header row followed by one
+record per row. The response is the same `202` with a `job_id`.
+
+The call returns immediately with **HTTP 202** — it is accepted, not completed. The `job_id` is the
+address for everything that follows.
+
+## The lifecycle
+
+A job moves through a fixed set of states (the same names Salesforce Bulk API 2.0 uses):
+
+<Mermaid chart={`
+stateDiagram-v2
+    [*] --> UploadComplete
+    UploadComplete --> InProgress: worker starts
+    InProgress --> JobComplete: every record processed
+    InProgress --> Failed: did not complete
+    UploadComplete --> Aborted: cancel
+    InProgress --> Aborted: cancel
+    JobComplete --> [*]
+    Failed --> [*]
+    Aborted --> [*]
+`} />
+
+- **JobComplete** — the whole batch was processed. Individual records may still have failed; a
+  per-record failure is reported in the results, not on the job.
+- **Failed** — the job did not complete: the file was rejected whole (a virus, a disallowed type, or
+  over the record limit), was unparseable, or a write quota ran out mid-drain. It may carry the results
+  of the chunks that committed before it stopped.
+- **Aborted** — the job was cancelled (see below).
+
+## Monitoring
+
+`partner_bulk_job.get?job_id=…` returns the job's state and counts. Poll it until the status is
+terminal (`JobComplete`, `Failed` or `Aborted`).
+
+```http
+GET /api/method/tatva_connect.api.partner_bulk_job.get?job_id=9f2c1ab77e
+Authorization: token <api_key>:<api_secret>
+```
+
+```json
+// HTTP 200
+{ "status": "success", "action": "fetched",
+  "data": { "status": "JobComplete", "total": 1000,
+            "processed": 1000, "succeeded": 998, "failed": 2, … } }
+```
+
+A **completion webhook** can be registered so a job need not be polled at all: when a job reaches a
+terminal state, a signed event is delivered to the partner's configured URL. The webhook is
+**best-effort** — it is attempted a few times and then given up on — so polling `get` remains the
+durable way to learn a job's outcome. Treat the webhook as a nudge, not a guarantee.
+
+## Reading the results
+
+`partner_bulk_job.results?job_id=…` pages the per-record outcomes. Each row is addressed by its
+position in the submitted batch, so a failure can be traced back to the record that caused it.
+
+```http
+GET /api/method/tatva_connect.api.partner_bulk_job.results?job_id=9f2c1ab77e&limit=20&offset=0
+Authorization: token <api_key>:<api_secret>
+```
+
+```json
+// HTTP 200
+{ "status": "success", "action": "fetched",
+  "data": { "total": 1000, "has_more": true,
+    "results": [
+      { "record_index": 0, "action": "created", "record_name": "a7f3c9e12b" },
+      { "record_index": 7, "action": "failed", "error_code": "validation_error",
+        "error_message": "mobile_no is required" } ] } }
+```
+
+`action` is `created`, `merged` (an existing lead was updated — leads deduplicate exactly as they do
+synchronously) or `failed`.
+
+## Retrying
+
+There is **no per-record idempotency**. A resubmitted batch does not skip records it already wrote —
+leads deduplicate on their identity, so re-sending them merges rather than duplicates; activities
+always create. To retry, read the results, collect the rows whose `action` is `failed`, fix them, and
+submit those as a new job. The failures carry the exact `error_code` and `error_message` to act on.
+
+The **whole job** is idempotent on the `Idempotency-Key` header: resubmitting the identical request
+with the same key returns the original job rather than starting a second one. (An idempotent file
+submission uses `content_base64`, not a multipart upload.)
+
+## Cancelling
+
+`partner_bulk_job.cancel?job_id=…` stops a job.
+
+- A job that **has not started** is dropped straight to `Aborted`; nothing was created.
+- A job that is **already running** is signalled to stop, and the records it has created so far are
+  deleted before it ends `Aborted` — a cancel never leaves a half-loaded batch behind. Records that
+  merged onto pre-existing leads are left alone.
+
+A job that has already finished cannot be cancelled (`409 conflict`).
+
+## Limits
+
+| Limit | Default |
+| --- | --- |
+| Records per inline job | 10,000 |
+| Records per file job | 50,000 |
+| File size | 50 MB |
+| Concurrent jobs per partner | 5 |
+| Jobs queued across all partners | 25 |
+
+A submission beyond a per-partner or global cap is refused with `429` / `503` and a `Retry-After` —
+wait and resubmit. Rows are charged against a **separate** daily volume budget from the synchronous
+tier, so a backfill cannot exhaust the interactive quota.
+
+## Retention
+
+A finished job and its per-record results are kept for a fixed window (seven days by default) so the
+outcomes can be fetched and failures reconciled, then purged. Read the results within the window.

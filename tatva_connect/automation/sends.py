@@ -19,6 +19,7 @@ import frappe
 from tatva_connect import automation
 
 SENDS_SWITCH = "Task::Automation::sends"
+_RECORD_SAVEPOINT = "automation_whatsapp_record"
 
 
 def sends_enabled() -> bool:
@@ -82,19 +83,31 @@ def send_whatsapp(subject_lead, template_name, context=None):
 		account_name=account_name,
 		to_number=adapter.normalize_number(recipient),
 		template_name=actual_name,
+		template=template_name,
 		parameters=parameters,
 		lead=subject_lead,
 	)
 
 
-def _deliver_whatsapp(account_name, to_number, template_name, parameters, lead):
+def _deliver_whatsapp(account_name, to_number, template_name, template, parameters, lead):
 	"""The deferred delivery `send_whatsapp` enqueues (R1). Runs inside the background job
 	`enqueue_after_commit=True` schedules - after the rule's segment has actually committed, never
 	before, so a rolled-back segment (nothing was ever enqueued) never reaches this function at all.
 	Re-loads the account fresh in the job's own context and calls the SAME adapter the manual/
 	notification send paths use (`providers.adapter_for` -> `send_template_message`). A WATI failure
 	`frappe.throw`s here, inside the job - captured by the native job runner / Error Log, never by the
-	caller's transaction."""
+	caller's transaction.
+
+	`template_name` is WATI's name for the template (what goes on the wire); `template` is the
+	`WhatsApp Templates` docname (what the row links to) - they differ, so both are queued.
+
+	On success it records the send as a `WhatsApp Message` on the lead, carrying the WATI message id -
+	the same thing the manual (`message.py`) and notification (`notification.py`) paths already do.
+	Without it the CRM's only copy of an automated send was whatever WATI echoed back through the
+	webhook, so a webhook that was down or a number that did not route left the patient messaged and
+	the record empty. Writing the id here also gives the echo something to dedup against: WATI's
+	`templateMessageSent_v2` then matches `localMessageId` and becomes a status update
+	(`adapter._ingest_outbound` -> `_update_status`) instead of a duplicate Manual bubble."""
 	from tatva_connect.whatsapp import providers
 
 	account = frappe.get_doc("WhatsApp Account", account_name)
@@ -109,6 +122,50 @@ def _deliver_whatsapp(account_name, to_number, template_name, parameters, lead):
 	result = adapter.classify_send_response(resp)
 	if result.failed:
 		frappe.throw(f"Send WhatsApp failed for lead {lead}: {result.reason or 'unknown WATI error'}")
+
+	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, WATI call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
+	try:
+		frappe.db.savepoint(_RECORD_SAVEPOINT)
+		_record_sent_message(account_name, to_number, template, parameters, result.message_id, lead)
+	except Exception:
+		try:
+			frappe.db.rollback(save_point=_RECORD_SAVEPOINT)
+			frappe.log_error(
+				title="automation: WhatsApp sent but not recorded",
+				message=f"lead={lead} account={account_name} template={template} message_id={result.message_id}",
+			)
+		except Exception:
+			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports
+
+
+def _record_sent_message(account_name, to_number, template, parameters, message_id, lead):
+	"""File the sent template on the lead. The row can NEVER re-send, by four independent guards:
+	`flags.tatva_ingested` short-circuits `WATIMessage.send_outgoing` before any adapter call (the only
+	send seam an insert reaches); `send_outgoing` is called from `before_insert` and from the BULK
+	retry alone, and the bulk retry filters on `bulk_message_reference` + `status == "Failed"`, neither
+	of which this row carries; and a Template row whose `message_id` is set is skipped even if
+	`send_outgoing` were reached with the in-memory flag gone (`if not self.message_id`). The DB's
+	`message_id_reference_unique` (message_id, reference_name) is the last backstop."""
+	if message_id and frappe.db.exists("WhatsApp Message", {"message_id": message_id, "reference_name": lead}):
+		return
+	doc = frappe.get_doc({
+		"doctype": "WhatsApp Message",
+		"type": "Outgoing",
+		"message_type": "Template",
+		"use_template": 1,
+		"template": template,
+		"template_parameters": frappe.as_json([p["value"] for p in parameters]) if parameters else None,
+		"message": frappe.db.get_value("WhatsApp Templates", template, "template") or "",
+		"content_type": "text",
+		"to": to_number,
+		"message_id": message_id,
+		"status": "sent",  # never "Failed"/"Queued" — those are the states the bulk retry re-sends
+		"whatsapp_account": account_name,
+		"reference_doctype": "CRM Lead",
+		"reference_name": lead,
+	})
+	doc.flags.tatva_ingested = True  # already on the wire — the controller must not send it a second time
+	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — background job, no user context; the send was already gated by routing + adapter.assert_enabled
 
 
 def send_email(subject_lead, recipient, subject, body, context=None) -> str:

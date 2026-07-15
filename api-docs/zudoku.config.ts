@@ -1,6 +1,7 @@
 import type { ZudokuConfig } from "zudoku";
 import { createApiIdentityPlugin } from "zudoku/plugins";
 import { ApiKeyInput } from "./src/components/ApiKeyInput";
+import { Mermaid } from "./src/components/Mermaid";
 import { PostmanDownload } from "./src/components/PostmanDownload";
 
 const config: ZudokuConfig = {
@@ -110,10 +111,11 @@ const config: ZudokuConfig = {
           label: "Working with the API",
           collapsed: false,
           items: [
-            { type: "doc", file: "writes-and-retries", label: "Writes, addressing and retries" },
+            { type: "doc", file: "writes-and-retries", label: "Writes and retries" },
             { type: "doc", file: "responses", label: "Response shapes" },
-            { type: "doc", file: "reading-values", label: "Reading responses" },
+            { type: "doc", file: "reading-values", label: "Reading values" },
             { type: "doc", file: "files", label: "Files" },
+            { type: "doc", file: "async-bulk", label: "Async bulk jobs" },
             { type: "doc", file: "partner-errors", label: "Errors" },
             { type: "doc", file: "rate-limits", label: "Rate limits" },
             { type: "doc", file: "conventions", label: "Conventions" },
@@ -137,7 +139,7 @@ const config: ZudokuConfig = {
   },
   // Make <ApiKeyInput /> usable inside MDX (Validate-your-API-key page).
   mdx: {
-    components: { ApiKeyInput },
+    components: { ApiKeyInput, Mermaid },
   },
   // "Download for Postman" button (with the Postman logo) in the header, top-RIGHT
   // (head-navigation-end) — away from the TatvaCare logo on the left. (The site has no

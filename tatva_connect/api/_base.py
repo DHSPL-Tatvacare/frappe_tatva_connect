@@ -147,6 +147,7 @@ def trusted_permissions():
 #   caps          -> 0 = DEFAULT
 _SETTINGS = "CRM Partner API Settings"
 _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
+_ASYNC_BULK = "Partner::AsyncBulk::jobs"  # dormant master switch for the async bulk-job tier
 
 DEFAULTS = {
 	"window_seconds": 60,
@@ -177,6 +178,18 @@ DEFAULTS = {
 	"global_write_records": 50000,
 	# Idempotency (opt-in write-dedup): how long a stored key/response is honoured for replay.
 	"idempotency_window_hours": 24,
+	# Async bulk-job tier (partner_bulk worker), dormant until Partner::AsyncBulk::jobs; own volume budget.
+	"async_inline_max_records": 10000,
+	"async_file_max_records": 50000,
+	"async_file_max_mb": 50,
+	"async_jobs_at_once": 1,
+	"async_concurrent_jobs_per_partner": 5,
+	"async_global_queue_max": 25,
+	"async_chunk_records": 50,
+	"async_job_timeout_seconds": 3600,
+	"async_results_retention_days": 7,
+	"async_per_token_write_records": 1000000,
+	"async_global_write_records": 5000000,
 }
 # The DIMENSIONS: 0 here means "unlimited", and the limiter skips that bucket entirely. A burst is
 # NOT in this list — it is the bucket's capacity, so a 0 falls back to its DEFAULT (see the 0-rules).
@@ -203,6 +216,10 @@ _LOOSER_WHEN_HIGHER = (
 	"per_token_write_records", "global_write_records",
 	"bulk_max_records", "file_bulk_max_records", "list_max_page", "list_default_page",
 	"file_download_timeout_seconds", "file_download_max_mb", "idempotency_window_hours",
+	"async_inline_max_records", "async_file_max_records", "async_file_max_mb", "async_jobs_at_once",
+	"async_concurrent_jobs_per_partner", "async_global_queue_max", "async_chunk_records",
+	"async_job_timeout_seconds", "async_results_retention_days",
+	"async_per_token_write_records", "async_global_write_records",
 )
 _LOOSER_WHEN_LOWER = ("window_seconds", "records_window_seconds", "bulk_window_seconds")
 
@@ -628,19 +645,30 @@ def _bulk_rate_check(mapping):
 	)
 
 
-def _volume_check(rows, direction, mapping):
+def _volume_check(rows, direction, mapping, budget=""):
 	"""VOLUME dimension — `rows` into the read|write daily buckets (global + per-token). Burst =
 	the ceiling, so a partner may spend a whole day's budget in one bulk load. `direction` is
-	'read' or 'write'; single + bulk endpoints both meter their row count here."""
+	'read' or 'write'; single + bulk endpoints both meter their row count here. `budget` selects the
+	bucket set: "" = the sync per_token_/global_ ; "async_" = the async tier's OWN budget and buckets,
+	so a backfill cannot drain the interactive quota."""
 	cfg = _cfg()
 	window = cfg["records_window_seconds"] or DEFAULTS["records_window_seconds"]
-	g = cfg[f"global_{direction}_records"]
-	t = cfg[f"per_token_{direction}_records"]
+	g = cfg[f"{budget}global_{direction}_records"]
+	t = cfg[f"{budget}per_token_{direction}_records"]
 	return _bucket_pair(
 		mapping, rows,
-		f"vol:{direction}:global", g, g,
-		f"vol:{direction}:tok:{frappe.session.user}", t, t, window,
+		f"vol:{budget}{direction}:global", g, g,
+		f"vol:{budget}{direction}:tok:{frappe.session.user}", t, t, window,
 	)
+
+
+def async_volume_exhausted(rows, mapping):
+	"""True if charging `rows` write-rows against the ASYNC volume budget is denied — for the bulk-job
+	worker, which has no HTTP response to fail with. Enforcement-off or an exempt caller -> False."""
+	if not automation.is_enabled(_RATE_ENFORCEMENT):
+		return False
+	check = _volume_check(rows, "write", mapping, budget="async_")
+	return bool(check and check[0] is not None)
 
 
 def _throttle_response(check, mapping, reason=None):
@@ -960,11 +988,19 @@ def _undo_side_effects(depth):
 			frappe.log_error(title="Partner API: bulk rollback callback failed")
 
 
-def _run_bulk(items, fn, entity=None):
-	"""WRITE lane. Run `fn(index, item)` per record in its own savepoint -> partial success. A failing
-	record is rolled back and reported; the rest still commit."""
-	if _bulk_guard(items, "write", entity):
-		return
+class BulkDeadlock(Exception):
+	"""A per-record savepoint rollback that itself raised = the DATABASE rolled the whole transaction
+	back (a deadlock), destroying every savepoint. The caller decides the remedy, because it differs by
+	lane: the sync endpoint returns a retryable 503; the async worker retries the batch under its own
+	transaction. Raised by _process_bulk so neither lane re-implements the other's response."""
+
+
+def _process_bulk(items, fn):
+	"""The pure WRITE core: run `fn(index, item)` per record in its own savepoint -> partial success,
+	returning (results, summary). No volume guard, no HTTP response, so BOTH lanes share ONE brain
+	(sync via _run_bulk, async via the bulk-job worker). Raises BulkDeadlock if the transaction
+	deadlocked (every row this call wrote is already gone, so a partial-success envelope would name
+	rows that no longer exist)."""
 	results, ok = [], 0
 	for i, item in enumerate(items):
 		sp = f"tc_bulk_{i}"
@@ -976,22 +1012,30 @@ def _run_bulk(items, fn, entity=None):
 		except Exception as e:
 			try:
 				frappe.db.rollback(save_point=sp)
-			except Exception:
-				# A deadlock is resolved by the DATABASE rolling the whole transaction back, which
-				# destroys every savepoint in it — so rolling back to this one raises instead of
-				# undoing anything, and that used to escape as an opaque 500. Every record this call
-				# wrote is already gone, including the ones counted as succeeded, so a partial-success
-				# envelope would report rows that no longer exist. Fail the whole call, retryably.
-				frappe.db.rollback()
-				return _fail(
-					"write_conflict",
-					_("A concurrent write conflicted with this batch and it was rolled back. "
-					  "Nothing was saved. Retry the whole call."),
-					503, retry_after=_cfg()["bulk_window_seconds"],
-				)
+			except Exception as rollback_err:
+				raise BulkDeadlock from rollback_err  # whole txn gone; the caller unwinds and decides
 			_undo_side_effects(depth)  # the savepoint rolled back the DB; this undoes what it wrote to disk
 			results.append(_bulk_error(i, e, "bulk"))
-	_ok(summary={"total": len(items), "succeeded": ok, "failed": len(items) - ok}, results=results)
+	return results, {"total": len(items), "succeeded": ok, "failed": len(items) - ok}
+
+
+def _run_bulk(items, fn, entity=None):
+	"""WRITE lane (sync). Guard, process, emit. A deadlock stays a retryable 503 (unchanged): the whole
+	txn is gone, so nothing was saved and the caller retries the whole call — a mid-request retry would
+	fight the idempotency claim held in this same transaction, so retry is the async worker's job."""
+	if _bulk_guard(items, "write", entity):
+		return
+	try:
+		results, summary = _process_bulk(items, fn)
+	except BulkDeadlock:
+		frappe.db.rollback()
+		return _fail(
+			"write_conflict",
+			_("A concurrent write conflicted with this batch and it was rolled back. "
+			  "Nothing was saved. Retry the whole call."),
+			503, retry_after=_cfg()["bulk_window_seconds"],
+		)
+	_ok(summary=summary, results=results)
 
 
 def _bulk_read(names, load, entity=None):

@@ -1,5 +1,5 @@
 ---
-title: Reading responses
+title: Reading values
 ---
 
 Every response is JSON. A value is read by following its dotted path from the top of the body. The pattern is the same every time: check `status`, branch on `action` for a success or `error.code` for a failure, then read the value by its path.

@@ -32,9 +32,8 @@ packages = []
 [tool.ruff]
 line-length = 110
 target-version = "py310"
-# tatva_connect/security/ is the gate's own tooling (tcsec + static_checks), not shipped app code —
-# excluded from the app lint scope, same posture as bandit/semgrep below.
-extend-exclude = ["tatva_connect/security"]
+# The gate's own tooling (tcsec + static_checks) is not shipped app code — excluded, like bandit/semgrep; the security TEST files beside it stay linted.
+extend-exclude = ["tatva_connect/tests/security/tcsec.py", "tatva_connect/tests/security/static_checks.py"]
 
 [tool.ruff.lint]
 select = [
@@ -72,7 +71,7 @@ indent-style = "tab"
 docstring-code-format = true
 
 # ── Security / test harness. The static gate is `pytest tatva_connect/tests/static`, defined once in
-#    tatva_connect/security/static_checks.py; `tatva_connect/security/tcsec.py` is the local cockpit. ──
+#    tatva_connect/tests/security/static_checks.py; `tatva_connect/tests/security/tcsec.py` is the local cockpit. ──
 
 [tool.bandit]
 # SAST over the shipped app code. Excludes are NOT app attack surface:
@@ -99,7 +98,7 @@ skips = ["B608", "B105"]
 
 [tool.pytest.ini_options]
 # The static (no-bench) gate IS `pytest tatva_connect/tests/static`: the scanner wrappers (which
-# read tatva_connect/security/static_checks.py) + the AST source-locks. Path-scoped, so it never
+# read tatva_connect/tests/security/static_checks.py) + the AST source-locks. Path-scoped, so it never
 # collects the frappe-dependent bench tests. norecursedirs keeps a bare `pytest` out of vendored trees.
 norecursedirs = [".devbench", "archive", "node_modules", "dist", ".zudoku"]
 markers = ["static: a no-bench static-gate check (scanner wrapper or AST source-lock); run via `pytest tatva_connect/tests/static`"]

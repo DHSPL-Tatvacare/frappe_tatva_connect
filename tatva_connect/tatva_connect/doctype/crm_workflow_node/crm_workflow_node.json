@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "node_id",
+  "node_type",
+  "action_group",
+  "condition",
+  "assign_json",
+  "wait_mode",
+  "wait_expression",
+  "signal_name",
+  "accepts_json",
+  "next_node",
+  "on_true",
+  "on_false",
+  "on_event",
+  "on_timeout"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "node_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Node ID",
+   "reqd": 1,
+   "description": "Identifies the node within its workflow; edges reference it and a parked Instance stores it as its cursor, so it must be stable and unique."
+  },
+  {
+   "columns": 2,
+   "fieldname": "node_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Node Type",
+   "options": "Step\nBranch\nAssign\nWait\nTerminal",
+   "reqd": 1,
+   "description": "Selects the node's behaviour - Step, Branch, Assign, Wait, or Terminal; the fields below are shown per type."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Step\"",
+   "fieldname": "action_group",
+   "fieldtype": "Link",
+   "label": "Action Group",
+   "options": "CRM Action Group",
+   "description": "Names the reusable Action Group a Step node runs."
+  },
+  {
+   "depends_on": "eval:doc.node_type==\"Branch\"",
+   "fieldname": "condition",
+   "fieldtype": "Code",
+   "label": "Condition",
+   "description": "Holds the expression a Branch node evaluates against Instance state; a true result follows On True, otherwise On False."
+  },
+  {
+   "depends_on": "eval:doc.node_type==\"Assign\"",
+   "fieldname": "assign_json",
+   "fieldtype": "Code",
+   "label": "Assign (Expression)",
+   "description": "Holds the expression an Assign node evaluates to a dict that updates Instance state (e.g. increment a counter) with no external effect."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Wait\"",
+   "fieldname": "wait_mode",
+   "fieldtype": "Select",
+   "label": "Wait Mode",
+   "options": "For Duration\nUntil Time\nUntil Event\nEvent-or-Timeout",
+   "description": "Selects how a Wait node resumes - after a duration, at a time, on an event, or on an event-or-timeout."
+  },
+  {
+   "depends_on": "eval:doc.node_type==\"Wait\" && [\"For Duration\",\"Until Time\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
+   "fieldname": "wait_expression",
+   "fieldtype": "Data",
+   "label": "Wait Expression",
+   "description": "Holds the delay (For Duration - e.g. {\"minutes\": 5}) or the deadline expression (Until Time, or the timeout of Event-or-Timeout)."
+  },
+  {
+   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
+   "fieldname": "signal_name",
+   "fieldtype": "Data",
+   "label": "Signal Name",
+   "description": "Names the external event a Wait node waits for; a delivered signal of this name resumes the Instance."
+  },
+  {
+   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
+   "fieldname": "accepts_json",
+   "fieldtype": "Code",
+   "label": "Accepts (JSON)",
+   "description": "Maps declared payload paths of an incoming signal to Instance-state keys; only these paths merge, bounding an arbitrary payload to a known shape."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:[\"Step\",\"Assign\"].includes(doc.node_type) || (doc.node_type==\"Wait\" && [\"For Duration\",\"Until Time\"].includes(doc.wait_mode))",
+   "fieldname": "next_node",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Next Node",
+   "description": "Points to the node followed when this Step, Assign, or pure-timer Wait completes."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Branch\"",
+   "fieldname": "on_true",
+   "fieldtype": "Data",
+   "label": "On True",
+   "description": "Points to the node followed when a Branch node's condition is true."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Branch\"",
+   "fieldname": "on_false",
+   "fieldtype": "Data",
+   "label": "On False",
+   "description": "Points to the node followed when a Branch node's condition is false."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
+   "fieldname": "on_event",
+   "fieldtype": "Data",
+   "label": "On Event",
+   "description": "Points to the node followed when a Wait node's awaited signal arrives."
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.node_type==\"Wait\" && doc.wait_mode==\"Event-or-Timeout\"",
+   "fieldname": "on_timeout",
+   "fieldtype": "Data",
+   "label": "On Timeout",
+   "description": "Points to the node followed when a Wait node's timeout elapses before its signal arrives."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Node",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

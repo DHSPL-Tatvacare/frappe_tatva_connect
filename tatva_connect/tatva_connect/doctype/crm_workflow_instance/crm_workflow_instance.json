@@ -1,0 +1,149 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-15 00:00:00.000000",
+ "description": "One durable runtime record per subject-in-workflow: the singular state (current_node + state_json + status). Binds to an IMMUTABLE CRM Workflow Version. The interpreter re-enters at current_node and commits once at each suspension boundary. Runtime data only - never seeded.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow",
+  "workflow_version",
+  "subject_doctype",
+  "subject_name",
+  "current_node",
+  "state_json",
+  "status",
+  "resume_at",
+  "awaiting_signal",
+  "awaiting_correlation",
+  "retry_count",
+  "active_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "label": "Workflow",
+   "options": "CRM Workflow Definition",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Records the workflow this execution is bound to."
+  },
+  {
+   "fieldname": "workflow_version",
+   "fieldtype": "Link",
+   "label": "Workflow Version",
+   "options": "CRM Workflow Version",
+   "reqd": 1,
+   "read_only": 1,
+   "search_index": 1,
+   "description": "Records the exact frozen version this execution runs. Pinned at start; the interpreter reads its graph, never the editable Definition."
+  },
+  {
+   "fieldname": "subject_doctype",
+   "fieldtype": "Data",
+   "label": "Subject DocType",
+   "reqd": 1,
+   "read_only": 1,
+   "description": "Identifies the doctype of the record this journey is about - half of its instance key."
+  },
+  {
+   "fieldname": "subject_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Subject Name",
+   "options": "subject_doctype",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Identifies the record this journey is about - the other half of its instance key."
+  },
+  {
+   "fieldname": "current_node",
+   "fieldtype": "Data",
+   "label": "Current Node",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Stores the node to run next; on resume the interpreter re-enters here."
+  },
+  {
+   "fieldname": "state_json",
+   "fieldtype": "Long Text",
+   "label": "State (JSON)",
+   "read_only": 1,
+   "description": "Holds the single authoritative context every node reads and writes; a consumed signal's payload is merged here. Never indexed - promote a field to a column to query it."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Running\nParked\nDone\nFailed",
+   "default": "Running",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Records whether the execution is Running, Parked, Done, or Failed."
+  },
+  {
+   "fieldname": "resume_at",
+   "fieldtype": "Datetime",
+   "label": "Resume At",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "Records when a clock-parked execution becomes due; the timer sweep wakes it at or after this."
+  },
+  {
+   "fieldname": "awaiting_signal",
+   "fieldtype": "Data",
+   "label": "Awaiting Signal",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "Records the signal name a parked execution waits for; a matching delivery wakes it."
+  },
+  {
+   "fieldname": "awaiting_correlation",
+   "fieldtype": "Data",
+   "label": "Awaiting Correlation",
+   "read_only": 1,
+   "description": "Records the per-iteration token a wait matches a signal on, so a reused signal name cannot wake the wrong loop iteration."
+  },
+  {
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count",
+   "read_only": 1,
+   "default": "0",
+   "description": "Counts transient-failure retries, so a repeatedly deadlocking execution eventually fails instead of retrying forever."
+  },
+  {
+   "fieldname": "active_key",
+   "fieldtype": "Data",
+   "label": "Active Key",
+   "read_only": 1,
+   "description": "Holds a uniqueness key while live and NULL once terminal, so the database itself rejects a second live Instance for the same subject and workflow."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-07-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Instance",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "role": "Sales Manager"},
+  {"read": 1, "report": 1, "role": "Automation Manager"},
+  {"create": 1, "delete": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

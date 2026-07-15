@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:workflow_name",
+ "creation": "2026-07-15 00:00:00.000000",
+ "description": "A per-subject workflow graph: typed Nodes (Step / Branch / Assign / Wait / Terminal) + edges. Frozen on save into an immutable CRM Workflow Version; a running Instance binds to a version, never to this editable Definition. Ships dormant (enabled off).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_name",
+  "enabled",
+  "grain_section",
+  "vertical",
+  "group",
+  "program",
+  "entry_section",
+  "entry_doctype",
+  "entry_event",
+  "nodes_section",
+  "nodes"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Workflow Name",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Names the workflow for operators; every Instance and log references it by this name."
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled",
+   "description": "Gates whether new Instances are created; disabling stops new starts but never touches Instances already running."
+  },
+  {
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "Grain"
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "label": "Vertical",
+   "options": "CRM Vertical",
+   "description": "Scopes the subjects that may enter; an Instance is created only when the subject's grain matches, mirroring the automation-rule grain gate. Blank axis = wildcard."
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "options": "CRM Group",
+   "description": "Scopes the subjects that may enter; blank = wildcard for this axis."
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "label": "Program",
+   "options": "CRM Program",
+   "description": "Scopes the subjects that may enter; blank = wildcard for this axis."
+  },
+  {
+   "fieldname": "entry_section",
+   "fieldtype": "Section Break",
+   "label": "Entry"
+  },
+  {
+   "fieldname": "entry_doctype",
+   "fieldtype": "Link",
+   "label": "Entry DocType",
+   "options": "DocType",
+   "description": "Declares the doctype whose lifecycle event starts an Instance; it must be a resolvable subject."
+  },
+  {
+   "default": "Created",
+   "fieldname": "entry_event",
+   "fieldtype": "Select",
+   "label": "Entry Event",
+   "options": "Created\nUpdated\nDeleted",
+   "description": "Declares which lifecycle event - Created, Updated, or Deleted - starts an Instance."
+  },
+  {
+   "fieldname": "nodes_section",
+   "fieldtype": "Section Break",
+   "label": "Nodes"
+  },
+  {
+   "fieldname": "nodes",
+   "fieldtype": "Table",
+   "label": "Nodes",
+   "options": "CRM Workflow Node",
+   "description": "The graph: one row per node. Set each row's type and its handful of type-specific fields; edges reference other rows by Node ID."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Definition",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Automation Manager", "share": 1, "write": 1},
+  {"read": 1, "role": "Sales Manager"}
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "workflow_name",
+ "track_changes": 1
+}

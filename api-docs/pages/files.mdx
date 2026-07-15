@@ -3,8 +3,6 @@ title: Files
 description: How a document is attached, how it is scanned, and how it is read back.
 ---
 
-# Files
-
 A document is attached to a lead, or to one of that lead's activities or notes. It is scanned for
 malware before it is stored, and it is always private once it is.
 
@@ -23,6 +21,7 @@ described by [`file_schema`](/discover-schema), which is read rather than assume
 ```http
 POST /api/method/tatva_connect.api.partner_file.file_attach
 Authorization: token <api_key>:<api_secret>
+Idempotency-Key: 5f2c1a9e-3b7d-4c8e-9f01-2a3b4c5d6e7f
 Content-Type: application/json
 
 {
@@ -33,7 +32,12 @@ Content-Type: application/json
 }
 ```
 
-The response carries the `name` the file is addressed by from then on.
+```json
+// HTTP 200
+{ "status": "success", "action": "created", "data": { "name": "f3a9c1e08b" } }
+```
+
+The `name` returned is the address the document is read, deleted and referenced by from then on.
 
 ## Every document is scanned for malware
 
@@ -44,6 +48,7 @@ on the caller's behalf.
 A document that fails the scan is **rejected outright, and nothing is written**:
 
 ```json
+// HTTP 400
 {
   "status": "error",
   "error": {
@@ -53,7 +58,7 @@ A document that fails the scan is **rejected outright, and nothing is written**:
 }
 ```
 
-The response is a **400**. The document is not quarantined and cannot be retrieved afterwards; there
+The document is not quarantined and cannot be retrieved afterwards; there
 is nothing to fetch, because nothing was stored. A clean copy is sent instead.
 
 The scan is the reason a file attach is measurably slower than any other write — roughly a second

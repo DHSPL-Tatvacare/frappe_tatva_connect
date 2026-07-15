@@ -130,16 +130,22 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 		frappe.enqueue = spy
 		return calls, orig
 
-	def _spy_adapter(self):
+	def _spy_adapter(self, message_id="wamid-routing-guard-test"):
+		"""A distinct id per test: `message_id_reference_unique` is UNIQUE(message_id, reference_name),
+		so two tests sending the "same" WATI id to the same lead would collide on the index - which the
+		real world never does."""
 		calls = []
 		orig_send = wati_api.send_template_message
 
 		def _fake_send(account, **kwargs):
 			calls.append((account, kwargs))
-			return {"result": True, "local_message_id": "wamid-routing-guard-test"}
+			return {"result": True, "local_message_id": message_id}
 
 		wati_api.send_template_message = _fake_send
 		return calls, orig_send
+
+	def _drop_messages(self, lead):
+		frappe.db.delete("WhatsApp Message", {"reference_doctype": "CRM Lead", "reference_name": lead})
 
 	def test_match_returns_deferred_thunk_that_enqueues_once_when_called(self):
 		orig_sends, orig_is_enabled = self._flip_on()
@@ -268,23 +274,142 @@ class TestSendWhatsappRoutingGuard(FrappeTestCase):
 	def test_deliver_whatsapp_calls_the_adapter_with_the_resolved_args(self):
 		"""`_deliver_whatsapp` is the job body `enqueue_after_commit` runs - call it directly (as the
 		job runner would) and prove it calls the adapter with exactly what was queued."""
-		calls, orig_send = self._spy_adapter()
+		calls, orig_send = self._spy_adapter(message_id="wamid-routing-guard-args")
 		try:
 			sends._deliver_whatsapp(
 				account_name=self.account_a,
 				to_number="919876500002",
 				template_name="RoutingGuard-template",
+				template=self.template_on_a,
 				parameters=[{"name": "1", "value": "RoutingGuard"}],
 				lead=self.lead_on_a.name,
 			)
 		finally:
 			wati_api.send_template_message = orig_send
+			self._drop_messages(self.lead_on_a.name)
 		self.assertEqual(len(calls), 1, "the adapter must be called exactly once")
 		account, kwargs = calls[0]
 		self.assertEqual(account.name, self.account_a)
 		self.assertEqual(kwargs["to_number"], "919876500002")
 		self.assertEqual(kwargs["template_name"], "RoutingGuard-template")
 		self.assertEqual(kwargs["parameters"], [{"name": "1", "value": "RoutingGuard"}])
+
+	def test_deliver_whatsapp_records_the_sent_message_on_the_lead_and_never_sends_twice(self):
+		"""The send must leave OUR OWN record of what went out. Before this, `_deliver_whatsapp` threw
+		`result.message_id` away and inserted nothing: the message only ever reached the lead's tab
+		because WATI echoed it back through the webhook (`adapter._ingest_outbound`), as a plain Manual
+		bubble. A webhook that is down, misconfigured, or whose number does not route means the patient
+		really got the message and the CRM shows NOTHING. The row is written here, carrying the WATI
+		message id, so the echo dedups against it (`adapter.py` lmid branch -> `_update_status`).
+
+		The adapter spy stays installed ACROSS the insert, so the call count is the double-send oracle:
+		inserting a `WhatsApp Message` runs `before_insert` -> `WATIMessage.send_outgoing`, which is
+		exactly the seam that would put the template on the wire a second time."""
+		mid = "wamid-routing-guard-record"
+		calls, orig_send = self._spy_adapter(message_id=mid)
+		try:
+			sends._deliver_whatsapp(
+				account_name=self.account_a,
+				to_number="919876500002",
+				template_name="RoutingGuard-template",
+				template=self.template_on_a,
+				parameters=[{"name": "1", "value": "RoutingGuard"}],
+				lead=self.lead_on_a.name,
+			)
+			self.assertEqual(
+				len(calls), 1,
+				"the adapter was called more than once - recording the row re-sent the template to the patient",
+			)
+			rows = frappe.get_all(
+				"WhatsApp Message",
+				filters={"reference_doctype": "CRM Lead", "reference_name": self.lead_on_a.name},
+				fields=["name", "type", "message_type", "template", "message_id", "whatsapp_account",
+				        "template_parameters", "status", "bulk_message_reference"],
+			)
+			self.assertEqual(len(rows), 1, "the automation send left no WhatsApp Message row on the lead")
+			row = rows[0]
+			self.assertEqual(row.type, "Outgoing")
+			self.assertEqual(row.message_type, "Template", "must thread as the Template it was, not a Manual bubble")
+			self.assertEqual(row.template, self.template_on_a)
+			self.assertEqual(
+				row.message_id, mid,
+				"the WATI message id was not recorded - the webhook echo has nothing to dedup against, and a "
+				"Template row with no message_id is re-sendable",
+			)
+			self.assertEqual(row.whatsapp_account, self.account_a)
+			self.assertEqual(frappe.parse_json(row.template_parameters), ["RoutingGuard"])
+			# The two fields the bulk retry (`bulk_whatsapp_message.retry_failed`) selects on. Either one
+			# alone keeps this row out of the re-send pool; assert both, so a future default can't arm it.
+			self.assertEqual(row.status, "sent")
+			self.assertFalse(row.bulk_message_reference, "a bulk reference would make this row eligible for re-send")
+		finally:
+			wati_api.send_template_message = orig_send
+			self._drop_messages(self.lead_on_a.name)
+
+	def test_a_deadlock_while_recording_never_escapes_and_re_sends_the_patient(self):
+		"""THE double-send oracle. `background_jobs.execute_job` re-runs this whole function - the WATI
+		call included - up to 5 times when it catches `frappe.db.InternalError` (a deadlock or lock-wait
+		timeout). A contended `WhatsApp Message` insert throws exactly that. So an InternalError escaping
+		AFTER WATI accepted the message does not lose a record: it messages the patient again.
+
+		Planted-bad, with the exact class that triggers the retry (a ValidationError would prove nothing -
+		`execute_job` does not retry those). The job must return cleanly, having left an Error Log."""
+		mid = "wamid-routing-guard-deadlock"
+		calls, orig_send = self._spy_adapter(message_id=mid)
+		orig_record = sends._record_sent_message
+
+		def _deadlock(*a, **kw):
+			raise frappe.db.InternalError(1213, "planted: Deadlock found when trying to get lock")
+
+		sends._record_sent_message = _deadlock
+		try:
+			sends._deliver_whatsapp(  # must NOT raise — an escape here is a second message to a patient
+				account_name=self.account_a,
+				to_number="919876500002",
+				template_name="RoutingGuard-template",
+				template=self.template_on_a,
+				parameters=[{"name": "1", "value": "RoutingGuard"}],
+				lead=self.lead_on_a.name,
+			)
+			self.assertEqual(len(calls), 1, "the adapter must have been called exactly once")
+			errors = frappe.get_all(
+				"Error Log",
+				filters={"method": "automation: WhatsApp sent but not recorded", "error": ["like", f"%{mid}%"]},
+				fields=["name"],
+			)
+			self.assertTrue(errors, "a send we could not record must leave an Error Log naming the message id")
+		finally:
+			sends._record_sent_message = orig_record
+			wati_api.send_template_message = orig_send
+			self._drop_messages(self.lead_on_a.name)
+
+	def test_a_deadlock_in_the_error_logging_itself_still_never_escapes(self):
+		"""The recovery path has the same failure mode as the thing it recovers from: `log_error` is a DB
+		insert, so it can deadlock too. If it does, the error escapes, the job retries, and the patient is
+		messaged twice - the hole would be inside the fix. Plant a deadlock in BOTH."""
+		calls, orig_send = self._spy_adapter(message_id="wamid-routing-guard-log-deadlock")
+		orig_record, orig_log = sends._record_sent_message, frappe.log_error
+
+		def _deadlock(*a, **kw):
+			raise frappe.db.InternalError(1213, "planted: Deadlock found when trying to get lock")
+
+		sends._record_sent_message = _deadlock
+		frappe.log_error = _deadlock
+		try:
+			sends._deliver_whatsapp(  # must STILL not raise
+				account_name=self.account_a,
+				to_number="919876500002",
+				template_name="RoutingGuard-template",
+				template=self.template_on_a,
+				parameters=[{"name": "1", "value": "RoutingGuard"}],
+				lead=self.lead_on_a.name,
+			)
+			self.assertEqual(len(calls), 1, "the adapter must have been called exactly once")
+		finally:
+			sends._record_sent_message = orig_record
+			frappe.log_error = orig_log
+			wati_api.send_template_message = orig_send
+			self._drop_messages(self.lead_on_a.name)
 
 
 if __name__ == "__main__":

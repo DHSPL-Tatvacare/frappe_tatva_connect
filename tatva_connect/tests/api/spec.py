@@ -46,11 +46,12 @@ def response_example(spec, path, status="200"):
 	for verb, op in node.items():
 		if verb.lower() not in ("get", "post", "put", "delete", "patch"):
 			continue
-		content = (op.get("responses", {}).get(status, {})
-		           .get("content", {}).get("application/json", {}))
-		examples = content.get("examples")
-		if not examples:
-			return None
-		first = _deref(spec, next(iter(examples.values())))
-		return first.get("value") if isinstance(first, dict) else None
+		for st in (status, "202"):  # an async submit answers 202 Accepted, not 200
+			content = (op.get("responses", {}).get(st, {})
+			           .get("content", {}).get("application/json", {}))
+			examples = content.get("examples")
+			if examples:
+				first = _deref(spec, next(iter(examples.values())))
+				return first.get("value") if isinstance(first, dict) else None
+		return None
 	return None

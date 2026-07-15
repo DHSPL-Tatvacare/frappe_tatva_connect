@@ -525,6 +525,47 @@ AUTOMATIONS = [
 		backs=["tatva_connect.automation.dispatcher.sweep_run_log"],
 	),
 	Auto(
+		key="Workflow::Engine::run",
+		fires_on="Doc Event",
+		trigger_detail='wildcard "*" · after_insert (Created) + on_update (Updated) + on_trash (Deleted) — workflow entry',
+		purpose=(
+			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
+			"starts one durable Instance that walks a graph of steps, branches, and waits, parking on "
+			"timers and external signals for as long as the journey needs. One instance runs per subject, "
+			"guarded by a database unique key so a subject can never start the same workflow twice, and "
+			"an external event is delivered by dropping a row in a durable inbox that the matching wait "
+			"consumes — so an early, duplicate, or out-of-order signal is handled by construction rather "
+			"than lost. Off, which is how it ships, no instance starts and no signal is delivered.\n"
+			"Example: a lead is created, a welcome step fires, the journey waits for a document upload, "
+			"and the upload's signal resumes it weeks later exactly where it parked."
+		),
+		backs=[
+			"tatva_connect.workflow_engine.triggers.on_created",
+			"tatva_connect.workflow_engine.triggers.on_updated",
+			"tatva_connect.workflow_engine.triggers.on_trash",
+			"tatva_connect.workflow_engine.triggers.on_task_done",
+		],
+	),
+	Auto(
+		key="Workflow::Engine::sweep",
+		fires_on="Schedule",
+		trigger_detail="every 15 min · timer wake + reconciler re-drive",
+		purpose=(
+			"The scheduled heartbeat behind the workflow engine's waits: every 15 minutes it wakes each "
+			"instance whose timer has elapsed and re-drives any instance whose awaited signal is already "
+			"waiting in the inbox but whose wake was lost, so the durable state is always the source of "
+			"truth and no lost job can strand a journey. It is gated on its own switch as well as the "
+			"engine's, so the sweep can be paused without taking the engine down. Off, timers and "
+			"buffered signals simply wait.\n"
+			"Example: a journey parked on a two-day timer is resumed by the first sweep after the two "
+			"days elapse, even if the original wake job never ran."
+		),
+		backs=[
+			"tatva_connect.workflow_engine.wakeups.sweep",
+		],
+		requires="Workflow::Engine::run",
+	),
+	Auto(
 		key="Storage::File::privacy",
 		fires_on="Doc Event",
 		trigger_detail="File · validate",
@@ -634,6 +675,50 @@ AUTOMATIONS = [
 		# Telephony/Location/visibility, so backs is empty (drift walks only doc_events
 		# + scheduler paths; this gate's target stays OUT of the registry).
 		backs=[],
+	),
+	Auto(
+		key="Partner::AsyncBulk::jobs",
+		fires_on="Provider call",
+		trigger_detail="api/partner_bulk_job · submit gate",
+		purpose=(
+			"The asynchronous bulk-job tier is opened up: a partner may submit a high-volume create job, "
+			"which a dedicated background worker drains through the same create brain the sync endpoints "
+			"use, reporting completion by webhook and a status endpoint. Off, a submit is refused and no "
+			"job runs; the synchronous single and slim-bulk endpoints are unaffected either way.\n"
+			"Example: a partner posts a 10,000-lead job, receives a job id at once, and polls it to "
+			"JobComplete while the CRM stays responsive."
+		),
+		# The submit gate lives inside api/partner_bulk_job (not a doc_event), so the toggle has no
+		# doc_event target; the tier's one doc_event is the always-on SSRF guard on a partner's
+		# completion-webhook URL, covered here so the drift lock passes.
+		backs=["tatva_connect.api.partner_bulk_job.guard_webhook_url"],
+	),
+	Auto(
+		key="Partner::AsyncBulk::reaper",
+		fires_on="Schedule",
+		trigger_detail="hourly at :45",
+		purpose=(
+			"An async bulk job left in-progress past its worker timeout — because the worker was "
+			"killed, redeployed or ran out of memory — is marked failed and its stored upload dropped, "
+			"so it cannot sit half-done forever and the partner is told by the completion webhook. Off, "
+			"a stranded job stays in-progress until it is cleared by hand.\n"
+			"Example: the queue worker is restarted mid-drain, and within the hour the job is failed "
+			"with its payload purged."
+		),
+		backs=["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
+	),
+	Auto(
+		key="Partner::AsyncBulk::purge",
+		fires_on="Schedule",
+		trigger_detail="daily 04:15",
+		purpose=(
+			"Finished async bulk jobs — their per-record results and the uploaded payload — are dropped "
+			"each day once past the retention window, so the tables and blob store do not grow without "
+			"bound. Off, finished jobs and their uploads are kept indefinitely.\n"
+			"Example: a job that completed eight days ago (retention seven) is removed at 04:15, results "
+			"and file included."
+		),
+		backs=["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
 	),
 	Auto(
 		key="Activity::Metrics::rollup",

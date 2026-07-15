@@ -82,21 +82,47 @@ class TestNearMe(FrappeTestCase):
 
 	# --- territory query -------------------------------------------------
 
+	def _open_gates(self):
+		self._set_switch(1)
+		self._user.add_roles(api.ROLE)
+		frappe.set_user(_USER)
+
 	def test_territory_query_radius_sort_and_cross_grain(self):
 		"""In-range doctors (any business line) come back nearest-first; out-of-range are excluded."""
 		near = self._make_lead(_LAT, _LNG)               # 0 m
 		mid = self._make_lead(_LAT + 0.01, _LNG + 0.01)  # ~1.6 km
 		self._make_lead(_LAT + 1.0, _LNG + 1.0)          # ~157 km — outside 15 km
 
-		self._set_switch(1)
-		self._user.add_roles(api.ROLE)
-		frappe.set_user(_USER)
-		rows = api.doctors_in_territory(_LAT, _LNG, 15)
+		self._open_gates()
+		res = api.doctors_in_territory(_LAT, _LNG, 15)
+		rows = res["doctors"]
 		names = [r["name"] for r in rows]
 
+		self.assertEqual(res["radius_km"], 15)  # an explicit radius is honoured exactly
 		self.assertIn(near, names)
 		self.assertIn(mid, names)
 		self.assertEqual(names[0], near)  # nearest first
 		self.assertLess(rows[0]["distance_m"], rows[1]["distance_m"])
 		# the far lead is excluded by the haversine refine
 		self.assertEqual(len(names), 2)
+
+	def test_first_load_widens_past_an_empty_ring(self):
+		"""No radius given: the ladder walks out to the first ring holding a doctor, and reports which
+		one answered — the fix for a page that opened on 'No doctors in this radius' merely because the
+		nearest doctor sat past a hardcoded 15 km."""
+		far = self._make_lead(_LAT + 0.2, _LNG + 0.2)  # ~31 km — empty at 15, found at 60
+
+		self._open_gates()
+		self.assertEqual(api.doctors_in_territory(_LAT, _LNG, 15)["doctors"], [])  # the old default: empty
+
+		res = api.doctors_in_territory(_LAT, _LNG)  # no radius -> ladder
+		self.assertEqual([r["name"] for r in res["doctors"]], [far])
+		self.assertEqual(res["radius_km"], 60.0)  # 15 and 30 were empty; 60 answered
+
+	def test_first_load_with_no_doctors_anywhere_reports_the_last_rung(self):
+		"""Nothing within 120 km: an empty list, and the widest radius searched — so the panel can say
+		what it looked at instead of implying the 15 km ring was the whole story."""
+		self._open_gates()
+		res = api.doctors_in_territory(_LAT, _LNG)
+		self.assertEqual(res["doctors"], [])
+		self.assertEqual(res["radius_km"], api.RADIUS_LADDER[-1])

@@ -66,17 +66,17 @@ Every response reports the current state of the request budget, so a client can 
 
 ## Retry handling
 
-Three statuses are retried, and all three are safe to retry. What differs is **whose** problem they are, and that changes what a client should do.
+Three statuses are retried, and all three are safe to retry. What differs is the **cause**, and that changes what the client should do.
 
-| Status | `error.code` | Whose problem | What to do |
+| Status | `error.code` | Cause | What to do |
 |---|---|---|---|
-| **429** | `rate_limited` | **Yours.** A budget is exhausted. | Wait `retry_after`, then **slow down**. Reduce concurrency or spread the calls out. |
-| **503** | `server_busy` | **Nobody's.** The server is overloaded. Your budget was neither exceeded nor consumed. | Wait `retry_after`, then retry the **same call unchanged**. Slowing down does not help. |
-| **503** | `write_conflict` | **Nobody's.** A concurrent write rolled the batch back. | Wait `retry_after`, then retry the **whole call**. Nothing was saved, not even the records that had already succeeded inside it. |
+| **429** | `rate_limited` | The key's own budget is exhausted. | Wait `retry_after`, then **slow down** — reduce concurrency or spread the calls out. |
+| **503** | `server_busy` | The server is overloaded; the key's budget was neither exceeded nor consumed. | Wait `retry_after`, then retry the **same call unchanged**. Slowing down does not help. |
+| **503** | `write_conflict` | A concurrent write rolled the batch back. | Wait `retry_after`, then retry the **whole call**. Nothing was saved, not even the records that had already succeeded inside it. |
 
 All three carry `error.retry_after`, and it is a real number: the exact seconds until the budget refills or the server frees up, computed rather than estimated.
 
-All three mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes, addressing and retries](/writes-and-retries).
+All three mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes and retries](/writes-and-retries).
 
 <Mermaid chart={`
 flowchart TD

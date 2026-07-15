@@ -790,13 +790,16 @@ def lead_create_bulk(**_kwargs):
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
 	leads = _read_required_list(frappe.form_dict, "leads")
+	return _run_bulk(leads, bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow, allowed_programs))
 
+
+def bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow, allowed_programs):
+	"""The per-record create closure, shared by the sync bulk endpoint and the async worker (one brain)."""
 	def one(i, item):
 		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
 		return {"index": i, "status": "success", "action": action,
 		        "data": _curate(doc, parent_fields, child_allow)}
-
-	return _run_bulk(leads, one)
+	return one
 
 
 @frappe.whitelist(methods=["PUT"])
