@@ -15,6 +15,7 @@ any real work.
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.automation import rules
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, versions
 
 INSTANCE_DT = interpreter.INSTANCE_DT
@@ -74,39 +75,135 @@ def on_task_done(doc, method=None):
 	)
 
 
+def run_guards(doc, method=None):
+	"""Wildcard `validate` — the SYNCHRONOUS GUARD lane for Flows (D3). Before the save commits, every
+	ENABLED Flow matching this record's (doctype, event) + grain + When runs its guard-lane action items;
+	a handler raising propagates straight out of validate and BLOCKS the save (never swallowed). Guards
+	are Flows too: a Require Location / Require Fields Flow enforces at save time, every other action runs
+	after — there is no separate guard engine.
+
+	Reuses the automation engine's ONE context builder + criteria evaluator + guard handlers — no second
+	copy (the fold shares one vocabulary). Dormant-by-default (engine switch) and non-re-entrant
+	(`in_workflow`), so a write the engine itself made never re-enters its own guard lane."""
+	if frappe.flags.get("in_workflow"):
+		return
+	if not automation.is_enabled(ENGINE_SWITCH):
+		return
+	ctx = _trigger_context(doc, "Created" if doc.is_new() else "Updated")
+	if ctx is None:
+		return
+	from tatva_connect.automation import actions
+
+	for version_name in ctx.versions:
+		version = versions.load(version_name)
+		if not rules.criteria_match(version.criteria, ctx.context, ctx.field_types):
+			continue  # the When did not hold — this Flow does not act on this save
+		for node in version.nodes:
+			if node.get("node_type") != "Step":
+				continue
+			for raw in (node.get("_frozen_items") or []):
+				item = frappe._dict(raw)
+				lane, handler = actions._ACTION_LANES.get(item.action_type, (None, None))
+				if lane == "guard":
+					handler(item, ctx.subject, ctx.context)  # a raise here IS the block (reaches validate unswallowed)
+
+
+def covering_location_guard(doc):
+	"""True iff an ENABLED Flow with a Require Location guard already covers THIS save — its guard lane
+	ran (or will run) synchronously in the same validate. The location backstop (tasks.enforce_location)
+	reads this to STAND DOWN instead of double-guarding: the Flow-era replacement for the old
+	"does a Require Location rule cover this?" check the rule engine used. Non-re-entrant + dormant like
+	the guard lane itself."""
+	if frappe.flags.get("in_workflow"):
+		return False
+	if not automation.is_enabled(ENGINE_SWITCH):
+		return False
+	ctx = _trigger_context(doc, "Created" if doc.is_new() else "Updated")
+	if ctx is None:
+		return False
+	for version_name in ctx.versions:
+		version = versions.load(version_name)
+		if not rules.criteria_match(version.criteria, ctx.context, ctx.field_types):
+			continue
+		for node in version.nodes:
+			if node.get("node_type") != "Step":
+				continue
+			for raw in (node.get("_frozen_items") or []):
+				if frappe._dict(raw).action_type == "Require Location":
+					return True
+	return False
+
+
 def _maybe_start(doc, event):
-	"""Start every enabled, grain-matching Definition whose (entry_doctype, entry_event) match this write."""
+	"""The after-save lane: run every ENABLED Flow whose (entry_doctype, entry_event) + grain + When match
+	this write. A wait-free Flow runs inline and persists nothing (EPHEMERAL, D4); a Flow that parks starts
+	a durable Instance (CONTINUOUS). Guard-lane actions already ran (or blocked the save) in `run_guards`."""
 	if frappe.flags.get("in_workflow"):
 		return  # re-entrancy guard: a write the engine made must not re-enter entry detection
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
+	ctx = _trigger_context(doc, event)
+	if ctx is None:
+		return
+	for version_name in ctx.versions:
+		version = versions.load(version_name)
+		if not rules.criteria_match(version.criteria, ctx.context, ctx.field_types):
+			continue  # the When did not hold — this Flow does not act on this write
+		if interpreter.has_wait(version):
+			_start_one(version.workflow, doc)  # CONTINUOUS: a durable Instance carries state across the park
+		else:
+			_run_ephemeral(version_name, ctx.subject, doc, ctx.context)  # EPHEMERAL: run inline, persist nothing
+
+
+def _trigger_context(doc, event):
+	"""Shared setup for both Flow lanes (guard + effect), reusing the automation engine's ONE brains. The
+	cheap Definition query gates everything, so an unrelated save resolves no subject and builds no context.
+	Returns `_dict(subject, context, field_types, versions)` — the resolved parent LEAD (the effect verbs'
+	subject, D7), the trigger context the When reads (with `{field}__before` for an Updated diff), the
+	field-type map for type-aware criteria, and the current frozen version of each grain-matched Flow — or
+	`None` when nothing can match (fail-closed)."""
 	definitions = frappe.get_all(
 		_DEF_DT,
 		filters={"enabled": 1, "entry_doctype": doc.doctype, "entry_event": event},
 		fields=["name", "vertical", "group", "program"],
 	)
 	if not definitions:
-		return
-	axes = _subject_axes(doc)
-	for d in definitions:
-		if _grain_matches(d, axes):
-			_start_one(d.name, doc)
+		return None
+	from tatva_connect.automation import context as ctx_build
+
+	subject = ctx_build.subject(doc)
+	if subject is None:
+		return None  # no resolvable parent lead → no Flow can act (fail-closed)
+	axes = ctx_build.subject_axes(subject)
+	matched = [d for d in definitions if _grain_matches(d, axes)]
+	if not matched:
+		return None
+	changed = ctx_build.diff_watched_fields(doc) if event == "Updated" else {}
+	return frappe._dict(
+		subject=subject.name,
+		context=ctx_build.context_for(doc, changed),
+		field_types=ctx_build.field_types_for(doc.doctype),
+		versions=[versions.current_name(d.name) for d in matched],
+	)
 
 
-def _subject_axes(doc):
-	"""(vertical, group, program) of the subject. A CRM Lead resolves through the ONE accessor the
-	automation/activity engines use; a non-Lead subject has no grain axes."""
-	if doc.doctype == "CRM Lead":
-		from tatva_connect.automation import rules
-
-		return rules.lead_axes(doc.name)
-	return (None, None, None)
+def _run_ephemeral(version_name, lead_name, trigger_doc, context):
+	"""Run a wait-free Flow inline (D4). An ephemeral effect can DO but never DENY: `run_inline`'s savepoint
+	isolates its writes and any failure is logged, never propagated, so the triggering save is untouched.
+	`in_workflow` guards the effects' own writes from re-entering the front-door."""
+	frappe.flags.in_workflow = True
+	try:
+		interpreter.run_inline(version_name, lead_name, trigger_doc, context)
+	except Exception:
+		frappe.log_error(title="workflow: ephemeral run failed", message=f"version={version_name} subject={lead_name} :: {frappe.get_traceback()}")
+	finally:
+		frappe.flags.in_workflow = False
 
 
 def _grain_matches(definition, axes):
 	"""A blank Definition axis is a wildcard (mirrors `rules.matching_rules`); a set axis must equal the
 	subject's. A non-Lead subject (axes all None) matches only a fully-wildcard Definition."""
-	for want, got in zip((definition.vertical, definition.group, definition.program), axes):
+	for want, got in zip((definition.vertical, definition.group, definition.program), axes, strict=False):
 		if want and want != (got or ""):
 			return False
 	return True

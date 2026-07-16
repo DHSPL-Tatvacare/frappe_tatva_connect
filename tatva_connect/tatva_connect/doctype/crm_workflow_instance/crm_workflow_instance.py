@@ -13,4 +13,4 @@ class CRMWorkflowInstance(Document):
 	one carries NULL (InnoDB treats multiple NULLs as distinct, so terminal rows never collide)."""
 
 	def before_save(self):
-		self.active_key = "{}::{}".format(self.workflow, self.subject_name) if self.status in _LIVE else None
+		self.active_key = f"{self.workflow}::{self.subject_name}" if self.status in _LIVE else None

@@ -204,7 +204,7 @@ def _csv_records(raw):
 		if len(r) != len(header):
 			out.append({"__error__": _("row has {0} columns, expected {1}").format(len(r), len(header))})
 		else:
-			out.append(dict(zip(header, r)))
+			out.append(dict(zip(header, r, strict=False)))
 	return out
 
 

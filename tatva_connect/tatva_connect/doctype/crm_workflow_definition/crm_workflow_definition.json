@@ -17,6 +17,8 @@
   "entry_section",
   "entry_doctype",
   "entry_event",
+  "when_section",
+  "criteria",
   "nodes_section",
   "nodes"
  ],
@@ -41,7 +43,8 @@
   {
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "Grain"
+   "label": "Grain",
+   "description": "The grain a subject must match for this Flow to act is set here first. A Flow is evaluated only for a record whose lead grain (vertical / group / program) matches; a blank axis is a wildcard, so an empty grain matches every subject."
   },
   {
    "fieldname": "vertical",
@@ -67,7 +70,8 @@
   {
    "fieldname": "entry_section",
    "fieldtype": "Section Break",
-   "label": "Entry"
+   "label": "Trigger",
+   "description": "1. Trigger. The doctype and lifecycle event that start the Flow are chosen here — for example a CRM Task, on Update. The Flow is evaluated only for records of the chosen doctype and event."
   },
   {
    "fieldname": "entry_doctype",
@@ -85,9 +89,23 @@
    "description": "Declares which lifecycle event - Created, Updated, or Deleted - starts an Instance."
   },
   {
+   "fieldname": "when_section",
+   "fieldtype": "Section Break",
+   "label": "When (Criteria)",
+   "description": "2. When. The criteria that must all hold for the Flow to act are composed here, over the allowlisted fields — for example outcome is \"Physical Visit\" and status changed to Done. Rows are combined with AND; an empty predicate matches every trigger of the chosen doctype and event."
+  },
+  {
+   "fieldname": "criteria",
+   "fieldtype": "Table",
+   "label": "Criteria",
+   "options": "CRM Automation Criterion",
+   "description": "The predicate that must hold for the Flow to act, composed of the same operator vocabulary the automation engine uses (AND across rows). An empty predicate matches every trigger of the chosen doctype and event."
+  },
+  {
    "fieldname": "nodes_section",
    "fieldtype": "Section Break",
-   "label": "Nodes"
+   "label": "Then (Actions)",
+   "description": "3. Then. The actions are arranged here as an ordered graph of nodes. A Step runs an Action Group; a guard action within it (Require Fields / Require Location) is enforced at save time and can block the save, while every other action runs after. A Branch routes on a condition; a Wait parks the Flow until a timer or an event, turning it into a journey that resumes. A wait-free Flow runs once and persists nothing (a rule); a Flow that waits carries a durable instance."
   },
   {
    "fieldname": "nodes",
@@ -100,7 +118,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-15 00:00:00.000000",
+ "modified": "2026-07-16 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Definition",

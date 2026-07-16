@@ -33,6 +33,7 @@ def _expected_group(key):
 		return "automation"
 	head = key.split("::", 1)[0]
 	return {
+		"Workflow": "automation",  # the Flow engine is the automation now (Workflow::Engine::run/sweep)
 		"WhatsApp": "whatsapp",
 		"Telephony": "telephony",
 		"Storage": "storage",
@@ -82,7 +83,7 @@ class TestGoLiveChecklistParity(unittest.TestCase):
 	# fail - proves equality bites, not just that today's files happen to line up.
 	def test_gate_bites_on_a_missing_switch(self):
 		crippled = set(_state_toggles())
-		crippled.discard("Task::Automation::rules")
+		crippled.discard("Workflow::Engine::run")
 		self.assertNotEqual(_registry_keys(), crippled)
 
 

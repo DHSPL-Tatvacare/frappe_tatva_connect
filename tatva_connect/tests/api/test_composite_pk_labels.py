@@ -230,15 +230,6 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 		action = frappe._dict(action_type="Create Task", task_type=self.task_type)
 		self._assert_clean({"detail": actions._action_label(action)}, "the automation run log")
 
-	def test_the_rule_simulation_preview(self):
-		from tatva_connect.automation import simulate
-
-		action = frappe._dict(action_type="Create Task", task_type=self.task_type,
-		                      due_mode=None, due_from=None, due_expression=None)
-		with patch("tatva_connect.automation.actions._due_at", return_value=None):
-			preview = simulate._would_create_task(action, {}, self.lead.name, (VERTICAL, GROUP, ""))
-		self._assert_clean({"detail": preview}, "the rule simulation preview")
-
 	def test_an_automation_created_task_is_titled_in_english(self):
 		"""create_followup_task titles the row from the type; it must not stamp the composite PK."""
 		from tatva_connect.tasks.tasks import create_followup_task

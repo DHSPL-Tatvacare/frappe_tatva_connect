@@ -88,26 +88,14 @@ def enforce_checklist(doc, method=None):
 
 
 def _location_guard_covers(doc):
-	"""True when an ENABLED 'Require Location' rule at this lead's grain would already run its guard,
-	synchronously, for THIS exact save — reuses the SAME matcher (rules.matching_rules), criteria
-	evaluator (rules.criteria_match) and context builder (router._diff_watched_fields/_context_for) the
-	guard lane itself uses (A.8, no parallel matcher). Lets the backstop below stand down only when an
-	authored rule genuinely covers this save, never on a blanket "a rule exists somewhere" guess."""
-	from tatva_connect.automation import router, rules
+	"""True when an ENABLED Require Location FLOW at this lead's grain already runs its guard,
+	synchronously, for THIS exact save — delegated to the ONE Flow guard-coverage brain
+	(`workflow_engine.triggers.covering_location_guard`), which reuses the same matcher / criteria
+	evaluator / context builder the Flow guard lane itself uses (A.8, no parallel matcher). Lets the
+	backstop below stand down only when an authored Flow genuinely covers this save, never on a guess."""
+	from tatva_connect.workflow_engine import triggers
 
-	axes = rules.lead_axes(doc.reference_docname)
-	matched = rules.matching_rules("CRM Task", "Updated", *axes)
-	if not matched:
-		return False
-	changed = router._diff_watched_fields(doc)
-	context = router._context_for(doc, changed)
-	field_types = router._field_types_for("CRM Task")
-	for r in matched:
-		rule = frappe.get_doc("CRM Automation Rule", r.name)
-		has_guard = any(a.action_type == "Require Location" for a in rule.actions)
-		if has_guard and rules.criteria_match(rule.criteria, context, field_types):
-			return True
-	return False
+	return triggers.covering_location_guard(doc)
 
 
 def enforce_location(doc, method=None):

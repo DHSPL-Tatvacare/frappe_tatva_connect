@@ -44,6 +44,7 @@ def build_payload(definition):
 		"program": definition.program or "",
 		"entry_doctype": definition.entry_doctype or "",
 		"entry_event": definition.entry_event or "",
+		"criteria": [_freeze(c) for c in (definition.criteria or [])],
 		"nodes": [_freeze_node(n) for n in definition.nodes],
 	}
 
@@ -131,6 +132,7 @@ def load(version_name):
 			workflow=row.workflow,
 			entry_doctype=payload.get("entry_doctype"),
 			entry_event=payload.get("entry_event"),
+			criteria=[frappe._dict(c) for c in payload.get("criteria", [])],
 			nodes=[frappe._dict(n) for n in payload["nodes"]],
 		)
 	return cache[version_name]

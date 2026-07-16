@@ -134,7 +134,7 @@ def _deliver_whatsapp(account_name, to_number, template_name, template, paramete
 				title="automation: WhatsApp sent but not recorded",
 				message=f"lead={lead} account={account_name} template={template} message_id={result.message_id}",
 			)
-		except Exception:
+		except Exception:  # nosec B110 — a re-raise here re-opens the deadlock log_error reports
 			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports
 
 

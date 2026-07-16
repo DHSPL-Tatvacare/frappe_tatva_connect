@@ -57,53 +57,6 @@
  },
  {
   "doctype": "Number Card",
-  "name": "Automation Fires Today",
-  "label": "Automation \u00b7 Fires Today",
-  "module": "Tatva Connect",
-  "is_standard": 0,
-  "is_public": 1,
-  "type": "Document Type",
-  "document_type": "CRM Automation Run Log",
-  "function": "Count",
-  "filters_json": "[]",
-  "dynamic_filters_json": "[[\"CRM Automation Run Log\",\"fire_time\",\">=\",\"frappe.utils.get_datetime(frappe.utils.today())\"]]",
-  "color": "#29CD42",
-  "show_percentage_stats": 1,
-  "stats_time_interval": "Daily"
- },
- {
-  "doctype": "Number Card",
-  "name": "Automation Enabled Rules",
-  "label": "Automation \u00b7 Enabled Rules",
-  "module": "Tatva Connect",
-  "is_standard": 0,
-  "is_public": 1,
-  "type": "Document Type",
-  "document_type": "CRM Automation Rule",
-  "function": "Count",
-  "filters_json": "[[\"CRM Automation Rule\",\"enabled\",\"=\",1]]",
-  "dynamic_filters_json": "[]",
-  "color": "#449CF0",
-  "show_percentage_stats": 0
- },
- {
-  "doctype": "Number Card",
-  "name": "Automation Failed Fires (7d)",
-  "label": "Automation \u00b7 Failed Fires (7d)",
-  "module": "Tatva Connect",
-  "is_standard": 0,
-  "is_public": 1,
-  "type": "Document Type",
-  "document_type": "CRM Automation Run Log",
-  "function": "Count",
-  "filters_json": "[[\"CRM Automation Run Log\",\"outcome\",\"=\",\"Failed\"]]",
-  "dynamic_filters_json": "[[\"CRM Automation Run Log\",\"fire_time\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-7)\"]]",
-  "color": "#E24C4C",
-  "show_percentage_stats": 1,
-  "stats_time_interval": "Daily"
- },
- {
-  "doctype": "Number Card",
   "name": "Partner API Requests (24h)",
   "label": "Partner API \u00b7 Requests (24h)",
   "module": "Tatva Connect",
@@ -133,27 +86,5 @@
   "color": "#E24C4C",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
- },
- {
-  "doctype": "Number Card",
-  "name": "Automation Active Grains",
-  "label": "Automation \u00b7 Active Grains",
-  "module": "Tatva Connect",
-  "is_standard": 0,
-  "is_public": 1,
-  "type": "Custom",
-  "method": "tatva_connect.automation.report.active_grains_card",
-  "color": "#449CF0"
- },
- {
-  "doctype": "Number Card",
-  "name": "Automation Failure Rate (7d)",
-  "label": "Automation \u00b7 Failure Rate % (7d)",
-  "module": "Tatva Connect",
-  "is_standard": 0,
-  "is_public": 1,
-  "type": "Custom",
-  "method": "tatva_connect.automation.report.failure_rate_card",
-  "color": "#E24C4C"
  }
 ]

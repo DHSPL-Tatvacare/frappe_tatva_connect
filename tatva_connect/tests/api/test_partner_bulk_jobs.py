@@ -434,6 +434,7 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		RESERVED enqueue parameter (job_id/job_name/timeout/…, which enqueue would swallow) and (b) match
 		process_job's parameter. Guards the enqueue→worker seam the in-process tests never exercise."""
 		import inspect
+
 		from frappe.utils import background_jobs
 		frappe.set_user(PARTNER)
 		frappe.local.response = frappe._dict()

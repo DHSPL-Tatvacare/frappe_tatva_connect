@@ -65,7 +65,7 @@ def advance(instance):
 		while True:
 			node = nodes.get(instance.current_node)
 			if node is None:
-				raise _Permanent("node {0!r} is not in the frozen graph".format(instance.current_node))
+				raise _Permanent(f"node {instance.current_node!r} is not in the frozen graph")
 
 			if node.node_type == "Terminal":
 				_persist(instance, {"status": "Done", "current_node": node.node_id, "state_json": frappe.as_json(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
@@ -82,7 +82,7 @@ def advance(instance):
 					if sig is not None:
 						state.update(_map_payload(node.accepts_json, sig))
 						was_parked = False
-						_step_log(instance, node, "resumed", "signal {0}".format(node.signal_name))
+						_step_log(instance, node, "resumed", f"signal {node.signal_name}")
 						instance.current_node = node.on_event
 						continue
 				# No signal buffered. If we were parked HERE and the clock is due, leave by the time edge.
@@ -98,18 +98,19 @@ def advance(instance):
 				return instance
 
 			if instance.current_node in seen:
-				raise _Permanent("cycle with no intervening Wait at node {0}".format(instance.current_node))
+				raise _Permanent(f"cycle with no intervening Wait at node {instance.current_node}")
 			hops += 1
 			if hops > MAX_HOPS:
-				raise _Permanent("hop budget exceeded ({0})".format(MAX_HOPS))
+				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
 			seen.add(instance.current_node)
 
 			started = time.monotonic()
 			if node.node_type == "Step":
-				step_deferred, markers = _run_step(node, instance, state)
+				subject_doc = frappe.get_doc(instance.subject_doctype, instance.subject_name)
+				step_deferred, markers = _run_step(node, instance.subject_name, subject_doc, state, _axes(instance.subject_doctype, instance.subject_name))
 				deferred += step_deferred
 				nxt = node.next_node
-				detail = "action group {0}".format(node.action_group)
+				detail = f"action group {node.action_group}"
 				if markers:  # a dormant send ("suppressed: sends dormant") records its marker in the audit, never a live message
 					detail += " :: " + " | ".join(markers)
 			elif node.node_type == "Branch":
@@ -119,12 +120,12 @@ def advance(instance):
 			elif node.node_type == "Assign":
 				result = expr.resolve_expression(node.assign_json, state)
 				if not isinstance(result, dict):
-					raise _Permanent("Assign node {0} did not evaluate to a dict".format(node.node_id))
+					raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
 				state.update(result)
 				nxt = node.next_node
-				detail = "keys: {0}".format(",".join(sorted(result.keys())))
+				detail = "keys: {}".format(",".join(sorted(result.keys())))
 			else:
-				raise _Permanent("unknown node type {0!r}".format(node.node_type))
+				raise _Permanent(f"unknown node type {node.node_type!r}")
 
 			_step_log(instance, node, "ok", detail, int((time.monotonic() - started) * 1000))
 			instance.current_node = nxt
@@ -139,6 +140,78 @@ def advance(instance):
 		frappe.db.rollback()
 		_fail(instance, str(e))
 		return instance
+
+
+def has_wait(version):
+	"""True iff the frozen graph parks anywhere - the ONE classifier the front-door uses to choose the
+	shape (D4): a graph with a Wait is CONTINUOUS (a durable Instance carries its state across the park);
+	a graph with none is EPHEMERAL (it runs to Terminal inline, persisting nothing, exactly like a rule)."""
+	return any(n.node_type == "Wait" for n in version.nodes)
+
+
+def run_inline(version_name, lead_name, trigger_doc, seed_state):
+	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Instance - the
+	rule-shaped Flow. The SAME node executor as `advance` (`_run_step`, the Branch/Assign logic, `expr`) -
+	one interpreter, two shapes - minus the durable machinery a rule never needs (no Instance row, no
+	active_key, no park, no signal inbox). A Wait node is a config error here: a graph that parks must run
+	as a continuous Instance, and the front-door only routes a wait-free graph to this path.
+
+	`seed_state` is the trigger context (the record's fields), so a Branch reads the trigger's values and an
+	effect verb sees them exactly as the durable path sees signal-merged state. The whole walk runs inside
+	ONE savepoint: a failure rolls back only the flow's own writes (the triggering save survives), and the
+	caller logs it - an ephemeral effect can DO but never DENY. Deferred thunks fire after the savepoint
+	releases. Returns the final state (for tests / callers); raises `_Permanent` on a broken graph."""
+	version = versions_load(version_name)
+	nodes = {n.node_id: n for n in version.nodes}
+	state = dict(seed_state or {})
+	axes = rules_lead_axes(lead_name)
+	cursor = version.nodes[0].node_id
+	seen, hops, deferred = set(), 0, []
+	save_point = f"tc_wf_inline_{frappe.generate_hash(length=8)}"
+	frappe.db.savepoint(save_point)
+	try:
+		while True:
+			node = nodes.get(cursor)
+			if node is None:
+				raise _Permanent(f"node {cursor!r} is not in the frozen graph")
+			if node.node_type == "Terminal":
+				break
+			if node.node_type == "Wait":
+				raise _Permanent(f"ephemeral Flow reached Wait node {node.node_id} - a waiting Flow must run as a durable Instance")
+			if cursor in seen:
+				raise _Permanent(f"cycle with no intervening Wait at node {cursor}")
+			hops += 1
+			if hops > MAX_HOPS:
+				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
+			seen.add(cursor)
+			if node.node_type == "Step":
+				step_deferred, _markers = _run_step(node, lead_name, trigger_doc, state, axes)
+				deferred += step_deferred
+				cursor = node.next_node
+			elif node.node_type == "Branch":
+				cursor = node.on_true if bool(expr.resolve_expression(node.condition, state)) else node.on_false
+			elif node.node_type == "Assign":
+				result = expr.resolve_expression(node.assign_json, state)
+				if not isinstance(result, dict):
+					raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
+				state.update(result)
+				cursor = node.next_node
+			else:
+				raise _Permanent(f"unknown node type {node.node_type!r}")
+		frappe.db.release_savepoint(save_point)
+	except Exception:
+		frappe.db.rollback(save_point=save_point)  # undo only the flow's writes; the triggering save is untouched
+		raise
+	_run_deferred(deferred)
+	return state
+
+
+def rules_lead_axes(lead_name):
+	"""Local indirection to the ONE grain accessor - the ephemeral path always has a resolved lead, so its
+	axes are real (never the durable path's None-for-non-Lead)."""
+	from tatva_connect.automation import rules
+
+	return rules.lead_axes(lead_name)
 
 
 def _clock_due(instance):
@@ -205,22 +278,25 @@ def _park(instance, node, state):
 	else:
 		values["awaiting_signal"] = None
 	_persist(instance, values)
-	_step_log(instance, node, "parked", "resume_at={0} awaiting={1}".format(values.get("resume_at"), values.get("awaiting_signal")))
+	_step_log(instance, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
 
 
-def _run_step(node, instance, state):
+def _run_step(node, lead_name, trigger_doc, state, axes):
 	"""Run the Step's FROZEN Action Group actions (snapshotted into the version at freeze time - D1) through
 	the existing `_ACTION_LANES` handlers, inside a savepoint (a bad action rolls the whole Step back).
 	Returns `(deferred, markers)`: deferred thunks (webhook / WhatsApp live send) are fired only after the
 	boundary commit, so a rolled-back segment sends nothing; markers are the string results a dormant send
 	returns ("suppressed: sends dormant") - the audit records them so a suppressed send is provable without
 	a live message. Guard-lane verbs are skipped: a Step is an effect, never a gate. Reading the frozen
-	snapshot (never live rows) is what makes a parked Instance immutable to a later molecule edit."""
+	snapshot (never live rows) is what makes a parked Instance immutable to a later molecule edit.
+
+	`lead_name` is the parent lead the effect verbs act ON (D7 - a Task/File flow resolves to its lead);
+	`trigger_doc` is the record that fired the flow (the same subject doc for a Lead flow). Both the
+	durable `advance` and the ephemeral `run_inline` pass these explicitly, so the ONE step executor is
+	shared by both shapes with no second copy."""
 	items = node.get("_frozen_items") or []
-	axes = _axes(instance)
-	subject_doc = frappe.get_doc(instance.subject_doctype, instance.subject_name)
 	deferred, markers = [], []
-	save_point = "tc_wf_step_{0}".format(frappe.generate_hash(length=8))
+	save_point = f"tc_wf_step_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
 		for item in items:
@@ -228,7 +304,7 @@ def _run_step(node, instance, state):
 			lane, handler = actions._ACTION_LANES.get(item.action_type, (None, None))
 			if lane != "effect":
 				continue  # a guard-lane verb is not an effect a Step runs
-			result = handler(item, instance.subject_name, state, axes, subject_doc)
+			result = handler(item, lead_name, state, axes, trigger_doc)
 			if callable(result):
 				deferred.append(result)  # a thunk (Call Webhook / live WhatsApp) — fires only after the boundary commit
 			elif isinstance(result, str) and result:
@@ -240,14 +316,14 @@ def _run_step(node, instance, state):
 	return deferred, markers
 
 
-def _axes(instance):
+def _axes(subject_doctype, subject_name):
 	"""(vertical, group, program) of the subject, for the effect handlers' allowlist checks. A CRM Lead
 	resolves through the ONE accessor the automation/activity engines use; a non-Lead subject has no grain
-	axes in Phase 1."""
-	if instance.subject_doctype == "CRM Lead":
+	axes on the durable path (the ephemeral path resolves the parent lead first, so it passes real axes)."""
+	if subject_doctype == "CRM Lead":
 		from tatva_connect.automation import rules
 
-		return rules.lead_axes(instance.subject_name)
+		return rules.lead_axes(subject_name)
 	return (None, None, None)
 
 

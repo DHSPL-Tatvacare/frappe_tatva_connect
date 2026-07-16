@@ -446,36 +446,6 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Task::Automation::rules",
-		fires_on="Doc Event",
-		trigger_detail='wildcard "*" · validate (guards, sync) + after_insert (Created) + on_update (Updated) + on_trash (Deleted) (effects, after commit)',
-		purpose=(
-			"The automation engine itself: every enabled rule whose grain matches is run when its "
-			"trigger fires. One wildcard router, keyed on doctype and event, replaces the old "
-			"Task-Completed / Field-Changed split — a doctype is watched only because an enabled rule "
-			"names it, so covering a new one costs a rule rather than a code push, and 'task "
-			"completed' is simply an Updated rule whose criteria include the status changing to Done. "
-			"Rules run in two lanes: guard actions such as Require Fields run inside validate and can "
-			"block the save, while effect actions — create a task, set a field, add a comment — run in "
-			"order once the save has committed. A Wait effect parks the actions behind it and a "
-			"15-minute sweep resumes them when the wait elapses, so a rule carrying a Wait is atomic "
-			"per segment, not end to end. A Deleted rule fires from on_trash: the trigger row is "
-			"captured before removal, since it is gone by the time effects run, and its effects act "
-			"on the lead that survives it. Off, no rule fires at all.\n"
-			"Example: a task moving to Done with outcome 'Enrolled' creates a 'Welcome Call' task; a "
-			"lead moved to 'Dropped Doctor' is given an audit comment; a rule that requires 'outcome' "
-			"blocks the task's save while it is left blank; a rule reading 'Create Task, Wait 14 days, "
-			"Update Field' creates the task now and sets the field a fortnight later; and a deleted "
-			"duplicate task leaves a note behind on its lead."
-		),
-		backs=[
-			"tatva_connect.automation.router.run_guards",
-			"tatva_connect.automation.router.on_created",
-			"tatva_connect.automation.router.on_updated",
-			"tatva_connect.automation.router.on_deleted",
-		],
-	),
-	Auto(
 		key="Task::Automation::sends",
 		fires_on="Provider call",
 		trigger_detail="automation/sends gate · Send WhatsApp / Send Email effect verbs",
@@ -490,44 +460,12 @@ AUTOMATIONS = [
 			"is switched on at go-live."
 		),
 		backs=[],
-		requires="Task::Automation::rules",
-	),
-	Auto(
-		key="Task::Automation::resume",
-		fires_on="Schedule",
-		trigger_detail="every 15 min · Wait-step resume sweep",
-		purpose=(
-			"The resume sweep behind the engine's Wait step: a rule that hits a Wait parks the effects "
-			"behind it in CRM Automation Resume, and each parked segment is picked up here once its "
-			"wait has elapsed and run through the same effect executor a first fire uses. The sweep is "
-			"double-gated — nothing resumes while the engine row itself is off — so it can be paused "
-			"on its own without the whole engine being taken down. Off, parked segments simply wait.\n"
-			"Example: a rule creates a task now, waits 14 days, then updates a field; the field update "
-			"fires from this sweep a fortnight later, not from the original trigger."
-		),
-		backs=["tatva_connect.automation.resume.sweep_resume"],
-		requires="Task::Automation::rules",
-	),
-	Auto(
-		key="Task::Automation::run-log-sweep",
-		fires_on="Schedule",
-		trigger_detail="daily 03:00",
-		purpose=(
-			"The engine's finished history is pruned each night once past the retention window, so the "
-			"audit trail stays useful without growing without bound: Run Log rows first, then the "
-			"queue executions that have finished (Done, Failed, Cancelled), then any rule version no "
-			"execution and no surviving Run Log still points at. An execution that is still waiting is "
-			"never touched, however old it is — a six-month Wait is the live queue, not stale data. "
-			"Off, the history is kept for ever.\n"
-			"Example: run-log entries past the retention period are removed at 03:00, along with the "
-			"completed drip executions and the retired rule definitions only they referenced."
-		),
-		backs=["tatva_connect.automation.dispatcher.sweep_run_log"],
+		requires="Workflow::Engine::run",
 	),
 	Auto(
 		key="Workflow::Engine::run",
 		fires_on="Doc Event",
-		trigger_detail='wildcard "*" · after_insert (Created) + on_update (Updated) + on_trash (Deleted) — workflow entry',
+		trigger_detail='wildcard "*" · validate (guard lane) + after_insert (Created) + on_update (Updated) + on_trash (Deleted) — workflow entry',
 		purpose=(
 			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
 			"starts one durable Instance that walks a graph of steps, branches, and waits, parking on "
@@ -540,6 +478,7 @@ AUTOMATIONS = [
 			"and the upload's signal resumes it weeks later exactly where it parked."
 		),
 		backs=[
+			"tatva_connect.workflow_engine.triggers.run_guards",
 			"tatva_connect.workflow_engine.triggers.on_created",
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			"tatva_connect.workflow_engine.triggers.on_trash",

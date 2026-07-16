@@ -18,7 +18,7 @@ import json
 import time
 
 from tatva_connect.tests.live.load.client import METHOD, Partner
-from tatva_connect.tests.live.load.config import ACCOUNTS, partner_token
+from tatva_connect.tests.live.load.config import ACCOUNTS, BASE_URL, SITE_HOST, partner_token
 from tatva_connect.tests.live.load.log import Logger
 
 NAME_PREFIX = "AsyncLoad"
@@ -122,13 +122,18 @@ def main():
 	ap = argparse.ArgumentParser(description="drive the async bulk-job tier end-to-end via the endpoints")
 	ap.add_argument("accounts", nargs="*", default=list(ACCOUNTS))
 	ap.add_argument("--mb", type=int, default=25, help="approx JSONL file size to submit (MB)")
+	ap.add_argument("--base", default=BASE_URL, help="target base URL, e.g. https://one-uat.tatvacare.in")
+	ap.add_argument("--site", default=SITE_HOST, help="Host header for the target site")
+	ap.add_argument("--tokens", default=None,
+	                help="partner tokens file under .creds (e.g. partner-api-tokens.uat.json)")
 	ap.add_argument("--verbose", action="store_true", help="stream every call")
 	args = ap.parse_args()
 
 	logger = Logger(verbose=args.verbose)
+	logger.line(f"async bulk jobs -> {args.base}  (Host: {args.site})  tokens: {args.tokens or 'default'}", "bold")
 	ok = True
 	for account in (args.accounts or ACCOUNTS):
-		result = run_async(account, args.mb, logger=logger)
+		result = run_async(account, args.mb, base=args.base, host=args.site, tokens=args.tokens, logger=logger)
 		f = result["final"]
 		if not (f["status"] == "JobComplete" and f.get("failed") == 0 and f.get("succeeded") == result["records"]):
 			ok = False

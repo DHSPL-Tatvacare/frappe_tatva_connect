@@ -74,3 +74,4 @@ tatva_connect.patches.retire_lead_import_coordinates  # post — CRM Lead's dead
 tatva_connect.patches.add_clinic_anchor_index  # post — composite (clinic lat, clinic lng); leads_within_radius claimed an indexed box prefilter and had none
 tatva_connect.patches.retire_nearme_map_provider  # post — Near Me is one Google map now; the provider Select controlled nothing (Single => the dead value sits in tabSingles)
 tatva_connect.patches.refresh_manager_dashboard_layout  # post — reshape the untouched stock Manager Dashboard to the leads-first ops layout; a customised board is left alone
+tatva_connect.patches.reimport_flow_desk  # post — the fold rebuilt the Automations + Observability desks around the one Flow engine; force-reimport on a touched desk

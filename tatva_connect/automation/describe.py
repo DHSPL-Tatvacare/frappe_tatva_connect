@@ -286,7 +286,7 @@ _VERB_PARAM_FIELDS = {
 
 
 def _verb_params(verb):
-	meta = frappe.get_meta("CRM Automation Action")
+	meta = frappe.get_meta("CRM Action Group Item")
 	out = []
 	for fieldname in _VERB_PARAM_FIELDS.get(verb, []):
 		df = meta.get_field(fieldname)
@@ -352,11 +352,9 @@ def coerces(value, ftype):
 
 @frappe.whitelist()
 def builder_schema(on_doctype=None, event=None, vertical=None, group=None, program=None):
-	"""THE one authoring contract (Task 14 / plan Part G): the v2 Rule Form Script renders When/If/
-	Then from this, and CRMAutomationRule.validate() re-derives the SAME call to reject any deviating
-	rule - one brain, no drift possible between what's offered and what's accepted. Grain-scoped,
-	whitelisted, read-only, permission-gated (read on CRM Automation Rule)."""
-	if not frappe.has_permission("CRM Automation Rule", "read"):
+	"""THE one authoring contract: the Flow form's When/Then builder renders fields/operators/verbs from
+	this. Grain-scoped, whitelisted, read-only, permission-gated (read on CRM Workflow Definition)."""
+	if not frappe.has_permission("CRM Workflow Definition", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	return {
 		"fields": _criterion_fields(on_doctype),

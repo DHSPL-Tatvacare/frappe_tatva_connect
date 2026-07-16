@@ -25,8 +25,14 @@ from pathlib import Path
 
 import frappe
 
-from tatva_connect.api import (partner, partner_activity, partner_bulk_job, partner_call, partner_file,
-                               partner_note)
+from tatva_connect.api import (
+	partner,
+	partner_activity,
+	partner_bulk_job,
+	partner_call,
+	partner_file,
+	partner_note,
+)
 from tatva_connect.api._base import ERROR_CODES
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 

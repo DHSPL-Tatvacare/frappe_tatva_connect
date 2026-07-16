@@ -168,17 +168,17 @@ doc_events = {
 	# so router.on_deleted captures subject + context synchronously; the effect lane still runs
 	# after-commit like Created/Updated (router.py's on_deleted docstring has the full nuance).
 	"*": {
+		# Workflow engine: the Flow GUARD lane — a Require Location / Require Fields Flow enforces at
+		# save time and can frappe.throw to block; dormant + in_workflow-guarded, cheap early-return.
 		"validate": [
-			"tatva_connect.automation.router.run_guards",
+			"tatva_connect.workflow_engine.triggers.run_guards",
 		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
-			"tatva_connect.automation.router.on_created",
-			# Workflow engine (Phase 2): start an Instance when a Created-entry Definition's grain matches.
+			# Workflow engine: run/start a Flow when a Created-entry Definition's grain + When match.
 			"tatva_connect.workflow_engine.triggers.on_created",
 		],
 		"on_update": [
-			"tatva_connect.automation.router.on_updated",
 			# Bond an offloaded file to the record whose Attach field names it — core's linker skips remote URLs.
 			"tatva_connect.storage.file_events.link_attach_fields",
 			"tatva_connect.workflow_engine.triggers.on_updated",
@@ -186,7 +186,6 @@ doc_events = {
 			"tatva_connect.workflow_engine.triggers.on_task_done",
 		],
 		"on_trash": [
-			"tatva_connect.automation.router.on_deleted",
 			"tatva_connect.workflow_engine.triggers.on_trash",
 		],
 	},
@@ -230,8 +229,6 @@ scheduler_events = {
 		],
 		# Daily: sweep abandoned email-draft staging files.
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
-		# Daily: prune automation Run Log rows past the retention window.
-		"0 3 * * *": ["tatva_connect.automation.dispatcher.sweep_run_log"],
 		# Daily: trim logs/monitor.json.log — the one log frappe appends to without rotating (1 GB or 30 days, whichever first).
 		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
 		# Daily: drop expired partner-API idempotency records.
@@ -240,10 +237,8 @@ scheduler_events = {
 		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
 		# Daily: purge finished async bulk jobs + results + payload past the retention window.
 		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
-		# Every 15 min: resume any automation rule fire parked at a Wait step whose time has arrived.
+		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5).
 		"*/15 * * * *": [
-			"tatva_connect.automation.resume.sweep_resume",
-			# Workflow engine (Phase 2): wake due-timer Instances + reconcile lost wakeups (F5).
 			"tatva_connect.workflow_engine.wakeups.sweep",
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).

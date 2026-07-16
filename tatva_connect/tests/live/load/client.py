@@ -11,12 +11,17 @@ Every request is timed and recorded, so the run doubles as the API's first perfo
 """
 import hashlib
 import time
+from urllib.parse import urlparse
 
 import requests
 
 from tatva_connect.tests.live.load.config import BASE_URL, SITE_HOST
 
 METHOD = "/api/method/tatva_connect.api"
+
+# The load harness creates, cancels and deletes records — it must NEVER touch production.
+# A run against these hosts is refused outright, regardless of flags or env.
+_PROD_HOSTS = {"one.tatvacare.in", "app.tatvacare.in"}
 
 
 def idempotency_key(account, entity, source_id):
@@ -47,6 +52,10 @@ class Partner:
 		deployment, and which one it is talking to is the caller's decision to make and to print."""
 		self.base = base or BASE_URL
 		self.host = host or SITE_HOST
+		for _h in (urlparse(self.base).hostname, self.host):
+			if _h and _h.lower() in _PROD_HOSTS:
+				raise SystemExit(
+					f"refusing to run: the load harness must never hit production ({_h}). Use local or UAT.")
 		self.headers = {
 			"Host": self.host,
 			"Authorization": token,

@@ -23,8 +23,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 from tatva_connect.tests.live.load import shape
 from tatva_connect.tests.live.load.client import Partner, idempotency_key
-from tatva_connect.tests.live.load.config import (ACCOUNTS, REPORTS, account_dir, field_map, lsq_creds,
-                                                 partner_token)
+from tatva_connect.tests.live.load.config import (
+	ACCOUNTS,
+	REPORTS,
+	account_dir,
+	field_map,
+	lsq_creds,
+	partner_token,
+)
 from tatva_connect.tests.live.load.files import _download, _fresh_urls
 from tatva_connect.tests.live.load.log import Logger
 
