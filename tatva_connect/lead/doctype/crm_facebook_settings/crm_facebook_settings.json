@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "creation": "2026-07-17 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_api",
+  "graph_api_version",
+  "column_break_api",
+  "lead_page_size"
+ ],
+ "fields": [
+  {
+   "description": "The connection settings shared by every Facebook lead source on this site. The routing applied to an individual form is set on its own Lead Sync Source row, not here.",
+   "fieldname": "section_break_api",
+   "fieldtype": "Section Break",
+   "label": "Facebook Graph API"
+  },
+  {
+   "default": "v23.0",
+   "description": "The numbered version of Facebook's Graph API that every call is made against. A new version is published roughly every three months and each is retired after about two years; once a version is retired it stops answering, and crawls stop bringing in leads with no error raised. v25.0 is the newest, released February 2026. For lead forms, v23.0, v24.0 and v25.0 behave identically — no lead-ads changes were made across them — so moving forward is safe and is how the retirement clock is kept at bay. One version is expected to be changed at a time and the next crawl observed, so that a regression is unambiguous.",
+   "fieldname": "graph_api_version",
+   "fieldtype": "Select",
+   "label": "Graph API Version",
+   "options": "v23.0\nv24.0\nv25.0",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_api",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "description": "The number of leads requested from Facebook in a single call while a crawl is fetching. The total collected is not limited by this value: Facebook's paging cursors are followed until every new lead has been retrieved. Only the number of round-trips is affected — a larger value means fewer, heavier calls, a smaller value means more, lighter ones. Fewer than requested may be returned, and Facebook's own ceiling is applied regardless of what is set here. A lower value is expected only where a crawl on a busy form times out; otherwise the default is left as it is.",
+   "fieldname": "lead_page_size",
+   "fieldtype": "Int",
+   "label": "Leads Fetched Per Request",
+   "non_negative": 1,
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-17 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Facebook Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

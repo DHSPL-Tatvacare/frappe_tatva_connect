@@ -30,6 +30,8 @@ override_doctype_class = {
 	"File": "tatva_connect.storage.file_override.FileOverride",
 	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain lead; stock otherwise.
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
+	# Facebook discovery/crawl through our Graph layer: Meta's reason surfaces, no silent empty, no token in logs.
+	"Lead Sync Source": "tatva_connect.lead_sync.source.TatvaLeadSyncSource",
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
@@ -252,6 +254,10 @@ after_migrate = [
 	"tatva_connect.schema_setup.apply_schema",
 	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT fix); structural + idempotent, same reason as schema_setup above.
 	"tatva_connect.access.lockdown.apply",
+	# Fixture Property Setters land in sync_fixtures, AFTER sync_all's updatedb — so a widened fieldtype needs its column rebuilt here or it never follows the meta. A patch cannot do this: patches run before fixtures.
+	"tatva_connect.lead_sync.schema.reconcile_fieldtypes",
+	# The three catalog rows the Facebook fold stamps by field_key; a key with no row has no declared home.
+	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
 	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
 	"tatva_connect.seeds.seed_master_data",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
@@ -332,6 +338,9 @@ fixtures = [
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
 		"FCRM Note-custom_lsq_activity_id",
+		# The contract a Facebook form's leads are created against — the ONE place its grain and field set are declared.
+		"Lead Sync Source-routing_section",
+		"Lead Sync Source-api_mapping",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
@@ -348,6 +357,13 @@ fixtures = [
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
 		"CRM Drug Program Profile-nivo_indication-fieldtype",
 		"CRM Drug Program Profile-nivo_indication-options",
+		# Facebook question label/key are Data(140); live GoodFlip forms carry 292-char qualification questions. The key is FB's slug of the label, so it is always the same length and widens with it — truncating it would silently stop the field_data match. See docs/plans/2026-07-16-facebook-lead-sync-remediation.md.
+		"Facebook Lead Form Question-label-fieldtype",
+		"Facebook Lead Form Question-key-fieldtype",
+		# The page token is derived from a long-lived User token and never expires on its own; it is stored encrypted, not as plaintext Small Text.
+		"Facebook Page-access_token-fieldtype",
+		# Upstream defaults enabled to 1; every automation surface here ships dormant and the operator turns it on.
+		"Lead Sync Source-enabled-default",
 		# Scoping fix: exclude the secondary (history) Link fields from User Permission matching so a scoped user is filtered by the CURRENT field only (else blank/different history HIDES valid in-scope leads).
 		"CRM Lead-custom_previous_program-ignore_user_permissions",
 		"CRM Lead-custom_origin_vertical-ignore_user_permissions",

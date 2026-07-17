@@ -75,3 +75,5 @@ tatva_connect.patches.add_clinic_anchor_index  # post — composite (clinic lat,
 tatva_connect.patches.retire_nearme_map_provider  # post — Near Me is one Google map now; the provider Select controlled nothing (Single => the dead value sits in tabSingles)
 tatva_connect.patches.refresh_manager_dashboard_layout  # post — reshape the untouched stock Manager Dashboard to the leads-first ops layout; a customised board is left alone
 tatva_connect.patches.reimport_flow_desk  # post — the fold rebuilt the Automations + Observability desks around the one Flow engine; force-reimport on a touched desk
+tatva_connect.patches.rekey_lead_api_mapping_composite  # post — the last grain-scoped master still keyed on a login; a contract with no login (intake form, Facebook crawl) could not exist, so each grew its own grain fields
+tatva_connect.patches.drop_lead_sync_source_grain_fields  # post — the grain a Facebook form stamps comes from its contract now; dropping the fields from the fixture does not delete the rows, so the delete is declared here
