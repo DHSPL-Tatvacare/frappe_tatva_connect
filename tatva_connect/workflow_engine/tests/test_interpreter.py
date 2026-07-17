@@ -307,6 +307,16 @@ class TestWaitDelayValidation(FrappeTestCase):
 		self.assertTrue(frappe.db.exists(_DEF_DT, wf.name))
 		self.assertTrue(versions.current_name(wf.name), "a saved Definition mints a current version")
 
+	def test_no_terminal_is_rejected(self):
+		"""A Flow with no Terminal can never end (it would run to the hop budget) — reject it at save."""
+		with self.assertRaises(frappe.exceptions.ValidationError):
+			frappe.get_doc({
+				"doctype": _DEF_DT, "workflow_name": "WFI-guard-noterm", "enabled": 0,
+				"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
+				"entry_doctype": "CRM Lead", "entry_event": "Created",
+				"nodes": [{"node_id": "b1", "node_type": "Branch", "condition": "True", "on_true": "b1", "on_false": "b1"}],
+			}).insert(ignore_permissions=True)
+
 
 class TestFullFreeze(FrappeTestCase):
 	"""D1 full freeze: a Step's Action Group actions are snapshotted INTO the version. Editing the molecule

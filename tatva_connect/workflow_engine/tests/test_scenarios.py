@@ -518,7 +518,7 @@ class TestScenarioC_Reliability(_SampleWorkflowCase):
 		frappe.db.commit()
 
 		# First drive crashes mid-segment with a TRANSIENT DB error -> rollback -> Parked + retry, not Failed.
-		with mock.patch.object(interpreter, "_run_step", side_effect=frappe.db.InternalError("simulated deadlock")):
+		with mock.patch.object(interpreter, "_run_step", side_effect=frappe.QueryDeadlockError("simulated deadlock")):
 			wakeups.reconciler_sweep()
 		crashed = _row(inst, ["status", "current_node", "retry_count"])
 		self.assertEqual(crashed.status, "Parked", "a transient crash leaves the Instance Parked, never Failed (F4)")

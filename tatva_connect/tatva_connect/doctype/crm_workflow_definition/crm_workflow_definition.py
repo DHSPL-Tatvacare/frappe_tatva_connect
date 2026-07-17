@@ -1,8 +1,11 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""The workflow graph author-time contract. Fail-closed: a Definition that cannot be proven walkable
-never saves, so no misconfiguration reaches a running Instance. On save it freezes into an immutable
-CRM Workflow Version (workflow_engine.versions) - the graph an Instance actually executes."""
+"""The workflow graph author-time contract. Fail-closed on the structural mistakes that would strand or
+crash an Instance (no node, no Terminal, a dangling edge, a missing Action Group, an unparseable
+expression, a zero/negative delay). A runtime-only mistake (an expression that yields the wrong type,
+a ctx reference that resolves oddly) is not caught here - it fails the Instance safely (Failed + logged),
+never a storm. On save the graph freezes into an immutable CRM Workflow Version - the graph an Instance
+actually executes."""
 import json
 
 import frappe
@@ -15,11 +18,21 @@ _TIME_MODES = frozenset({"For Duration", "Until Time", "Event-or-Timeout"})
 
 class CRMWorkflowDefinition(Document):
 	def validate(self):
+		self._require_reachable_terminal()
 		self._require_unique_node_ids()
 		self._require_edges_resolve()
 		self._require_step_action_groups_exist()
 		self._require_expressions_parse()
 		self._require_positive_wait_delays()
+
+	def _require_reachable_terminal(self):
+		"""A Flow needs at least one node and at least one Terminal — a zero-node graph would IndexError at
+		start (the entry is the first node), and a graph with no Terminal could never end (it would run to
+		the hop budget and Fail)."""
+		if not self.nodes:
+			frappe.throw(_("A Flow needs at least one node."), title=_("Empty graph"))
+		if not any(n.node_type == "Terminal" for n in self.nodes):
+			frappe.throw(_("A Flow needs at least one Terminal node so it can end."), title=_("No Terminal"))
 
 	def on_update(self):
 		"""Freeze this graph into an immutable version and mark it current. No migration - editing a

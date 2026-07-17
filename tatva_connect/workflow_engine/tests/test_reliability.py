@@ -291,8 +291,9 @@ class TestFailureClasses(_EngineOnCase):
 		frappe.db.set_value(_INSTANCE_DT, inst.name, "resume_at", frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-1))
 		frappe.db.commit()
 
-		# On wake, the next Step hits a simulated deadlock (frappe.db.InternalError) - a TRANSIENT class.
-		with mock.patch.object(interpreter, "_run_step", side_effect=frappe.db.InternalError("simulated deadlock")):
+		# On wake, the next Step hits a real lock-wait/deadlock (frappe.QueryDeadlockError) - the TRANSIENT
+		# class the interpreter must retry (the same class webhooks/spine.py + api/_base.py classify).
+		with mock.patch.object(interpreter, "_run_step", side_effect=frappe.QueryDeadlockError("simulated deadlock")):
 			interpreter.advance(frappe.get_doc(_INSTANCE_DT, inst.name))
 
 		row = _row(inst.name, ["status", "current_node", "retry_count"])

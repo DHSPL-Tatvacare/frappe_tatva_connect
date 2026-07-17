@@ -27,7 +27,7 @@
    "fieldname": "reads",
    "fieldtype": "Small Text",
    "label": "Reads",
-   "description": "Declares the state keys the group reads (comma-separated), so a workflow can be checked for a missing producer at author time."
+   "description": "Documentation only: the state keys this group reads (comma-separated). Not enforced - a note for the author, not an author-time check."
   },
   {
    "fieldname": "writes",
@@ -40,7 +40,7 @@
    "fieldtype": "Table",
    "label": "Actions",
    "options": "CRM Action Group Item",
-   "description": "The actions this group runs, in order, when a Flow's Step node references it. Each action is one verb over an allowlisted field or a curated endpoint; a guard verb (Require Fields / Require Location) is enforced at save time, while an effect verb (Update Field, Create Task, Create Note, Call Webhook, Send WhatsApp) runs after. A group is built and corrected once here and reused by any Flow."
+   "description": "The actions this group runs, in order, when a Flow's Step node references it. Each is one effect verb - Update Field, Create Task, Create Note, Append/Upsert Child Row, Call Webhook, Send WhatsApp, or Send Email - over an allowlisted field or a curated endpoint. A group is built and corrected once here and reused by any Flow."
   }
  ],
  "grid_page_length": 50,

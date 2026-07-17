@@ -36,7 +36,7 @@
  "fields": [
   {
    "columns": 2,
-   "description": "What this effect does when its Step node runs. The same verb set the automation engine uses, minus Wait (a workflow parks at a Wait node, never inside an Action Group). A Step runs only effect-lane verbs; guard verbs are ignored here. Effects run top-to-bottom inside one savepoint.",
+   "description": "What this effect does when its Step node runs. A Step runs only effect-lane verbs (Update Field, Create Task, Create Note, Append/Upsert Child Row, Call Webhook, Send WhatsApp, Send Email); a guard verb (Require Fields / Require Location) selected here is IGNORED - guards belong to a Flow's guard lane, enforced at save time. Wait is a Flow NODE, never an action. Effects run top-to-bottom inside one savepoint.",
    "fieldname": "action_type",
    "fieldtype": "Select",
    "in_list_view": 1,

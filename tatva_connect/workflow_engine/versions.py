@@ -4,13 +4,11 @@ WHY THIS EXISTS
 ---------------
 A Definition is a PROGRAM: a graph of nodes. A subject entering it starts an INSTANCE that can park for
 weeks on a timer or an event. If that Instance re-read the node graph live out of the mutable Definition
-at resume time, an edit could re-route it, drop the node it sleeps in, or orphan it entirely - the exact
-class of bug the automation engine already fixed by freezing.
+at resume time, an edit could re-route it, drop the node it sleeps in, or orphan it entirely.
 
 So: on save, the Definition's graph is frozen into a content-addressed, immutable version, and every
-Instance binds to a VERSION, never to the Definition. This mirrors `automation.versions`, MINUS all
-migration machinery - editing a Definition mints a new Version; in-flight Instances keep their pinned
-Version (UAT, greenfield: no adopt-new-version prefix matching, nothing to migrate).
+Instance binds to a VERSION, never to the Definition. No migration machinery - editing a Definition mints
+a new Version; in-flight Instances keep their pinned Version (greenfield: nothing to migrate).
 """
 import frappe
 from frappe import _

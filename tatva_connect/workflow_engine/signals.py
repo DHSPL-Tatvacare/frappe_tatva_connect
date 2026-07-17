@@ -3,8 +3,8 @@
 DELIVERY IS AN INSERT, NOTHING MORE (F1/F5). `deliver_signal` - the clean whitelisted contract an
 external AI / mobile / partner API calls - inserts ONE Pending `CRM Workflow Signal` row and NEVER
 touches an Instance. It then OPTIMISTICALLY enqueues `resume_for_signal` (enqueue-after-commit,
-job_id/deduplicate, `now` inline in tests - the exact posture `automation.router._enqueue` uses). But
-the enqueue is only a latency optimisation: the durable inbox row is the source of truth, so a lost job
+job_id/deduplicate, `now` inline in tests). But the enqueue is only a latency optimisation: the durable
+inbox row is the source of truth, so a lost job
 (Redis flush, worker death) costs only latency - the reconciler sweep re-drives the parked Instance from
 the row it can see (`wakeups.reconciler_sweep`). An early delivery (before the Instance parks) simply
 waits in the inbox and is consumed the moment the interpreter reaches the Wait - the wakeup cannot drop.
@@ -44,26 +44,27 @@ def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None,
 		queue="short",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.get("in_test")),
-		job_id=f"workflow-signal::{subject_doctype}::{subject_name}::{signal_name}",
+		job_id=f"workflow-signal::{subject_doctype}::{subject_name}::{signal_name}::{correlation or ''}",
 		deduplicate=True,
 		subject_doctype=subject_doctype,
 		subject_name=subject_name,
 		signal_name=signal_name,
+		correlation=correlation,
 	)
 	return row.name
 
 
-def resume_for_signal(subject_doctype, subject_name, signal_name):
-	"""Wake the `Parked` Instance waiting on (subject, signal): claim it `for_update`, re-check status,
-	`advance` (which consumes the inbox row). Idempotent - no matching parked Instance is a clean no-op."""
+def resume_for_signal(subject_doctype, subject_name, signal_name, correlation=None):
+	"""Wake the `Parked` Instance waiting on (subject, signal, correlation): claim it `for_update`, re-check
+	status, `advance` (which consumes the inbox row). Correlation is matched (null → wildcard, the same trick
+	`_consume_signal` uses), so if two journeys on the same subject park on the same signal with different
+	correlations the RIGHT one is woken, not an arbitrary one. Idempotent - no matching parked Instance is a
+	clean no-op (the inbox row waits until one parks; the reconciler is the backstop)."""
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
-	name = frappe.db.get_value(
-		INSTANCE_DT,
-		{"subject_doctype": subject_doctype, "subject_name": subject_name, "awaiting_signal": signal_name, "status": "Parked"},
-		"name",
-		for_update=True,
-	)
+	filters = {"subject_doctype": subject_doctype, "subject_name": subject_name, "awaiting_signal": signal_name, "status": "Parked"}
+	filters["awaiting_correlation"] = correlation if correlation else ["in", ["", None]]
+	name = frappe.db.get_value(INSTANCE_DT, filters, "name", for_update=True)
 	if not name:
-		return  # no Instance parked on this signal yet - the row waits in the inbox (early-signal safe, F1)
+		return  # no Instance parked on this (signal, correlation) yet - waits in the inbox (early-signal safe, F1)
 	wakeups.drive_instance(name)

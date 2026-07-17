@@ -10,7 +10,7 @@ field only gets its own single-column `search_index`).
     closes the double-start race at the DB itself.
 
 Idempotent (has_index guard). install-app baselines patches.txt without running it, so this also runs on
-after_migrate via schema_setup (mirrors add_resume_index / add_observability_indexes)."""
+after_migrate via schema_setup (mirrors add_observability_indexes)."""
 import frappe
 
 _INSTANCE = "CRM Workflow Instance"

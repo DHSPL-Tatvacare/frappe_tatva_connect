@@ -51,7 +51,7 @@
    "fieldtype": "Link",
    "label": "Vertical",
    "options": "CRM Vertical",
-   "description": "Scopes the subjects that may enter; an Instance is created only when the subject's grain matches, mirroring the automation-rule grain gate. Blank axis = wildcard."
+   "description": "Scopes the subjects that may enter; an Instance is created only when the subject's lead grain matches. Blank axis = wildcard."
   },
   {
    "fieldname": "group",
@@ -71,7 +71,7 @@
    "fieldname": "entry_section",
    "fieldtype": "Section Break",
    "label": "Trigger",
-   "description": "1. Trigger. The doctype and lifecycle event that start the Flow are chosen here — for example a CRM Task, on Update. The Flow is evaluated only for records of the chosen doctype and event."
+   "description": "1. Trigger. The doctype and lifecycle event that start the Flow are chosen here \u2014 for example a CRM Task, on Update. The Flow is evaluated only for records of the chosen doctype and event."
   },
   {
    "fieldname": "entry_doctype",
@@ -92,14 +92,14 @@
    "fieldname": "when_section",
    "fieldtype": "Section Break",
    "label": "When (Criteria)",
-   "description": "2. When. The criteria that must all hold for the Flow to act are composed here, over the allowlisted fields — for example outcome is \"Physical Visit\" and status changed to Done. Rows are combined with AND; an empty predicate matches every trigger of the chosen doctype and event."
+   "description": "2. When. The criteria that must all hold for the Flow to act are composed here, over the allowlisted fields \u2014 for example outcome is \"Physical Visit\" and status changed to Done. Rows are combined with AND; an empty predicate matches every trigger of the chosen doctype and event."
   },
   {
    "fieldname": "criteria",
    "fieldtype": "Table",
    "label": "Criteria",
    "options": "CRM Automation Criterion",
-   "description": "The predicate that must hold for the Flow to act, composed of the same operator vocabulary the automation engine uses (AND across rows). An empty predicate matches every trigger of the chosen doctype and event."
+   "description": "The predicate that must hold for the Flow to act, composed from the allowlisted fields with the word operators (AND across rows). An empty predicate matches every trigger of the chosen doctype and event."
   },
   {
    "fieldname": "nodes_section",
@@ -124,9 +124,34 @@
  "name": "CRM Workflow Definition",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Automation Manager", "share": 1, "write": 1},
-  {"read": 1, "role": "Sales Manager"}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
  ],
  "row_format": "Dynamic",
  "show_title_field_in_link": 1,

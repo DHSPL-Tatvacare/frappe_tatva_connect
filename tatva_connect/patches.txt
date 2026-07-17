@@ -22,7 +22,6 @@ tatva_connect.patches.neutralize_wati_message_id_field  # Neutralise the WhatsAp
 tatva_connect.patches.rename_task_field_target  # Activity engine 9-column collapse: rename CRM Task Type Field.first_class_target -> target before the doctype JSON syncs, so the renamed field map carries existing values (no orphan column)
 tatva_connect.patches.backfill_catalog_target_doctype  # CRM Lead API Field drops the redundant `child_doctype` column (target_doctype is now the single source)
 tatva_connect.patches.migrate_intake_field_map_target  # Intake mapping contract: split the legacy free-text CRM Intake Field Map.target ("plan:nivo_dosage") into the structured target_table + target_field pair BEFORE the new JSON drops `target`
-tatva_connect.patches.reshape_automation_triggers  # Automation engine v2 (Task 1, big-bang reshape): CRM Automation Rule's flat trigger_type/task_type/ watch_doctype/watch_field -> the two-axis trigger (on_doctype, event); CRM Automation Criterion's old operator SYMBOLS -> the frozen v2 WORD operators
 
 [post_model_sync]
 tatva_connect.patches.add_whatsapp_message_id_unique_index  # UNIQUE index on WhatsApp Message.message_id
@@ -43,8 +42,6 @@ tatva_connect.patches.fix_nivolumab_drug_mapping  # Nivolumab mapping fix (Phase
 tatva_connect.patches.retire_crm_enrolment_submission  # Retire the legacy shared intake staging doctype `CRM Enrolment Submission`
 tatva_connect.patches.merge_automation_field_allowlists  # Merge the two automation field allowlists — CRM Automatable Field (write) + CRM Automation Watchable Field (read) -> one CRM Automation Field with can_set/can_watch flags
 tatva_connect.patches.widen_lsq_attachment_id  # post — File.custom_lsq_attachment_id varchar(140)->500 (long S3 paths failed the migration File save)
-tatva_connect.patches.add_resume_index  # Composite indexes on the CRM Automation Resume Wait-park queue + the UNIQUE (rule, definition_hash) on CRM Automation Rule Version
-tatva_connect.patches.migrate_resume_to_versions  # Bind every already-parked execution to an immutable CRM Automation Rule Version, translating the old effect-lane `next_action_idx` into the new all-lanes `cursor`
 tatva_connect.patches.add_lead_dedup_unique_index  # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
 tatva_connect.patches.add_call_log_reference_index  # post — index (reference_doctype, reference_docname): call_list full-scanned without it
 tatva_connect.patches.reimport_infrastructure_desk  # post — File Screening + File Scan Log had no route from any workspace; the standard import skips a desk doc whose DB copy looks newer than the file, so force it (same reason as reimport_communications_desk)
@@ -78,3 +75,4 @@ tatva_connect.patches.reimport_flow_desk  # post — the fold rebuilt the Automa
 tatva_connect.patches.rekey_lead_api_mapping_composite  # post — the last grain-scoped master still keyed on a login; a contract with no login (intake form, Facebook crawl) could not exist, so each grew its own grain fields
 tatva_connect.patches.drop_lead_sync_source_grain_fields  # post — the grain a Facebook form stamps comes from its contract now; dropping the fields from the fixture does not delete the rows, so the delete is declared here
 tatva_connect.patches.retire_task_type_scope  # post — the deprecated CRM Task Type Scope child was a RIVAL grain source: the automation lane gated its grain check on a scope row existing, so for every real (parent-keyed) type the check never ran. Doctype + table dropped (archived to archive/doctype/), and the name-keyed grainless types it propped up deleted — the composite key is the one grain
+tatva_connect.patches.rekey_lead_catalog_sections  # post — a section's four facts (its table, its target, whether a lead carries many rows, which column addresses one) were restated on all 607 catalog rows and rotted there: sql_source was added to a populated table so 29 rows were born blank, and is_row_key was set on 1 of 607, which is why the brain called Lab single-row and report 5 overwrote report 1. They live once on CRM Lead Section now; every field row carries a section Link, `mx` (LeadSquared's prefix) is re-keyed `metrics` through rename_doc so the Links cascade, and is_row_key is dropped

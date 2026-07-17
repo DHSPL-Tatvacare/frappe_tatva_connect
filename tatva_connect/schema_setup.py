@@ -24,7 +24,6 @@ from tatva_connect.patches import (
 	add_crm_task_metrics_index,
 	add_integration_request_index,
 	add_observability_indexes,
-	add_resume_index,
 	add_workflow_instance_indexes,
 	add_workflow_signal_indexes,
 	backfill_webhook_token_digests,
@@ -50,8 +49,6 @@ _STEPS = (
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter
 	# select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
-	# Composite index (status, resume_at) on the Wait-park queue — backs sweep_resume()'s query.
-	add_resume_index,
 	# Composite + UNIQUE(active_key) indexes on CRM Workflow Instance — the timer/signal/scope/retention
 	# queries and the single-live-instance guard, none expressible in doctype JSON.
 	add_workflow_instance_indexes,

@@ -113,26 +113,17 @@ def advance(instance):
 				detail = f"action group {node.action_group}"
 				if markers:  # a dormant send ("suppressed: sends dormant") records its marker in the audit, never a live message
 					detail += " :: " + " | ".join(markers)
-			elif node.node_type == "Branch":
-				truthy = bool(expr.resolve_expression(node.condition, state))
-				nxt = node.on_true if truthy else node.on_false
-				detail = "on_true" if truthy else "on_false"
-			elif node.node_type == "Assign":
-				result = expr.resolve_expression(node.assign_json, state)
-				if not isinstance(result, dict):
-					raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
-				state.update(result)
-				nxt = node.next_node
-				detail = "keys: {}".format(",".join(sorted(result.keys())))
+			elif node.node_type in ("Branch", "Assign"):
+				nxt, detail = _next_control(node, state)  # the ONE control-flow step, shared with run_inline
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 
 			_step_log(instance, node, "ok", detail, int((time.monotonic() - started) * 1000))
 			instance.current_node = nxt
-	except frappe.db.InternalError:  # deadlock / lock-wait — TRANSIENT (F4)
+	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):  # real lock-wait / deadlock — TRANSIENT (F4)
 		frappe.db.rollback()  # back to the last durable suspend
 		if (instance.retry_count or 0) < MAX_RETRIES:
-			_bump_retry(instance)  # leave it at its last durable state; the reconciler re-drives (Phase 2)
+			_bump_retry(instance)  # leave it at its last durable state; the reconciler re-drives
 		else:
 			_fail(instance, "exhausted transient retries")
 		return instance
@@ -140,6 +131,20 @@ def advance(instance):
 		frappe.db.rollback()
 		_fail(instance, str(e))
 		return instance
+
+
+def _next_control(node, state):
+	"""Branch/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one interpreter, not
+	two copies). A Branch routes on its condition; an Assign merges its evaluated dict into `state`. Returns
+	`(next_node_id, detail)` — `advance` logs the detail, `run_inline` ignores it."""
+	if node.node_type == "Branch":
+		truthy = bool(expr.resolve_expression(node.condition, state))
+		return (node.on_true if truthy else node.on_false), ("on_true" if truthy else "on_false")
+	result = expr.resolve_expression(node.assign_json, state)
+	if not isinstance(result, dict):
+		raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
+	state.update(result)
+	return node.next_node, "keys: " + ",".join(sorted(result.keys()))
 
 
 def has_wait(version):
@@ -188,14 +193,8 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 				step_deferred, _markers = _run_step(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
 				cursor = node.next_node
-			elif node.node_type == "Branch":
-				cursor = node.on_true if bool(expr.resolve_expression(node.condition, state)) else node.on_false
-			elif node.node_type == "Assign":
-				result = expr.resolve_expression(node.assign_json, state)
-				if not isinstance(result, dict):
-					raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
-				state.update(result)
-				cursor = node.next_node
+			elif node.node_type in ("Branch", "Assign"):
+				cursor, _ = _next_control(node, state)  # the ONE control-flow step, shared with advance
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 		frappe.db.release_savepoint(save_point)
@@ -224,10 +223,10 @@ def _clock_due(instance):
 def _consume_signal(instance, signal_name, correlation):
 	"""Claim the FIRST Pending inbox row matching (subject, signal, correlation) under a write lock, mark
 	it Consumed (+ consumed_by), and return its parsed payload; `None` if none is buffered (→ park). A null
-	awaiting correlation matches rows with a null/empty correlation (the query-builder turns `None` in an
-	`in` list into `IS NULL`, the same wildcard trick `rules.matching_rules` uses). Claiming under
-	`for_update` + a single mark is what makes a duplicate delivery advance exactly once (F2): two Pending
-	rows with the same correlation, one consumed, the other left for a GC - never a second advance."""
+	awaiting correlation matches rows with a null/empty correlation (`None` in an `in` list becomes
+	`IS NULL`). Claiming under `for_update` + a single mark is what makes a duplicate delivery advance
+	exactly once (F2): two Pending rows with the same correlation, one consumed, the other purged by the
+	sweep's stale-signal GC (`wakeups._purge_stale_signals`) - never a second advance."""
 	filters = {"subject_doctype": instance.subject_doctype, "subject_name": instance.subject_name, "signal_name": signal_name, "status": "Pending"}
 	filters["correlation"] = correlation if correlation else ["in", ["", None]]
 	row = frappe.db.get_value(SIGNAL_DT, filters, ["name", "payload_json"], as_dict=True, order_by="creation asc", for_update=True)
@@ -302,8 +301,8 @@ def _run_step(node, lead_name, trigger_doc, state, axes):
 		for item in items:
 			item = frappe._dict(item)
 			lane, handler = actions._ACTION_LANES.get(item.action_type, (None, None))
-			if lane != "effect":
-				continue  # a guard-lane verb is not an effect a Step runs
+			if lane != "effect" or item.action_type == "Wait":
+				continue  # a guard-lane verb, or a Wait (a NODE in the Flow model, never an action), is not run here
 			result = handler(item, lead_name, state, axes, trigger_doc)
 			if callable(result):
 				deferred.append(result)  # a thunk (Call Webhook / live WhatsApp) — fires only after the boundary commit
@@ -311,8 +310,11 @@ def _run_step(node, lead_name, trigger_doc, state, axes):
 				markers.append(result)  # a dormant-send marker — no message left, recorded for the audit
 		frappe.db.release_savepoint(save_point)
 	except Exception:
-		frappe.db.rollback(save_point=save_point)
-		raise
+		try:
+			frappe.db.rollback(save_point=save_point)
+		except Exception:  # nosec B110 — a full-transaction deadlock already discarded this savepoint
+			pass
+		raise  # re-raise the ORIGINAL error so advance() classifies it (transient deadlock vs permanent)
 	return deferred, markers
 
 
@@ -352,15 +354,24 @@ def _step_log(instance, node, outcome, detail="", duration_ms=0):
 
 def _bump_retry(instance):
 	"""A transient failure: increment the retry counter and commit, leaving the Instance at its last
-	durable state for the reconciler to re-drive (Phase 2). Its own commit — the segment already rolled
-	back, so this counter write is the only pending change."""
+	durable state for the reconciler to re-drive. Its own commit — the segment already rolled back, so this
+	counter write is the only pending change. On the ENTRY path the Instance row may not be committed yet
+	(the rollback dropped the uncommitted insert); there is nothing durable to retry, so log and return."""
+	if not frappe.db.exists(INSTANCE_DT, instance.name):
+		frappe.log_error(title="workflow: entry-segment transient failure (Flow never started)", message=f"instance={instance.name}")
+		return
 	_persist(instance, {"retry_count": (instance.retry_count or 0) + 1})
 	frappe.db.commit()
 
 
 def _fail(instance, reason):
 	"""A permanent failure: mark Failed (terminal, so no retry storm) and drop the active_key so a fresh
-	Instance can start. Runs after a rollback, so it commits its own single write plus an audit row."""
+	Instance can start. Runs after a rollback, so it commits its own single write plus an audit row. On the
+	ENTRY path the Instance row may already be gone (the rollback dropped the uncommitted insert) — log the
+	reason and return rather than write a dangling audit row to a vanished Instance."""
+	if not frappe.db.exists(INSTANCE_DT, instance.name):
+		frappe.log_error(title="workflow: entry-segment failed before commit", message=f"instance={instance.name} :: {reason[:1500]}")
+		return
 	_persist(instance, {"status": "Failed", "active_key": None})
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,

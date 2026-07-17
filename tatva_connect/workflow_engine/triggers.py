@@ -150,7 +150,7 @@ def _maybe_start(doc, event):
 		if not rules.criteria_match(version.criteria, ctx.context, ctx.field_types):
 			continue  # the When did not hold — this Flow does not act on this write
 		if interpreter.has_wait(version):
-			_start_one(version.workflow, doc)  # CONTINUOUS: a durable Instance carries state across the park
+			_start_one(version.workflow, version_name, ctx.subject, ctx.context)  # CONTINUOUS: durable Instance on the lead
 		else:
 			_run_ephemeral(version_name, ctx.subject, doc, ctx.context)  # EPHEMERAL: run inline, persist nothing
 
@@ -201,20 +201,23 @@ def _run_ephemeral(version_name, lead_name, trigger_doc, context):
 
 
 def _grain_matches(definition, axes):
-	"""A blank Definition axis is a wildcard (mirrors `rules.matching_rules`); a set axis must equal the
-	subject's. A non-Lead subject (axes all None) matches only a fully-wildcard Definition."""
+	"""A blank Definition axis is a wildcard; a set axis must equal the subject's grain. A non-Lead subject
+	(axes all None) matches only a fully-wildcard Definition."""
 	for want, got in zip((definition.vertical, definition.group, definition.program), axes, strict=False):
 		if want and want != (got or ""):
 			return False
 	return True
 
 
-def _start_one(workflow_name, doc):
-	"""Create the Instance at the graph's entry node (the first node) and run its first segment in ONE
-	transaction, committing at the first suspend (advance). The `active_key` UNIQUE index closes the
-	double-start race - a second entry for the same (workflow, subject) raises IntegrityError on insert,
-	which is caught and treated as already-running."""
-	version_name = versions.current_name(workflow_name)
+def _start_one(workflow_name, version_name, lead_name, seed_context):
+	"""Create the durable Instance for a CONTINUOUS Flow and run its first segment in ONE transaction,
+	committing at the first suspend (advance). The Instance's subject is the resolved parent LEAD (D7) — so
+	effects act on the lead and the review-signal detector (which looks up Parked instances by CRM Lead) can
+	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Branch
+	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
+	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
+	race — a second entry for the same (workflow, lead) raises IntegrityError on insert, caught + treated as
+	already-running."""
 	entry_node = versions.load(version_name).nodes[0].node_id
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
@@ -222,10 +225,10 @@ def _start_one(workflow_name, doc):
 			"doctype": INSTANCE_DT,
 			"workflow": workflow_name,
 			"workflow_version": version_name,
-			"subject_doctype": doc.doctype,
-			"subject_name": doc.name,
+			"subject_doctype": "CRM Lead",
+			"subject_name": lead_name,
 			"current_node": entry_node,
-			"state_json": "{}",
+			"state_json": frappe.as_json(seed_context or {}),
 			"status": "Running",
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
 		interpreter.advance(instance)
@@ -233,6 +236,6 @@ def _start_one(workflow_name, doc):
 		frappe.db.rollback()  # active_key UNIQUE rejected a second live Instance - already running (F3)
 	except Exception:
 		frappe.db.rollback()
-		frappe.log_error(title="workflow: entry start failed", message=f"workflow={workflow_name} subject={doc.name} :: {frappe.get_traceback()}")
+		frappe.log_error(title="workflow: entry start failed", message=f"workflow={workflow_name} lead={lead_name} :: {frappe.get_traceback()}")
 	finally:
 		frappe.flags.in_workflow = False
