@@ -52,11 +52,11 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
-	field_descriptor,
 	resolve_lead,
 	scoped_by_lead,
 	validate_external_id,
 )
+from tatva_connect.api.field_spec import FieldSpec, collect, describe
 from tatva_connect.storage import file_manager, file_screening
 
 # All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
@@ -69,19 +69,24 @@ from tatva_connect.storage import file_manager, file_screening
 _TARGETS = (("activity", "CRM Task"), ("note", "FCRM Note"))
 _TARGET_DOCTYPES = tuple(doctype for _key, doctype in _TARGETS)
 
-# The attach payload contract — the ONE source of truth for what a caller may send and what
-# `file_schema` advertises. Discovery equals ingestion because both read THIS.
-#   fieldname -> (label, fieldtype, required)
+# The attach payload contract — declared ONCE, read by `describe` (what file_schema advertises) and by
+# `collect` (what lands on the File row). Discovery equals ingestion because neither owns a field list.
+#
+# Most of an attach is not a column. `lead`/`mobile_no` resolve a lead, `activity`/`note` pick the home,
+# and `file_url`/`content_base64` are where the BYTES come from — `file_url` is the caller's download
+# source, not `File.file_url` (which is ours, holds the proxy url, and is typed Code). `filename` names
+# the file to `file_manager.save`, which takes it as its own argument. What remains IS the meta dict the
+# insert used to carry as a literal.
 FILE_FIELDS = (
-	("lead",           "Lead",           "Data", False),
-	("mobile_no",      "Mobile No",      "Data", False),
-	("activity",       "Activity",       "Data", False),
-	("note",           "Note",           "Data", False),
-	("external_id",    "External ID",    "Data", False),
-	("file_type",      "File Type",      "Data", False),
-	("filename",       "Filename",       "Data", True),
-	("file_url",       "File URL",       "Data", False),
-	("content_base64", "Content Base64", "Data", False),
+	FieldSpec("lead",           "Lead",           fieldtype="Data"),
+	FieldSpec("mobile_no",      "Mobile No",      fieldtype="Data"),
+	FieldSpec("activity",       "Activity",       fieldtype="Data"),
+	FieldSpec("note",           "Note",           fieldtype="Data"),
+	FieldSpec("external_id",    "External ID",    EXTERNAL_ID_FIELD),
+	FieldSpec("file_type",      "File Type",      "custom_file_type"),
+	FieldSpec("filename",       "Filename",       fieldtype="Data", required=True),
+	FieldSpec("file_url",       "File URL",       fieldtype="Data"),
+	FieldSpec("content_base64", "Content Base64", fieldtype="Data"),
 )
 
 
@@ -237,16 +242,14 @@ def _create_one(data, mp, is_sysmgr):
 		source_ip=getattr(frappe.local, "request_ip", None),
 	)
 	# ALWAYS private (Invariant #15) — the privacy checkpoint on File.validate decides it; the File
-	# doc_events enforce the private floor regardless. The category + the caller's label go
-	# via meta so both land on the row in one insert.
+	# doc_events enforce the private floor regardless. The category + the caller's label are the
+	# collected columns, so both land on the row in one insert; the source is ours, not the caller's.
 	doc = file_manager.save(
 		content,
 		filename=filename,
 		attached_to_doctype=target_doctype,
 		attached_to_name=target_name,
-		meta={"custom_file_type": data.get("file_type"),
-		      EXTERNAL_ID_FIELD: data.get("external_id"),
-		      "custom_source": "Partner API"},
+		meta=dict(collect(FILE_FIELDS, data), custom_source="Partner API"),
 	)
 	return _file_view(doc), ACTION_CREATED
 
@@ -280,8 +283,7 @@ def file_schema(**_kwargs):
 			"None. Every POST attaches a new file and returns a new `name`. Retries are made safe with "
 			"the Idempotency-Key header; `external_id` does not deduplicate."
 		),
-		fields=[field_descriptor(fn, label, ftype, required)
-		        for fn, label, ftype, required in FILE_FIELDS],
+		fields=describe(FILE_FIELDS, "File"),
 		bytes=(
 			"The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as "
 			"`content_base64`. Exactly one is sent. The maximum download size is {} MB.".format(

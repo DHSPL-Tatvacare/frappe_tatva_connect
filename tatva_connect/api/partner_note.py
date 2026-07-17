@@ -54,26 +54,27 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
-	field_descriptor,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
 	validate_external_id,
 )
+from tatva_connect.api.field_spec import FieldSpec, collect, describe
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg(). One source of truth, no module-local copy.
 
-# The note's payload contract. The ONE source of truth for what a caller may send, what it maps to on
-# FCRM Note, and what `note_schema` advertises. Discovery equals ingestion because both read THIS.
-#   partner fieldname -> (label, FCRM Note fieldname or None, required)
+# The note's payload contract — declared ONCE, read by `describe` (what note_schema advertises) and by
+# `collect` (what the write path accepts). Discovery equals ingestion because neither owns a field list.
+# A target-less spec is one this module resolves itself: `mobile_no` finds a lead, `created_at`
+# backdates `creation` (a framework default field, not a docfield — see field_spec).
 NOTE_FIELDS = (
-	("lead",        "Lead",        "reference_docname", False),
-	("mobile_no",   "Mobile No",   None,                False),
-	("external_id", "External ID", EXTERNAL_ID_FIELD,   False),
-	("title",       "Title",       "title",             False),
-	("content",     "Content",     "content",           True),
-	("created_at",  "Created At",  None,                False),
+	FieldSpec("lead",        "Lead",        "reference_docname"),
+	FieldSpec("mobile_no",   "Mobile No"),
+	FieldSpec("external_id", "External ID", EXTERNAL_ID_FIELD),
+	FieldSpec("title",       "Title",       "title"),
+	FieldSpec("content",     "Content",     "content", required=True),
+	FieldSpec("created_at",  "Created At",  fieldtype="Datetime"),
 )
 
 _TITLE_CAP = 140
@@ -127,11 +128,16 @@ def _apply_fields(doc, data, lead_name):
 	sent", never as "erase this": a create refuses blank content, so an update must not accept it either,
 	or the API would refuse to make a record it is willing to destroy. Many clients serialize an absent
 	field as "", and a blanked clinical note is not recoverable.
+
+	`collect` decides WHAT may land and on which column; this decides how. `reference_docname` is the one
+	target it never takes from the caller — `lead` is an input to the grain-scoped `resolve_lead`, and
+	writing the raw value would attach the note to a lead off the caller's line.
 	"""
-	if data.get("title"):
+	fields = collect(NOTE_FIELDS, data)
+	if fields.get("title"):
 		doc.title = _derive_title(data)
-	if data.get("content"):
-		doc.content = data.get("content")  # frappe sanitises Text Editor on save (_sanitize_content)
+	if fields.get("content"):
+		doc.content = fields["content"]  # frappe sanitises Text Editor on save (_sanitize_content)
 	if lead_name:
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead_name
@@ -203,21 +209,13 @@ def note_schema(**_kwargs):
 	required. The shape is fixed (it does not vary by partner or grain), but it is discoverable, so an
 	integrator never hardcodes a field list."""
 	_resolve_caller()
-	m = frappe.get_meta("FCRM Note")
-	fields = []
-	for fieldname, label, crm_field, required in NOTE_FIELDS:
-		f = m.get_field(crm_field) if crm_field else None
-		fieldtype = f.fieldtype if f else "Data"
-		if fieldname == "created_at":
-			fieldtype = "Datetime"
-		fields.append(field_descriptor(fieldname, label, fieldtype, required, (f.options if f else None), None))
 	_schema_ok(
 		"note",
 		dedup=(
 			"None. Every POST creates a new note and returns a new `name`. Retries are made safe with "
 			"the Idempotency-Key header; `external_id` does not deduplicate."
 		),
-		fields=fields,
+		fields=describe(NOTE_FIELDS, "FCRM Note"),
 		attribution=(
 			"`lead` or `mobile_no` attaches the note to a lead on the caller's line. A note is never "
 			"left unattached and is never matched by guesswork: a payload that names no reachable lead "

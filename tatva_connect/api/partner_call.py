@@ -51,12 +51,12 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
-	field_descriptor,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
 	validate_external_id,
 )
+from tatva_connect.api.field_spec import FieldSpec, collect, describe
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
@@ -64,20 +64,22 @@ from tatva_connect.api._base import (
 # Partner direction vocab -> CRM Call Log `type` vocab.
 _DIRECTION_TYPE = {"Inbound": "Incoming", "Outbound": "Outgoing"}
 
-# The call's payload contract — the ONE source of truth for what a caller may send, what it maps to on
-# CRM Call Log, and what `call_schema` advertises. Discovery equals ingestion because both read THIS.
-#   partner fieldname -> (label, CRM Call Log fieldname or None, required)
+# The call's payload contract — declared ONCE, read by `describe` (what call_schema advertises) and by
+# `collect` (what the write path accepts). Discovery equals ingestion because neither owns a field list.
+# `direction` declares its own vocabulary: the column holds Incoming/Outgoing and partners speak
+# Inbound/Outbound, so the internal values are suppressed. Translating them stays in _apply_fields.
 CALL_FIELDS = (
-	("lead",          "Lead",          "reference_docname", False),
-	("mobile_no",     "Mobile No",     None,                False),
-	("external_id",   "External ID",   EXTERNAL_ID_FIELD,   False),
-	("direction",     "Direction",     "type",              True),
-	("from_number",   "From Number",   "from",              False),
-	("to_number",     "To Number",     "to",                False),
-	("status",        "Status",        "status",            False),
-	("duration",      "Duration",      "duration",          False),
-	("recording_url", "Recording URL", "recording_url",     False),
-	("started_at",    "Started At",    "start_time",        False),
+	FieldSpec("lead",          "Lead",          "reference_docname"),
+	FieldSpec("mobile_no",     "Mobile No"),
+	FieldSpec("external_id",   "External ID",   EXTERNAL_ID_FIELD),
+	FieldSpec("direction",     "Direction",     "type", required=True,
+	          allowed_values=tuple(_DIRECTION_TYPE)),
+	FieldSpec("from_number",   "From Number",   "from"),
+	FieldSpec("to_number",     "To Number",     "to"),
+	FieldSpec("status",        "Status",        "status"),
+	FieldSpec("duration",      "Duration",      "duration"),
+	FieldSpec("recording_url", "Recording URL", "recording_url"),
+	FieldSpec("started_at",    "Started At",    "start_time"),
 )
 
 
@@ -149,25 +151,31 @@ def _scoped_call(name, mp, is_sysmgr):
 
 
 def _apply_fields(doc, data, lead_name):
-	"""Overlay the partner payload onto a CRM Call Log doc (create or update path)."""
+	"""Overlay the partner payload onto a CRM Call Log doc (create or update path).
+
+	`collect` decides WHAT may land and on which column, so this is keyed by column and no longer
+	restates the mapping. Two targets are never taken from the caller: `type` carries the partner's
+	vocabulary and is translated below, and `reference_docname` is resolved by `_attribute_lead` (writing
+	the raw value would attach the call to a lead off the caller's line)."""
+	fields = collect(CALL_FIELDS, data)
 	direction = data.get("direction")
 	if direction and direction not in _DIRECTION_TYPE:
 		frappe.throw(_("direction must be Inbound or Outbound"))
 	if direction:
 		doc.type = _DIRECTION_TYPE[direction]
 
-	if data.get("from_number") is not None:
-		setattr(doc, "from", str(data.get("from_number") or ""))
-	if data.get("to_number") is not None:
-		doc.to = str(data.get("to_number") or "")
-	if data.get("status"):
-		doc.status = data.get("status")
-	if data.get("duration") not in (None, ""):
-		doc.duration = cint(data.get("duration"))
-	if data.get("recording_url") is not None:
-		doc.recording_url = data.get("recording_url")
-	if data.get("started_at"):
-		dt = get_datetime(data.get("started_at"))
+	if fields.get("from") is not None:
+		setattr(doc, "from", str(fields.get("from") or ""))
+	if fields.get("to") is not None:
+		doc.to = str(fields.get("to") or "")
+	if fields.get("status"):
+		doc.status = fields.get("status")
+	if fields.get("duration") not in (None, ""):
+		doc.duration = cint(fields.get("duration"))
+	if fields.get("recording_url") is not None:
+		doc.recording_url = fields.get("recording_url")
+	if fields.get("start_time"):
+		dt = get_datetime(fields.get("start_time"))
 		if dt:
 			doc.start_time = dt
 
@@ -248,25 +256,13 @@ def call_schema(**_kwargs):
 	is required. The shape is fixed (it does not vary by partner or grain), but it is discoverable, so
 	an integrator never hardcodes a field list."""
 	_resolve_caller()
-	m = frappe.get_meta("CRM Call Log")
-	fields = []
-	for fieldname, label, crm_field, required in CALL_FIELDS:
-		f = m.get_field(crm_field) if crm_field else None
-		fieldtype = f.fieldtype if f else "Data"
-		options, allowed = (f.options if f else None), None
-		if fieldname == "direction":
-			# The partner vocabulary is Inbound/Outbound; the native column is Incoming/Outgoing.
-			fieldtype, options, allowed = "Select", None, list(_DIRECTION_TYPE)
-		elif fieldname == "status" and f:
-			allowed = [o for o in (f.options or "").split("\n") if o] or None
-		fields.append(field_descriptor(fieldname, label, fieldtype, required, options, allowed))
 	_schema_ok(
 		"call",
 		dedup=(
 			"None. Every POST creates a new call log and returns a new `name`. Retries are made safe "
 			"with the Idempotency-Key header; `external_id` does not deduplicate."
 		),
-		fields=fields,
+		fields=describe(CALL_FIELDS, "CRM Call Log"),
 		attribution=(
 			"`lead` or `mobile_no` attaches the call explicitly, scoped to the caller's line. When both "
 			"are omitted, the customer number is strict-matched within the line (from_number on Inbound, "
