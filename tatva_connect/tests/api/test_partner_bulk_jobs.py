@@ -33,9 +33,11 @@ def _mint_partner(email, vertical=VERTICAL, group=GROUP):
 	if "Partner API User" not in [r.role for r in user.roles]:
 		user.append("roles", {"role": "Partner API User"})
 		user.save(ignore_permissions=True)
-	if not frappe.db.exists("CRM Lead API Mapping", email):
+	# The contract is keyed on its grain composite, so it is found by the partner_user COLUMN, never by name.
+	if not frappe.db.exists("CRM Lead API Mapping", {"partner_user": email}):
 		frappe.get_doc({"doctype": "CRM Lead API Mapping", "partner_user": email, "enabled": 1,
-		                "vertical": vertical, "crm_group": group}).insert(ignore_permissions=True)
+		                "contract_name": email, "vertical": vertical,
+		                "crm_group": group}).insert(ignore_permissions=True)
 
 
 def _purge_test_leads():
@@ -64,9 +66,10 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		for job in frappe.get_all("CRM Bulk Job", filters={"partner": ["in", (PARTNER, OTHER)]}, pluck="name"):
 			frappe.delete_doc("CRM Bulk Job", job, force=True, ignore_permissions=True)
 		for email in (PARTNER, OTHER):
-			for dt in ("CRM Lead API Mapping", "User"):
-				if frappe.db.exists(dt, email):
-					frappe.delete_doc(dt, email, force=True, ignore_permissions=True)
+			for contract in frappe.get_all("CRM Lead API Mapping", filters={"partner_user": email}, pluck="name"):
+				frappe.delete_doc("CRM Lead API Mapping", contract, force=True, ignore_permissions=True)
+			if frappe.db.exists("User", email):
+				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 0)
 		frappe.db.commit()
 		super().tearDownClass()

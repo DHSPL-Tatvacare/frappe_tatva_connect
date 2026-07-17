@@ -89,7 +89,12 @@ BEHAVIOR_OUTPUT_ONLY = "OUTPUT_ONLY"
 
 
 def is_writable(fieldname):
-	"""True if a partner may SEND this field (not a reserved audit/system/assignment field)."""
+	"""True if a partner may SEND this field (not a reserved audit/system/assignment field).
+
+	A docfield's `read_only` flag is NOT consulted: in this app it means "a rep may not hand-edit this in
+	the Desk form" (21 Property Setters, incl. mobile_no and the whole lab panel), which is a different
+	question from what an API may write. A computed column is kept out of a caller's reach by not being
+	ticked on the contract — the contract is the allowlist."""
 	return fieldname not in RESERVED_FIELDS
 
 
@@ -312,13 +317,14 @@ def _resolve_caller():
 def _load_caller():
 	"""The gate itself: resolve the caller, or raise 403. Called ONCE per request, by the preamble.
 
-	The mapping row's name == partner_user (autoname field:partner_user). This is the SINGLE enablement
-	gate for ALL entity APIs (leads/activities/files/calls): one enabled `CRM Lead API Mapping` row +
-	its grain governs every entity."""
+	The contract is resolved by the partner_user COLUMN, never by the row's name — the name is the
+	grain composite. `mp.name` is carried so the child grids (allowed_fields / allowed_programs) can be
+	read by parent. This is the SINGLE enablement gate for ALL entity APIs (leads/activities/files/calls):
+	one enabled `CRM Lead API Mapping` row + its grain governs every entity."""
 	user = frappe.session.user
 	mp = frappe.db.get_value(
 		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
-		["source", "vertical", "crm_group", "program"], as_dict=True,
+		["name", "source", "vertical", "crm_group", "program"], as_dict=True,
 	)
 	roles = frappe.get_roles(user)
 	is_sysmgr = "System Manager" in roles

@@ -112,9 +112,10 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
 		frappe.db.set_value("CRM Tatva Automation", "Partner::AsyncBulk::jobs", "enabled", 0)  # back to dormant
-		for dt, name in (("CRM Lead API Mapping", PARTNER), ("User", PARTNER)):
-			if frappe.db.exists(dt, name):
-				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
+		for contract in frappe.get_all("CRM Lead API Mapping", filters={"partner_user": PARTNER}, pluck="name"):
+			frappe.delete_doc("CRM Lead API Mapping", contract, force=True, ignore_permissions=True)
+		if frappe.db.exists("User", PARTNER):
+			frappe.delete_doc("User", PARTNER, force=True, ignore_permissions=True)
 		frappe.db.commit()
 
 	@classmethod
@@ -130,10 +131,11 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 		if "Partner API User" not in [r.role for r in user.roles]:
 			user.append("roles", {"role": "Partner API User"})
 			user.save(ignore_permissions=True)
-		if not frappe.db.exists("CRM Lead API Mapping", PARTNER):
+		# Found by the partner_user COLUMN: the contract's name is its grain composite, not the login.
+		if not frappe.db.exists("CRM Lead API Mapping", {"partner_user": PARTNER}):
 			frappe.get_doc({
 				"doctype": "CRM Lead API Mapping", "partner_user": PARTNER, "enabled": 1,
-				"vertical": VERTICAL, "crm_group": GROUP,
+				"contract_name": PARTNER, "vertical": VERTICAL, "crm_group": GROUP,
 			}).insert(ignore_permissions=True)
 		frappe.db.commit()  # the drive rolls back, and the gate must survive that
 

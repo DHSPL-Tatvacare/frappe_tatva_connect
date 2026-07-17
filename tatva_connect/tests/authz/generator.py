@@ -103,7 +103,7 @@ def _ensure_partner_mapping(g, partner_email):
 	if frappe.db.exists(_MAPPING, {"partner_user": partner_email}):
 		return
 	frappe.get_doc({
-		"doctype": _MAPPING, "partner_user": partner_email, "enabled": 1,
+		"doctype": _MAPPING, "partner_user": partner_email, "enabled": 1, "contract_name": partner_email,
 		"vertical": g["vertical"], "crm_group": g["group"], "program": g["program"],
 	}).insert(ignore_permissions=True)
 

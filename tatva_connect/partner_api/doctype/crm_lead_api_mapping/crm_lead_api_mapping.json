@@ -1,13 +1,14 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:partner_user",
+ "autoname": "format:{vertical}::{crm_group}::{program}::{contract_name}",
  "creation": "2026-06-04 00:00:00.000000",
- "description": "Scopes a partner API user to ONE product line+group (+optional program). The lead_create endpoint forces this routing on every lead the partner creates; the partner cannot set routing itself.",
+ "description": "The ONE contract for a grain: which product line+group (+optional program) a lead is stamped with, and which catalog fields may be carried. It is read by every lead-intake surface — the partner API resolves it from the caller, an intake form and a Facebook lead source each link to one. Routing is forced from here and can never be set by the submitter.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "contract_name",
   "partner_user",
   "enabled",
   "routing_section",
@@ -21,7 +22,8 @@
   "allowed_fields"
  ],
  "fields": [
-  {"fieldname": "partner_user", "fieldtype": "Link", "options": "User", "label": "Partner User", "reqd": 1, "unique": 1, "in_list_view": 1},
+  {"fieldname": "contract_name", "fieldtype": "Data", "label": "Contract Name", "reqd": 1, "in_list_view": 1, "description": "The name this contract is known by, and the last part of its id. It is required because two contracts may legitimately share one grain — two partners on the same product line, or a short and a long intake form. It is expected to be short and descriptive, e.g. 'Anaya Partner API' or 'Facebook GoodFlip'."},
+  {"fieldname": "partner_user", "fieldtype": "Link", "options": "User", "label": "Partner User", "unique": 1, "in_list_view": 1, "description": "The external login this contract is bound to. When set, that partner's API calls resolve to this contract and no other — one login, one contract, enforced by the database. It is left BLANK for an internal contract, one an intake form or a Facebook lead source links to directly, where there is no login to resolve from; a blank is stored as NULL, and any number of internal contracts may exist."},
   {"default": "1", "fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "in_list_view": 1},
   {"fieldname": "routing_section", "fieldtype": "Section Break", "label": "Forced Routing (stamped on every lead this partner creates)"},
   {"fieldname": "source", "fieldtype": "Link", "options": "CRM Lead Source", "label": "Source", "in_list_view": 1},

@@ -214,6 +214,16 @@ def _child_key_field(cf):
 # tatva_connect.api._base and is imported above. Only lead-specific helpers remain
 # in this module.
 
+def _contract_name(user):
+	"""The contract's id — the SAME row the gate resolved, never a second lookup: partner_user lost its
+	unique when the key went composite, so two independent reads could take the grain from one row and
+	the field allowlist from another."""
+	ctx = getattr(frappe.local, "partner_ctx", None)
+	if ctx and ctx[0] == user and ctx[1]:
+		return ctx[1].get("name")
+	return frappe.db.get_value("CRM Lead API Mapping", {"partner_user": user, "enabled": 1}, "name")
+
+
 def _allowed_keys(user, has_mapping):
 	"""The catalog keys THIS caller may use. Partner with a non-empty grid -> that
 	subset (mobile_no always included). Empty grid, or System Manager -> full catalog."""
@@ -221,7 +231,7 @@ def _allowed_keys(user, has_mapping):
 	if has_mapping:
 		picked = frappe.get_all(
 			"CRM Lead API Mapping Field",
-			filters={"parent": user, "parenttype": "CRM Lead API Mapping"},
+			filters={"parent": _contract_name(user), "parenttype": "CRM Lead API Mapping"},
 			pluck="field",
 		)
 		picked = {k for k in picked if k in cat["key_set"]}
@@ -239,7 +249,7 @@ def _allowed_programs(user, has_mapping):
 		return []
 	return frappe.get_all(
 		"CRM Lead API Mapping Program",
-		filters={"parent": user, "parenttype": "CRM Lead API Mapping"},
+		filters={"parent": _contract_name(user), "parenttype": "CRM Lead API Mapping"},
 		pluck="program",
 	)
 
