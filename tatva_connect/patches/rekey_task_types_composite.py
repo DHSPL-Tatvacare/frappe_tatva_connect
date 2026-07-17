@@ -26,6 +26,8 @@ def _composite(vertical, group, program, type_name):
 
 
 def execute():
+	if not frappe.db.table_exists("CRM Task Type Scope"):
+		return  # the scope table this reads from is retired — every record it could re-key already is
 	for name in [r.name for r in frappe.get_all(TT, fields=["name"])]:
 		if "::" in name:
 			continue  # already composite — idempotent

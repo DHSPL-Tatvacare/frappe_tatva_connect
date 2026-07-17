@@ -1,11 +1,11 @@
 """The activity engine's server brain.
 
-An "activity" is a CRM Task of an activity type (a CRM Task Type that carries a grain
-scope), logged complete on save. One writer (`save_activity`) splits the submitted form
+An "activity" is a CRM Task of an activity type (a CRM Task Type whose composite key carries
+a grain), logged complete on save. One writer (`save_activity`) splits the submitted form
 into first-class columns + a JSON payload. One projection (`lead_timeline`) feeds BOTH
 the SPA Activity timeline and the Desk Lead timeline. Availability is grain-scoped through
-the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or scope.
-Ships dormant: a CRM Task Type with no scope row never surfaces as an activity.
+the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or grain.
+Ships dormant: a CRM Task Type with an all-blank grain never surfaces as an activity.
 """
 from collections import Counter
 from urllib.parse import parse_qs, urlparse
@@ -38,21 +38,15 @@ def _lead_axes(lead):
 
 
 def _grain_of(task_type):
-	"""The activity type's grain — now on the PARENT record (composite key vertical::group::program::
-	type_name). Falls back to the deprecated `scope` child table for any record not yet re-keyed, so
-	resolution is correct on both sides of the migration. Returns a {vertical, group, program} dict (the
+	"""The activity type's grain — the PARENT record's composite key (vertical::group::program::
+	type_name), which is the ONE grain source. Returns a {vertical, group, program} dict (the
 	resolve_scoped candidate shape) or None for a dormant/unscoped type."""
 	g = frappe.db.get_value(
 		"CRM Task Type", task_type, ["vertical", "`group` as grp", "program"], as_dict=True
 	)
 	if g and (g.vertical or g.grp or g.program):
 		return {"vertical": g.vertical or "", "group": g.grp or "", "program": g.program or ""}
-	rows = frappe.get_all(
-		"CRM Task Type Scope",
-		filters={"parent": task_type, "parenttype": "CRM Task Type"},
-		fields=["vertical", "`group` as grp", "program"],
-	)
-	return {"vertical": rows[0].vertical or "", "group": rows[0].grp or "", "program": rows[0].program or ""} if rows else None
+	return None
 
 
 def _grain_matches(grain, vertical, group, program):
@@ -69,14 +63,14 @@ def _scope_applies(task_type, vertical, group, program):
 	return _grain_matches(_grain_of(task_type), vertical, group, program)
 
 
+def scope_applies_to_lead(task_type, lead):
+	"""Same gate, keyed on the LEAD — the seam every task writer calls, so no caller assembles axes."""
+	return _scope_applies(task_type, *_lead_axes(lead))
+
+
 def _activity_type_names():
-	"""Every CRM Task Type configured as an activity (grain-assigned). Post-migration the grain is the
-	parent vertical; the deprecated scope child is a fallback for any not-yet-re-keyed record."""
-	names = {r.name for r in frappe.get_all("CRM Task Type", filters={"vertical": ["!=", ""]}, fields=["name"])}
-	names |= {r.parent for r in frappe.get_all(
-		"CRM Task Type Scope", filters={"parenttype": "CRM Task Type"}, fields=["parent"], distinct=True
-	)}
-	return names
+	"""Every CRM Task Type configured as an activity (grain-assigned) — the grain is the parent vertical."""
+	return {r.name for r in frappe.get_all("CRM Task Type", filters={"vertical": ["!=", ""]}, fields=["name"])}
 
 
 def resolve_type_for_lead(lead, type_name):

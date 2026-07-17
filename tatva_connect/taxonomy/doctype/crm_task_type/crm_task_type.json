@@ -18,9 +18,7 @@
   "location_when",
   "is_logged_complete",
   "schema_section",
-  "schema",
-  "scope_section",
-  "scope"
+  "schema"
  ],
  "fields": [
   {
@@ -95,19 +93,6 @@
    "fieldtype": "Table",
    "label": "Schema",
    "options": "CRM Task Type Field"
-  },
-  {
-   "fieldname": "scope_section",
-   "fieldtype": "Section Break",
-   "label": "Availability (Lead Grain) — DEPRECATED"
-  },
-  {
-   "description": "DEPRECATED — grain now lives in the composite key (vertical/group/program above). Kept read-only during migration; ignored by resolution. Will be removed once prod is re-keyed.",
-   "fieldname": "scope",
-   "fieldtype": "Table",
-   "label": "Scope (deprecated)",
-   "options": "CRM Task Type Scope",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,

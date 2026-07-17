@@ -19,6 +19,6 @@ def execute():
 	for name in _DEAD:
 		if frappe.db.exists("Custom Field", name):
 			# Custom Field's own on_trash drops the column through Frappe's schema layer — not raw DDL.
-			frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
+			frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)  # authz-ok: tier-a — migration, runs as Administrator at migrate
 	frappe.clear_cache(doctype="Lead Sync Source")
 	frappe.db.commit()

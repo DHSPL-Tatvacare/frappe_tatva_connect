@@ -8,6 +8,7 @@ from tatva_connect.taxonomy import labels
 
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
+# A type_name, never a PK — resolved to this lead's grain-scoped type by the ONE resolver.
 CALL_LEAD_TYPE = "Call Lead"
 
 
@@ -15,6 +16,8 @@ def on_lead_assignment(doc, method=None):
 	"""ToDo.after_insert — when a CRM Lead is assigned to an agent, raise ONE open
 	'Call Lead' task for that agent (the on-lead-create follow-up). Fires after the
 	Assignment Rule sets the owner; gated by the master switch (OFF by default)."""
+	from tatva_connect.activity.api import resolve_type_for_lead
+
 	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
 		return
 	if not automation.is_enabled("Task::Assignment::followup"):
@@ -23,13 +26,16 @@ def on_lead_assignment(doc, method=None):
 		"CRM Lead", doc.reference_name, ["lead_name", "custom_current_program"], as_dict=True
 	) or frappe._dict()
 	lead_name = lead.lead_name or doc.reference_name
-	create_followup_task(
-		lead=doc.reference_name,
-		task_type=CALL_LEAD_TYPE,
-		due_in_hours=24,
-		assigned_to=doc.allocated_to,
-		title=_("Call lead — {0}").format(lead_name),
-	)
+	# Dormant until a grain seeds a Call Lead type — the same rule the first-activity mapping follows.
+	call_type = resolve_type_for_lead(doc.reference_name, CALL_LEAD_TYPE)
+	if call_type:
+		create_followup_task(
+			lead=doc.reference_name,
+			task_type=call_type,
+			due_in_hours=24,
+			assigned_to=doc.allocated_to,
+			title=_("Call lead — {0}").format(lead_name),
+		)
 	# Field-sales: if the lead's program names a first activity type (config), raise ONE open
 	# activity-task of it (reuses the same idempotent throttle). Dormant when the mapping is unset.
 	first_type = lead.custom_current_program and frappe.db.get_value(
@@ -161,9 +167,18 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	custom_review_task back-reference by its caller), not per lead+type — several reviewable files on
 	one lead must each get their own review task, never collapse onto the first.
 
+	THE ONE EXCEPTION to "every writer goes through compute_activity", and it is a real one: this
+	creates a schema-less SHELL — an open to-do carries no submitted form, so there is nothing to
+	resolve. The grain is not part of that exemption. A task type is available to a lead or it is not,
+	and the answer comes from the same `_scope_applies` brain the picker and the activity gate use,
+	read off the lead the task lands on (never a caller-passed axes tuple, which the durable Flow path
+	leaves blank for a non-Lead subject).
+
 	Race-free throttle: a row lock on the lead serializes concurrent creates, so simultaneous
 	fires (automation engine / assignment / inbound) for the same lead can't slip two tasks past
 	the check-then-insert."""
+	from tatva_connect.activity.api import scope_applies_to_lead
+
 	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
 
@@ -172,6 +187,12 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	# triggering user's session and already hold it; the insert itself stays ignore_permissions so the
 	# follow-up lands assigned even where the child docperm is narrower than lead access (one gate).
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+
+	if not scope_applies_to_lead(task_type, lead):
+		frappe.throw(
+			_("{0} is not available for this lead.").format(labels.label(task_type, labels.TASK_TYPE)),
+			title=_("Out of scope"),
+		)
 
 	# Valid enabled assignee only (a task's assignee can see its lead reference) — never Guest/disabled.
 	if assigned_to and (assigned_to == "Guest" or not frappe.db.get_value("User", {"name": assigned_to, "enabled": 1})):

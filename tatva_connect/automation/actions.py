@@ -113,20 +113,18 @@ def _action_require_location(action, subject, context):
 
 
 def _action_create_task(action, lead, context, axes, trigger_doc):
-	"""CREATE_TASK — reuse the idempotent follow-up helper. Grain backstop: a scoped task type may
-	only be raised on a lead its scope admits, so a grain-A rule can't plant a grain-B activity type.
-	The due date resolves from a context field (From Context) or an expression (Expression).
+	"""CREATE_TASK — reuse the idempotent follow-up helper, which grain-gates every task it raises, so
+	a grain-A rule cannot plant a grain-B activity type. The gate lives THERE, not here: it must read
+	the lead the task lands on, and `axes` is (None, None, None) for a Flow whose subject is not a Lead
+	(a File-triggered Document Review is exactly that). The due date resolves from a context field
+	(From Context) or an expression (Expression).
 
 	A File / WhatsApp Message trigger carries no assignee, so the follow-up would land unassigned (on
 	no rep's list, no assignment notification): fall back to the lead's owner. When the trigger is a
 	File and the raised type is Document Review, pin the file onto the review task and mark the File
 	Pending + linked (the review flow's on-upload step)."""
-	from tatva_connect.activity.api import _scope_applies
 	from tatva_connect.tasks.tasks import create_followup_task
 
-	scoped = frappe.db.exists("CRM Task Type Scope", {"parent": action.task_type, "parenttype": "CRM Task Type"})
-	if scoped and not _scope_applies(action.task_type, axes[0], axes[1], axes[2]):
-		raise PermissionError(f"task type {action.task_type} is not in this lead's grain")
 	# Carry the completing task's assignee onto the next task (old-engine parity). Only a trigger that
 	# genuinely has no assignee field — a File / WhatsApp Message — falls back to the lead owner so its
 	# task is never orphaned; a Lead- or Task-triggered rule keeps producing an unassigned task for the
