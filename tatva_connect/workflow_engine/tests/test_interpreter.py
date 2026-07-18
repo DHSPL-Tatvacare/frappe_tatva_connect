@@ -27,7 +27,7 @@ _INSTANCE_DT = "CRM Workflow Instance"
 _STEP_LOG_DT = "CRM Workflow Step Log"
 _GROUP_DT = "CRM Action Group"
 _ITEM_DT = "CRM Action Group Item"
-_FIELD = field_allowlist.DOCTYPE
+# retired: seeds now live on the catalog + contract; teardown uses field_allowlist.clear()
 
 _GRAIN = GRAINS[2]  # TatvaPractice / India / FieldSales
 _AXES = (_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"])
@@ -98,7 +98,7 @@ class TestWalkAndPark(FrappeTestCase):
 	@classmethod
 	def tearDownClass(cls):
 		_cleanup("WFI-walk", "WFI-walk-ag")
-		frappe.db.delete(_FIELD, {"name": cls.set_row})
+		field_allowlist.clear()
 		frappe.db.commit()
 
 	def setUp(self):
@@ -226,7 +226,7 @@ class TestMidSegmentRollback(FrappeTestCase):
 	@classmethod
 	def tearDownClass(cls):
 		_cleanup("WFI-crash", "WFI-crash-ag")
-		frappe.db.delete(_FIELD, {"name": cls.set_row})
+		field_allowlist.clear()
 		frappe.db.commit()
 
 	def setUp(self):
@@ -332,7 +332,7 @@ class TestFullFreeze(FrappeTestCase):
 	@classmethod
 	def tearDownClass(cls):
 		_cleanup("WFI-freeze", "WFI-freeze-ag")
-		frappe.db.delete(_FIELD, {"name": cls.set_row})
+		field_allowlist.clear()
 		frappe.db.commit()
 
 	def setUp(self):

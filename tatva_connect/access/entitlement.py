@@ -23,6 +23,8 @@ UNIVERSAL_KEYS = ("lead:name", "lead:mobile_no", "lead:status")
 
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _RESTRICT_CACHE = "tatva_connect:field_restrictions"
+_INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"
+_UNIVERSAL_CACHE = "tatva_connect:internal_universal_fields"
 _REPORTS_TO_DEPTH = 10
 
 
@@ -118,6 +120,48 @@ def field_in_grains(field_row, grains):
 	return False
 
 
+def _internal_ticks():
+	"""{grain_tuple: set(ticked field_keys)} from the is_internal=1 mappings — the SAME tick mechanism
+	the partner API reads, but for internal per-grain visibility. Request-cached; one build per request.
+	Seeded by access/internal_contract.py from the grain_* logic, so it agrees with field_in_grains."""
+	def build():
+		ticks = {}
+		for m in frappe.get_all(
+			"CRM Lead API Mapping", filters={"is_internal": 1},
+			fields=["name", "vertical", "crm_group", "program"],
+		):
+			g = (m.vertical or "", m.crm_group or "", m.program or "")
+			ticks[g] = set(frappe.get_all(
+				"CRM Lead API Mapping Field", filters={"parent": m.name}, pluck="field",
+			))
+		return ticks
+	return request_cache(_INTERNAL_TICKS_CACHE, "all", build)
+
+
+def field_in_grains_via_contract(field_key, grains):
+	"""Contract-based twin of field_in_grains: True iff `field_key` is ticked by the internal contract of
+	ANY grain in `grains`. ALL_GRAINS (System Manager) → True. Takes a field_key (the switch task will
+	reconcile the callers that today pass a field_row). Reads NO grain_* column — the contract is the brain."""
+	if grains == ALL_GRAINS:
+		return True
+	ticks = _internal_ticks()
+	for g in grains:
+		if field_key in ticks.get(g, set()):
+			return True
+	return False
+
+
+def is_universal_field(field_key):
+	"""Contract-era 'universal': True iff `field_key` is ticked by EVERY internal contract (belongs to all
+	grains). Request-cached off the same _internal_ticks() map. No contracts at all → False (fail-closed)."""
+	def build():
+		ticks = _internal_ticks()
+		if not ticks:
+			return set()
+		return set.intersection(*ticks.values())
+	return field_key in request_cache(_UNIVERSAL_CACHE, "all", build)
+
+
 def grain_entitled(grain, user=None):
 	"""Is an explicit `(vertical, group, program)` grain within the caller's entitlement?
 	True iff ∃ entitled g that COVERS the requested grain — every axis of g is blank (wildcard)
@@ -157,7 +201,7 @@ def resolve_fields(catalog_rows, grains, roles):
 			continue
 		if key in hidden:
 			continue
-		if field_in_grains(row, grains):
+		if field_in_grains_via_contract(row["field_key"], grains):
 			out[key] = row
 	return out
 

@@ -38,8 +38,8 @@ def _rule(name, grain):
 
 
 def _field(key, grain):
-	spec = dict(field_key=key, label=key, fieldname="first_name", section_key="lead",
-				target_doctype="CRM Lead", sql_source="parent", applies_to="lead",
+	spec = dict(field_key=key, label=key, fieldname="first_name", section="lead", section_key="lead",
+				target_doctype="CRM Lead",
 				filterable=1, sortable=1, surface="worklist",
 				grain_vertical=grain[0], grain_group=grain[1], grain_program=grain[2])
 	if frappe.db.exists("CRM Lead API Field", key):

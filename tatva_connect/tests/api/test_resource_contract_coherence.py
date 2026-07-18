@@ -29,9 +29,13 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.api import _base, partner, partner_call, partner_file, partner_note
 from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, field_descriptor
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
+from tatva_connect.tests.api import partner_fixture
 
 METRICS = "CRM Lead Activity Metrics"
-METRICS_SECTION = "mx"
+METRICS_SECTION = "metrics"  # the section was renamed mx->metrics; the field_key prefix is `metrics:`
+
+PARTNER = "coherence.fixture.partner@example.test"
+ANCHOR = "lead:mobile_no"  # the dedup anchor `_allowed_keys` adds itself — our rule, not a tick
 
 # (module, its specs, the doctype they land on). The three resources this phase put on the contract
 # layer. Each test walks all three, so a resource cannot be fixed and another left behind.
@@ -137,31 +141,28 @@ class TestResourceContractCoherence(FrappeTestCase):
 
 	def test_no_contract_ticks_a_metric(self):
 		"""2.7b — the hole, closed where it belongs. The contract is the allowlist, so a computed column is
-		kept from a caller by not being ticked — not by code reinterpreting a Frappe flag.
+		kept from a CALLER by not being ticked — not by code reinterpreting a Frappe flag.
+
+		Scoped to PARTNER contracts (is_internal=0): a partner may not tick a computed metric (it would let
+		it overwrite a CRM-derived number). The per-grain INTERNAL VISIBILITY contracts (is_internal=1)
+		legitimately DO tick metrics — reps READ them on the Data tab — so those are not callers and are
+		excluded here.
 
 		This asserts the tick, not `_allowed_keys`: an EMPTY grid resolves to the full catalog by design
 		(`_allowed_keys`: "Empty grid, or System Manager -> full catalog"), so a contract that restricts
 		nothing would fail this for a reason that is not the metrics. That fail-open default is a real
 		question and it is not this phase's."""
+		partner_contracts = frappe.get_all(
+			"CRM Lead API Mapping", filters={"is_internal": 0}, pluck="name"
+		)
 		self.assertEqual(
 			frappe.get_all(
 				"CRM Lead API Mapping Field",
-				filters={"field": ["like", f"{METRICS_SECTION}:%"], "parenttype": "CRM Lead API Mapping"},
+				filters={"field": ["like", f"{METRICS_SECTION}:%"], "parent": ["in", partner_contracts]},
 				pluck="field",
 			),
 			[],
 		)
-
-	def test_the_partner_field_counts_did_not_move(self):
-		"""2.8 — the number under everything: what each partner may send. It changes only when we decide
-		it changes. Every silent move today was a defect."""
-		for user, expected in (
-			("partner-api-anaya@tatvacare.in", 117),
-			("partner-api-tp@tatvacare.in", 63),
-			("partner-api-niva@tatvacare.in", 59),
-		):
-			with self.subTest(partner=user):
-				self.assertEqual(len(partner._allowed_keys(user, True)), expected)
 
 	def test_the_schemas_did_not_move(self):
 		"""2.9 — the regression lock. `describe(SPECS)` reproduces what each `*_schema` advertised before
@@ -186,3 +187,52 @@ class TestResourceContractCoherence(FrappeTestCase):
 						field_descriptor(spec.fieldname, spec.label, fieldtype, spec.required, options, allowed)
 					)
 				self.assertEqual(describe(specs, doctype), expected)
+
+
+class TestTheContractIsTheAllowlist(FrappeTestCase):
+	"""2.8 — the rule under everything: what a caller may send is what its contract ticks, and nothing
+	else. Asserted on a contract THIS class minted.
+
+	It used to be asserted as three numbers read off the dev site — "Anaya has 118 keys". That is the
+	seed's answer, not the code's: it moves when an operator ticks a box, and it says nothing about
+	whether `_allowed_keys` honours a tick. Both branches of that function are pinned here instead."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.set_user("Administrator")
+		cls.ticked = [partner_fixture.mint_catalog_row(fn) for fn in ("zzprobe_a", "zzprobe_b")]
+		cls.unticked = partner_fixture.mint_catalog_row("zzprobe_c")  # minted, deliberately NOT ticked
+		partner_fixture.mint_partner(PARTNER, ticks=cls.ticked)
+		frappe.db.commit()  # survives the per-test rollback; _allowed_keys reads the contract live
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		partner_fixture.teardown()
+		frappe.db.commit()
+		frappe.cache().delete_value(partner._CATALOG_CACHE_KEY)
+		super().tearDownClass()
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		# The bust is direct, never clear_catalog_cache(): that hook is gated on a dormant switch.
+		frappe.cache().delete_value(partner._CATALOG_CACHE_KEY)
+		self.addCleanup(frappe.cache().delete_value, partner._CATALOG_CACHE_KEY)
+
+	def test_a_ticked_grid_resolves_to_exactly_those_keys_plus_the_anchor(self):
+		"""The contract IS the allowlist. Two of three minted keys are ticked, so two come back — plus
+		`lead:mobile_no`, which is ours: the dedup anchor rides free on every contract, never a tick."""
+		got = set(partner._allowed_keys(PARTNER, True))
+		self.assertEqual(got, set(self.ticked) | {ANCHOR})
+		self.assertNotIn(self.unticked, got, "an unticked key reached the caller")
+
+	def test_an_empty_grid_resolves_to_the_whole_catalog(self):
+		"""The other branch, as `_allowed_keys` documents it: "Empty grid, or System Manager -> full
+		catalog". That fail-open default is a real question and it is not this phase's — but it IS the
+		behaviour, so it is pinned rather than left for an empty contract to discover in production."""
+		frappe.db.delete("CRM Lead API Mapping Field", {"parent": partner._contract_name(PARTNER)})
+		self.addCleanup(frappe.db.rollback)
+		got = set(partner._allowed_keys(PARTNER, True))
+		self.assertEqual(got, set(partner._catalog()["keys"]))
+		self.assertIn(self.unticked, got, "an empty grid must fall open to the whole catalog")

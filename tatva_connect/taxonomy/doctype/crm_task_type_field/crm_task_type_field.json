@@ -12,7 +12,10 @@
   "options",
   "reqd",
   "depends_on",
-  "target"
+  "target",
+  "can_read",
+  "can_watch",
+  "can_set"
  ],
  "fields": [
   {
@@ -70,7 +73,10 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Target"
-  }
+  },
+  {"fieldname": "can_read", "fieldtype": "Check", "default": "0", "label": "Automation: Readable", "description": "A workflow criterion may test this activity field."},
+  {"fieldname": "can_watch", "fieldtype": "Check", "default": "0", "label": "Automation: Watchable", "description": "A change to this field may fire a workflow (only meaningful for a promoted-column field with a Target). Implies Readable."},
+  {"fieldname": "can_set", "fieldtype": "Check", "default": "0", "label": "Automation: Settable", "description": "A workflow action may write this activity field."}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,

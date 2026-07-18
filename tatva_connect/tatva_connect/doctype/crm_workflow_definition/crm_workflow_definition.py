@@ -25,6 +25,30 @@ class CRMWorkflowDefinition(Document):
 		self._require_expressions_parse()
 		self._require_positive_wait_delays()
 
+	@staticmethod
+	def default_list_data():
+		"""Default columns/rows for the CRM list surface (Campaigns page). Every CRM list doctype defines
+		this; get_data calls it when no saved CRM View Settings exists (crm/api/doc.py)."""
+		columns = [
+			{"label": "Name", "type": "Data", "key": "workflow_name", "width": "16rem"},
+			{"label": "Entry DocType", "type": "Link", "options": "DocType", "key": "entry_doctype", "width": "12rem"},
+			{"label": "Entry Event", "type": "Select", "key": "entry_event", "width": "9rem"},
+			{"label": "Enabled", "type": "Check", "key": "enabled", "width": "7rem"},
+			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "9rem"},
+		]
+		rows = [
+			"name",
+			"workflow_name",
+			"entry_doctype",
+			"entry_event",
+			"enabled",
+			"vertical",
+			"group",
+			"program",
+			"modified",
+		]
+		return {"columns": columns, "rows": rows}
+
 	def _require_reachable_terminal(self):
 		"""A Flow needs at least one node and at least one Terminal — a zero-node graph would IndexError at
 		start (the entry is the first node), and a graph with no Terminal could never end (it would run to

@@ -37,7 +37,7 @@ _SIGNAL_DT = "CRM Workflow Signal"
 _GROUP_DT = "CRM Action Group"
 _ITEM_DT = "CRM Action Group Item"
 _SWITCH_DT = "CRM Tatva Automation"
-_FIELD = field_allowlist.DOCTYPE
+# retired: seeds now live on the catalog + contract; teardown uses field_allowlist.clear()
 
 _GRAIN = GRAINS[2]  # TatvaPractice / India / FieldSales
 _AXES = (_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"])
@@ -416,7 +416,7 @@ class TestPayloadMap(_EngineOnCase):
 	@classmethod
 	def tearDownClass(cls):
 		_cleanup("WF2-map", "WF2-map-ag")
-		frappe.db.delete(_FIELD, {"name": cls.set_row})
+		field_allowlist.clear()
 		frappe.db.commit()
 		super().tearDownClass()
 

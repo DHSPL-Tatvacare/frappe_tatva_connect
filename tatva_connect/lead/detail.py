@@ -8,13 +8,15 @@ replaces that with a clean, server-resolved projection driven by the EXISTING fi
 (`CRM Lead API Field`) and the SAME grain-entitlement brain Smart Views uses — no new field
 meanings, no DOM, no client field enumeration.
 
+Section routing (title, order, target doctype, child table, row key) is NOT restated here: every
+catalog row carries a `section` Link and the section's own row (`CRM Lead Section`) is the ONE
+home of that routing, read live via frappe.get_cached_doc.
+
 The CATALOG is the single authority. One viewer gate only:
   * ENTITLEMENT (viewer) — may this principal see the field at all?
       access.entitlement.resolve_fields (grain brain + role restriction + universal floor).
 Every catalogued profile field for the viewer's grain surfaces, grouped into its section.
 Sections are DISPLAY GROUPS only; the frontend's "hide empty fields" toggle keeps the tab neat.
-(The former drug/metabolic "world" split — CRM Program.custom_is_drug_program — was RETIRED: it
-was a second gate that hid catalogued fields, i.e. a parallel path. The catalog now decides.)
 
 Security:
   * Read is permission-gated; values are resolved server-side (no client SQL, no field
@@ -30,72 +32,36 @@ from frappe import _
 from tatva_connect.access import entitlement
 from tatva_connect.taxonomy import labels
 
-# section_key -> (display label, sort order). Sections are DISPLAY GROUPS only — the catalog
-# decides which fields exist for a grain; there is no world/applicability gate. `drug` and
-# `drug_program` share one display group ("Drug Program").
-SECTION_REGISTRY = {
-	"lead":         ("Lead Details",     10),
-	"acq":          ("Acquisition",      20),
-	"plan":         ("Plan",             30),
-	"lab":          ("Lab",              40),
-	"clinical":     ("Health Snapshot",  50),
-	"care":         ("Care & Providers", 60),
-	"drug":         ("Drug Program",     70),
-	"drug_program": ("Drug Program",     70),
-}
-_DEFAULT_SECTION = ("Lead Details", 10)
-
-# Fields that live on CRM Task (activity surfaces) — never part of the lead profile.
-_ACTIVITY_DOCTYPES = ("CRM Task",)
-
 # Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
 # (vertical/group) is the dedup anchor; program transitions happen via deliberate routing
 # flows, not a casual field edit. Forced read-only regardless of catalog/property-setter state.
 _PROTECTED_FIELDS = frozenset({"custom_vertical", "custom_group", "custom_current_program"})
 
 _CATALOG_FIELDS = [
-	"field_key", "label", "fieldname", "section_key", "target_doctype",
-	"child_table_field", "child_pick", "applies_to",
+	"field_key", "label", "fieldname", "section",
 	"grain_vertical", "grain_group", "grain_program",
 ]
 
 
 # ------------------------------- pure helpers (no DB) -------------------------------
-def _section_meta(section_key):
-	return SECTION_REGISTRY.get(section_key or "", _DEFAULT_SECTION)
-
-
-def is_profile_row(row):
-	"""A lead-profile catalog row (vs an activity-surface / Smart-Views-only row). Pure.
-	Excludes rows scoped to an activity (applies_to 'activity:*') and rows on CRM Task."""
-	if (row.get("applies_to") or "").strip().startswith("activity:"):
-		return False
-	if (row.get("target_doctype") or "") in _ACTIVITY_DOCTYPES:
-		return False
-	return True
+def _is_universal(row):
+	"""A row is universal iff its field is ticked by every internal contract (belongs to all grains); a
+	grain-specific row is not. Specificity is read through the contract brain, never off grain_* directly."""
+	return entitlement.is_universal_field(row["field_key"])
 
 
 def dedup_rows(rows):
-	"""Collapse duplicate catalog rows to one per (target_doctype, fieldname). Pure.
-	The curated lead-surface row (applies_to == 'lead') wins over the raw partner row, so the
-	cleaner label + flatten rule is used. Order preserved by first appearance."""
+	"""Collapse duplicate catalog rows to one per (section, fieldname). A grain-specific row wins
+	over a universal one, so the grain-scoped label survives. Order preserved by first appearance."""
 	chosen, order = {}, []
 	for row in rows:
-		key = (row.get("target_doctype") or "", row.get("fieldname") or "")
+		key = (row.get("section") or "", row.get("fieldname") or "")
 		if key not in chosen:
 			chosen[key], _ = row, order.append(key)
 			continue
-		if (row.get("applies_to") or "") == "lead" and (chosen[key].get("applies_to") or "") != "lead":
+		if _is_universal(chosen[key]) and not _is_universal(row):
 			chosen[key] = row
 	return [chosen[k] for k in order]
-
-
-def writable_keys(selected, is_readonly):
-	"""The field_keys writable through update_lead_detail: those in `selected` whose target field
-	is not read-only. `is_readonly(target_doctype, fieldname) -> bool` is injected (pure/testable).
-	`selected` is {field_key: row}."""
-	return {fk for fk, row in selected.items()
-	        if not is_readonly(row.get("target_doctype") or "", row.get("fieldname") or "")}
 
 
 def _is_empty(value):
@@ -116,6 +82,12 @@ def _catalog_rows():
 	return {r["field_key"]: r for r in rows}
 
 
+def _section_of(row):
+	"""The native CRM Lead Section Document a catalog row routes through — the ONE home of its
+	title, order, target doctype, child table and row key. No copy, no parser, read live."""
+	return frappe.get_cached_doc("CRM Lead Section", row.get("section"))
+
+
 def _docfield(target_doctype, fieldname):
 	try:
 		return frappe.get_meta(target_doctype).get_field(fieldname)
@@ -132,42 +104,48 @@ def _is_readonly(target_doctype, fieldname):
 	return bool(df.read_only) if df else True
 
 
+def writable_keys(selected, is_readonly):
+	"""The field_keys writable through update_lead_detail: those whose target field is not read-only.
+	Target doctype is read off the section brain; `is_readonly(target_doctype, fieldname)` is injected."""
+	out = set()
+	for fk, row in selected.items():
+		if not is_readonly(_section_of(row).target_doctype, row.get("fieldname") or ""):
+			out.add(fk)
+	return out
+
+
 def _select(doc):
 	"""The entitled (VIEWER's grains) ∧ applicable (THIS LEAD's grain) ∧ deduped {field_key: row}.
-	Two grain axes, ONE brain (entitlement.field_in_grains): a field shows only if the VIEWER may see
+	Two grain axes, ONE brain (entitlement.field_in_grains_via_contract): a field shows only if the VIEWER may see
 	it AND it belongs to the LEAD's grain — so an Anaya lead never shows TatvaPractice fields even for
 	an admin entitled to every grain. Universal keys always pass. (Sections are display groups; the
 	frontend hides empties.)"""
-	catalog = {k: r for k, r in _catalog_rows().items() if is_profile_row(r)}
-	visible = entitlement.resolve_fields(catalog, entitlement.entitled_grains(), frappe.get_roles())
+	visible = entitlement.resolve_fields(_catalog_rows(), entitlement.entitled_grains(), frappe.get_roles())
 	lead_grain = (doc.get("custom_vertical") or "", doc.get("custom_group") or "",
 	              doc.get("custom_current_program") or "")
 	applicable = {k: r for k, r in visible.items()
-	              if k in entitlement.UNIVERSAL_KEYS or entitlement.field_in_grains(r, [lead_grain])}
+	              if k in entitlement.UNIVERSAL_KEYS or entitlement.field_in_grains_via_contract(r["field_key"], [lead_grain])}
 	deduped = dedup_rows(list(applicable.values()))
 	return {r["field_key"]: r for r in deduped}
 
 
-def _child_row(doc, row):
-	"""The single child row a child-section field reads from, honouring child_pick
-	('single' | 'latest_by:<field>'; default 'single'). Returns a child doc or None."""
-	table = row.get("child_table_field")
+def _child_row(doc, section):
+	"""The single child row a child-section field reads from. A multi-row section picks the latest
+	by its row key; a single-row section takes the one row. Returns a child doc or None."""
+	table = section.child_table_field
 	if not table:
 		return None
 	children = doc.get(table) or []
 	if not children:
 		return None
-	pick = (row.get("child_pick") or "single").strip()
-	if pick.startswith("latest_by:"):
-		order_field = pick.split(":", 1)[1].strip()
-		if order_field:
-			return max(children, key=lambda c: (c.get(order_field) or ""))
+	if section.is_multi_row and section.row_key_field:
+		return max(children, key=lambda c: (c.get(section.row_key_field) or ""))
 	return children[0]
 
 
-def _value(doc, row):
-	if row.get("child_table_field"):
-		child = _child_row(doc, row)
+def _value(doc, section, row):
+	if section.child_table_field:
+		child = _child_row(doc, section)
 		return None if child is None else child.get(row.get("fieldname"))
 	return doc.get(row.get("fieldname"))
 
@@ -180,12 +158,6 @@ def _display_label(df, value):
 	return labels.title_of(df.options, value)
 
 
-def _group_key(section_key):
-	if section_key in ("drug", "drug_program"):
-		return "drug"
-	return section_key if section_key in SECTION_REGISTRY else "lead"
-
-
 @frappe.whitelist()
 def lead_detail(lead):
 	"""Read projection: {sections:[{key,label,order,fields:[{field_key,label,fieldname,fieldtype,
@@ -194,12 +166,10 @@ def lead_detail(lead):
 	doc = frappe.get_doc("CRM Lead", lead)
 	buckets = {}
 	for fk, row in _select(doc).items():
-		sk = row.get("section_key") or ""
-		label, order = _section_meta(sk)
-		gk = _group_key(sk)
-		bucket = buckets.setdefault(gk, {"key": gk, "label": label, "order": order, "fields": []})
-		df = _docfield(row.get("target_doctype"), row.get("fieldname"))
-		value = _value(doc, row)
+		section = _section_of(row)
+		bucket = buckets.setdefault(section.name, {"key": section.name, "label": section.title, "order": section.display_order, "fields": []})
+		df = _docfield(section.target_doctype, row.get("fieldname"))
+		value = _value(doc, section, row)
 		bucket["fields"].append({
 			"field_key": fk,
 			"label": row.get("label") or row.get("fieldname"),
@@ -209,7 +179,7 @@ def lead_detail(lead):
 			"value": value,
 			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
 			"empty": _is_empty(value),
-			"read_only": _is_readonly(row.get("target_doctype"), row.get("fieldname")),
+			"read_only": _is_readonly(section.target_doctype, row.get("fieldname")),
 			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
 			"_idx": df.idx if df else 10_000,
 		})
@@ -219,15 +189,15 @@ def lead_detail(lead):
 	return {"sections": sections}
 
 
-def _stage_write(doc, row, value):
-	"""Stage one field write onto the in-memory doc (parent field or single child row). Goes
-	through the doc API only — never raw SQL."""
-	table = row.get("child_table_field")
+def _stage_write(doc, section, row, value):
+	"""Stage one field write onto the in-memory doc (parent field or child row). Goes through the
+	doc API only — never raw SQL."""
+	table = section.child_table_field
 	fieldname = row.get("fieldname")
 	if not table:
 		doc.set(fieldname, value)
 		return
-	child = _child_row(doc, row) or doc.append(table, {})
+	child = _child_row(doc, section) or doc.append(table, {})
 	child.set(fieldname, value)
 
 
@@ -246,6 +216,7 @@ def update_lead_detail(lead, changes):
 	for fk, value in changes.items():
 		if fk not in writable:
 			frappe.throw(_("Field {0} is not editable here").format(fk))
-		_stage_write(doc, selected[fk], value)
+		row = selected[fk]
+		_stage_write(doc, _section_of(row), row, value)
 	doc.save()
 	return {"ok": True}

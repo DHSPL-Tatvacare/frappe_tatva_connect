@@ -85,8 +85,8 @@ class TestSmartViewSqlInjection(FrappeTestCase):
 	# --- seeding -------------------------------------------------------------
 	def _seed_catalog(self):
 		spec = dict(
-			field_key=FIELD, label="SQLi First Name", fieldname="first_name", section_key="lead",
-			target_doctype="CRM Lead", sql_source="parent", applies_to="lead",
+			field_key=FIELD, label="SQLi First Name", fieldname="first_name",
+			section="lead", section_key="lead", target_doctype="CRM Lead",
 			filterable=1, sortable=1, surface="worklist",
 		)
 		if frappe.db.exists("CRM Lead API Field", FIELD):

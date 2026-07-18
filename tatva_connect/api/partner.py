@@ -66,19 +66,31 @@ from tatva_connect.api._base import (
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:
 # it lives in the `CRM Lead API Field` master, one row per namespaced `section:fieldname`
-# key, carrying its routing (section / target doctype / child-table fieldname).
-# `_catalog()` reads + caches that table; everything below derives from it, so
+# key, each naming the `CRM Lead Section` that routes it. The section — not the field —
+# carries the target doctype, the child-table fieldname and the row key, once.
+# `_catalog()` reads + caches both tables; everything below derives from them, so
 # exposing a new partner field = one `CRM Lead API Field` row, no code change.
 #
 # The only structural code-side constant: the parent (non-child) section is "lead".
-# A row whose `child_table_field` is set is a child section; everything else is
-# treated as a parent (CRM Lead) field.
+# A section whose `child_table_field` is set is a child section; one without is the
+# CRM Lead row itself.
 # ---------------------------------------------------------------------------
 _CATALOG_CACHE_KEY = "tatva_connect:lead_api_catalog"
-# Backstop TTL: the Partner::Catalog::cache toggle evicts instantly on edit when ON; this bounds
-# staleness to 60 min even if that hook never fires (toggle off, or a missed event) — self-heals.
+# Backstop TTL: the Partner::Catalog::cache toggle evicts instantly on edit when ON; this bounds staleness to 60 min even if that hook never fires (toggle off, or a missed event) — self-heals.
 _CATALOG_CACHE_TTL_SEC = 60 * 60
 PARENT_SECTION = "lead"
+
+
+def _sections() -> dict:
+	"""The lead sections, keyed by section_key (the doctype autonames on it)."""
+	return {
+		r.name: r
+		for r in frappe.get_all(
+			"CRM Lead Section",
+			fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row", "row_key_field"],
+			order_by="display_order asc",
+		)
+	}
 
 
 def _build_catalog() -> dict:
@@ -91,22 +103,22 @@ def _build_catalog() -> dict:
 	  section_doctype  {section: target doctype}
 	  section_child    {section: child-table fieldname}  (child sections only)
 	  section_title    {section: display title}
-	  section_key_field {section: fieldname}  (multi-row child sections only — the
-	                     row that carries is_row_key; its presence = multi-row, A4)
+	  section_key_field {section: fieldname}  (multi-row sections only — the section's
+	                     row_key_field; its presence = multi-row)
+	The four section_* maps are the `CRM Lead Section` rows themselves: ONE row per section states
+	its table, its target, its row key and its title, and no field row restates any of them.
 	"""
-	rows = frappe.get_all(
+	sections = _sections()
+	keys, audit = [], []
+	for r in frappe.get_all(
 		"CRM Lead API Field",
-		fields=["field_key", "label", "section_key", "target_doctype", "child_table_field", "fieldname", "is_row_key", "sql_source"],
+		fields=["field_key", "label", "section", "fieldname"],
 		order_by="field_key asc",
-	)
-	keys, section_doctype, section_child, section_title, section_key_field = [], {}, {}, {}, {}
-	audit = []
-	for r in rows:
-		# Smart-Views-only activity rows (CRM Task promoted columns / payload) are NOT lead
-		# fields — the partner API exposes lead fields only. Skip them so they never reach
-		# a partner's lead_schema. Parent/child (CRM Lead) rows stay; blank sql_source =
-		# legacy partner-only rows stay.
-		if r.sql_source in ("task", "payload"):
+	):
+		# A row whose section is not a lead section is not a lead field: these are the CRM Task rows
+		# (promoted columns / JSON payload) the Smart Views composer reads, and the partner API
+		# exposes lead fields only. Skip them so they never reach a partner's lead_schema.
+		if r.section not in sections:
 			continue
 		# Grain routing fields (source / vertical / group / program) are FORCED from entitlement,
 		# never partner-suppliable (see ROUTING_FIELDS). They ARE Smart-View catalog rows (so the
@@ -114,19 +126,12 @@ def _build_catalog() -> dict:
 		# partner's writable lead_schema — skip them here. The Smart View path reads them directly.
 		if r.fieldname in ROUTING_FIELDS:
 			continue
-		section = r.section_key
-		section_doctype[section] = r.target_doctype
-		if r.child_table_field:
-			section_child[section] = r.child_table_field
-		if r.is_row_key:
-			section_key_field[section] = r.fieldname
-		section_title.setdefault(section, section.title())
 		# Reserved audit fields (_base.RESERVED_FIELDS) stay OUT of the writable catalog so a partner
 		# can never send them, but are surfaced (marked OUTPUT_ONLY) in lead_schema for discovery. They
 		# live on the parent (lead) section; the Smart View composer reads the table directly, so its
 		# own owner and creation columns are untouched.
 		if not is_writable(r.fieldname):
-			if section == PARENT_SECTION:
+			if r.section == PARENT_SECTION:
 				audit.append({"fieldname": r.fieldname, "label": r.label or r.fieldname})
 			continue
 		keys.append(r.field_key)
@@ -134,10 +139,10 @@ def _build_catalog() -> dict:
 		"keys": keys,
 		"key_set": set(keys),
 		"audit": audit,
-		"section_doctype": section_doctype,
-		"section_child": section_child,
-		"section_title": section_title,
-		"section_key_field": section_key_field,
+		"section_doctype": {k: s.target_doctype for k, s in sections.items()},
+		"section_child": {k: s.child_table_field for k, s in sections.items() if s.child_table_field},
+		"section_title": {k: s.title for k, s in sections.items()},
+		"section_key_field": {k: s.row_key_field for k, s in sections.items() if s.is_multi_row},
 	}
 
 
@@ -170,8 +175,8 @@ ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_p
 # The key_field is intrinsic to the row and unique within one lead; it is marked
 # `required` in the schema and is ALWAYS preserved on write (even if a partner's
 # grid doesn't tick it), mirroring the always-included lead:mobile_no pattern.
-# DERIVED FROM THE CATALOG (A4): a child section is multi-row iff one of its catalog
-# rows carries `is_row_key`; that row's fieldname is the key. No hardcoded map.
+# DERIVED FROM THE SECTION: a section is multi-row iff it says so, and names the key
+# field that addresses one of its rows. No hardcoded map, and no per-field copy.
 
 # lead_list: only these (safe, indexed) filters are honoured. NOT arbitrary fields.
 #   key in request -> (CRM Lead field, operator)
@@ -200,7 +205,7 @@ def catalog_section_title(child_fieldname):
 
 def _child_key_field(cf):
 	"""The row-key fieldname for a child-table fieldname, or None (single-row).
-	Derived from the catalog's `is_row_key` flag (A4) — replaces CHILD_CONFIG."""
+	The section states it; no catalog row carries a copy."""
 	cat = _catalog()
 	for section, child in cat["section_child"].items():
 		if child == cf:
@@ -406,7 +411,7 @@ def _apply_multi_row(doc, cf, incoming, key_field, title):
 
 def _apply_children(doc, children):
 	"""Config-driven UPSERT-BY-KEY write engine (§3-4 of the child-table contract).
-	Per child table, the catalog's is_row_key decides single-row vs multi-row + the key field;
+	Per child table, the section decides single-row vs multi-row + the key field;
 	a partial write never wipes the other fields/rows already on the doc.
 	After applying, mirror the latest lab row's headline metrics up to the parent
 	(the validate hook also does this, but doing it here keeps the API path explicit
@@ -452,8 +457,7 @@ def _curate(doc, parent_fields, child_allow):
 	})
 	for cf, allowed in child_allow.items():
 		if allowed:
-			# Return the caller's allowed fields + our row id (name) + the key field
-			# (the row's address per the contract — always present even if not ticked).
+			# Return the caller's allowed fields + our row id (name) + the key field (the row's address per the contract — always present even if not ticked).
 			key_field = _child_key_field(cf)
 			keys = list(allowed)
 			if key_field and key_field not in keys:
@@ -630,7 +634,7 @@ def lead_schema(**_kwargs):
 	Two partners hitting this get different field lists — driven by their grid."""
 	user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 
-	def describe(doctype, section_fields, required_override=None):
+	def _describe_section_fields(doctype, section_fields, required_override=None):
 		"""Field dicts for a section. `required_override` ({fieldname: bool}) reports the API's
 		actual contract instead of the doctype's `reqd` flag — used for the parent (identity
 		required, defaulted fields not) and a child key_field (required to address its row)."""
@@ -669,14 +673,14 @@ def lead_schema(**_kwargs):
 		children[cf] = {
 			"multi_row": bool(key_field),
 			"key_field": key_field,
-			"fields": describe(cat["section_doctype"][section], fields,
+			"fields": _describe_section_fields(cat["section_doctype"][section], fields,
 			                   required_override={key_field: True} if key_field else None),
 		}
 
 	# The lead's writable fields + the caller's own external_id label + the OUTPUT_ONLY audit fields
 	# (discoverable, never writable — Frappe and the assignment rule set those).
 	m_lead = frappe.get_meta("CRM Lead")
-	fields = describe("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED)
+	fields = _describe_section_fields("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED)
 	fields.append(field_descriptor("external_id", "External ID", "Data", required=False))
 	fields += [_audit_field(a["fieldname"], a["label"], m_lead) for a in cat["audit"]]
 

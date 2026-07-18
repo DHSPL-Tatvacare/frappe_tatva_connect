@@ -22,7 +22,6 @@ named below with its reason.
 import ast
 import os
 import pathlib
-import unittest
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -31,8 +30,13 @@ from tatva_connect.activity.api import compute_activity
 from tatva_connect.automation import actions
 from tatva_connect.tasks.tasks import create_followup_task
 
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
-FOREIGN = ("TatvaPractice", "India", "FieldSales")
+# The grain is the operator's taxonomy, so this module mints its own rather than naming one it hopes
+# the seed carries. Two grains that share NO axis: the gate must refuse across either. Named so no
+# operator taxonomy can collide with them, and torn down in full.
+VERTICAL, GROUP = "ZZ Activity Line", "ZZ Activity Group"
+FOREIGN = ("ZZ Foreign Line", "ZZ Foreign Group", "ZZ Foreign Program")
+TYPE_NAME, FOREIGN_TYPE_NAME = "ZZ Fixture Followup", "ZZ Fixture Foreign"
+SCHEMA_FIELD = "zz_fixture_note"  # a payload field: it names no promoted column, so 3.6 is deterministic
 
 # .../tatva_connect  (the app package root)
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,6 +61,46 @@ _NAMED_EXCEPTIONS = {
 # A grainless CRM Task Type is dormant by `_grain_matches` and can never be raised, so a bare name is
 # a row that lies about being available. None is justified; the mapping exists to force the argument.
 _BARE_TYPES_ALLOWED = {}
+
+
+_MADE = []  # (doctype, name) this module minted, torn down in reverse. Never something it found.
+
+
+def _make(doctype, name, values):
+	if frappe.db.exists(doctype, name):
+		return name
+	frappe.get_doc({"doctype": doctype, **values}).insert(ignore_permissions=True)
+	_MADE.append((doctype, name))
+	return name
+
+
+def _mint_task_type(type_name, vertical, group, program="", schema=()):
+	"""A CRM Task Type on a minted grain, with the masters its axes Link to. The key restates the
+	doctype's own autoname format (the module docstring names it) so the mint can be idempotent."""
+	_make("CRM Vertical", vertical, {"vertical_name": vertical})
+	_make("CRM Group", group, {"group_name": group})
+	if program:
+		_make("CRM Program", program, {"program_name": program})
+	return _make("CRM Task Type", f"{vertical}::{group}::{program}::{type_name}", {
+		"type_name": type_name, "vertical": vertical, "group": group, "program": program,
+		"schema": [{"label": f, "fieldname": f, "fieldtype": "Data"} for f in schema],
+	})
+
+
+def _mint_grain_fixture():
+	"""The in-grain type (program-agnostic — a blank axis is a wildcard) and a type sharing no axis."""
+	in_grain = _mint_task_type(TYPE_NAME, VERTICAL, GROUP, schema=(SCHEMA_FIELD,))
+	foreign = _mint_task_type(FOREIGN_TYPE_NAME, *FOREIGN)
+	frappe.db.commit()  # survives the per-test rollback; the gate reads these live
+	return in_grain, foreign
+
+
+def _teardown_grain_fixture():
+	for doctype, name in reversed(_MADE):
+		if frappe.db.exists(doctype, name):
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+	_MADE.clear()
+	frappe.db.commit()
 
 
 def _dotted(node):
@@ -206,25 +250,20 @@ class TestTheGrainGate(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		cls.in_grain = frappe.db.get_value(
-			"CRM Task Type",
-			{"name": ["like", f"{VERTICAL}::{GROUP}::%"], "program": ["in", ["", None]]},
-			"name", order_by="name asc",
-		)
-		cls.foreign = frappe.db.get_value(
-			"CRM Task Type",
-			{"vertical": FOREIGN[0], "group": FOREIGN[1], "program": FOREIGN[2]},
-			"name", order_by="name asc",
-		)
-		if not (cls.in_grain and cls.foreign):
-			raise unittest.SkipTest("this site lacks both an in-grain and a foreign-grain task type")
+		cls.in_grain, cls.foreign = _mint_grain_fixture()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		_teardown_grain_fixture()
+		super().tearDownClass()
 
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
 		frappe.set_user("Administrator")
 		self.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": "Grain Gate Probe",
-			"mobile_no": f"+9198126{frappe.generate_hash(length=5)[:5]}",
+			"mobile_no": f"+9198126{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": VERTICAL, "custom_group": GROUP,
 		}).insert(ignore_permissions=True)
 
@@ -236,7 +275,7 @@ class TestTheGrainGate(FrappeTestCase):
 
 	def test_create_followup_task_refuses_an_out_of_grain_type(self):
 		"""3.3 — the shell writer skips compute_activity because there is nothing to compute. It does
-		not get to skip the grain: a GoodFlip Care lead may not carry a TatvaPractice task."""
+		not get to skip the grain: a lead may not carry a task type that shares no axis with it."""
 		with self.assertRaises(frappe.ValidationError):
 			create_followup_task(self.lead.name, self.foreign, throttle=False)
 		self.assertEqual(self._tasks_of(self.foreign), [],
@@ -276,21 +315,20 @@ class TestTheBrainOwnsThePayload(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		cls.task_type = frappe.db.get_value(
-			"CRM Task Type",
-			{"name": ["like", f"{VERTICAL}::{GROUP}::%"], "program": ["in", ["", None]]},
-			"name", order_by="name asc",
-		)
-		if not cls.task_type:
-			raise unittest.SkipTest(f"no program-agnostic task type on {VERTICAL}::{GROUP}")
-		cls.schema_fields = {f.fieldname for f in frappe.get_doc("CRM Task Type", cls.task_type).schema}
+		cls.task_type, _foreign = _mint_grain_fixture()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		_teardown_grain_fixture()
+		super().tearDownClass()
 
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
 		frappe.set_user("Administrator")
 		self.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": "Payload Probe",
-			"mobile_no": f"+9198127{frappe.generate_hash(length=5)[:5]}",
+			"mobile_no": f"+9198127{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": VERTICAL, "custom_group": GROUP,
 		}).insert(ignore_permissions=True)
 
@@ -303,11 +341,11 @@ class TestTheBrainOwnsThePayload(FrappeTestCase):
 
 	def test_a_payload_naming_a_promoted_column_never_reaches_it(self):
 		"""3.6 — a caller writing `custom_outcome` directly is naming a column, not a schema field.
-		Only a schema field whose `target` IS that column may route there."""
+		Only a schema field whose `target` IS that column may route there. The minted type declares one
+		payload field and targets nothing, so every promoted column below is genuinely undeclared —
+		this used to hedge ("pick another") against whatever the seeded type happened to declare."""
 		hijack = "HIJACKED-BY-PAYLOAD"
-		promoted = [c for c in ("custom_outcome", "custom_reference", "custom_asm")
-					if c not in self.schema_fields]
-		self.assertTrue(promoted, "this type names a promoted column as a schema fieldname — pick another")
+		promoted = ("custom_outcome", "custom_reference", "custom_asm")
 		fields = compute_activity(self.lead.name, self.task_type, {c: hijack for c in promoted})
 		for column in promoted:
 			self.assertNotEqual(fields.get(column), hijack,

@@ -26,7 +26,10 @@ from tatva_connect import automation
 _GATE = "Activity::Metrics::rollup"
 _METRICS_DT = "CRM Lead Activity Metrics"
 _PARENT_DT = "CRM Lead"
-_PARENTFIELD = "custom_lead_activity_metrics"
+def _parentfield():
+	# The child-table field holding the metrics rows is DERIVED from the section brain (CRM Lead Section
+	# "metrics"), never a hardcoded custom_* literal — the AST lock forbids one outside the section seed.
+	return frappe.get_cached_doc("CRM Lead Section", "metrics").child_table_field
 _DONE_STATUS = "Done"
 
 # CRM Task `custom_task_type` -> the `CRM Lead Activity Metrics` count fieldname it feeds.
@@ -89,7 +92,7 @@ def _get_or_create_row(lead):
 	created empty if missing. One row per lead (the parent Table field is single-valued)."""
 	row = frappe.db.get_value(
 		_METRICS_DT,
-		{"parent": lead, "parenttype": _PARENT_DT, "parentfield": _PARENTFIELD},
+		{"parent": lead, "parenttype": _PARENT_DT, "parentfield": _parentfield()},
 		"name",
 	)
 	if row:
@@ -99,7 +102,7 @@ def _get_or_create_row(lead):
 			"doctype": _METRICS_DT,
 			"parent": lead,
 			"parenttype": _PARENT_DT,
-			"parentfield": _PARENTFIELD,
+			"parentfield": _parentfield(),
 			"parentdocname": lead,
 		}
 	)

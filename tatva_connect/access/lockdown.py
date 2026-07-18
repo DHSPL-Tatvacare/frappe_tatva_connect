@@ -133,7 +133,23 @@ FIELD_LEVELS = {
 			"Sales User": (1, 0),
 		}
 	},
+	# VAPT Jul N4/N5: the exercise's hidden grading fields (LMS Test Case.input/expected_output, bumped to
+	# permlevel 1 by apply_lms_field_permlevels) are read/written ONLY by the author roles. A permlevel-1
+	# CHILD field resolves against the PARENT's permlevel access (get_permissions() uses parent perms for an
+	# istable), so the grant here governs the child. LMS Student keeps its stock permlevel-0 read (solve the
+	# exercise) but holds no permlevel-1 row -> input/expected_output are stripped for a student.
+	"LMS Programming Exercise": {
+		1: {
+			"System Manager": (1, 1),
+			"Moderator": (1, 1),
+			"Course Creator": (1, 1),
+		}
+	},
 }
+
+# Upstream LMS grading fields reclassified to permlevel 1 via Property Setter (the non-fork way to change
+# an upstream field). Paired with the FIELD_LEVELS grant above. VAPT Jul N4/N5.
+_LMS_HIDDEN_FIELDS = {"LMS Test Case": ("input", "expected_output")}
 
 
 def apply_field_levels():
@@ -151,6 +167,20 @@ def apply_field_levels():
 					add_permission(doctype, role, permlevel)
 				for ptype, value in (("read", read), ("write", write)):
 					update_permission_property(doctype, role, permlevel, ptype, value, validate=False)
+	frappe.clear_cache()
+
+
+def apply_lms_field_permlevels():
+	"""Bump the LMS grading fields to permlevel 1 via Property Setter (idempotent upsert) — the non-fork way
+	to reclassify an upstream field so the FIELD_LEVELS grant can hide it. VAPT Jul N4/N5."""
+	for doctype, fields in _LMS_HIDDEN_FIELDS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		for fieldname in fields:
+			frappe.make_property_setter(
+				{"doctype": doctype, "fieldname": fieldname, "property": "permlevel", "value": 1, "property_type": "Int"},
+				is_system_generated=True,
+			)
 	frappe.clear_cache()
 
 
@@ -179,6 +209,7 @@ def apply(*_args, **_kwargs):
 				}
 			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	apply_field_levels()
+	apply_lms_field_permlevels()
 	frappe.clear_cache()
 
 

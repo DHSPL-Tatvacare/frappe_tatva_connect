@@ -2,32 +2,23 @@
 
 This is NOT business data and NOT a fixture: it ships under tests/, is idempotent, and is only
 ever run by the proof harness (run_proof) on a dev bench. Business catalog rows + real views ship
-as db-seeds the operator runs by hand (CLAUDE.md A5). The catalog rows seeded here describe the
-9 promoted CRM Task columns + a display-only payload field + a couple of CRM Lead parent fields,
-so the composer has something to project, filter and sort on the unified activity model.
+as db-seeds the operator runs by hand (CLAUDE.md A5).
+
+Only LEAD fields are seeded here. An activity's fields are not catalogued in this table and cannot be:
+they live on the task type that declares them, and the composer asks the activity brain for them. The
+Activity view below therefore names a task type and seeds no columns of its own — its field set IS that
+type's schema.
 """
 import frappe
 
-# (field_key, label, fieldname, sql_source, child_pick, filterable, sortable, surface, applies_to)
+# (field_key, label, fieldname, section, filterable, sortable, surface) — all CRM Lead parent fields.
 _CATALOG = [
-	# Lead parent fields
-	("lead:first_name", "First Name", "first_name", "parent", None, 1, 1, "worklist", "lead"),
-	("lead:status", "Status", "status", "parent", None, 1, 1, "worklist", "lead"),
-	("lead:mobile_no", "Mobile", "mobile_no", "parent", None, 1, 0, "worklist", "lead"),
-	# Activity (Order Punch) — the 9 promoted CRM Task columns (filter/sort)
-	("act:title", "Title", "title", "task", None, 0, 1, "worklist", "activity:Order Punch Status"),
-	("act:status", "Status", "status", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:outcome", "Outcome", "custom_outcome", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:reference", "Order ID", "custom_reference", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
-	("act:scheduled", "Shipped By", "custom_scheduled_at", "task", None, 1, 1, "worklist", "activity:Order Punch Status"),
-	# Activity (Order Punch) — a display-only payload field (JSON_EXTRACT, not filter/sort)
-	("act:cycle", "Cycle", "cycle_category", "payload", None, 0, 0, "worklist", "activity:Order Punch Status"),
+	("lead:first_name", "First Name", "first_name", "lead", 1, 1, "worklist"),
+	("lead:status", "Status", "status", "lead", 1, 1, "worklist"),
+	("lead:mobile_no", "Mobile", "mobile_no", "lead", 1, 0, "worklist"),
 ]
 
-_FIELDS = [
-	"field_key", "label", "fieldname", "sql_source",
-	"child_pick", "filterable", "sortable", "surface", "applies_to",
-]
+_FIELDS = ["field_key", "label", "fieldname", "section", "filterable", "sortable", "surface"]
 
 TEST_ACTIVITY_TYPE = "Order Punch Status"
 LEAD_VIEW = "TEST Smart View — Leads"
@@ -38,13 +29,9 @@ def _seed_catalog():
 	for row in _CATALOG:
 		vals = dict(zip(_FIELDS, row, strict=False))
 		name = vals["field_key"]
-		# section_key/target_doctype/fieldname are required by the doctype; fill sane values.
-		if vals["sql_source"] in ("task", "payload"):
-			vals["section_key"] = "activity"
-			vals["target_doctype"] = "CRM Task"
-		else:
-			vals["section_key"] = "lead"
-			vals["target_doctype"] = "CRM Lead"
+		# section_key mirrors section until its last reader moves; target_doctype is reqd on the doctype.
+		vals["section_key"] = vals["section"]
+		vals["target_doctype"] = "CRM Lead"
 		if frappe.db.exists("CRM Lead API Field", name):
 			doc = frappe.get_doc("CRM Lead API Field", name)
 			doc.update(vals)
@@ -62,7 +49,7 @@ def _seed_views():
 		),
 		dict(
 			label=ACT_VIEW, base_object="Activity", activity_type=TEST_ACTIVITY_TYPE, is_standard=1,
-			columns=frappe.as_json(["act:title", "act:status", "act:outcome", "act:reference", "act:scheduled", "act:cycle"]),
+			# No columns: an empty set falls back to every worklist field the type's schema declares.
 			predicate=frappe.as_json({"op": "and", "conditions": []}),
 		),
 	]

@@ -757,6 +757,11 @@ class TestPartnerContract(unittest.TestCase):
 		"""When the index fires, the other request has already committed. Fold onto its row: the caller
 		gets the same lead either way, which is exactly what the dedup rule promises."""
 		phone = "+919812300102"
+		# This race exercises the TWO pre-insert reads the blind below is calibrated for: _upsert_one's
+		# own dedup lookup AND dedup_guard's validate-time lookup. dedup_guard only reads when the dedup
+		# automation is enabled, which is dormant-OFF by default — so enable it here or only one read
+		# happens and the recovery read falls inside the blind. The teardown savepoint restores the default.
+		frappe.db.set_value("CRM Tatva Automation", "Lead::CRM Lead::dedup", "enabled", 1)
 		first, _ = self._lead(phone)
 
 		# Reproduce the real sequence. A concurrent request has not COMMITTED yet, so neither of the

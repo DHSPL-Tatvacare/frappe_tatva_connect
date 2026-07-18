@@ -74,6 +74,10 @@ override_whitelisted_methods = {
 	# Upstream LMS race (2.55.0, unfixed on develop): CourseOverview calls this with no course, so a
 	# student sees "Course Content coming soon!" on every course. Shim recovers it from the Referer.
 	"lms.lms.utils.get_course_outline": "tatva_connect.learning.outline.get_course_outline",
+	# VAPT Jul — quiz assessment integrity: submit_quiz gets an atomic single-attempt guard (N2 race) +
+	# a best-effort server-side timer (N6); get_quiz_with_questions stamps the open time the timer reads.
+	"lms.lms.doctype.lms_quiz.lms_quiz.submit_quiz": "tatva_connect.access.native_guards.submit_quiz",
+	"lms.lms.utils.get_quiz_with_questions": "tatva_connect.access.native_guards.get_quiz_with_questions",
 }
 
 # Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.
@@ -256,8 +260,12 @@ after_migrate = [
 	"tatva_connect.access.lockdown.apply",
 	# Fixture Property Setters land in sync_fixtures, AFTER sync_all's updatedb — so a widened fieldtype needs its column rebuilt here or it never follows the meta. A patch cannot do this: patches run before fixtures.
 	"tatva_connect.lead_sync.schema.reconcile_fieldtypes",
+	# The seven lead sections a field key is routed by; before any catalog row that Links to one.
+	"tatva_connect.partner_api.section_seed.ensure_rows",
 	# The three catalog rows the Facebook fold stamps by field_key; a key with no row has no declared home.
 	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
+	# Per-grain INTERNAL visibility contracts (is_internal=1), ticked from the grain_* logic; after the catalog rows exist so every grain's field list is complete. Additive — grain_* stays live.
+	"tatva_connect.access.internal_contract.ensure_internal_contracts",
 	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
 	"tatva_connect.seeds.seed_master_data",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).

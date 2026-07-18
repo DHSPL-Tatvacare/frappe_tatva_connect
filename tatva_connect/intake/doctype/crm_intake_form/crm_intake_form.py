@@ -31,8 +31,8 @@ class CRMIntakeForm(Document):
 
 	def _validate_targets(self):
 		"""Fail-closed mapping contract: a row that DECLARES a target_table must point at a
-		field that exists on the doctype it resolves to (lead = CRM Lead; plan/care/lab/drug via
-		the _TABLE child map; `note` = a free-text Note title, not field-checked). A row with NO
+		field that exists on the doctype it resolves to (lead = CRM Lead; a child section via
+		its CRM Lead Section row; `note` = a free-text Note title, not field-checked). A row with NO
 		target_table is a web-form-only input or a layout field (Section/Column Break, HTML) and
 		lands nothing on the lead — so it is not field-checked.
 

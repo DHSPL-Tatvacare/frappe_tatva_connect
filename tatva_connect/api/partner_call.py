@@ -104,8 +104,7 @@ def _attribute_lead(data, mp, is_sysmgr):
 	if data.get("lead") or data.get("mobile_no"):
 		return resolve_lead(mp, is_sysmgr, data)
 
-	# Strict phone+grain attribution. The customer number is the OTHER party: the from_number
-	# on an inbound call, the to_number on an outbound call.
+	# Strict phone+grain attribution. The customer number is the OTHER party: the from_number on an inbound call, the to_number on an outbound call.
 	direction = data.get("direction")
 	customer = data.get("from_number") if direction == "Inbound" else data.get("to_number")
 	anchor = _last10(customer)
@@ -225,8 +224,7 @@ def _update_one(name, data, mp, is_sysmgr):
 	Returns (call_view, "updated")."""
 	doc = _scoped_call(name, mp, is_sysmgr)
 	validate_external_id("CRM Call Log", data.get("external_id"))
-	# Re-attribution is allowed only when the caller explicitly names a lead; a payload that omits
-	# lead/mobile_no leaves the existing link alone (it never silently re-attributes by phone).
+	# Re-attribution is allowed only when the caller explicitly names a lead; a payload that omits lead/mobile_no leaves the existing link alone (it never silently re-attributes by phone).
 	lead_name = resolve_lead(mp, is_sysmgr, data) if (data.get("lead") or data.get("mobile_no")) else None
 	_apply_fields(doc, data, lead_name)
 	doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save

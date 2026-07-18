@@ -9,32 +9,21 @@ import frappe
 
 from tatva_connect import automation
 
-_TABLE = {
-	"plan": "custom_plan_profile",
-	"care": "custom_care_providers_profile",
-	"lab": "custom_lab_profile",
-	# The drug-program child holds Nivolumab dosage/indication (nivo_dosage / nivo_indication).
-	# Its absence here is the live data-loss bug — a `drug:*` mapping had nowhere to land.
-	"drug": "custom_drug_program_profile",
-}
 # The back-link the per-form submission row carries to its contract (set by the builder).
 _INTAKE_FORM_FIELD = "intake_form"
 
 
 def target_doctype(target_table):
-	"""Resolve a mapping's target_table to the DOCTYPE whose fields it writes:
-	`lead` -> CRM Lead; a child table -> the child doctype (the CRM Lead Table field's
-	`options`, NOT the fieldname); `note` / unknown -> None. ONE resolver — the save-time
-	validation AND the builder field-discovery both call this, so a child-table fieldname
-	(`custom_drug_program_profile`) can never again be mistaken for a doctype."""
+	"""Resolve a mapping's target_table to the DOCTYPE whose fields it writes. Reads the ONE
+	brain, `CRM Lead Section` — no private dict: `lead` -> CRM Lead, a child section -> its
+	child doctype (the section row's own target_doctype). `note` / blank / not a section -> None.
+	ONE resolver — the save-time validation AND the builder field-discovery both call this."""
 	table = (target_table or "").strip()
-	if table == "lead":
-		return "CRM Lead"
-	cf = _TABLE.get(table)
-	if not cf:
+	if not table or table == "note":
 		return None
-	df = frappe.get_meta("CRM Lead").get_field(cf)
-	return df.options if df else None
+	if not frappe.db.exists("CRM Lead Section", table):
+		return None
+	return frappe.get_cached_doc("CRM Lead Section", table).target_doctype
 
 
 _INTAKE_DOCTYPES_CACHE_KEY = "tatva_connect:intake_doctypes"
@@ -115,18 +104,24 @@ def _fold_submission_to_lead(doc, cfg):
 		val = _resolve_value(doc, m)
 		if not val:
 			continue
-		# ONE target representation: the structured (target_table, target_field) pair.
+		# ONE target representation: the structured (target_table, target_field) pair,
+		# routed by the section brain — never a private table/field dict.
 		table = (m.target_table or "").strip()
 		field = (m.target_field or "").strip()
-		if table == "lead":
+		if not table:
+			continue
+		if table == "note":
+			notes.append((field or "Note", val))
+			continue
+		if not frappe.db.exists("CRM Lead Section", table):
+			continue  # stale/invalid target_table on an already-saved row — skip, don't throw
+		section = frappe.get_cached_doc("CRM Lead Section", table)
+		if section.child_table_field:
+			item.setdefault(section.child_table_field, [{}])[0][field] = val
+			child_allow.setdefault(section.child_table_field, []).append(field)
+		else:
 			item[field] = val
 			parent_fields.append(field)
-		elif table in _TABLE:
-			cf = _TABLE[table]
-			item.setdefault(cf, [{}])[0][field] = val
-			child_allow.setdefault(cf, []).append(field)
-		elif table == "note":
-			notes.append((field or "Note", val))
 
 	# Provenance (latest-source-wins): stamp which intake form sourced this lead. Sent on
 	# every upsert; the brain's doc.update(parent) applies it on update too — so the lead

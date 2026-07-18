@@ -19,11 +19,8 @@ def ensure_rows():
 				"doctype": "CRM Lead API Field",
 				"field_key": field_key,
 				"label": label,
-				"section_key": "lead",
-				"target_doctype": "CRM Lead",
+				"section": "lead",
 				"fieldname": fieldname,
-				"sql_source": "parent",
-				"applies_to": "lead",
 			}
 		).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 	frappe.db.commit()

@@ -136,8 +136,7 @@ def _load_bytes(data):
 		assert_safe_public_url(file_url)  # SSRF: block internal/metadata targets before fetching
 		cfg = _cfg()
 		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
-		# The URL is the caller's input, so one that will not fetch is a 400, never a 500. Every
-		# requests failure is a RequestException; unmapped, _classify would call it a server_error.
+		# The URL is the caller's input, so one that will not fetch is a 400, never a 500. Every requests failure is a RequestException; unmapped, _classify would call it a server_error.
 		chunks, total = [], 0
 		try:
 			# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
@@ -244,6 +243,7 @@ def _create_one(data, mp, is_sysmgr):
 	# ALWAYS private (Invariant #15) — the privacy checkpoint on File.validate decides it; the File
 	# doc_events enforce the private floor regardless. The category + the caller's label are the
 	# collected columns, so both land on the row in one insert; the source is ours, not the caller's.
+	# No _apply_fields seam (unlike note/call): a file carries BYTES, so collect() feeds file_manager.save's meta dict directly — there is no doc to overlay.
 	doc = file_manager.save(
 		content,
 		filename=filename,

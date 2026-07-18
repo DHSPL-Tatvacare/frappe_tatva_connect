@@ -153,8 +153,7 @@ def _create_one(data, mp, is_sysmgr):
 		frappe.throw(_("content is required"))
 	validate_external_id("FCRM Note", data.get("external_id"))
 
-	# A note is never left unattached: unlike a call, an orphan note has no value and a misattached one
-	# is a clinical hazard. resolve_lead raises the generic not-found when the lead is off the line.
+	# A note is never left unattached: unlike a call, an orphan note has no value and a misattached one is a clinical hazard. resolve_lead raises the generic not-found when the lead is off the line.
 	lead_name = resolve_lead(mp, is_sysmgr, data)
 
 	doc = frappe.new_doc("FCRM Note")
@@ -178,8 +177,7 @@ def _update_one(name, data, mp, is_sysmgr):
 	Returns (note_view, "updated")."""
 	doc = _scoped_note(name, mp, is_sysmgr)
 	validate_external_id("FCRM Note", data.get("external_id"))
-	# Re-attribution only when the caller explicitly names a lead; a payload that omits lead/mobile_no
-	# leaves the existing link alone.
+	# Re-attribution only when the caller explicitly names a lead; a payload that omits lead/mobile_no leaves the existing link alone.
 	lead_name = resolve_lead(mp, is_sysmgr, data) if (data.get("lead") or data.get("mobile_no")) else None
 	_apply_fields(doc, data, lead_name)
 	doc.save(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _scoped_note, before the save

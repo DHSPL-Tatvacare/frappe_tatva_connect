@@ -13,6 +13,8 @@ no recursion. Contract (same as the brain, §5): a read leak is gated on READ of
 doc; a write/create is gated on the doctype's write/create. Row-scope is a separate layer.
 """
 import frappe
+from frappe import _
+from frappe.utils import cint, now_datetime
 
 
 def _require_read(doctype, name):
@@ -199,4 +201,70 @@ def get_job_details(job):
 	data = _native(job)
 	if data and not _lms_privileged():
 		data.pop("owner", None)
+	return data
+
+
+# --- LMS quiz assessment integrity (VAPT Jul N2, N6) -------------------------------------------
+# Not authz — these harden the quiz SUBMISSION against a race and a client-side-only timer. Same seam
+# (wrap -> delegate to native), so no fork. N1 (server already re-grades) and N3 (check_answer already
+# enforces show_answers) need NO wrapper — proven live; tests/security/test_lms_vapt_jul.py pins them.
+_QUIZ_START_TTL = 24 * 60 * 60  # keep the start stamp a day so elapsed stays computable past the deadline
+_QUIZ_GRACE_SEC = 30  # clock skew + in-flight submit; a real submit lands well inside this
+
+
+def _quiz_start_key(quiz):
+	return f"lms_quiz_start:{quiz}:{frappe.session.user}"
+
+
+def _enforce_quiz_deadline(quiz):
+	"""Best-effort server-side timer (N6). Rejects a submit that arrives after the quiz's duration from the
+	recorded open. RESIDUAL: a client that never calls get_quiz_with_questions leaves no start stamp, so we
+	cannot enforce and must allow — documented in the VAPT exception list. Closes the audit's exact PoC."""
+	start = frappe.cache().get_value(_quiz_start_key(quiz))
+	if not start:
+		return
+	duration = cint(frappe.db.get_value("LMS Quiz", quiz, "duration"))
+	if not duration:
+		return  # untimed quiz
+	if now_datetime().timestamp() - float(start) > duration * 60 + _QUIZ_GRACE_SEC:
+		frappe.throw(_("The time allotted for this quiz has elapsed."), frappe.ValidationError)
+
+
+@frappe.whitelist()
+def submit_quiz(quiz, results=None):
+	# N2: the native single-attempt guard is a NON-locking count() then insert (LMSQuizSubmission.validate)
+	# — a TOCTOU a single-packet attack bypasses (verified live: 12 concurrent submits -> 8 rows under a
+	# max_attempts=1 quiz). A count() reads this txn's REPEATABLE-READ snapshot, so a peer's already-
+	# committed submit is invisible; locking the quiz row does NOT help (the count still reads the snapshot).
+	# Gate with a LOCKING read on the submission rows: FOR UPDATE reads the latest committed rows AND gap-
+	# locks the (quiz, member) range, so concurrent submits serialize and the ceiling holds.
+	from lms.lms.doctype.lms_quiz.lms_quiz import submit_quiz as _native
+	from lms.lms.doctype.lms_quiz_submission.lms_quiz_submission import MaximumAttemptsExceededError
+
+	_enforce_quiz_deadline(quiz)
+	max_attempts = cint(frappe.db.get_value("LMS Quiz", quiz, "max_attempts"))
+	if max_attempts:
+		existing = frappe.db.sql(
+			"SELECT name FROM `tabLMS Quiz Submission` WHERE quiz=%(q)s AND member=%(m)s FOR UPDATE",
+			{"q": quiz, "m": frappe.session.user},
+		)  # sqli-ok: constant identifiers; quiz + member bound via %(...)s
+		if len(existing) >= max_attempts:
+			frappe.throw(
+				_("You have exceeded the maximum number of attempts ({0}) for this quiz").format(max_attempts),
+				MaximumAttemptsExceededError,
+			)
+	return _native(quiz, results)
+
+
+@frappe.whitelist()
+def get_quiz_with_questions(quiz):
+	# N6: stamp the open time so submit_quiz can reject a late replay. Stamp only if absent — a re-open must
+	# not extend the clock. Delegates unchanged; the native call also carries its own has_lms_role gate.
+	from lms.lms.utils import get_quiz_with_questions as _native
+
+	data = _native(quiz)
+	cache = frappe.cache()
+	key = _quiz_start_key(quiz)
+	if cache.get_value(key) is None:
+		cache.set_value(key, now_datetime().timestamp(), expires_in_sec=_QUIZ_START_TTL)
 	return data

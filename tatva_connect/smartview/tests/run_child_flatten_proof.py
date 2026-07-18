@@ -1,101 +1,38 @@
-"""CHILD-TABLE FLATTENING PROOF — run on a dev bench with:
+"""MULTI-ROW CHILD-FLATTEN PROOF — run on a dev bench with:
 
     bench --site dev.localhost execute tatva_connect.smartview.tests.run_child_flatten_proof.run
 
-Proves the composer linearises a CRM Lead parent + a child-table row into ONE flat row:
-  * a catalog field with sql_source='child' (target_doctype = the child doctype) is LEFT-JOINed
-    on parent=name AND parenttype, and projected as the field_key,
-  * the lead appears exactly ONCE (no row-per-child duplication) for a single-row child,
-  * the child value lands under the field_key alongside parent columns,
+Proves the composer linearises a CRM Lead parent + its multi-row `lab` child into ONE flat row, picking
+the LATEST child by date — the locked "latest wins" rule (ADR: a multi-row section shows the latest row
+across every consumer). It rides the REAL `lab` section, so `sql_source`/`row_key_field` come from the one
+`CRM Lead Section` brain, not from anything this script writes:
+
+  * a lead with TWO `custom_lab_profile` rows (different `report_date`) appears exactly ONCE,
+  * the projected `lab:hba1c` is the value from the row with the NEWEST `report_date`,
   * it all rides the one catalog/resolve_fields brain (get_data path).
 
-Self-seeds: picks the first CRM Lead child table it can write, makes a lead with one child row
-carrying a sentinel, seeds the two catalog rows + a view, asserts. Idempotent.
+Self-seeds a lead + two lab rows + a view, asserts, idempotent. Seeds NO catalog rows: `lab:hba1c` and
+`lead:first_name` are the real, already-seeded catalog — the point is that this proof invents no fork.
 """
 import frappe
 
 from tatva_connect.smartview import api
 
-TAG = "ZCHILD_PROOF"
-TAG2 = "ZCHILD_LATEST"
-SENTINEL = "CHILDVAL-42"
-OLD_VAL = "AAA-old"
-NEW_VAL = "ZZZ-new"              # latest_by orders DESC -> this wins over OLD_VAL
-PARENT_KEY = "lead:first_name"   # parent column (also the search handle)
-CHILD_KEY = "zchild:val"         # single-row child column
-CHILD_LATEST_KEY = "zchild:latest"  # latest_by child column (same child field)
-VIEW_LABEL = "ZCHILD Smart View"
-VIEW2_LABEL = "ZCHILD Latest Smart View"
+TAG = "ZLAB_PROOF"
+LEAD_KEY = "lead:first_name"           # real catalog handle: worklist, searchable
+LAB_KEY = "lab:hba1c"                  # real multi-row lab column, picked latest_by report_date
+OLD_DATE, OLD_VAL = "2026-01-01", 8.1
+NEW_DATE, NEW_VAL = "2026-07-01", 6.9  # the newest report_date -> this hba1c must win
+VIEW_LABEL = "ZLAB Latest Smart View"
 
 
-def _dummy(cf):
-	ft = cf.fieldtype
-	if ft in ("Int", "Float", "Currency", "Percent"):
-		return 1
-	if ft == "Date":
-		return "2026-01-01"
-	if ft == "Datetime":
-		return "2026-01-01 00:00:00"
-	if ft == "Select":
-		return (cf.options or "").strip().split("\n")[0] or "x"
-	return "ZC"
-
-
-def _pick_writable_child():
-	"""First CRM Lead child table with a Data/text field we can project, whose required fields are
-	all fillable without a Link lookup. Returns (parent_table_field, child_doctype, proj_field, reqd)."""
-	for f in frappe.get_meta("CRM Lead").fields:
-		if f.fieldtype != "Table":
-			continue
-		cm = frappe.get_meta(f.options)
-		text = [cf for cf in cm.fields if cf.fieldtype in ("Data", "Small Text", "Text")]
-		reqd_links = [cf for cf in cm.fields if cf.reqd and cf.fieldtype in ("Link", "Dynamic Link")]
-		if text and not reqd_links:
-			proj = text[0].fieldname
-			reqd = {cf.fieldname: _dummy(cf) for cf in cm.fields if cf.reqd and cf.fieldname != proj}
-			return f.fieldname, f.options, proj, reqd
-	raise RuntimeError("No writable CRM Lead child table found for the flatten proof.")
-
-
-def _seed_catalog(child_dt, child_field):
-	rows = [
-		dict(field_key=PARENT_KEY, label="First Name", fieldname="first_name", section_key="lead",
-			 target_doctype="CRM Lead", sql_source="parent", applies_to="lead",
-			 filterable=1, sortable=1, surface="worklist"),
-		dict(field_key=CHILD_KEY, label="Child Val", fieldname=child_field, section_key="child",
-			 target_doctype=child_dt, sql_source="child", child_pick="single", applies_to="lead",
-			 filterable=1, sortable=1, surface="worklist"),
-		dict(field_key=CHILD_LATEST_KEY, label="Child Latest", fieldname=child_field, section_key="child",
-			 target_doctype=child_dt, sql_source="child", child_pick="latest_by:" + child_field,
-			 applies_to="lead", filterable=1, sortable=1, surface="worklist"),
-	]
-	for r in rows:
-		if frappe.db.exists("CRM Lead API Field", r["field_key"]):
-			frappe.get_doc("CRM Lead API Field", r["field_key"]).update(r).save(ignore_permissions=True)
-		else:
-			frappe.get_doc(dict(doctype="CRM Lead API Field", **r)).insert(ignore_permissions=True)
-
-
-def _seed_lead(parent_table_field, proj_field, reqd):
+def _seed_lead():
+	"""A lead with TWO lab rows so latest_by must pick exactly one (the newer report's value)."""
 	for ld in frappe.get_all("CRM Lead", filters={"lead_name": ["like", "%" + TAG + "%"]}, pluck="name"):
 		frappe.delete_doc("CRM Lead", ld, force=True, ignore_permissions=True)
 	lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": TAG, "lead_name": TAG, "status": "New"})
-	row = dict(reqd)
-	row[proj_field] = SENTINEL
-	lead.append(parent_table_field, row)
-	lead.insert(ignore_permissions=True)
-	return lead.name
-
-
-def _seed_lead_multi(parent_table_field, proj_field, reqd):
-	"""A lead with TWO child rows so latest_by must pick exactly one (the newer value)."""
-	for ld in frappe.get_all("CRM Lead", filters={"lead_name": ["like", "%" + TAG2 + "%"]}, pluck="name"):
-		frappe.delete_doc("CRM Lead", ld, force=True, ignore_permissions=True)
-	lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": TAG2, "lead_name": TAG2, "status": "New"})
-	for val in (OLD_VAL, NEW_VAL):
-		row = dict(reqd)
-		row[proj_field] = val
-		lead.append(parent_table_field, row)
+	for report_date, hba1c in ((OLD_DATE, OLD_VAL), (NEW_DATE, NEW_VAL)):
+		lead.append("custom_lab_profile", {"report_date": report_date, "hba1c": hba1c})
 	lead.insert(ignore_permissions=True)
 	return lead.name
 
@@ -116,37 +53,34 @@ def _check(label, cond):
 	return cond
 
 
+def _as_float(v):
+	"""The projected value, coerced for comparison; None/blank -> None so a miss FAILs, never throws."""
+	try:
+		return float(v) if v not in (None, "") else None
+	except (TypeError, ValueError):
+		return None
+
+
 def run():
 	frappe.flags.in_test = True
-	parent_table_field, child_dt, proj_field, reqd = _pick_writable_child()
-	print("    child doctype:", child_dt, "| field:", proj_field, "| via:", parent_table_field)
-	_seed_catalog(child_dt, proj_field)
-	_seed_lead(parent_table_field, proj_field, reqd)
-	_seed_lead_multi(parent_table_field, proj_field, reqd)
-	view = _seed_view(VIEW_LABEL, [PARENT_KEY, CHILD_KEY])
-	view2 = _seed_view(VIEW2_LABEL, [PARENT_KEY, CHILD_LATEST_KEY])
+	_seed_lead()
+	view = _seed_view(VIEW_LABEL, [LEAD_KEY, LAB_KEY])
 	frappe.db.commit()
 
 	r = []
-	print("\n== single-row child flatten ==")
+	print("\n== multi-row lab flatten (2 lab rows -> 1 lead row, newest report_date wins) ==")
 	data = api.get_data(view, search=TAG)
 	cols = [c["key"] for c in data["columns"]]
 	print("    columns:", cols, "| total:", data["total"])
-	r.append(_check("child column projected in column set", CHILD_KEY in cols))
-	r.append(_check("parent + child both projected", PARENT_KEY in cols and CHILD_KEY in cols))
-	r.append(_check("lead appears exactly ONCE (no row-per-child dup)", data["total"] == 1 and len(data["rows"]) == 1))
+	r.append(_check("lab column projected in column set", LAB_KEY in cols))
+	r.append(_check("parent + lab both projected", LEAD_KEY in cols and LAB_KEY in cols))
+	r.append(_check("lead with 2 lab rows appears exactly ONCE (no row-per-child dup)",
+					data["total"] == 1 and len(data["rows"]) == 1))
 	row0 = data["rows"][0] if data["rows"] else {}
-	print("    row:", {k: row0.get(k) for k in (PARENT_KEY, CHILD_KEY, "name")})
-	r.append(_check("child value linearised onto the parent row", row0.get(CHILD_KEY) == SENTINEL))
-	r.append(_check("parent value present on the same row", (row0.get(PARENT_KEY) or "") == TAG))
-
-	print("\n== latest_by child flatten (2 child rows -> 1 parent row, newest wins) ==")
-	d2 = api.get_data(view2, search=TAG2)
-	print("    total:", d2["total"], "| rows:", len(d2["rows"]))
-	row1 = d2["rows"][0] if d2["rows"] else {}
-	print("    row:", {k: row1.get(k) for k in (PARENT_KEY, CHILD_LATEST_KEY, "name")})
-	r.append(_check("lead with 2 child rows appears exactly ONCE (no dup)", d2["total"] == 1 and len(d2["rows"]) == 1))
-	r.append(_check("latest_by picked the NEWEST value (ZZZ>AAA desc)", row1.get(CHILD_LATEST_KEY) == NEW_VAL))
+	print("    row:", {k: row0.get(k) for k in (LEAD_KEY, LAB_KEY, "name")})
+	r.append(_check("latest_by report_date picked the NEWEST hba1c (Jul 6.9 over Jan 8.1)",
+					_as_float(row0.get(LAB_KEY)) == NEW_VAL))
+	r.append(_check("parent value present on the same row", (row0.get(LEAD_KEY) or "") == TAG))
 
 	ok = all(r)
 	print("\n==== CHILD-FLATTEN PROOF {} ({}/{} checks passed) ====".format(

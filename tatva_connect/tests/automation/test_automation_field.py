@@ -1,95 +1,62 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The merged `CRM Automation Field` allowlist — validate() contract (fail-closed, unambiguous).
+"""The automation query brain (`automation/fields.py`) over the resource catalogs — one brain per resource,
+folded out of the retired `CRM Automation Field`. Capabilities are Check flags on `CRM Lead API Field` /
+`CRM Task Type Field`; routing derives from `CRM Lead Section`, grain from the internal contract. Real
+Frappe engine as the oracle; FrappeTestCase rolls the transaction back, so toggling a real catalog flag in
+a test never persists.
 
-Replaces the retired test_watchable_field.py. Real Frappe engine as the oracle: real meta reads, real
-validate() throws, no mocked verdicts. The contract: at least one capability; read and watch are
-grain-independent, parent-only, subject-only (so grain/child columns only ever mean set-scope); a row
-key implies a child set.
+C4 — a capability change on the catalog is reflected by the reader with NO code edit.
+C5 — the retired `CRM Automation Field` doctype (doc + table) is absent.
 """
 import unittest
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
+from tatva_connect.automation import fields
 
-_DT = "CRM Automation Field"
-_LEAD_FIELD = "custom_stage"            # Select on CRM Lead
-_LEAD_DATE = "custom_last_report_date"  # Date on CRM Lead
-_GRAIN = GRAINS[0]
+_CATALOG = "CRM Lead API Field"
 
 
-class TestAutomationField(FrappeTestCase):
-	@classmethod
-	def setUpClass(cls):
-		assert_masters_exist()  # the grain axes are Links → the masters must exist
-
+class TestAutomationFieldBrain(FrappeTestCase):
 	def setUp(self):
-		frappe.db.delete(_DT, {"doctype_name": ("in", ("CRM Lead", "CRM Task", "Customer"))})
+		# A stable lead catalog row to toggle; the rollback undoes every flag change we make.
+		self.row = frappe.get_all(_CATALOG, fields=["name", "fieldname"], order_by="name", limit=1)[0]
 
-	def tearDown(self):
-		frappe.db.delete(_DT, {"doctype_name": ("in", ("CRM Lead", "CRM Task", "Customer"))})
+	def _set(self, **flags):
+		frappe.db.set_value(_CATALOG, self.row.name, flags)
 
-	def _row(self, **kw):
-		base = {"doctype": _DT, "doctype_name": "CRM Lead", "fieldname": _LEAD_FIELD, "enabled": 1}
-		base.update(kw)
-		return frappe.get_doc(base)
+	# C5 — the retired doctype is gone: doc AND physical table.
+	def test_crm_automation_field_doctype_absent(self):
+		self.assertFalse(frappe.db.exists("DocType", "CRM Automation Field"))
+		self.assertFalse(frappe.db.table_exists("CRM Automation Field"))
 
-	# (a) a can_watch row (subject, blank grain) saves.
-	def test_watch_row_saves(self):
-		doc = self._row(can_watch=1).insert(ignore_permissions=True)
-		self.assertTrue(frappe.db.exists(_DT, doc.name))
+	# C4 — tick can_read on the catalog, the reader reflects it with no code change.
+	def test_can_read_reflected_in_readable_fields(self):
+		self._set(can_read=0, can_watch=0)
+		self.assertNotIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
+		self._set(can_read=1)
+		self.assertIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
 
-	# (b) a can_set row with a grain saves.
-	def test_set_row_with_grain_saves(self):
-		doc = self._row(fieldname=_LEAD_DATE, can_set=1, vertical=_GRAIN["vertical"]).insert(ignore_permissions=True)
-		self.assertTrue(frappe.db.exists(_DT, doc.name))
+	# can_watch IMPLIES can_read (folded in readable_fields, and nowhere else), and is watchable.
+	def test_can_watch_implies_readable_and_watchable(self):
+		self._set(can_read=0, can_watch=1)
+		self.assertIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
+		self.assertTrue(fields.is_watchable("CRM Lead", self.row.fieldname))
+		self.assertIn(self.row.fieldname, fields.watchable_fields("CRM Lead"))
 
-	# (c) watch + set collapse to ONE row (both flags, one autoname).
-	def test_watch_and_set_one_row(self):
-		doc = self._row(can_watch=1, can_set=1).insert(ignore_permissions=True)
-		self.assertTrue(doc.can_watch and doc.can_set)
+	# Fail-closed: an unticked field is neither readable, watchable, nor settable.
+	def test_unticked_field_is_fenced(self):
+		self._set(can_read=0, can_watch=0, can_set=0)
+		self.assertNotIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
+		self.assertFalse(fields.is_watchable("CRM Lead", self.row.fieldname))
+		self.assertFalse(fields.is_settable("CRM Lead", self.row.fieldname, ("", "", "")))
 
-	# (d) can_watch + a grain -> throws (watch is grain-independent — grain only means set-scope).
-	def test_watch_with_grain_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(can_watch=1, vertical=_GRAIN["vertical"]).insert(ignore_permissions=True)
-
-	# (e) can_watch + child_table_field -> throws (a child row is not watchable).
-	def test_watch_with_child_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(can_watch=1, child_table_field="custom_lab_profile").insert(ignore_permissions=True)
-
-	# (f) can_watch on a non-subject doctype -> throws.
-	def test_watch_non_subject_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(doctype_name="Customer", fieldname="customer_name", can_watch=1).insert(ignore_permissions=True)
-
-	# (f1) a can_read row is its own capability - readable without being watchable.
-	def test_read_row_saves_without_watch(self):
-		doc = self._row(can_read=1).insert(ignore_permissions=True)
-		self.assertTrue(doc.can_read and not doc.can_watch)
-
-	# (f2) can_read carries the SAME shape guard as can_watch - a grain on it is a config error.
-	def test_read_with_grain_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(can_read=1, vertical=_GRAIN["vertical"]).insert(ignore_permissions=True)
-
-	# (g) is_row_key without a settable child -> throws.
-	def test_row_key_without_child_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(fieldname=_LEAD_DATE, can_set=1, is_row_key=1).insert(ignore_permissions=True)
-
-	# (h) neither capability -> throws (a row that does nothing is a config error).
-	def test_no_capability_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row().insert(ignore_permissions=True)
-
-	# (i) unknown fieldname -> throws (typo caught at config time, not at first misfire).
-	def test_unknown_field_throws(self):
-		with self.assertRaises(frappe.exceptions.ValidationError):
-			self._row(fieldname="no_such_field", can_watch=1).insert(ignore_permissions=True)
+	# Fail-closed: a non-subject doctype has no catalog — empty vocabulary, no writes.
+	def test_non_subject_doctype_is_fenced(self):
+		self.assertEqual(fields.readable_fields("Customer"), [])
+		self.assertFalse(fields.is_settable("Customer", "customer_name", ("", "", "")))
 
 
 if __name__ == "__main__":

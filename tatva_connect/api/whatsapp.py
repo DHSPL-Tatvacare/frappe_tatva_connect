@@ -213,12 +213,11 @@ def get_field_options(reference_doctype, reference_name):
 	lead = _field_options(doc, "Lead")
 	if lead:
 		groups.append(lead)
-	for fieldname, label in (
-		("custom_plan_profile", "Plan Profile"),
-		("custom_lab_profile", "Lab Profile"),
-		("custom_care_providers_profile", "Care Providers"),
-	):
-		rows = doc.get(fieldname) or []
+	# The child table each profile lives in is read from the ONE brain (CRM Lead Section), never
+	# restated here; the (section, label) pairs are only this picker's display curation.
+	for section_key, label in (("plan", "Plan Profile"), ("lab", "Lab Profile"), ("care", "Care Providers")):
+		child_table_field = frappe.get_cached_doc("CRM Lead Section", section_key).child_table_field
+		rows = doc.get(child_table_field) or []
 		if rows:
 			g = _field_options(rows[0], label)
 			if g:

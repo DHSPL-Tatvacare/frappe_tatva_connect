@@ -5,16 +5,17 @@ row per CRM Task of an activity type). Its rows come from ONE `frappe.qb` query 
 
   1. drives off CRM Lead (lead view) or CRM Task WHERE custom_task_type = activity_type,
   2. LEFT JOINs only the CRM Lead child tables actually referenced by columns/predicate
-     (single-row on parent=name, or a latest_by:<field> subquery); CRM Task activity views
+     (single-row on parent=name, or ordered by the section's row_key_field); CRM Task activity views
      read the 9 promoted columns directly + display-only JSON_EXTRACT(custom_activity_payload),
   3. ANDs the permission query conditions — ALWAYS, fail-closed, on list AND count,
   4. translates the saved predicate JSON tree into nested qb WHERE (catalog fields only),
   5. applies ad-hoc filters/search/sort (catalog-bounded) and paginates,
   6. returns {columns, rows, total} — total being the tab's PQC-scoped count.
 
-The field catalog (the extended `CRM Lead API Field` master) is the allowlist: no fieldname
-that is not a catalog row for the resolved scope can ever reach the SQL. No raw string SQL is
-built here — the only raw fragment is the framework's own PQC string, wrapped in a PseudoColumn.
+The resolved field set is the allowlist: no fieldname outside it can ever reach the SQL. A lead view
+resolves it from `CRM Lead API Field` + `CRM Lead Section`; an activity view asks the activity brain
+for the type's schema. No raw string SQL is built here — the only raw fragment is the framework's own
+PQC string, wrapped in a PseudoColumn.
 """
 import frappe
 from frappe import _
@@ -25,6 +26,8 @@ from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
 from tatva_connect.access import entitlement
+from tatva_connect.activity import api as activity_brain
+from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.taxonomy import labels
 
 LEAD_DOCTYPE = "CRM Lead"
@@ -50,49 +53,112 @@ _OPS = {
 
 
 # ---------------------------------------------------------------------------
-# Catalog read — the grain-entitled allowlist for a (base_object, activity_type) scope.
-# Reuses the partner-API catalog table (CRM Lead API Field), reading the Smart Views
-# columns the partner path ignores. On THIS (internal) path the catalog is grain-filtered
-# and role-restricted by the one entitlement brain (tatva_connect.access.entitlement); the
-# partner path never does either. applies_to scopes by base object/type.
+# Catalog read — the allowlist for a (base_object, activity_type) scope.
+#
+# TWO brains answer here, because this surface shows two resources and each owns its own fields:
+#
+#   Lead view      -> CRM Lead API Field + CRM Lead Section. The section states ONCE which table holds
+#                     a field, whose columns it is and how one row is picked; a field row restates none
+#                     of it. Both facts below are DERIVED, never read off the field row.
+#   Activity view  -> the activity brain (tatva_connect.activity.api), asked live. CRM Task Type IS the
+#                     contract — the grain is its key — and CRM Task Type Field is its schema.
+#
+# Smart Views used to read a frozen COPY of that schema out of the lead catalog, addressed by a Data
+# field holding a task type's name as text. The types were re-keyed to composite grain PKs: every real
+# Link cascaded, the text did not, and every Activity view resolved zero fields. Nothing is copied now.
+#
+# On THIS (internal) path the catalog is grain-filtered and role-restricted by the one entitlement
+# brain (tatva_connect.access.entitlement); the partner path never does either.
 # ---------------------------------------------------------------------------
 
-def _scope_label(base_object, activity_type):
-	return f"activity:{activity_type}" if base_object == "Activity" else "lead"
-
-
-def _all_catalog_rows():
-	"""Every catalog row, keyed by field_key. Request-cached — one read per request, shared
-	across every scope/grain resolution (was an uncached get_all per call)."""
+def _sections():
+	"""The lead sections, keyed by section_key — the ONE row that owns a section's table and row key."""
 	def build():
-		rows = frappe.get_all(
+		return {
+			r.name: r
+			for r in frappe.get_all(
+				"CRM Lead Section",
+				fields=["name", "target_doctype", "child_table_field", "is_multi_row", "row_key_field"],
+			)
+		}
+
+	return entitlement.request_cache("tatva_connect:smartview_sections", "all", build)
+
+
+def _lead_catalog():
+	"""Every lead catalog row, keyed by field_key, each carrying its section's DERIVED facts: where the
+	column physically lives (parent/child) and how one row of it is picked. A stored copy of either is
+	what left 29 rows with a blank source and called multi-row Lab single-row, so neither is stored.
+
+	Request-cached — one read per request, shared across every scope/grain resolution."""
+	def build():
+		sections = _sections()
+		rows = {}
+		for r in frappe.get_all(
 			"CRM Lead API Field",
-			filters={"sql_source": ["in", ["parent", "child", "task", "payload"]]},
 			fields=[
-				"field_key", "label", "fieldname", "sql_source", "child_pick",
-				"filterable", "sortable", "surface", "applies_to", "target_doctype",
+				"field_key", "label", "fieldname", "section", "filterable", "sortable", "surface",
 				"grain_vertical", "grain_group", "grain_program",
 			],
 			order_by="field_key asc",
-		)
-		return {r.field_key: r for r in rows}
+		):
+			section = sections.get(r.section)
+			if not section:
+				continue  # a row whose section does not resolve names no table to be read from
+			r.sql_source = crm_lead_section.sql_source(section)
+			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
+			r.target_doctype = section.target_doctype
+			rows[r.field_key] = r
+		return rows
 
 	return entitlement.request_cache("tatva_connect:smartview_catalog", "all", build)
 
 
+def _activity_catalog(activity_type):
+	"""The activity type's fields, ASKED of the brain. Keyed `activity:<fieldname>` — the schema field's
+	own name, so re-keying the TYPE moves nothing here and the type itself is reached through the view's
+	Link, which cascades.
+
+	A field naming one of the 9 promoted CRM Task columns IS that column: project, filter and sort it.
+	A field naming none lives in the JSON payload, reachable only through JSON_EXTRACT — display-only,
+	so it may never reach a WHERE or an ORDER BY (see _joins). The brain owns the routing; this owns
+	only what Smart Views can physically do with each side of it."""
+	if not activity_type:
+		return {}
+	rows = {}
+	for f in activity_brain.get_schema(activity_type):
+		column = activity_brain.field_column(f)
+		key = f"activity:{f['fieldname']}"
+		rows[key] = frappe._dict(
+			field_key=key,
+			label=f["label"] or f["fieldname"],
+			fieldname=column or f["fieldname"],
+			sql_source="task" if column else "payload",
+			row_key_field="",
+			target_doctype=TASK_DOCTYPE if column else None,
+			filterable=1 if column else 0,
+			sortable=1 if column else 0,
+			surface="worklist" if column else "detail",
+			fieldtype=f["fieldtype"],
+			options=f["options"],
+			grain_vertical=None,
+			grain_group=None,
+			grain_program=None,
+		)
+	return rows
+
+
 def _catalog_fields(base_object, activity_type, grains, roles):
-	"""Catalog rows usable by a view of this base object/type, keyed by field_key, after grain
-	entitlement: in scope (applies_to blank or matching), visible in `grains`, minus the fields
-	restricted for `roles`, plus the universal floor. The composer never touches a fieldname
-	outside this dict — so a saved view can never project a field outside its grain."""
-	scope = _scope_label(base_object, activity_type)
-	scoped = {}
-	for key, r in _all_catalog_rows().items():
-		applies = (r.applies_to or "").strip()
-		if applies and applies != scope:
-			continue
-		scoped[key] = r
-	return entitlement.resolve_fields(scoped, grains, roles)
+	"""Catalog rows usable by a view of this base object/type, keyed by field_key, after entitlement:
+	visible in `grains`, minus the fields restricted for `roles`, plus the universal floor. The composer
+	never touches a fieldname outside this dict — so a saved view can never project a field outside its
+	grain.
+
+	An Activity view resolves the TYPE's schema and nothing else: its rows are CRM Tasks, so a CRM Lead
+	column has no column on this query to come from. The type's key already carries its grain, so its
+	fields need no second grain filter — resolve_fields still applies the role restrictions."""
+	rows = _activity_catalog(activity_type) if base_object == "Activity" else _lead_catalog()
+	return entitlement.resolve_fields(rows, grains, roles)
 
 
 def _grains_for_view(v):
@@ -125,7 +191,7 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	out = []
 	for r in cat.values():
-		df = _col_docfield(r)
+		fieldtype, options = _col_type(r)
 		out.append({
 			"field_key": r.field_key,
 			"label": r.label or r.fieldname,
@@ -134,10 +200,8 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 			"filterable": bool(r.filterable),
 			"sortable": bool(r.sortable),
 			"surface": r.surface or "worklist",
-			# fieldtype + options let the native Filter/ColumnSettings controls (operator menu,
-			# value widget, Link target) work off the catalog exactly as they do off doctype meta.
-			"fieldtype": df.fieldtype if df else "Data",
-			"options": (df.options or "") if df else "",
+			"fieldtype": fieldtype,
+			"options": options,
 		})
 	return out
 
@@ -312,13 +376,13 @@ def _predicate_keys(node, acc):
 
 
 def _joins(needed_keys, cat, driving_table, driving_name):
-	"""LEFT JOIN every CRM Lead child table referenced by `needed_keys`, once per (doctype, pick).
-	Returns (query-mutator, {field_key: pypika Field}). single -> join on parent=name +
-	parenttype; latest_by:<f> -> join a subquery picking the newest row per parent. The driving
+	"""LEFT JOIN every CRM Lead child table referenced by `needed_keys`, once per (doctype, order_field).
+	Returns (query-mutator, {field_key: pypika Field}). No order_field -> join on parent=name +
+	parenttype ordered by creation; a row_key_field -> a subquery picking the newest row per parent. The driving
 	table's own (parent/task) fields resolve straight off driving_table; payload fields resolve to
 	a JSON_EXTRACT off the task's custom_activity_payload (no join, display-only)."""
 	field_terms = {}
-	join_specs = {}  # alias -> (aliased child table, pick)
+	join_specs = {}  # alias -> (aliased child table, order_field, child doctype)
 	for key in needed_keys:
 		r = cat.get(key)
 		if not r:
@@ -339,12 +403,12 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		child_dt = (r.target_doctype or "").strip()
 		if not child_dt:
 			continue
-		pick = (r.child_pick or "single").strip()
-		alias = f"{child_dt}__{pick}".replace(" ", "_").replace(":", "_")
+		order_field = (r.row_key_field or "creation").strip()  # multi-row child ordered by its row key; else creation
+		alias = f"{child_dt}__{order_field}".replace(" ", "_")
 		child_tbl = join_specs.get(alias, (None,))[0]
 		if child_tbl is None:
 			child_tbl = DocType(child_dt).as_(alias)
-			join_specs[alias] = (child_tbl, pick, child_dt)
+			join_specs[alias] = (child_tbl, order_field, child_dt)
 		# A real Field off the aliased child table -> .as_(field_key) aliases correctly,
 		# so the row dict is keyed by field_key (never the bare fieldname).
 		field_terms[key] = child_tbl[r.fieldname]
@@ -353,11 +417,10 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	driving_tbl = f"tab{driving_name}"
 
 	def apply(query):
-		# Every child join yields ONE row per parent — the newest by the pick's order field
-		# (`single` -> creation). ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
+		# Every child join yields ONE row per parent — the newest by its order field (blank -> creation).
+		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
 		# a plain join would multiply the parent for a multi-row child, inflating rows AND the count.
-		for spec_alias, (_child_tbl, spec_pick, spec_child_dt) in join_specs.items():
-			order_field = spec_pick.split(":", 1)[1] if spec_pick.startswith("latest_by:") else "creation"
+		for spec_alias, (_child_tbl, order_field, spec_child_dt) in join_specs.items():
 			inner = DocType(spec_child_dt)
 			rn = (
 				RowNumber()
@@ -447,10 +510,8 @@ def _apply_search(crit, search, cat, field_terms):
 
 
 def _col_docfield(r):
-	"""The live DocField backing a catalog row, read from doctype meta (never guessed).
-	target_doctype is the doctype the field lives on for every sql_source. None when it can't be
-	resolved (payload rows resolve to None -> 'Data', since the schema fieldname is not a real
-	CRM Task docfield)."""
+	"""The live DocField backing a lead catalog row, read from doctype meta (never guessed). The row's
+	target_doctype is its section's. None when it cannot be resolved."""
 	dt = (r.target_doctype or "").strip()
 	if not dt:
 		return None
@@ -460,13 +521,18 @@ def _col_docfield(r):
 		return None
 
 
-def _col_fieldtype(r):
-	"""The DocField fieldtype for a catalog column — drives the frontend's column width +
-	cell formatting (Date/Datetime/Currency...). Unknown -> 'Data' (inert)."""
+def _col_type(r):
+	"""(fieldtype, options) for a catalog column — drives the frontend's column width, cell formatting
+	and the native Filter/ColumnSettings controls (operator menu, value widget, Link target).
+
+	An activity field answers with the SCHEMA's own type, because that is the type the brain declared and
+	the one the form submits: the promoted column it lands in is a generic Data column, and reading meta
+	there would flatten a Select back to free text. A lead field is a real column, so meta IS its truth.
+	Unknown -> 'Data' (inert)."""
+	if r.get("fieldtype"):
+		return r.fieldtype, (r.options or "")
 	df = _col_docfield(r)
-	if not df:
-		return "Data"
-	return df.fieldtype
+	return (df.fieldtype, df.options or "") if df else ("Data", "")
 
 
 @frappe.whitelist()
@@ -554,7 +620,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows = rows_q.run(as_dict=True)
 
 	columns = [
-		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_fieldtype(cat[k])}
+		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0]}
 		for k in col_keys if k in field_terms
 	]
 	return {"columns": columns, "rows": rows, "total": total}

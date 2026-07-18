@@ -23,45 +23,53 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.access import entitlement, internal_contract
 from tatva_connect.lead import detail
 
 
-# ----------------------------- pure helpers (no DB) -----------------------------
+# ----------------------------- pure helpers -----------------------------
 class TestDetailPureLogic(FrappeTestCase):
-	def test_section_meta_groups_without_world_gate(self):
-		# Sections are display groups only — the drug/metabolic world gate is retired. A known key
-		# returns its (label, order); an unknown key buckets to the default group and never vanishes.
-		self.assertEqual(detail._section_meta("drug_program")[0], "Drug Program")
-		self.assertEqual(detail._section_meta("care")[0], "Care & Providers")
-		self.assertEqual(detail._section_meta("brand_new_section"), detail._DEFAULT_SECTION)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# Specificity is now read through the INTERNAL CONTRACT (ticked-by-all-grains == universal), so the
+		# contracts must exist; pick a real universal key and a real grain-specific key off the live ticks.
+		internal_contract.ensure_internal_contracts()
+		ticks = entitlement._internal_ticks()
+		universal = set.intersection(*ticks.values()) if ticks else set()
+		specific = (set().union(*ticks.values()) if ticks else set()) - universal
+		assert universal and specific, "need both a universal and a grain-specific field to prove dedup"
+		cls.universal_key = sorted(universal)[0]
+		cls.specific_key = sorted(specific)[0]
 
-	def test_activity_rows_are_not_profile_rows(self):
-		# Rows scoped to an activity surface (order/clinical → CRM Task) are excluded.
-		self.assertFalse(detail.is_profile_row({"section_key": "order", "applies_to": "activity:Order Punch Status", "target_doctype": "CRM Task"}))
-		self.assertFalse(detail.is_profile_row({"section_key": "clinical", "applies_to": "activity:Welcome Call", "target_doctype": "CRM Task"}))
-
-	def test_lead_and_child_rows_are_profile_rows(self):
-		self.assertTrue(detail.is_profile_row({"section_key": "lead", "applies_to": "lead", "target_doctype": "CRM Lead"}))
-		self.assertTrue(detail.is_profile_row({"section_key": "drug_program", "applies_to": "", "target_doctype": "CRM Drug Program Profile", "child_table_field": "custom_drug_program_profile"}))
-
-	def test_dedup_prefers_curated_lead_tagged_row(self):
-		raw = {"field_key": "drug:psp_drug_category", "target_doctype": "CRM Drug Program Profile", "fieldname": "psp_drug_category", "label": "Psp Drug Category", "applies_to": ""}
-		curated = {"field_key": "drug:psp_category", "target_doctype": "CRM Drug Program Profile", "fieldname": "psp_drug_category", "label": "PSP Drug Category", "applies_to": "lead", "child_pick": "single"}
-		out = detail.dedup_rows([raw, curated])
+	def test_dedup_prefers_grain_specific_over_universal(self):
+		# One physical field catalogued twice: a grain-scoped row ("Lead Stage") and a universal one
+		# ("Sub-stage"). The grain-specific row wins, so its label survives. Specificity is read via the
+		# contract brain (is_universal_field), not off grain_* columns in detail.py.
+		universal = {"field_key": self.universal_key, "section": "lead", "fieldname": "custom_substage",
+		             "label": "Sub-stage"}
+		specific = {"field_key": self.specific_key, "section": "lead", "fieldname": "custom_substage",
+		            "label": "Lead Stage"}
+		self.assertTrue(detail._is_universal(universal))
+		self.assertFalse(detail._is_universal(specific))
+		out = detail.dedup_rows([universal, specific])
 		self.assertEqual(len(out), 1)
-		self.assertEqual(out[0]["label"], "PSP Drug Category")  # curated wins
+		self.assertEqual(out[0]["label"], "Lead Stage")
+		# order-independent: the grain-specific row wins whichever appears first
+		self.assertEqual(detail.dedup_rows([specific, universal])[0]["label"], "Lead Stage")
 
 	def test_dedup_keeps_distinct_fields(self):
-		a = {"field_key": "drug:dosage", "target_doctype": "CRM Drug Program Profile", "fieldname": "dosage", "applies_to": ""}
-		b = {"field_key": "drug:psp_name", "target_doctype": "CRM Drug Program Profile", "fieldname": "psp_name", "applies_to": ""}
+		a = {"field_key": "drug:dosage", "section": "drug", "fieldname": "dosage"}
+		b = {"field_key": "drug:psp_name", "section": "drug", "fieldname": "psp_name"}
 		self.assertEqual(len(detail.dedup_rows([a, b])), 2)
 
 	def test_writable_keys_excludes_readonly(self):
+		# Target doctype is resolved off the section brain; the injected resolver marks mobile_no
+		# read-only (API-owned), so it is excluded while first_name stays writable.
 		selected = {
-			"lead:first_name": {"target_doctype": "CRM Lead", "fieldname": "first_name"},
-			"lead:mobile_no": {"target_doctype": "CRM Lead", "fieldname": "mobile_no"},
+			"lead:first_name": {"section": "lead", "fieldname": "first_name"},
+			"lead:mobile_no": {"section": "lead", "fieldname": "mobile_no"},
 		}
-		# inject a read-only resolver: mobile_no is read-only (API-owned)
 		def ro(_dt, fn):
 			return fn == "mobile_no"
 		writable = detail.writable_keys(selected, is_readonly=ro)
@@ -95,6 +103,20 @@ class TestLeadDetailEndpoints(FrappeTestCase):
 		# the universal floor (status) is always projected
 		flat = {f["field_key"]: f for sec in out["sections"] for f in sec["fields"]}
 		self.assertIn("lead:status", flat)
+
+	def test_section_title_comes_from_the_brain(self):
+		# C4: the Data-tab heading is the CRM Lead Section title, read live — not a hardcoded map.
+		# Rename the `lead` section in the DB and the projection reflects it; restore on cleanup.
+		original = frappe.db.get_value("CRM Lead Section", "lead", "title")
+		def restore():
+			frappe.db.set_value("CRM Lead Section", "lead", "title", original)
+			frappe.clear_document_cache("CRM Lead Section", "lead")
+		self.addCleanup(restore)
+		frappe.db.set_value("CRM Lead Section", "lead", "title", "Renamed By Brain")
+		frappe.clear_document_cache("CRM Lead Section", "lead")
+		out = detail.lead_detail(self.lead.name)
+		titles = {sec["label"] for sec in out["sections"]}
+		self.assertIn("Renamed By Brain", titles)
 
 	def test_routing_fields_are_shown_but_never_writable(self):
 		# custom_vertical/group/current_program are catalog fields (so they show) but are

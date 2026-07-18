@@ -207,7 +207,9 @@ class TestTpTuplesAsFlows(FrappeTestCase):
 			frappe.db.set_value(_SWITCH_DT, k, "enabled", 0)
 
 		cls.tp_watch_fields = sorted({f for _t, f, *_ in RULES})
-		field_allowlist.seed_watchable("CRM Task", "status")  # the `changed to` completion signal needs the diff
+		# status is a watchable native Task column now (CRM Task Field, seeded by patch), so the flow uses
+		# `changed to Done`: the dispatcher captures status's before-value and the rule fires ONLY on the
+		# not-Done→Done transition — once, never on a re-save of an already-Done task.
 		field_allowlist.seed_settable("CRM Lead", "custom_substage", VERTICAL, GROUP, PROGRAM)
 		frappe.flags.pop("_watchable_fields_cache", None)
 
@@ -225,11 +227,7 @@ class TestTpTuplesAsFlows(FrappeTestCase):
 			frappe.db.delete(_DEF_DT, {"name": name})
 		frappe.db.delete("CRM Action Group Item", {"parent": ("like", f"{_PREFIX}%")})
 		frappe.db.delete(_GROUP_DT, {"group_name": ("like", f"{_PREFIX}%")})
-		frappe.db.delete(field_allowlist.DOCTYPE, {"doctype_name": "CRM Task", "fieldname": "status"})
-		frappe.db.delete(field_allowlist.DOCTYPE, {
-			"doctype_name": "CRM Lead", "fieldname": "custom_substage",
-			"vertical": VERTICAL, "group": GROUP, "program": PROGRAM,
-		})
+		field_allowlist.clear()
 		for k, v in cls._prior.items():
 			frappe.db.set_value(_SWITCH_DT, k, "enabled", v or 0)
 		frappe.db.commit()
@@ -272,6 +270,29 @@ class TestTpTuplesAsFlows(FrappeTestCase):
 			self._unspy_sends(patched)
 		self.assertEqual(calls["whatsapp"], 0, "a tuple fire reached the WhatsApp adapter")
 		self.assertEqual(calls["email"], 0, "a tuple fire reached the email adapter")
+
+	def test_fire_once_on_done_transition_not_on_resave(self):
+		"""Fire-once proof — the whole point of the native-Task watchable home. A not-Done→Done TRANSITION
+		fires the rule once; re-saving the already-Done task does NOT re-fire (status is watchable via
+		CRM Task Field, so `changed to Done` sees the before-value and matches only on the transition)."""
+		idx = next(i for i, r in enumerate(RULES) if r[4])  # first tuple that creates a follow-up
+		trigger, field, value, set_stage, create_task, _due = RULES[idx]
+		followup_type = _tt(create_task)
+		lead = _make_lead(f"fireonce-{idx}")
+		task = _make_trigger_task(lead.name, _tt(trigger))
+		_apply_activity_field(task, _tt(trigger), field, value)
+
+		task.status = "Done"
+		task.save(ignore_permissions=True)  # the not-Done → Done transition
+		first = [t for t in _new_tasks_for(lead.name, exclude=task.name) if t.custom_task_type == followup_type]
+		self.assertEqual(len(first), 1, "the Done transition must fire the rule exactly ONCE")
+
+		# Re-save the ALREADY-Done task (a real edit, status unchanged) — no transition, so it must NOT re-fire.
+		task.reload()
+		task.title = "TPFlow trigger (re-saved)"
+		task.save(ignore_permissions=True)
+		again = [t for t in _new_tasks_for(lead.name, exclude=task.name) if t.custom_task_type == followup_type]
+		self.assertEqual(len(again), 1, "re-saving an already-Done task must NOT create a second follow-up")
 
 	def _fire_and_assert(self, idx, trigger, field, value, set_stage, create_task, due_from):
 		task_type = _tt(trigger)

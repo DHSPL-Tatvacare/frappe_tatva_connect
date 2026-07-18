@@ -174,8 +174,7 @@ DEFAULTS = {
 	"list_default_page": 20,
 	"file_download_timeout_seconds": 30,
 	"file_download_max_mb": 25,
-	# Volume dimension — rows/window, read + write, per-token + global (records global = 5x
-	# per-token). Single + bulk both charge their row count here.
+	# Volume dimension — rows/window, read + write, per-token + global (records global = 5x per-token). Single + bulk both charge their row count here.
 	"records_window_seconds": 86400,
 	"per_token_read_records": 10000,
 	"global_read_records": 50000,
@@ -196,8 +195,7 @@ DEFAULTS = {
 	"async_per_token_write_records": 1000000,
 	"async_global_write_records": 5000000,
 }
-# The DIMENSIONS: 0 here means "unlimited", and the limiter skips that bucket entirely. A burst is
-# NOT in this list — it is the bucket's capacity, so a 0 falls back to its DEFAULT (see the 0-rules).
+# The DIMENSIONS: 0 here means "unlimited", and the limiter skips that bucket entirely. A burst is NOT in this list — it is the bucket's capacity, so a 0 falls back to its DEFAULT (see the 0-rules).
 _UNLIMITED_WHEN_ZERO = (
 	"per_token_rate", "global_rate", "bulk_rate",
 	"per_token_read_records", "global_read_records",
@@ -458,8 +456,7 @@ _ERROR_MAP = {
 	frappe.PermissionError: ("forbidden", 403),
 	frappe.DoesNotExistError: ("not_found", 404),
 	frappe.ValidationError: ("validation_error", 400),
-	# Python builtins (no frappe equivalent) — Frappe's field coercion raises these on bad input
-	# (e.g. a malformed date); the caller's fault -> 400, not an opaque 500.
+	# Python builtins (no frappe equivalent) — Frappe's field coercion raises these on bad input (e.g. a malformed date); the caller's fault -> 400, not an opaque 500.
 	ValueError: ("validation_error", 400),
 	TypeError: ("validation_error", 400),
 }
@@ -927,8 +924,7 @@ def _api(fn=None, *, bulk=False, read=False):
 			if code == "server_error":
 				frappe.db.commit()
 			extra = {"fields": fields} if fields else {}
-			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a
-			# retryable failure must never do.
+			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a retryable failure must never do.
 			if http == 503:
 				extra["retry_after"] = _cfg()["bulk_window_seconds"]
 			_fail(code, message, http, **extra)
@@ -945,8 +941,7 @@ def _bulk_error(i, e, fn_name):
 	"""One failed record -> its entry in a bulk `results` array. Shared by the write and read
 	lanes so a per-record failure looks IDENTICAL whichever bulk endpoint produced it."""
 	code, _http, message, fields = _classify(e, fn_name)
-	# the throw populated message_log -> clear it so build_response doesn't
-	# leak `_server_messages` into the (otherwise clean) bulk envelope.
+	# the throw populated message_log -> clear it so build_response doesn't leak `_server_messages` into the (otherwise clean) bulk envelope.
 	frappe.clear_messages()
 	frappe.local.message_log = []
 	err = {"code": code, "message": message}

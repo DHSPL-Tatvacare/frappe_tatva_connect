@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:section_key",
+ "creation": "2026-07-18 00:00:00.000000",
+ "description": "The sections a lead's fields are grouped into (the `acq` in `acq:utm_campaign`). ONE row states everything a section is: which CRM Lead Table field holds its rows, whose columns they are, whether a lead may carry many of them, and which column addresses one. Every reader — the partner API, the Facebook fold, intake, Smart Views, the Data tab — asks this table; the answer is never restated on a CRM Lead API Field row.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_key",
+  "title",
+  "display_order",
+  "column_break_target",
+  "target_doctype",
+  "child_table_field",
+  "row_section",
+  "is_multi_row",
+  "row_key_field"
+ ],
+ "fields": [
+  {"fieldname": "section_key", "fieldtype": "Data", "label": "Section Key", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "The prefix in a field key: the `acq` in `acq:utm_campaign`. Every catalog field naming this section is routed by the row below."},
+  {"fieldname": "title", "fieldtype": "Data", "label": "Title", "reqd": 1, "in_list_view": 1, "description": "The heading these fields are shown under, on the Data tab and in a partner's error messages."},
+  {"fieldname": "display_order", "fieldtype": "Int", "label": "Display Order", "reqd": 1, "in_list_view": 1, "description": "Ascending: a lower number sits higher on the page. Sections are rendered in this order."},
+  {"fieldname": "column_break_target", "fieldtype": "Column Break"},
+  {"fieldname": "target_doctype", "fieldtype": "Link", "options": "DocType", "label": "Target DocType", "reqd": 1, "in_list_view": 1, "description": "The doctype whose columns these fields are. Every field naming this section is resolved against it, so a field that is not one of its columns is refused."},
+  {"fieldname": "child_table_field", "fieldtype": "Data", "label": "Child Table Field", "description": "The Table field on CRM Lead holding these rows, e.g. custom_lab_profile. Left blank the section IS the lead row itself, and the target must then be CRM Lead."},
+  {"fieldname": "row_section", "fieldtype": "Section Break", "label": "Rows"},
+  {"fieldname": "is_multi_row", "fieldtype": "Check", "label": "Is Multi Row", "in_list_view": 1, "description": "A lead may carry many of these rows — a lab report per date, a drug cycle per date. Ticked, a write upserts the row named by the Row Key Field and leaves every other row untouched; unticked, the one row is merged onto and a second incoming row is refused."},
+  {"fieldname": "row_key_field", "fieldtype": "Data", "label": "Row Key Field", "description": "The column identifying one row, e.g. report_date. Required when multi-row: it is the address a write is applied at, is always accepted even where a partner's grid has not ticked it, and is marked required in that section's schema."}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Partner API",
+ "name": "CRM Lead Section",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "display_order",
+ "sort_order": "ASC",
+ "states": []
+}

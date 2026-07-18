@@ -74,11 +74,10 @@
    "label": "Maps to Lead / Profile"
   },
   {
-   "description": "Where this field's value lands. lead = CRM Lead; plan/care/lab/drug = the matching child profile; note = an FCRM Note. Leave blank for layout-only fields (Section/Column Break, HTML).",
+   "description": "Where this field's value lands: a CRM Lead Section key (lead = CRM Lead; a child section = its matching child profile) or note = an FCRM Note. Leave blank for layout-only fields (Section/Column Break, HTML).",
    "fieldname": "target_table",
-   "fieldtype": "Select",
-   "label": "Target Table",
-   "options": "\nlead\nplan\ncare\nlab\ndrug\nnote"
+   "fieldtype": "Autocomplete",
+   "label": "Target Table"
   },
   {
    "description": "The fieldname on the resolved doctype the value lands in (for note: the Note title). One row must target lead → mobile_no (the lead's phone).",

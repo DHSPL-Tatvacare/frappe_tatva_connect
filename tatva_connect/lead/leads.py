@@ -191,7 +191,7 @@ def lead_stages(lead):
 def _latest_lab_row(doc):
 	"""The most recent CRM Lab Profile child row, or None. 'Latest' = newest
 	report_date; rows with no date sort last, ties broken by grid order (idx)."""
-	rows = doc.get("custom_lab_profile") or []
+	rows = doc.get(frappe.get_cached_doc("CRM Lead Section", "lab").child_table_field) or []
 	if not rows:
 		return None
 	# cstr keys the sort uniformly whether report_date is a date object or an ISO

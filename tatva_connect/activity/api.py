@@ -28,6 +28,14 @@ PROMOTED_COLUMNS = (
 )
 
 
+def field_column(f):
+	"""The promoted CRM Task column a schema field routes to, or None when it lives in the JSON payload.
+	THE routing rule, named once: compute_activity WRITES by it and Smart Views READS by it, so a column
+	the writer fills can never be a column the reader looks past."""
+	target = f.get("target") or ""
+	return target if target in PROMOTED_COLUMNS else None
+
+
 def _lead_axes(lead):
 	v = frappe.db.get_value(
 		"CRM Lead", lead, ["custom_vertical", "custom_group", "custom_current_program"], as_dict=True
@@ -175,24 +183,26 @@ def list_types_for_lead(lead):
 	return out
 
 
+def _field_descriptor(f):
+	"""One shape for an activity field descriptor from a CRM Task Type schema row — the client form."""
+	return {
+		"label": f.label,
+		"fieldname": f.fieldname,
+		"fieldtype": f.fieldtype,
+		"options": f.options or "",
+		"reqd": int(f.reqd or 0),
+		"target": f.target or "",
+		"depends_on": (f.get("depends_on") or ""),
+	}
+
+
 @frappe.whitelist()
 def get_schema(task_type):
 	"""The activity type's per-field schema, in order — for the client form."""
 	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
 		frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
 	doc = frappe.get_doc("CRM Task Type", task_type)
-	return [
-		{
-			"label": f.label,
-			"fieldname": f.fieldname,
-			"fieldtype": f.fieldtype,
-			"options": f.options or "",
-			"reqd": int(f.reqd or 0),
-			"target": f.target or "",
-			"depends_on": (f.get("depends_on") or ""),
-		}
-		for f in doc.schema
-	]
+	return [_field_descriptor(f) for f in doc.schema]
 
 
 def _validate_asm(asm):
@@ -248,9 +258,9 @@ def compute_activity(lead, task_type, values, task=None):
 		# submitted, so requiring it would brick the save (one rule, same as the client).
 		if f.reqd and _field_visible(f.get("depends_on"), values) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
-		target = f.target or ""
 		# Route by the schema field's target: one of the 9 promoted columns, else the JSON payload.
-		(promoted if target in PROMOTED_COLUMNS else payload)[target or f.fieldname] = val
+		column = field_column(f)
+		(promoted if column else payload)[column or f.fieldname] = val
 
 	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
 	_validate_asm(promoted.get("custom_asm"))
@@ -448,18 +458,7 @@ def _type_config(task_type):
 		return None
 	doc = frappe.get_doc("CRM Task Type", task_type)
 	return {
-		"fields": [
-			{
-				"label": f.label,
-				"fieldname": f.fieldname,
-				"fieldtype": f.fieldtype,
-				"options": f.options or "",
-				"reqd": int(f.reqd or 0),
-				"depends_on": (f.get("depends_on") or ""),
-				"target": f.target or "",
-			}
-			for f in doc.schema
-		],
+		"fields": [_field_descriptor(f) for f in doc.schema],
 		"is_logged_complete": int(doc.is_logged_complete or 0),
 		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
 	}

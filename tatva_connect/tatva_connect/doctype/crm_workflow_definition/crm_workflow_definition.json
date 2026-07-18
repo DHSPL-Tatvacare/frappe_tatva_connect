@@ -20,7 +20,8 @@
   "when_section",
   "criteria",
   "nodes_section",
-  "nodes"
+  "nodes",
+  "canvas_json"
  ],
  "fields": [
   {
@@ -113,6 +114,14 @@
    "label": "Nodes",
    "options": "CRM Workflow Node",
    "description": "The graph: one row per node. Set each row's type and its handful of type-specific fields; edges reference other rows by Node ID."
+  },
+  {
+   "fieldname": "canvas_json",
+   "fieldtype": "Long Text",
+   "label": "Canvas Layout (JSON)",
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "UI-only: node positions and viewport for the Campaigns canvas. Not read by the version freeze, so moving a node never mints a new Version; layout is presentation, the node graph is content."
   }
  ],
  "grid_page_length": 50,

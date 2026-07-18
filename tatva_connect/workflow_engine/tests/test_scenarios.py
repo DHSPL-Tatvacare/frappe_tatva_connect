@@ -61,7 +61,7 @@ _SIGNAL_DT = "CRM Workflow Signal"
 _GROUP_DT = "CRM Action Group"
 _ITEM_DT = "CRM Action Group Item"
 _SWITCH_DT = "CRM Tatva Automation"
-_FIELD = field_allowlist.DOCTYPE
+# retired: seeds now live on the catalog + contract; teardown uses field_allowlist.clear()
 
 _GRAIN = GRAINS[2]  # TatvaPractice / India / FieldSales
 _AXES = (_GRAIN["vertical"], _GRAIN["group"], _GRAIN["program"])
@@ -287,8 +287,7 @@ class _SampleWorkflowCase(FrappeTestCase):
 		frappe.db.delete(_DEF_DT, {"workflow_name": _WF})
 		frappe.db.delete(_ITEM_DT, {"parent": ["like", f"{_AG}%"]})
 		frappe.db.delete(_GROUP_DT, {"group_name": ["like", f"{_AG}%"]})
-		for r in cls.set_rows:
-			frappe.db.delete(_FIELD, {"name": r})
+		field_allowlist.clear()
 		frappe.delete_doc("WhatsApp Templates", cls.template, force=True, ignore_permissions=True)
 		frappe.delete_doc("WhatsApp Account", cls.account, force=True, ignore_permissions=True)
 		frappe.db.delete("Webhook", {"name": ["in", [cls.hook_ai, cls.hook_api2]]})

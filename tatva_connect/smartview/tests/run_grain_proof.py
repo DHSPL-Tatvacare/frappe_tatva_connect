@@ -45,12 +45,12 @@ def _other_program(p):
 def _seed_catalog(v, g, p, p_other):
 	rows = [
 		# grain-tagged field for (v,g,p)
-		dict(field_key=GFIELD, label="Grain In", fieldname="first_name", section_key="lead",
-			 target_doctype="CRM Lead", sql_source="parent", applies_to="lead", filterable=1, sortable=1,
+		dict(field_key=GFIELD, label="Grain In", fieldname="first_name", section="lead", section_key="lead",
+			 target_doctype="CRM Lead", filterable=1, sortable=1,
 			 surface="worklist", grain_vertical=v, grain_group=g, grain_program=p),
 		# field tagged to a DIFFERENT program
-		dict(field_key=OFIELD, label="Grain Out", fieldname="last_name", section_key="lead",
-			 target_doctype="CRM Lead", sql_source="parent", applies_to="lead", filterable=1, sortable=1,
+		dict(field_key=OFIELD, label="Grain Out", fieldname="last_name", section="lead", section_key="lead",
+			 target_doctype="CRM Lead", filterable=1, sortable=1,
 			 surface="worklist", grain_vertical=v, grain_group=g, grain_program=p_other),
 	]
 	for r in rows:

@@ -1,6 +1,9 @@
 // Desk Client Script — CRM Intake Form builder (Frappe Desk, /app/crm-intake-form).
 // Two affordances, both native, no DOM hacks, no innerHTML of user content:
 //   1) Mappings grid dropdowns driven by LIVE meta:
+//        - target_table  -> the live CRM Lead Section keys + `note` (column-wide, same set for
+//          every row, via grid.update_docfield_property). No hardcoded list — the section brain
+//          is the only source, so a new/renamed section shows up here with no client change.
 //        - target_field  -> the pickable fields of the row's target_table (resolved server-side
 //          via list_target_fields, which is has_permission-gated and read-only). Per-row, so it
 //          is set on the OPENED row control in `form_render`.
@@ -21,6 +24,7 @@ frappe.ui.form.on('CRM Intake Form', {
   refresh(frm) {
     tatva_intake_buttons(frm);
     tatva_intake_showif_options(frm);
+    tatva_intake_target_table_options(frm);
   },
 });
 
@@ -58,6 +62,22 @@ function tatva_intake_showif_options(frm) {
   } catch (e) {
     // Field absent / grid not built yet — safe no-op.
   }
+}
+
+// target_table: the live CRM Lead Section keys + note, column-wide (same for all rows). No
+// hardcoded list — reads the section brain, so it can never drift from what the fold routes on.
+function tatva_intake_target_table_options(frm) {
+  const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
+  if (!grid) return;
+  frappe.db.get_list('CRM Lead Section', { fields: ['section_key'], order_by: 'display_order asc' }).then((rows) => {
+    const keys = (rows || []).map((r) => r.section_key);
+    const opts = ['', ...keys, 'note'].join('\n');
+    try {
+      grid.update_docfield_property('target_table', 'options', opts);
+    } catch (e) {
+      // Field absent / grid not built yet — safe no-op.
+    }
+  });
 }
 
 // target_field: per-row, from live meta of the row's target_table.

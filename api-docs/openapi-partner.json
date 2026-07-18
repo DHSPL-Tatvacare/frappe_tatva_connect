@@ -2935,8 +2935,8 @@
                 ]
               },
               "custom_lab_profile": {
-                "multi_row": false,
-                "key_field": null,
+                "multi_row": true,
+                "key_field": "report_date",
                 "fields": [
                   {
                     "fieldname": "alt_sgpt",
@@ -3071,8 +3071,8 @@
                     "fieldname": "report_date",
                     "label": "Lab Report Date",
                     "type": "Date",
-                    "behavior": "OPTIONAL",
-                    "required": false,
+                    "behavior": "REQUIRED",
+                    "required": true,
                     "options": null
                   },
                   {
