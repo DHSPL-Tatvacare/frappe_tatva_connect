@@ -4,7 +4,7 @@ The catalog (`CRM Lead API Field`) is shared with the partner API, but this modu
 ONLY on the internal Smart Views path. It never touches partner behaviour:
   * `entitled_grains(user)` — the grains a principal owns (partner → mapping row; internal →
     their Assignment Rule rows + reports_to roll-up; System Manager → all; nothing → universal).
-  * `field_in_grains(field_row, grains)` — a containment test (blank axis = wildcard, no throw).
+  * `field_in_grains_via_contract(field_key, grains)` — is this field ticked by any grain's contract?
   * `resolve_fields(...)` — catalog ∩ grain − role-restricted ∪ universal (fail-closed).
 
 A grain is a `(vertical, group, program)` tuple; a blank axis means "any". `ALL_GRAINS` is the
@@ -29,6 +29,8 @@ _REPORTS_TO_DEPTH = 10
 
 
 def _grain(row):
+	"""Grain tuple off an Assignment Rule row (grain_vertical/group/program). Assignment Rule keeps these
+	columns — the catalog's grain_* were dropped in Phase 9. Read ONLY for the rule roll-up below."""
 	return (row.get("grain_vertical") or "", row.get("grain_group") or "", row.get("grain_program") or "")
 
 
@@ -107,23 +109,10 @@ def entitled_grains(user=None):
 	return request_cache(_GRAINS_CACHE, user, build)
 
 
-def field_in_grains(field_row, grains):
-	"""Membership: is this catalog field visible to a principal holding `grains`?
-	True iff ∃ g ∈ grains where every axis of the field is blank (wildcard) or equals g's axis.
-	Containment only — never throws (unlike resolve_scoped, which raises on ties)."""
-	if grains == ALL_GRAINS:
-		return True
-	fv, fg, fp = _grain(field_row)
-	for gv, gg, gp in grains:
-		if (not fv or fv == gv) and (not fg or fg == gg) and (not fp or fp == gp):
-			return True
-	return False
-
-
 def _internal_ticks():
 	"""{grain_tuple: set(ticked field_keys)} from the is_internal=1 mappings — the SAME tick mechanism
 	the partner API reads, but for internal per-grain visibility. Request-cached; one build per request.
-	Seeded by access/internal_contract.py from the grain_* logic, so it agrees with field_in_grains."""
+	Seeded by access/internal_contract.py from the frozen GRAIN_FIELDS snapshot (the primary seed)."""
 	def build():
 		ticks = {}
 		for m in frappe.get_all(
@@ -138,15 +127,23 @@ def _internal_ticks():
 	return request_cache(_INTERNAL_TICKS_CACHE, "all", build)
 
 
+def _contract_covers(contract_grain, grain):
+	"""THE grain-match rule, identical to taxonomy.grain._score and every other matcher: a SET axis on the
+	CONTRACT must equal the target's; a BLANK axis is a wildcard. Contracts are declared at the level
+	visibility is granted (a rep sees all of GoodFlip Care/Anaya whatever program the patient enrolled
+	into), so a blank program covers every program — it never means the empty string."""
+	# strict=True: a grain that is not a full 3-tuple is a defect (every input surface populates all three axes), and a short one would zip to nothing and match EVERYTHING.
+	return all(c == "" or c == t for c, t in zip(contract_grain, grain, strict=True))
+
+
 def field_in_grains_via_contract(field_key, grains):
-	"""Contract-based twin of field_in_grains: True iff `field_key` is ticked by the internal contract of
-	ANY grain in `grains`. ALL_GRAINS (System Manager) → True. Takes a field_key (the switch task will
-	reconcile the callers that today pass a field_row). Reads NO grain_* column — the contract is the brain."""
+	"""The ONE membership brain: True iff `field_key` is ticked by a contract COVERING any grain in
+	`grains`. ALL_GRAINS (System Manager) → True. Reads NO grain_* column (they were dropped in Phase 9) —
+	the per-grain contract, seeded from GRAIN_FIELDS, is the sole source of internal field visibility."""
 	if grains == ALL_GRAINS:
 		return True
-	ticks = _internal_ticks()
-	for g in grains:
-		if field_key in ticks.get(g, set()):
+	for contract_grain, keys in _internal_ticks().items():
+		if field_key in keys and any(_contract_covers(contract_grain, g) for g in grains):
 			return True
 	return False
 
@@ -155,10 +152,11 @@ def is_universal_field(field_key):
 	"""Contract-era 'universal': True iff `field_key` is ticked by EVERY internal contract (belongs to all
 	grains). Request-cached off the same _internal_ticks() map. No contracts at all → False (fail-closed)."""
 	def build():
-		ticks = _internal_ticks()
-		if not ticks:
+		# Only contracts that DECLARE something: a zero-tick grain means "declares nothing yet", and intersecting it would flip every universal field off everywhere.
+		declared = [keys for keys in _internal_ticks().values() if keys]
+		if not declared:
 			return set()
-		return set.intersection(*ticks.values())
+		return set.intersection(*declared)
 	return field_key in request_cache(_UNIVERSAL_CACHE, "all", build)
 
 
