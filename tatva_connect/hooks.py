@@ -32,6 +32,8 @@ override_doctype_class = {
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
 	# Facebook discovery/crawl through our Graph layer: Meta's reason surfaces, no silent empty, no token in logs.
 	"Lead Sync Source": "tatva_connect.lead_sync.source.TatvaLeadSyncSource",
+	# A question maps to a catalog field_key, checked against the form's contract; upstream compares bare fieldnames and throws on every edit.
+	"Facebook Lead Form": "tatva_connect.lead_sync.form.TatvaFacebookLeadForm",
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
@@ -264,7 +266,9 @@ after_migrate = [
 	"tatva_connect.partner_api.section_seed.ensure_rows",
 	# The three catalog rows the Facebook fold stamps by field_key; a key with no row has no declared home.
 	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
-	# Per-grain INTERNAL visibility contracts (is_internal=1), ticked from the grain_* logic; after the catalog rows exist so every grain's field list is complete. Additive — grain_* stays live.
+	# The token-expiry alert as a native Notification, seeded DISABLED — no job is written; Frappe owns the Days Before scheduler.
+	"tatva_connect.lead_sync.notification_seed.ensure_notification",
+	# Per-grain INTERNAL visibility contracts (is_internal=1), ticked from the frozen GRAIN_FIELDS seed (the primary source; grain_* columns dropped in Phase 9); after the catalog rows exist so every grain's field list is complete.
 	"tatva_connect.access.internal_contract.ensure_internal_contracts",
 	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
 	"tatva_connect.seeds.seed_master_data",
@@ -349,6 +353,8 @@ fixtures = [
 		# The contract a Facebook form's leads are created against — the ONE place its grain and field set are declared.
 		"Lead Sync Source-routing_section",
 		"Lead Sync Source-api_mapping",
+		# Stamped from Graph when the token is saved; a 60-day lapse otherwise stops the crawl in silence.
+		"Lead Sync Source-token_expires_on",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
@@ -370,6 +376,8 @@ fixtures = [
 		"Facebook Lead Form Question-key-fieldtype",
 		# The page token is derived from a long-lived User token and never expires on its own; it is stored encrypted, not as plaintext Small Text.
 		"Facebook Page-access_token-fieldtype",
+		# "Unconfigured Form": the crawl's word for a source pointing at a form Facebook no longer reports.
+		"Failed Lead Sync Log-type-options",
 		# Upstream defaults enabled to 1; every automation surface here ships dormant and the operator turns it on.
 		"Lead Sync Source-enabled-default",
 		# Scoping fix: exclude the secondary (history) Link fields from User Permission matching so a scoped user is filtered by the CURRENT field only (else blank/different history HIDES valid in-scope leads).

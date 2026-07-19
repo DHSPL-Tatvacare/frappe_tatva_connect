@@ -1,6 +1,5 @@
 """Page + lead-form discovery: one unreadable Page never kills the readable ones."""
 import frappe
-
 from crm.lead_syncing.doctype.lead_sync_source.facebook import create_facebook_lead_form_in_db
 
 from tatva_connect.lead_sync.graph import api_url, graph_get, redact_tokens
@@ -77,12 +76,17 @@ def _create_page(page: dict, account_details: dict) -> None:
 	).insert(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
 
 
-def _fetch_and_store_forms(page_id: str, page_access_token: str) -> list[dict]:
-	forms = graph_get(
+def list_forms(page_id: str, page_access_token: str) -> list[dict]:
+	"""The live lead forms Facebook reports for a Page — READ ONLY, stores nothing. One lister, two callers: discovery (which then stores) and the crawl's drift check."""
+	return graph_get(
 		f"lead form listing for page {page_id}",
 		api_url(f"/{page_id}/leadgen_forms"),
 		{"access_token": page_access_token, "fields": "id,name,questions", "limit": 15000},
 	).get("data", [])
+
+
+def _fetch_and_store_forms(page_id: str, page_access_token: str) -> list[dict]:
+	forms = list_forms(page_id, page_access_token)
 	for form in forms:
 		if not frappe.db.exists("Facebook Lead Form", form["id"]):
 			create_facebook_lead_form_in_db(form, page_id)

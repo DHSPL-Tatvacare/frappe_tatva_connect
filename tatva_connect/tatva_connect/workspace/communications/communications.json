@@ -1,7 +1,7 @@
 {
  "app": "tatva_connect",
  "charts": [],
- "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}, {\"id\": \"shortcutNotifSettings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 6}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 6}}, {\"id\": \"telhdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Telephony Setup</b></span>\", \"col\": 12}}, {\"id\": \"telintro\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Four steps, in order. Every provider names these differently &mdash; Acefone calls a number a <i>My Number</i>, Ozonetel calls it a <i>Virtual Number</i> &mdash; but they are the same four things, so a new provider reuses this screen.</span>\", \"col\": 12}}, {\"id\": \"tel1\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Telephony Account</b> &mdash; one per provider tenant. Its webhook token is what authenticates the provider; HMAC and an IP allowlist are optional and off until you turn them on.\", \"col\": 12}}, {\"id\": \"tel2\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Numbers (DIDs)</b> &mdash; one row per number the business gives you, and the grain it belongs to. <b>A number that is not listed here is dropped.</b> That is what keeps other businesses off a shared provider account out of this CRM. Type the number; pick the grain &mdash; it must match the grain on the leads, or a call attaches to nothing.\", \"col\": 12}}, {\"id\": \"tel3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Agents</b> &mdash; only for agents whose provider email is <i>not</i> their CRM login. Staff whose email matches a CRM user resolve on their own and need no row. An unmapped agent never costs you the call; it only leaves the rep blank.\", \"col\": 12}}, {\"id\": \"tel4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Capture Rules</b> &mdash; inside Telephony Settings. Which calls become Call Logs, by direction and channel. <b>Empty captures nothing</b>; telephony is on once you add a rule.\", \"col\": 12}}, {\"id\": \"telafter\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Every delivery is logged either way. A call that is dropped or declined is recorded in <b>Integration Request</b> with the reason &mdash; fix the reason, replay the row, and the call lands.</span>\", \"col\": 12}}, {\"id\": \"telsc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 3}}, {\"id\": \"telsc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 3}}, {\"id\": \"telsc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Mapping\", \"col\": 3}}, {\"id\": \"telsc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 3}}]",
+ "content": "[{\"id\": \"hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}}, {\"id\": \"shortcutNotifSettings\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 6}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 6}}, {\"id\": \"telhdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Telephony Setup</b></span>\", \"col\": 12}}, {\"id\": \"telintro\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Four steps, in order. Every provider names these differently &mdash; Acefone calls a number a <i>My Number</i>, Ozonetel calls it a <i>Virtual Number</i> &mdash; but they are the same four things, so a new provider reuses this screen.</span>\", \"col\": 12}}, {\"id\": \"tel1\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Telephony Account</b> &mdash; one per provider tenant. Its webhook token is what authenticates the provider; HMAC and an IP allowlist are optional and off until you turn them on.\", \"col\": 12}}, {\"id\": \"tel2\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Numbers (DIDs)</b> &mdash; one row per number the business gives you, and the grain it belongs to. <b>A number that is not listed here is dropped.</b> That is what keeps other businesses off a shared provider account out of this CRM. Type the number; pick the grain &mdash; it must match the grain on the leads, or a call attaches to nothing.\", \"col\": 12}}, {\"id\": \"tel3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Agents</b> &mdash; only for agents whose provider email is <i>not</i> their CRM login. Staff whose email matches a CRM user resolve on their own and need no row. An unmapped agent never costs you the call; it only leaves the rep blank.\", \"col\": 12}}, {\"id\": \"tel4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Capture Rules</b> &mdash; inside Telephony Settings. Which calls become Call Logs, by direction and channel. <b>Empty captures nothing</b>; telephony is on once you add a rule.\", \"col\": 12}}, {\"id\": \"telafter\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Every delivery is logged either way. A call that is dropped or declined is recorded in <b>Integration Request</b> with the reason &mdash; fix the reason, replay the row, and the call lands.</span>\", \"col\": 12}}, {\"id\": \"telsc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 3}}, {\"id\": \"telsc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 3}}, {\"id\": \"telsc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Mapping\", \"col\": 3}}, {\"id\": \"telsc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 3}}, {\"id\": \"fbhdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Facebook Routing</b></span>\", \"col\": 12}}, {\"id\": \"fbintro\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Four steps, in order. A Facebook form collects whatever the campaign asked for; this decides which of those answers become a lead, and which business line that lead belongs to. Nothing arrives until the last step is taken &mdash; a source is dormant when it is created.</span>\", \"col\": 12}}, {\"id\": \"fb1\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Contract</b> &mdash; the grain every lead from this form is stamped with, and the field list the form is allowed to write. It is chosen once, on the source. <b>A source cannot be enabled without one</b>, because a lead with no grain is owned by nobody and routed by no rule.\", \"col\": 12}}, {\"id\": \"fb2\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Lead Sync Source</b> &mdash; one per form being crawled, holding the Page access token. The Pages and their lead forms are discovered and stored when it is saved, so the token is exercised immediately: if it cannot see the Business that owns the Page, it is refused here rather than months later in silence.\", \"col\": 12}}, {\"id\": \"fb3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Field Mapping</b> &mdash; on the Facebook Lead Form, each question is pointed at a CRM field. The list offered is exactly what the contract allows for that grain, so a field outside it cannot be chosen. <b>An unmapped question is collected and discarded</b> &mdash; the answer reaches Facebook and stops there. Phone is required: the lead is deduped on it.\", \"col\": 12}}, {\"id\": \"fb4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>4. Enable &amp; frequency</b> &mdash; how often the form is crawled. Only leads created since the last successful crawl are fetched, so an hourly form and a daily form cost the same. This is the switch that starts everything; until it is set, the source is configured and idle.\", \"col\": 12}}, {\"id\": \"fbafter\", \"type\": \"paragraph\", \"data\": {\"text\": \"<span class=\\\"text-muted\\\">Every refusal is recorded in <b>Failed Lead Sync Log</b> with its reason. Two are worth watching: <i>Duplicate</i> is ordinary &mdash; the same Facebook lead was already taken. <i>Unconfigured Form</i> is not: it means the form this source points at is no longer one Facebook reports for the Page, which happens when a form is duplicated or rebuilt and takes a new id. The source keeps crawling a form that no longer exists and returns nothing, so it is named here instead of passing as a quiet day.</span>\", \"col\": 12}}, {\"id\": \"fbsc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Sources\", \"col\": 3}}, {\"id\": \"fbsc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Lead Forms\", \"col\": 3}}, {\"id\": \"fbsc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Settings\", \"col\": 3}}, {\"id\": \"fbsc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Failures\", \"col\": 3}}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,7 +13,7 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-07-12 12:00:00.000000",
+ "modified": "2026-07-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -102,6 +102,38 @@
    "doc_view": "List",
    "label": "Notification Settings",
    "link_to": "CRM Notification Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Lead Sync Sources",
+   "link_to": "Lead Sync Source",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Facebook Lead Forms",
+   "link_to": "Facebook Lead Form",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Facebook Settings",
+   "link_to": "CRM Facebook Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Lead Sync Failures",
+   "link_to": "Failed Lead Sync Log",
    "stats_filter": "[]",
    "type": "DocType"
   }

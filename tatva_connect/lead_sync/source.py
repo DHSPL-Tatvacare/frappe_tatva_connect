@@ -1,12 +1,13 @@
 """Lead Sync Source override: discovery + crawl through our Graph layer, failures always logged."""
 import frappe
-
 from crm.lead_syncing.doctype.lead_sync_source.facebook import FacebookSyncSource
 from crm.lead_syncing.doctype.lead_sync_source.lead_sync_source import LeadSyncSource
 
 from tatva_connect.lead_sync.contract import allowed_field_keys, allowed_programs, contract_of, stage
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
+from tatva_connect.lead_sync.drift import report_form_drift
 from tatva_connect.lead_sync.graph import api_url, graph_get, redact_tokens, settings
+from tatva_connect.lead_sync.token import stamp_expiry
 
 
 class TatvaFacebookSyncSource(FacebookSyncSource):
@@ -98,6 +99,9 @@ class TatvaLeadSyncSource(LeadSyncSource):
 				frappe._("Select a Contract before enabling — it is what gives every lead from this form its grain."),
 				title=frappe._("Contract required"),
 			)
+		# Ask Graph for the expiry only when the token is actually new or changed, never on every save.
+		if self.type == "Facebook" and (self.is_new() or self.has_value_changed("access_token")):
+			stamp_expiry(self)
 
 	def before_insert(self):
 		if self.type == "Facebook" and self.access_token:
@@ -120,6 +124,7 @@ class TatvaLeadSyncSource(LeadSyncSource):
 			return
 		if not self.facebook_lead_form:
 			frappe.throw(frappe._("Please select a lead gen form before syncing!"))
+		report_form_drift(self)
 		try:
 			# source_name is what the fold reads its contract off; upstream leaves it None.
 			TatvaFacebookSyncSource(

@@ -942,5 +942,21 @@
   "property_type": "Text",
   "row_name": null,
   "value": "0"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Failed Lead Sync Log",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "type",
+  "is_system_generated": 0,
+  "modified": "2026-07-13 02:00:00.000000",
+  "module": null,
+  "name": "Failed Lead Sync Log-type-options",
+  "property": "options",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "Duplicate\nFailure\nSynced\nUnconfigured Form"
  }
 ]
