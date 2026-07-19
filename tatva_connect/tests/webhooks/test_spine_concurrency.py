@@ -22,20 +22,20 @@ PAYLOAD = {"call_id": "_spine-conc-1", "call_status": "missed", "duration": 292}
 class TestDeliveryKey(unittest.TestCase):
 	def test_identical_deliveries_share_one_key(self):
 		"""The eleven copies were byte-identical, so they are one delivery and need run once."""
-		a = spine._delivery_key("Acefone", "inbound_complete", dict(PAYLOAD))
-		b = spine._delivery_key("Acefone", "inbound_complete", dict(reversed(list(PAYLOAD.items()))))
+		a = spine._delivery_key("telephony", "inbound_complete", dict(PAYLOAD))
+		b = spine._delivery_key("telephony", "inbound_complete", dict(reversed(list(PAYLOAD.items()))))
 		self.assertEqual(a, b, "key depends on dict order")
 
 	def test_a_delivery_that_says_something_new_gets_its_own_key(self):
 		"""The hangup CDR carries the duration and the recording. It must never be deduplicated away."""
-		answered = spine._delivery_key("Acefone", "inbound_answered", {**PAYLOAD, "duration": 0})
-		hangup = spine._delivery_key("Acefone", "inbound_complete", PAYLOAD)
+		answered = spine._delivery_key("telephony", "inbound_answered", {**PAYLOAD, "duration": 0})
+		hangup = spine._delivery_key("telephony", "inbound_complete", PAYLOAD)
 		self.assertNotEqual(answered, hangup)
 
-	def test_the_key_is_scoped_to_its_provider(self):
-		"""Two providers are free to send the same bytes."""
+	def test_the_key_is_scoped_to_its_channel(self):
+		"""Two channels are free to send the same bytes."""
 		self.assertNotEqual(
-			spine._delivery_key("Acefone", "x", PAYLOAD), spine._delivery_key("WATI", "x", PAYLOAD)
+			spine._delivery_key("telephony", "x", PAYLOAD), spine._delivery_key("whatsapp", "x", PAYLOAD)
 		)
 
 
@@ -47,13 +47,14 @@ class TestSpineConcurrency(FrappeTestCase):
 		     patch.object(spine, "_screen", return_value=(True, None)), \
 		     patch.object(spine, "_request_payload", return_value=dict(PAYLOAD)), \
 		     patch.object(spine.ingress, "verify", return_value="_TestTelephonyAcct"), \
+		     patch.object(spine, "_adapter_for", return_value=None), \
 		     patch.object(spine, "_mark") as mark:
-			spine.receive("Acefone", enabled=lambda: True, adapter=None, event="inbound_complete")
+			spine.receive("telephony", enabled=lambda: True, event="inbound_complete")
 
 		self.assertTrue(enq.call_args.kwargs["deduplicate"], "the enqueue is not deduplicated")
 		self.assertEqual(
 			enq.call_args.kwargs["job_id"],
-			spine._delivery_key("Acefone", "inbound_complete", PAYLOAD),
+			spine._delivery_key("telephony", "inbound_complete", PAYLOAD),
 		)
 		mark.assert_called_once()
 		self.assertEqual(mark.call_args[0][1], "Cancelled")
@@ -70,7 +71,7 @@ class TestSpineConcurrency(FrappeTestCase):
 		with patch.object(spine, "_adapter_for", return_value=adapter), \
 		     patch.object(spine, "_mark"):
 			with self.assertRaises(frappe.RetryBackgroundJobError):
-				spine.process("Acefone", dict(PAYLOAD), "_TestTelephonyAcct",
+				spine.process("telephony", dict(PAYLOAD), "_TestTelephonyAcct",
 				              vendor_event="inbound_complete", log="_test-log-row")
 
 	def test_every_way_the_same_collision_surfaces_is_retried(self):
@@ -83,7 +84,7 @@ class TestSpineConcurrency(FrappeTestCase):
 				with patch.object(spine, "_adapter_for", return_value=adapter), \
 				     patch.object(spine, "_mark"):
 					with self.assertRaises(frappe.RetryBackgroundJobError):
-						spine.process("Acefone", dict(PAYLOAD), "_TestTelephonyAcct", log="_x")
+						spine.process("telephony", dict(PAYLOAD), "_TestTelephonyAcct", log="_x")
 
 	def test_a_genuinely_broken_delivery_still_fails_to_the_dlq(self):
 		"""The retry must not swallow a real bug. Only a collision is re-run."""
@@ -91,7 +92,7 @@ class TestSpineConcurrency(FrappeTestCase):
 		with patch.object(spine, "_adapter_for", return_value=adapter), \
 		     patch.object(spine, "_mark") as mark:
 			with self.assertRaises(ValueError):
-				spine.process("Acefone", dict(PAYLOAD), "_TestTelephonyAcct", log="_test-log-row")
+				spine.process("telephony", dict(PAYLOAD), "_TestTelephonyAcct", log="_test-log-row")
 		self.assertEqual(mark.call_args[0][1], "Failed")
 
 	def test_a_delivery_whose_call_is_already_written_completes_without_writing(self):
@@ -99,7 +100,7 @@ class TestSpineConcurrency(FrappeTestCase):
 		adapter = _adapter(already=True)
 		with patch.object(spine, "_adapter_for", return_value=adapter), \
 		     patch.object(spine, "_mark") as mark:
-			spine.process("Acefone", dict(PAYLOAD), "_TestTelephonyAcct", log="_test-log-row")
+			spine.process("telephony", dict(PAYLOAD), "_TestTelephonyAcct", log="_test-log-row")
 		self.assertEqual(mark.call_args[0][1], "Completed")
 		self.assertEqual(mark.call_args.kwargs["output"]["outcome"], "already processed")
 		adapter.handle.assert_not_called()

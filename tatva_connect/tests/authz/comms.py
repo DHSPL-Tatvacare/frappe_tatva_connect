@@ -17,7 +17,7 @@ from tatva_connect.automation.settings import is_enabled
 # lead or inserting a task with an assignee fires an HTTP push to the rep's mobile (sender.py),
 # gated by these keys, NOT by the three above. Missing them = a real push during a test.
 COMMS_SWITCHES = (
-	"WhatsApp::WATI::messaging",   # WATI outbound/inbound master gate
+	"WhatsApp::Channel::messaging",         # WhatsApp outbound/inbound master gate
 	"Telephony::Acefone::calls",   # Acefone click-to-call + logging
 	"Task::Assignment::followup",  # auto-creates follow-up tasks (can trigger notifications)
 	"Notify::Lead::assigned",      # FCM push to rep's mobile on lead assignment

@@ -35,16 +35,16 @@ class TestAutomationSeam(FrappeTestCase):
 
 	def test_settings_accessor(self):
 		"""Flipping a row's `enabled` is reflected by is_enabled() and the
-		module wrapper that delegates to it (whatsapp.api.is_enabled)."""
-		from tatva_connect.whatsapp import api as wati
+		module wrapper that delegates to it (whatsapp.channel.is_enabled)."""
+		from tatva_connect.whatsapp import channel as wa_channel
 
-		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::WATI::messaging", "enabled", 0)
-		self.assertFalse(settings.is_enabled("WhatsApp::WATI::messaging"))
-		self.assertFalse(wati.is_enabled())
+		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::Channel::messaging", "enabled", 0)
+		self.assertFalse(settings.is_enabled("WhatsApp::Channel::messaging"))
+		self.assertFalse(wa_channel.is_enabled())
 
-		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::WATI::messaging", "enabled", 1)
-		self.assertTrue(settings.is_enabled("WhatsApp::WATI::messaging"))
-		self.assertTrue(wati.is_enabled())
+		frappe.db.set_value("CRM Tatva Automation", "WhatsApp::Channel::messaging", "enabled", 1)
+		self.assertTrue(settings.is_enabled("WhatsApp::Channel::messaging"))
+		self.assertTrue(wa_channel.is_enabled())
 
 		# Unknown key is fail-closed dormant.
 		self.assertFalse(settings.is_enabled("does_not_exist"))
@@ -180,7 +180,7 @@ class TestAutomationSeam(FrappeTestCase):
 		cutover = {
 			"Task::Automation::rules",
 			"Storage::File::draft-cleanup",
-			"WhatsApp::WATI::templates",
+			"WhatsApp::Channel::templates",
 			"Storage::Azure::offload",
 			"Location::Google::capture",
 			"Task::Assignment::followup",
@@ -196,7 +196,7 @@ class TestAutomationSeam(FrappeTestCase):
 			self.assertIn(key, _BY_KEY, f"{key} not in registry")
 			# The key is named somewhere in the enable file — either the active
 			# UPDATE (dev live state) or the PROD-operator note (e.g. template_sync,
-			# documented but not enabled on dev because WATI is off here).
+			# documented but not enabled on dev because WhatsApp is off here).
 			self.assertIn(
 				key,
 				sql_text,

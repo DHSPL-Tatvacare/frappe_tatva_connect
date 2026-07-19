@@ -34,7 +34,6 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 
 from tatva_connect.telephony import api as acefone
-from tatva_connect.telephony.adapters import acefone as adapter
 from tatva_connect.webhooks import ingress, spine
 
 # TATVA L2: removed the TELEPHONY_MEDIUM / _process re-export shims (Invariant 14).
@@ -74,13 +73,12 @@ def outbound_complete(**kwargs):
 
 
 def _receive(event: str):
-	"""Hand the trigger to the shared spine. `event` carries direction + completion; the
-	adapter recovers both from it. The spine does kill-switch, token auth+identity, raw-log,
-	fast-ACK and enqueue."""
+	"""Hand the trigger to the shared spine. `event` carries direction + completion; the adapter
+	recovers both from it. The spine does kill-switch, token auth+identity, raw-log, fast-ACK and
+	enqueue, and resolves the adapter from the account the token authenticated."""
 	return spine.receive(
-		"Acefone",
+		"telephony",
 		enabled=acefone.is_enabled,
-		adapter=adapter,
 		event=event,
 	)
 

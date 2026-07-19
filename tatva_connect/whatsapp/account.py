@@ -6,7 +6,7 @@ from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_account.whatsapp_account i
 from tatva_connect.webhooks import ingress
 
 
-class WATIWhatsAppAccount(WhatsAppAccount):
+class ChannelWhatsAppAccount(WhatsAppAccount):
 	"""Upstream WhatsApp Account, plus the shared webhook-ingress contract.
 
 	Inbound authentication is infrastructure, not an automation: it must never become a switch an

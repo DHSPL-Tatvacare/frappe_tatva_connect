@@ -21,11 +21,11 @@ add_to_apps_screen = [
 	}
 ]
 
-# WATI WhatsApp — route frappe_whatsapp through WATI (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
+# WhatsApp channel — route frappe_whatsapp through the account's own channel adapter (never Meta): Message sends, Notification sends, Templates neutralise Meta create/edit/fetch.
 override_doctype_class = {
-	"WhatsApp Message": "tatva_connect.whatsapp.message.WATIWhatsAppMessage",
-	"WhatsApp Notification": "tatva_connect.whatsapp.notification.WATINotification",
-	"WhatsApp Templates": "tatva_connect.whatsapp.templates.WATITemplates",
+	"WhatsApp Message": "tatva_connect.whatsapp.message.ChannelWhatsAppMessage",
+	"WhatsApp Notification": "tatva_connect.whatsapp.notification.ChannelWhatsAppNotification",
+	"WhatsApp Templates": "tatva_connect.whatsapp.templates.ChannelWhatsAppTemplates",
 	# Read offloaded file bytes from Azure Blob; no-op for local files and when the storage kill-switch is off.
 	"File": "tatva_connect.storage.file_override.FileOverride",
 	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain lead; stock otherwise.
@@ -37,12 +37,12 @@ override_doctype_class = {
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
-	"WhatsApp Account": "tatva_connect.whatsapp.account.WATIWhatsAppAccount",
+	"WhatsApp Account": "tatva_connect.whatsapp.account.ChannelWhatsAppAccount",
 }
 
-# Rewire frappe_whatsapp's "Sync templates" endpoint to pull from WATI (read-only mirror), not Meta — for the desk button and any caller.
+# Rewire frappe_whatsapp's "Sync templates" endpoint to pull from the account's provider (read-only mirror), not Meta — for the desk button and any caller.
 override_whitelisted_methods = {
-	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_from_wati",
+	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_templates",
 	# Acefone rides crm's NATIVE call UI (no fork): phone icon -> Acefone bridge call, call-log fetch gains a playable recording path.
 	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.telephony.bridge.make_a_call",
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
@@ -227,10 +227,10 @@ doc_events = {
 	},
 }
 
-# Safety-net: re-sync every WATI account's templates every 6h so the local mirror stays current (manual "Sync from WATI" stays real-time).
+# Safety-net: re-sync every account's templates every 6h so the local mirror stays current (the manual Sync button stays real-time).
 scheduler_events = {
 	"cron": {
-		# Every 6h: WATI template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
+		# Every 6h: template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
 		"0 */6 * * *": [
 			"tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
 			"tatva_connect.observability.rollup.run",
@@ -346,6 +346,9 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["name", "in", [
 		"WhatsApp Message-custom_failed_reason",
 		"WhatsApp Message-custom_provider_message_id",
+		# An interactive reply's machine-readable identity — the two facts the upstream doctype has nowhere to put.
+		"WhatsApp Message-custom_button_id",
+		"WhatsApp Message-custom_button_title",
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
@@ -414,9 +417,9 @@ fixtures = [
 		"CRM Plan Profile-member_id-in_list_view",
 		"CRM Plan Profile-payment_link-in_list_view",
 		"CRM Plan Profile-plan_name-in_list_view",
-		# WATI Bearer tokens are long JWTs (>300 chars); raise the token field's form length cap (300 -> 1000) so an operator can paste a real token (column is already TEXT — form-validation only).
+		# Provider Bearer tokens are long JWTs (>300 chars); raise the token field's form length cap (300 -> 1000) so an operator can paste a real token (column is already TEXT — form-validation only).
 		"WhatsApp Account-token-length",
-		# Declutter (WATI-only): hide frappe_whatsapp's Meta-handshake fields we never use, so the form shows just our custom_webhook_token (values hidden, not dropped).
+		# Declutter: hide frappe_whatsapp's Meta-handshake fields we never use, so the form shows just our custom_webhook_token (values hidden, not dropped).
 		"WhatsApp Account-webhook_verify_token-hidden",
 		"WhatsApp Account-app_id-hidden",
 		"WhatsApp Account-business_id-hidden",
@@ -430,10 +433,10 @@ fixtures = [
 		"WhatsApp Account-url-description",
 		"WhatsApp Account-token-label",
 		"WhatsApp Account-token-description",
-		# Provider + url + token is the minimum that can send; gated on the provider so a non-WATI account is never forced to carry WATI's fields.
+		# Provider + url + token is the minimum that can send; gated on the provider so an account with no adapter is never forced to carry another provider's fields.
 		"WhatsApp Account-url-mandatory_depends_on",
 		"WhatsApp Account-token-mandatory_depends_on",
-		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our WATI text-template path doesn't use, so the form shows just template + variable mapping + account.
+		# Declutter WhatsApp Notification: hide Meta media/header/button/print fields our text-template path doesn't use, so the form shows just template + variable mapping + account.
 		"WhatsApp Notification-code-hidden",
 		"WhatsApp Notification-attach_document_print-hidden",
 		"WhatsApp Notification-custom_attachment-hidden",

@@ -15,6 +15,19 @@ row fails `bench migrate`.
 """
 from dataclasses import dataclass, field
 
+KEY_SHAPE = "Area::Subject::Capability"
+
+
+def assert_valid_key(key):
+	"""The ONE shape check for an automation key — exactly three non-empty `::` parts."""
+	parts = (key or "").split("::")
+	if len(parts) != 3 or not all(part.strip() for part in parts):
+		raise ValueError(
+			f"Automation key {key!r} must be {KEY_SHAPE} — exactly three non-empty `::` segments. "
+			"`Area` is derived from segment 1, and the go-live checklist groups by it."
+		)
+	return key
+
 
 @dataclass(frozen=True)
 class Auto:
@@ -26,50 +39,73 @@ class Auto:
 	requires: str = ""
 	activator: str = ""
 
+	# Import-time shape gate: a malformed key cannot reach the catalog, so drift fails the build.
+	def __post_init__(self):
+		assert_valid_key(self.key)
+		if self.requires:
+			assert_valid_key(self.requires)
+
 
 AUTOMATIONS = [
 	Auto(
-		key="WhatsApp::WATI::messaging",
+		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",
 		purpose=(
 			"WhatsApp is opened up on the lead: the templates and messages sent out of the CRM, and "
-			"the patient replies that come back, both ride the WATI account routed to that lead's "
-			"grain. Off, the WhatsApp tab and its send actions are inert — nothing leaves and "
-			"nothing lands.\n"
+			"the patient replies that come back, both ride the WhatsApp account routed to that lead's "
+			"grain, through whichever provider that account names. Off, the WhatsApp tab and its send "
+			"actions are inert — nothing leaves and nothing lands.\n"
 			"Example: an approved template is sent to a lead, and the patient's reply arrives back "
 			"on that same lead's WhatsApp tab."
 		),
 		backs=["tatva_connect.whatsapp.webhook.pin_inbound_reference"],
 	),
 	Auto(
-		key="WhatsApp::WATI::templates",
+		key="WhatsApp::Channel::templates",
 		fires_on="Schedule",
 		trigger_detail="every 6h",
 		purpose=(
-			"The approved-template list is refreshed from WATI every six hours, so the picker a rep "
+			"The approved-template list is refreshed from the provider every six hours, so the picker a rep "
 			"sends from is always the current one and nobody syncs it by hand. Off, the list is "
 			"frozen at whatever the last pull left behind.\n"
-			"Example: a reminder template approved in WATI by marketing appears in the Send Template "
+			"Example: a reminder template approved by marketing on the provider appears in the Send Template "
 			"picker within six hours."
 		),
 		backs=["tatva_connect.whatsapp.templates_sync.scheduled_sync_all"],
-		requires="WhatsApp::WATI::messaging",
+		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
-		key="WhatsApp::WATI::backfill",
+		key="WhatsApp::Channel::backfill",
 		fires_on="Schedule",
 		trigger_detail="operator-armed · getMessages history pull",
 		purpose=(
-			"A lead's WhatsApp tab is topped up from WATI's message history: the full two-way thread "
-			"is pulled, including replies typed straight into the WATI portal, and any message the "
-			"live webhook missed is inserted, de-duplicated by WATI message id. The row is dormant "
+			"A lead's WhatsApp tab is topped up from the provider's message history: the full two-way "
+			"thread is pulled, including replies typed straight into the provider's portal, and any "
+			"message the live webhook missed is inserted, de-duplicated by the provider's message id. "
+			"The row is dormant "
 			"and unscheduled by default; a cron is armed by the operator when a gap needs filling.\n"
-			"Example: messages an agent answered inside the WATI portal during a webhook outage are "
+			"Example: messages an agent answered inside the provider's portal during a webhook outage are "
 			"brought onto the lead's WhatsApp tab."
 		),
 		backs=["tatva_connect.whatsapp.backfill.scheduled_backfill"],
-		requires="WhatsApp::WATI::messaging",
+		requires="WhatsApp::Channel::messaging",
+	),
+	Auto(
+		key="WhatsApp::Channel::recovery",
+		fires_on="Provider call",
+		trigger_detail="orphan status · one-message conversation read",
+		purpose=(
+			"A delivery or read receipt that arrives for a message this CRM never stored no longer "
+			"vanishes: the one message the receipt names is fetched from the provider's own "
+			"conversation, filed on the lead it belongs to with its attachment, and the receipt applied "
+			"to it. Only that message is fetched, and a message already held is never fetched twice. "
+			"Off, such a receipt is recorded and dropped, exactly as before.\n"
+			"Example: a read receipt lands for a template an agent sent from the provider's portal "
+			"during a webhook outage, and both the message and its blue tick appear on the lead."
+		),
+		backs=[],
+		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
 		key="Telephony::Acefone::calls",
@@ -453,7 +489,7 @@ AUTOMATIONS = [
 			"The send gate for the engine's Send WhatsApp and Send Email effects. Off, which is how it "
 			"ships, a rule carrying a Send action still fires end to end and the Run Log records the "
 			"intent, but no template and no email ever leaves the building. On, those same actions "
-			"send for real, through the existing grain-routed WATI account and frappe's own mailer — "
+			"send for real, through the existing grain-routed WhatsApp account and frappe's own mailer — "
 			"never a second transport.\n"
 			"Example: a 'Welcome' rule is built and tested with the gate off, the Run Log reading "
 			"'suppressed: sends dormant', and the same rule starts sending the real message the day it "

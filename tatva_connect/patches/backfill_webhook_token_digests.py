@@ -13,7 +13,7 @@ from tatva_connect.webhooks import ingress, registry
 
 
 def execute():
-	for cfg in registry.PROVIDERS.values():
+	for cfg in registry.CHANNELS.values():
 		doctype = cfg["account_doctype"]
 		if not frappe.db.exists("DocType", doctype):
 			continue

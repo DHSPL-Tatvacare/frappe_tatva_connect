@@ -1,5 +1,5 @@
 """Shared admin helper: the exact, ready-to-register inbound webhook URL(s) for an
-account form — for BOTH providers (WATI WhatsApp, Acefone telephony).
+account form — for both channels (WhatsApp, telephony).
 
 The per-account webhook token is a Password field, so once saved its form value is the
 `***` placeholder — the Desk client scripts CANNOT build the URL from `frm.doc.<token>`.
@@ -9,8 +9,8 @@ true URL. System Manager only (default `@frappe.whitelist` gating).
 
 URL shapes (nginx rewrites the pretty trailing segment to `?token=`, see
 nginx/frappe.conf.template):
-  * WhatsApp Account      -> /webhooks/whatsapp/wati/<token>            (one URL)
-  * CRM Telephony Account -> /webhooks/telephony/<provider>/<token>/<event>  (one per event)
+  * WhatsApp Account      -> /webhooks/whatsapp/<token>                     (one URL, no vendor segment)
+  * CRM Telephony Account -> /webhooks/telephony/<provider>/<token>/<event> (one per event)
 """
 import frappe
 from frappe import _
@@ -36,6 +36,6 @@ def get_account_webhook_urls(account_doctype, name):
 	token = doc.get_password(cfg["token_field"], raise_exception=False)
 	if not token:
 		return {"token_set": False, "urls": [], "targets": []}
-	# `targets` carries the provider-dashboard config each URL belongs to; `urls` stays a plain list for the Copy button and the back-compat caller.
+	# `targets` carries the provider-dashboard config each URL belongs to; `urls` stays a plain list for the Copy button.
 	targets = cfg["targets"](get_url().rstrip("/"), doc, token)
 	return {"token_set": True, "urls": [t["url"] for t in targets], "targets": targets}

@@ -36,7 +36,7 @@ class TestWebhookIngress(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.cfg = registry.by_service("Acefone")
+		cls.cfg = registry.by_channel("telephony")
 		if not frappe.db.exists("CRM Telephony Account", ACCOUNT):
 			frappe.get_doc(
 				{
@@ -80,18 +80,18 @@ class TestWebhookIngress(FrappeTestCase):
 
 	def test_a_valid_token_authenticates(self):
 		self._request()
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 	def test_an_unknown_token_is_denied_at_the_gate(self):
 		"""Denied before an adapter is reached, and before the payload is even logged."""
 		self._request(token="_test-not-a-real-token")
 		with self.assertRaises(frappe.PermissionError):
-			ingress.verify("Acefone")
+			ingress.verify("telephony")
 
 	def test_a_missing_token_is_denied(self):
 		self._request(token=None)
 		with self.assertRaises(frappe.PermissionError):
-			ingress.verify("Acefone")
+			ingress.verify("telephony")
 
 	def test_an_unknown_token_costs_no_decryption(self):
 		"""The point of the digest. A rotating-token flood must not amplify into N decryptions."""
@@ -101,7 +101,7 @@ class TestWebhookIngress(FrappeTestCase):
 		frappe.get_cached_doc = lambda *a, **kw: (calls.append(a), original(*a, **kw))[1]
 		try:
 			with self.assertRaises(frappe.PermissionError):
-				ingress.verify("Acefone")
+				ingress.verify("telephony")
 		finally:
 			frappe.get_cached_doc = original
 		self.assertEqual(calls, [], "an unknown token must not load any account")
@@ -111,28 +111,28 @@ class TestWebhookIngress(FrappeTestCase):
 		self._configure(webhook_token="_test-rotated-token", webhook_token_previous=TOKEN)
 
 		self._request(token=TOKEN)
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 		self._request(token="_test-rotated-token")
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 	def test_the_ip_allowlist_is_off_until_an_operator_turns_it_on(self):
 		"""Not every provider publishes egress addresses, so enforcement cannot be the default."""
 		self._request(ip="198.51.100.99")
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 	def test_an_enforced_allowlist_rejects_a_caller_outside_it(self):
 		self._configure(webhook_enforce_ip=1, webhook_ip_allowlist="203.0.113.0/24\n198.51.100.7 # a host")
 
 		self._request(ip="203.0.113.55")
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 		self._request(ip="198.51.100.7")
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 		self._request(ip="9.9.9.9")
 		with self.assertRaises(frappe.PermissionError):
-			ingress.verify("Acefone")
+			ingress.verify("telephony")
 
 	def test_enforcing_an_empty_allowlist_is_refused_at_save(self):
 		"""A config that would silently reject every call must not be savable."""
@@ -152,11 +152,11 @@ class TestWebhookIngress(FrappeTestCase):
 		signature = "sha256=" + hmac.new(SECRET.encode(), BODY, "sha256").hexdigest()
 
 		self._request(body=BODY, headers={"X-Signature": signature})
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 		self._request(body=BODY, headers={"X-Signature": "sha256=deadbeef"})
 		with self.assertRaises(frappe.PermissionError):
-			ingress.verify("Acefone")
+			ingress.verify("telephony")
 
 	def test_a_tampered_body_fails_its_own_signature(self):
 		"""Signed over the RAW body. A parsed dict reorders keys and would never reproduce this."""
@@ -170,7 +170,7 @@ class TestWebhookIngress(FrappeTestCase):
 
 		self._request(body=b'{"call_id":"tampered"}', headers={"X-Signature": signature})
 		with self.assertRaises(frappe.PermissionError):
-			ingress.verify("Acefone")
+			ingress.verify("telephony")
 
 	def test_a_base64_signature_is_honoured(self):
 		"""Providers differ on encoding, so it is declared per account rather than assumed."""
@@ -184,7 +184,7 @@ class TestWebhookIngress(FrappeTestCase):
 		signature = base64.b64encode(hmac.new(SECRET.encode(), BODY, "sha256").digest()).decode()
 
 		self._request(body=BODY, headers={"X-Signature": signature})
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
 	def test_enabling_hmac_without_a_secret_is_refused_at_save(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -209,7 +209,7 @@ class TestWebhookIngress(FrappeTestCase):
 		try:
 			self._request(token=TOKEN)
 			with self.assertRaises(frappe.PermissionError):
-				ingress.verify("Acefone")
+				ingress.verify("telephony")
 		finally:
 			frappe.delete_doc("CRM Telephony Account", twin, force=True, ignore_permissions=True)
 			frappe.db.commit()
@@ -220,7 +220,7 @@ class TestWebhookIngress(FrappeTestCase):
 		try:
 			self._request()
 			with self.assertRaises(frappe.PermissionError):
-				ingress.verify("Acefone")
+				ingress.verify("telephony")
 		finally:
 			self._configure(enabled=1)
 
@@ -259,17 +259,25 @@ class TestWebhookIngress(FrappeTestCase):
 		_ = request.form
 
 		self.assertEqual(request.get_data(), BODY, "the raw body must survive form parsing")
-		self.assertEqual(ingress.verify("Acefone"), ACCOUNT)
+		self.assertEqual(ingress.verify("telephony"), ACCOUNT)
 
-	def test_every_provider_declares_an_ingress_prefix(self):
-		"""The one knob a new provider sets. Without it the whole auth surface silently misses."""
-		for service, cfg in registry.PROVIDERS.items():
-			self.assertIn("ingress_prefix", cfg, service)
+	def test_every_channel_declares_an_ingress_prefix(self):
+		"""The one knob a new channel sets. Without it the whole auth surface silently misses."""
+		for name, cfg in registry.CHANNELS.items():
+			self.assertIn("ingress_prefix", cfg, name)
 			self.assertEqual(
 				ingress.field(cfg, "token"), cfg["token_field"],
-				f"{service}: the prefix must derive the same token field the registry declares",
+				f"{name}: the prefix must derive the same token field the registry declares",
 			)
 			self.assertTrue(
 				cfg.get("active_filter"),
-				f"{service}: must declare what makes an account live, or a disabled one still authenticates",
+				f"{name}: must declare what makes an account live, or a disabled one still authenticates",
+			)
+			self.assertTrue(
+				cfg.get("adapters"),
+				f"{name}: a channel with no adapter can authenticate a caller and then serve nobody",
+			)
+			self.assertTrue(
+				cfg.get("provider_field"),
+				f"{name}: the account row is what names the vendor — without the field nothing can resolve one",
 			)

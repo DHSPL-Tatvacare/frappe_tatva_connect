@@ -40,6 +40,10 @@ Concurrency is handled HERE, once, for every provider — no adapter writes a li
 Neither is a telephony concern. Every adapter — Acefone, Ozonetel, WATI, whatever comes next — inherits
 both by coming through this door.
 
+The door is keyed by CHANNEL, never by vendor. `receive("whatsapp", …)` authenticates a token, the
+token resolves an account, and the account's own provider field names the adapter. No endpoint, no
+URL and no log row carries a vendor's name, so swapping one is configuration rather than a deploy.
+
 Adapter contract (duck-typed module, no ABC):
   * screen(payload, event, account)            -> (wanted, reason). Asked once, at the front door and
     again on replay. The reason is written onto a declined row so an operator can act on it.
@@ -54,18 +58,14 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import create_request_log
 
+from tatva_connect.channels import resolve
 from tatva_connect.webhooks import ingress, registry
 
 LOG_DOCTYPE = "Integration Request"
 
 _GENERIC_DECLINE = "not accepted by this provider's pre-filter"
 
-# A write that lost a race with another worker handling the SAME delivery. Not a failure: the four are
-# the ways one collision surfaces — the winner still in flight (a deadlock, or MariaDB's 1020 snapshot
-# conflict), the winner already committed and this one hit the primary key, or a unique column.
-#
-# Measured, not assumed: eleven concurrent workers writing one real Acefone CDR produced one row and
-# nine of these.
+# A write that lost a race with another worker handling the SAME delivery. Not a failure: the four are the ways one collision surfaces — the winner still in flight (a deadlock, or MariaDB's 1020 snapshot conflict), the winner already committed and this one hit the primary key, or a unique column. Measured, not assumed: eleven concurrent workers writing one real Acefone CDR produced one row and nine of these.
 CONFLICT = (
 	frappe.QueryDeadlockError,
 	frappe.QueryTimeoutError,
@@ -74,7 +74,7 @@ CONFLICT = (
 )
 
 
-def receive(service, *, enabled, adapter, event=None):
+def receive(channel, *, enabled, event=None):
 	"""Shared front door. Authenticates, decides, logs once, then ACKs fast.
 
 	Authentication comes FIRST, before the kill-switch. That ordering is deliberate: a dormant
@@ -82,47 +82,40 @@ def receive(service, *, enabled, adapter, event=None):
 	act on this", not "destroy it" — but only an authenticated caller may write a row, or an
 	unauthenticated flood could fill the log table.
 
-	`enabled` is the provider's kill-switch callback; `adapter` is its module, passed in so the front
-	door never imports one. Authentication is not a callback: it is the same three factors for every
-	provider and lives in `webhooks.ingress`.
+	`enabled` is the channel's kill-switch callback. The adapter is NOT passed in: the token resolves
+	the account and the account names its provider, so the front door never has to be told — and no
+	endpoint carries a vendor name it would have to be edited to change. Authentication is not a
+	callback either: it is the same three factors for every channel and lives in `webhooks.ingress`.
 	"""
-	account = ingress.verify(service)       # token digest -> HMAC -> IP; raises, fail-closed
+	account = ingress.verify(channel)       # token digest -> HMAC -> IP; raises, fail-closed
 	payload = _request_payload()            # form_dict minus cmd/token
 
 	if not enabled():                       # kill-switch, fresh read, default OFF
-		# Recorded, not discarded. Providers retry very few times — Acefone twice — so a call dropped
-		# while the switch was off would be gone for good. Logged Cancelled, it is replayable the
-		# moment the integration is turned on.
-		_persist(service, event, payload, False, "the integration is switched off")
+		# Recorded, not discarded. Providers retry very few times — Acefone twice — so a call dropped while the switch was off would be gone for good. Logged Cancelled, it is replayable the moment the integration is turned on.
+		_persist(channel, event, payload, False, "the integration is switched off")
 		return "ok"
 
+	adapter = _adapter_for(channel, account)
 	wanted, reason = _screen(adapter, payload, event, account)
-	log = _persist(service, event, payload, wanted, reason)
+	log = _persist(channel, event, payload, wanted, reason)
 	if not wanted:
 		return "ok"
 
 	job = frappe.enqueue(
 		"tatva_connect.webhooks.spine.process",
 		queue="short",
-		# A provider re-sends: one live Acefone CDR arrived ELEVEN times, byte for byte. Each copy was
-		# its own job, and two worker containers drain this queue, so all eleven wrote the same call at
-		# once. Keyed on the delivery's own content, the copies collapse to one job and the rest are
-		# never queued. A trigger that carries something new — a hangup after an answer — hashes
-		# differently and still runs.
-		job_id=_delivery_key(service, event, payload),
+		# A provider re-sends: one live Acefone CDR arrived ELEVEN times, byte for byte. Each copy was its own job, and two worker containers drain this queue, so all eleven wrote the same call at once. Keyed on the delivery's own content, the copies collapse to one job and the rest are never queued. A trigger that carries something new — a hangup after an answer — hashes differently and still runs.
+		job_id=_delivery_key(channel, event, payload),
 		deduplicate=True,
-		service=service,
+		channel=channel,
 		payload=payload,
 		account=account,
-		# NB: 'event' is a RESERVED kwarg of frappe.enqueue (its queue-clearing arg) — passing it
-		# here would bind to enqueue itself and never reach process(). Forward the provider's
-		# sub-event under a non-reserved name.
+		# NB: 'event' is a RESERVED kwarg of frappe.enqueue (its queue-clearing arg) — passing it here would bind to enqueue itself and never reach process(). Forward the provider's sub-event under a non-reserved name.
 		vendor_event=event,
 		log=log,
 	)
 	if job is None:
-		# Frappe refused it: an identical delivery is queued or running. Said plainly on the row, so a
-		# copy nobody needed is never mistaken for one that was lost.
+		# Frappe refused it: an identical delivery is queued or running. Said plainly on the row, so a copy nobody needed is never mistaken for one that was lost.
 		_mark(log, "Cancelled", output={
 			"outcome": "not captured",
 			"reason": "an identical delivery is already in flight",
@@ -130,17 +123,17 @@ def receive(service, *, enabled, adapter, event=None):
 	return "ok"
 
 
-def _delivery_key(service, event, payload) -> str:
-	"""A stable id for THIS delivery — the provider, its trigger, and the bytes it sent.
+def _delivery_key(channel, event, payload) -> str:
+	"""A stable id for THIS delivery — the channel, its trigger, and the bytes it sent.
 
 	Provider-blind: the payload is the identity, so no adapter has to declare one. Two deliveries that
 	say exactly the same thing are the same delivery and only one need run.
 	"""
 	body = json.dumps(payload, sort_keys=True, default=str)
-	return f"{service}:{event or '-'}:{hashlib.sha256(body.encode()).hexdigest()[:24]}"
+	return f"{channel}:{event or '-'}:{hashlib.sha256(body.encode()).hexdigest()[:24]}"
 
 
-def process(service, payload, account, vendor_event=None, log=None):
+def process(channel, payload, account, vendor_event=None, log=None):
 	"""Worker: dedupe, then hand to the adapter. Runs privileged — the front door is a guest
 	endpoint, but persistence and downstream automation must run as a system user.
 
@@ -149,28 +142,19 @@ def process(service, payload, account, vendor_event=None, log=None):
 	"""
 	if frappe.session.user == "Guest":
 		frappe.set_user("Administrator")
-	adapter = _adapter_for(service)
+	adapter = _adapter_for(channel, account)
 	try:
 		if adapter.already_processed(payload, vendor_event, account):
 			_mark(log, "Completed", output={"outcome": "already processed"})
 			return
 		adapter.handle(payload, vendor_event, account)
 	except CONFLICT as e:
-		# Another worker is writing this same call. Nothing is wrong with this delivery, so it is not a
-		# failure — it is re-run. `RetryBackgroundJobError` is Frappe's own signal for that: execute_job
-		# catches it, rolls back, and re-runs the job (its own budget, five attempts). On the next pass
-		# `already_processed` sees the winner's committed row and the delivery completes.
-		#
-		# The DLQ replay reaches this too. It enqueues one job per stored row, so replaying a call that
-		# was delivered eleven times fires eleven jobs at once — and without this they would collide and
-		# be marked Failed all over again, leaving the operator's recovery button unable to recover.
+		# Another worker is writing this same call. Nothing is wrong with this delivery, so it is not a failure — it is re-run. `RetryBackgroundJobError` is Frappe's own signal for that: execute_job catches it, rolls back, and re-runs the job (its own budget, five attempts). On the next pass `already_processed` sees the winner's committed row and the delivery completes. The DLQ replay reaches this too. It enqueues one job per stored row, so replaying a call that was delivered eleven times fires eleven jobs at once — and without this they would collide and be marked Failed all over again, leaving the operator's recovery button unable to recover.
 		frappe.db.rollback()
 		_mark(log, "Failed", error=frappe.get_traceback())
 		raise frappe.RetryBackgroundJobError from e
 	except Exception:
-		# Rolled back BEFORE the status is written. A half-finished handler must not have its partial
-		# writes flushed by the very commit that records the failure — the row would then be replayed
-		# over state it had already half-created.
+		# Rolled back BEFORE the status is written. A half-finished handler must not have its partial writes flushed by the very commit that records the failure — the row would then be replayed over state it had already half-created.
 		frappe.db.rollback()
 		_mark(log, "Failed", error=frappe.get_traceback())
 		raise
@@ -201,7 +185,7 @@ def _screen(adapter, payload, event, account):
 # ---------------------------------------------------------------------------
 # The raw log. One row per delivery, written once, never raising.
 # ---------------------------------------------------------------------------
-def _persist(service, event, payload, relevant, reason):
+def _persist(channel, event, payload, relevant, reason):
 	"""Persist the delivery as an Integration Request and return its name, or None.
 
 	Never raises: durable logging must not break a webhook. The privileged insert happens inside
@@ -210,16 +194,13 @@ def _persist(service, event, payload, relevant, reason):
 	try:
 		row = create_request_log(
 			payload,
-			service_name=service,
-			request_description=f"{service} {event or ''}".strip(),
+			service_name=channel,
+			request_description=f"{channel} {event or ''}".strip(),
 			status="Queued" if relevant else "Cancelled",
-			# Empty strings, not None. The helper runs both through `frappe.as_json`, which turns a
-			# None into the literal string "null" — which would then read as a populated Error field
-			# on every row. A str is passed through untouched.
+			# Empty strings, not None. The helper runs both through `frappe.as_json`, which turns a None into the literal string "null" — which would then read as a populated Error field on every row. A str is passed through untouched.
 			output="" if relevant else frappe.as_json({"outcome": "not captured", "reason": reason}),
 			error="",
-			# Passed explicitly so the helper never reaches into the payload looking for one; a
-			# provider is free to post a body carrying a `reference_doctype` key of its own.
+			# Passed explicitly so the helper never reaches into the payload looking for one; a provider is free to post a body carrying a `reference_doctype` key of its own.
 			reference_doctype=None,
 			reference_docname=None,
 		)
@@ -239,8 +220,7 @@ def _mark(log, status, output=None, error=None):
 	status was last touched.
 	"""
 	if not log:
-		# The raw log never got written, so there is nowhere to record this. A traceback still has to
-		# survive somewhere the operator can find it.
+		# The raw log never got written, so there is nowhere to record this. A traceback still has to survive somewhere the operator can find it.
 		if error:
 			frappe.log_error(title="webhook spine: handler failed with no log row", message=error)
 		return
@@ -260,13 +240,18 @@ def _mark(log, status, output=None, error=None):
 # ---------------------------------------------------------------------------
 # Adapter resolution (lazy import -> no import cycle; import-safe before adapters exist)
 # ---------------------------------------------------------------------------
-def _adapter_for(service):
-	"""The adapter module for a service, from the provider registry. Lazy-imported, so the spine
-	stays import-safe and free of any provider import."""
-	cfg = registry.by_service(service)
+def _adapter_for(channel, account):
+	"""The adapter module for this delivery — the channel's registry entry, then the ACCOUNT's own
+	provider field. Lazy-imported, so the spine stays import-safe and free of any provider import.
+
+	The account is what names the vendor, which is why nothing above ever had to, and why this always
+	requires one. Replay is the only caller that starts without an account; it resolves one from the
+	payload FIRST (`resolve.adapter_for_payload`) rather than being handed an adapter chosen for it.
+	"""
+	cfg = registry.by_channel(channel)
 	if not cfg:
-		frappe.throw(f"No webhook provider registered for service {service!r}")
-	return frappe.get_module(cfg["adapter"])
+		frappe.throw(f"No webhook channel registered as {channel!r}")
+	return resolve.adapter_for(account, cfg["account_doctype"])
 
 
 def _request_payload():
@@ -294,23 +279,29 @@ def replay(integration_request):
 	"""
 	frappe.only_for("System Manager")
 	row = frappe.get_doc(LOG_DOCTYPE, integration_request)
-	service = row.integration_request_service
+	channel = row.integration_request_service
 	payload = frappe.parse_json(row.data) or {}
-	event = _event_from_description(service, row.request_description)
-	account = _account_for_replay(service, payload, event)
+	event = _event_from_description(channel, row.request_description)
+	# No token survives on a stored row, so the payload's own adapter identifies it and the account.
+	adapter, account = resolve.adapter_for_payload(channel, payload, event)
+	if not adapter:
+		frappe.throw(
+			_("No {0} provider recognises this delivery, so it cannot be replayed against one.").format(channel),
+			title=_("Unidentified delivery"),
+		)
 
-	wanted, reason = _screen(_adapter_for(service), payload, event, account)
+	wanted, reason = _screen(adapter, payload, event, account)
 	if not wanted:
 		_mark(row.name, "Cancelled", output={"outcome": "not captured", "reason": reason})
 		return reason
 
-	process(service, payload, account, vendor_event=event, log=row.name)
+	process(channel, payload, account, vendor_event=event, log=row.name)
 	return "ok"
 
 
 @frappe.whitelist()
-def replay_service(service, status="Failed", since=None):
-	"""Re-enqueue a service's replayable rows: Failed (the worker raised) or Cancelled (declined).
+def replay_channel(channel, status="Failed", since=None):
+	"""Re-enqueue a channel's replayable rows: Failed (the worker raised) or Cancelled (declined).
 
 	Cancelled is the one an operator reaches for after fixing configuration — map a DID, then replay
 	everything that was dropped for want of it. A row is Failed only once its worker actually raised,
@@ -320,7 +311,7 @@ def replay_service(service, status="Failed", since=None):
 	if status not in REPLAYABLE:
 		frappe.throw(_("Only {0} deliveries can be replayed.").format(" or ".join(REPLAYABLE)))
 
-	filters = {"integration_request_service": service, "status": status}
+	filters = {"integration_request_service": channel, "status": status}
 	if since:
 		filters["creation"] = [">=", since]
 	names = frappe.get_all(LOG_DOCTYPE, filters=filters, pluck="name")  # authz-ok: operator-only DLQ replay over system Integration Request rows, not user records
@@ -329,25 +320,11 @@ def replay_service(service, status="Failed", since=None):
 	return len(names)
 
 
-def _event_from_description(service, description):
-	"""Recover the event segment the front door wrote as '<service> <event>'."""
-	prefix = f"{service} "
+def _event_from_description(channel, description):
+	"""Recover the event segment the front door wrote as '<channel> <event>'."""
+	prefix = f"{channel} "
 	if description and description.startswith(prefix):
 		return description[len(prefix):].strip() or None
 	return None
 
 
-def _account_for_replay(service, payload, event):
-	"""Re-derive the receiving account for a replayed payload.
-
-	A replay carries the payload, not the live request token, so each adapter exposes how it recovers
-	its account. A missing hook or a failed resolve returns None, and the adapter fails closed.
-	"""
-	adapter = _adapter_for(service)
-	resolver = getattr(adapter, "account_for_payload", None)
-	if not resolver:
-		return None
-	try:
-		return resolver(payload, event)
-	except Exception:
-		return None

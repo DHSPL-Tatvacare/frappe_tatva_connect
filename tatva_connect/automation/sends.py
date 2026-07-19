@@ -3,11 +3,11 @@ WhatsApp` / `Send Email` effect verbs raise goes through here. `Task::Automation
 (A.6, dormant by default — a blank/absent row reads as disabled): while dormant, both functions
 record a `"suppressed: sends dormant"` marker and call NO adapter — the engine runs end to end (rule
 fires, action runs, Run Log records it) without a message ever leaving. Once the operator flips the
-switch, the SAME functions resolve against the EXISTING WATI send brain (`whatsapp.routing`
-grain-routing + `whatsapp.providers.adapter_for` + `whatsapp.api.send_template_message`) or native
+switch, the SAME functions resolve against the EXISTING WhatsApp send brain (`whatsapp.routing`
+grain-routing + `channels.resolve.adapter_for` + the adapter's `send_template`) or native
 `frappe.sendmail` (A.18), never a second HTTP path (A.11/A.8, one brain). Both irreversible side
 effects RIDE the rule's own segment transaction (R1, post-audit remediation): Send WhatsApp defers
-its WATI call past commit via a thunk (`_deliver_whatsapp`), Send Email drops `now=True` so the Email
+its provider call past commit via a thunk (`_deliver_whatsapp`), Send Email drops `now=True` so the Email
 Queue insert is itself the transactional write - a segment that rolls back sends nothing either way.
 
 A blank template/recipient/subject/body is a misconfiguration, not "nothing to send" — every
@@ -38,10 +38,10 @@ def template_account_mismatch(template_name, account_name) -> str | None:
 
 
 def send_whatsapp(subject_lead, template_name, context=None):
-	"""Validate and resolve a WATI template send to `subject_lead`'s `mobile_no`, then RETURN a
+	"""Validate and resolve a template send to `subject_lead`'s `mobile_no`, then RETURN a
 	deferred thunk instead of sending inline (R1, post-audit remediation). Every check that can fail
 	the segment (blank config, no routing, a disabled account, a template/account mismatch) runs here,
-	SYNCHRONOUSLY, so a bad rule still fails before anything is queued. Only the actual WATI HTTP call
+	SYNCHRONOUSLY, so a bad rule still fails before anything is queued. Only the actual provider HTTP call
 	moves out: the returned `lambda: frappe.enqueue(..., enqueue_after_commit=True, ...)` mirrors
 	`actions._action_call_webhook` (A.8) - `dispatcher.run_effects` appends it to `deferred` and runs
 	it only after the segment's savepoint is released, and `enqueue_after_commit=True` fires the job
@@ -61,78 +61,83 @@ def send_whatsapp(subject_lead, template_name, context=None):
 	if not sends_enabled():
 		return "suppressed: sends dormant"
 
-	from tatva_connect.whatsapp import providers, routing
+	from tatva_connect.channels import resolve
+	from tatva_connect.whatsapp import channel, routing
 
 	account_name = routing.resolve_account_for_lead(lead)
 	if not account_name:
-		raise ValueError(f"Send WhatsApp: no WATI routing for lead {subject_lead}'s grain")
+		raise ValueError(f"Send WhatsApp: no WhatsApp routing for lead {subject_lead}'s grain")
 	account = frappe.get_doc("WhatsApp Account", account_name)
-	adapter = providers.adapter_for(account)
-	adapter.assert_enabled()
+	channel.assert_enabled()
+	adapter = resolve.adapter_for(account)
 	template = frappe.get_doc("WhatsApp Templates", template_name)
 	mismatch = template_account_mismatch(template_name, account_name)
 	if mismatch:
 		raise ValueError(f"Send WhatsApp: lead {subject_lead} - {mismatch}")
-	names = adapter.template_param_names(template)
+	names = adapter.template_variables(account, template)
 	ctx = context or {}
 	parameters = [{"name": n, "value": "" if ctx.get(n) is None else str(ctx[n])} for n in names]
-	actual_name = template.actual_name or template.template_name
 	return lambda: frappe.enqueue(
 		"tatva_connect.automation.sends._deliver_whatsapp",
 		enqueue_after_commit=True,
 		account_name=account_name,
-		to_number=adapter.normalize_number(recipient),
-		template_name=actual_name,
+		to_number=channel.normalize_number(recipient),
 		template=template_name,
 		parameters=parameters,
 		lead=subject_lead,
 	)
 
 
-def _deliver_whatsapp(account_name, to_number, template_name, template, parameters, lead):
+def _deliver_whatsapp(account_name, to_number, template, parameters, lead):
 	"""The deferred delivery `send_whatsapp` enqueues (R1). Runs inside the background job
 	`enqueue_after_commit=True` schedules - after the rule's segment has actually committed, never
 	before, so a rolled-back segment (nothing was ever enqueued) never reaches this function at all.
-	Re-loads the account fresh in the job's own context and calls the SAME adapter the manual/
-	notification send paths use (`providers.adapter_for` -> `send_template_message`). A WATI failure
+	Re-loads the account fresh in the job's own context and calls the SAME adapter surface the manual
+	and notification send paths use (`resolve.adapter_for` -> `send_template`). A provider failure
 	`frappe.throw`s here, inside the job - captured by the native job runner / Error Log, never by the
 	caller's transaction.
 
-	`template_name` is WATI's name for the template (what goes on the wire); `template` is the
-	`WhatsApp Templates` docname (what the row links to) - they differ, so both are queued.
+	`template` is the `WhatsApp Templates` docname; the adapter resolves the provider-side name from it,
+	so the wire name is never carried separately and the two can never disagree.
 
-	On success it records the send as a `WhatsApp Message` on the lead, carrying the WATI message id -
+	On success it records the send as a `WhatsApp Message` on the lead, carrying the correlation id -
 	the same thing the manual (`message.py`) and notification (`notification.py`) paths already do.
-	Without it the CRM's only copy of an automated send was whatever WATI echoed back through the
-	webhook, so a webhook that was down or a number that did not route left the patient messaged and
-	the record empty. Writing the id here also gives the echo something to dedup against: WATI's
-	`templateMessageSent_v2` then matches `localMessageId` and becomes a status update
-	(`adapter._ingest_outbound` -> `_update_status`) instead of a duplicate Manual bubble."""
-	from tatva_connect.whatsapp import providers
+	Without it the CRM's only copy of an automated send was whatever the provider echoed back through
+	the webhook, so a webhook that was down or a number that did not route left the patient messaged and
+	the record empty. Writing the id here also gives the echo something to dedup against: the provider's
+	sent event then matches the correlation id and becomes a status update instead of a duplicate
+	Manual bubble."""
+	from tatva_connect.channels import resolve
 
 	account = frappe.get_doc("WhatsApp Account", account_name)
-	adapter = providers.adapter_for(account)
-	resp = adapter.send_template_message(
+	adapter = resolve.adapter_for(account)
+	result = adapter.send_template(
 		account,
-		to_number=to_number,
-		template_name=template_name,
-		broadcast_name=f"automation_{frappe.scrub(template_name)}",
-		parameters=parameters,
+		to_number,
+		template,
+		parameters,
+		broadcast_name=f"automation_{frappe.scrub(template)}",
 	)
-	result = adapter.classify_send_response(resp)
-	if result.failed:
-		frappe.throw(f"Send WhatsApp failed for lead {lead}: {result.reason or 'unknown WATI error'}")
+	if result.unknown:
+		# No answer from the wire — the template may already be on the patient's phone. A throw here puts the job on the failed registry, and a re-run re-sends the provider call. Recorded, not retried.
+		frappe.log_error(
+			title="automation: WhatsApp send outcome unknown",
+			message=f"lead={lead} account={account_name} template={template} reason={result.error}",
+		)
+		return
+	if not result.accepted:
+		frappe.throw(f"Send WhatsApp failed for lead {lead}: {result.error or 'unknown provider error'}")
 
-	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, WATI call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
+	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, the provider call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
 	try:
 		frappe.db.savepoint(_RECORD_SAVEPOINT)
-		_record_sent_message(account_name, to_number, template, parameters, result.message_id, lead)
+		_record_sent_message(account_name, to_number, template, parameters, result.correlation_id, lead)
 	except Exception:
 		try:
 			frappe.db.rollback(save_point=_RECORD_SAVEPOINT)
 			frappe.log_error(
 				title="automation: WhatsApp sent but not recorded",
-				message=f"lead={lead} account={account_name} template={template} message_id={result.message_id}",
+				message=f"lead={lead} account={account_name} template={template} message_id={result.correlation_id}",
 			)
 		except Exception:  # nosec B110 — a re-raise here re-opens the deadlock log_error reports
 			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports
@@ -140,7 +145,7 @@ def _deliver_whatsapp(account_name, to_number, template_name, template, paramete
 
 def _record_sent_message(account_name, to_number, template, parameters, message_id, lead):
 	"""File the sent template on the lead. The row can NEVER re-send, by four independent guards:
-	`flags.tatva_ingested` short-circuits `WATIMessage.send_outgoing` before any adapter call (the only
+	`flags.tatva_ingested` short-circuits the controller's `send_outgoing` before any adapter call (the only
 	send seam an insert reaches); `send_outgoing` is called from `before_insert` and from the BULK
 	retry alone, and the bulk retry filters on `bulk_message_reference` + `status == "Failed"`, neither
 	of which this row carries; and a Template row whose `message_id` is set is skipped even if

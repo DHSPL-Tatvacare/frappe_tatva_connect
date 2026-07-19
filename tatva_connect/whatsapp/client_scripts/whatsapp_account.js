@@ -2,7 +2,7 @@
 // WhatsApp webhook setup affordances so an operator never has to hand-craft a secret or assemble a URL:
 //   1) "Generate Webhook Token" button  -> fills custom_webhook_token with a random secret.
 //   2) "Copy Webhook URL" button + a headline banner showing the ready-to-register inbound
-//      URL  https://<host>/webhooks/whatsapp/wati/<token>.
+//      URL  https://<host>/webhooks/whatsapp/<token>.
 // The token is a Password field (masked as `***` after save), so the URL is fetched from the
 // server (tatva_connect.webhooks.urls.get_account_webhook_urls), never built from frm.doc.<token>.
 // The token generator + URL-banner renderer are the shared Desk helpers (public/js/tatva_connect.bundle.js).

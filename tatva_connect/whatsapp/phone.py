@@ -1,13 +1,13 @@
-"""Phone canonicalisation for WATI.
+"""Phone canonicalisation for the WhatsApp channel.
 
 One rule, one code path: numbers are stored canonical E.164 (`+<digits>`) and
-reduced to bare digits only at the WATI boundary (api.normalize_number). WATI's
-`waId` is bare digits and stock leads were stored as `+91-XXXXXXXXXX`; without
-this they would never match.
+reduced to bare digits only at the provider boundary (channel.normalize_number). A
+provider's subscriber id is bare digits and stock leads were stored as
+`+91-XXXXXXXXXX`; without this they would never match.
 """
 import frappe
 
-from tatva_connect.whatsapp.api import normalize_number
+from tatva_connect.whatsapp.channel import normalize_number
 
 
 def to_e164(number: str, default_cc: str = "91") -> str:

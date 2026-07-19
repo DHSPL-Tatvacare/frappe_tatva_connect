@@ -1,8 +1,8 @@
 """Inbound webhook authentication — one gate, every provider, configured per account.
 
 Every future integration arrives through here, so the contract is deliberately narrow and the
-config is data rather than code. A provider declares an `ingress_prefix` in the registry and gets
-the whole surface; nothing new is written per provider.
+config is data rather than code. A channel declares an `ingress_prefix` in the registry and gets
+the whole surface; nothing new is written per channel, and nothing at all per vendor.
 
 Three factors, applied in order, each independently switchable on the account:
 
@@ -63,25 +63,25 @@ def token_digest(token: str) -> str:
 	return hashlib.sha256((token or "").strip().encode()).hexdigest()
 
 
-def field(service_or_cfg, suffix: str) -> str:
-	"""The account fieldname a provider uses for one ingress setting."""
-	cfg = service_or_cfg if isinstance(service_or_cfg, dict) else registry.by_service(service_or_cfg)
+def field(channel_or_cfg, suffix: str) -> str:
+	"""The account fieldname a channel uses for one ingress setting."""
+	cfg = channel_or_cfg if isinstance(channel_or_cfg, dict) else registry.by_channel(channel_or_cfg)
 	return f"{(cfg or {}).get('ingress_prefix', '')}webhook_{suffix}"
 
 
-def verify(service: str) -> str:
+def verify(channel: str) -> str:
 	"""Authenticate an inbound request and return the receiving account. Raises on any failure."""
-	cfg = registry.by_service(service)
+	cfg = registry.by_channel(channel)
 	if not cfg:
-		raise frappe.PermissionError(f"No webhook provider registered for {service!r}")
+		raise frappe.PermissionError(f"No webhook channel registered as {channel!r}")
 
 	account = _account_for_token(cfg, request_token())
 	if not account:
-		raise frappe.PermissionError(f"Invalid {service} webhook token")
+		raise frappe.PermissionError(f"Invalid {channel} webhook token")
 
 	doc = frappe.get_cached_doc(cfg["account_doctype"], account)
-	_assert_ip_allowed(doc, cfg, service)
-	_assert_signature(doc, cfg, service)
+	_assert_ip_allowed(doc, cfg, channel)
+	_assert_signature(doc, cfg, channel)
 	return account
 
 

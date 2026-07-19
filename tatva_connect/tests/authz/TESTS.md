@@ -205,7 +205,7 @@ class AuthzTestCase(IntegrationTestCase):
         self.addCleanup(frappe.db.rollback)
 ```
 
-`assert_comms_off()` checks the FIVE `CRM Tatva Automation` switches that gate a real send (audit-confirmed 2026-06-26): `WhatsApp::WATI::messaging`, `Telephony::Acefone::calls`, `Task::Assignment::followup`, and the two FCM push channels `Notify::Lead::assigned` + `Notify::Task::assigned` (assigning a lead or inserting a task with an assignee fires a real push to a rep's mobile — these are NOT covered by the first three). Per the constitution these default OFF; the gate enforces it and fails loud if anything flipped them on. The Playwright runner performs the **same** check before launching a browser.
+`assert_comms_off()` checks the FIVE `CRM Tatva Automation` switches that gate a real send (audit-confirmed 2026-06-26): `WhatsApp::Channel::messaging`, `Telephony::Acefone::calls`, `Task::Assignment::followup`, and the two FCM push channels `Notify::Lead::assigned` + `Notify::Task::assigned` (assigning a lead or inserting a task with an assignee fires a real push to a rep's mobile — these are NOT covered by the first three). Per the constitution these default OFF; the gate enforces it and fails loud if anything flipped them on. The Playwright runner performs the **same** check before launching a browser.
 
 ---
 

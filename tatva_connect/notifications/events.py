@@ -122,6 +122,8 @@ def on_lead_assigned(doc, method=None):
 
 def on_whatsapp_received(doc, method=None):
 	"""A patient replied. crm writes the tray row itself (crm.api.whatsapp), so this adds only the live channel."""
+	if frappe.flags.get("in_workflow"):
+		return  # backfilled or recovered, not a live reply — see whatsapp.ingest.apply_historical
 	if doc.get("type") != "Incoming":
 		return
 	lead = _lead_of_message(doc)

@@ -14,6 +14,6 @@ called, so a None is never a loss, only a decision not to build a Call Log from 
 Everything after `normalize` is shared: `telephony.envelope` defines the interface, `telephony.resolve`
 answers the gates, `telephony.writer` does the DB moves.
 
-WhatsApp has a single provider and stays at `whatsapp/adapter.py`. Telephony has more than one, so its
-adapters live here, keyed by provider name. The same rule, one level deeper.
+WhatsApp keys its adapters the same way, at `whatsapp/wati.py`. Both channels are reached through
+`channels.resolve` — the account row names the vendor, and nothing else does.
 """

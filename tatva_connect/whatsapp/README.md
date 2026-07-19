@@ -1,10 +1,17 @@
-# WATI WhatsApp integration (`tatva_connect.wati`)
+# The WhatsApp channel (`tatva_connect.whatsapp`)
 
-This folder makes the CRM send and receive WhatsApp **only through WATI** — never
-through Meta. WATI is our BSP; the chatbot flows and approved templates already
-live there. The single hard rule everything below protects:
+This folder makes the CRM send and receive WhatsApp through a **declared channel adapter**.
+WhatsApp is the CHANNEL; **WATI is the first vendor on it**, and today the only one. Its
+chatbot flows and approved templates live on the vendor side. The single hard rule
+everything below protects:
 
-> **WATI only. No code path may ever reach Meta's WhatsApp API — not once.**
+> **No code path may ever reach Meta's WhatsApp API — not once.**
+
+Nothing outside `wati.py` and `transport.py` knows the vendor's name. The route carries no
+vendor, the switch keys carry no vendor, the registry is keyed by channel, and an emitted
+event is `whatsapp.delivered`, never `wati.delivered`. Adding a second provider is: write an
+adapter module that declares itself and implements the surface in `channels/contract.py`, add
+one line to `webhooks/registry.py`, add the Select option. No call site changes.
 
 ## How it plugs in (no CRM fork, no patches)
 
@@ -14,9 +21,9 @@ the box. We do **not** edit `frappe_whatsapp` or `frappe/crm`. Instead `tatva_co
 
 | What | How it's redirected |
 |---|---|
-| `WhatsApp Message` (every manual / picker send) | `override_doctype_class` → `WATIWhatsAppMessage` |
-| `WhatsApp Notification` (automated / scheduled sends) | `override_doctype_class` → `WATINotification` |
-| `WhatsApp Templates` (create / edit / delete / fetch) | `override_doctype_class` → `WATITemplates` + `override_whitelisted_methods` for the "Sync" button |
+| `WhatsApp Message` (every manual / picker send) | `override_doctype_class` → `ChannelWhatsAppMessage` |
+| `WhatsApp Notification` (automated / scheduled sends) | `override_doctype_class` → `ChannelWhatsAppNotification` |
+| `WhatsApp Templates` (create / edit / delete / fetch) | `override_doctype_class` → `ChannelWhatsAppTemplates` + `override_whitelisted_methods` for the "Sync" button |
 
 Because these are framework-level overrides, the CRM's own UI and code stay
 untouched — they just write a `WhatsApp Message` row like always, and our override
@@ -56,7 +63,7 @@ every inbound event.
 **6. Reconcile a lead's thread — the "Refresh WhatsApp" button**
 On the CRM Lead header (leftmost, before Assign / Convert to Deal) there's a
 **Refresh WhatsApp** button. Click it to pull the lead's **entire** WhatsApp
-history from WATI (`getMessages`, all pages) and rebuild the thread — so any
+history from WATI (the v3 conversation read, all pages) and rebuild the thread — so any
 discrepancy between what WATI has and what the CRM shows is rattled out.
 
 It's built to be safe:
@@ -79,28 +86,52 @@ It respects the kill-switch and never crashes the scheduler on a sync error.
 ## Folder / file map
 
 ```
-tatva_connect/wati/
-├── api.py            WATI HTTP client. One WATI tenant = one WhatsApp Account
-│                     (base URL + JWT). Builds every WATI request; normalises
-│                     phone numbers to bare digits; never raises on a WATI error
-│                     body (returns it so callers show a clean message).
-├── message.py        WATIWhatsAppMessage — overrides WhatsApp Message. Routes the
-│                     send to WATI (template / session / media), resolves the
+tatva_connect/channels/   (vendor-free — see channels/__init__.py)
+├── contract.py       What an adapter DECLARES (channel · provider · account doctype ·
+│                     the outcomes it can TRUTHFULLY emit · its capabilities) and the
+│                     one `SendResult` every send returns.
+├── event.py          `ChannelEvent` — the ONE normalized event every adapter emits.
+│                     Frozen, dict-like (so it serialises into the raw log unchanged).
+│                     Canonical names: whatsapp.sent|delivered|read|replied|clicked|failed.
+├── resolve.py        The adapter for an account, read from the ONE registry.
+
+tatva_connect/whatsapp/
+├── channel.py        Channel-level and vendor-free: the `WhatsApp::Channel::messaging`,
+│                     `::templates`, `::backfill` and `::recovery` switches, and E.164
+│                     canonicalisation.
+├── wati.py           THE ADAPTER. Declares WATI, and implements normalize() +
+│                     normalize_history() + the spine contract + send_template /
+│                     send_session / send_media / list_templates / template_variables /
+│                     history / recover_message / fetch_media_by_message_id.
+│                     TWO normalizers, ONE envelope: the webhook is camelCase and the v3
+│                     reads are snake_case, and that difference dies here.
+├── transport.py      WATI HTTP client — the wire and nothing above it. One WATI tenant =
+│                     one WhatsApp Account (base URL + JWT). Never raises on a WATI error
+│                     body (returns it so callers show a clean message). Every SEND is v1
+│                     and tenant-scoped; every READ is v3 and host-rooted — `base_url` is
+│                     the one function that knows the two differ.
+├── ingest.py         VENDOR-BLIND persistence. Reads a ChannelEvent and nothing else:
+│                     attribution, the WhatsApp Message rows, status ticks, media filing.
+│                     `apply` for a live event, `apply_historical` for one pulled out of
+│                     the past (same writes, no entry triggers, no notifications).
+├── recovery.py       Orphan-status recovery: a receipt for a message we never stored
+│                     fetches THAT ONE message from its conversation, files it as
+│                     backfill, and applies the receipt. Queued, surgical, idempotent,
+│                     fail-soft, and dormant until `::recovery` is switched on.
+├── message.py        ChannelWhatsAppMessage — overrides WhatsApp Message. Sends through
+│                     the account's adapter (template / session / media), resolves the
 │                     account, fills {{N}} from the agent's values, and has the
 │                     no-Meta backstops (notify + send_read_receipt).
-├── notification.py   WATINotification — overrides WhatsApp Notification. The same
-│                     no-Meta redirect for automated / scheduled / event-driven
-│                     template sends (translates the would-be Meta payload to WATI).
-├── templates.py      WATITemplates — neutralises every Meta-bound path on the
+├── notification.py   ChannelWhatsAppNotification — overrides WhatsApp Notification. The
+│                     same no-Meta redirect for automated / scheduled / event-driven sends.
+├── templates.py      ChannelWhatsAppTemplates — neutralises every Meta-bound path on the
 │                     template doctype (create blocked, edit allowed for the
 │                     field mapping, update/delete/fetch are no-ops).
-├── templates_sync.py "Sync from WATI" — pulls each WATI account's approved
+├── templates_sync.py `sync_templates` — asks each account's own adapter for its approved
 │                     templates and mirrors them locally, one record per account.
 │                     `scheduled_sync_all` is the 6-hourly scheduler entry.
-├── api.py            ...also `get_all_messages` — paginated full-history pull
-│                     used by the Refresh button (see below).
-├── routing.py        Picks the WATI account for a lead (outbound) and for an
-│                     inbound message. This is the multi-account brain (below).
+├── routing.py        Picks the account for a lead (outbound) and for an inbound
+│                     message. This is the multi-account brain (below).
 ├── webhook.py        The inbound guest endpoint: verify → kill-switch → drop
 │                     non-CRM → enqueue → store. Maps delivery/read statuses to
 │                     the ticks the CRM shows.
@@ -146,9 +177,9 @@ Desk → **WhatsApp Account** → New:
   set a unique random value; it appears in this account's webhook URL (Step 4).
 
 ### Step 2 — Sync that account's templates
-Desk → **WhatsApp Templates** list → **Sync from WATI** (or run
-`tatva_connect.whatsapp.templates_sync.sync_from_wati` with no argument to sync **all**
-WATI accounts at once). Templates are stored **per account** — the record name is
+Desk → **WhatsApp Templates** list → **Sync** (or run
+`tatva_connect.whatsapp.templates_sync.sync_templates` with no argument to sync **all**
+active accounts at once). Templates are stored **per account** — the record name is
 `templatename::Account Name`, so two tenants can both have e.g. `appointment_reminder`
 without clobbering each other. The picker only ever shows the templates of the
 account a given lead routes to.
@@ -189,14 +220,18 @@ both pointing at that account. They can't conflict.
   the message will go out from. (No route → the picker says so and lists nothing.)
 
 ### Step 4 — Inbound: register the webhook per tenant
-On **each** WATI tenant, register the pretty, provider-uniform webhook URL. The trailing
-segment is **that account's own token** (`WhatsApp Account → Webhook Token (WATI)`):
+On **each** provider tenant, register the pretty, CHANNEL-uniform webhook URL. There is
+deliberately no vendor segment — the trailing segment is **that account's own token**
+(`WhatsApp Account → Webhook Token`), and the account names its own provider, so moving a
+tenant between vendors is configuration rather than a URL an operator must re-register on a
+dashboard we do not control:
 
 ```
-https://<host>/webhooks/whatsapp/wati/<token>
+https://<host>/webhooks/whatsapp/<token>
 ```
-- nginx rewrites `/webhooks/whatsapp/wati/<token>` → `?token=<token>` (see
-  `nginx/frappe.conf.template`); the handler resolves the account from the token.
+- nginx rewrites `/webhooks/whatsapp/<token>` → `?token=<token>` (see
+  `nginx/frappe.conf.template`); the spine resolves the account from the token and the
+  adapter from the account.
 - The token does **double duty**: it authenticates the caller **and** identifies the
   receiving tenant — one secret per account, no `&account=` hint, no shared token, and
   no dependence on any WATI payload field (WATI inbound carries no reliable tenant id).
