@@ -394,15 +394,16 @@ def run_history_refresh(reference_doctype, reference_name):
 	"""The queued half of the refresh. Publishes start/finish on ONE event, whatever the outcome.
 
 	`finished` is emitted from a finally-block on purpose: a UI that only learns about success leaves the
-	button disabled for ever the one time the provider is down.
+	button disabled for ever the one time the provider is down. It cannot cover a SIGKILLed worker —
+	nothing in-process can — which is why the client also carries its own timeout.
 	"""
 	from tatva_connect.whatsapp import backfill
 
+	outcome = {"error": _("WhatsApp refresh failed.")}
 	try:
 		summary = backfill.backfill_lead(reference_name, dry_run=False)
 		if not summary.get("ok"):
-			_publish_refresh(reference_doctype, reference_name, "finished",
-			                 error=summary.get("reason") or _("WhatsApp refresh is unavailable for this lead."))
+			outcome = {"error": summary.get("reason") or _("WhatsApp refresh is unavailable for this lead.")}
 			return
 		# The backfill writes through ingest, which does not publish per historical insert, so the open
 		# thread is told once here — the same event crm emits on WhatsApp Message.on_update.
@@ -410,13 +411,15 @@ def run_history_refresh(reference_doctype, reference_name):
 			"whatsapp_message",
 			{"reference_doctype": reference_doctype, "reference_name": reference_name},
 		)
-		_publish_refresh(reference_doctype, reference_name, "finished",
-		                 count=summary.get("new", 0), existing=summary.get("existing", 0))
+		outcome = {"count": summary.get("new", 0), "existing": summary.get("existing", 0)}
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title="WhatsApp history refresh failed", message=frappe.get_traceback())
 		frappe.db.commit()
-		_publish_refresh(reference_doctype, reference_name, "finished", error=_("WhatsApp refresh failed."))
+	finally:
+		# ACTUALLY a finally. It was an except, so an early `return` on an unavailable lead emitted
+		# nothing and left every watching client's button disabled until they navigated away.
+		_publish_refresh(reference_doctype, reference_name, "finished", **outcome)
 
 
 def _publish_refresh(reference_doctype, reference_name, state, **payload):
@@ -433,4 +436,11 @@ def _publish_refresh(reference_doctype, reference_name, state, **payload):
 			"state": state,
 			**payload,
 		},
+		# The DOC room, not the site room. With neither doctype nor user, Frappe broadcasts to every
+		# Desk user on the site: a rep refreshing one lead toasted every other logged-in user, and put
+		# that lead's id into every browser. `doc_subscribe` joins this room only after socketio has
+		# checked the subscriber can READ the record, so the scope is the permission, not a filter we
+		# remembered to write.
+		doctype=reference_doctype,
+		docname=reference_name,
 	)
