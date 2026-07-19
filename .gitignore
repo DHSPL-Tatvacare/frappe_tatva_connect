@@ -106,3 +106,8 @@ tatva_connect/tests/live/**/node_modules/
 tatva_connect/tests/live/**/test-results/
 tatva_connect/tests/live/**/playwright-report/
 tatva_connect/tests/live/**/.browsers/
+
+# WhatsApp characterisation corpus — real webhook payloads harvested from the bench's Integration
+# Request rows. Scrubbed, but it is captured patient traffic and this repo is public. The tests that
+# read it are TRACKED; the corpus itself is regenerated locally and never committed.
+tatva_connect/tests/whatsapp/fixtures/
