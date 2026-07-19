@@ -9,6 +9,7 @@ import re
 
 import frappe
 from frappe import _
+from frappe.utils.background_jobs import is_job_enqueued
 
 from tatva_connect.whatsapp import roles
 
@@ -84,8 +85,8 @@ def get_template_variables(template):
 	doc = frappe.get_cached_doc("WhatsApp Templates", template)
 	body = doc.template or ""
 	indexes = sorted({int(m) for m in re.findall(r"\{\{\s*(\d+)\s*\}\}", body)})
-	names = _param_names(doc.sample_values)  # WATI paramNames in body order
-	hints = _parse_hints(doc.sample_values)  # keyed by paramName
+	names = _param_names(doc.sample_values)  # the provider's own param names, in body order
+	hints = _parse_hints(doc.sample_values)  # sample values, keyed by the same names
 	variables = []
 	for i in indexes:
 		name = names[i - 1] if 0 < i <= len(names) else str(i)
@@ -142,6 +143,35 @@ def get_send_context(reference_doctype, reference_name):
 		"account": account,
 		"mobile_no": mobile_no,
 		"templates": list_templates(reference_doctype, reference_name),
+	}
+
+
+@frappe.whitelist()
+def whatsapp_window_state(reference_doctype, reference_name):
+	"""Is the WhatsApp 24-hour customer-service window OPEN for this record?
+
+	OPEN iff the customer sent an inbound WhatsApp message within the last 24h —
+	Meta's rule, and the canonical definition (WATI exposes no window flag). Drives
+	the UI: when CLOSED, the free-text input box is hidden and only template
+	messages may be sent; a new inbound reopens it. Read-only, fail-open-to-closed.
+	"""
+	from crm.api.whatsapp import validate_access
+	from frappe.utils import add_to_date, get_datetime, now_datetime
+
+	validate_access(reference_doctype, reference_name)
+	last = frappe.db.get_value(
+		"WhatsApp Message",
+		{"reference_doctype": reference_doctype, "reference_name": reference_name, "type": "Incoming"},
+		"creation",
+		order_by="creation desc",
+	)
+	if not last:
+		return {"open": False, "last_inbound": None, "expires_at": None}
+	expires = add_to_date(get_datetime(last), hours=24)
+	return {
+		"open": get_datetime(now_datetime()) < expires,
+		"last_inbound": str(last),
+		"expires_at": str(expires),
 	}
 
 
@@ -298,6 +328,31 @@ def send_template_with_params(reference_doctype, reference_name, template, to, b
 # --- Reconcile a lead's WhatsApp thread against the provider (the "Refresh" button) ---
 
 
+def _refresh_job_id(reference_name: str) -> str:
+	"""The RQ job id for one lead's refresh — composed HERE and nowhere else.
+
+	It is the whole cross-user lock: `enqueue(deduplicate=True)` refuses a second job under this key,
+	and `whatsapp_refresh_state` asks about this same key. Two spellings of it would give a UI that
+	says idle while a job runs.
+	"""
+	return f"whatsapp-refresh:{reference_name}"
+
+
+@frappe.whitelist()
+def whatsapp_refresh_state(reference_doctype, reference_name):
+	"""Is a history refresh running for this lead, right now, for ANYONE?
+
+	The realtime event tells a client that is already watching. This answers the other half: a rep who
+	opens the lead AFTER the job started, a second rep on the same lead, a reloaded tab. RQ is the
+	source of truth — the job either exists in the queue or it does not, so there is no state of our
+	own to keep in sync or to leak when a worker dies.
+	"""
+	from crm.api.whatsapp import validate_access
+
+	validate_access(reference_doctype, reference_name)
+	return {"running": is_job_enqueued(_refresh_job_id(reference_name))}
+
+
 @frappe.whitelist()
 def refresh_messages_from_wati(reference_doctype, reference_name):
 	"""Reconcile a lead's WhatsApp thread against the provider's authoritative history.
@@ -309,22 +364,73 @@ def refresh_messages_from_wati(reference_doctype, reference_name):
 	thread and reinserted none of it.
 
 	Additive, never destructive: it inserts what is missing and touches nothing that is already here.
+
+	QUEUED, not inline. The provider walk is 5-15 seconds against someone else's API — long enough that a
+	synchronous request leaves the rep staring at a dead screen and short enough that nobody thinks to
+	build for it. The job reports through Frappe's own realtime channel, so progress and completion reach
+	every open tab and survive the rep navigating away.
 	"""
 	from crm.api.whatsapp import validate_access
 
-	from tatva_connect.whatsapp import backfill
-
 	validate_access(reference_doctype, reference_name)
 	if reference_doctype != "CRM Lead":
-		frappe.throw("WhatsApp refresh is only supported on CRM Lead.")
+		frappe.throw(_("WhatsApp refresh is only supported on CRM Lead."))
 
-	summary = backfill.backfill_lead(reference_name, dry_run=False)
-	if not summary.get("ok"):
-		frappe.throw(summary.get("reason") or "WhatsApp refresh is unavailable for this lead.")
-
-	# The backfill writes through ingest, which does not publish on a historical insert, so the open panel is told once here — the same event crm emits on WhatsApp Message.on_update.
-	frappe.publish_realtime(
-		"whatsapp_message",
-		{"reference_doctype": reference_doctype, "reference_name": reference_name},
+	frappe.enqueue(
+		"tatva_connect.api.whatsapp.run_history_refresh",
+		queue="short",
+		# One refresh per LEAD in flight, for the whole site — not per user and not per tab. A second
+		# click, from anyone, is not a second job: deduplicate collapses it on this key.
+		job_id=_refresh_job_id(reference_name),
+		deduplicate=True,
+		reference_doctype=reference_doctype,
+		reference_name=reference_name,
 	)
-	return {"count": summary.get("new", 0), "existing": summary.get("existing", 0)}
+	_publish_refresh(reference_doctype, reference_name, "started")
+	return {"queued": True}
+
+
+def run_history_refresh(reference_doctype, reference_name):
+	"""The queued half of the refresh. Publishes start/finish on ONE event, whatever the outcome.
+
+	`finished` is emitted from a finally-block on purpose: a UI that only learns about success leaves the
+	button disabled for ever the one time the provider is down.
+	"""
+	from tatva_connect.whatsapp import backfill
+
+	try:
+		summary = backfill.backfill_lead(reference_name, dry_run=False)
+		if not summary.get("ok"):
+			_publish_refresh(reference_doctype, reference_name, "finished",
+			                 error=summary.get("reason") or _("WhatsApp refresh is unavailable for this lead."))
+			return
+		# The backfill writes through ingest, which does not publish per historical insert, so the open
+		# thread is told once here — the same event crm emits on WhatsApp Message.on_update.
+		frappe.publish_realtime(
+			"whatsapp_message",
+			{"reference_doctype": reference_doctype, "reference_name": reference_name},
+		)
+		_publish_refresh(reference_doctype, reference_name, "finished",
+		                 count=summary.get("new", 0), existing=summary.get("existing", 0))
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="WhatsApp history refresh failed", message=frappe.get_traceback())
+		frappe.db.commit()
+		_publish_refresh(reference_doctype, reference_name, "finished", error=_("WhatsApp refresh failed."))
+
+
+def _publish_refresh(reference_doctype, reference_name, state, **payload):
+	"""One realtime event for the whole lifecycle — `whatsapp_refresh`, carrying its own state.
+
+	One event rather than three (started/progress/finished) because the client needs ONE subscription to
+	know whether a refresh is in flight, and two events racing is how a button ends up stuck enabled.
+	"""
+	frappe.publish_realtime(
+		"whatsapp_refresh",
+		{
+			"reference_doctype": reference_doctype,
+			"reference_name": reference_name,
+			"state": state,
+			**payload,
+		},
+	)

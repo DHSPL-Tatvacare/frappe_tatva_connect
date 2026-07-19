@@ -341,10 +341,38 @@ def send_media_url(account, to, file_url, caption="") -> contract.SendResult:
 
 
 def list_templates(account):
-	"""The account's approved templates, as WATI reports them."""
+	"""The account's approved templates, in the CHANNEL's shape — not WATI's.
+
+	`[{name, language, category, body, variables}]`, where `variables` is `{param_name: sample}` in
+	body order. This is the last place `elementName`, `customParams`, `paramName` and `paramValue`
+	exist: the catalogue sync used to read all four, so a vendor-free module was reading WATI's
+	dictionary and a second provider would have mirrored an empty catalogue.
+
+	`variables` is a mapping, not a list, because WATI matches parameters by NAME and not by the
+	position shown in the body — sending positional "1","2" fills the slots blank.
+	"""
 	resp = transport.get_message_templates(account) or {}
 	items = resp.get("messageTemplates") or resp.get("templates") or resp.get("data") or []
-	return [t for t in items if (t.get("status") or "").upper() == "APPROVED"]
+	return [
+		_template_shape(t) for t in items if (t.get("status") or "").upper() == "APPROVED"
+	]
+
+
+def _template_shape(item) -> dict:
+	"""One WATI template item -> the channel's template shape. The whole vendor dialect stops here."""
+	language = item.get("language")
+	code = (language.get("value") if isinstance(language, dict) else language) or "en"
+	params = item.get("customParams") or []
+	return {
+		"name": item.get("elementName"),
+		"language": str(code).replace("-", "_"),
+		"category": item.get("category") or "UTILITY",
+		"body": item.get("body") or "",
+		"variables": {
+			str(p.get("paramName") or index + 1): (p.get("paramValue") or "")
+			for index, p in enumerate(params)
+		},
+	}
 
 
 def template_variables(account, template) -> list:
@@ -412,6 +440,10 @@ def recover_message(account, conversation_id, provider_message_id):
 
 
 # The v3 dialect: (webhook name, v3 name), drawn from the MEASURED field union of 100 live items. Only fields the endpoint really sends are here — mapping one it does not would read blank for ever and look like a bug in the data rather than a lie in this table. What v3 does NOT send, and what each absence costs: * no contact identifier of ANY kind (no wa_id/phone/contact_id/bsuid) -> the subject number cannot come from the item. It is passed in by the caller; see `normalize_history`. * no local_message_id -> a recovered message carries no correlation id of its own. It too is passed in, from the status event that triggered the recovery. * no `data` -> there is no media URL. Media is read by message id instead (`recover_media`). * no whatsapp_message_id, no template_id, no reply/button context. `event_type` is deliberately unmapped — see `normalize_history` on why direction comes from `owner`.
+# The only two v3 event types that ARE messages. Everything else (`ticket`) is a lifecycle event with
+# no body, an int `type` and a null `owner` — measured, not assumed.
+_HISTORY_MESSAGE_EVENTS = ("message", "broadcastMessage")
+
 _HISTORY_KEYS = (
 	("id", "id"),
 	("conversationId", "conversation_id"),
@@ -438,20 +470,41 @@ def normalize_history(item, account=None, number=None, correlation_id=None):
 	                    a recovered outbound row that stored none could never be ticked by the very
 	                    status that recovered it.
 
-	Direction comes from `owner`, never from the item's own event_type — that reads "message" both ways,
-	and believing it would file an agent's outbound message as a status and lose it.
+	`event_type` decides WHETHER this is a message; `owner` decides its DIRECTION. Conflating the two
+	cost a thread: reading direction off event_type files an agent's outbound message as a status, and
+	NOT reading event_type at all forces ticket rows through the message path.
+
+	Measured over 100 live items, the three shapes are sharply distinct:
+
+	  message          60   type is a STRING (text/document/image), owner is a BOOL. A real message.
+	  ticket           27   type is an INT (0,1,4,7,9,10), owner is None, there is no body. A ticket
+	                        lifecycle event — assignment, resolution. NOT a message, and forcing one
+	                        through crashes on the int the moment content_type_for() strips it.
+	  broadcastMessage 13   type and owner are BOTH None; the rendered body is in final_text. An
+	                        OUTBOUND template. Trusting `owner` here reads None as falsy and files the
+	                        business's own template as a message FROM the patient — silently, no error.
 	"""
+	event_type = item.get("event_type")
+	if event_type not in _HISTORY_MESSAGE_EVENTS:
+		return None
+
 	payload = {}
 	for camel, snake in _HISTORY_KEYS:
 		payload[camel] = item.get(snake)
-	payload["type"] = payload.get("type") or "text"
 	# WATI's history renders a template's body into final_text; `text` is the unsubstituted form. Prefer the rendered one, or a recovered template bubble shows {{1}} to the rep.
 	payload["text"] = item.get("final_text") or item.get("text")
 	payload["waId"] = number
 	payload["localMessageId"] = correlation_id
-	if payload.get("owner"):  # business -> customer (an agent or bot typed it on the provider side)
+
+	if event_type == "broadcastMessage":
+		# An outbound template. `owner` is None on every one of them, so direction is decided here.
+		payload["type"] = "text"
+		payload["eventType"] = "templateMessageSent_v2"
+	elif payload.get("owner"):  # business -> customer (an agent or bot typed it on the provider side)
+		payload["type"] = payload.get("type") or "text"
 		payload["eventType"] = "sessionMessageSent_v2"
 	else:  # customer -> business
+		payload["type"] = payload.get("type") or "text"
 		payload["eventType"] = "message"
 		payload["senderName"] = payload.get("operatorName")
 	return normalize(payload, account)

@@ -63,23 +63,39 @@ _V3_FIELDS = (
 )
 
 
-def _v3_item(**overrides):
-	"""A v3 history item exactly as the live endpoint returns one — every measured field, no others."""
+# The three shapes v3 actually returns, measured over 100 live items on one thread (60/27/13). They
+# differ in the TYPE of their fields, not only the values — which is exactly what a hand-written stub
+# gets wrong: `type` is a str on a message, an INT on a ticket and None on a broadcast, and `owner` is
+# a bool only on a message. A stub that only ever built the message shape is why a crash on ticket rows
+# and a silent direction flip on broadcasts both passed 21 green tests.
+_V3_SHAPES = {
+	"message": {"event_type": "message", "type": "text", "owner": True, "text": "recovered from the conversation",
+	            "status": 3, "status_string": "SENT", "operator_name": "agent@example.com"},
+	"ticket": {"event_type": "ticket", "type": 7, "owner": None, "text": None, "final_text": None,
+	           "event_description": "Ticket assigned", "detailed_event_description": "assigned to an agent"},
+	"broadcastMessage": {"event_type": "broadcastMessage", "type": None, "owner": None, "text": None,
+	                     "final_text": "Hello, this is your Care Specialist.", "status_string": "SENT"},
+}
+
+
+def _v3_item(shape="message", **overrides):
+	"""A v3 history item exactly as the live endpoint returns one — every measured field, no others.
+
+	`shape` picks which of the three REAL event types to build. Defaulting to "message" keeps existing
+	callers honest while making the other two reachable; a test that never builds a ticket or a
+	broadcast is not testing the endpoint, it is testing one third of it.
+	"""
+	if shape not in _V3_SHAPES:
+		raise AssertionError(f"the live v3 endpoint sends no such event_type: {shape!r}; known: {sorted(_V3_SHAPES)}")
 	item = dict.fromkeys(_V3_FIELDS)
 	item.update({
 		"id": _PROVIDER_ID,
 		"conversation_id": _CONVERSATION,
-		"event_type": "message",
 		"final_text": "recovered from the conversation",
-		"text": "recovered from the conversation",
-		"type": "text",
-		"owner": True,
-		"operator_name": "agent@example.com",
-		"status": 3,
-		"status_string": "SENT",
 		"created": "2026-07-19T09:00:00Z",
 		"timestamp": "1784800000",
 	})
+	item.update(_V3_SHAPES[shape])
 	item.update(overrides)
 	unknown = set(item) - set(_V3_FIELDS)
 	if unknown:
@@ -392,8 +408,9 @@ class TestWhatsAppRecovery(FrappeTestCase):
 			self.assertEqual(webhook.get(field), history.get(field), field)
 
 	def test_history_reads_direction_from_owner_not_from_the_items_event_type(self):
-		"""Every v3 item says event_type "message" whichever way it went. Believing that would file an
-		agent's outbound message as a status and lose it."""
+		"""A `message` item says event_type "message" whichever way it went, so DIRECTION comes from
+		`owner`. Believing event_type here would file an agent's outbound message as a status and lose
+		it. What event_type DOES decide — whether the item is a message at all — is covered below."""
 		outbound = adapter.normalize_history(
 			_v3_item(owner=True), self.account, number=_WA_ID, correlation_id=_LOCAL_ID
 		)
@@ -401,6 +418,27 @@ class TestWhatsAppRecovery(FrappeTestCase):
 		self.assertEqual(outbound.kind, "outbound_echo")
 		self.assertEqual(outbound.correlation_id, _LOCAL_ID)
 		self.assertEqual(inbound.kind, "inbound")
+
+	def test_a_ticket_event_is_not_a_message(self):
+		"""CHANGED 2026-07-20: a ticket was forced through the message path and Refresh History died on
+		it with `'int' object has no attribute 'strip'`.
+
+		27 of 100 measured items on one thread are `ticket` — an assignment or resolution with no body,
+		an INT `type` and a null `owner`. event_type is what tells it apart from a message."""
+		self.assertIsNone(
+			adapter.normalize_history(_v3_item("ticket"), self.account, number=_WA_ID),
+			"a ticket lifecycle event must not become a WhatsApp Message",
+		)
+
+	def test_a_broadcast_is_outbound_even_though_owner_is_null(self):
+		"""CHANGED 2026-07-20: was filed as INBOUND, silently and with no error.
+
+		A broadcastMessage is the business's own template. `owner` is None on all 13 measured, and None
+		is falsy, so reading direction off it put our own outbound template on the thread as if the
+		patient had sent it. For this one shape, event_type decides direction."""
+		event = adapter.normalize_history(_v3_item("broadcastMessage"), self.account, number=_WA_ID)
+		self.assertEqual(event.kind, "outbound_echo")
+		self.assertEqual(event.text, "Hello, this is your Care Specialist.", "the body is in final_text")
 
 	# ============================================================================= The two base URLs. =============================================================================
 	def test_v1_is_tenant_scoped_and_v3_is_host_root(self):

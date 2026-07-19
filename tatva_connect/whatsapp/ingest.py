@@ -105,8 +105,9 @@ def _fetch_media(event):
 
 	Two provider routes, one order of preference. The message-id route (`recover_media`) is asked first
 	because the provider's message id is present on a webhook AND on a history item, so it is the one
-	route that serves live ingest, backfill and recovery alike — and it returns the provider's own
-	filename rather than a uuid guessed out of a URL path. The event's media URL is the fallback, and
+	route that serves live ingest, backfill and recovery alike. It also returns the provider's own name
+	for the file — which for a document is a uuid, so it is passed to `_filename_for` as a FALLBACK and
+	never as the preferred name. The event's media URL is the fallback, and
 	is all a webhook-only provider will ever have.
 
 	Returns (content, filename) — never raises: a provider outage on the media endpoint must cost the
@@ -122,7 +123,7 @@ def _fetch_media(event):
 		if event.provider_message_id and adapter.DECLARATION.can("recover_media"):
 			found = adapter.fetch_media_by_message_id(account_doc, event.provider_message_id)
 			if found:
-				return found[0], found[1] or _filename_for(event)
+				return found[0], _filename_for(event, provider_name=found[1])
 		if not event.media_url:
 			return None
 		content = adapter.fetch_media(account_doc, event.media_url)
@@ -135,9 +136,13 @@ def _fetch_media(event):
 	return content, _filename_for(event)
 
 
-def _filename_for(event) -> str:
-	"""The filename to file this event's media under, when the provider named none itself."""
-	return media_module.media_filename(event.media_type, event.filename, event.media_url or "")
+def _filename_for(event, provider_name=None) -> str:
+	"""The filename to file this event's media under. `provider_name` is what the provider called it —
+	a fallback, not a preference: WATI's own name for a document is a uuid, while the real one rides in
+	the message body. `media_filename` owns that ordering for every route in."""
+	return media_module.media_filename(
+		event.media_type, event.filename, event.media_url or "", provider_name
+	)
 
 
 def _apply_media(doc, event, lead, media):
@@ -222,7 +227,7 @@ def _insert_inbound_row(event, lead, media) -> None:
 			"doctype": "WhatsApp Message",
 			"type": "Incoming",
 			"from": event.subject_number,
-			"message": event.text,
+			"message": event.text or "",
 			"content_type": content_type_for(event.media_type),
 			"message_id": event.wamid,
 			"custom_provider_message_id": event.provider_message_id,  # cross-path identity (live + history backfill)
@@ -289,7 +294,7 @@ def _insert_outbound_row(event, lead, media) -> None:
 			"doctype": "WhatsApp Message",
 			"type": "Outgoing",
 			"to": event.subject_number,
-			"message": event.text,
+			"message": event.text or "",
 			"content_type": content_type_for(event.media_type),
 			"message_type": "Manual",
 			"message_id": event.correlation_id,  # lets later delivered/read events tick this row

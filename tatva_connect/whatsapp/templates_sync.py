@@ -66,39 +66,31 @@ def _record_name(element_name, account_name):
 
 def _sync_one(account_name):
 	account = frappe.get_doc("WhatsApp Account", account_name)
-	# The adapter owns "which templates are approved" — the shape of that answer is its provider's,
-	# not ours, and the day a second provider spells it differently only its adapter changes.
+	# The adapter owns "which templates are approved" AND normalizes the answer: it returns the
+	# channel's own shape ({name, language, category, body, variables}), so this module reads no
+	# provider dictionary. A second provider changes its adapter and nothing here.
 	items = resolve.adapter_for(account).list_templates(account)
 
 	created = updated = skipped = 0
 	for t in items:
 		try:
-			element_name = t.get("elementName")
+			element_name = t.get("name")
 			if not element_name:
 				continue
-			# Sample values, keyed by param name ({"1": "...", "2": "..."}), so the
-			# picker can show an exact per-variable hint. The {{N}} -> CRM field
-			# mapping lives in `field_names` (operator-set) — never overwritten here.
-			custom_params = t.get("customParams") or []
-			sample_values = frappe.as_json(
-				{
-					str(p.get("paramName") or i + 1): (p.get("paramValue") or "")
-					for i, p in enumerate(custom_params)
-				}
-			)
-			lang = t.get("language")
-			lang_code = (lang.get("value") if isinstance(lang, dict) else lang) or "en"
 			record_name = _record_name(element_name, account_name)
 			values = {
 				# template_name (unique) carries the account-scoped id so two
 				# tenants with the same template name don't collide on one row.
 				"template_name": record_name,
 				"actual_name": element_name,  # the real provider-side name used to send
-				"language_code": str(lang_code).replace("-", "_"),
+				"language_code": t.get("language") or "en",
 				"status": "APPROVED",
 				"category": t.get("category") or "UTILITY",
 				"template": t.get("body") or "",
-				"sample_values": sample_values,
+				# Sample values keyed by the provider's own PARAM NAME, so the picker shows an exact
+				# per-variable hint and the send matches by name. The {{N}} -> CRM field mapping lives
+				# in `field_names` (operator-set) and is never overwritten here.
+				"sample_values": frappe.as_json(t.get("variables") or {}),
 				"whatsapp_account": account_name,
 			}
 			if frappe.db.exists("WhatsApp Templates", record_name):
@@ -117,7 +109,7 @@ def _sync_one(account_name):
 			skipped += 1
 			frappe.log_error(
 				title="WhatsApp template sync skipped one",
-				message=f"account={account_name} template={t.get('elementName')}\n{frappe.get_traceback()}",
+				message=f"account={account_name} template={t.get('name')}\n{frappe.get_traceback()}",
 			)
 
 	return {"created": created, "updated": updated, "skipped": skipped}

@@ -85,7 +85,13 @@ class ChannelWhatsAppNotification(WhatsAppNotification):
 				}
 				if doc_data:
 					new_doc.update({"reference_doctype": doc_data.doctype, "reference_name": doc_data.name})
-				frappe.get_doc(new_doc).save(ignore_permissions=True)  # authz-ok: tier-b — outbound send, gated by the account's own grain check
+				row = frappe.get_doc(new_doc)
+				# This row RECORDS a send that already left — the same thing an ingested mirror records, so
+				# it carries the same flag. Without it the controller falls back to "no message_id means
+				# never sent" and sends the template a second time, which is exactly what an UNKNOWN
+				# outcome produces: accepted-or-not, correlation id None, patient messaged twice.
+				row.flags.tatva_ingested = True
+				row.save(ignore_permissions=True)  # authz-ok: tier-b — outbound send, gated by the account's own grain check
 
 				# Preserve upstream's set-property-after-alert behaviour.
 				if doc_data and self.set_property_after_alert and self.property_value:

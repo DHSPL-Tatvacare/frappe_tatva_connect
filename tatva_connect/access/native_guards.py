@@ -116,7 +116,32 @@ def get_whatsapp_messages(reference_doctype, reference_name):
 	_require_read(reference_doctype, reference_name)
 	from crm.api.whatsapp import get_whatsapp_messages as _native
 
-	return _native(reference_doctype, reference_name)
+	return _attachment_details(_native(reference_doctype, reference_name))
+
+
+def _attachment_details(rows):
+	"""Stamp each attachment row with its File's real name and size, for the chat bubble.
+
+	The bubble had a generic icon and the literal word "Document" — no name, no size, no type. All
+	three exist on the File row, which is where display metadata is READ from (M3: a URL is not a
+	filename and not a size; read the row). The message body is not a substitute: it is the provider's
+	caption, absent on a caption-less image and equal to the filename only for documents.
+
+	One query for the whole thread, keyed by file_url — not one per bubble.
+	"""
+	urls = [r.get("attach") for r in rows if r.get("attach")]
+	if not urls:
+		return rows
+	files = frappe.get_all(
+		"File", filters={"file_url": ["in", list(set(urls))]}, fields=["file_url", "file_name", "file_size"]
+	)
+	by_url = {f.file_url: f for f in files}
+	for row in rows:
+		found = by_url.get(row.get("attach"))
+		if found:
+			row["file_name"] = found.file_name
+			row["file_size"] = found.file_size
+	return rows
 
 
 # --- CRM (assignment rules / saved views) ------------------------------------------------------

@@ -110,6 +110,7 @@ def resolve_for_message(msg):
 	return None
 
 
+@frappe.whitelist()
 def lead_has_route(reference_doctype=None, reference_name=None):
 	"""Does an account route to this lead? Reuses the SAME resolver used to
 	send (resolve_account_for_lead) — single source of truth. The WhatsApp tab/UI
