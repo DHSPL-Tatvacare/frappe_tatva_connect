@@ -60,6 +60,16 @@ APP_ENDPOINTS = [
 	EndpointSpec("linked-docs", "frappe.desk.form.linked_with.get_linked_docs", "POST", "read", "B1",
 	             "CRM Lead", "docname"),
 	EndpointSpec("installed-apps", "frappe.apps.get_apps", "GET", "info", "B4"),
+	# VAPT Jul — LMS assessment surface. These carry the quiz id (not a doctype-derived name), so they are
+	# APP endpoints. The row/action sweep judges REACHABILITY here; the answer-key FIELD strip (N4/N5) and
+	# the race/timer LOGIC (N2/N6) are judged by the field oracle + the integrity module — a row oracle
+	# cannot see either (a student legitimately reaches the row).
+	EndpointSpec("lms-submit-quiz", "lms.lms.doctype.lms_quiz.lms_quiz.submit_quiz", "POST", "create",
+	             "B3", "LMS Quiz", "quiz"),
+	EndpointSpec("lms-check-answer", "lms.lms.doctype.lms_quiz.lms_quiz.check_answer", "POST", "read",
+	             "B1", "LMS Quiz", "quiz"),
+	EndpointSpec("lms-quiz-questions", "lms.lms.utils.get_quiz_with_questions", "POST", "read", "B1",
+	             "LMS Quiz", "quiz"),
 ]
 
 # -- the objects a hostile principal must never reach (crossed with GENERIC_ENDPOINTS) --------------
@@ -76,6 +86,10 @@ SENSITIVE_DOCTYPES = [
 	{"doctype": "File", "app": "frappe", "private": True, "write_field": "file_name"},
 	{"doctype": "Assignment Rule", "app": "frappe", "private": False, "write_field": "description"},
 	{"doctype": "ToDo", "app": "frappe", "private": False, "write_field": "description"},
+	# VAPT Jul N4/N5: the exercise carries the hidden grading answer key in its `test_cases` child rows.
+	# A student may legitimately READ the row (they must solve it), so the row sweep should say ALLOW —
+	# the leak is the permlevel-1 FIELD strip, judged by native_permitted_fields, not by row access.
+	{"doctype": "LMS Programming Exercise", "app": "lms", "private": False, "write_field": "title"},
 ]
 
 _BY_DOCTYPE = {d["doctype"]: d for d in SENSITIVE_DOCTYPES}

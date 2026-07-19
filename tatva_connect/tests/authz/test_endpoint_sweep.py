@@ -50,6 +50,9 @@ _FOREIGN_SEED = {
 	# Administrator so a hostile read is a real object-level test, not a 404.
 	"File": {"file_name": f"{TAG}-secret.txt", "is_private": 1, "content": f"{TAG}-file-body"},
 	"FCRM Note": {"title": f"{TAG}-note", "content": f"{TAG}-note-body"},
+	# VAPT Jul: a real exercise carrying a hidden answer key, so the LMS cases have a foreign-owned target.
+	"LMS Programming Exercise": {"title": f"{TAG}-exercise", "problem_statement": "x", "language": "Python",
+	                             "test_cases": [{"input": f"{TAG}-in", "expected_output": f"{TAG}-out"}]},
 }
 _ENDPOINT_BY_KEY = {e.key: e for e in (*endpoints.GENERIC_ENDPOINTS, *endpoints.APP_ENDPOINTS)}
 

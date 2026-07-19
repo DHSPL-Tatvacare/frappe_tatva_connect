@@ -44,6 +44,15 @@ VAPT_FINDINGS = [
 	_v("vapt-22-article-stats", "P3", "lms-article-stats"),
 	_v("vapt-23-assignment-rules-list", "P3", "client-get-list", "Assignment Rule"),
 	_v("vapt-24-installed-apps", "P4", "installed-apps"),
+	# --- Jul cut: the 6 NEW LMS findings (report total 32). Each names the primitive that REACHES the
+	# surface; two of them (N4/N5 answer-key strip, N2/N6 race+timer) are judged by the field oracle and
+	# the integrity module respectively, because a row oracle cannot see a field strip or a race.
+	_v("vapt-25-lms-testcase-list", "P2", "client-get-list", "LMS Programming Exercise"),
+	_v("vapt-26-lms-exercise-get", "P2", "client-get", "LMS Programming Exercise"),
+	_v("vapt-27-lms-quiz-submit-race", "P2", "lms-submit-quiz", "LMS Quiz"),
+	_v("vapt-28-lms-quiz-timer", "P2", "lms-submit-quiz", "LMS Quiz"),
+	_v("vapt-29-lms-check-answer", "P2", "lms-check-answer", "LMS Quiz"),
+	_v("vapt-30-lms-quiz-questions", "P2", "lms-quiz-questions", "LMS Quiz"),
 ]
 
 # Known-benign residual escalations (verified live 2026-07-09, real DB): the wire stays LIVE (a NEW
