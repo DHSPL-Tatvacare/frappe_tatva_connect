@@ -79,11 +79,12 @@ def _make_group(suffix, items):
 	return frappe.get_doc({"doctype": _GROUP_DT, "group_name": f"{_PFX}-{suffix}", "actions": items}).insert(ignore_permissions=True).name
 
 
-def _make_flow(name, criteria, nodes):
+def _make_flow(name, criteria, nodes, entry=None):
 	return frappe.get_doc({
-		"doctype": _DEF_DT, "workflow_name": f"{_PFX}-{name}", "enabled": 1,
+		"doctype": _DEF_DT, "workflow_name": f"{_PFX}-{name}", "lifecycle_state": "Active",
 		"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
 		"entry_doctype": "CRM Task", "entry_event": "Updated",
+		"entry_node": entry or nodes[0]["node_id"],  # the Start node; defaults to the first node (the old convention)
 		"criteria": criteria, "nodes": nodes,
 	}).insert(ignore_permissions=True).name
 

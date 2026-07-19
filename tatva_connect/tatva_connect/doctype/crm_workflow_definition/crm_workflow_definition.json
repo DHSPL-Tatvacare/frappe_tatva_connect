@@ -3,13 +3,13 @@
  "allow_rename": 1,
  "autoname": "field:workflow_name",
  "creation": "2026-07-15 00:00:00.000000",
- "description": "A per-subject workflow graph: typed Nodes (Step / Branch / Assign / Wait / Terminal) + edges. Frozen on save into an immutable CRM Workflow Version; a running Instance binds to a version, never to this editable Definition. Ships dormant (enabled off).",
+ "description": "A per-subject workflow graph: typed Nodes (Step / Branch / Assign / Wait / Terminal) + edges. Authored as a Draft on the Campaigns canvas, then advanced through a lifecycle: Publish freezes an immutable CRM Workflow Version; Activate arms the entry trigger; Suspend disarms it; Archive retires it. A running Instance binds to a Version, never to this editable Definition. Born dormant (Draft).",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "workflow_name",
-  "enabled",
+  "lifecycle_state",
   "grain_section",
   "vertical",
   "group",
@@ -20,6 +20,7 @@
   "when_section",
   "criteria",
   "nodes_section",
+  "entry_node",
   "nodes",
   "canvas_json"
  ],
@@ -34,12 +35,15 @@
    "description": "Names the workflow for operators; every Instance and log references it by this name."
   },
   {
-   "default": "0",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
+   "default": "Draft",
+   "fieldname": "lifecycle_state",
+   "fieldtype": "Select",
+   "options": "Draft\nPublished\nActive\nSuspended\nArchived",
    "in_list_view": 1,
-   "label": "Enabled",
-   "description": "Gates whether new Instances are created; disabling stops new starts but never touches Instances already running."
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "label": "Lifecycle State",
+   "description": "The Definition's editorial lifecycle, advanced only through its transition verbs (never edited by hand): Draft (authoring, mutable) -> Publish freezes an immutable Version -> Activate arms the entry trigger -> Suspend disarms it -> Archive retires it. A new Instance starts only while Active; running Instances stay pinned to their Version across every later transition."
   },
   {
    "fieldname": "grain_section",
@@ -107,6 +111,12 @@
    "fieldtype": "Section Break",
    "label": "Then (Actions)",
    "description": "3. Then. The actions are arranged here as an ordered graph of nodes. A Step runs an Action Group; a guard action within it (Require Fields / Require Location) is enforced at save time and can block the save, while every other action runs after. A Branch routes on a condition; a Wait parks the Flow until a timer or an event, turning it into a journey that resumes. A wait-free Flow runs once and persists nothing (a rule); a Flow that waits carries a durable instance."
+  },
+  {
+   "fieldname": "entry_node",
+   "fieldtype": "Data",
+   "label": "Entry Node",
+   "description": "The Node ID where a new Instance starts - the Start node the canvas wires. Set by the canvas, validated at Publish (must name a real node). A legacy Version frozen before this field falls back to the first node."
   },
   {
    "fieldname": "nodes",

@@ -22,6 +22,7 @@ tatva_connect.patches.neutralize_wati_message_id_field  # Neutralise the WhatsAp
 tatva_connect.patches.rename_task_field_target  # Activity engine 9-column collapse: rename CRM Task Type Field.first_class_target -> target before the doctype JSON syncs, so the renamed field map carries existing values (no orphan column)
 tatva_connect.patches.backfill_catalog_target_doctype  # CRM Lead API Field drops the redundant `child_doctype` column (target_doctype is now the single source)
 tatva_connect.patches.migrate_intake_field_map_target  # Intake mapping contract: split the legacy free-text CRM Intake Field Map.target ("plan:nivo_dosage") into the structured target_table + target_field pair BEFORE the new JSON drops `target`
+tatva_connect.patches.workflow_definition_enabled_to_lifecycle  # Definition lifecycle: enabled Check -> lifecycle_state Select (enabled=1 -> Active, else Draft); pre-sync one-time map, then DROPs enabled itself (no orphan + idempotent on replay)
 
 [post_model_sync]
 tatva_connect.patches.add_whatsapp_message_id_unique_index  # UNIQUE index on WhatsApp Message.message_id

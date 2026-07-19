@@ -166,11 +166,13 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 	ONE savepoint: a failure rolls back only the flow's own writes (the triggering save survives), and the
 	caller logs it - an ephemeral effect can DO but never DENY. Deferred thunks fire after the savepoint
 	releases. Returns the final state (for tests / callers); raises `_Permanent` on a broken graph."""
+	from tatva_connect.workflow_engine import versions
+
 	version = versions_load(version_name)
 	nodes = {n.node_id: n for n in version.nodes}
 	state = dict(seed_state or {})
 	axes = rules_lead_axes(lead_name)
-	cursor = version.nodes[0].node_id
+	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
 	seen, hops, deferred = set(), 0, []
 	save_point = f"tc_wf_inline_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)

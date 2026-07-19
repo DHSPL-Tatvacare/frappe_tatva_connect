@@ -42,6 +42,7 @@ def build_payload(definition):
 		"program": definition.program or "",
 		"entry_doctype": definition.entry_doctype or "",
 		"entry_event": definition.entry_event or "",
+		"entry_node": definition.entry_node or "",
 		"criteria": [_freeze(c) for c in (definition.criteria or [])],
 		"nodes": [_freeze_node(n) for n in definition.nodes],
 	}
@@ -116,6 +117,14 @@ def current_name(workflow_name):
 	return name or ensure_version(frappe.get_doc("CRM Workflow Definition", workflow_name))
 
 
+def entry_node_of(version):
+	"""Where a new Instance begins: the declared Start node (entry_node), falling back to the first node for
+	a legacy Version frozen before entry_node existed. The ONE entry-resolution brain — both the durable
+	start (triggers._start_one) and the ephemeral run (interpreter.run_inline) call this, never their own
+	copy, so the fallback policy can never drift between the two paths."""
+	return version.entry_node or version.nodes[0].node_id
+
+
 def load(version_name):
 	"""The frozen graph as `_dict(workflow, entry_doctype, entry_event, nodes)`, nodes rehydrated as
 	`frappe._dict` - which returns `None` for a missing attribute exactly like a child doc, so the
@@ -130,6 +139,7 @@ def load(version_name):
 			workflow=row.workflow,
 			entry_doctype=payload.get("entry_doctype"),
 			entry_event=payload.get("entry_event"),
+			entry_node=payload.get("entry_node"),
 			criteria=[frappe._dict(c) for c in payload.get("criteria", [])],
 			nodes=[frappe._dict(n) for n in payload["nodes"]],
 		)

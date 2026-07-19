@@ -45,11 +45,12 @@ def _make_group(name, items):
 	return frappe.get_doc({"doctype": _GROUP_DT, "group_name": name, "actions": items}).insert(ignore_permissions=True)
 
 
-def _make_workflow(name, nodes):
+def _make_workflow(name, nodes, entry=None):
 	return frappe.get_doc({
-		"doctype": _DEF_DT, "workflow_name": name, "enabled": 1,
+		"doctype": _DEF_DT, "workflow_name": name, "lifecycle_state": "Active",
 		"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
 		"entry_doctype": "CRM Lead", "entry_event": "Created",
+		"entry_node": entry or nodes[0]["node_id"],  # the Start node; defaults to the first node (the old convention)
 		"nodes": nodes,
 	}).insert(ignore_permissions=True)
 
@@ -266,9 +267,11 @@ class TestMidSegmentRollback(FrappeTestCase):
 
 
 class TestWaitDelayValidation(FrappeTestCase):
-	"""A zero or negative For-Duration delay is rejected at Definition save (F6) — a {'seconds': 0} Wait
-	would re-arm instantly and hot-loop the sweep. A strictly-positive delay saves. No commit needed: a
-	rejected save throws in validate() before any insert."""
+	"""A zero or negative For-Duration delay is rejected at Publish (F6) — a {'seconds': 0} Wait would
+	re-arm instantly and hot-loop the sweep. The release contract runs when a Definition enters a released
+	state, so these fixtures publish (lifecycle_state="Published") to trigger it; a strictly-positive delay
+	publishes and freezes a Version. No commit needed: a rejected publish throws in validate() before any
+	insert. entry_node is set so a bad delay throws for the delay, not a masked 'no entry'."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -285,9 +288,9 @@ class TestWaitDelayValidation(FrappeTestCase):
 
 	def _wf(self, name, wait_expression):
 		return frappe.get_doc({
-			"doctype": _DEF_DT, "workflow_name": name, "enabled": 0,
+			"doctype": _DEF_DT, "workflow_name": name, "lifecycle_state": "Published",
 			"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
-			"entry_doctype": "CRM Lead", "entry_event": "Created",
+			"entry_doctype": "CRM Lead", "entry_event": "Created", "entry_node": "w1",
 			"nodes": [
 				{"node_id": "w1", "node_type": "Wait", "wait_mode": "For Duration", "wait_expression": wait_expression, "next_node": "w2"},
 				{"node_id": "w2", "node_type": "Terminal"},
@@ -305,15 +308,15 @@ class TestWaitDelayValidation(FrappeTestCase):
 	def test_positive_delay_saves(self):
 		wf = self._wf("WFI-guard-pos", "{'minutes': 1}")
 		self.assertTrue(frappe.db.exists(_DEF_DT, wf.name))
-		self.assertTrue(versions.current_name(wf.name), "a saved Definition mints a current version")
+		self.assertTrue(versions.current_name(wf.name), "a published Definition mints a current version")
 
 	def test_no_terminal_is_rejected(self):
-		"""A Flow with no Terminal can never end (it would run to the hop budget) — reject it at save."""
+		"""A Flow with no Terminal can never end (it would run to the hop budget) — reject it at Publish."""
 		with self.assertRaises(frappe.exceptions.ValidationError):
 			frappe.get_doc({
-				"doctype": _DEF_DT, "workflow_name": "WFI-guard-noterm", "enabled": 0,
+				"doctype": _DEF_DT, "workflow_name": "WFI-guard-noterm", "lifecycle_state": "Published",
 				"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
-				"entry_doctype": "CRM Lead", "entry_event": "Created",
+				"entry_doctype": "CRM Lead", "entry_event": "Created", "entry_node": "b1",
 				"nodes": [{"node_id": "b1", "node_type": "Branch", "condition": "True", "on_true": "b1", "on_false": "b1"}],
 			}).insert(ignore_permissions=True)
 
@@ -371,12 +374,17 @@ class TestFullFreeze(FrappeTestCase):
 		self.assertEqual(self._step_value(v1), "2025-05-05", "a pinned version is immutable to a later molecule edit")
 
 	def test_resaving_the_workflow_publishes_a_new_version(self):
+		from tatva_connect.campaigns import api
+
 		v1 = versions.current_name(self.wf.name)
 		self._edit_molecule("2030-12-31")
-		frappe.get_doc(_DEF_DT, self.wf.name).save(ignore_permissions=True)  # re-publish
+		# A released workflow's graph is immutable in place; the lawful way to re-freeze a changed body is
+		# Revise -> Draft, then Publish (which mints a new Version carrying the new molecule).
+		api.revise(self.wf.name)
+		api.publish(self.wf.name)
 		frappe.db.commit()
 		v2 = versions.current_name(self.wf.name)
-		self.assertNotEqual(v1, v2, "re-saving after a molecule edit mints a new version")
+		self.assertNotEqual(v1, v2, "re-publishing after a molecule edit mints a new version")
 		self.assertEqual(self._step_value(v1), "2025-05-05", "the old version keeps the old body")
 		self.assertEqual(self._step_value(v2), "2030-12-31", "the new current version carries the new body")
 

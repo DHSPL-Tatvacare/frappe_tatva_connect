@@ -249,9 +249,9 @@ class _SampleWorkflowCase(FrappeTestCase):
 	@classmethod
 	def _build_workflow(cls):
 		frappe.get_doc({
-			"doctype": _DEF_DT, "workflow_name": _WF, "enabled": 1,
+			"doctype": _DEF_DT, "workflow_name": _WF, "lifecycle_state": "Active",
 			"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
-			"entry_doctype": "CRM Lead", "entry_event": "Created",
+			"entry_doctype": "CRM Lead", "entry_event": "Created", "entry_node": "n1",
 			"nodes": [
 				{"node_id": "n1", "node_type": "Branch", "condition": "ctx.get('cycle', 1) == 1", "on_true": "n2", "on_false": "n3c"},
 				{"node_id": "n2", "node_type": "Step", "action_group": f"{_AG}-welcome", "next_node": "n3c"},

@@ -2,20 +2,21 @@
 automation router's proven precedent), guarded by its OWN `frappe.flags.in_workflow` re-entrancy flag so
 it coexists with the automation engine's `in_automation` guard and neither engine fires the other.
 
-On the entry doctype's `entry_event` (Created/Updated/Deleted), every ENABLED Definition whose grain
+On the entry doctype's `entry_event` (Created/Updated/Deleted), every ACTIVE Definition whose grain
 matches the subject starts: an Instance is created AND its first segment runs in ONE transaction,
 committing at the first suspend (F3 - no `Running` orphan if it crashes before the first park). The
 `active_key` UNIQUE index rejects a duplicate start; that `IntegrityError` is caught and treated as
 "already running", never surfaced (F3 double-start guard, closed at the DB).
 
 Dormant-by-default (constitution A.6): with the engine switch off, nothing starts. The wildcard fires on
-EVERY write of EVERY doctype, so the switch check + a cheap enabled-Definition lookup early-return before
+EVERY write of EVERY doctype, so the switch check + a cheap Active-Definition lookup early-return before
 any real work.
 """
 import frappe
 
 from tatva_connect import automation
 from tatva_connect.automation import rules
+from tatva_connect.tatva_connect.doctype.crm_workflow_definition.crm_workflow_definition import ARMED_STATE
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, versions
 
 INSTANCE_DT = interpreter.INSTANCE_DT
@@ -77,7 +78,7 @@ def on_task_done(doc, method=None):
 
 def run_guards(doc, method=None):
 	"""Wildcard `validate` — the SYNCHRONOUS GUARD lane for Flows (D3). Before the save commits, every
-	ENABLED Flow matching this record's (doctype, event) + grain + When runs its guard-lane action items;
+	ACTIVE Flow matching this record's (doctype, event) + grain + When runs its guard-lane action items;
 	a handler raising propagates straight out of validate and BLOCKS the save (never swallowed). Guards
 	are Flows too: a Require Location / Require Fields Flow enforces at save time, every other action runs
 	after — there is no separate guard engine.
@@ -109,7 +110,7 @@ def run_guards(doc, method=None):
 
 
 def covering_location_guard(doc):
-	"""True iff an ENABLED Flow with a Require Location guard already covers THIS save — its guard lane
+	"""True iff an ACTIVE Flow with a Require Location guard already covers THIS save — its guard lane
 	ran (or will run) synchronously in the same validate. The location backstop (tasks.enforce_location)
 	reads this to STAND DOWN instead of double-guarding: the Flow-era replacement for the old
 	"does a Require Location rule cover this?" check the rule engine used. Non-re-entrant + dormant like
@@ -135,7 +136,7 @@ def covering_location_guard(doc):
 
 
 def _maybe_start(doc, event):
-	"""The after-save lane: run every ENABLED Flow whose (entry_doctype, entry_event) + grain + When match
+	"""The after-save lane: run every ACTIVE Flow whose (entry_doctype, entry_event) + grain + When match
 	this write. A wait-free Flow runs inline and persists nothing (EPHEMERAL, D4); a Flow that parks starts
 	a durable Instance (CONTINUOUS). Guard-lane actions already ran (or blocked the save) in `run_guards`."""
 	if frappe.flags.get("in_workflow"):
@@ -164,7 +165,7 @@ def _trigger_context(doc, event):
 	`None` when nothing can match (fail-closed)."""
 	definitions = frappe.get_all(
 		_DEF_DT,
-		filters={"enabled": 1, "entry_doctype": doc.doctype, "entry_event": event},
+		filters={"lifecycle_state": ARMED_STATE, "entry_doctype": doc.doctype, "entry_event": event},
 		fields=["name", "vertical", "group", "program"],
 	)
 	if not definitions:
@@ -218,7 +219,7 @@ def _start_one(workflow_name, version_name, lead_name, seed_context):
 	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
 	race — a second entry for the same (workflow, lead) raises IntegrityError on insert, caught + treated as
 	already-running."""
-	entry_node = versions.load(version_name).nodes[0].node_id
+	entry_node = versions.entry_node_of(versions.load(version_name))  # the ONE entry-resolution brain
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
 		instance = frappe.get_doc({

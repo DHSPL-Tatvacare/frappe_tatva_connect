@@ -55,11 +55,12 @@ def _make_group(name, items):
 	return frappe.get_doc({"doctype": _GROUP_DT, "group_name": name, "actions": items}).insert(ignore_permissions=True)
 
 
-def _make_workflow(name, nodes, event="Created"):
+def _make_workflow(name, nodes, event="Created", entry=None):
 	return frappe.get_doc({
-		"doctype": _DEF_DT, "workflow_name": name, "enabled": 1,
+		"doctype": _DEF_DT, "workflow_name": name, "lifecycle_state": "Active",
 		"vertical": _GRAIN["vertical"], "group": _GRAIN["group"], "program": _GRAIN["program"],
 		"entry_doctype": "CRM Lead", "entry_event": event,
+		"entry_node": entry or nodes[0]["node_id"],  # the Start node; defaults to the first node (the old convention)
 		"nodes": nodes,
 	}).insert(ignore_permissions=True)
 

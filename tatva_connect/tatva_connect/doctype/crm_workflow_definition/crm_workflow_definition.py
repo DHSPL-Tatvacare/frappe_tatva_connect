@@ -15,15 +15,80 @@ from frappe.model.document import Document
 _EVENT_MODES = frozenset({"Until Event", "Event-or-Timeout"})
 _TIME_MODES = frozenset({"For Duration", "Until Time", "Event-or-Timeout"})
 
+# The Definition lifecycle - the ONE state machine. A Definition is born a Draft (the field default), then
+# advanced ONLY along these edges; each canvas verb (campaigns.api) calls apply_transition, and nothing else
+# sets lifecycle_state by hand. The state names are defined once here and reused everywhere - no literals.
+LIFECYCLE_STATES = ("Draft", "Published", "Active", "Suspended", "Archived")
+DRAFT, PUBLISHED, ACTIVE, SUSPENDED, ARCHIVED = LIFECYCLE_STATES
+ARMED_STATE = ACTIVE  # the entry trigger reads THIS and nothing else - a new Instance starts only while Active
+_ENFORCED_STATES = frozenset({PUBLISHED, ACTIVE, SUSPENDED})  # a running Instance can bind here - the release contract holds
+_TRANSITIONS = {
+	DRAFT: {PUBLISHED, ARCHIVED},
+	PUBLISHED: {ACTIVE, DRAFT, ARCHIVED},
+	ACTIVE: {SUSPENDED, DRAFT, ARCHIVED},
+	SUSPENDED: {ACTIVE, DRAFT, ARCHIVED},
+	ARCHIVED: set(),
+}
+
 
 class CRMWorkflowDefinition(Document):
 	def validate(self):
-		self._require_reachable_terminal()
+		"""Frappe's per-save hook. A Draft is mutable and half-built by design, so only the cheap identity
+		check runs while authoring. In a released state two laws hold: the graph is IMMUTABLE (edit a Draft -
+		Revise first) and it must satisfy the full release contract. The gate lives on release, not on every
+		keystroke."""
 		self._require_unique_node_ids()
+		if self.lifecycle_state in _ENFORCED_STATES:
+			self._forbid_released_graph_edit()
+			self._enforce_release_contract()
+
+	def is_editable(self):
+		"""A Definition's graph may be authored only while it is a Draft — the ONE editability predicate the
+		campaigns API asks instead of testing the state itself (one brain, no literal at the call site)."""
+		return (self.lifecycle_state or DRAFT) == DRAFT
+
+	def _forbid_released_graph_edit(self):
+		"""'Editable <=> Draft' as a controller LAW, not just an API convention — so Desk / REST / any writer
+		cannot bypass save_draft. A released Definition is an immutable Version; its graph may not change in
+		place. Allowed: a transition (lifecycle_state changed) — Publish is meant to (re)freeze, Activate /
+		Suspend never touch the graph — and a doc inserted straight into a released state (a publish-on-insert
+		seed/test). Refused: a save that KEEPS a released state while the frozen graph would change. Reuses the
+		ONE freeze brain (build_payload + definition_hash), so 'changed' means exactly what the freeze means."""
+		if self.is_new() or self.has_value_changed("lifecycle_state"):
+			return
+		from tatva_connect.workflow_engine import versions
+
+		current = frappe.db.get_value(versions.DOCTYPE, {"workflow": self.name, "is_current": 1}, "definition_hash")
+		if current and versions.definition_hash(versions.build_payload(self)) != current:
+			frappe.throw(
+				_("A {0} workflow is immutable — Revise it to a Draft before editing its graph.").format(frappe.bold(self.lifecycle_state)),
+				title=_("Not editable"),
+			)
+
+	def _enforce_release_contract(self):
+		"""The fail-closed structural contract a Version must satisfy before it can run (the Publish gate).
+		Ordered so the most precise message wins: edges resolve, the graph is entered and fully reachable,
+		every Step has its Action Group, expressions parse, delays are strictly positive."""
 		self._require_edges_resolve()
+		self._require_reachable_terminal()
 		self._require_step_action_groups_exist()
 		self._require_expressions_parse()
 		self._require_positive_wait_delays()
+
+	def apply_transition(self, target):
+		"""The ONE lifecycle mover: advance this Definition along a legal edge, then save - so the Publish
+		gate (validate's release contract) and the freeze (on_update) fire exactly when the target is a
+		released state. An illegal edge is refused before any write (fail-closed). Callers are the thin
+		whitelisted verbs in campaigns.api; nothing sets lifecycle_state by hand."""
+		current = self.lifecycle_state or "Draft"
+		if target not in _TRANSITIONS.get(current, set()):
+			frappe.throw(
+				_("A {0} workflow cannot move to {1}.").format(frappe.bold(current), frappe.bold(target)),
+				title=_("Illegal transition"),
+			)
+		self.lifecycle_state = target
+		self.save()
+		return self.lifecycle_state
 
 	@staticmethod
 	def default_list_data():
@@ -31,17 +96,17 @@ class CRMWorkflowDefinition(Document):
 		this; get_data calls it when no saved CRM View Settings exists (crm/api/doc.py)."""
 		columns = [
 			{"label": "Name", "type": "Data", "key": "workflow_name", "width": "16rem"},
+			{"label": "State", "type": "Select", "key": "lifecycle_state", "width": "9rem"},
 			{"label": "Entry DocType", "type": "Link", "options": "DocType", "key": "entry_doctype", "width": "12rem"},
 			{"label": "Entry Event", "type": "Select", "key": "entry_event", "width": "9rem"},
-			{"label": "Enabled", "type": "Check", "key": "enabled", "width": "7rem"},
 			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "9rem"},
 		]
 		rows = [
 			"name",
 			"workflow_name",
+			"lifecycle_state",
 			"entry_doctype",
 			"entry_event",
-			"enabled",
 			"vertical",
 			"group",
 			"program",
@@ -50,17 +115,54 @@ class CRMWorkflowDefinition(Document):
 		return {"columns": columns, "rows": rows}
 
 	def _require_reachable_terminal(self):
-		"""A Flow needs at least one node and at least one Terminal — a zero-node graph would IndexError at
-		start (the entry is the first node), and a graph with no Terminal could never end (it would run to
-		the hop budget and Fail)."""
+		"""A publishable Flow must be enterable and finishable: at least one node, an explicit Start node
+		(entry_node) that names a real node, and a Terminal reachable from it. Every node must be reachable
+		from the entry - a node stranded off the entry graph is dead config, never silently shipped. (The
+		entry pointer replaces the old 'entry is the first node' convention, so the canvas Start node is the
+		single source of where an Instance begins.)"""
 		if not self.nodes:
-			frappe.throw(_("A Flow needs at least one node."), title=_("Empty graph"))
+			frappe.throw(_("A Flow needs at least one node before it can be published."), title=_("Empty graph"))
 		if not any(n.node_type == "Terminal" for n in self.nodes):
 			frappe.throw(_("A Flow needs at least one Terminal node so it can end."), title=_("No Terminal"))
+		ids = set(self._node_ids())
+		if not (self.entry_node or "").strip():
+			frappe.throw(_("Set a Start node before publishing - the Flow needs an Entry Node."), title=_("No entry"))
+		if self.entry_node not in ids:
+			frappe.throw(_("Entry Node {0} is not a node in this workflow.").format(frappe.bold(self.entry_node)), title=_("Bad entry"))
+		reachable = self._reachable_from(self.entry_node)
+		dead = [n.node_id for n in self.nodes if n.node_id and n.node_id not in reachable]
+		if dead:
+			frappe.throw(
+				_("These nodes are unreachable from the Start node: {0}.").format(frappe.bold(", ".join(dead))),
+				title=_("Unreachable nodes"),
+			)
+		if not any(n.node_type == "Terminal" and n.node_id in reachable for n in self.nodes):
+			frappe.throw(_("No Terminal is reachable from the Start node."), title=_("No reachable Terminal"))
+
+	def _reachable_from(self, entry):
+		"""The set of node_ids reachable from `entry` by following declared edges - the graph-walk the
+		reachability check reads. Uses the same `_edges_of` the edge validator uses (one edge brain), so a
+		Wait's mode-specific handles are honoured exactly once."""
+		by_id = {n.node_id: n for n in self.nodes if n.node_id}
+		seen, stack = set(), [entry]
+		while stack:
+			nid = stack.pop()
+			if nid in seen or nid not in by_id:
+				continue
+			seen.add(nid)
+			for _label, target in self._edges_of(by_id[nid]):
+				if target:
+					stack.append(target)
+		return seen
 
 	def on_update(self):
-		"""Freeze this graph into an immutable version and mark it current. No migration - editing a
-		Definition mints a new Version; in-flight Instances keep their pinned Version (UAT, greenfield)."""
+		"""Freeze this graph into an immutable Version and mark it current - but ONLY in a released state
+		(Publish and beyond). A Draft save persists the working graph and mints nothing, so authoring never
+		litters Versions; the freeze happens at the Publish gate. Editing a released Definition (via Revise
+		-> Draft -> Publish) mints a NEW Version; in-flight Instances keep their pinned Version (greenfield,
+		no migration)."""
+		if self.lifecycle_state not in _ENFORCED_STATES:
+			return
 		from tatva_connect.workflow_engine import versions
 
 		versions.ensure_version(self)

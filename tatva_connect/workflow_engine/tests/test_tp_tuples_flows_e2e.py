@@ -128,9 +128,9 @@ def _build_flow(idx, trigger, field, value, set_stage, create_task, due_from):
 		})
 	group = frappe.get_doc({"doctype": _GROUP_DT, "group_name": f"{_PREFIX}ag-{idx:02d}", "actions": items}).insert(ignore_permissions=True).name
 	return frappe.get_doc({
-		"doctype": _DEF_DT, "workflow_name": f"{_PREFIX}{idx:02d}", "enabled": 1,
+		"doctype": _DEF_DT, "workflow_name": f"{_PREFIX}{idx:02d}", "lifecycle_state": "Active",
 		"vertical": VERTICAL, "group": GROUP, "program": PROGRAM,
-		"entry_doctype": "CRM Task", "entry_event": "Updated",
+		"entry_doctype": "CRM Task", "entry_event": "Updated", "entry_node": "n1",
 		"criteria": [
 			{"field": "status", "operator": "changed to", "value": "Done"},
 			{"field": "custom_task_type", "operator": "is", "value": _tt(trigger)},
