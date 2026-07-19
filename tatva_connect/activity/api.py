@@ -36,6 +36,28 @@ def field_column(f):
 	return target if target in PROMOTED_COLUMNS else None
 
 
+def set_schema_field(task, task_type, fieldname, value):
+	"""Write ONE declared activity-schema field onto an existing CRM Task, routed by the SAME rule
+	compute_activity uses (field_column): a promoted field lands on its column, a payload field into
+	custom_activity_payload. Raises if the field is not declared on the type — so no out-of-declaration
+	key can be poked into the payload (the second-writer bug this replaces). Returns True iff it changed."""
+	f = next((x for x in frappe.get_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
+	if not f:
+		frappe.throw(_("{0} is not a declared field of activity type {1}.").format(fieldname, task_type))
+	column = field_column(f)
+	if column:
+		if task.get(column) == value:
+			return False
+		task.set(column, value)
+		return True
+	payload = frappe.parse_json(task.custom_activity_payload) if (task.custom_activity_payload or "").strip() else {}
+	if payload.get(fieldname) == value:
+		return False
+	payload[fieldname] = value
+	task.custom_activity_payload = frappe.as_json(payload)
+	return True
+
+
 def _lead_axes(lead):
 	v = frappe.db.get_value(
 		"CRM Lead", lead, ["custom_vertical", "custom_group", "custom_current_program"], as_dict=True

@@ -74,13 +74,21 @@ TASK_TYPE_TO_METRIC = {
 }
 
 
+def _plain_type(task_type):
+	"""The bare type_name from a CRM Task Type key. After rekey_task_types_composite the PK — and the
+	cascaded custom_task_type on every CRM Task — is 'vertical::group::program::type_name'; the metric map
+	is keyed by the bare type_name, so read the last '::' component (a pre-composite value has no '::')."""
+	return (task_type or "").split("::")[-1]
+
+
 def _metric_field(task_type):
 	"""The count column for a task type — ONLY from the code dict (never from the doc).
 
-	Defends the `set_value` fieldname against injection: an unknown/crafted task type
-	returns None and the caller writes nothing. The `assert` makes a typo in the dict a
-	loud failure rather than a silent bad column name."""
-	field = TASK_TYPE_TO_METRIC.get(task_type)
+	Accepts the composite custom_task_type and normalises to the bare type_name the dict is keyed by (the
+	composite re-key would otherwise make every lookup miss). Defends the `set_value` fieldname against
+	injection: an unknown/crafted task type returns None and the caller writes nothing. The `assert` makes
+	a typo in the dict a loud failure rather than a silent bad column name."""
+	field = TASK_TYPE_TO_METRIC.get(_plain_type(task_type))
 	if field is None:
 		return None
 	assert field in TASK_TYPE_TO_METRIC.values()  # field is code-owned, not user input  # nosec B101
@@ -170,8 +178,8 @@ def _aggregate_write():
 			"status": _DONE_STATUS,
 			"reference_doctype": _PARENT_DT,
 			"reference_docname": ["is", "set"],
-			"custom_task_type": ["in", list(TASK_TYPE_TO_METRIC.keys())],
 		},
+		# custom_task_type is the COMPOSITE key, so a plain-name `in` filter matches nothing — the mapped-type check runs per row below via _metric_field (skips None).
 		fields=["reference_docname as lead", "custom_task_type as task_type", "count(name) as n"],
 		group_by="reference_docname, custom_task_type",
 	)

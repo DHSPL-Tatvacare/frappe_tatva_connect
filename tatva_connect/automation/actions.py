@@ -175,15 +175,14 @@ def _review_task_for_file(file_name, lead, action, context, assignee):
 def _pin_review_file(task_name, file_name):
 	"""Pin a File onto its Document Review task and back-link it (review flow, spec §4.2). Both writes
 	go through the unified get_doc/save path (never db.set_value — that skips validate/mirroring) and
-	are idempotent: the document Attach schema value lands in the task's JSON payload under its
-	fieldname (`document`), and the File is stamped Pending + custom_review_task, each written only
-	when it actually changes so a re-fire is a no-op."""
+	are idempotent. The `document` value is written through the activity write brain
+	(activity_api.set_schema_field), which validates it is a declared CRM Task Type Field and routes it by
+	field_column — never a hardcoded payload key that could silently drift from a promoted column."""
+	from tatva_connect.activity import api as activity_api
+
 	file_doc = frappe.get_doc("File", file_name)
 	task = frappe.get_doc("CRM Task", task_name)
-	payload = frappe.parse_json(task.custom_activity_payload) if (task.custom_activity_payload or "").strip() else {}
-	if payload.get("document") != file_doc.file_url:
-		payload["document"] = file_doc.file_url
-		task.custom_activity_payload = frappe.as_json(payload)
+	if activity_api.set_schema_field(task, task.custom_task_type, "document", file_doc.file_url):
 		task.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 	if file_doc.custom_review_status != "Pending" or file_doc.custom_review_task != task_name:
 		file_doc.custom_review_status = "Pending"

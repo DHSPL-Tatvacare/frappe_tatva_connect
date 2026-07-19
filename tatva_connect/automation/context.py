@@ -77,7 +77,12 @@ def activity_values(doc):
 	column / payload key `activity.api.compute_activity` routed them to. A criterion is authored against
 	the schema fieldname (outcome/training_status/…), so the context must expose the SAME name at fire
 	time. Reuses the ONE existing brain (`activity.api._task_values` + `_type_config`). Empty for a
-	non-CRM-Task subject or a plain task with no activity type."""
+	non-CRM-Task subject or a plain task with no activity type.
+
+	NOTE (audit GAP 3, deferred): read is gated by can_read only at AUTHOR time (describe), not here at
+	fire time. Enforcing readable_fields here is the right shape but needs the seed to first tick can_read
+	on EVERY criterion-referenced schema field (many live TP-tuple rules key on can_read=0 fields today) —
+	a coordinated seed change owned by the automation engine, not a code-only fix. Tracked for that owner."""
 	if doc.doctype != "CRM Task" or not doc.get("custom_task_type"):
 		return {}
 	from tatva_connect.activity.api import _task_values, _type_config
