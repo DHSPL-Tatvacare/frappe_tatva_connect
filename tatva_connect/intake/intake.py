@@ -115,6 +115,7 @@ def _fold_submission_to_lead(doc, cfg):
 			continue
 		if not frappe.db.exists("CRM Lead Section", table):
 			continue  # stale/invalid target_table on an already-saved row — skip, don't throw
+		# No catalogue check here: the fold must never silently DROP a patient's answer — the target is gated at the picker and the save-time backstop, where an operator can act on it.
 		section = frappe.get_cached_doc("CRM Lead Section", table)
 		if section.child_table_field:
 			item.setdefault(section.child_table_field, [{}])[0][field] = val

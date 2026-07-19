@@ -16,3 +16,4 @@ class CRMIntakeFieldMap(Document):
 				_("Target Table '{0}' is not a known CRM Lead Section (nor blank/note).").format(table),
 				title=_("Unknown Target Table"),
 			)
+		# The catalogue + grain check lives on the PARENT (CRMIntakeForm._validate_targets): a child controller's validate() is not invoked by a parent save, so a gate here would never fire.

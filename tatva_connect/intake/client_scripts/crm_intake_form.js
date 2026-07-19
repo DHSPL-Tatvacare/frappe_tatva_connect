@@ -80,19 +80,34 @@ function tatva_intake_target_table_options(frm) {
   });
 }
 
-// target_field: per-row, from live meta of the row's target_table.
+// target_field: per-row, from the ONE brain (CRM Lead API Field) scoped to the row's target_table AND
+// the form's grain. The grain is read off frm.doc — the OPEN form, saved or not — so choosing/changing
+// a grain re-narrows the list on the next dropdown open, with no save and no reject-after-the-fact.
 function tatva_intake_target_field_options(frm, cdt, cdn) {
   const row = locals[cdt] && locals[cdt][cdn];
   if (!row || !(row.target_table || '').trim()) return;
 
   frappe.call({
     method: 'tatva_connect.intake.api.list_target_fields',
-    args: { target_table: row.target_table, intake_form: frm.doc.name },
+    args: {
+      target_table: row.target_table,
+      intake_form: frm.doc.name,
+      vertical: frm.doc.custom_vertical,
+      group: frm.doc.custom_group,
+      program: frm.doc.custom_current_program,
+    },
     callback(r) {
       const fields = (r && r.message) || [];
       // {value,label} pairs — frappe escapes these in the dropdown; we never build HTML.
       const data = fields.map((f) => ({ value: f.fieldname, label: f.label || f.fieldname }));
       tatva_intake_set_row_options(frm, cdn, 'target_field', data);
+      if (!data.length && row.target_table !== 'note') {
+        // Empty list has exactly one cause worth naming: no grain chosen yet.
+        const g = [frm.doc.custom_vertical, frm.doc.custom_group, frm.doc.custom_current_program];
+        if (!g.some((x) => (x || '').trim())) {
+          frappe.show_alert({ message: __('Pick the Vertical / Group / Program first — the field list is grain-scoped.'), indicator: 'orange' });
+        }
+      }
     },
   });
 }

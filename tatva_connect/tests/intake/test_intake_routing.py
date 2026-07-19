@@ -92,7 +92,8 @@ class TestIntakeRouting(FrappeTestCase):
 				# acq was UNROUTABLE under the old _TABLE dict — the live bug this phase fixes.
 				{"source_field": "utm_campaign_field", "target_table": "acq", "target_field": "utm_campaign"},
 				{"source_field": "lab_date_field", "fieldtype": "Date", "target_table": "lab", "target_field": "report_date"},
-				{"source_field": "hba1c_field", "target_table": "lab", "target_field": "hba1c"},
+				# weight_kg, not hba1c: the target must be a field THIS grain's contract grants — exactly what the builder's picker now offers.
+				{"source_field": "weight_field", "target_table": "lab", "target_field": "weight_kg"},
 				{"source_field": "note_field", "target_table": "note", "target_field": "Intake Note"},
 			],
 		})
@@ -130,7 +131,7 @@ class TestIntakeRouting(FrappeTestCase):
 			"patient_name": "Asha Routing",
 			"utm_campaign_field": "spring_push",
 			"lab_date_field": "2026-06-01",
-			"hba1c_field": "5.7",
+			"weight_field": "62.5",
 			"note_field": "Patient asked about diet plan",
 		})
 		sub.insert(ignore_permissions=True)
@@ -150,7 +151,7 @@ class TestIntakeRouting(FrappeTestCase):
 
 		# lab (child, multi-row — still lands correctly).
 		self.assertEqual(len(lead.custom_lab_profile), 1)
-		self.assertAlmostEqual(float(lead.custom_lab_profile[0].hba1c), 5.7, places=2)
+		self.assertAlmostEqual(float(lead.custom_lab_profile[0].weight_kg), 62.5, places=2)
 		self.assertEqual(str(lead.custom_lab_profile[0].report_date), "2026-06-01")
 
 		# note (unchanged — still creates an FCRM Note, not a section).

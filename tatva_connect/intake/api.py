@@ -14,17 +14,20 @@ from frappe import _
 
 # ONE resolver, shared with the save-time validation — target_table -> the doctype whose
 # fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
+from tatva_connect.access import entitlement
 from tatva_connect.intake.intake import target_doctype as _resolve_doctype
 
 
 @frappe.whitelist()
-def list_target_fields(target_table, intake_form=None):
-	"""Return the pickable fields of the doctype `target_table` resolves to, as
-	[{fieldname, label, fieldtype}] from LIVE get_meta — never a baked list.
+def list_target_fields(target_table, intake_form=None, vertical=None, group=None, program=None):
+	"""The fields this form may map into `target_table`, as [{fieldname, label, fieldtype}].
 
-	Gated read-only: requires read on CRM Intake Form (System-Manager-only doctype), so
-	this surfaces schema metadata to builders only. `intake_form` is accepted for symmetry
-	with the client call but unused — the field set is a function of the target doctype.
+	The list is the ONE brain (`CRM Lead API Field`), scoped to the section AND to the form's grain —
+	NOT a raw get_meta walk, which offered every column on the doctype including ones this grain must
+	never write. The grain axes come from the CALLER (the open, possibly unsaved builder form), so the
+	list narrows the moment an operator picks a grain — no save, no round trip.
+
+	Gated read-only: requires read on CRM Intake Form (System-Manager-only doctype).
 	"""
 	frappe.has_permission("CRM Intake Form", "read", throw=True)
 
@@ -32,14 +35,23 @@ def list_target_fields(target_table, intake_form=None):
 	if not dt:
 		return []  # note (free-text) or unknown table -> nothing to pick
 
+	grain = ((vertical or "").strip(), (group or "").strip(), (program or "").strip())
+	if not any(grain):
+		return []  # no grain chosen yet — the client shows "pick the grain first"
+
 	meta = frappe.get_meta(dt)
 	out = []
-	for df in meta.fields:
-		# Skip layout-only fieldtypes — they are not data targets.
-		if df.fieldtype in frappe.model.no_value_fields:
+	for row in frappe.get_all(
+		"CRM Lead API Field", filters={"section": target_table}, fields=["field_key", "fieldname", "label"]
+	):
+		if not entitlement.field_in_grains_via_contract(row.field_key, [grain]):
 			continue
-		out.append({"fieldname": df.fieldname, "label": _(df.label or df.fieldname), "fieldtype": df.fieldtype})
-	return out
+		df = meta.get_field(row.fieldname)
+		if not df or df.fieldtype in frappe.model.no_value_fields:
+			continue  # catalogued but not a live data column — never offer it
+		out.append({"fieldname": row.fieldname, "label": _(row.label or df.label or row.fieldname),
+		            "fieldtype": df.fieldtype})
+	return sorted(out, key=lambda f: f["label"])
 
 
 @frappe.whitelist()

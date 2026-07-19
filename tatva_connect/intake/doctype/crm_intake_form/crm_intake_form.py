@@ -65,6 +65,33 @@ class CRMIntakeForm(Document):
 					),
 					title=_("Invalid Target Field"),
 				)
+			self._validate_target_in_brain(m, table, field)
+
+	def _validate_target_in_brain(self, m, table, field):
+		"""Backstop for the grain-scoped picker: the target must be declared by the ONE brain
+		(`CRM Lead API Field`) for this section AND belong to this form's grain. The builder's dropdown
+		already offers only these, so an operator never meets this — it catches an API/import write.
+		The message NAMES what is allowed, so a hit is actionable rather than a dead end."""
+		from tatva_connect.access import entitlement
+		from tatva_connect.intake.api import list_target_fields
+
+		grain = ((self.custom_vertical or "").strip(), (self.custom_group or "").strip(),
+		         (self.custom_current_program or "").strip())
+		if not any(grain):
+			frappe.throw(
+				_("Set the Vertical / Group / Program before mapping fields — targets are grain-scoped."),
+				title=_("Grain Required"),
+			)
+		key = frappe.db.get_value("CRM Lead API Field", {"section": table, "fieldname": field}, "field_key")
+		if key and entitlement.field_in_grains_via_contract(key, [grain]):
+			return
+		allowed = ", ".join(f["fieldname"] for f in list_target_fields(table, self.name, *grain)) or _("(none)")
+		frappe.throw(
+			_("'{0}' is not a field this form's grain may write to '{1}' (field '{2}'). Allowed: {3}.").format(
+				field, table, m.source_field or "?", allowed
+			),
+			title=_("Target Not In This Grain"),
+		)
 
 	def _validate_phone_mapping(self):
 		"""Fail-closed: the lead is keyed and deduped on phone, so an ENABLED form with fields
