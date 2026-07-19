@@ -22,14 +22,14 @@ from tatva_connect.channels.resolve import adapter_for, adapter_for_channel, has
 
 __all__ = [
 	"CAPABILITIES",
-	"Declaration",
-	"SendResult",
 	"KINDS",
 	"OUTCOMES",
 	"ChannelEvent",
-	"build",
-	"event_name",
+	"Declaration",
+	"SendResult",
 	"adapter_for",
 	"adapter_for_channel",
+	"build",
+	"event_name",
 	"has_adapter",
 ]

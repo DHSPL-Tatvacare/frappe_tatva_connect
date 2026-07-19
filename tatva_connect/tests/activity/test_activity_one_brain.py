@@ -67,7 +67,7 @@ def _activity_catalog(task_type):
 def _literal_dict_value(node, key):
 	"""The constant value of `key` in a `{...}` display or a `dict(...)` call, else None."""
 	if isinstance(node, ast.Dict):
-		for k, v in zip(node.keys, node.values):
+		for k, v in zip(node.keys, node.values, strict=False):
 			if isinstance(k, ast.Constant) and k.value == key and isinstance(v, ast.Constant):
 				return v.value
 	if isinstance(node, ast.Call) and _dotted(node.func) == "dict":

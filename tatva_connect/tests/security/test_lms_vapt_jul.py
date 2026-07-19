@@ -27,7 +27,6 @@ from frappe.client import get as client_get
 from frappe.client import get_list as client_get_list
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now_datetime
-
 from lms.lms.doctype.lms_quiz.lms_quiz import check_answer, submit_quiz
 from lms.lms.doctype.lms_quiz_submission.lms_quiz_submission import MaximumAttemptsExceededError
 

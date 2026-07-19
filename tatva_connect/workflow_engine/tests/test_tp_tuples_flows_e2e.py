@@ -276,7 +276,7 @@ class TestTpTuplesAsFlows(FrappeTestCase):
 		fires the rule once; re-saving the already-Done task does NOT re-fire (status is watchable via
 		CRM Task Field, so `changed to Done` sees the before-value and matches only on the transition)."""
 		idx = next(i for i, r in enumerate(RULES) if r[4])  # first tuple that creates a follow-up
-		trigger, field, value, set_stage, create_task, _due = RULES[idx]
+		trigger, field, value, _set_stage, create_task, _due = RULES[idx]
 		followup_type = _tt(create_task)
 		lead = _make_lead(f"fireonce-{idx}")
 		task = _make_trigger_task(lead.name, _tt(trigger))

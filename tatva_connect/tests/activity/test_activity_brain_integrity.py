@@ -153,7 +153,7 @@ def _writes_crm_task(call):
 	return any(
 		isinstance(k, ast.Constant) and k.value == "doctype"
 		and isinstance(v, ast.Constant) and v.value == "CRM Task"
-		for k, v in zip(first.keys, first.values)
+		for k, v in zip(first.keys, first.values, strict=False)
 	)
 
 

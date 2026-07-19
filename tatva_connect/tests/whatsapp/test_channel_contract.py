@@ -11,15 +11,16 @@ Every test here failed on the pre-refactor code — the defect each one covers i
 Hermetic: no network. The one send test mocks the HTTP call and asserts only the URL that was built.
 """
 import unittest
+from typing import ClassVar
 from unittest import mock
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.channels import contract, event as channel_event, resolve
+from tatva_connect.channels import contract, resolve
+from tatva_connect.channels import event as channel_event
 from tatva_connect.webhooks import registry
-from tatva_connect.whatsapp import channel, transport
-from tatva_connect.whatsapp import wati
+from tatva_connect.whatsapp import channel, transport, wati
 
 _ACCOUNT = "Contract-test-account"
 
@@ -47,7 +48,7 @@ class TestChannelContract(FrappeTestCase):
 		self.assertEqual(wati.DECLARATION.account_doctype, "WhatsApp Account")
 
 	# The send-side function a capability PROMISES. Declaring one without it is the lie the field exists to prevent — `buttons` was declared for three weeks with no builder anywhere in the app.
-	_CAPABILITY_IMPLEMENTATION = {
+	_CAPABILITY_IMPLEMENTATION: ClassVar[dict] = {
 		"templates": "send_template",
 		"media": "send_media",
 		"session": "send_session",

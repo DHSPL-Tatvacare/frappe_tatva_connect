@@ -105,7 +105,7 @@ class TestResourceContractCoherence(FrappeTestCase):
 
 		Identity, not equality: `describe(SPECS)` and `collect(SPECS, ...)` must be handed the same tuple
 		the module exposes. A copy would satisfy an equality check and drift on the next edit."""
-		for name, module, specs, doctype in RESOURCES:
+		for name, _module, specs, doctype in RESOURCES:
 			with self.subTest(resource=name):
 				self.assertIsInstance(specs, tuple)
 				for spec in specs:

@@ -25,7 +25,8 @@ from every one of them. That is why recovery keys on the conversation and never 
 """
 import frappe
 
-from tatva_connect.channels import contract, event as channel_event
+from tatva_connect.channels import contract
+from tatva_connect.channels import event as channel_event
 from tatva_connect.whatsapp import channel, ingest, recovery, routing, transport
 
 DECLARATION = contract.declare(
