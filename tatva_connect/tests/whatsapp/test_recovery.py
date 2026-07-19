@@ -353,20 +353,22 @@ class TestWhatsAppRecovery(FrappeTestCase):
 		self.assertEqual(self._rows(), [], "a failed queue writes nothing")
 
 	def test_recovery_is_dormant_until_the_operator_turns_it_on(self):
+		# CHANGED 2026-07-19: drives `handle`, not `screen`. The decision moved — screening no longer acts, so the switch is read where the work would be done.
 		_switch(channel.SWITCH_RECOVERY, False)
+		payload = _status_payload()
 		with mock.patch.object(frappe, "enqueue") as enqueued:
-			wanted, reason = adapter.screen(_status_payload(), None, self.account)
-		self.assertFalse(wanted)
-		self.assertIn("switched off", reason)
+			adapter.handle(payload, None, self.account)
 		enqueued.assert_not_called()
+		self.assertIn("switched off", recovery.queue(adapter.normalize(payload, self.account)))
 
 	def test_a_status_that_names_no_conversation_is_not_recoverable(self):
 		"""Recovery keys on the conversation and the message id, and on nothing else. A status without
 		them is dropped exactly as it always was."""
+		payload = _status_payload(conversationId=None)
 		with mock.patch.object(frappe, "enqueue") as enqueued:
-			reason = adapter.screen(_status_payload(conversationId=None), None, self.account)[1]
-		self.assertIn("names no conversation", reason)
+			adapter.handle(payload, None, self.account)
 		enqueued.assert_not_called()
+		self.assertIn("names no conversation", recovery.queue(adapter.normalize(payload, self.account)))
 
 	# ============================================================================= One envelope, two producers. =============================================================================
 	def test_both_normalizers_build_the_same_envelope_for_the_same_message(self):
@@ -435,7 +437,9 @@ class TestWhatsAppRecovery(FrappeTestCase):
 			channel="whatsapp", provider="Mute", account_doctype="WhatsApp Account",
 			outcomes=frozenset({"delivered"}), capabilities=frozenset(),
 		)
+		payload = _status_payload()
 		with mock.patch.object(adapter, "DECLARATION", mute), mock.patch.object(frappe, "enqueue") as enqueued:
-			reason = adapter.screen(_status_payload(), None, self.account)[1]
+			adapter.handle(payload, None, self.account)
+			reason = recovery.queue(adapter.normalize(payload, self.account))
 		self.assertIn("cannot recover", reason)
 		enqueued.assert_not_called()

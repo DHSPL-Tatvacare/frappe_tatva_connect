@@ -199,14 +199,11 @@ class TestWATIAdapterCharacterisation(FrappeTestCase):
 					(False, f"neither a message we sent nor a number any CRM lead holds ({_UNKNOWN_WA_ID})"),
 				)
 
-	def test_screen_declines_status_v2_events_for_a_message_this_crm_did_not_send(self):
-		# CHANGED 2026-07-19 (recovery): the DECISION is identical — an orphan status is still declined, and the ingest path is untouched. What changed is that the reason now also says what became of the message: with the recovery switch off (its shipped state, and this suite's state) it says so, and the status is dropped exactly as it always was. The full recovery behaviour is pinned in test_recovery.py; this suite pins that turning it on changed nothing here.
+	def test_screen_wants_a_status_for_a_message_this_crm_did_not_send(self):
+		# CHANGED 2026-07-19 (screen decides, handle acts): was declined here, with recovery enqueued from screen. A screening function must not ACT — a DLQ replay re-screened the same declined delivery and fired a fresh provider fetch every time. The orphan status is WANTED now; `handle` tells a held message from an orphan and recovers only the latter. What becomes of it is pinned in test_recovery.py.
 		for case in _STATUS_V2_CASES:
 			with self.subTest(case=case):
-				self.assertEqual(
-					adapter.screen(_payload(case), None, self.account),
-					(False, "a status update for a message this CRM did not send; recovery is switched off"),
-				)
+				self.assertEqual(adapter.screen(_payload(case), None, self.account), (True, None))
 
 	def test_screen_wants_status_v2_events_once_our_row_carries_the_local_message_id(self):
 		for case in _STATUS_V2_CASES:
@@ -233,13 +230,15 @@ class TestWATIAdapterCharacterisation(FrappeTestCase):
 		p = _payload("message:text", owner=True)
 		self.assertEqual(adapter.screen(p, None, self.account), (False, "eventType message is not ingested"))
 
-	def test_screen_ignores_the_account_argument_entirely(self):
-		# Pinning the seam the refactor will most want to change: screen is account-blind today.
+	def test_screen_answers_per_account_because_ingest_does(self):
+		# CHANGED 2026-07-19 (defect: screen and ingest disagreed): screen was account-BLIND and asked "does any lead hold this number", while `ingest._targets` asks "does a lead hold it ON THIS ACCOUNT". A number whose lead sits on another account passed the filter and was dropped deep in the worker — with the delivery recorded as processed. Both ask `whatsapp.routing` the same question now, so screen necessarily varies by account.
 		p = _payload("message:text")
+		self.assertEqual(adapter.screen(p, None, self.account), (True, None))
 		self.assertEqual(
-			adapter.screen(p, None, self.account), adapter.screen(p, None, self.other_account)
+			adapter.screen(p, None, self.other_account),
+			(False, "no CRM lead holds the number 919900000001"),
+			"a lead on ANOTHER account must not make this delivery wanted",
 		)
-		self.assertEqual(adapter.screen(p, None, None), (True, None))
 
 	# ============================================================================= already_processed(payload) =============================================================================
 	def test_already_processed_is_false_for_every_unseen_corpus_payload(self):
