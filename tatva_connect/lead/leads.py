@@ -1,9 +1,9 @@
 """CRM Lead automations."""
 import frappe
 from frappe import _
-from frappe.utils import cstr
 
 from tatva_connect import automation
+from tatva_connect.lead import multirow
 from tatva_connect.whatsapp.phone import to_e164
 
 # Phone-type fields on CRM Lead we keep canonical (+E.164). mobile_no is the dedup +
@@ -189,14 +189,12 @@ def lead_stages(lead):
 
 
 def _latest_lab_row(doc):
-	"""The most recent CRM Lab Profile child row, or None. 'Latest' = newest
-	report_date; rows with no date sort last, ties broken by grid order (idx)."""
-	rows = doc.get(frappe.get_cached_doc("CRM Lead Section", "lab").child_table_field) or []
-	if not rows:
-		return None
-	# cstr keys the sort uniformly whether report_date is a date object or an ISO
-	# string (Frappe types child values inconsistently across write paths).
-	return max(rows, key=lambda r: (cstr(r.report_date), r.idx or 0))
+	"""The most recent CRM Lab Profile child row, or None — via the ONE multi-row rule
+	(multirow.latest_child_row), keyed by the 'lab' section's own row_key_field, NOT a hardcoded
+	report_date. So the headline sync agrees with the Data tab and Smart Views on which row is 'latest'."""
+	section = frappe.get_cached_doc("CRM Lead Section", "lab")
+	rows = doc.get(section.child_table_field) or []
+	return multirow.latest_child_row(rows, section.row_key_field)
 
 
 def sync_headline_metrics(doc, method=None):

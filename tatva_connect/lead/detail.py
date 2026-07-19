@@ -30,6 +30,7 @@ import frappe
 from frappe import _
 
 from tatva_connect.access import entitlement
+from tatva_connect.lead import multirow
 from tatva_connect.taxonomy import labels
 
 # Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
@@ -39,7 +40,6 @@ _PROTECTED_FIELDS = frozenset({"custom_vertical", "custom_group", "custom_curren
 
 _CATALOG_FIELDS = [
 	"field_key", "label", "fieldname", "section",
-	"grain_vertical", "grain_group", "grain_program",
 ]
 
 
@@ -130,8 +130,9 @@ def _select(doc):
 
 
 def _child_row(doc, section):
-	"""The single child row a child-section field reads from. A multi-row section picks the latest
-	by its row key; a single-row section takes the one row. Returns a child doc or None."""
+	"""The single child row a child-section field reads from. A multi-row section picks the latest via
+	the ONE shared rule (multirow.latest_child_row); a single-row section takes the one row. Returns a
+	child doc or None."""
 	table = section.child_table_field
 	if not table:
 		return None
@@ -139,7 +140,7 @@ def _child_row(doc, section):
 	if not children:
 		return None
 	if section.is_multi_row and section.row_key_field:
-		return max(children, key=lambda c: (c.get(section.row_key_field) or ""))
+		return multirow.latest_child_row(children, section.row_key_field)
 	return children[0]
 
 

@@ -35,7 +35,8 @@ class TestDetailPureLogic(FrappeTestCase):
 		# Specificity is now read through the INTERNAL CONTRACT (ticked-by-all-grains == universal), so the
 		# contracts must exist; pick a real universal key and a real grain-specific key off the live ticks.
 		internal_contract.ensure_internal_contracts()
-		ticks = entitlement._internal_ticks()
+		# Only contracts that DECLARE something define "universal" — same rule as entitlement.is_universal_field.
+		ticks = {g: k for g, k in entitlement._internal_ticks().items() if k}
 		universal = set.intersection(*ticks.values()) if ticks else set()
 		specific = (set().union(*ticks.values()) if ticks else set()) - universal
 		assert universal and specific, "need both a universal and a grain-specific field to prove dedup"

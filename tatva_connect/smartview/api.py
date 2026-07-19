@@ -98,7 +98,6 @@ def _lead_catalog():
 			"CRM Lead API Field",
 			fields=[
 				"field_key", "label", "fieldname", "section", "filterable", "sortable", "surface",
-				"grain_vertical", "grain_group", "grain_program",
 			],
 			order_by="field_key asc",
 		):
@@ -141,9 +140,6 @@ def _activity_catalog(activity_type):
 			surface="worklist" if column else "detail",
 			fieldtype=f["fieldtype"],
 			options=f["options"],
-			grain_vertical=None,
-			grain_group=None,
-			grain_program=None,
 		)
 	return rows
 
@@ -426,6 +422,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 				RowNumber()
 				.over(inner.parent)
 				.orderby(inner[order_field], order=frappe.qb.desc)
+				.orderby(inner.creation, order=frappe.qb.desc)
 				.orderby(inner.name, order=frappe.qb.desc)
 			)
 			ranked = (
