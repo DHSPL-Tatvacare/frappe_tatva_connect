@@ -118,19 +118,31 @@ def _attribute_lead(data, mp, is_sysmgr):
 	return matches[0] if len(matches) == 1 else None
 
 
+# The ONE output declaration — (public key, source columns, resolve(doc) or None): `_call_view` builds its dict from it and `call_list` selects exactly its columns, so the two cannot drift.
+_VIEW_FIELDS = (
+	("name",          ("name",), None),
+	("external_id",   (EXTERNAL_ID_FIELD,), None),
+	("lead",          ("reference_doctype", "reference_docname"),
+	                  lambda doc: doc.reference_docname if doc.reference_doctype == "CRM Lead" else None),
+	("direction",     ("type",), lambda doc: "Inbound" if doc.type == "Incoming" else "Outbound"),
+	("from_number",   ("from",), lambda doc: doc.get("from")),
+	("to_number",     ("to",), lambda doc: doc.to),
+	("status",        ("status",), None),
+	("duration",      ("duration",), None),
+	("recording_url", ("recording_url",), None),
+	("start_time",    ("start_time",), lambda doc: str(doc.start_time) if doc.start_time else None),
+)
+
+# The columns call_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
+_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
+
+
 def _call_view(doc):
-	"""The partner-facing shape of a CRM Call Log row."""
+	"""The partner-facing shape of a CRM Call Log row — built from _VIEW_FIELDS, the SAME structure
+	call_list selects its columns from."""
 	return {
-		"name": doc.name,
-		"external_id": doc.get(EXTERNAL_ID_FIELD),
-		"lead": doc.reference_docname if doc.reference_doctype == "CRM Lead" else None,
-		"direction": "Inbound" if doc.type == "Incoming" else "Outbound",
-		"from_number": doc.get("from"),
-		"to_number": doc.to,
-		"status": doc.status,
-		"duration": doc.duration,
-		"recording_url": doc.recording_url,
-		"start_time": str(doc.start_time) if doc.start_time else None,
+		key: (resolve(doc) if resolve else doc.get(cols[0]))
+		for key, cols, resolve in _VIEW_FIELDS
 	}
 
 
@@ -389,8 +401,7 @@ def call_list(**_kwargs):
 	total = frappe.db.count("CRM Call Log", filters)
 	rows = frappe.get_all(
 		"CRM Call Log", filters=filters,
-		fields=["name", EXTERNAL_ID_FIELD, "reference_doctype", "reference_docname", "type",
-		        "from", "to", "status", "duration", "recording_url", "start_time"],
+		fields=list(_LIST_COLUMNS),
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
 	_list_ok("calls", [_call_view(frappe._dict(r)) for r in rows], total, offset, limit)

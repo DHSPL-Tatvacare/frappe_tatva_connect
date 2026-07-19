@@ -855,9 +855,10 @@
             "type": "string",
             "enum": [
               "CRM Lead",
-              "CRM Task"
+              "CRM Task",
+              "FCRM Note"
             ],
-            "description": "What the file hangs off, the lead, or a scoped activity task."
+            "description": "What the file hangs off: the lead, a scoped activity task, or a scoped note."
           },
           "attached_to_name": {
             "type": "string",

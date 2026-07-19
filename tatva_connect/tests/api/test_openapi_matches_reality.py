@@ -376,6 +376,15 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			fil = r["data"]["name"]
 			hit(partner_file.file_get, "tatva_connect.api.partner_file.file_get", name=fil)
 			hit(partner_file.file_list, "tatva_connect.api.partner_file.file_list", lead=lead, limit=10)
+
+			# A NOTE-homed file: attached_to_doctype is "FCRM Note" — the branch the lie detector never exercised, which let the spec's enum forbid a real response.
+			r = hit(partner_note.note_create, "tatva_connect.api.partner_note.note_create",
+			        lead=lead, content="<p>file home</p>")
+			note_home = r["data"]["name"]
+			r = hit(partner_file.file_attach, "tatva_connect.api.partner_file.file_attach",
+			        lead=lead, note=note_home, filename="spec-note.txt", content_base64="cw==")
+			hit(partner_file.file_get, "tatva_connect.api.partner_file.file_get", name=r["data"]["name"])
+
 			r = hit(partner_file.file_attach_bulk, "tatva_connect.api.partner_file.file_attach_bulk",
 			        files=[{"lead": lead, "filename": "spec2.txt", "content_base64": "cw=="}])
 			f1 = r["results"][0]["data"]["name"]

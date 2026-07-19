@@ -82,11 +82,16 @@ _TITLE_CAP = 140
 
 # -- helpers -----------------------------------------------------------------
 
-def _derive_title(data):
+def _derive_title(fields, data):
 	"""FCRM Note.title is mandatory on the doctype but OPTIONAL in this contract, so a caller with no
 	title concept still gets a real label. It is a metadata HEADER, never the body: deriving a title
-	from the content would just print the note twice."""
-	title = (data.get("title") or "").strip()
+	from the content would just print the note twice.
+
+	`fields` is `collect(NOTE_FIELDS, data)` — the title override is read THROUGH it, not off raw
+	`data`, so a future read_only/hidden title spec is honoured here too. `created_at` stays a raw
+	`data` read: it is target-less (backdates `creation`, a framework default field), so collect()
+	never carries it — that is the resource's own business, same as everywhere else in this module."""
+	title = (fields.get("title") or "").strip()
 	if title:
 		return title[:_TITLE_CAP]
 	created = data.get("created_at")
@@ -97,15 +102,27 @@ def _derive_title(data):
 	return "Note"
 
 
+# The ONE output declaration — (public key, source columns, resolve(doc) or None): `_note_view` builds its dict from it and `note_list` selects exactly its columns, so the two cannot drift.
+_VIEW_FIELDS = (
+	("name",        ("name",), None),
+	("external_id", (EXTERNAL_ID_FIELD,), None),
+	("lead",        ("reference_doctype", "reference_docname"),
+	                lambda doc: doc.reference_docname if doc.reference_doctype == "CRM Lead" else None),
+	("title",       ("title",), None),
+	("content",     ("content",), None),
+	("created_at",  ("creation",), lambda doc: str(doc.get("creation")) if doc.get("creation") else None),
+)
+
+# The columns note_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
+_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
+
+
 def _note_view(doc):
-	"""The partner-facing shape of an FCRM Note row."""
+	"""The partner-facing shape of an FCRM Note row — built from _VIEW_FIELDS, the SAME structure
+	note_list selects its columns from."""
 	return {
-		"name": doc.name,
-		"external_id": doc.get(EXTERNAL_ID_FIELD),
-		"lead": doc.reference_docname if doc.reference_doctype == "CRM Lead" else None,
-		"title": doc.title,
-		"content": doc.content,
-		"created_at": str(doc.creation) if doc.get("creation") else None,
+		key: (resolve(doc) if resolve else doc.get(cols[0]))
+		for key, cols, resolve in _VIEW_FIELDS
 	}
 
 
@@ -132,15 +149,19 @@ def _apply_fields(doc, data, lead_name):
 	`collect` decides WHAT may land and on which column; this decides how. `reference_docname` is the one
 	target it never takes from the caller — `lead` is an input to the grain-scoped `resolve_lead`, and
 	writing the raw value would attach the note to a lead off the caller's line.
+
+	Returns `fields` (the collected dict) so a caller building a NEW doc (create) can reuse it for the
+	mandatory-title fallback without recomputing collect().
 	"""
 	fields = collect(NOTE_FIELDS, data)
 	if fields.get("title"):
-		doc.title = _derive_title(data)
+		doc.title = _derive_title(fields, data)
 	if fields.get("content"):
 		doc.content = fields["content"]  # frappe sanitises Text Editor on save (_sanitize_content)
 	if lead_name:
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead_name
+	return fields
 
 
 # -- per-record core (shared by singular + bulk) -----------------------------
@@ -157,10 +178,10 @@ def _create_one(data, mp, is_sysmgr):
 	lead_name = resolve_lead(mp, is_sysmgr, data)
 
 	doc = frappe.new_doc("FCRM Note")
-	doc.title = _derive_title(data)
-	doc.content = content
-	doc.reference_doctype = "CRM Lead"
-	doc.reference_docname = lead_name
+	# _apply_fields routes every field through collect(NOTE_FIELDS, data), the same path _update_one takes, so a future read_only/hidden spec is honoured on create too.
+	fields = _apply_fields(doc, data, lead_name)
+	if not doc.title:  # the mandatory-title fallback: a caller with no title concept still gets one
+		doc.title = _derive_title(fields, data)
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save
 
 	stamp_external_id("FCRM Note", doc.name, data.get("external_id"))
@@ -332,8 +353,7 @@ def note_list(**_kwargs):
 	total = frappe.db.count("FCRM Note", filters)
 	rows = frappe.get_all(
 		"FCRM Note", filters=filters,
-		fields=["name", EXTERNAL_ID_FIELD, "reference_doctype", "reference_docname",
-		        "title", "content", "creation"],
+		fields=list(_LIST_COLUMNS),
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
 	_list_ok("notes", [_note_view(frappe._dict(r)) for r in rows], total, offset, limit)

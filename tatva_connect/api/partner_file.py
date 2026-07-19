@@ -89,20 +89,33 @@ FILE_FIELDS = (
 	FieldSpec("content_base64", "Content Base64", fieldtype="Data"),
 )
 
+# The column file_type lands on — read through the INPUT contract above, never a fresh literal.
+FILE_TYPE_FIELD = next(s.target for s in FILE_FIELDS if s.fieldname == "file_type")
+
+# The ONE output declaration — (public key, source column, resolve(doc) or None): `_file_view` builds its dict from it and `file_list` selects exactly its columns, so the two cannot drift.
+_VIEW_FIELDS = (
+	("name",                ("name",),                 None),
+	("file_type",           (FILE_TYPE_FIELD,),         None),
+	("external_id",         (EXTERNAL_ID_FIELD,),       None),
+	("filename",            ("file_name",),             None),
+	("file_url",            ("file_url",),               lambda doc: file_manager.proxy_url(doc)),
+	("is_private",          ("is_private",),             lambda doc: bool(doc.get("is_private"))),
+	("attached_to_doctype", ("attached_to_doctype",),   None),
+	("attached_to_name",    ("attached_to_name",),      None),
+)
+
+# The columns file_list must select — the flattened, deduped union of every _VIEW_FIELDS dependency.
+_LIST_COLUMNS = tuple(dict.fromkeys(c for _key, cols, _resolve in _VIEW_FIELDS for c in cols))
+
 
 # -- helpers -----------------------------------------------------------------
 
 def _file_view(doc):
-	"""The partner-facing shape of a File (proxy URL, never a raw blob/local path)."""
+	"""The partner-facing shape of a File (proxy URL, never a raw blob/local path) — built from
+	_VIEW_FIELDS, the SAME structure file_list selects its columns from."""
 	return {
-		"name": doc.name,
-		"file_type": doc.get("custom_file_type"),
-		"external_id": doc.get(EXTERNAL_ID_FIELD),
-		"filename": doc.file_name,
-		"file_url": file_manager.proxy_url(doc),
-		"is_private": bool(doc.is_private),
-		"attached_to_doctype": doc.attached_to_doctype,
-		"attached_to_name": doc.attached_to_name,
+		key: (resolve(doc) if resolve else doc.get(cols[0]))
+		for key, cols, resolve in _VIEW_FIELDS
 	}
 
 
@@ -400,14 +413,13 @@ def file_list(**_kwargs):
 
 	f, cond = _lead_files(lead_name)
 	if data.get("file_type"):
-		cond = cond & (f.custom_file_type == data.get("file_type"))
+		cond = cond & (getattr(f, FILE_TYPE_FIELD) == data.get("file_type"))
 
 	limit, offset = _page(data)
 	total = frappe.qb.from_(f).select(Count("*")).where(cond).run()[0][0]
 	rows = (
 		frappe.qb.from_(f)
-		.select(f.name, f.custom_file_type, getattr(f, EXTERNAL_ID_FIELD), f.file_name,
-		        f.file_url, f.is_private, f.attached_to_doctype, f.attached_to_name)
+		.select(*[getattr(f, c) for c in _LIST_COLUMNS])
 		.where(cond)
 		.orderby(f.creation, order=Order.desc)
 		.limit(limit).offset(offset)
