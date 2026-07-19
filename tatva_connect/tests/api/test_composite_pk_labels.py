@@ -164,7 +164,7 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": "Label Probe",
-			"mobile_no": f"+9198124{frappe.generate_hash(length=5)[:5]}",
+			"mobile_no": f"+9198124{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": VERTICAL, "custom_group": GROUP,
 		}).insert(ignore_permissions=True)
 		save_activity(self.lead.name, self.task_type, {}, task=None)
@@ -264,7 +264,7 @@ class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
 		with patch.object(events.dispatch, "notify", lambda *a, **kw: sent.update(kw)):
 			doc = frappe.get_doc({
 				"doctype": "CRM Lead", "first_name": "Push Probe",
-				"mobile_no": f"+9198125{frappe.generate_hash(length=5)[:5]}",
+				"mobile_no": f"+9198125{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			}).insert(ignore_permissions=True)
 			doc.custom_substage = self.stage
 			events.on_lead_stage_changed(doc)

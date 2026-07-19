@@ -45,7 +45,7 @@ class TestDormantLocationWritesNothing(unittest.TestCase):
 		frappe.db.savepoint(self.sp)
 		self.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": "Dormant Probe",
-			"mobile_no": f"+9198123{frappe.generate_hash(length=5)[:5]}",
+			"mobile_no": f"+9198123{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": VERTICAL, "custom_group": GROUP,
 		}).insert(ignore_permissions=True)
 

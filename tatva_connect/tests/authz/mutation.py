@@ -52,8 +52,7 @@ from tatva_connect.tests.authz.oracle import (
 
 # custom_vertical / custom_group are permlevel-1 on CRM Lead (verified live 2026-06-29);
 # custom_current_program is permlevel-0, so it is NOT a permlevel-leak target. A7 tests the two
-# genuinely permlevel-1 fields. RESTRICTABLE_FIELD is the catalog key a Field Restriction targets (A4).
-RESTRICTABLE_FIELD = "custom_vertical"
+# genuinely permlevel-1 fields. (A4 resolves its own target from the live catalog — see _restrictable_key.)
 
 
 # ---- helpers --------------------------------------------------------------------------------------
@@ -82,8 +81,10 @@ def _task_for_lead(lead_name):
 def _clear_access_caches():
 	"""Drop the per-request memo buckets the entitlement/restriction resolvers use, so a detector
 	reading after a plant sees the planted row (request_cache lives on frappe.local)."""
+	# The two contract-tick buckets are here because grain membership moved onto the contract (Phase 5/9) — a plant that ticks a field is invisible to its detector without them.
 	for bucket in ("tatva_connect:entitled_grains", "tatva_connect:field_restrictions",
-	               "tatva_connect:visible_parents"):
+	               "tatva_connect:visible_parents", "tatva_connect:internal_contract_ticks",
+	               "tatva_connect:internal_universal_fields"):
 		if hasattr(frappe.local, bucket):
 			delattr(frappe.local, bucket)
 
@@ -220,22 +221,35 @@ def _remove_field_restriction_effect(role):
 	Detector mirrors resolve_fields: with NO restriction row, the field survives -> leak detectable."""
 	from tatva_connect.access import entitlement
 
+	def _restrictable_key():
+		"""A REAL catalogued lead field the restriction can target. CRM Lead Field Restriction.field is a Link to CRM Lead API Field, so an uncatalogued fieldname can never be restricted; UNIVERSAL_KEYS are excluded because resolve_fields returns them before it ever consults a restriction."""
+		for row in frappe.get_all("CRM Lead API Field", filters={"section": "lead"},
+		                          fields=["field_key", "fieldname"], order_by="field_key asc"):
+			if row.field_key not in entitlement.UNIVERSAL_KEYS:
+				return row.field_key, row.fieldname
+		return None, None
+
+	def _resolved_has(key, fieldname, the_role):
+		_clear_access_caches()
+		catalog = {key: {"field_key": key, "section": "lead", "fieldname": fieldname}}
+		return key in entitlement.resolve_fields(catalog, entitlement.ALL_GRAINS, [the_role])
+
 	def plant():
-		# Ensure there is NO restriction for this role/field (the bug: restriction removed/never set).
+		key, fieldname = _restrictable_key()
+		# BASELINE FIRST: prove the restriction genuinely hides the field, so a detection can only come from removing it — never from a no-op that matched nothing.
+		if not frappe.db.exists("CRM Lead Field Restriction", {"role": role, "field": key}):
+			frappe.get_doc({"doctype": "CRM Lead Field Restriction", "role": role, "field": key}
+			               ).insert(ignore_permissions=True)
+		baseline_hidden = not _resolved_has(key, fieldname, role)
+		# The violation: the restriction is removed, so the field the role must never see survives.
 		for n in frappe.get_all("CRM Lead Field Restriction",
-		                        filters={"role": role, "field": RESTRICTABLE_FIELD}, pluck="name"):
+		                        filters={"role": role, "field": key}, pluck="name"):
 			frappe.delete_doc("CRM Lead Field Restriction", n, ignore_permissions=True, force=True)
-		return {"role": role}
+		return {"role": role, "key": key, "fieldname": fieldname, "baseline_hidden": baseline_hidden}
 
 	def detect(ctx):
-		_clear_access_caches()
-		# A field the role-restriction SHOULD hide survives resolve_fields when the restriction is
-		# absent. catalog_rows keyed by field_key; the grain field is in-grain so field_in_grains
-		# passes -> the only thing that could hide it is the restriction. Absent -> it leaks.
-		catalog = {"lead:" + RESTRICTABLE_FIELD: {"grain_vertical": "", "grain_group": "",
-		                                           "grain_program": ""}}
-		resolved = entitlement.resolve_fields(catalog, entitlement.ALL_GRAINS, [ctx["role"]])
-		return ("lead:" + RESTRICTABLE_FIELD) in resolved
+		# Detected iff the field was genuinely hidden at baseline and leaks once the restriction is gone.
+		return _resolved_has(ctx["key"], ctx["fieldname"], ctx["role"]) and ctx["baseline_hidden"]
 
 	return plant, detect
 
@@ -354,10 +368,9 @@ def _smartview_grain_overgrant():
 	from tatva_connect.tests.authz.generator import TAG as _TAG
 
 	g_out = grains.GRAINS[2]  # grain_3 — the foreign line to over-grant
-	# A synthetic catalog row scoped to grain_3: field_in_grains() admits it ONLY when grain_3 is entitled.
+	# A synthetic field TICKED BY grain_3's internal contract: since Phase 5/9 grain membership is the contract's tick list, not a grain_* column on the row, so the tick is what scopes it.
 	foreign_key = "lead:authz_mut_grain3_col"
-	foreign_row = {"grain_vertical": g_out["vertical"], "grain_group": g_out["group"],
-	               "grain_program": g_out["program"]}
+	foreign_row = {"field_key": foreign_key, "section": "lead", "fieldname": "authz_mut_grain3_col"}
 	role = "Authz Mut SmartView Probe Role"
 	probe = "authz.mut.svprobe@example.test"
 	out_rule = "{}::{}".format(_TAG, g_out["key"])  # the grain_3 Assignment Rule seeded by generator
@@ -371,6 +384,22 @@ def _smartview_grain_overgrant():
 				"doctype": "User", "email": probe, "first_name": "svprobe",
 				"user_type": "System User", "send_welcome_email": 0, "roles": [{"role": role}],
 			}).insert(ignore_permissions=True)
+		# The tick is a Link, so the catalog row must exist before the contract can reference it.
+		if not frappe.db.exists("CRM Lead API Field", foreign_key):
+			frappe.get_doc({
+				"doctype": "CRM Lead API Field", "field_key": foreign_key, "section": "lead",
+				"label": "Authz Mut Grain3 Col", "fieldname": "authz_mut_grain3_col",
+			}).insert(ignore_permissions=True)
+		# Tick the synthetic field into grain_3's internal contract — that tick IS its grain scoping.
+		contract = frappe.db.get_value("CRM Lead API Mapping", {
+			"is_internal": 1, "vertical": g_out["vertical"], "crm_group": g_out["group"],
+			"program": g_out["program"],
+		})
+		if contract:
+			doc = frappe.get_doc("CRM Lead API Mapping", contract)
+			if foreign_key not in [r.field for r in doc.allowed_fields]:
+				doc.append("allowed_fields", {"field": foreign_key})
+				doc.save(ignore_permissions=True)
 		# Clean baseline: the probe is entitled to NO grain (no Assignment Rule membership), so the
 		# grain_3-scoped column is absent from its resolved catalog.
 		_clear_access_caches()

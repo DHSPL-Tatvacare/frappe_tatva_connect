@@ -227,8 +227,8 @@ class TestRegistryCases(AuthzTestCase):
 		we restrict and then prove disappears. None if the catalog yields nothing to restrict."""
 		from tatva_connect.access import entitlement
 		with set_user(user):
-			catalog = {k: r for k, r in lead_detail_mod._catalog_rows().items()
-			           if lead_detail_mod.is_profile_row(r)}
+			# Every catalog row routes through a section now (is_profile_row retired with SECTION_REGISTRY), so the whole catalog is the candidate set.
+			catalog = lead_detail_mod._catalog_rows()
 			visible = entitlement.resolve_fields(
 				catalog, entitlement.entitled_grains(), frappe.get_roles())
 		for key in visible:
