@@ -20,9 +20,16 @@ _AXES = ("vertical", "group", "program")
 
 def _grain_clause(grain):
 	"""SQL for one grain tuple: each axis matches the grain value OR is blank (wildcard).
-	Axis values are quoted via frappe.db.escape — never string-interpolated raw."""
+
+	This is the SQL twin of `taxonomy.grain.overlaps` — BOTH sides may wildcard here, because an entitled
+	grain is a RULE and a blank axis on a picklist row is a global option. The two are locked against each
+	other by `tests/access/test_picklist_grain_sql_twin.py`; change one and change the other.
+
+	Axis values are quoted via frappe.db.escape — never string-interpolated raw.
+	"""
 	parts = []
-	for col, val in zip(_AXES, grain, strict=False):
+	# strict=True: a grain that is not a full 3-tuple is a defect, and a short one would silently drop its missing axes' constraints and widen the read — the fail-open `entitlement._contract_covers` guards the same way.
+	for col, val in zip(_AXES, grain, strict=True):
 		col = f"`tabCRM Picklist Value`.`{col}`"
 		if val:
 			parts.append(f"({col} = {frappe.db.escape(val)} OR {col} = '' OR {col} IS NULL)")
