@@ -13,8 +13,8 @@ import time
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, now_datetime
-from frappe.utils.csvutils import read_csv_content
 
+from tatva_connect import tabular
 from tatva_connect.api._base import (
 	BulkDeadlock,
 	_cfg,
@@ -193,19 +193,8 @@ def _to_batch(job, raw):
 
 
 def _csv_records(raw):
-	"""Flat lead-core CSV -> dicts via the native reader; the header keys each row. A row whose column
-	count does not match the header becomes a per-record failure, never a silently mis-mapped record."""
-	rows = [r for r in read_csv_content(raw) if r]
-	if not rows:
-		return []
-	header = [h.strip() for h in rows[0]]
-	out = []
-	for r in rows[1:]:
-		if len(r) != len(header):
-			out.append({"__error__": _("row has {0} columns, expected {1}").format(len(r), len(header))})
-		else:
-			out.append(dict(zip(header, r, strict=False)))
-	return out
+	"""Flat lead-core CSV -> dicts. The parsing rule lives in `tabular`; this is the partner lane's name for it."""
+	return tabular.read(raw, "csv")
 
 
 def _payload_file(job_name):
