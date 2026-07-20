@@ -6822,29 +6822,29 @@
       }
     },
     "headers": {
-      "RateLimit-Limit": {
-        "description": "The key's request budget for the current window. Sent on every partner response. A platform-level ceiling across all keys is enforced separately, so a 429 can occur even while this header still shows budget remaining.",
+      "X-RateLimit-Limit": {
+        "description": "The key's request budget per window. Sent on every partner response, success and failure alike. A platform-level ceiling across all keys is enforced separately, so a 429 can occur even while this header still shows budget remaining. Absent when rate-limit enforcement is off or the caller is exempt (a System Manager with no mapping).",
         "schema": {
           "type": "integer",
           "example": 120
         }
       },
-      "RateLimit-Remaining": {
-        "description": "Requests still available in the current window. Sent on every partner response. Absent when rate-limit enforcement is off or the caller is exempt.",
+      "X-RateLimit-Remaining": {
+        "description": "Requests still available against `X-RateLimit-Limit`, never larger than it. Sent on every partner response. The bucket is allowed to hold a short burst above the advertised limit; a client pacing at the limit never trips. Absent when rate-limit enforcement is off or the caller is exempt.",
         "schema": {
           "type": "integer",
-          "example": 1158
+          "example": 118
         }
       },
-      "RateLimit-Reset": {
-        "description": "Seconds until the window refills and the budget resets. Sent on every partner response (success and 429). Absent when rate-limit enforcement is off or the caller is exempt (a System Manager with no mapping).",
+      "X-RateLimit-Reset": {
+        "description": "Delta seconds until the full budget is available again — a countdown, not a fixed window length, and never more than one window. `0` means the budget is already whole. This is seconds-from-now, matching Frappe's own `X-RateLimit-Reset`; it is NOT a UNIX timestamp. To retry a refused call use `Retry-After`, which is the shorter wait for a single request. Absent when rate-limit enforcement is off or the caller is exempt.",
         "schema": {
           "type": "integer",
-          "example": 37
+          "example": 30
         }
       },
       "Retry-After": {
-        "description": "Sent only on a 429: seconds to wait before retrying. Mirrors `error.retry_after` in the body.",
+        "description": "Seconds to wait before retrying, per RFC 9110. Sent on a 429 (your budget is spent) and on a 503 (the shared capacity is spent), and mirrors `error.retry_after` in the body. It is the wait for ONE request, so it is normally shorter than `X-RateLimit-Reset`. Always obey it.",
         "schema": {
           "type": "integer",
           "example": 42
@@ -6855,14 +6855,14 @@
       "RateLimited": {
         "description": "A budget is exhausted. `error.retry_after` gives the seconds to wait; nothing was saved.",
         "headers": {
-          "RateLimit-Limit": {
-            "$ref": "#/components/headers/RateLimit-Limit"
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/X-RateLimit-Limit"
           },
-          "RateLimit-Remaining": {
-            "$ref": "#/components/headers/RateLimit-Remaining"
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/X-RateLimit-Remaining"
           },
-          "RateLimit-Reset": {
-            "$ref": "#/components/headers/RateLimit-Reset"
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/X-RateLimit-Reset"
           },
           "Retry-After": {
             "$ref": "#/components/headers/Retry-After"
@@ -6982,14 +6982,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7074,14 +7074,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7250,14 +7250,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7347,14 +7347,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7437,14 +7437,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7544,14 +7544,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7678,14 +7678,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7776,14 +7776,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7893,14 +7893,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -7996,14 +7996,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8096,14 +8096,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8178,14 +8178,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8309,14 +8309,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8394,14 +8394,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8501,14 +8501,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8601,14 +8601,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8686,14 +8686,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8784,14 +8784,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8873,14 +8873,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -8995,14 +8995,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9083,14 +9083,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9182,14 +9182,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9277,14 +9277,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9366,14 +9366,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9501,14 +9501,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9589,14 +9589,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9688,14 +9688,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9783,14 +9783,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9861,14 +9861,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -9986,14 +9986,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10111,14 +10111,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10193,14 +10193,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10313,14 +10313,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10438,14 +10438,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10520,14 +10520,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10642,14 +10642,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10762,14 +10762,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -10887,14 +10887,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11012,14 +11012,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11105,14 +11105,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11218,14 +11218,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11306,14 +11306,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11391,14 +11391,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11527,14 +11527,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11597,14 +11597,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11742,14 +11742,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11820,14 +11820,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -11945,14 +11945,14 @@
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -12085,14 +12085,14 @@
           "202": {
             "description": "Accepted. The job id and initial status.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -12175,14 +12175,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -12264,14 +12264,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {
@@ -12336,14 +12336,14 @@
           "200": {
             "description": "Success.",
             "headers": {
-              "RateLimit-Limit": {
-                "$ref": "#/components/headers/RateLimit-Limit"
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
               },
-              "RateLimit-Remaining": {
-                "$ref": "#/components/headers/RateLimit-Remaining"
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
               },
-              "RateLimit-Reset": {
-                "$ref": "#/components/headers/RateLimit-Reset"
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
               }
             },
             "content": {

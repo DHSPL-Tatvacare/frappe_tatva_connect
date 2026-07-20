@@ -109,12 +109,76 @@ class TestPartnerLimiter(unittest.TestCase):
 			self.assertIsNone(self._charge(1, 0, 0, 0, 0)[0], "an unlimited dimension must never deny")
 
 		frappe.local.response_headers = frappe._dict()
-		with patch.object(_base, "_cfg", return_value={**_base.DEFAULTS, "per_token_rate": 0}):
+		# Enforcement ON, or the headers are skipped for that reason instead and this proves nothing.
+		with patch(_ENFORCE, return_value=True), \
+		     patch.object(_base, "_cfg", return_value={**_base.DEFAULTS, "per_token_rate": 0}):
 			_base._ratelimit_headers(self.mapping, remaining=None)
 		self.assertNotIn(
-			"RateLimit-Limit", frappe.local.response_headers,
-			"RateLimit-Limit: 0 reads to a client as an exhausted budget -- omit it instead",
+			"X-RateLimit-Limit", frappe.local.response_headers,
+			"X-RateLimit-Limit: 0 reads to a client as an exhausted budget -- omit it instead",
 		)
+
+	# -- what the headers TELL the caller ------------------------------------
+
+	def _headers(self, remaining=None, retry_after=None, enforced=True, **cfg):
+		"""Drive _ratelimit_headers once and hand back what landed on the response."""
+		frappe.local.response_headers = frappe._dict()
+		with patch(_ENFORCE, return_value=enforced), \
+		     patch.object(_base, "_cfg", return_value={**_base.DEFAULTS, **cfg}):
+			_base._ratelimit_headers(self.mapping, remaining=remaining, retry_after=retry_after)
+		return frappe.local.response_headers
+
+	def test_remaining_never_exceeds_the_limit_it_is_measured_against(self):
+		"""Shipped reading `X-RateLimit-Limit: 120` beside `X-RateLimit-Remaining: 239`. Remaining came off
+		the burst bucket (2x the rate) while Limit advertised the rate, so the pair was unreadable."""
+		hdrs = self._headers(remaining=239)
+		self.assertEqual(hdrs["X-RateLimit-Limit"], "120")
+		self.assertEqual(
+			hdrs["X-RateLimit-Remaining"], "120",
+			"remaining is clamped to the advertised limit -- '239 of 120' is not a budget",
+		)
+
+	def test_reset_counts_down_instead_of_repeating_the_window(self):
+		"""Reset was hardcoded to window_seconds, so it read 60 forever and a client backing off by it
+		was obeying a constant. It must track the real deficit and never exceed one window."""
+		self.assertEqual(self._headers(remaining=120)["X-RateLimit-Reset"], "0", "a full budget waits for nothing")
+		spent = int(self._headers(remaining=60)["X-RateLimit-Reset"])
+		self.assertEqual(spent, 30, "half the budget spent at 120/60s refills in 30s")
+		drained = int(self._headers(remaining=0)["X-RateLimit-Reset"])
+		self.assertEqual(drained, 60, "an empty budget is whole again after exactly one window")
+		self.assertLessEqual(drained, _base.DEFAULTS["window_seconds"], "reset can never outrun its window")
+
+	def test_the_headers_are_the_names_frappe_and_the_ecosystem_already_use(self):
+		"""We answer under core's own X-RateLimit-* spelling, which is also what partner HTTP clients
+		parse -- and writing those names is what displaces core's site-wide guard, whose value is
+		MICROSECONDS of request time (1200000000) and means nothing to a partner.
+
+		The bare RateLimit-* trio we used to send belongs to a SUPERSEDED revision of
+		draft-ietf-httpapi-ratelimit-headers (now RateLimit/RateLimit-Policy structured fields), so it
+		matched neither core, nor the draft, nor common practice. It must not come back."""
+		hdrs = self._headers(remaining=100)
+		self.assertEqual(hdrs["X-RateLimit-Limit"], "120")
+		self.assertEqual(hdrs["X-RateLimit-Remaining"], "100")
+		self.assertNotEqual(hdrs["X-RateLimit-Limit"], "1200000000", "frappe's microsecond budget must not survive")
+		for name in ("Limit", "Remaining", "Reset"):
+			with self.subTest(name=name):
+				self.assertNotIn(f"RateLimit-{name}", hdrs, "the superseded bare spelling must not return")
+
+	def test_a_dormant_limiter_advertises_no_budget(self):
+		"""The toggle ships OFF. Sending a limit nothing meters tells a conforming client to pace itself
+		against a ceiling that does not exist -- so when enforcement is off, we say nothing."""
+		hdrs = self._headers(remaining=None, enforced=False)
+		for name in ("Limit", "Remaining", "Reset"):
+			with self.subTest(name=name):
+				self.assertNotIn(f"X-RateLimit-{name}", hdrs)
+
+	def test_retry_after_survives_every_exemption(self):
+		"""CHARACTERISATION -- green before this change too, kept because the fix moved the Retry-After
+		write above the new enforcement gate and this is what proves it did not fall behind it. A refusal
+		must always say when to retry: the 429 can come from the volume dimension while the rate
+		dimension is unlimited or dormant."""
+		self.assertEqual(self._headers(retry_after=7, enforced=False)["Retry-After"], "7")
+		self.assertEqual(self._headers(retry_after=7, per_token_rate=0)["Retry-After"], "7")
 
 	# -- the limiter actually limits -----------------------------------------
 

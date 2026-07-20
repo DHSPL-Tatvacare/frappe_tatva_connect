@@ -719,25 +719,48 @@ def _meter_volume(rows, direction):
 	)
 
 
+def _rate_reset(remaining, limit, window):
+	"""Seconds until the caller is back to the full advertised budget. Measured against `limit`, not the
+	burst capacity, so it agrees with the Limit/Remaining on the same response and never exceeds one
+	window. Full budget -> 0; unknown (limiter fail-open) -> one window, the safe over-estimate."""
+	if remaining is None:
+		return window
+	deficit = max(limit - max(remaining, 0), 0)
+	return -(-deficit * window // limit) if deficit else 0
+
+
 def _ratelimit_headers(mapping, remaining=None, retry_after=None):
-	"""IETF RateLimit-* headers (+ Retry-After on a 429) on frappe.local.response_headers. Sysmgr and
-	no-mapping callers are exempt. A per-token rate of 0 is unlimited and sends NO headers — a
-	RateLimit-Limit: 0 reads to a conforming client as a budget of nothing. Never raises."""
+	"""X-RateLimit-* (+ Retry-After) on frappe.local.response_headers. Never raises.
+
+	The X- spelling and delta-second Reset are frappe core's own, from `conf.rate_limit`, and also what
+	partner HTTP clients and gateways parse. Writing the same three names here DISPLACES core's values,
+	which measure microseconds of request time against a whole-site budget — a number no partner can
+	act on. response_headers is applied last (app.py process_response), which is what lets ours win.
+
+	Deliberately NOT the bare `RateLimit-Limit/-Remaining/-Reset`: that trio is a superseded revision of
+	draft-ietf-httpapi-ratelimit-headers, which now defines `RateLimit`/`RateLimit-Policy` structured
+	fields instead — so the bare names match neither core, nor the draft, nor common practice.
+
+	No headers at all when there is no mapping (sysmgr), enforcement is off, or the rate is 0: a budget
+	nothing meters is a lie, and a Limit of 0 reads to a client as a budget of nothing."""
 	if not mapping:
 		return
 	try:
-		cfg = _cfg()
-		if cfg["per_token_rate"] <= 0:
-			if retry_after is not None:  # a 429 can still come from the OTHER dimension (volume)
-				frappe.local.response_headers["Retry-After"] = str(retry_after)
-			return
 		hdrs = frappe.local.response_headers
-		hdrs["RateLimit-Limit"] = str(cfg["per_token_rate"])
-		if remaining is not None:
-			hdrs["RateLimit-Remaining"] = str(max(remaining, 0))
-		hdrs["RateLimit-Reset"] = str(cfg["window_seconds"])
-		if retry_after is not None:
+		if retry_after is not None:  # a refusal always says when to retry, metered or not
 			hdrs["Retry-After"] = str(retry_after)
+		if not automation.is_enabled(_RATE_ENFORCEMENT):
+			return
+		cfg = _cfg()
+		limit = cfg["per_token_rate"]
+		if limit <= 0:
+			return
+		window = cfg["window_seconds"] or DEFAULTS["window_seconds"]
+		hdrs["X-RateLimit-Limit"] = str(limit)
+		hdrs["X-RateLimit-Reset"] = str(_rate_reset(remaining, limit, window))
+		if remaining is not None:
+			# Clamped: the bucket holds `per_token_burst` (2x limit), and "239 remaining of 120" is unreadable.
+			hdrs["X-RateLimit-Remaining"] = str(min(max(remaining, 0), limit))
 	except Exception:
 		frappe.log_error(title="Partner API ratelimit headers failed (ignored)")
 
@@ -899,15 +922,16 @@ def _api(fn=None, *, bulk=False, read=False):
 				if not bulk and _meter_volume(1, "read" if read else "write"):
 					return
 
+			# Stamped BEFORE fn() so every outcome carries the budget; after it, errors answered bare.
+			_ratelimit_headers(mapping, remaining=remaining)
+
 			key = _idem_key()
 			if key and not read:  # a read is already idempotent; it never claims a key
 				action, idem = _idempotency_begin(user, key, fn.__name__)
 				if action != "run":  # replay / conflict body already set
-					_ratelimit_headers(mapping, remaining=remaining)
 					return
 
 			result = fn(*args, **kwargs)
-			_ratelimit_headers(mapping, remaining=remaining)
 			if idem:
 				_idempotency_store(idem)
 			return result
@@ -927,6 +951,8 @@ def _api(fn=None, *, bulk=False, read=False):
 			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a retryable failure must never do.
 			if http == 503:
 				extra["retry_after"] = _cfg()["bulk_window_seconds"]
+				# _fail writes the BODY only — without this the header contradicts the body by being absent.
+				frappe.local.response_headers["Retry-After"] = str(extra["retry_after"])
 			_fail(code, message, http, **extra)
 			if idem:
 				_idempotency_release(idem)

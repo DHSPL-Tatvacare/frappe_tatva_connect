@@ -33,7 +33,7 @@ from tatva_connect.api import (
 	partner_file,
 	partner_note,
 )
-from tatva_connect.api._base import ERROR_CODES
+from tatva_connect.api._base import DEFAULTS, ERROR_CODES, _RATE_ENFORCEMENT
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
 MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, partner_bulk_job)
@@ -259,6 +259,47 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			lies,
 			"the spec promises fields the API does not send:\n  " +
 			"\n  ".join(f"{k}: {v}" for k, v in lies.items()),
+		)
+
+	def test_the_documented_headers_are_the_headers_a_partner_receives(self):
+		"""The header block was prose NOTHING drove, and it rotted exactly as you would expect: it
+		promised a Reset that counted down while the code sent a constant window, and showed a Remaining
+		of 1158 beside a Limit of 120. Enforcement ships dormant, so turn it on -- the way UAT runs it --
+		and hold the wire to the spec."""
+		documented = set(self.spec["components"]["headers"])
+		frappe.set_user("Administrator")
+		# Restored to what it WAS, not to dormant: this switch is operator policy, and a test that
+		# hardcodes the default silently disarms a bench where someone had deliberately turned it on.
+		was = frappe.db.get_value("CRM Tatva Automation", _RATE_ENFORCEMENT, "enabled")
+		frappe.db.set_value("CRM Tatva Automation", _RATE_ENFORCEMENT, "enabled", 1)
+		frappe.db.commit()
+		try:
+			frappe.set_user(PARTNER)
+			frappe.local.response = frappe._dict()
+			frappe.local.response_headers = frappe._dict()
+			frappe.form_dict = frappe._dict()
+			partner.lead_list()
+			emitted = dict(frappe.local.response_headers)
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.set_value("CRM Tatva Automation", _RATE_ENFORCEMENT, "enabled", was)
+			frappe.db.commit()
+			frappe.set_user(PARTNER)
+
+		self.assertTrue(emitted, "enforcement is on, so a partner call must report its budget")
+		self.assertFalse(
+			set(emitted) - documented,
+			f"headers on the wire that the spec never mentions: {sorted(set(emitted) - documented)}",
+		)
+		limit, remaining = int(emitted["X-RateLimit-Limit"]), int(emitted["X-RateLimit-Remaining"])
+		self.assertLessEqual(remaining, limit, "Remaining must never exceed the Limit it is measured against")
+		self.assertLessEqual(
+			int(emitted["X-RateLimit-Reset"]), DEFAULTS["window_seconds"],
+			"Reset is the wait for a full budget, so it can never outrun one window",
+		)
+		self.assertFalse(
+			[h for h in emitted if h.startswith("RateLimit-")],
+			"the superseded bare RateLimit-* spelling is back on the wire and is not in the spec",
 		)
 
 	# -- drive every endpoint in-process ------------------------------------
