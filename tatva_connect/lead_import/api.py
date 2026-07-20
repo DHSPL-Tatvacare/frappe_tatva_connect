@@ -100,15 +100,18 @@ def start_validation(lead_import):
 @frappe.whitelist()
 def start_import(lead_import):
 	"""Queue the live run. Refused unless a validation ran against exactly the bytes now attached."""
-	if not automation.is_enabled(_TOGGLE):
-		frappe.throw(_("The Desk bulk import is turned off."), title=_("Feature off"))
 	imp = _doc(lead_import, "write")
 	imp.assert_importable()
 	return _queue(imp, dry_run=0, status="Importing")
 
 
 def _queue(imp, dry_run, status):
-	"""Submit through the ONE submit path, so a Desk import is capped exactly as a partner job is."""
+	"""Submit through the ONE submit path, so a Desk import is capped exactly as a partner job is.
+
+	The dormant gate sits here rather than on `start_import` alone: a dry run writes and rolls back, so
+	the whole surface stays inert until an operator turns it on, not merely the half that keeps its rows."""
+	if not automation.is_enabled(_TOGGLE):
+		frappe.throw(_("The Desk bulk import is turned off."), title=_("Feature off"))
 	user = frappe.session.user
 	pressure = partner_bulk_job.queue_pressure(user, True)
 	if pressure:

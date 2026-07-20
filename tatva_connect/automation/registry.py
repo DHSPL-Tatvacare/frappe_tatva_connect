@@ -732,6 +732,23 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api.partner_bulk_job.guard_webhook_url"],
 	),
 	Auto(
+		key="Lead::BulkImport::desk",
+		fires_on="Doc Event",
+		trigger_detail="lead_import/api · validate + import gate; CRM Bulk Job · on_update",
+		purpose=(
+			"Leads are loaded into the CRM from a spreadsheet in the Desk: an operator picks the contract "
+			"that carries the grain, maps each column to a section and a field, and the rows are written "
+			"by the same brain the partner API writes through, on the bulk worker's own queue. A file is "
+			"always validated first — every row is written and rolled back — so nothing lands until the "
+			"result has been read. Off, neither validation nor import runs and the form is inert.\n"
+			"Example: a clinic sends 1,800 patients as an Excel file; it is mapped once, validated to show "
+			"11 refusals, and the remaining rows are loaded without touching the web workers."
+		),
+		# The gate lives inside lead_import/api (_queue), not a doc_event; the surface's one doc_event is
+		# the status mirror from a finished job back onto its import, covered here so the drift lock passes.
+		backs=["tatva_connect.lead_import.api.follow_job_status"],
+	),
+	Auto(
 		key="Partner::AsyncBulk::reaper",
 		fires_on="Schedule",
 		trigger_detail="hourly at :45",
