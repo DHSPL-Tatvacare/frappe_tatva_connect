@@ -111,6 +111,8 @@ has_permission = {
 
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
+	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
+	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
 	"CRM Lead": {
 		# stamp/clamp the lead's grain from the acting user's entitlement (single->auto, manager->validated pick),
 		# THEN canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').

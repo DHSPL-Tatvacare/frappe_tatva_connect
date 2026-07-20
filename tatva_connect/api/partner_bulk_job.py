@@ -105,11 +105,14 @@ def guard_webhook_url(doc, method=None):
 		assert_safe_public_url(doc.request_url)
 
 
-def queue_pressure(user, mp):
+def queue_pressure(user, per_caller):
 	"""The bounded-queue refusal as (code, message, http), or None. Held here so EVERY submit path —
-	the HTTP endpoint and the Desk import alike — pushes back on the same two caps."""
+	the HTTP endpoint and the Desk import alike — pushes back on the same two caps.
+
+	`per_caller` asks for the caller's OWN cap as well as the shared one: true for a partner and for a
+	Desk operator, false only for a trusted sysmgr calling the API with no mapping."""
 	cfg = _cfg()
-	if mp and frappe.db.count("CRM Bulk Job", {"partner": user, "status": ["in", _NON_TERMINAL]}) \
+	if per_caller and frappe.db.count("CRM Bulk Job", {"partner": user, "status": ["in", _NON_TERMINAL]}) \
 			>= cfg["async_concurrent_jobs_per_partner"]:
 		return ("rate_limited", _("Too many jobs in flight; retry when one finishes."), 429)
 	if frappe.db.count("CRM Bulk Job", {"status": ["in", _NON_TERMINAL]}) >= cfg["async_global_queue_max"]:

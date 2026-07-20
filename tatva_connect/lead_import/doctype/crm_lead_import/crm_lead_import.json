@@ -10,7 +10,6 @@
   "contract",
   "program",
   "column_break_grain",
-  "grain_summary",
   "file_section",
   "import_file",
   "column_break_file",
@@ -53,12 +52,6 @@
   {
    "fieldname": "column_break_grain",
    "fieldtype": "Column Break"
-  },
-  {
-   "description": "The vertical, group and programme resolved from the contract are shown here once it is chosen.",
-   "fieldname": "grain_summary",
-   "fieldtype": "HTML",
-   "label": "Resolved Grain"
   },
   {
    "fieldname": "file_section",
@@ -114,7 +107,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Draft\nValidating\nValidated\nValidation Failed\nImporting\nImported\nPartially Imported\nCancelled",
+   "options": "Draft\nValidating\nValidated\nValidation Failed\nImporting\nImported\nPartially Imported\nImport Failed\nCancelled",
    "read_only": 1
   },
   {
