@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-07-15 00:00:00.000000",
- "description": "An IMMUTABLE, content-addressed snapshot of one CRM Workflow Definition's graph, keyed by definition_hash. A running Instance binds to a version, never to the mutable Definition - so editing a Definition can never re-route, duplicate or orphan an Instance already executing it. Minted by workflow_engine.versions on Definition save; runtime data, never seeded.",
+ "description": "An IMMUTABLE, content-addressed snapshot of one CRM Workflow's graph, keyed by definition_hash. A running Run binds to a version, never to the mutable Workflow \u2014 so editing a Workflow can never re-route, duplicate or orphan a Run already executing it. Minted by workflow_engine.versions on save; runtime data, never seeded.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -20,7 +20,7 @@
    "fieldname": "workflow",
    "fieldtype": "Link",
    "label": "Workflow",
-   "options": "CRM Workflow Definition",
+   "options": "CRM Workflow",
    "reqd": 1,
    "read_only": 1,
    "in_list_view": 1,
@@ -81,8 +81,17 @@
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
-  {"read": 1, "report": 1, "role": "Automation Manager"},
-  {"read": 1, "report": 1, "export": 1, "role": "System Manager"}
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Automation Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "role": "System Manager"
+  }
  ],
  "row_format": "Dynamic",
  "sort_field": "creation",

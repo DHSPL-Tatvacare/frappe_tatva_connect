@@ -106,6 +106,6 @@ def _due_parked():
 def _has_pending_signal(row):
 	"""True iff a Pending inbox row matches this Instance's awaited (subject, signal, correlation) - the
 	same match `_consume_signal` will make on the drive (null correlation matches null/empty)."""
-	filters = {"subject_doctype": row.subject_doctype, "subject_name": row.subject_name, "signal_name": row.awaiting_signal, "status": "Pending"}
+	filters = {"subject_doctype": row.subject_doctype, "subject_name": row.subject_name, "event_name": row.awaiting_signal, "status": "Pending"}
 	filters["correlation"] = row.awaiting_correlation if row.awaiting_correlation else ["in", ["", None]]
 	return bool(frappe.db.get_value(SIGNAL_DT, filters, "name"))

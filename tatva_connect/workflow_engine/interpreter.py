@@ -4,9 +4,10 @@
 (a Wait park, or a Terminal), then commits ONCE (per-SEGMENT, not per-node - F3). A crash mid-segment
 auto-rolls-back to the last durable Parked/Done state; nothing is ever left `Running` with no owner.
 
-Reuse, not reinvention: a Step runs an Action Group's effect actions through the EXISTING
-`automation.actions._ACTION_LANES` handlers inside a savepoint; Branch/Assign evaluate through the ONE
-expression resolver `automation.expr`; a For-Duration Wait's wake time comes from the ONE arithmetic
+Reuse, not reinvention: a verb node runs THE handler its type names, through the EXISTING
+`automation.actions.VERBS` declaration, inside a savepoint; a Branch evaluates through the ONE
+predicate evaluator `automation.rules.predicate_match` (the same one the Trigger uses) and an Assign
+through `automation.expr`; a For-Duration Wait's wake time comes from the ONE arithmetic
 `automation.actions.wait_resume_at` (`frappe.utils.add_to_date`). No second executor, no second evaluator.
 
 INVARIANT (F6): every `advance()` is entered ONLY after the caller has claimed the Instance row
@@ -15,19 +16,20 @@ INVARIANT (F6): every `advance()` is entered ONLY after the caller has claimed t
 A Wait[event mode] tries the durable signal inbox FIRST (`_consume_signal`): an early, duplicate, or
 crash-interleaved delivery is correct by construction because it simply waits in the inbox. A consumed
 signal's declared payload paths merge into state via `_map_payload` (a dotted-path resolver, NOT eval)
-and the Wait leaves by `on_event`; otherwise, if the clock is due, it leaves by `on_timeout`
-(Event-or-Timeout) or `next_node` (pure timer); else it parks. The scheduler sweep + `deliver_signal` +
+and the Wait leaves by its `event` output; otherwise, if the clock is due, it leaves by `timeout`
+(Event-or-Timeout) or `next` (pure timer); else it parks. The scheduler sweep + `deliver_signal` +
 `resume_for_signal` (the wake callers) live in `wakeups.py` / `signals.py` and hold the `for_update` claim.
 """
 import time
 
 import frappe
 
-from tatva_connect.automation import actions, expr
+from tatva_connect.automation import actions, expr, rules
+from tatva_connect.workflow_engine import refs, registry
 
-INSTANCE_DT = "CRM Workflow Instance"
+INSTANCE_DT = "CRM Workflow Run"
 STEP_LOG_DT = "CRM Workflow Step Log"
-SIGNAL_DT = "CRM Workflow Signal"
+SIGNAL_DT = "CRM Workflow Event"
 
 MAX_HOPS = 100
 MAX_RETRIES = 5
@@ -51,12 +53,69 @@ def wait_deadline(wait_mode, wait_expression, state, base=None):
 	return actions.wait_resume_at(wait_expression, state, base)
 
 
+# Keys the ENGINE owns inside run state are declared ONCE, by `registry.RESERVED_VARIABLES` — the same
+# place that refuses an author's variable taking one of those names. A second tuple lived here, unread.
+
+
+def _storable(state):
+	"""What is persisted between segments: the run's OWN values, nested by the node that wrote them.
+
+	`state.buckets` holds exactly what writers put there. The subject's fields are never in it — they are
+	read from the document each segment, because the document is where they live and Frappe already
+	answers that question.
+	"""
+	return frappe.as_json(state.buckets)
+
+
+def _subject_loader(instance):
+	"""A zero-argument loader for the subject's fields AS THEY ARE NOW, or `None` when there is no subject.
+
+	A LOADER and not a snapshot, because it is called on the first reference of the segment and not before.
+	State used to be captured once, when the workflow was triggered, and never updated. Every later segment
+	therefore judged the lead as it had been at the start: "wait 30 days, then if the lead is still New"
+	tested a 30-day-old value, and a WhatsApp template after a Wait rendered from stale fields. It is also
+	why dates decayed — a datetime survives one JSON round trip as a string, and every comparison after the
+	first park was string-vs-datetime.
+	"""
+	if not instance.subject_doctype or not instance.subject_name:
+		return None
+
+	def load():
+		if not frappe.db.exists(instance.subject_doctype, instance.subject_name):
+			return {}  # deleted mid-flight; the run fails at its next real read, not while reading state
+		from tatva_connect.automation import context as ctx_build
+
+		doc = frappe.get_doc(instance.subject_doctype, instance.subject_name)
+		# The SAME builder the Trigger uses, unpacked back to this record's own bucket. A second walk here
+		# is how the two evaluators came to speak different languages in the first place.
+		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(instance.subject_doctype), {})
+
+	return load
+
+
+def _refreshed_state(instance):
+	"""The evaluation context for this segment: the run's own values, plus the subject read live.
+
+	`refs.Values`, not a ChainMap. A ChainMap merged two FLAT dicts, so a node's `status` and the lead's
+	`status` were one name with the node's winning — the lead's own status was unreadable below a Call API,
+	and the identical predicate that matched at the Trigger could not match at the Branch. Namespacing
+	makes that collision impossible by construction rather than by ordering, and the subject stays a
+	loader, so it is still read as it is NOW and still never copied into what persists.
+	"""
+	return refs.Values(
+		buckets=frappe.parse_json(instance.state_json or "{}"),
+		records={refs.slug(instance.subject_doctype): _subject_loader(instance)}
+		if instance.subject_doctype
+		else {},
+	)
+
+
 def advance(instance):
 	"""Walk the frozen graph to the next suspension and commit once. The caller already holds the
 	`for_update` claim (F6). Returns the (mutated) instance doc."""
 	version = versions_load(instance.workflow_version)
 	nodes = {n.node_id: n for n in version.nodes}  # O(1) lookup, built once (F6)
-	state = frappe.parse_json(instance.state_json or "{}")
+	state = _refreshed_state(instance)
 	was_parked = instance.status == "Parked"
 	entry_node = instance.current_node
 	seen, hops = set(), 0
@@ -68,28 +127,29 @@ def advance(instance):
 				raise _Permanent(f"node {instance.current_node!r} is not in the frozen graph")
 
 			if node.node_type == "Terminal":
-				_persist(instance, {"status": "Done", "current_node": node.node_id, "state_json": frappe.as_json(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
+				_persist(instance, {"status": "Done", "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
 				_step_log(instance, node, "done")
 				frappe.db.commit()
 				_run_deferred(deferred)
 				return instance
 
 			if node.node_type == "Wait":
-				# The inbox FIRST (early/duplicate/stale signal - F1/F2): a Pending row matching this Wait's
-				# (subject, signal, correlation) is consumed and its declared payload paths merge into state.
-				if node.wait_mode in _EVENT_MODES:
-					sig = _consume_signal(instance, node.signal_name, state.get("_corr"))
+				wait = _config(node)
+				# The inbox first: a Pending row for this Wait is consumed and merged before parking.
+				if wait.get("mode") in _EVENT_MODES:
+					sig = _consume_signal(instance, wait.get("event_name"), _wait_correlation(wait, state))
 					if sig is not None:
-						state.update(_map_payload(node.accepts_json, sig))
+						state.writing_as(node.node_id).update(_map_payload(wait.get("accepts"), sig))
 						was_parked = False
-						_step_log(instance, node, "resumed", f"signal {node.signal_name}")
-						instance.current_node = node.on_event
+						_step_log(instance, node, "resumed", f"event {wait.get('event_name')}")
+						instance.current_node = _edge(node, "event")
 						continue
-				# No signal buffered. If we were parked HERE and the clock is due, leave by the time edge.
-				if was_parked and node.node_id == entry_node and node.wait_mode in _TIME_MODES and _clock_due(instance):
+				# No event buffered. If we were parked HERE and the clock is due, leave by the time edge.
+				if was_parked and node.node_id == entry_node and wait.get("mode") in _TIME_MODES and _clock_due(instance):
 					was_parked = False
-					_step_log(instance, node, "resumed", "timeout" if node.wait_mode == "Event-or-Timeout" else "timer")
-					instance.current_node = node.on_timeout if node.wait_mode == "Event-or-Timeout" else node.next_node
+					timed_out = wait.get("mode") == "Event-or-Timeout"
+					_step_log(instance, node, "resumed", "timeout" if timed_out else "timer")
+					instance.current_node = _edge(node, "timeout" if timed_out else "next")
 					continue
 				# Nothing to leave by - PARK (idempotent: a re-drive that arrives too early re-parks unchanged).
 				_park(instance, node, state)
@@ -105,16 +165,16 @@ def advance(instance):
 			seen.add(instance.current_node)
 
 			started = time.monotonic()
-			if node.node_type == "Step":
-				subject_doc = frappe.get_doc(instance.subject_doctype, instance.subject_name)
-				step_deferred, markers = _run_step(node, instance.subject_name, subject_doc, state, _axes(instance.subject_doctype, instance.subject_name))
+			if actions.lane_of(node.node_type) == "effect":
+				step_deferred, marker = _run_verb(node, instance.subject_name, _trigger_doc(instance), state, _axes(instance.subject_doctype, instance.subject_name), run_name=instance.name)
 				deferred += step_deferred
-				nxt = node.next_node
-				detail = f"action group {node.action_group}"
-				if markers:  # a dormant send ("suppressed: sends dormant") records its marker in the audit, never a live message
-					detail += " :: " + " | ".join(markers)
-			elif node.node_type in ("Branch", "Assign"):
+				nxt = _edge(node, _verb_output(node, state))
+				detail = marker or "ran"  # a dormant send records its marker, never a live message
+			elif node.node_type in ("Branch", "Set Variables"):
 				nxt, detail = _next_control(node, state)  # the ONE control-flow step, shared with run_inline
+			elif node.node_type == registry.TRIGGER:
+				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
+				nxt, detail = _edge(node, "next"), "entered"
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 
@@ -133,18 +193,58 @@ def advance(instance):
 		return instance
 
 
+def _trigger_doc(instance):
+	"""The record whose save started this run — a Task, a File, or the lead itself.
+
+	The subject of a durable run is ALWAYS the resolved parent lead, so this used to hand every verb the
+	lead and call it the trigger doc. A Call API set to send the trigger doc therefore sent the lead, a
+	Create Task could never see the file it was raised for, and an Update Field aimed at the triggering
+	Task failed the run outright. The author's choice changed nothing and nothing said so.
+
+	Falls back to the subject: a run started before this was recorded, or one the lead itself fired, has
+	no separate trigger, and the lead is then the honest answer rather than a missing one.
+	"""
+	if instance.get("trigger_doctype") and instance.get("trigger_name"):
+		if frappe.db.exists(instance.trigger_doctype, instance.trigger_name):
+			return frappe.get_doc(instance.trigger_doctype, instance.trigger_name)
+	return frappe.get_doc(instance.subject_doctype, instance.subject_name)
+
+
+def _config(node):
+	"""This node's own configuration. One reader — a node type's fields live in its `config_json`, so the
+	engine never grows a column-per-node-type and a new type needs no interpreter change."""
+	return frappe.parse_json(node.get("config_json") or "{}") or {}
+
+
+def _edge(node, output):
+	"""The node this named output leads to, or None. The ONE routing lookup: every node type asks by the
+	output name its registry entry declares, so adding a type adds no branch here."""
+	for edge in node.get("edges") or []:
+		if edge.get("output") == output:
+			return edge.get("to")
+	return None
+
+
 def _next_control(node, state):
 	"""Branch/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one interpreter, not
-	two copies). A Branch routes on its condition; an Assign merges its evaluated dict into `state`. Returns
-	`(next_node_id, detail)` — `advance` logs the detail, `run_inline` ignores it."""
+	two copies). Returns `(next_node_id, detail)` — `advance` logs the detail, `run_inline` ignores it.
+
+	A Branch routes on the SAME predicate structure the Trigger uses, through the same evaluator: one
+	control for the author, one meaning at runtime. It used to evaluate a raw Python expression, which
+	made a Branch the only place in the product where authoring required knowing Python, and put the
+	condition beyond the reach of the validator that checks every other field."""
+	config = _config(node)
 	if node.node_type == "Branch":
-		truthy = bool(expr.resolve_expression(node.condition, state))
-		return (node.on_true if truthy else node.on_false), ("on_true" if truthy else "on_false")
-	result = expr.resolve_expression(node.assign_json, state)
+		output = "true" if rules.predicate_match(config.get("condition"), state) else "false"
+		return _edge(node, output), output
+	result = expr.resolve_expression(config.get("assign"), state)
 	if not isinstance(result, dict):
 		raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
-	state.update(result)
-	return node.next_node, "keys: " + ",".join(sorted(result.keys()))
+	# Through the node's own writer view, so `{"stage": "Qualified"}` lands at `<node_id>.stage`. An author
+	# names a value; which node produced it is the engine's to know, and `upstream` offers it under exactly
+	# this reference — so the picker and the run agree without the author ever typing a node id.
+	state.writing_as(node.node_id).update(result)
+	return _edge(node, "next"), "keys: " + ",".join(sorted(result.keys()))
 
 
 def has_wait(version):
@@ -156,7 +256,7 @@ def has_wait(version):
 
 def run_inline(version_name, lead_name, trigger_doc, seed_state):
 	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Instance - the
-	rule-shaped Flow. The SAME node executor as `advance` (`_run_step`, the Branch/Assign logic, `expr`) -
+	rule-shaped Flow. The SAME node executor as `advance` (`_run_verb`, the Branch/Assign logic, `expr`) -
 	one interpreter, two shapes - minus the durable machinery a rule never needs (no Instance row, no
 	active_key, no park, no signal inbox). A Wait node is a config error here: a graph that parks must run
 	as a continuous Instance, and the front-door only routes a wait-free graph to this path.
@@ -170,7 +270,10 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 
 	version = versions_load(version_name)
 	nodes = {n.node_id: n for n in version.nodes}
-	state = dict(seed_state or {})
+	# The trigger context AS BUILT — a `refs.Values`, carried through rather than flattened. An ephemeral
+	# run has no persisted state, so the Trigger's own namespaced buckets are the whole vocabulary and the
+	# same references resolve here as at dispatch.
+	state = seed_state if isinstance(seed_state, refs.Values) else refs.Values(buckets=seed_state or {})
 	axes = rules_lead_axes(lead_name)
 	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
 	seen, hops, deferred = set(), 0, []
@@ -191,12 +294,14 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 			if hops > MAX_HOPS:
 				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
 			seen.add(cursor)
-			if node.node_type == "Step":
-				step_deferred, _markers = _run_step(node, lead_name, trigger_doc, state, axes)
+			if actions.lane_of(node.node_type) == "effect":
+				step_deferred, _marker = _run_verb(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
-				cursor = node.next_node
-			elif node.node_type in ("Branch", "Assign"):
+				cursor = _edge(node, _verb_output(node, state))
+			elif node.node_type in ("Branch", "Set Variables"):
 				cursor, _ = _next_control(node, state)  # the ONE control-flow step, shared with advance
+			elif node.node_type == registry.TRIGGER:
+				cursor = _edge(node, "next")  # a pass-through here too — see `advance`
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 		frappe.db.release_savepoint(save_point)
@@ -222,6 +327,21 @@ def _clock_due(instance):
 	return bool(instance.resume_at) and frappe.utils.get_datetime(instance.resume_at) <= frappe.utils.now_datetime()
 
 
+def _wait_correlation(wait, state):
+	"""What THIS Wait correlates on. The ONE reader — both the park and the consume side ask it.
+
+	A Wait that names an upstream node answers to the token that node minted, which is what makes the
+	wake per-task. A Wait that names none falls back to the run-level `_corr`, which is what a signal
+	delivered from outside the graph carries. Two readers of this rule is exactly the bug it was written
+	after: parking on the token while consuming on `_corr` left the row in the inbox and the run parked
+	for ever, with every part looking individually correct.
+	"""
+	source = wait.get("source_node")
+	if source:
+		return (state.get(refs.EMITTED) or {}).get(source)
+	return state.get(refs.CORRELATION)
+
+
 def _consume_signal(instance, signal_name, correlation):
 	"""Claim the FIRST Pending inbox row matching (subject, signal, correlation) under a write lock, mark
 	it Consumed (+ consumed_by), and return its parsed payload; `None` if none is buffered (→ park). A null
@@ -229,13 +349,32 @@ def _consume_signal(instance, signal_name, correlation):
 	`IS NULL`). Claiming under `for_update` + a single mark is what makes a duplicate delivery advance
 	exactly once (F2): two Pending rows with the same correlation, one consumed, the other purged by the
 	sweep's stale-signal GC (`wakeups._purge_stale_signals`) - never a second advance."""
-	filters = {"subject_doctype": instance.subject_doctype, "subject_name": instance.subject_name, "signal_name": signal_name, "status": "Pending"}
-	filters["correlation"] = correlation if correlation else ["in", ["", None]]
+	filters = pending_signal_filters(instance.subject_doctype, instance.subject_name, signal_name, correlation)
 	row = frappe.db.get_value(SIGNAL_DT, filters, ["name", "payload_json"], as_dict=True, order_by="creation asc", for_update=True)
 	if not row:
 		return None
 	frappe.db.set_value(SIGNAL_DT, row.name, {"status": "Consumed", "consumed_by": instance.name}, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
 	return frappe.parse_json(row.payload_json or "{}")
+
+
+def pending_signal_filters(subject_doctype, subject_name, signal_name, correlation):
+	"""The ONE description of "an inbox row that would wake this park".
+
+	`_consume_signal` claims by it. The run-history surface ASKS by it, to tell a park that a buffered
+	signal will end from one that nothing has arrived for — and a second filter dict there would be a
+	second opinion about what counts as a match, which is exactly the class of bug that left runs
+	parked for ever while every part looked individually correct.
+
+	A null correlation matches rows with a null/empty correlation (`None` inside an `in` list becomes
+	`IS NULL`).
+	"""
+	return {
+		"subject_doctype": subject_doctype,
+		"subject_name": subject_name,
+		"event_name": signal_name,
+		"status": "Pending",
+		"correlation": correlation if correlation else ["in", ["", None]],
+	}
 
 
 def _map_payload(accepts_json, payload):
@@ -244,10 +383,19 @@ def _map_payload(accepts_json, payload):
 	incoming JSON (`data.diagnosis`, `results.0.label` - dict keys and numeric list indices, a tiny resolver,
 	NOT eval, NOT full JSONPath) and lands under its state key. An absent path lands `None`, so an arbitrary
 	AI payload is bounded to a known, unambiguous shape - it can never write an undeclared key."""
+	return {state_key: _pluck(payload, path) for path, state_key in accepts_map(accepts_json).items()}
+
+
+def accepts_map(accepts_json):
+	"""A Wait's declared `{dotted path: state key}` map, parsed. The ONE reader of that field.
+
+	`upstream` needs the same answer to tell the publish gate which keys a Wait contributes, and a second
+	parser there would be a second opinion about what "malformed" means — the gate would then reject a
+	graph the runtime happily runs, or bless one it does not. Anything that is not an object is an empty
+	map: it writes nothing, so it contributes nothing.
+	"""
 	accepts = frappe.parse_json(accepts_json) if accepts_json else {}
-	if not isinstance(accepts, dict):
-		return {}
-	return {state_key: _pluck(payload, path) for path, state_key in accepts.items()}
+	return accepts if isinstance(accepts, dict) else {}
 
 
 def _pluck(payload, dotted_path):
@@ -271,45 +419,81 @@ def _park(instance, node, state):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
 	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the timer/reconciler sweep
 	and `resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here."""
-	values = {"status": "Parked", "current_node": node.node_id, "state_json": frappe.as_json(state)}
-	values["resume_at"] = wait_deadline(node.wait_mode, node.wait_expression, state) if node.wait_mode in _TIME_MODES else None
-	if node.wait_mode in _EVENT_MODES:
-		values["awaiting_signal"] = node.signal_name
-		values["awaiting_correlation"] = state.get("_corr")
+	wait = _config(node)
+	mode = wait.get("mode")
+	values = {"status": "Parked", "current_node": node.node_id, "state_json": _storable(state)}
+	values["resume_at"] = wait_deadline(mode, wait.get("expression"), state) if mode in _TIME_MODES else None
+	if mode in _EVENT_MODES:
+		correlation = _wait_correlation(wait, state)
+		# A Wait that NAMES a node it never got a token from is unwakeable, not patient: the null it parks
+		# on is matched only against rows whose correlation is empty, and the node it is waiting for mints
+		# a token. Fail loudly rather than sit Parked with no clock and no reachable event, which reads
+		# exactly like waiting normally. A Wait naming NO node is the external-signal case and is fine.
+		# `graph._wait_problems` refuses this at publish; this catches versions frozen before it existed.
+		if wait.get("source_node") and not correlation and mode == registry.UNTIL_EVENT:
+			raise _Permanent(
+				f"{node.node_id} waits on {wait.get('source_node') or 'nothing'}, which has not run — "
+				"there is no correlation to wake it and no timeout to end it"
+			)
+		values["awaiting_signal"] = wait.get("event_name")
+		values["awaiting_correlation"] = correlation
 	else:
 		values["awaiting_signal"] = None
 	_persist(instance, values)
 	_step_log(instance, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
 
 
-def _run_step(node, lead_name, trigger_doc, state, axes):
-	"""Run the Step's FROZEN Action Group actions (snapshotted into the version at freeze time - D1) through
-	the existing `_ACTION_LANES` handlers, inside a savepoint (a bad action rolls the whole Step back).
-	Returns `(deferred, markers)`: deferred thunks (webhook / WhatsApp live send) are fired only after the
-	boundary commit, so a rolled-back segment sends nothing; markers are the string results a dormant send
-	returns ("suppressed: sends dormant") - the audit records them so a suppressed send is provable without
-	a live message. Guard-lane verbs are skipped: a Step is an effect, never a gate. Reading the frozen
-	snapshot (never live rows) is what makes a parked Instance immutable to a later molecule edit.
+def _verb_output(node, state):
+	"""Which edge this verb leaves by. Almost always `next`; a verb that ROUTES on its own result — a
+	Call API that succeeded or failed — names its output in state, and the choice is validated against
+	what the type actually declares so a handler can never invent an edge the canvas never drew."""
+	chosen = state.pop(refs.OUTPUT, None)
+	if chosen and chosen in registry.outputs_for(node.node_type, _config(node)):
+		return chosen
+	return "next"
 
-	`lead_name` is the parent lead the effect verbs act ON (D7 - a Task/File flow resolves to its lead);
-	`trigger_doc` is the record that fired the flow (the same subject doc for a Lead flow). Both the
-	durable `advance` and the ephemeral `run_inline` pass these explicitly, so the ONE step executor is
-	shared by both shapes with no second copy."""
-	items = node.get("_frozen_items") or []
-	deferred, markers = [], []
+
+def _run_verb(node, lead_name, trigger_doc, state, axes, run_name=None):
+	"""Run THIS node's verb, with the node's own config as its parameters, inside a savepoint.
+
+	A node is a verb now — its type names what it does and its config is exactly that verb's declared
+	parameters. The old shape was a generic `Step` carrying a list of actions, so one node could half
+	succeed; a node that IS one verb either happened or did not, and the savepoint means a failure takes
+	nothing with it.
+
+	Returns `(deferred, marker)`. A deferred thunk (a live WhatsApp send) fires only after
+	the boundary commit, so a rolled-back segment sends nothing. A marker is what a dormant send returns
+	("suppressed: sends dormant") — recorded in the audit so a suppressed send is provable without a
+	message having left.
+
+	`lead_name` is the parent lead the verb acts ON; `trigger_doc` is the record that fired the workflow.
+	Both the durable `advance` and the ephemeral `run_inline` pass these, so one executor serves both.
+	"""
+	verb = node.node_type
+	handler = actions.handler_of(verb)
+	if handler is None:
+		raise _Permanent(f"no handler for verb {verb!r}")
+
+	# A verb that can be ANSWERED (a task someone completes) gets a token identifying this node in this
+	# run. The handler stamps it on whatever it creates, and a Wait downstream correlates on the same
+	# token — which is what makes the wake per-task instead of per-lead.
+	if run_name and actions.outcomes_of(verb):
+		token = f"{run_name}::{node.node_id}"
+		state[refs.TOKEN] = token
+		state.setdefault(refs.EMITTED, {})[node.node_id] = token
+	else:
+		state.pop(refs.TOKEN, None)
+
 	save_point = f"tc_wf_step_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
-		for item in items:
-			item = frappe._dict(item)
-			lane, handler = actions._ACTION_LANES.get(item.action_type, (None, None))
-			if lane != "effect" or item.action_type == "Wait":
-				continue  # a guard-lane verb, or a Wait (a NODE in the Flow model, never an action), is not run here
-			result = handler(item, lead_name, state, axes, trigger_doc)
-			if callable(result):
-				deferred.append(result)  # a thunk (Call Webhook / live WhatsApp) — fires only after the boundary commit
-			elif isinstance(result, str) and result:
-				markers.append(result)  # a dormant-send marker — no message left, recorded for the audit
+		# `action_type` is set because a handler identifies its verb from it — same value, one source.
+		params = frappe._dict(_config(node))
+		params.action_type = verb
+		# The handler writes through THIS node's view, so a Call API capturing `order_id` lands it at
+		# `<node_id>.order_id`. A verb is one verb reused by the rule lane and by both interpreter paths and
+		# must not know its node id; the interpreter does, so the scoping belongs here and only here.
+		result = handler(params, lead_name, state.writing_as(node.node_id), axes, trigger_doc)
 		frappe.db.release_savepoint(save_point)
 	except Exception:
 		try:
@@ -317,7 +501,10 @@ def _run_step(node, lead_name, trigger_doc, state, axes):
 		except Exception:  # nosec B110 — a full-transaction deadlock already discarded this savepoint
 			pass
 		raise  # re-raise the ORIGINAL error so advance() classifies it (transient deadlock vs permanent)
-	return deferred, markers
+
+	if callable(result):
+		return [result], None
+	return [], result if isinstance(result, str) and result else None
 
 
 def _axes(subject_doctype, subject_name):
@@ -344,7 +531,7 @@ def _step_log(instance, node, outcome, detail="", duration_ms=0):
 	boundary with everything else (a rolled-back segment writes no log)."""
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
-		"workflow_instance": instance.name,
+		"workflow_run": instance.name,
 		"subject_name": instance.subject_name,
 		"node_id": node.node_id,
 		"node_type": node.node_type,
@@ -352,6 +539,36 @@ def _step_log(instance, node, outcome, detail="", duration_ms=0):
 		"detail": detail,
 		"duration_ms": duration_ms,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
+	_publish_step(instance, node, outcome, detail)
+
+
+def _publish_step(instance, node, outcome, detail):
+	"""Tell any open canvas which node this run just executed.
+
+	The SAME shape the WhatsApp history refresh proved: ONE event carrying its own state, published to
+	the WORKFLOW'S doc room. Not the site room — with neither doctype nor user Frappe broadcasts to every
+	Desk user on the site, which would put one lead's run onto every open browser. `doc_subscribe` joins
+	this room only for a user who may read the workflow, so the permission is Frappe's, not ours.
+
+	Best-effort by construction: a canvas nobody has open must never be able to fail a run, so a socket
+	that is down is swallowed. The audit row is already written — this is a notification, not the record.
+	"""
+	try:
+		frappe.publish_realtime(
+			"workflow_step",
+			{
+				"workflow": instance.workflow,
+				"run": instance.name,
+				"node_id": node.node_id,
+				"outcome": outcome,
+				"detail": detail,
+			},
+			doctype="CRM Workflow",
+			docname=instance.workflow,
+			after_commit=True,
+		)
+	except Exception:  # nosec B110 — a notification must never take a run down
+		pass
 
 
 def _bump_retry(instance):
@@ -377,7 +594,7 @@ def _fail(instance, reason):
 	_persist(instance, {"status": "Failed", "active_key": None})
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
-		"workflow_instance": instance.name,
+		"workflow_run": instance.name,
 		"subject_name": instance.subject_name,
 		"node_id": instance.current_node,
 		"node_type": "",

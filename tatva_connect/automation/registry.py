@@ -395,6 +395,21 @@ AUTOMATIONS = [
 		backs=["tatva_connect.lead.leads.validate_stage"],
 	),
 	Auto(
+		key="Lead::Facebook::form-refresh",
+		fires_on="Schedule",
+		trigger_detail="daily 01:00",
+		purpose=(
+			"Each Facebook Page and lead form is re-read from Facebook every night, so a form published "
+			"today and a question reworded today are both visible the next morning, and each Page's own "
+			"access token is renewed in step. Off, the forms and questions stay frozen at whatever the "
+			"last refresh stored, a newly published form is never offered, and a reworded question "
+			"arrives as an answer with nowhere to land.\n"
+			"Example: a campaign form gains a question in the afternoon; by the next morning it is "
+			"listed on the form's mapping table, waiting to be pointed at a screening concept."
+		),
+		backs=["tatva_connect.lead_sync.discovery.refresh_all_sources"],
+	),
+	Auto(
 		key="Task::CRM Task::guards",
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · validate",
@@ -475,6 +490,54 @@ AUTOMATIONS = [
 			"patient conversation.\n"
 			"Example: a lead's WhatsApp tab shows a rep only the messages on their own leads, not the "
 			"whole team's."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
+		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
+		key="Workflow::CRM Workflow Run::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Workflow Run · permission_query_conditions + has_permission",
+		purpose=(
+			"Workflow runs are scoped to the people who should see them: a run is visible to a rep only "
+			"when it is theirs, or it is about a Lead or Deal already visible to them. A run carries its "
+			"lead's field values in its saved state, so off, anyone who can open the run list reads "
+			"every other grain's lead data.\n"
+			"Example: the Workflow Runs list shows a manager only the runs on their own leads, not the "
+			"whole business's."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
+		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
+		key="Workflow::CRM Workflow Event::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Workflow Event · permission_query_conditions + has_permission",
+		purpose=(
+			"Workflow events are scoped to the people who should see them: a signal is visible to a rep "
+			"only when it is theirs, or it is addressed to a Lead or Deal already visible to them. An "
+			"event carries the payload that woke a run, so off, anyone who can open the event list reads "
+			"every other grain's lead data.\n"
+			"Example: the Workflow Events inbox shows a manager only the signals on their own leads."
+		),
+		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
+		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
+		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
+		key="Workflow::CRM Workflow Step Log::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Workflow Step Log · permission_query_conditions + has_permission",
+		purpose=(
+			"Workflow step logs are scoped to the people who should see them: a step is visible to a rep "
+			"only when the run it belongs to is. A step's detail quotes the values the node acted on, so "
+			"off, anyone who can open the step list reads every other grain's lead data.\n"
+			"Example: a lead's workflow history shows a rep the steps of their own leads' runs only."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
@@ -752,6 +815,22 @@ AUTOMATIONS = [
 			"archive and emptied, and archives older than 30 days are deleted."
 		),
 		backs=["tatva_connect.observability.monitor_log.sweep"],
+	),
+	Auto(
+		key="Learning::Course Lesson::office-embeds",
+		fires_on="Doc Event",
+		trigger_detail="Course Lesson · before_save",
+		purpose=(
+			"A Word, Excel or PowerPoint file shared from SharePoint or OneDrive is turned into a "
+			"readable panel inside the training lesson, the way a Google Doc or Slides link already "
+			"is, so training material need not be converted or re-uploaded to be used in a course. "
+			"The document is shown read-only and must be shared so that anyone holding the link can "
+			"open it. Off, the pasted link is left as it was typed and the lesson shows nothing "
+			"where the document would be.\n"
+			"Example: a course author pastes a SharePoint link to a training deck into a lesson, and "
+			"learners see the deck laid out in the lesson itself."
+		),
+		backs=["tatva_connect.learning.embeds.rewrite_office_links"],
 	),
 ]
 

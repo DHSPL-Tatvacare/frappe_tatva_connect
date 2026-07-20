@@ -1,7 +1,7 @@
 """Signal delivery + the signal-wake caller.
 
 DELIVERY IS AN INSERT, NOTHING MORE (F1/F5). `deliver_signal` - the clean whitelisted contract an
-external AI / mobile / partner API calls - inserts ONE Pending `CRM Workflow Signal` row and NEVER
+external AI / mobile / partner API calls - inserts ONE Pending `CRM Workflow Event` row and NEVER
 touches an Instance. It then OPTIMISTICALLY enqueues `resume_for_signal` (enqueue-after-commit,
 job_id/deduplicate, `now` inline in tests). But the enqueue is only a latency optimisation: the durable
 inbox row is the source of truth, so a lost job
@@ -14,6 +14,7 @@ re-enters `advance`, which consumes the inbox row via `_consume_signal`. Idempot
 no longer parked (already resumed, done, failed, or never parked yet) is a no-op.
 """
 import frappe
+from frappe import _
 
 from tatva_connect import automation
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, wakeups
@@ -25,7 +26,17 @@ INSTANCE_DT = interpreter.INSTANCE_DT
 @frappe.whitelist()
 def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None, payload=None):
 	"""Deliver one signal: insert a Pending inbox row, then optimistically enqueue a resume. Returns the
-	inbox row name. Dormant-by-default: with the engine switch off, nothing is delivered (nothing runs)."""
+	inbox row name. Dormant-by-default: with the engine switch off, nothing is delivered (nothing runs).
+
+	PERMISSION-GATED, because this is a whitelisted write into a running workflow. The payload it carries
+	is merged into run state by the Wait's `accepts` map, where it feeds Branch predicates and every
+	effect verb — so an ungated caller could advance another team's journey on a lead they cannot see and
+	choose the values that drive its sends. The gate is write on the SUBJECT: if you may not write the
+	record, you may not move a workflow that is watching it."""
+	if not frappe.db.exists("DocType", subject_doctype):
+		frappe.throw(_("Unknown doctype {0}").format(subject_doctype))
+	if not frappe.has_permission(subject_doctype, "write", doc=subject_name):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return None
 	if isinstance(payload, str):
@@ -34,7 +45,7 @@ def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None,
 		"doctype": SIGNAL_DT,
 		"subject_doctype": subject_doctype,
 		"subject_name": subject_name,
-		"signal_name": signal_name,
+		"event_name": signal_name,
 		"correlation": correlation,
 		"payload_json": frappe.as_json(payload or {}),
 		"status": "Pending",

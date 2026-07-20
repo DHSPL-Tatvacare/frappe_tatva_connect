@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-20 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "subject_doctype",
+  "subject_name",
+  "event_name",
+  "correlation",
+  "payload_json",
+  "status",
+  "consumed_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "subject_doctype",
+   "fieldtype": "Data",
+   "label": "Subject DocType",
+   "reqd": 1,
+   "read_only": 1,
+   "description": "Identifies the doctype of the record the signal is delivered to."
+  },
+  {
+   "fieldname": "subject_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Subject Name",
+   "options": "subject_doctype",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Identifies the record the signal is delivered to."
+  },
+  {
+   "fieldname": "event_name",
+   "fieldtype": "Data",
+   "label": "Event Name",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Names the event being delivered; a Wait waiting on this name consumes the row."
+  },
+  {
+   "fieldname": "correlation",
+   "fieldtype": "Data",
+   "label": "Correlation",
+   "read_only": 1,
+   "description": "Carries the token that ties this delivery to a specific wait, so a duplicate and a stale delivery are distinguishable and cannot wake the wrong loop iteration."
+  },
+  {
+   "fieldname": "payload_json",
+   "fieldtype": "Long Text",
+   "label": "Payload (JSON)",
+   "read_only": 1,
+   "description": "Carries the external payload; the receiving Wait merges only its declared accepts paths into Instance state."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nConsumed",
+   "default": "Pending",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Records whether the signal is still Pending or has been Consumed by a Wait."
+  },
+  {
+   "fieldname": "consumed_by",
+   "fieldtype": "Link",
+   "label": "Consumed By",
+   "options": "CRM Workflow Run",
+   "read_only": 1,
+   "description": "Records the Instance that consumed this signal, for audit."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-07-20 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Automation Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

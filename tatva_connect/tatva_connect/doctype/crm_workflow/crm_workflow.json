@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-20 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_name",
+  "lifecycle_state",
+  "entry_node",
+  "trigger_doctype",
+  "trigger_event",
+  "canvas_json",
+  "trigger_vertical",
+  "trigger_group",
+  "trigger_program"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Workflow Name",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Names the workflow for operators; every Instance and log references it by this name."
+  },
+  {
+   "default": "Draft",
+   "fieldname": "lifecycle_state",
+   "fieldtype": "Select",
+   "options": "Draft\nPublished\nActive\nSuspended\nArchived",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "label": "Lifecycle State",
+   "description": "The Definition's editorial lifecycle, advanced only through its transition verbs (never edited by hand): Draft (authoring, mutable) -> Publish freezes an immutable Version -> Activate arms the entry trigger -> Suspend disarms it -> Archive retires it. A new Instance starts only while Active; running Instances stay pinned to their Version across every later transition."
+  },
+  {
+   "fieldname": "entry_node",
+   "fieldtype": "Data",
+   "label": "Entry Node",
+   "description": "The node a Run starts at. The Trigger node declares the subject, the event and the predicate \u2014 the workflow header no longer carries them."
+  },
+  {
+   "fieldname": "trigger_doctype",
+   "fieldtype": "Data",
+   "label": "Trigger Doctype",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query \u2014 a predicate in JSON cannot answer that. One writer: the Workflow controller."
+  },
+  {
+   "fieldname": "trigger_event",
+   "fieldtype": "Data",
+   "label": "Trigger Event",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "DERIVED from the Trigger node on save, never authored. See trigger_doctype."
+  },
+  {
+   "fieldname": "canvas_json",
+   "fieldtype": "Long Text",
+   "label": "Canvas Layout (JSON)",
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "UI-only: node positions and viewport for the Campaigns canvas. Not read by the version freeze, so moving a node never mints a new Version; layout is presentation, the node graph is content."
+  },
+  {
+   "fieldname": "trigger_vertical",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "label": "Trigger Vertical",
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+  },
+  {
+   "fieldname": "trigger_group",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "label": "Trigger Group",
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+  },
+  {
+   "fieldname": "trigger_program",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "label": "Trigger Program",
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-07-20 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Workflow",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Automation Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "field:workflow_name",
+ "title_field": "workflow_name"
+}

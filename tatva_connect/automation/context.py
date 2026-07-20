@@ -59,17 +59,36 @@ def diff_watched_fields(doc):
 
 
 def context_for(doc, changed):
-	"""The trigger context a criteria predicate reads: the doc's own persistable fields (get_valid_dict)
-	PLUS, for each changed watched field, a `{field}__before` key carrying the old value (the pair the
-	`changed to`/`changed from…to` operators read) PLUS CRM Task's activity-schema values, keyed by their
-	own schema fieldname, `setdefault`-merged so a genuine doc column always wins a name clash. ONE builder
-	for every subject/event."""
-	context = doc.get_valid_dict()
-	for fieldname, (old, _new) in changed.items():
-		context[f"{fieldname}__before"] = old
+	"""The trigger context a criteria predicate reads — a `refs.Values`, NAMESPACED by the doc's own slug.
+
+	ONE VOCABULARY, IN BOTH PLACES A PREDICATE IS JUDGED. A predicate control is one control, and an author
+	who builds `Status is New` means one thing by it. The engine judges it in two entirely different places:
+	a TRIGGER predicate here, at dispatch, against the doc that fired; a BRANCH predicate at execution,
+	against the run's state. Namespace one and not the other and the same control means two different
+	things — the Trigger/Branch divergence this codebase has already found once. Both build a `Values`, so
+	there is one grammar and one resolver.
+
+	What lands, all under `frappe.scrub(doc.doctype)`:
+
+	  * the doc's own persistable fields (`get_valid_dict`);
+	  * for each changed watched field, `<slug>.<field>__before` carrying the old value — the pair the
+	    `changed to` / `changed from…to` operators read. The suffix goes on the FIELD, never on the source;
+	    `refs` owns that grammar and the reasoning is in its docstring;
+	  * CRM Task's activity-schema values, keyed by their own LOGICAL schema fieldname, `setdefault`-merged
+	    so a genuine doc column always wins a name clash.
+
+	Written into a BUCKET rather than handed over as a record loader, deliberately: this doc is mid-save
+	and uncommitted, so the in-memory values are the truth and a re-read would see the old row. The durable
+	run does the opposite for the same reason — see `interpreter._refreshed_state`.
+	"""
+	from tatva_connect.workflow_engine import refs
+
+	values = dict(doc.get_valid_dict())
 	for fieldname, value in activity_values(doc).items():
-		context.setdefault(fieldname, value)
-	return context
+		values.setdefault(fieldname, value)
+	for fieldname, (old, _new) in changed.items():
+		values[f"{fieldname}{refs.BEFORE}"] = old
+	return refs.Values(buckets={refs.slug(doc.doctype): values})
 
 
 def activity_values(doc):
@@ -94,11 +113,16 @@ def activity_values(doc):
 
 
 def field_types_for(doctype):
-	"""{fieldname: schema type} for the trigger doctype's meta fields, so criteria evaluate type-aware.
-	Reuses `describe.fields_for_doctype` — the same vocabulary the builder + validator read."""
-	from tatva_connect.automation.describe import fields_for_doctype
+	"""{reference: schema type} for the trigger doctype, so criteria evaluate type-aware — and, because
+	`rules._rule_match` treats it as the DECLARATION of what may be referenced, in the SAME namespaced
+	vocabulary `context_for` builds. A bare map here would reject every predicate the picker offers.
 
-	return {f["key"]: f["type"] for f in fields_for_doctype(doctype)}
+	Reuses `refs.readable_for`, which delegates to `describe.fields_for_doctype` — the same brain the
+	builder, the validator and the value picker read, and the only one that knows CRM Task answers to its
+	activity-schema fields by LOGICAL name."""
+	from tatva_connect.workflow_engine import refs
+
+	return {f["key"]: f["type"] for f in refs.readable_for(doctype)}
 
 
 def watchable_fields_for(doctype):

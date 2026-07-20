@@ -163,17 +163,50 @@ def field_catalog(doctype):
 	return out
 
 
-def _settable_fields(vertical, group, program):
-	"""CRM Lead parent fields a Set Field action may target at this grain — enabled can_set rows,
-	enriched with type/options from the lead meta. (Set Field can also target the triggering doc; the
-	validator gates any target via fields.is_settable — this dropdown hints the dominant Lead case.)"""
-	meta = frappe.get_meta("CRM Lead")
+def _settable_fields(doctype, vertical, group, program):
+	"""Fields a write node may target ON `doctype` at this workflow's grain, typed for the control.
+
+	The grain here is the workflow's DECLARED one — a RULE grain whose blank axis means ANY — so the rows
+	come from `fields.settable_rows_in_rule_grain` and never from the data-grain resolver. Handing a rule
+	grain to that one compared the wildcard as the literal empty string, and a workflow declaring
+	`vertical=X, group=""` was offered only fields whose contract was equally blank: a field ticked by
+	`(X, G1, "")` was hidden, though execution would have allowed the write.
+
+	Typed off the doctype's own meta, falling back for CRM Task to the activity schema — a task's real
+	business fields are `CRM Task Type Field` rows and never meta fields, so dropping them would answer
+	empty on exactly the subject the doctype fix was for. Same union `fields_for_doctype` already reads.
+	"""
+	meta = frappe.get_meta(doctype)
+	schema = activity_schema_fields() if doctype == fields.TASK_DT else {}
 	out = []
-	for r in fields.settable_rows("CRM Lead", (vertical, group, program)):
+	for r in fields.settable_rows_in_rule_grain(doctype, (vertical, group, program)):
 		df = meta.get_field(r.fieldname)
 		if df:
-			out.append(_descriptor(r.fieldname, df.label, df.fieldtype, df.options))
+			out.append({**_descriptor(r.fieldname, df.label, df.fieldtype, df.options), "doctype": doctype})
+		elif r.fieldname in schema:
+			s = schema[r.fieldname]
+			out.append({**_descriptor(s.fieldname, s.label, s.fieldtype, s.options), "doctype": doctype})
 	return out
+
+
+def _settable_targets(subject, vertical, group, program):
+	"""Every field a write node in this workflow may target, across every record the run can reach.
+
+	It used to ask for `CRM Lead` whatever the workflow watched, so a Task-triggered workflow offered the
+	Target `CRM Task` and then listed LEAD fields underneath it — two controls describing different
+	records. The reachable set is read from the ONE declaration (`actions.reachable_targets`), the same
+	one `_resolve_write_target` enforces and the publish gate checks, so the three cannot drift.
+
+	Each descriptor carries the `doctype` it belongs to: a flat list spanning two records cannot be
+	rendered under a chosen Target without it.
+	"""
+	from tatva_connect.automation import actions
+
+	return [
+		descriptor
+		for dt in actions.reachable_targets(subject)
+		for descriptor in _settable_fields(dt, vertical, group, program)
+	]
 
 
 # TATVA (A.14): the pre-v2 `describe()` emitter (trigger_type/task_type/watch_doctype vocabulary)
@@ -188,7 +221,7 @@ def _settable_fields(vertical, group, program):
 # ONLY vocabulary CRMAutomationRule.validate() re-derives to reject a deviating rule (A.8 - one
 # contract, no fourth vocabulary). Every piece is reused from an existing brain, never re-listed:
 # fields <- field_catalog/activity_schema_fields, operators <- rules.py's operator-family dicts,
-# verbs <- actions._ACTION_LANES, set_targets <- fields.settable_rows (via _settable_fields above).
+# verbs <- actions.VERBS, set_targets <- fields.settable_rows (via _settable_fields above).
 
 # Schema-type groupings for the operator table: which operator FAMILIES apply to which field type.
 # The operator NAMES themselves are never re-typed here - they come straight off rules.py's own
@@ -270,45 +303,23 @@ def _criterion_fields(doctype):
 # Which of the CRM Automation Action doctype's OWN fields are a given verb's params - the builder
 # reads their type/options straight off that doctype's live meta (_verb_params), so a schema change
 # there (a relabel, a new picker) reaches the builder with zero edits here.
-_VERB_PARAM_FIELDS = {
-	"Require Fields": ["require_fields"],
-	"Require Location": ["geofence_meters"],
-	"Create Task": ["task_type", "due_mode", "due_from", "due_expression"],
-	"Update Field": ["target_doctype", "fieldname", "value_mode", "value", "context_field", "expression"],
-	"Append Child Row": ["child_table", "set_json"],
-	"Upsert Child Row": ["child_table", "match_json", "set_json"],
-	"Call Webhook": ["webhook_endpoint", "webhook_payload_source"],
-	"Create Note": ["comment_mode", "comment_text", "comment_expression"],
-	"Send WhatsApp": ["whatsapp_template"],
-	"Send Email": ["email_recipient", "email_subject", "email_body"],
-	"Wait": ["wait_expression"],
-}
-
-
-def _verb_params(verb):
-	meta = frappe.get_meta("CRM Action Group Item")
-	out = []
-	for fieldname in _VERB_PARAM_FIELDS.get(verb, []):
-		df = meta.get_field(fieldname)
-		if not df:
-			continue
-		out.append({
-			"name": df.fieldname,
-			"label": df.label or df.fieldname,
-			"type": df.fieldtype,
-			"pick": _pick_for(df.fieldtype, df.options),
-		})
-	return out
-
+# Each verb's parameters, DECLARED here — name, label, type and options. They used to be read off the
+# CRM Action Group Item doctype's meta, which meant the builder's contract was a side effect of a
+# 26-column table holding the union of every verb's fields. A verb owns its own parameters; W1 turns
+# this into the node-type registry, and this is that declaration's first form.
 
 def builder_verbs():
-	"""`verbs` for the builder contract: every registered verb (actions._ACTION_LANES, the ONE verb
-	registry) with its lane + typed param fields. A verb sitting in the action_type Select with no
-	_ACTION_LANES entry is invisible to the builder - the same guardrail CRMAutomationRule.validate
-	already enforces at save time (Task 8), so the builder can never offer a dead verb either."""
-	from tatva_connect.automation.actions import _ACTION_LANES
+	"""`verbs` for the builder contract, read from the ONE verb declaration (`actions.VERBS`).
 
-	return [{"verb": verb, "lane": lane, "params": _verb_params(verb)} for verb, (lane, _handler) in _ACTION_LANES.items()]
+	A verb's lane and its parameters are declared beside the handler that runs them, so the builder can
+	never offer a verb the engine cannot run, nor a parameter the handler does not read.
+	"""
+	from tatva_connect.automation import actions
+
+	return [
+		{"verb": verb, "lane": declared["lane"], "params": declared["params"]}
+		for verb, declared in actions.VERBS.items()
+	]
 
 
 def coerces(value, ftype):
@@ -353,12 +364,28 @@ def coerces(value, ftype):
 @frappe.whitelist()
 def builder_schema(on_doctype=None, event=None, vertical=None, group=None, program=None):
 	"""THE one authoring contract: the Flow form's When/Then builder renders fields/operators/verbs from
-	this. Grain-scoped, whitelisted, read-only, permission-gated (read on CRM Workflow Definition)."""
-	if not frappe.has_permission("CRM Workflow Definition", "read"):
+	this. Grain-scoped, whitelisted, read-only, permission-gated (read on CRM Workflow)."""
+	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	return {
 		"fields": _criterion_fields(on_doctype),
 		"operators_by_type": operators_by_type(),
+		"operator_shapes": operator_shapes(),
 		"verbs": builder_verbs(),
-		"set_targets": _settable_fields(vertical, group, program),
+		"set_targets": _settable_targets(on_doctype, vertical, group, program),
+	}
+
+
+def operator_shapes():
+	"""Which operators take no value, a range, or a list — read from the operator families themselves.
+
+	The builder has to know this to render the right widget, and it used to know it by keeping its own
+	copy of the operator names in JavaScript. That copy had no lock: renaming an operator in Python
+	would leave the control silently rendering a text box for `is set`, which then saves a value the
+	evaluator ignores.
+	"""
+	return {
+		"none": sorted(rules._PRESENCE_OPS),
+		"range": sorted(rules._RANGE_OPS),
+		"list": sorted(rules._MEMBERSHIP_OPS),
 	}

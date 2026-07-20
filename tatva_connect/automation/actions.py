@@ -1,11 +1,11 @@
 """The automation engine's verb handlers — every GUARD/EFFECT action body + its resolver helpers +
-the `_ACTION_LANES` registry (TATVA v2, Task 6).
+the `VERBS` declaration.
 
 Extracted from `dispatcher.py` (Task 5 co-located the verb bodies with the two-lane executor for the
 initial split; Task 6 finishes the separation so dispatcher.py owns only orchestration — run_guards/
 run_effects/`_run_action` dispatch/Run Log/error factory — and this module owns every verb's
 implementation). A move, not a rewrite (A.8/A.12) — behavior, docstrings and security annotations are
-unchanged from their dispatcher.py originals. `dispatcher.py` imports this module for `_ACTION_LANES`
+unchanged from their originals. Every consumer reads `VERBS`
 and `_action_label`; nothing here imports `dispatcher` (the executor depends on the verbs, never the
 reverse — no circular import).
 """
@@ -13,10 +13,19 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.integrations.utils import create_request_log
+from frappe.utils import flt, get_request_session, validate_url
 
-from tatva_connect.automation import fields
+from tatva_connect.automation import fields, sends
 from tatva_connect.taxonomy import labels
+from tatva_connect.workflow_engine import refs
+
+# The location guard reads a CRM Task's own fields, so it names them in the CRM Task namespace. Composed
+# through `refs.of_record` rather than typed as `"crm_task.custom_task_type"`: the slug is `frappe.scrub`'s
+# to decide, and a hand-spelled one is a second rule about the same name.
+_TASK_TYPE_REF = refs.of_record("CRM Task", "custom_task_type")
+_TASK_LAT_REF = refs.of_record("CRM Task", "custom_location_latitude")
+_TASK_LNG_REF = refs.of_record("CRM Task", "custom_location_longitude")
 
 
 def _action_label(a):
@@ -28,8 +37,8 @@ def _action_label(a):
 		return "Update Field {}".format(a.fieldname or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):
 		return "{} {}".format(a.action_type, a.child_table or "?")
-	if a.action_type == "Call Webhook":
-		return "Call Webhook {}".format(a.webhook_endpoint or "?")
+	if a.action_type == "Call API":
+		return "Call API {}".format(a.webhook_endpoint or "?")
 	if a.action_type == "Create Note":
 		return "Create Note"
 	if a.action_type == "Send WhatsApp":
@@ -61,6 +70,11 @@ class _ParkSignal(Exception):
 # -- actions -----------------------------------------------------------------
 
 
+# A workflow must not hang on an endpoint that never answers; a timeout is the `failed` output.
+_API_TIMEOUT_SECONDS = 30
+_LOG_LIMIT = 10000  # an Integration Request records the shape of an answer, never an unbounded body
+
+
 def _action_require_fields(action, subject, context):
 	"""REQUIRE_FIELDS (guard, Task 5) — the first guard verb, exercising the guard lane end to end.
 	Comma-separated fieldnames read off the rule's subject (the sync context `run_guards` built); a
@@ -84,10 +98,10 @@ def _action_require_location(action, subject, context):
 	as the `tasks.enforce_location` hook this verb supersedes once a rule is authored for a task type."""
 	from tatva_connect.location import api as location_api
 
-	radius = location_api.location_required(context.get("custom_task_type"), subject, context)
+	radius = location_api.location_required(context.get(_TASK_TYPE_REF), subject, context)
 	if radius is None:
 		return  # not required for this task type / submitted values — same non-match as the old hook
-	lat, lng = context.get("custom_location_latitude"), context.get("custom_location_longitude")
+	lat, lng = context.get(_TASK_LAT_REF), context.get(_TASK_LNG_REF)
 	if not (lat and lng):
 		frappe.throw(
 			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
@@ -112,6 +126,172 @@ def _action_require_location(action, subject, context):
 		)
 
 
+# -- the record a verb acts on ------------------------------------------------
+
+TARGET_LEAD = "lead"          # the parent lead the run is about, whatever fired it
+TARGET_AUTHORED = "authored"  # whichever reachable record the author's `Target` parameter names
+TARGET_NONE = "none"          # this verb writes no record at all
+TARGET_KINDS = (TARGET_LEAD, TARGET_AUTHORED, TARGET_NONE)
+
+
+def target_of(verb):
+	"""Which record this verb acts on, as declared. `None` for a verb that declares nothing — refused,
+	never guessed, by `resolve_target`."""
+	return (VERBS.get(verb) or {}).get("target")
+
+
+def authored_target_field(verb):
+	"""The parameter an `authored` verb takes its target doctype from — DERIVED from the verb's own params
+	(the one typed `Target`), never a second per-verb map that could name a field the verb does not have."""
+	for param in (VERBS.get(verb) or {}).get("params") or []:
+		if param.get("type") == "Target":
+			return param["name"]
+	return None
+
+
+def reachable_targets(subject_doctype):
+	"""The records a verb's target can resolve to in a workflow watching `subject_doctype`.
+
+	Exactly what `resolve_target` will accept: the parent lead the run is about, and the record that fired
+	it (whose doctype IS the subject). Read by the publish gate (`graph._write_target_problems`) and by the
+	authoring vocabulary (`describe.builder_schema`) alike — two copies of "what can a write reach" is how
+	the picker came to offer lead fields under a `CRM Task` target.
+	"""
+	return [dt for dt in dict.fromkeys([fields.LEAD_DT, subject_doctype]) if dt]
+
+
+def resolve_target(action, lead_name, trigger_doc):
+	"""`(doctype, name)` of the record this node acts on — THE one answer, off the verb's declaration.
+
+	Four verbs used to answer this four different ways with nothing written down: Update Field honoured
+	the author's choice, while Create Note, Assign to User and both child-row verbs always wrote the lead
+	even when a Task or a File fired the run. An author who learned one rule guessed wrong on the next.
+	The answer now lives in the verb's `target` and the decision lives here; handlers never name a doctype.
+
+	A rule's write scope is {the Lead} ∪ {the triggering doc}: anything else is out of scope and raises
+	loudly rather than misfiring on a name that is not its. An undeclared verb raises too — guessing "it
+	is probably the lead" is precisely how the four divergent answers grew.
+	"""
+	kind = target_of(action.action_type)
+	if kind not in TARGET_KINDS:
+		raise ValueError(
+			f"{action.action_type!r} does not declare which record it acts on — declare `target` on it"
+		)
+	if kind == TARGET_NONE:
+		return None, None
+	if kind == TARGET_LEAD:
+		return fields.LEAD_DT, lead_name
+	doctype = action.get(authored_target_field(action.action_type) or "")
+	if doctype == fields.LEAD_DT:
+		return fields.LEAD_DT, lead_name
+	if trigger_doc is not None and doctype == trigger_doc.doctype:
+		return trigger_doc.doctype, trigger_doc.name
+	raise ValueError(
+		f"{action.action_type} target {doctype} is not in this rule's scope "
+		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
+	)
+
+
+def _resolve_write_target(action, lead_name, trigger_doc):
+	"""The record this verb writes to, loaded fresh in the current transaction. ONE decision
+	(`resolve_target`), one load — a handler never names its own doctype."""
+	doctype, name = resolve_target(action, lead_name, trigger_doc)
+	return frappe.get_doc(doctype, name)
+
+
+def _action_assign_to_user(action, lead, context, axes, trigger_doc):
+	"""ASSIGN TO USER — move ownership of the lead as a consequence of what happened in this run.
+
+	The DEFAULT owner is not this node's job. An Assignment Rule declares that per grain, in the Desk,
+	because round-robin rotation is state Frappe already keeps and ownership must happen whether or not a
+	workflow is armed. This node exists for the part a standing rule cannot express: ownership changing
+	BECAUSE something happened — nobody responded, a task completed, a predicate turned true.
+
+	Native only: `assign_to.add` writes a ToDo, and the ToDo is the source of truth. `_assign` on the
+	document is a derived cache that Frappe recomputes, so writing it directly is silently reverted.
+
+	Reassign removes the current holders first, and does so through `assign_to.remove` — never by setting
+	a ToDo to Closed, because a rule with no `close_condition` reopens Closed ToDos and the person would
+	find the work back on their list.
+
+	Leaves by `assigned` or by `nobody`: an escalation with no one to escalate to is a real outcome the
+	author must be able to route, not an error that kills the run.
+	"""
+	from frappe.desk.form import assign_to
+
+	doctype, name = resolve_target(action, lead, trigger_doc)
+	user = _assignee(action, context)
+	_assert_entitled_to_act(user, axes)
+	# `assigned_to` is DECLARED emitted, so it is written on BOTH legs. A key that appears only when
+	# someone was found could not honestly be offered downstream at all: the publish gate would certify
+	# a node reading it and the read would silently be None on the leg that skipped the write.
+	context["assigned_to"] = user or None
+	if not user:
+		context[refs.OUTPUT] = "nobody"
+		return "no assignee resolved"
+
+	if (action.assign_mode or "Assign") == "Reassign":
+		for holder in _current_assignees(doctype, name):
+			if holder != user:
+				assign_to.remove(doctype, name, holder)  # Cancelled, never Closed
+
+	if user not in _current_assignees(doctype, name):
+		assign_to.add({
+			"doctype": doctype,
+			"name": name,
+			"assign_to": [user],
+			"description": action.assign_note or _("Assigned by a workflow"),
+		})
+	context[refs.OUTPUT] = "assigned"
+	return f"assigned to {user}"
+
+
+def _assert_entitled_to_act(user, axes):
+	"""Refuse an assignment to someone the record's grain does not entitle.
+
+	This node was completely ungrained: `assign_to_user` is a `Link` to `User`, `User` carries no grain
+	axis, so nothing scoped the picker and nothing checked the pick. A workflow on GoodFlip Care/Anaya
+	could hand a lead to a rep entitled only to TatvaPractice, on both sides, silently.
+
+	Asked of the ONE entitlement brain — the same `access.entitlement` that decides which leads and fields
+	that rep may see. No second notion of user-grain entitlement, and no query against the permission
+	tables: a reverse query would be a second matcher free to disagree with the forward one.
+
+	`axes` is the record's DATA grain, which is what `grain_entitled` expects. A run carrying no axes at
+	all (a non-Lead subject on the durable path) has no grain to enforce, and inventing one here would
+	refuse every File-triggered workflow rather than protect anything.
+	"""
+	from tatva_connect.access import entitlement
+
+	grain = tuple((a or "") for a in (axes or ("", "", "")))
+	if not user or not any(grain):
+		return
+	if not entitlement.grain_entitled(grain, user=user):
+		raise PermissionError(
+			f"{user} is not entitled to {'/'.join(a or '*' for a in grain)} — a workflow may not assign a "
+			"record to someone who may not see it"
+		)
+
+
+def _current_assignees(doctype, name):
+	"""Who holds this record right now — asked of Frappe, not queried ourselves.
+
+	`assign_to.get` is the platform's own answer, and it excludes Cancelled AND Closed. A hand-written
+	ToDo query here did exclude Cancelled but not Closed, so a closed assignment counted as a live holder
+	and a Reassign would have tried to remove someone who no longer held anything.
+	"""
+	from frappe.desk.form import assign_to
+
+	return [row["owner"] for row in assign_to.get({"doctype": doctype, "name": name})]
+
+
+def _assignee(action, context):
+	"""The user to assign to: a named one, or whatever an upstream value holds."""
+	if (action.assignee_mode or "User") == "From Variable":
+		return context.get(action.assignee_variable) or None
+	return action.assign_to_user or None
+
+
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper, which grain-gates every task it raises, so
 	a grain-A rule cannot plant a grain-B activity type. The gate lives THERE, not here: it must read
@@ -125,12 +305,22 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	Pending + linked (the review flow's on-upload step)."""
 	from tatva_connect.tasks.tasks import create_followup_task
 
+	lead = resolve_target(action, lead, trigger_doc)[1]  # declared `lead` — resolved, never assumed
+	# The token that ties this task back to the node that raised it. A Wait downstream correlates on the
+	# same token, so completing THIS task wakes THIS iteration — never another lead's, and never a
+	# different task of the same type on the same lead. Absent on an ephemeral run, which cannot park.
+	token = context.get(refs.TOKEN) if hasattr(context, "get") else None
+
 	# Carry the completing task's assignee onto the next task (old-engine parity). Only a trigger that
 	# genuinely has no assignee field — a File / WhatsApp Message — falls back to the lead owner so its
 	# task is never orphaned; a Lead- or Task-triggered rule keeps producing an unassigned task for the
 	# native Assignment Rule to route (do NOT force lead_owner on those — it defeats the Assignment Rule).
 	assignee = trigger_doc.get("assigned_to") if trigger_doc else None
-	if not assignee and trigger_doc is not None and trigger_doc.doctype in ("File", "WhatsApp Message"):
+	if not assignee:
+		# Fall back to the lead's owner whenever nothing else names an assignee. This used to be limited
+		# to File / WhatsApp Message triggers, which meant every task raised by a workflow that PARKS
+		# landed unassigned: on the durable path the "trigger doc" is the lead itself, a lead has no
+		# `assigned_to`, and the old condition could never fire. Unassigned work sits on nobody's list.
 		assignee = frappe.db.get_value("CRM Lead", lead, "lead_owner")
 	# Review flow: a File that raises a Document Review task gets its OWN task, one per document — the
 	# verdict is per-document, so it must never ride the per-lead-per-type throttle (which would collapse
@@ -143,14 +333,35 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		and frappe.db.get_value("CRM Task Type", action.task_type, "type_name") == "Document Review"
 	)
 	if is_review:
-		_pin_review_file(_review_task_for_file(trigger_doc.name, lead, action, context, assignee), trigger_doc.name)
+		review = _review_task_for_file(trigger_doc.name, lead, action, context, assignee)
+		_pin_review_file(review, trigger_doc.name)
+		_stamp_workflow_token(review, token)
 		return
-	create_followup_task(
+	task = create_followup_task(
 		lead=lead,
 		task_type=action.task_type,
 		due_at=_due_at(action, context),
 		assigned_to=assignee,
 	)
+	_stamp_workflow_token(task, token)
+
+
+def _stamp_workflow_token(task, token):
+	"""Tie a raised task back to the node that raised it, so its completion wakes that exact wait.
+
+	Written straight to the column: the token is engine bookkeeping, not a field a user or a rule may
+	set, and a full save here would re-enter the very doc_events that raised it. The throttled helper can
+	return an ALREADY-OPEN task from an earlier iteration — that task is already tied to its own node, so
+	the token is only ever written where there is none, never moved.
+	"""
+	if not token or not task:
+		return
+	# A CRM Task autonames to an INTEGER, so a name is not necessarily a string — take the doc's `name`
+	# when given a document, and treat any other scalar as the name itself.
+	name = task.get("name") if hasattr(task, "get") else task
+	if not name or frappe.db.get_value("CRM Task", name, "custom_workflow_token"):
+		return
+	frappe.db.set_value("CRM Task", name, "custom_workflow_token", token, update_modified=False)  # authz-ok: tier-a — workflow engine bookkeeping, never user input
 
 
 def _review_task_for_file(file_name, lead, action, context, assignee):
@@ -207,20 +418,6 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
-def _resolve_write_target(action, lead_name, trigger_doc):
-	"""The record a Set Field writes to. A rule's write scope is {the Lead} ∪ {the triggering doc}:
-	target the Lead, or the trigger doc itself (Field-Changed on a Task → set a field on that Task).
-	Any other doctype is out of scope — raise loudly rather than misfire on a name that isn't its."""
-	if action.target_doctype == "CRM Lead":
-		return frappe.get_doc("CRM Lead", lead_name)
-	if trigger_doc is not None and action.target_doctype == trigger_doc.doctype:
-		return frappe.get_doc(trigger_doc.doctype, trigger_doc.name)  # fresh load, same txn
-	raise ValueError(
-		f"Set Field target {action.target_doctype} is not in this rule's scope "
-		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
-	)
-
-
 def _resolve_set_field_value(action, context):
 	"""One seam for the three Set Field value modes. Literal = the field as typed; From Context =
 	the named context key; Expression = safe_eval against ctx (raises on a bad/missing ref so the
@@ -249,8 +446,7 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 		text = action.comment_text or ""
 	if not text:
 		raise ValueError("Add Comment resolved to an empty string — nothing to log")
-	subject_doc = frappe.get_doc("CRM Lead", lead)
-	subject_doc.add_comment("Comment", text)
+	_resolve_write_target(action, lead, trigger_doc).add_comment("Comment", text)
 
 
 def _action_append_child(action, lead, context, axes, trigger_doc):
@@ -261,7 +457,7 @@ def _action_append_child(action, lead, context, axes, trigger_doc):
 	if not values:
 		raise ValueError("Append Child Row needs a non-empty Set (JSON)")
 	_assert_child_allowlisted(child_dt, child_table, set(values), axes)
-	tdoc = frappe.get_doc("CRM Lead", lead)
+	tdoc = _resolve_write_target(action, lead, trigger_doc)
 	tdoc.append(child_table, values)
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
@@ -278,7 +474,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 	if any(_blank(v) for v in match.values()):
 		raise ValueError("Upsert match key resolved to a blank value — refusing to match on blank")
 	_assert_child_allowlisted(child_dt, child_table, set(match) | set(values), axes, keys=set(match))
-	tdoc = frappe.get_doc("CRM Lead", lead)
+	tdoc = _resolve_write_target(action, lead, trigger_doc)
 	row = _find_child_row(tdoc.get(child_table), match, child_dt)
 	if row:
 		for k, v in values.items():
@@ -290,40 +486,185 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
-def _action_call_webhook(action, lead, context, axes, trigger_doc):
-	"""CALL_WEBHOOK — invoke a curated native Webhook's delivery (spec §6). We don't rebuild HTTP:
-	enqueue Frappe's enqueue_webhook (HMAC + 3 retries + Webhook Request Log) with the payload doc as
-	context. The endpoint is picked, never typed; its URL/secret stay admin-curated.
+def _action_call_api(action, lead, context, axes, trigger_doc):
+	"""CALL API — call a curated endpoint, capture its response, and route on whether it succeeded.
 
-	`webhook_payload_source` chooses what rides the body: the Lead (default — every existing rule is
-	unchanged) or the Trigger Doc (the record that fired the rule, e.g. a Document Review task, so the
-	disposition + reason go out). Trigger Doc degrades to the lead only when there is no trigger doc."""
-	if not action.webhook_endpoint:
-		raise ValueError("Call Webhook action missing an endpoint")
-	if not frappe.db.exists("Webhook", action.webhook_endpoint):
-		raise ValueError(f"Webhook endpoint {action.webhook_endpoint!r} does not exist")
+	This replaces a fire-and-forget dispatch that enqueued Frappe's webhook delivery and never read the
+	answer: the workflow could tell an external system something but could never act on what it said
+	back. A node that cannot see its own result is a dead end in a graph whose whole purpose is to react.
+
+	THE ENDPOINT IS STILL PICKED, NEVER TYPED. The URL, method, headers and secret stay on the curated
+	`Webhook` record an administrator owns — an author chooses which endpoint, never where the request
+	goes. Letting a workflow author type a URL would turn every workflow into an outbound request the
+	network trusts (an SSRF the product would be shipping deliberately).
+
+	The response becomes an ordinary context: `status`, `ok`, and the parsed `body`. `capture` maps paths
+	out of it into named run variables, so every downstream node reads them like any other value; and
+	`success_when` — the same predicate control the Trigger and Branch use — decides which of the node's
+	two outputs the run takes. No `success_when` means the HTTP status decides.
+
+	Runs INLINE rather than deferred: an output the run must route on cannot arrive after the run has
+	already moved past this node. A transport failure is not an exception here — it is the `failed`
+	output, which is a graph the author can handle.
+	"""
+	endpoint = action.webhook_endpoint
+	if not endpoint:
+		raise ValueError("Call API node missing an endpoint")
+	if not frappe.db.exists("Webhook", endpoint):
+		raise ValueError(f"Endpoint {endpoint!r} does not exist")
+
 	if (action.webhook_payload_source or "Lead") == "Trigger Doc" and trigger_doc is not None:
 		payload_doc = frappe.get_doc(trigger_doc.doctype, trigger_doc.name)  # fresh load, same txn
 	else:
 		payload_doc = frappe.get_doc("CRM Lead", lead)
-	# Deferred: return the enqueue as a thunk so it fires only if the rule commits (a rolled-back
-	# rule must not send its webhook — a savepoint rollback would not clear an after_commit hook).
-	return lambda: frappe.enqueue(
-		"frappe.integrations.doctype.webhook.webhook.enqueue_webhook",
-		doc=payload_doc,
-		webhook={"name": action.webhook_endpoint},
-		enqueue_after_commit=True,
+
+	response = _call_endpoint(endpoint, payload_doc)
+	_write_response_state(action.capture, response, context)
+	context[refs.OUTPUT] = "succeeded" if _api_succeeded(action.success_when, response, context) else "failed"
+	return f"{response['status']} {'ok' if response['ok'] else 'failed'}"
+
+
+def _call_endpoint(endpoint, payload_doc):
+	"""Issue the request the curated Webhook describes, and shape the answer into one context.
+
+	Frappe's own plumbing, not our own: `get_request_session()` is the platform's HTTP session (pooled,
+	with its retry adapter already mounted) and `validate_url` is its URL check. A hand-rolled
+	`requests.request` would quietly opt out of both — and out of whatever the platform hardens next.
+	`create_request_log` writes the Integration Request row, so an outbound call is inspectable in the
+	desk exactly like every other integration this site makes.
+
+	Every failure mode lands in the SAME shape — a transport error is `status: 0, ok: False` with the
+	reason in `error` — so a graph handles a refused connection and a 500 identically, and neither takes
+	the run down. We do NOT use `make_request`: it raises on any non-2xx, and a failed call here is data
+	the author routes on, not an exception.
+	"""
+	hook = frappe.get_doc("Webhook", endpoint)
+	url = hook.request_url
+	# Defence in depth: the URL is admin-curated and Webhook validates it on its own save, but an http(s)
+	# scheme check costs nothing and keeps a file:// or gopher:// endpoint from ever being reached.
+	validate_url(url, throw=True, valid_schemes=("http", "https"))
+
+	headers = {h.key: h.value for h in (hook.get("webhook_headers") or []) if h.get("key")}
+	payload = payload_doc.as_dict()
+	log = create_request_log(
+		payload, is_remote_request=1, service_name="Workflow Call API", url=url,
+		request_headers=headers or None,
+		reference_doctype=payload_doc.doctype, reference_docname=payload_doc.name,
 	)
+	try:
+		reply = get_request_session().request(
+			(hook.request_method or "POST").upper(), url,
+			json=payload, headers=headers or None, timeout=_API_TIMEOUT_SECONDS,
+		)
+	except Exception as transport:
+		result = {"status": 0, "ok": False, "body": None, "error": str(transport)}
+		log.db_set({"status": "Failed", "error": str(transport)}, commit=False, update_modified=False)
+		return result
+
+	try:
+		body = reply.json()
+	except ValueError:
+		body = reply.text
+	result = {"status": reply.status_code, "ok": reply.ok, "body": body, "error": None}
+	log.db_set(
+		{"status": "Completed" if reply.ok else "Failed", "output": frappe.as_json(body)[:_LOG_LIMIT]},
+		commit=False, update_modified=False,
+	)
+	return result
+
+
+def _write_response_state(capture, response, context):
+	"""THE one writer of run state for a Call API — the declared response shape, then the author's rows.
+
+	`emits` promises `status`, `ok` and `error` are always written, and `upstream` offers them to every
+	node downstream; nothing ever wrote them, so a Branch on `ok` published green and then raised on the
+	first live record. They are written here rather than in the handler so a Call API has exactly ONE
+	place that puts anything into state — two writers is how the declaration and the runtime drifted
+	apart in the first place.
+
+	The declared keys go in FIRST, so an author who captures into a name of their own overrides the
+	shape rather than being overridden by it: their row is the more specific instruction.
+
+	A capture path that resolves to nothing writes `None` rather than being skipped: a downstream
+	predicate naming that variable must see it as empty, not raise as though the author had misspelt it.
+	"""
+	context.update(_response_state(response))
+	for row in (capture or []):
+		if not isinstance(row, dict) or not row.get("variable"):
+			continue
+		context[row["variable"]] = _dig(response, row.get("path") or "")
+
+
+def _response_state(response):
+	"""The response as run state, in the TYPES the verb declares — `Int`, `Check`, `Data`.
+
+	One shaping, two consumers: what a downstream node reads and what `success_when` is judged against
+	are the same values, so an author's predicate on `ok` cannot mean one thing at the node and another
+	on the Branch after it. `ok` is a Check (1/0, never True/False) because the evaluator resolves
+	operators by declared type, and `error` is Data — empty, not null, when there was nothing to say.
+	"""
+	return {
+		"status": response["status"],
+		"ok": 1 if response["ok"] else 0,
+		"error": response["error"] or "",
+	}
+
+
+def _dig(value, path):
+	"""Walk a dotted path — `status`, `body.data.id`, `body.items.0.name`. Never raises."""
+	for part in str(path).split("."):
+		if part == "":
+			continue
+		if isinstance(value, dict):
+			value = value.get(part)
+		elif isinstance(value, list) and part.isdigit() and int(part) < len(value):
+			value = value[int(part)]
+		else:
+			return None
+	return value
+
+
+def _api_succeeded(success_when, response, context=None):
+	"""Did this call succeed? The author's predicate decides; without one, the HTTP status does.
+
+	The predicate is judged in the NODE'S OWN namespace — `api.status`, `api.body.customer_id` — because
+	that is where the values it tests really live and where `upstream` offers them. It used to be judged
+	against a private flat dict, so `success_when` was the one predicate control in the product that spoke
+	a different language from every other one: an author who picked `status` from the picker got
+	`crm_lead.status` and it never matched anything here.
+
+	The node id comes from the writer view the interpreter already scoped this handler with, so the verb
+	still never has to know it. A caller with no view (a direct unit call) gets the response alone.
+	"""
+	if not success_when:
+		return bool(response["ok"])
+	from tatva_connect.automation import rules
+
+	flat = _response_state(response)
+	if isinstance(response.get("body"), dict):
+		flat.update({f"body.{k}": v for k, v in response["body"].items()})
+	writer = getattr(context, "writer_id", None)
+	return rules.predicate_match(success_when, refs.Values(buckets={writer or refs.ENGINE: flat}), None)
+
 
 
 def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
 	"""SEND_WHATSAPP (effect, Task 7) — the dormant sends gate. `sends.send_whatsapp` records the
 	fire behind `Task::Automation::sends` (OFF by default, A.6) and, once the operator flips it,
 	sends through the EXISTING WATI brain (grain-routed account + template, A.11/A.8). This handler
-	only resolves the action's config off the rule row; no adapter logic lives here."""
+	only resolves the action's config off the rule row; no adapter logic lives here.
+
+	`_output` names the edge the run leaves by, exactly as Call API does — the ONE routing mechanism,
+	validated by `interpreter._verb_output` against what the verb declares. The decision itself belongs
+	to `sends`, which is the module that knows why a send did not happen."""
 	from tatva_connect.automation import sends
 
-	return sends.send_whatsapp(lead, action.whatsapp_template, context)
+	output, result = sends.send_whatsapp(
+		resolve_target(action, lead, trigger_doc)[1],
+		action.whatsapp_template, context, action.template_values,
+	)
+	context[refs.OUTPUT] = output
+	return result
 
 
 def _action_send_email(action, lead, context, axes, trigger_doc):
@@ -331,7 +672,12 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 	native `frappe.sendmail` (A.18), never a hand-rolled mail path."""
 	from tatva_connect.automation import sends
 
-	return sends.send_email(lead, action.email_recipient, action.email_subject, action.email_body, context)
+	output, result = sends.send_email(
+		resolve_target(action, lead, trigger_doc)[1],
+		action.email_recipient, action.email_subject, action.email_body, context,
+	)
+	context[refs.OUTPUT] = output
+	return result
 
 
 def wait_resume_at(wait_expression, context, base):
@@ -364,13 +710,6 @@ def wait_resume_at(wait_expression, context, base):
 		)
 
 
-def _action_wait(action, lead, context, axes, trigger_doc):
-	"""WAIT (effect, Task 9) — a SEGMENT BOUNDARY, not a write. Never writes anything and never parks
-	anything itself: it raises `_ParkSignal`, which `run_effects` catches to do the actual parking. The
-	delay contract lives in `wait_resume_at` (the one resolver)."""
-	parked_at = frappe.utils.now_datetime()
-	raise _ParkSignal(parked_at, wait_resume_at(action.wait_expression, context, parked_at))
-
 
 # The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
 # `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
@@ -378,19 +717,212 @@ def _action_wait(action, lead, context, axes, trigger_doc):
 # `Require Location` (Task 8) is the second. `CRMAutomationRule.validate()` rejects any action_type
 # not present here at author time (Task 8) — a verb sitting in the Select with no row here (e.g. Wait,
 # before Task 9) can never reach a rule.
-_ACTION_LANES = {
-	"Require Fields": ("guard", _action_require_fields),
-	"Require Location": ("guard", _action_require_location),
-	"Create Task": ("effect", _action_create_task),
-	"Update Field": ("effect", _action_set_field),
-	"Append Child Row": ("effect", _action_append_child),
-	"Upsert Child Row": ("effect", _action_upsert_child),
-	"Call Webhook": ("effect", _action_call_webhook),
-	"Create Note": ("effect", _action_add_comment),
-	"Send WhatsApp": ("effect", _action_send_whatsapp),
-	"Send Email": ("effect", _action_send_email),
-	"Wait": ("effect", _action_wait),
+# THE verb declaration. One entry per verb: which lane it runs in, which handler runs it, how it reads
+# to an author, and the parameters it takes. The parameters used to live in `describe._VERB_PARAMS`,
+# which meant the thing that DECLARED a verb's inputs and the thing that READ them were in different
+# modules and could disagree. They are now next to the handler that consumes them.
+#
+#   lane "guard"  — runs inside validate and may BLOCK a save by raising.
+#   lane "effect" — runs after the save, inside the node's savepoint, and may never block.
+#
+# `emits` are the run-state VARIABLES a verb writes, so a downstream node can be offered them instead of
+# asking the author to type a name from memory. Static keys are listed here; a verb whose keys depend on
+# its own config (Call API's `capture` rows) names the config field in `emits_from` and the resolver
+# reads the author's rows. This is the same lesson as `outcomes`, applied to state instead of events:
+# a name typed blind is a name that can be typed wrong, and nothing notices until a run behaves oddly.
+#
+# `outcomes` are the events a verb can later EMIT. A verb that emits nothing finishes and the run moves
+# on; a verb that emits is something the world answers — a task someone completes, a message someone
+# replies to — and a Wait downstream can name one of those outcomes and suspend until it arrives. The
+# names are declared here so a Wait offers a CHOICE rather than a free-text box: a typo in an event name
+# used to mean a run that parks for ever with nothing able to wake it.
+VERBS = {
+	"Require Fields": {
+		"lane": "guard", "handler": _action_require_fields,
+		"label": "Require Fields",
+		"description": "Refuses the save unless every named field has a value.",
+		"params": [
+			{"name": "require_fields", "label": "Fields", "type": "Small Text"},
+		],
+	},
+	"Require Location": {
+		"lane": "guard", "handler": _action_require_location,
+		"label": "Require Location",
+		"description": "Refuses the save unless the record carries a location inside the geofence.",
+		"params": [
+			{"name": "geofence_meters", "label": "Geofence Meters", "type": "Int"},
+		],
+	},
+	"Assign to User": {
+		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD,
+		"label": "Assign to User",
+		"description": "Moves ownership of the lead. The default owner is an Assignment Rule's job; this is for ownership changing because something happened.",
+		"outputs": ["assigned", "nobody"],
+		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
+		"params": [
+			{"name": "assign_mode", "label": "Mode", "type": "Select",
+			 "options": ["Assign", "Reassign"], "reqd": True},
+			{"name": "assignee_mode", "label": "Assign to", "type": "Select",
+			 "options": ["User", "From Variable"], "reqd": True},
+			# `User` carries no grain axis, so the picker cannot be scoped by columns — it DECLARES the kind.
+			{"name": "assign_to_user", "label": "User", "type": "Link", "link": "User",
+			 "scope": "entitled_users",
+			 "depends_on_value": {"assignee_mode": ["User"]}},
+			{"name": "assignee_variable", "label": "Take the user from", "type": "Variable",
+			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
+			{"name": "assign_note", "label": "Note", "type": "Data"},
+		],
+	},
+	"Create Task": {
+		"lane": "effect", "handler": _action_create_task, "target": TARGET_LEAD,
+		"label": "Create Task",
+		"description": "Raises a task on the lead.",
+		"outcomes": ["task.completed", "task.cancelled"],
+		"params": [
+			{"name": "task_type", "label": "Task Type", "type": "Link", "link": "CRM Task Type", "reqd": True},
+			{"name": "due_mode", "label": "Due Mode", "type": "Select", "options": ["From Context", "Expression"]},
+			{"name": "due_from", "label": "Due date from", "type": "Variable",
+			 "depends_on_value": {"due_mode": ["From Context"]}},
+			{"name": "due_expression", "label": "Due Expression", "type": "Small Text", "reads": "expression",
+			 "depends_on_value": {"due_mode": ["Expression"]}},
+		],
+	},
+	"Update Field": {
+		"lane": "effect", "handler": _action_set_field, "target": TARGET_AUTHORED,
+		"label": "Update Field",
+		"description": "Writes a value onto a field the operator has allowed automation to set.",
+		"params": [
+			{"name": "target_doctype", "label": "Write to", "type": "Target", "reqd": True},
+			# `doctype_from` names the sibling holding the doctype this field belongs to — read by the publish gate.
+			{"name": "fieldname", "label": "Field to set", "type": "Field", "reqd": True,
+			 "doctype_from": "target_doctype"},
+			{"name": "value_mode", "label": "Value Mode", "type": "Select",
+			 "options": ["Literal", "From Context", "Expression"], "reqd": True},
+			{"name": "value", "label": "Value", "type": "Data", "depends_on_value": {"value_mode": ["Literal"]}},
+			{"name": "context_field", "label": "Take the value from", "type": "Variable",
+			 "depends_on_value": {"value_mode": ["From Context"]}},
+			{"name": "expression", "label": "Expression", "type": "Small Text", "reads": "expression",
+			 "depends_on_value": {"value_mode": ["Expression"]}},
+		],
+	},
+	"Append Child Row": {
+		"lane": "effect", "handler": _action_append_child, "target": TARGET_LEAD,
+		"label": "Append Child Row",
+		"description": "Adds a row to a child table on the lead.",
+		"params": [
+			{"name": "child_table", "label": "Child Table", "type": "Data", "reqd": True},
+			{"name": "set_json", "label": "Set (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
+		],
+	},
+	"Upsert Child Row": {
+		"lane": "effect", "handler": _action_upsert_child, "target": TARGET_LEAD,
+		"label": "Upsert Child Row",
+		"description": "Updates a matching child row, or adds one if none matches.",
+		"params": [
+			{"name": "child_table", "label": "Child Table", "type": "Data", "reqd": True},
+			{"name": "match_json", "label": "Match (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
+			{"name": "set_json", "label": "Set (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
+		],
+	},
+	"Call API": {
+		"lane": "effect", "handler": _action_call_api, "target": TARGET_NONE,
+		"label": "Call API",
+		"description": "Calls a curated endpoint and captures its response into named variables.",
+		"outputs": ["succeeded", "failed"],
+		# The shape of the answer, always written; plus one variable per `capture` row the author adds.
+		"emits": [
+			{"name": "status", "type": "Int", "about": "HTTP status code"},
+			{"name": "ok", "type": "Check", "about": "1 when the call succeeded"},
+			{"name": "error", "type": "Data", "about": "why the call could not be made"},
+		],
+		"emits_from": "capture",
+		"params": [
+			{"name": "webhook_endpoint", "label": "Endpoint", "type": "Link", "link": "Webhook", "reqd": True},
+			{"name": "webhook_payload_source", "label": "Send", "type": "Select",
+			 "options": ["Lead", "Trigger Doc"]},
+			{"name": "capture", "label": "Capture", "type": "Mapping"},
+			{"name": "success_when", "label": "Succeeded when", "type": "Predicate"},
+		],
+	},
+	"Create Note": {
+		"lane": "effect", "handler": _action_add_comment, "target": TARGET_LEAD,
+		"label": "Create Note",
+		"description": "Adds a note to the lead's timeline.",
+		"params": [
+			{"name": "comment_mode", "label": "Mode", "type": "Select", "options": ["Literal", "Expression"]},
+			{"name": "comment_text", "label": "Text", "type": "Data",
+			 "depends_on_value": {"comment_mode": ["Literal"]}},
+			{"name": "comment_expression", "label": "Expression", "type": "Small Text", "reads": "expression",
+			 "depends_on_value": {"comment_mode": ["Expression"]}},
+		],
+	},
+	"Send WhatsApp": {
+		"lane": "effect", "handler": _action_send_whatsapp, "target": TARGET_LEAD,
+		"label": "Send WhatsApp",
+		"description": "Sends a template message on the resolved WhatsApp account, and routes on whether it reached the patient.",
+		# A send that did not reach the patient is DATA the author routes, not an exception that kills the
+		# run. The split between the two edges lives in `sends`; the names come from there too.
+		"outputs": [sends.SENT, sends.FAILED],
+		"params": [
+			{"name": "whatsapp_template", "label": "Template", "type": "Link",
+			 "link": "WhatsApp Templates", "reqd": True},
+			# The template's placeholders, DECLARED. `reads=value_rows` is what makes them visible to
+			# `contract.reads_of` and therefore refusable by the publish gate; `slots_from` names the
+			# sibling holding the template whose real placeholder names the control offers.
+			{"name": "template_values", "label": "Template Values", "type": "Value Map",
+			 "reads": "value_rows", "slots_from": "whatsapp_template",
+			 "slots_method": "tatva_connect.automation.sends.template_slots"},
+		],
+	},
+	"Send Email": {
+		"lane": "effect", "handler": _action_send_email, "target": TARGET_LEAD,
+		"label": "Send Email",
+		"description": "Sends an email after the segment commits, and routes on whether it could be sent.",
+		"outputs": [sends.SENT, sends.FAILED],
+		"params": [
+			{"name": "email_recipient", "label": "Recipient", "type": "Variable", "free_text": True, "reqd": True},
+			{"name": "email_subject", "label": "Subject", "type": "Data", "reqd": True},
+			{"name": "email_body", "label": "Body", "type": "Small Text"},
+		],
+	},
 }
+
+
+def emits_of(verb, config=None):
+	"""The run-state variables this verb writes, given how it is configured.
+
+	Static keys come from the declaration; config-derived ones are read from the field named by
+	`emits_from` — for Call API that is the author's own `capture` rows, so the variables offered
+	downstream are exactly the ones this node will really set.
+	"""
+	declared = VERBS.get(verb) or {}
+	found = [dict(e) for e in declared.get("emits") or []]
+
+	source = declared.get("emits_from")
+	if source and config:
+		for row in config.get(source) or []:
+			name = (row or {}).get("variable")
+			if name:
+				found.append({"name": name, "type": "Data", "about": _("captured from the response")})
+	return found
+
+
+def outcomes_of(verb):
+	"""The events this verb can emit. Empty for a verb the world never answers."""
+	return list((VERBS.get(verb) or {}).get("outcomes") or [])
+
+
+def lane_of(verb):
+	return (VERBS.get(verb) or {}).get("lane")
+
+
+def handler_of(verb):
+	return (VERBS.get(verb) or {}).get("handler")
+
+
+def verbs_in_lane(lane):
+	"""Every verb in a lane, in declaration order. The ONE way to ask 'what can guard' / 'what can act'."""
+	return [verb for verb, declared in VERBS.items() if declared["lane"] == lane]
 
 
 # -- value + child helpers ---------------------------------------------------
@@ -473,10 +1005,19 @@ def _eq(a, b, df):
 
 def _assert_child_allowlisted(child_dt, child_table, fieldnames, axes, keys=None):
 	"""Every set/match field must be an enabled can_set row for the child table at the lead's grain;
-	match keys must additionally be is_row_key. Fail-closed. One allowlist brain (fields.is_settable)."""
+	match keys must additionally be the section's row key. Fail-closed. One allowlist brain
+	(fields.is_settable).
+
+	The doctype asked about is the LEAD, never the child doctype: the lead catalog (`CRM Lead API Field`)
+	is where a child field is declared, and WHICH child table it lands in is derived from its
+	`CRM Lead Section` — which is exactly what `child_table_field` disambiguates. Asking about the child
+	doctype fell through `is_settable`'s `doctype != LEAD_DT` floor and refused every field, so no
+	Append/Upsert Child Row node could ever run. `child_dt` is kept for the message, which is what an
+	author reads.
+	"""
 	keys = keys or set()
 	for f in fieldnames:
-		if not fields.is_settable(child_dt, f, axes, child_table_field=child_table, require_row_key=(f in keys)):
+		if not fields.is_settable(fields.LEAD_DT, f, axes, child_table_field=child_table, require_row_key=(f in keys)):
 			raise PermissionError(
 				f"{f} on {child_dt} ({child_table}) is not in the enabled Automation-Field allowlist"
 			)

@@ -91,22 +91,70 @@ def is_settable(doctype, fieldname, axes, child_table_field="", require_row_key=
 	return False
 
 
-def settable_rows(doctype, axes):
-	"""can_set PARENT fields (Lead: whose section has no child table, ticked by the grain contract; Task:
-	any can_set row across both catalogs) — the rows the describe endpoint enriches for the Set Field
-	target dropdown."""
-	from tatva_connect.access import entitlement
+def is_set_declared(doctype, fieldname, child_table_field=""):
+	"""MEMBERSHIP only: is this fieldname a can_set field of this doctype AT ALL, in any grain?
 
+	The publish-time half of the write gate, and DELIBERATELY weaker than `is_settable`. At publish there
+	is no lead — only the workflow's declared grain, which is a RULE grain whose blank axis means ANY.
+	Feeding that into `is_settable` (which expects a lead's real DATA grain) would compare a wildcard as
+	if it were a value and answer confidently wrong in both directions. So publish asks the only question
+	it can honestly answer — "did the operator ever allow automation to set this field?" — and catches the
+	misspelling and the forbidden field, which is the whole failure class. Whether THIS lead's grain
+	allows the write stays at execution, where `is_settable` has a real lead.
+
+	Same routing rule as `is_settable`: a field belongs to the child table its `CRM Lead Section` names,
+	so a parent write (`child_table_field=""`) never matches a child-only field. One allowlist brain.
+	"""
+	if doctype == TASK_DT:
+		return any(frappe.db.exists(c, {"fieldname": fieldname, "can_set": 1}) for c in _catalogs_for(TASK_DT))
+	if doctype != LEAD_DT:
+		return False
+	for row in frappe.get_all("CRM Lead API Field", filters={"fieldname": fieldname, "can_set": 1}, fields=["section"]):
+		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
+		if (sec.child_table_field or "") == (child_table_field or ""):
+			return True
+	return False
+
+
+def _settable_parent_rows(doctype, ticked):
+	"""can_set PARENT fields (Lead: whose section has no child table; Task: any can_set row across both
+	catalogs), keeping only the field_keys `ticked` accepts.
+
+	ONE walk, so the two grain questions below differ in exactly the membership predicate and nowhere
+	else. A single function with a wildcard FLAG was the alternative, and a flag that silently changes
+	what a blank axis means is precisely how a rule grain gets compared as the empty string."""
 	if doctype == TASK_DT:
 		return [frappe._dict(fieldname=f) for f in _union_pluck(TASK_DT, filters={"can_set": 1})]
 	if doctype != LEAD_DT:
 		return []
-	grain = {_grain_key(axes)}
 	out = []
 	for row in frappe.get_all("CRM Lead API Field", filters={"can_set": 1}, fields=["field_key", "fieldname", "section"]):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
 		if sec.child_table_field:
 			continue
-		if entitlement.field_in_grains_via_contract(row.field_key, grain):
+		if ticked(row.field_key):
 			out.append(frappe._dict(fieldname=row.fieldname))
 	return out
+
+
+def settable_rows(doctype, axes):
+	"""can_set PARENT fields at a real record's DATA grain — every axis carries a value, blank is literal."""
+	from tatva_connect.access import entitlement
+
+	grain = {_grain_key(axes)}
+	return _settable_parent_rows(doctype, lambda key: entitlement.field_in_grains_via_contract(key, grain))
+
+
+def settable_rows_in_rule_grain(doctype, axes):
+	"""can_set PARENT fields a RULE declaring `axes` could EVER be allowed to set — blank means ANY.
+
+	The author-time twin of `settable_rows`, and the reason it is a separate name rather than an argument:
+	a workflow's declared grain is a rule grain, and the picker that fed it to `settable_rows` offered a
+	workflow scoped to a whole vertical only the fields of contracts equally blank — hiding every field a
+	more specific contract ticks, though execution would have allowed the write. Membership is decided by
+	`entitlement.field_in_any_grain_overlapping`, over the same ticks and the same one matcher module.
+	"""
+	from tatva_connect.access import entitlement
+
+	grain = _grain_key(axes)
+	return _settable_parent_rows(doctype, lambda key: entitlement.field_in_any_grain_overlapping(key, grain))

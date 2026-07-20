@@ -6,148 +6,106 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "workflow",
   "node_id",
   "node_type",
-  "action_group",
-  "condition",
-  "assign_json",
-  "wait_mode",
-  "wait_expression",
-  "signal_name",
-  "accepts_json",
-  "next_node",
-  "on_true",
-  "on_false",
-  "on_event",
-  "on_timeout"
+  "sequence",
+  "config_json",
+  "edges"
  ],
  "fields": [
+  {
+   "fieldname": "workflow",
+   "fieldtype": "Link",
+   "options": "CRM Workflow",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Workflow",
+   "description": "The workflow this node belongs to. A node is a record, so it can be addressed, permissioned and moved on its own."
+  },
   {
    "columns": 2,
    "fieldname": "node_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Node ID",
    "reqd": 1,
-   "description": "Identifies the node within its workflow; edges reference it and a parked Instance stores it as its cursor, so it must be stable and unique."
+   "label": "Node ID",
+   "description": "Identifies the node within its workflow. Edges point at it and a parked Run stores it as its cursor, so it must be stable."
   },
   {
    "columns": 2,
    "fieldname": "node_type",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Node Type",
-   "options": "Step\nBranch\nAssign\nWait\nTerminal",
    "reqd": 1,
-   "description": "Selects the node's behaviour - Step, Branch, Assign, Wait, or Terminal; the fields below are shown per type."
+   "label": "Node Type",
+   "description": "Which node type this is, named by the registry (W1). Data, not a Select: adding a node type is a registry entry, never a schema change."
   },
   {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Step\"",
-   "fieldname": "action_group",
-   "fieldtype": "Link",
-   "label": "Action Group",
-   "options": "CRM Action Group",
-   "description": "Names the reusable Action Group a Step node runs."
-  },
-  {
-   "depends_on": "eval:doc.node_type==\"Branch\"",
-   "fieldname": "condition",
-   "fieldtype": "Code",
-   "label": "Condition",
-   "description": "Holds the expression a Branch node evaluates against Instance state; a true result follows On True, otherwise On False."
-  },
-  {
-   "depends_on": "eval:doc.node_type==\"Assign\"",
-   "fieldname": "assign_json",
-   "fieldtype": "Code",
-   "label": "Assign (Expression)",
-   "description": "Holds the expression an Assign node evaluates to a dict that updates Instance state (e.g. increment a counter) with no external effect."
-  },
-  {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Wait\"",
-   "fieldname": "wait_mode",
-   "fieldtype": "Select",
-   "label": "Wait Mode",
-   "options": "For Duration\nUntil Time\nUntil Event\nEvent-or-Timeout",
-   "description": "Selects how a Wait node resumes - after a duration, at a time, on an event, or on an event-or-timeout."
-  },
-  {
-   "depends_on": "eval:doc.node_type==\"Wait\" && [\"For Duration\",\"Until Time\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
-   "fieldname": "wait_expression",
-   "fieldtype": "Data",
-   "label": "Wait Expression",
-   "description": "Holds the delay (For Duration - e.g. {\"minutes\": 5}) or the deadline expression (Until Time, or the timeout of Event-or-Timeout)."
-  },
-  {
-   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
-   "fieldname": "signal_name",
-   "fieldtype": "Data",
-   "label": "Signal Name",
-   "description": "Names the external event a Wait node waits for; a delivered signal of this name resumes the Instance."
-  },
-  {
-   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
-   "fieldname": "accepts_json",
-   "fieldtype": "Code",
-   "label": "Accepts (JSON)",
-   "description": "Maps declared payload paths of an incoming signal to Instance-state keys; only these paths merge, bounding an arbitrary payload to a known shape."
-  },
-  {
-   "columns": 2,
-   "depends_on": "eval:[\"Step\",\"Assign\"].includes(doc.node_type) || (doc.node_type==\"Wait\" && [\"For Duration\",\"Until Time\"].includes(doc.wait_mode))",
-   "fieldname": "next_node",
-   "fieldtype": "Data",
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "label": "Sequence",
    "in_list_view": 1,
-   "label": "Next Node",
-   "description": "Points to the node followed when this Step, Assign, or pure-timer Wait completes."
+   "description": "Authoring order. The GRAPH is the edges; this only keeps the frozen payload deterministic."
   },
   {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Branch\"",
-   "fieldname": "on_true",
-   "fieldtype": "Data",
-   "label": "On True",
-   "description": "Points to the node followed when a Branch node's condition is true."
+   "fieldname": "config_json",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "Configuration",
+   "description": "This node type's own configuration, validated against the registry's declaration for it. One field instead of a column per node type's needs \u2014 a Branch's condition, a Wait's signal and mode, an Assign's mapping all lived as separate columns that every other node type carried empty."
   },
   {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Branch\"",
-   "fieldname": "on_false",
-   "fieldtype": "Data",
-   "label": "On False",
-   "description": "Points to the node followed when a Branch node's condition is false."
-  },
-  {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Wait\" && [\"Until Event\",\"Event-or-Timeout\"].includes(doc.wait_mode)",
-   "fieldname": "on_event",
-   "fieldtype": "Data",
-   "label": "On Event",
-   "description": "Points to the node followed when a Wait node's awaited signal arrives."
-  },
-  {
-   "columns": 2,
-   "depends_on": "eval:doc.node_type==\"Wait\" && doc.wait_mode==\"Event-or-Timeout\"",
-   "fieldname": "on_timeout",
-   "fieldtype": "Data",
-   "label": "On Timeout",
-   "description": "Points to the node followed when a Wait node's timeout elapses before its signal arrives."
+   "fieldname": "edges",
+   "fieldtype": "Table",
+   "options": "CRM Workflow Edge",
+   "label": "Edges",
+   "description": "Where this node goes, one row per named output the registry declares for its type."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "istable": 1,
+ "istable": 0,
  "links": [],
- "modified": "2026-07-15 00:00:00.000000",
+ "modified": "2026-07-20 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Node",
  "owner": "Administrator",
- "permissions": [],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Automation Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0,
+   "report": 1,
+   "share": 1
+  }
+ ],
  "row_format": "Dynamic",
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": []
+ "sort_field": "sequence",
+ "sort_order": "ASC",
+ "states": [],
+ "autoname": "hash",
+ "title_field": "node_id"
 }
