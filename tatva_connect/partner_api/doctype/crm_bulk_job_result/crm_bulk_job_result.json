@@ -18,7 +18,7 @@
  "fields": [
   {"fieldname": "job", "fieldtype": "Link", "options": "CRM Bulk Job", "label": "Job", "in_list_view": 1, "read_only": 1, "search_index": 1},
   {"fieldname": "record_index", "fieldtype": "Int", "label": "Record Index", "in_list_view": 1, "read_only": 1},
-  {"fieldname": "action", "fieldtype": "Select", "options": "created\nmerged\nfailed", "label": "Action", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "action", "fieldtype": "Select", "options": "created\nmerged\nfailed\nvalidated", "label": "Action", "in_list_view": 1, "read_only": 1},
   {"fieldname": "record_name", "fieldtype": "Data", "label": "Record", "read_only": 1},
   {"fieldname": "error_code", "fieldtype": "Data", "label": "Error Code", "read_only": 1},
   {"fieldname": "error_message", "fieldtype": "Small Text", "label": "Error Message", "read_only": 1}

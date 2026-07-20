@@ -33,7 +33,7 @@ from tatva_connect.api._base import (
 from tatva_connect.automation import settings as automation
 
 _OPERATIONS = ("lead_create", "activity_create")  # Phase 1-2; call/note/file_attach are later phases
-_FORMATS = ("inline", "csv", "jsonl")  # csv is flat lead-core only; activity needs jsonl
+_FORMATS = ("inline", "csv", "jsonl", "xlsx")  # csv/xlsx are tabular; activity nesting needs jsonl
 _NON_TERMINAL = ("Open", "UploadComplete", "InProgress")
 _TERMINAL = ("JobComplete", "Failed", "Aborted")
 _ASYNC_PURGE = "Partner::AsyncBulk::purge"  # dormant toggle for the retention purge
@@ -60,7 +60,7 @@ def _owned_job(job_id, user, mp):
 def _attach_payload(job_name, content, fmt):
 	"""Store the submitted batch as the job's OWN private file (M1: owned by the job, dies with it), so
 	inline and uploaded jobs share one read path. The privacy floor keeps it private regardless."""
-	ext = "csv" if fmt == "csv" else "jsonl"
+	ext = fmt if fmt in ("csv", "xlsx") else "jsonl"
 	doc = frappe.new_doc("File")
 	doc.file_name = f"{job_name}.{ext}"
 	doc.attached_to_doctype = "CRM Bulk Job"

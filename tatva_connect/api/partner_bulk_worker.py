@@ -65,7 +65,7 @@ def _drain(job, items):
 	write budget (the same limit brain). A record that will not parse is a per-record failure, not a crash."""
 	chunk_size = _cfg()["async_chunk_records"]
 	_user, mp, _is = _resolve_caller()
-	creator = _creator(job.operation)
+	creator = _creator(job)
 	processed = succeeded = failed = 0
 	for start in range(0, len(items), chunk_size):
 		if frappe.db.get_value("CRM Bulk Job", job.name, "cancel_requested"):
@@ -119,9 +119,13 @@ def _retry_deadlock(fn, tries=4):
 			time.sleep(0.15 * (attempt + 1))
 
 
-def _creator(operation):
+def _creator(job):
 	"""The resource's OWN per-record create closure — the same factory the sync bulk endpoint calls."""
-	if operation == "lead_create":
+	if job.operation == "lead_import":
+		from tatva_connect.lead_import import creator as import_creator
+		imp = frappe.get_doc("CRM Lead Import", job.get("source_import"))
+		return import_creator.dry_creator(imp) if job.get("dry_run") else import_creator.live_creator(imp)
+	if job.operation == "lead_create":
 		from tatva_connect.api import partner
 		user, mp, is_sysmgr, parent_fields, child_allow = partner._caller_fields()
 		return partner.bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow,
@@ -131,14 +135,17 @@ def _creator(operation):
 	return partner_activity.bulk_creator(mp, is_sysmgr)
 
 
+# A create closure's action -> the row Import Results shows; a dry run wrote nothing and must not claim it did.
+_RESULT_ACTION = {"updated": "merged", "validated": "validated"}
+
+
 def _write_results(job_name, start, records, results, parse_fails):
 	"""One CRM Bulk Job Result per record. `results` is index-aligned with `records` (the parsed rows);
 	`parse_fails` are lines that never parsed. Both addressed by their input row index."""
 	for r in results:
 		offset = records[r["index"]][0]
 		if r["status"] == "success":
-			_insert_result(job_name, start + offset,
-			               "merged" if r.get("action") == "updated" else "created",
+			_insert_result(job_name, start + offset, _RESULT_ACTION.get(r.get("action"), "created"),
 			               record_name=(r.get("data") or {}).get("name"))
 		else:
 			err = r.get("error") or {}
@@ -183,8 +190,8 @@ def _to_batch(job, raw):
 	cap = _cfg()["async_file_max_records"]
 	if raw.count(b"\n") + 1 > cap:  # upper bound on record count, before the file is materialised
 		raise PayloadRejected(_("Exceeds the {0} record limit.").format(cap))
-	if job.input_format == "csv":
-		batch = _csv_records(raw)
+	if job.input_format in ("csv", "xlsx"):
+		batch = tabular.read(raw, job.input_format)
 	else:
 		text = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
 		batch = [line for line in text.splitlines() if line.strip()]
@@ -213,9 +220,12 @@ def _purge_payload(job):
 def _compensate_and_abort(job):
 	"""Clean cancel: delete only the records THIS job created (never a merge onto a pre-existing lead),
 	via the resource's OWN delete brain, later rows first; then end Aborted."""
+	if job.get("dry_run"):
+		finish_job(job.name, "Aborted")  # a dry run created nothing, so there is nothing to compensate
+		return
 	created = frappe.get_all("CRM Bulk Job Result", filters={"job": job.name, "action": "created"},
 	                         order_by="record_index desc", pluck="record_name")
-	delete_one = _deleter(job.operation)
+	delete_one = _deleter(job)
 	for name in created:
 		if not name:
 			continue
@@ -227,11 +237,12 @@ def _compensate_and_abort(job):
 	finish_job(job.name, "Aborted")
 
 
-def _deleter(operation):
+def _deleter(job):
 	"""The resource's OWN delete-one, bound to the caller — reused, not re-implemented."""
 	from tatva_connect.api import partner, partner_activity
 	_user, mp, is_sysmgr = _resolve_caller()
-	delete_one = partner._delete_one if operation == "lead_create" else partner_activity._delete_one
+	lead_lane = job.operation in ("lead_create", "lead_import")
+	delete_one = partner._delete_one if lead_lane else partner_activity._delete_one
 	return lambda name: delete_one(name, mp, is_sysmgr)
 
 
