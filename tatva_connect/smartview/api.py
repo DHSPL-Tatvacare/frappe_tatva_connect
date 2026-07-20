@@ -50,7 +50,31 @@ _OPS = {
 	"not in": lambda f, v: f.notin(v if isinstance(v, (list, tuple)) else [v]),
 	"is set": lambda f, v: f.isnotnull(),
 	"is not set": lambda f, v: f.isnull(),
+	# `between` is what the control sends for EVERY date field by default (getDefaultOperator), and
+	# `timespan` is its named-range sibling. Without them a date filter silently narrowed nothing.
+	"between": lambda f, v: f.between(*_date_pair(v)),
+	"timespan": lambda f, v: f.between(*_timespan_pair(v)),
 }
+
+
+def _date_pair(value):
+	"""Inclusive bounds of a `between`, from either wire shape: a JSON list, or the comma string DateRangePicker emits."""
+	if isinstance(value, str):
+		value = [v.strip() for v in value.split(",")]
+	if not (isinstance(value, (list, tuple)) and len(value) == 2 and all(v for v in value)):
+		frappe.throw(_("A between filter needs two dates."))
+	return value[0], value[1]
+
+
+def _timespan_pair(value):
+	"""A named timespan as its two bounds, resolved by frappe. The control's option values ARE frappe's
+	own strings ("last week", "last month", ...), so no date arithmetic is written here."""
+	from frappe.utils import get_timespan_date_range
+
+	span = get_timespan_date_range(cstr(value).lower())
+	if not span:
+		frappe.throw(_("Unknown timespan {0}").format(value))
+	return span
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +234,32 @@ def _grains_for_view(v):
 	"""The grain a saved view resolves its fields against: its own stored (vertical, group,
 	program) when set, else the caller's entitled grains (fail-closed fallback)."""
 	return _grains_from_axes(v.vertical, v.group, v.program)
+
+
+def _settle_grain(vertical, group, program):
+	"""The grain a SAVED view is scoped to, decided once at save.
+
+	A view's columns are a fixed set for the whole table, so they can only be one grain's columns:
+	resolved against several, the table carries grain A's columns beside grain B's leads, blank on most
+	rows and contradicting the rule the Data Tab keeps. `_grains_from_axes` unions the caller's grains
+	when none are named, which is right for the PICKER (offer what could be chosen) and wrong once the
+	choice has been made.
+
+	Hold one grain and there is nothing to choose, so it is stamped rather than demanded. Hold several
+	and the view must say which. A System Manager holds ALL_GRAINS, whose whole meaning is the entire
+	catalog, so an open view is theirs to make."""
+	if vertical or group or program:
+		return vertical, group, program
+	entitled = entitlement.entitled_grains()
+	if entitled == entitlement.ALL_GRAINS:
+		return vertical, group, program
+	if len(entitled) == 1:
+		only = next(iter(entitled))
+		return (only[0] or None, only[1] or None, only[2] or None)
+	frappe.throw(
+		_("Choose the grain this view is for. Its columns are one grain's columns, so a view spanning several cannot say what a row means."),
+		title=_("Grain required"),
+	)
 
 
 def _grains_from_axes(vertical, group, program):
@@ -547,15 +597,18 @@ def _predicate_where(node, cat, field_terms):
 
 def _apply_filters(crit, filters, cat, field_terms):
 	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded.
-	Tolerant: an unknown field or unsupported operator is skipped, never raised — a
-	stale/odd ad-hoc filter narrows nothing rather than 500-ing the whole list."""
+
+	Honoured or refused, never ignored. Skipping one silently hands back a list that looks filtered and
+	is not, which is worse than an error: the user reads it as the answer to a question it never asked.
+	A saved predicate already fails CLOSED here (`_never_matches`) when a field cannot resolve; a filter
+	the user set a second ago fails LOUD. Both refuse to guess."""
 	for f in filters or []:
 		if not (isinstance(f, (list, tuple)) and len(f) == 3):
 			continue
 		key, op, value = f
 		r = cat.get(key)
-		if not r or not r.filterable or key not in field_terms or op not in _OPS:
-			continue
+		if not r or not r.filterable or key not in field_terms:
+			frappe.throw(_("{0} cannot be filtered on here.").format(key))
 		c = _criterion(field_terms[key], op, value)
 		crit = c if crit is None else (crit & c)
 	return crit
@@ -776,6 +829,7 @@ def upsert_view(view):
 	vertical = view.get("vertical") or None
 	group = view.get("group") or None
 	program = view.get("program") or None
+	vertical, group, program = _settle_grain(vertical, group, program)
 	grains = _grains_from_axes(vertical, group, program)
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
 	# Materialised on save, so a view's projection is always an explicit stored list. What "empty" meant
