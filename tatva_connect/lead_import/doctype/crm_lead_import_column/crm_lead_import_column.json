@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-21 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "source_column",
+  "target_table",
+  "target_field",
+  "skip"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "The header read from the uploaded file. It is filled in when the file is attached and is not edited here.",
+   "fieldname": "source_column",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Column In File",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 3,
+   "description": "The lead section this column is written into. The list is the live section brain, so a section added later is offered here without this form being changed.",
+   "fieldname": "target_table",
+   "fieldtype": "Autocomplete",
+   "in_list_view": 1,
+   "label": "Section"
+  },
+  {
+   "columns": 4,
+   "description": "The field within the chosen section. Only fields the contract's grain is permitted to write are offered.",
+   "fieldname": "target_field",
+   "fieldtype": "Autocomplete",
+   "in_list_view": 1,
+   "label": "Field"
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "description": "Set when the column is deliberately not imported. A column with no field chosen is skipped in any case.",
+   "fieldname": "skip",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Skip"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-21 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead Import",
+ "name": "CRM Lead Import Column",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

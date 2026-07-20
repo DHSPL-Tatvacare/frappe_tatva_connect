@@ -1,0 +1,184 @@
+{
+ "actions": [],
+ "allow_import": 0,
+ "autoname": "hash",
+ "creation": "2026-07-21 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "grain_section",
+  "contract",
+  "program",
+  "column_break_grain",
+  "grain_summary",
+  "file_section",
+  "import_file",
+  "column_break_file",
+  "row_count",
+  "file_hash",
+  "mapping_section",
+  "columns",
+  "result_section",
+  "status",
+  "valid_rows",
+  "invalid_rows",
+  "column_break_result",
+  "validated_against",
+  "dry_run_job",
+  "import_job"
+ ],
+ "fields": [
+  {
+   "fieldname": "grain_section",
+   "fieldtype": "Section Break",
+   "label": "1. Grain"
+  },
+  {
+   "description": "The grain every lead in this file is stamped with, and the field list the file is allowed to write. Only contracts the current user is entitled to are offered, and the grain is never taken from a column in the file.",
+   "fieldname": "contract",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Contract",
+   "options": "CRM Lead API Mapping",
+   "reqd": 1
+  },
+  {
+   "description": "Chosen only when the contract leaves programme open. One of the programmes the contract permits is picked here and applied to every row in the file.",
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "label": "Programme",
+   "options": "CRM Program"
+  },
+  {
+   "fieldname": "column_break_grain",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The vertical, group and programme resolved from the contract are shown here once it is chosen.",
+   "fieldname": "grain_summary",
+   "fieldtype": "HTML",
+   "label": "Resolved Grain"
+  },
+  {
+   "fieldname": "file_section",
+   "fieldtype": "Section Break",
+   "label": "2. File"
+  },
+  {
+   "description": "The spreadsheet is attached here, as CSV or Excel. One row is one lead. Replacing the file clears the mapping and the validation result, because neither describes the new file.",
+   "fieldname": "import_file",
+   "fieldtype": "Attach",
+   "label": "Import File"
+  },
+  {
+   "fieldname": "column_break_file",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The number of data rows found below the header.",
+   "fieldname": "row_count",
+   "fieldtype": "Int",
+   "label": "Rows Found",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "File Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "3. Mapping"
+  },
+  {
+   "description": "One row per column found in the file. Each is pointed at a section and a field, or left blank to be skipped. A column mapped to a field this grain may not write is refused when the import is saved.",
+   "fieldname": "columns",
+   "fieldtype": "Table",
+   "label": "Columns",
+   "options": "CRM Lead Import Column"
+  },
+  {
+   "fieldname": "result_section",
+   "fieldtype": "Section Break",
+   "label": "4. Validation & Import"
+  },
+  {
+   "default": "Draft",
+   "description": "Validation is mandatory and is always a dry run: every row is written through the live path and then rolled back, so what passes here is what will be written. Import stays unavailable until the current file has been validated.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nValidating\nValidated\nValidation Failed\nImporting\nImported\nPartially Imported\nCancelled",
+   "read_only": 1
+  },
+  {
+   "description": "Counted by the last validation run.",
+   "fieldname": "valid_rows",
+   "fieldtype": "Int",
+   "label": "Rows That Passed",
+   "read_only": 1
+  },
+  {
+   "description": "Their reasons are listed per row against the job, under Import Results.",
+   "fieldname": "invalid_rows",
+   "fieldtype": "Int",
+   "label": "Rows Refused",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The file the last validation was run against. Import is refused when the attached file no longer matches it.",
+   "fieldname": "validated_against",
+   "fieldtype": "Data",
+   "label": "Validated Against",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dry_run_job",
+   "fieldtype": "Link",
+   "label": "Validation Job",
+   "options": "CRM Bulk Job",
+   "read_only": 1
+  },
+  {
+   "fieldname": "import_job",
+   "fieldtype": "Link",
+   "label": "Import Job",
+   "options": "CRM Bulk Job",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-21 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead Import",
+ "name": "CRM Lead Import",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
