@@ -160,6 +160,39 @@ class TestRegistryConformance(unittest.TestCase):
 		exposed = {entry["type"] for entry in registry.node_types()}
 		self.assertEqual(exposed, set(registry.NODE_TYPES))
 
+	def test_a_value_rows_field_ships_its_modes_from_the_contract(self):
+		"""The mode switch's vocabulary travels with the field, and it is the CONTRACT's own words.
+
+		A `value_rows` row is filled one of two ways, and `sends._template_parameters` decides which by
+		comparing against `contract.FROM_CONTEXT`. If the control offered its own spelling of that word the
+		comparison would silently fall through to the literal branch, and a patient would receive the text
+		`crm_lead.first_name` where their name belonged — a wrong message, sent, with nothing logged.
+
+		So the words are asserted to BE the contract's objects, never a matching pair of strings. Typing
+		`["Literal", "From Context"]` into this test would let both sides drift together and prove nothing.
+		"""
+		from tatva_connect.workflow_engine import contract
+
+		found = [
+			field
+			for entry in registry.node_types()
+			for field in entry["config"]
+			if field.get("reads") == "value_rows"
+		]
+		self.assertTrue(found, "no value_rows field is declared — this lock would pass vacuously")
+		for field in found:
+			with self.subTest(field=field["name"]):
+				self.assertEqual(field.get("modes"), [contract.LITERAL, contract.FROM_CONTEXT])
+
+	def test_a_field_that_reads_nothing_ships_no_modes(self):
+		"""The negative half. `modes` says 'this control chooses HOW the value is filled'; putting it on a
+		field with one way to be filled would have the inspector draw a switch with nothing to switch."""
+		for entry in registry.node_types():
+			for field in entry["config"]:
+				if field.get("reads") != "value_rows":
+					with self.subTest(node_type=entry["type"], field=field.get("name")):
+						self.assertIsNone(field.get("modes"))
+
 	def test_every_effect_verb_is_a_node_type(self):
 		"""A node IS a verb. Every verb the engine can actually run must be placeable on the canvas, or it
 		is a capability nobody can reach; and every verb node must name a real handler, or a run reaches it

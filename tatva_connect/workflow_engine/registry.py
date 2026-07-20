@@ -455,6 +455,31 @@ def _scoped(field):
 	return {**field, "grain_scoped": True, "scope_kind": kind}
 
 
+def _wire(field):
+	"""One config field as the BUILDER receives it: grain scoping, plus any vocabulary its control would
+	otherwise have to re-type. Computed per request for the same reason `_scoped` is."""
+	return _value_modes(_scoped(field))
+
+
+def _value_modes(field):
+	"""A `value_rows` field carries the two modes its rows may take.
+
+	Its control has to render a mode switch, and typing `Literal` / `From Context` into the frontend would
+	be a second vocabulary for one idea. The runtime compares against `contract.FROM_CONTEXT` itself
+	(`sends._template_parameters`), so a drifted spelling would quietly send the literal string
+	`crm_lead.first_name` to a patient instead of their name, and nothing would report it.
+
+	Imported lazily: `contract` reaches `registry`, which builds its verb node types out of `actions` —
+	at module scope this is a cycle.
+	"""
+	if field.get("reads") != "value_rows":
+		return field
+
+	from tatva_connect.workflow_engine import contract
+
+	return {**field, "modes": [contract.LITERAL, contract.FROM_CONTEXT]}
+
+
 @frappe.whitelist()
 def scoped_options(scope_kind, vertical=None, group=None, program=None, txt=None, limit=20):
 	"""The rows a declared-scope control may offer at a workflow's grain. ONE endpoint for every kind.
@@ -486,7 +511,7 @@ def node_types():
 			"label": declared["label"],
 			"description": declared["description"],
 			"singleton": declared.get("singleton", False),
-			"config": [_scoped(f) for f in declared["config"]],
+			"config": [_wire(f) for f in declared["config"]],
 			"outputs": declared.get("outputs"),
 			"outputs_by": declared.get("outputs_by"),
 			"outcomes": outcomes_for(node_type),
