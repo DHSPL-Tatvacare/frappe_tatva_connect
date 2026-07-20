@@ -1,10 +1,57 @@
 """Shared low-level utilities for tatva_connect."""
 import ipaddress
+import re
 import socket
 from typing import NoReturn
 from urllib.parse import urlparse
 
 import frappe
+
+# A field NAME that carries a secret, whatever the value looks like. This is the general rule: a new
+# secret is covered by being named like one, so no per-secret code is ever added here.
+_SECRET_NAME = r"[A-Za-z0-9_.\-]*(?:secret|token|password|passwd|api[_-]?key|apikey)[A-Za-z0-9_.\-]*"
+# `name=value`, `name: value`, `"name": "value"` and `'name': 'value'` all read the same way.
+_KEYED_SECRET = re.compile(rf"({_SECRET_NAME})([\"']?\s*[=:]\s*)([\"']?)([^\s&\"'\\,;)}}\]]*)", re.IGNORECASE)
+# A Facebook token travels bare in a header and in Meta's own error text, so shape catches what name cannot.
+_SHAPED_SECRET = re.compile(r"EAA[A-Za-z0-9_\-]{10,}")
+_VISIBLE = 4
+_STARS = "*" * 8
+
+
+def mask_value(secret: str) -> str:
+	"""One secret, masked: a few leading and trailing characters stay readable so an operator can still
+	compare and identify the value, and the middle is replaced by a fixed run of asterisks so the length
+	is not disclosed either. A value too short to show ends of is masked whole."""
+	secret = str(secret or "")
+	if len(secret) < 4 * _VISIBLE:
+		return _STARS if secret else secret
+	return f"{secret[:_VISIBLE]}{_STARS}{secret[-_VISIBLE:]}"
+
+
+def mask_secrets(text: str, extra=()) -> str:
+	"""THE masker: every secret this app can put into a log or a message goes out through here.
+
+	Two rules, both by SHAPE rather than by value, so nothing is decrypted out of the database to write
+	a log line. A named field (`client_secret=`, `access_token:`, `"webhook_hmac_secret": "..."`) has its
+	value masked whatever that value is, which is what covers a webhook token, an HMAC secret or an API
+	key without another line of code. A bare Facebook `EAA...` token is masked on its own shape, because
+	it rides an Authorization header and Meta echoes it back inside its own error text under no key at all.
+
+	`extra` masks values the caller already holds, for the in-flight token that is not yet stored anywhere.
+
+	What it cannot catch: a secret written into prose with no name beside it and no recognisable shape.
+	It deliberately over-masks instead of under-masking, so a field merely NAMED like a secret loses its
+	value even when that value is harmless. A log is cheaper to blind than a credential is to rotate.
+
+	Masking is applied on the way OUT only. It never touches a value that is used."""
+	text = str(text or "")
+	if not text:
+		return text
+	for value in extra:
+		if value and len(str(value)) >= 6:
+			text = text.replace(str(value), mask_value(value))
+	text = _KEYED_SECRET.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}{mask_value(m.group(4))}", text)
+	return _SHAPED_SECRET.sub(lambda m: mask_value(m.group(0)), text)
 
 
 def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None) -> None:
