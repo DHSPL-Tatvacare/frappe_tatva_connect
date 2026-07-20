@@ -105,6 +105,35 @@ def guard_webhook_url(doc, method=None):
 		assert_safe_public_url(doc.request_url)
 
 
+def queue_pressure(user, mp):
+	"""The bounded-queue refusal as (code, message, http), or None. Held here so EVERY submit path —
+	the HTTP endpoint and the Desk import alike — pushes back on the same two caps."""
+	cfg = _cfg()
+	if mp and frappe.db.count("CRM Bulk Job", {"partner": user, "status": ["in", _NON_TERMINAL]}) \
+			>= cfg["async_concurrent_jobs_per_partner"]:
+		return ("rate_limited", _("Too many jobs in flight; retry when one finishes."), 429)
+	if frappe.db.count("CRM Bulk Job", {"status": ["in", _NON_TERMINAL]}) >= cfg["async_global_queue_max"]:
+		return ("server_busy", _("The bulk-job queue is full; retry shortly."), 503)
+	return None
+
+
+def submit_job(user, operation, fmt, payload, *, total=0, idempotency_key=None, extra=None):
+	"""Insert the job, own its payload, enqueue the worker — the ONE submit path, HTTP and Desk alike.
+
+	`extra` carries columns only one lane knows about (the Desk import names itself on the job), so a
+	second creator never has to exist to add a field."""
+	job = frappe.new_doc("CRM Bulk Job")
+	job.update({"partner": user, "operation": operation, "input_format": fmt, "status": "UploadComplete",
+	            "idempotency_key": idempotency_key, "submitted_at": now_datetime(), "total": total,
+	            **(extra or {})})
+	job.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own authz (_resolve_caller on the API lane, has_permission on the Desk lane)
+	_attach_payload(job.name, payload, fmt)
+	frappe.enqueue("tatva_connect.api.partner_bulk_worker.process_job", queue="partner_bulk",
+	               bulk_job_id=job.name, timeout=_cfg()["async_job_timeout_seconds"],
+	               enqueue_after_commit=True)
+	return job.name
+
+
 @frappe.whitelist(methods=["POST"])
 @_api
 def create(**_kwargs):
@@ -120,15 +149,12 @@ def create(**_kwargs):
 	if fmt not in _FORMATS:
 		return _fail("validation_error", _("format must be one of: {0}").format(", ".join(_FORMATS)), 400)
 
-	# Backpressure: a bounded queue refused cheaply; the caller's OWN cap is a 429, the shared global a 503.
+	# Backpressure: a bounded queue refused cheaply; the caps themselves live in queue_pressure.
 	cfg = _cfg()
-	if mp and frappe.db.count("CRM Bulk Job", {"partner": user, "status": ["in", _NON_TERMINAL]}) \
-			>= cfg["async_concurrent_jobs_per_partner"]:
-		return _fail("rate_limited", _("Too many jobs in flight; retry when one finishes."), 429,
-		             retry_after=cfg["bulk_window_seconds"])
-	if frappe.db.count("CRM Bulk Job", {"status": ["in", _NON_TERMINAL]}) >= cfg["async_global_queue_max"]:
-		return _fail("server_busy", _("The bulk-job queue is full; retry shortly."), 503,
-		             retry_after=cfg["bulk_window_seconds"])
+	pressure = queue_pressure(user, mp)
+	if pressure:
+		code, message, http = pressure
+		return _fail(code, message, http, retry_after=cfg["bulk_window_seconds"])
 
 	# Inline is shape-checked here; a file's bytes are size-capped and stored as-is (the worker screens
 	# and parses). CSV carries only flat lead-core; activity needs the nesting of JSONL.
@@ -151,16 +177,9 @@ def create(**_kwargs):
 			return _fail("validation_error", _("A file upload or content_base64 is required for a {0} job.").format(fmt), 400)
 		total = 0  # the worker counts records once it parses the file
 
-	job = frappe.new_doc("CRM Bulk Job")
-	job.update({"partner": user, "operation": operation, "input_format": fmt, "status": "UploadComplete",
-	            "idempotency_key": _idem_key(), "submitted_at": now_datetime(), "total": total})
-	job.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller; owner=partner
-	_attach_payload(job.name, payload, fmt)
-
-	frappe.enqueue("tatva_connect.api.partner_bulk_worker.process_job", queue="partner_bulk",
-	               bulk_job_id=job.name, timeout=cfg["async_job_timeout_seconds"], enqueue_after_commit=True)
+	job_name = submit_job(user, operation, fmt, payload, total=total, idempotency_key=_idem_key())
 	frappe.local.response["http_status_code"] = 202
-	_ok(action=ACTION_CREATED, data={"job_id": job.name, "status": job.status})
+	_ok(action=ACTION_CREATED, data={"job_id": job_name, "status": "UploadComplete"})
 
 
 @frappe.whitelist(methods=["GET"])

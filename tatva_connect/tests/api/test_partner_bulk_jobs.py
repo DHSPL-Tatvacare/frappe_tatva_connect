@@ -454,6 +454,51 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		self.assertEqual(len(passthrough), 1, f"expected exactly one non-reserved id kwarg, got {passthrough}")
 		self.assertIn(passthrough[0], inspect.signature(partner_bulk_worker.process_job).parameters)
 
+	def _in_flight(self, count):
+		"""`count` non-terminal jobs for PARTNER, so the caps have something to push back against."""
+		for _ in range(count):
+			frappe.get_doc({"doctype": "CRM Bulk Job", "partner": PARTNER, "operation": "lead_create",
+			                "input_format": "inline", "status": "UploadComplete"}
+			               ).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture
+
+	def test_an_idle_queue_pushes_back_on_nothing(self):
+		frappe.set_user(PARTNER)
+		_user, mp, _is = partner_bulk_job._resolve_caller()
+		self.assertIsNone(partner_bulk_job.queue_pressure(PARTNER, mp))
+
+	def test_the_per_partner_cap_refuses_a_further_submit_with_429(self):
+		"""The caller's OWN cap is a 429; it must apply wherever a job is submitted, not just over HTTP."""
+		frappe.set_user(PARTNER)
+		_user, mp, _is = partner_bulk_job._resolve_caller()
+		frappe.set_user("Administrator")
+		self._in_flight(partner_bulk_job._cfg()["async_concurrent_jobs_per_partner"])
+		pressure = partner_bulk_job.queue_pressure(PARTNER, mp)
+		self.assertIsNotNone(pressure, "a full per-partner queue accepted another job")
+		self.assertEqual(pressure[0], "rate_limited")
+		self.assertEqual(pressure[2], 429)
+
+	def test_submit_job_owns_its_payload_and_enqueues_the_worker_once(self):
+		"""The ONE submit path: a job row, its own attached payload, one process_job enqueue."""
+		frappe.set_user("Administrator")
+		calls = []
+		with patch("frappe.enqueue", side_effect=lambda *a, **k: calls.append((a, k))):
+			name = partner_bulk_job.submit_job(PARTNER, "lead_create", "csv", b"mobile_no\n+916100009999\n")
+		job = frappe.get_doc("CRM Bulk Job", name)
+		self.assertEqual((job.partner, job.input_format, job.status), (PARTNER, "csv", "UploadComplete"))
+		self.assertTrue(frappe.db.exists("File", {"attached_to_doctype": "CRM Bulk Job",
+		                                          "attached_to_name": name}), "the payload is not owned by the job")
+		proc = [k for a, k in calls if a and "process_job" in str(a[0])]
+		self.assertEqual(len(proc), 1, "submit_job must enqueue process_job exactly once")
+		self.assertEqual(proc[0].get("queue"), "partner_bulk")
+
+	def test_submit_job_carries_extra_columns_onto_the_job(self):
+		"""A Desk import names itself on the job through `extra`, without a second creator existing."""
+		frappe.set_user("Administrator")
+		with patch("frappe.enqueue"):
+			name = partner_bulk_job.submit_job(PARTNER, "lead_create", "csv", b"mobile_no\n+916100009998\n",
+			                                   extra={"error_summary": "carried"})
+		self.assertEqual(frappe.db.get_value("CRM Bulk Job", name, "error_summary"), "carried")
+
 
 if __name__ == "__main__":
 	unittest.main()
