@@ -38,12 +38,15 @@ Bulk and query (each record enforced individually; partial success):
 """
 import frappe
 from frappe import _
-from frappe.utils import cstr
+from frappe.utils import cstr, now_datetime, today
 
 from tatva_connect import automation
+from tatva_connect.lead import keyvalue
+from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
+	BEHAVIOR_OUTPUT_ONLY,
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
@@ -87,7 +90,8 @@ def _sections() -> dict:
 		r.name: r
 		for r in frappe.get_all(
 			"CRM Lead Section",
-			fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row", "row_key_field"],
+			fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row", "is_key_value",
+			        *crm_lead_section.COLUMN_FIELDS],
 			order_by="display_order asc",
 		)
 	}
@@ -98,6 +102,7 @@ def _build_catalog() -> dict:
 	Returns a dict (everything below is derived from these keys):
 	  keys           ordered list of writable `section:fieldname` (sort_field=field_key)
 	  key_set        set(keys)
+	  labels         {field_key: label}  the catalog's own label, so no reader invents one
 	  audit          [{fieldname, label}] reserved OUTPUT_ONLY lead fields, shown in the
 	                 schema (marked) but never writable (see _base.RESERVED_FIELDS)
 	  section_doctype  {section: target doctype}
@@ -105,11 +110,14 @@ def _build_catalog() -> dict:
 	  section_title    {section: display title}
 	  section_key_field {section: fieldname}  (multi-row sections only — the section's
 	                     row_key_field; its presence = multi-row)
+	  section_key_value {section: the section row itself}  (key-value sections only — one row per field,
+	                     where a field's `fieldname` addresses a ROW, not a column; the section names
+	                     every column those rows are read through)
 	The four section_* maps are the `CRM Lead Section` rows themselves: ONE row per section states
 	its table, its target, its row key and its title, and no field row restates any of them.
 	"""
 	sections = _sections()
-	keys, audit = [], []
+	keys, read_only, audit, labels = [], [], [], {}
 	for r in frappe.get_all(
 		"CRM Lead API Field",
 		fields=["field_key", "label", "section", "fieldname"],
@@ -134,15 +142,23 @@ def _build_catalog() -> dict:
 			if r.section == PARENT_SECTION:
 				audit.append({"fieldname": r.fieldname, "label": r.label or r.fieldname})
 			continue
+		labels[r.field_key] = r.label or r.fieldname
+		# A key-value row is READ-ONLY: cataloguing a screening question shows it, it never grants a write.
+		if sections[r.section].is_key_value:
+			read_only.append(r.field_key)
+			continue
 		keys.append(r.field_key)
 	return {
 		"keys": keys,
 		"key_set": set(keys),
+		"read_only_keys": read_only,
+		"labels": labels,
 		"audit": audit,
 		"section_doctype": {k: s.target_doctype for k, s in sections.items()},
 		"section_child": {k: s.child_table_field for k, s in sections.items() if s.child_table_field},
 		"section_title": {k: s.title for k, s in sections.items()},
 		"section_key_field": {k: s.row_key_field for k, s in sections.items() if s.is_multi_row},
+		"section_key_value": {k: s for k, s in sections.items() if s.is_key_value},
 	}
 
 
@@ -210,6 +226,19 @@ def _child_key_field(cf):
 	for section, child in cat["section_child"].items():
 		if child == cf:
 			return cat["section_key_field"].get(section)
+	return None
+
+
+def _child_key_value(cf):
+	"""The `CRM Lead Section` behind a key-value child table, or None if it is not one.
+
+	The section names every column its rows are read through — the identity, the answer, the label and
+	the raw key the identity was derived from. A field row naming this section addresses one of its ROWS
+	through that identity, never a column."""
+	cat = _catalog()
+	for section, child in cat["section_child"].items():
+		if child == cf:
+			return cat["section_key_value"].get(section)
 	return None
 
 
@@ -320,6 +349,10 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 			rows = frappe.parse_json(rows)
 		if not isinstance(rows, list):
 			rows = [rows]
+		if _child_key_value(cf):
+			# The section is the unit of grant: a key-value answer is identified by the question itself.
+			children[cf] = [r for r in rows if r]
+			continue
 		# The key_field of a multi-row child is the row's address: always keep it
 		# (even if the partner's grid didn't tick it) plus the explicit _delete flag,
 		# so the upsert engine can identify the row. Everything else is allow-gated.
@@ -328,7 +361,15 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 		if key_field:
 			keep.add(key_field)
 		keep.add("_delete")
-		children[cf] = [{k: v for k, v in (r or {}).items() if k in keep} for r in rows]
+		# An empty string is "not sent", never "erase this" — the same rule the parent fields above are
+		# held to. A column carries one fact and cannot record that it was asked and left blank, so a
+		# blank overwriting a stored value is data loss; `_merge_row` sets whatever reaches it. The key
+		# field and the delete flag are addresses rather than values and are kept whatever they hold.
+		children[cf] = [
+			{k: v for k, v in (r or {}).items()
+			 if k in keep and (v not in (None, "") or k in (key_field, "_delete"))}
+			for r in rows
+		]
 	return parent, children
 
 
@@ -378,10 +419,22 @@ def _apply_single_row(doc, cf, incoming, title):
 		doc.append(cf, {k: v for k, v in (incoming[0] or {}).items() if k != "_delete"})
 
 
+def _row_arrival_key(doc, cf, key_field):
+	"""The key a row gets when its surface did not name one — the moment it arrived, typed to the column.
+
+	A surface that KNOWS when the row happened sends it (Facebook sends Meta's `created_time`, a partner
+	names its own). One that does not — an intake form, a rep — gets now. The alternative was a blank
+	key, and a blank key on a multi-row section is no address at all: the section validator says so, the
+	partner API could never target such a row, and every later write appended beside it for ever."""
+	child_dt = doc.meta.get_field(cf).options
+	df = frappe.get_meta(child_dt).get_field(key_field)
+	return today() if (df and df.fieldtype == "Date") else now_datetime()
+
+
 def _apply_multi_row(doc, cf, incoming, key_field, title):
-	"""multi-row child, upsert-by-key. Each incoming row MUST carry key_field (else 400).
-	Match by key -> partial-merge that row; new key -> append; {key,_delete:true} ->
-	drop that keyed row. Rows already on the doc that are not referenced -> untouched."""
+	"""multi-row child, upsert-by-key. A row that names no key is stamped with its arrival time rather
+	than refused — see `_row_arrival_key`. Match by key -> partial-merge that row; new key -> append;
+	{key,_delete:true} -> drop that keyed row. Rows already on the doc that are not referenced -> untouched."""
 	rows = doc.get(cf) or []
 	# Index existing rows by the STRINGIFIED key: a stored Date is a date object but
 	# the incoming key arrives as an ISO string from JSON — cstr keys both uniformly
@@ -392,9 +445,13 @@ def _apply_multi_row(doc, cf, incoming, key_field, title):
 	for row in incoming:
 		raw = (row or {}).get(key_field)
 		if raw in (None, ""):
-			_child_error(
-				_("{0} is required to identify a {1} row").format(key_field, title), key_field
-			)
+			# A delete still needs one: you cannot name the row to drop by not naming it.
+			if (row or {}).get("_delete"):
+				_child_error(
+					_("{0} is required to identify the {1} row to delete").format(key_field, title), key_field
+				)
+			raw = _row_arrival_key(doc, cf, key_field)
+			row = {**(row or {}), key_field: raw}
 		key = cstr(raw)
 		target = by_key.get(key)
 		if row.get("_delete"):
@@ -409,6 +466,33 @@ def _apply_multi_row(doc, cf, incoming, key_field, title):
 			by_key[key] = new
 
 
+def _already_present(rows, incoming):
+	"""Whether a row identical on every field the caller sent is already on the doc."""
+	return any(
+		all(cstr(r.get(k)) == cstr(v) for k, v in (incoming or {}).items()) for r in rows
+	)
+
+
+def _apply_key_value(doc, cf, incoming, identity_field):
+	"""key-value child: an answer is kept whenever it DIFFERS from what the question already holds, and
+	every re-read that says the same thing changes nothing.
+
+	Upserting on the identity alone destroyed the earlier answer when a patient answered the same
+	question on a second campaign, with no record it had ever been different. A changed answer is itself
+	the clinical fact, so it is appended and the readers show the newest. Re-reading a form is therefore
+	idempotent: the row is only touched when the patient actually said something new."""
+	value_field = _child_key_value(cf).value_field
+	for row in incoming:
+		rows = doc.get(cf) or []
+		identity = cstr((row or {}).get(identity_field))
+		answered = [r for r in rows if identity and cstr(r.get(identity_field)) == identity]
+		newest = keyvalue.newest_first(answered)[0] if answered else None
+		if newest is not None and cstr(newest.get(value_field)) == cstr((row or {}).get(value_field)):
+			continue  # left alone, never merged: a merge rewrote which form asked it
+		if identity or not _already_present(rows, row):
+			doc.append(cf, {k: v for k, v in (row or {}).items() if k != "_delete"})
+
+
 def _apply_children(doc, children):
 	"""Config-driven UPSERT-BY-KEY write engine (§3-4 of the child-table contract).
 	Per child table, the section decides single-row vs multi-row + the key field;
@@ -418,6 +502,10 @@ def _apply_children(doc, children):
 	and idempotent)."""
 	for cf, incoming in children.items():
 		if not incoming:
+			continue
+		key_value = _child_key_value(cf)
+		if key_value:
+			_apply_key_value(doc, cf, incoming, key_value.row_key_field)
 			continue
 		key_field = _child_key_field(cf)
 		title = catalog_section_title(cf)
@@ -445,6 +533,43 @@ def _force_routing(doc, mp):
 # The shared _ok / _fail writers (the top-level {status:...} envelope) live in
 # _base and are imported above. The lead-shaped result/curate shims stay here.
 
+# The PUBLIC shape of a key-value row. Stable on the wire whatever the section names its columns:
+# the declaration says where to read each one FROM, this says what a partner sees it AS.
+KEY_VALUE_VIEW = ("question", "label", "value")
+
+
+def _key_value_columns(section):
+	"""The columns behind KEY_VALUE_VIEW, in that order — named once, read by the projection AND the
+	schema, so what a partner is told and what a partner receives cannot describe different columns."""
+	return (section.question_field, section.label_field, section.value_field)
+
+
+def _key_value_descriptor(public_name, df):
+	"""One KEY_VALUE_VIEW field, typed from the column it is read out of and marked never-writable."""
+	d = field_descriptor(public_name, df.label if df else public_name, df.fieldtype if df else "Data")
+	d["behavior"] = BEHAVIOR_OUTPUT_ONLY
+	d["required"] = False
+	return d
+
+
+def _catalogued_answers(doc, cf, section):
+	"""A key-value section's rows, read the way the section says to read them.
+
+	Only the questions an operator has CATALOGUED are returned — that row is the grant, and it is the
+	only one there can be, because a key-value field addresses a row rather than a column and so can
+	never enter a partner's own field grid. Read-only by construction: `keys` does not carry them, so
+	nothing here is writable by anybody."""
+	shown = {k.partition(":")[2] for k in _catalog()["read_only_keys"]}
+	if not shown:
+		return []
+	source = _key_value_columns(section)
+	return [
+		dict(zip(KEY_VALUE_VIEW, (row.get(c) for c in source)), name=row.get("name"))
+		for row in (doc.get(cf) or [])
+		if row.get(section.row_key_field) in shown
+	]
+
+
 def _curate(doc, parent_fields, child_allow):
 	"""A lead as only the caller's allowed fields (+ name, the caller's own external_id label,
 	and read-only routing). The ONE lead projection: every read AND every write returns this, so a
@@ -455,6 +580,11 @@ def _curate(doc, parent_fields, child_allow):
 		"source": doc.source, "custom_vertical": doc.custom_vertical,
 		"custom_group": doc.custom_group, "custom_current_program": doc.custom_current_program,
 	})
+	for section_key, section in _catalog()["section_key_value"].items():
+		cf = _catalog()["section_child"].get(section_key)
+		answers = _catalogued_answers(doc, cf, section) if cf else []
+		if answers:
+			out[cf] = answers
 	for cf, allowed in child_allow.items():
 		if allowed:
 			# Return the caller's allowed fields + our row id (name) + the key field (the row's address per the contract — always present even if not ticked).
@@ -660,6 +790,21 @@ def lead_schema(**_kwargs):
 
 	cat = _catalog()
 	children = {}
+	# A key-value section is advertised exactly as `_curate` returns it: the catalogued questions, read
+	# through the columns the section names, every one OUTPUT_ONLY. Nothing to send, so no key_field.
+	for section_key, section in cat["section_key_value"].items():
+		cf = cat["section_child"].get(section_key)
+		if not (cf and cat["read_only_keys"]):
+			continue
+		meta = frappe.get_meta(section.target_doctype)
+		children[cf] = {
+			"multi_row": True,
+			"key_field": None,
+			"fields": [
+				_key_value_descriptor(public, meta.get_field(column))
+				for public, column in zip(KEY_VALUE_VIEW, _key_value_columns(section))
+			],
+		}
 	for section, cf in cat["section_child"].items():
 		allowed = child_allow.get(cf)
 		if not allowed:

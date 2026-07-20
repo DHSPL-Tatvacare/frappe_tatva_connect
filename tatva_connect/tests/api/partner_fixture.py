@@ -21,6 +21,7 @@ PARENT_SECTION = "lead"
 
 _MAPPING = "CRM Lead API Mapping"
 _CATALOG = "CRM Lead API Field"
+_LEAD = "CRM Lead"
 
 # (doctype, name) for what THIS module actually created, torn down in reverse. A row that already
 # existed is left alone: the fixture may not delete something it did not mint.
@@ -42,13 +43,29 @@ def mint_grain():
 
 
 def mint_catalog_row(fieldname, section=PARENT_SECTION):
-	"""One catalog row this test owns, so a tick can name a key no seed decided. Returns its field_key."""
+	"""One catalog row this test owns, so a tick can name a key no seed decided. Returns its field_key.
+
+	Outside a key-value section a catalog fieldname names a COLUMN, and a row naming one that does not
+	exist declares a field the API could never write — so the column is minted alongside it, and dropped
+	with it. A key-value fieldname addresses a row, so there is no column to mint."""
 	key = f"{section}:{fieldname}"
+	if not frappe.db.get_value("CRM Lead Section", section, "is_key_value"):
+		_mint_column(fieldname)
 	_make(_CATALOG, key, {
-		"field_key": key, "label": fieldname, "section": section, "section_key": section,
-		"target_doctype": "CRM Lead", "fieldname": fieldname,
+		"field_key": key, "label": fieldname, "section": section, "fieldname": fieldname,
 	})
 	return key
+
+
+def _mint_column(fieldname):
+	"""The CRM Lead column a parent-section catalog row names, created only when it is not already there."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+	name = f"{_LEAD}-{fieldname}"
+	if frappe.db.exists("Custom Field", name):
+		return
+	create_custom_field(_LEAD, {"fieldname": fieldname, "label": fieldname, "fieldtype": "Data"})
+	_MADE.append(("Custom Field", name))
 
 
 def mint_partner(email, ticks=()):

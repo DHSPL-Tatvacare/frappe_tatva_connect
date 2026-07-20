@@ -12,35 +12,70 @@ from frappe.model.document import Document
 
 LEAD_DOCTYPE = "CRM Lead"
 
+# Every field on this doctype that NAMES a column of the target. One list, so a new one is validated,
+# and described, by having been added here rather than by anyone remembering to write a check for it.
+COLUMN_FIELDS = ("row_key_field", "value_field", "label_field", "question_field")
+
+# What a key-value section must name before it can hold anything: where a row's identity, its answer,
+# its human label and the raw key that identity was derived from each live.
+_KEY_VALUE_REQUIRED = ("row_key_field", "value_field", "label_field", "question_field")
+
 
 def sql_source(section):
 	"""Where this section's columns physically live. Derived — a stored copy is a second brain."""
+	if section.get("is_key_value"):
+		return "answer"
 	return "child" if section.get("child_table_field") else "parent"
 
 
 class CRMLeadSection(Document):
 	def validate(self):
 		self._multi_row_needs_a_row_key()
+		self._key_value_needs_an_address_and_a_value()
+		self._key_value_is_not_multi_row()
 		if not self.target_doctype:
 			return  # reqd catches it, and every check below reads the target's meta
-		self._row_key_is_a_real_column()
+		self._every_named_column_is_real()
 		self._child_table_reaches_the_target()
 		self._a_section_with_no_child_table_is_the_lead()
+
+	def _key_value_needs_an_address_and_a_value(self):
+		missing = [f for f in _KEY_VALUE_REQUIRED if not self.get(f)]
+		if self.is_key_value and missing:
+			frappe.throw(
+				frappe._("A key-value section must name every column it uses; missing: {0}. Its rows ARE its fields, so nothing can read one until it knows where the identity, the answer, the label and the raw key each live.").format(", ".join(missing)),
+				title=frappe._("Key-value section is incomplete"),
+			)
+
+	def _key_value_is_not_multi_row(self):
+		if self.is_key_value and self.is_multi_row:
+			frappe.throw(
+				frappe._("A section is keyed by a field or dated by a row key, never both: a key-value section already holds exactly one row per field."),
+				title=frappe._("Key Value and Multi Row are exclusive"),
+			)
+
+	def _every_named_column_is_real(self):
+		"""Each COLUMN_FIELDS entry names a column of the target, or it names nothing at all.
+
+		One check for all of them: a section that points at a column which does not exist is a section
+		every consumer reads a None out of, and there is no reason for that to be caught for the row key
+		and missed for the label."""
+		meta = frappe.get_meta(self.target_doctype)
+		for field in COLUMN_FIELDS:
+			named = self.get(field)
+			if named and not meta.get_field(named):
+				frappe.throw(
+					frappe._("{0} names {1}, which is not a field of {2}.").format(
+						self.meta.get_label(field), named, self.target_doctype
+					),
+					title=frappe._("Unknown column"),
+				)
 
 	def _multi_row_needs_a_row_key(self):
 		if self.is_multi_row and not self.row_key_field:
 			frappe.throw(
 				frappe._("A multi-row section needs a Row Key Field: without one no row has an address, so every write lands on the same row."),
 				title=frappe._("Row Key Field required"),
-			)
-
-	def _row_key_is_a_real_column(self):
-		if not self.row_key_field:
-			return
-		if not frappe.get_meta(self.target_doctype).get_field(self.row_key_field):
-			frappe.throw(
-				frappe._("{0} is not a field of {1}, so it can address no row.").format(self.row_key_field, self.target_doctype),
-				title=frappe._("Unknown Row Key Field"),
 			)
 
 	def _child_table_reaches_the_target(self):

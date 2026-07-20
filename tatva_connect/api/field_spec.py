@@ -112,6 +112,11 @@ def collect(specs, data):
 	for spec in specs:
 		if spec.read_only or not spec.target:
 			continue
-		if spec.fieldname in data:
-			out[spec.target] = data[spec.fieldname]
+		if spec.fieldname not in data:
+			continue
+		value = data[spec.fieldname]
+		# An empty string is "not sent", never "erase this" — the rule `partner._collect` holds for a lead.
+		if isinstance(value, str) and not value.strip():
+			continue
+		out[spec.target] = value
 	return out

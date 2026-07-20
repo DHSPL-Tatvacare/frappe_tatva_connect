@@ -156,7 +156,8 @@ def _apply_fields(doc, data, lead_name):
 	fields = collect(NOTE_FIELDS, data)
 	if fields.get("title"):
 		doc.title = _derive_title(fields, data)
-	if fields.get("content"):
+	# Presence, not truthiness: `collect` already drops a blank string, so this only states that rule.
+	if "content" in fields:
 		doc.content = fields["content"]  # frappe sanitises Text Editor on save (_sanitize_content)
 	if lead_name:
 		doc.reference_doctype = "CRM Lead"

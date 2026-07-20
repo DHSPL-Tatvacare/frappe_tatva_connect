@@ -11,13 +11,17 @@ class CRMLeadAPIMapping(Document):
 		self._one_internal_contract_per_grain()
 
 	def _one_internal_contract_per_grain(self):
-		"""An internal surface resolves its contract BY GRAIN, so a second one on the same grain is ambiguous."""
-		if not self.enabled or self.partner_user:
+		"""An INTERNAL contract resolves BY GRAIN, so a second internal one on the same grain is ambiguous.
+
+		Keyed on is_internal, not on "has no login": a source contract (Facebook, intake) also carries no
+		partner_user, but it is resolved by an explicit link from its source and never by grain — so two of
+		them, or one beside an internal contract, are not ambiguous at all."""
+		if not self.enabled or not self.is_internal:
 			return
 		clash = frappe.db.get_value(
 			"CRM Lead API Mapping",
 			{
-				"partner_user": ["in", ["", None]],
+				"is_internal": 1,
 				"enabled": 1,
 				"vertical": self.vertical,
 				"crm_group": self.crm_group or "",
