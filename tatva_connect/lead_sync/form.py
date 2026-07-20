@@ -13,6 +13,9 @@ from tatva_connect.lead_sync.contract import allowed_field_keys, contract_of
 
 IDENTITY_KEY = f"{PARENT_SECTION}:{LEAD_IDENTITY}"
 
+# Set by discovery: both mapping gates guard the OPERATOR's edit, so a mirror write stands them aside.
+DISCOVERY_FLAG = "from_discovery"
+
 
 def contract_for_form(form_name: str):
 	"""The contract of the source that crawls this form, or None when there is none to judge against.
@@ -31,9 +34,13 @@ def contract_for_form(form_name: str):
 
 
 class TatvaFacebookLeadForm(FacebookLeadForm):
+	def is_mirror_write(self) -> bool:
+		"""True when discovery wrote this, rather than an operator saving the form."""
+		return bool(self.flags.get(DISCOVERY_FLAG))
+
 	def check_mandatory_crm_fields_mapped(self):
 		"""Identity, in KEY space. Upstream compares bare fieldnames ("first_name") against this column, which holds catalog field_keys ("lead:first_name") — so it can never match and throws on every edit. What ingestion actually requires is the dedup key."""
-		if self.is_new():
+		if self.is_new() or self.is_mirror_write():
 			return
 		mapped = {(q.mapped_to_crm_field or "").strip() for q in self.questions}
 		if IDENTITY_KEY not in mapped:
@@ -49,7 +56,9 @@ class TatvaFacebookLeadForm(FacebookLeadForm):
 		self._validate_mapped_keys()
 
 	def _validate_mapped_keys(self):
-		"""Every mapped target must be a key this form's grain may write. Skipped while no source points at the form — there is no grain to judge against yet."""
+		"""Every mapped target must be a key this form's grain may write. Skipped while no source points at the form — there is no grain to judge against yet, and on a mirror write, whose mappings ingestion re-checks anyway."""
+		if self.is_mirror_write():
+			return
 		contract = contract_for_form(self.name)
 		if not contract:
 			return

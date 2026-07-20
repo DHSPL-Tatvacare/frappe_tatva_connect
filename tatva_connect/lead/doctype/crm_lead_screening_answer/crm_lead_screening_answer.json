@@ -1,0 +1,38 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-20 00:00:00.000000",
+ "description": "One row per screening answer a lead gave on an externally authored form. The question is kept exactly as it was asked and is mapped to nothing: `question_hash` is its stable identity, `question` the key the form sent, and `label` the wording the patient actually saw. What a patient was asked and what they answered are both facts about that patient, so the row is self-describing and stays readable after its form is gone.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "label",
+  "value",
+  "column_break_origin",
+  "question",
+  "question_hash",
+  "form"
+ ],
+ "fields": [
+  {"fieldname": "label", "fieldtype": "Small Text", "label": "Question", "in_list_view": 1, "description": "The wording the patient saw, as the form presented it."},
+  {"fieldname": "value", "fieldtype": "Small Text", "label": "Answer", "in_list_view": 1, "description": "The answer as given. A multi-select answer holds every value, joined with a comma."},
+  {"fieldname": "column_break_origin", "fieldtype": "Column Break"},
+  {"fieldname": "question", "fieldtype": "Small Text", "label": "Question Key", "description": "The question key the external form sent, stored whole and never shortened."},
+  {"fieldname": "question_hash", "fieldtype": "Data", "length": 64, "label": "Question Hash", "read_only": 1, "description": "The identity a query matches on: a fixed-length digest of the question key, so the index never depends on a length that a longer question could one day exceed. Set on write; never edited."},
+  {"fieldname": "form", "fieldtype": "Link", "options": "Facebook Lead Form", "label": "Form", "description": "The form this answer was given on."}
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Lead Screening Answer",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

@@ -13,6 +13,8 @@ class CRMFacebookSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		app_id: DF.Data | None
+		app_secret: DF.Password | None
 		graph_api_version: DF.Literal["v23.0", "v24.0", "v25.0"]
 		lead_page_size: DF.Int
 	# end: auto-generated types

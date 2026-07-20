@@ -25,6 +25,8 @@ class TestFormDrift(FrappeTestCase):
 	PAGE = "zz-drift-page"
 	LIVE_FORM = "zz-drift-form-live"
 	DEAD_FORM = "zz-drift-form-dead"
+	# Never created and never sourced: what a form duplicated by marketing looks like on the next crawl.
+	NEW_FORM = "zz-drift-form-duplicated"
 
 	@classmethod
 	def setUpClass(cls):
@@ -59,6 +61,8 @@ class TestFormDrift(FrappeTestCase):
 			frappe.delete_doc("Lead Sync Source", f"zz-src-{form_id}", force=True, ignore_permissions=True)
 			frappe.delete_doc("Facebook Lead Form", form_id, force=True, ignore_permissions=True)
 		frappe.delete_doc("Facebook Page", cls.PAGE, force=True, ignore_permissions=True)
+		# The drift log commits, so these fixtures outlive the case rollback and the removal must commit too.
+		frappe.db.commit()
 		super().tearDownClass()
 
 	def setUp(self):
@@ -72,8 +76,35 @@ class TestFormDrift(FrappeTestCase):
 
 	def _logs_for(self, source_name):
 		return frappe.get_all(
-			"Failed Lead Sync Log", filters={"source": source_name, "type": drift.LOG_TYPE}, pluck="name"
+			"Failed Lead Sync Log", filters={"source": source_name, "type": drift.LOG_TYPE_MISSING}, pluck="name"
 		)
+
+	def _logs_of_type(self, source_name, log_type):
+		return frappe.get_all(
+			"Failed Lead Sync Log", filters={"source": source_name, "type": log_type}, pluck="name"
+		)
+
+	def test_a_live_form_that_no_source_crawls_is_reported(self):
+		"""The duplicated-form case, which the id check cannot see.
+
+		Duplicating is the ordinary way to edit a published form: it mints a NEW id and leaves the original
+		live. So the configured id is still in the listing, the id check passes, and the only sign that
+		submissions have moved is a form on the Page that nobody crawls."""
+		src = self._source(self.LIVE_FORM)
+		listing = [{"id": self.LIVE_FORM}, {"id": self.NEW_FORM}]
+		with patch.object(drift, "list_forms", return_value=listing):
+			self.assertTrue(drift.report_form_drift(src))
+		logs = self._logs_of_type(src.name, drift.LOG_TYPE_UNSOURCED)
+		self.assertEqual(len(logs), 1, "one log per crawl, not one per form")
+		payload = frappe.parse_json(frappe.get_doc("Failed Lead Sync Log", logs[0]).lead_data)
+		self.assertEqual(payload["unsourced_forms"], [self.NEW_FORM])
+
+	def test_a_page_whose_forms_are_all_crawled_reports_nothing(self):
+		"""Both fixture forms carry a source, so a listing of exactly those two is not drift."""
+		src = self._source(self.LIVE_FORM)
+		with patch.object(drift, "list_forms", return_value=[{"id": self.LIVE_FORM}, {"id": self.DEAD_FORM}]):
+			self.assertFalse(drift.report_form_drift(src))
+		self.assertEqual(self._logs_of_type(src.name, drift.LOG_TYPE_UNSOURCED), [])
 
 	def test_a_dead_form_is_reported_once(self):
 		src = self._source(self.DEAD_FORM)

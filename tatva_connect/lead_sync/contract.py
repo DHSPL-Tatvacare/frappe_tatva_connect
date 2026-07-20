@@ -1,6 +1,8 @@
 """Read the contract a lead source is created against — grain and ticked field_keys, nothing local."""
 import frappe
 
+from tatva_connect.lead import keyvalue
+
 from tatva_connect.api.partner import _catalog
 
 CONTRACT = "CRM Lead API Mapping"
@@ -36,11 +38,35 @@ def allowed_programs(contract):
 	return [row.program for row in (contract.allowed_programs or [])]
 
 
-def stage(item, field_key, value):
-	"""Place a value under the shape _collect expects: parent fields flat, child fields under their table."""
+def stage(item, field_key, value, question=None, label=None, form=None):
+	"""Place a value under the shape _collect expects: parent fields flat, child fields under their table,
+	a key-value answer as its own row.
+
+	A key-value answer is built HERE rather than by the caller: this is where the section is already
+	resolved, and the section is what names the column each part of a row lands in. The identity is
+	derived from the question by the one rule that derives it, and the row re-derives it on validate —
+	so a caller can neither name a column nor invent an identity."""
+	cat = _catalog()
 	section, _, fieldname = field_key.partition(":")
-	child_table = _catalog()["section_child"].get(section)
-	if child_table:
+	child_table = cat["section_child"].get(section)
+	key_value = cat["section_key_value"].get(section)
+	if key_value:
+		item.setdefault(child_table, []).append({
+			key_value.value_field: value,
+			key_value.question_field: question,
+			key_value.label_field: label,
+			key_value.row_key_field: keyvalue.identity_of(question),
+			"form": form,
+		})
+	elif child_table:
 		item.setdefault(child_table, [{}])[0][fieldname] = value
 	else:
 		item[fieldname] = value
+
+
+def screening_key():
+	"""The key a screening answer is staged under: the first key-value section. The question carries its own
+	identity, so the key names only the section. None while no section declares itself key-value, so such an
+	answer is dropped exactly as it was before one did — the seed decides, and code never re-decides it."""
+	sections = list(_catalog()["section_key_value"])
+	return f"{sections[0]}:" if sections else None
