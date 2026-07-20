@@ -13,7 +13,13 @@
 frappe.ui.form.on('CRM Telephony Account', {
   refresh(frm) {
     // Every secret on this form gets the same working eye toggle (a saved Password field holds only asterisks).
-    tatva_enable_secret_reveal(frm, ['api_token', 'click_to_call_api_key', 'webhook_token', 'webhook_token_previous']);
+    tatva_enable_secret_reveal(frm, [
+      'api_token',
+      'click_to_call_api_key',
+      'webhook_token',
+      'webhook_token_previous',
+      'webhook_hmac_secret',
+    ]);
 
     if (!frm.doc.provider) return;
 

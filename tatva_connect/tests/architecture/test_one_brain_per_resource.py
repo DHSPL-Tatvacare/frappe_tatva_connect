@@ -7,11 +7,11 @@ from frappe.tests.utils import FrappeTestCase
 
 APP = pathlib.Path(frappe.get_app_path("tatva_connect"))
 
-# The seven section keys. A literal collection enumerating >=3 of them IS a rival section registry:
+# The section keys. A literal collection enumerating >=3 of them IS a rival section registry:
 # the keys' one home is the CRM Lead Section rows, reached through the `section` Link. No module may
 # restate them as a dict/list/set/tuple literal — that is exactly the copy the brain replaced.
 # section_seed.py (the seed that WRITES those rows) and the doctype dir are the home.
-SECTION_KEYS = {"lead", "acq", "plan", "lab", "care", "drug", "metrics"}
+SECTION_KEYS = {"lead", "acq", "plan", "lab", "screening", "care", "drug", "metrics"}
 SECTION_REGISTRY_EXEMPT = ("partner_api/section_seed.py", "partner_api/doctype/crm_lead_section/")
 
 

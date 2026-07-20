@@ -48,6 +48,39 @@ window.tatva_bind_secret_reveal = function tatva_bind_secret_reveal(frm, fieldna
   });
 }
 
+// A pass/fail list from any server-side validate endpoint returning {ok, checks:[{label, passed, detail}]}.
+// One renderer, so every "is this credential real" answer in the app reads the same way.
+// Laid out as a grid: mark, label, value. A label and its value never run into each other.
+window.tatva_show_check_report = function tatva_show_check_report(report, opts) {
+  const rows = (report.checks || [])
+    .map((c) => {
+      const mark = c.passed
+        ? '<span style="color:var(--green-600)">&#10003;</span>'
+        : '<span style="color:var(--red-600)">&#10007;</span>';
+      const label = frappe.utils.escape_html(c.label);
+      const detail = c.detail
+        ? '<span style="color:' + (c.passed ? 'var(--text-color)' : 'var(--red-600)') + '">' +
+          frappe.utils.escape_html(c.detail) + '</span>'
+        : '<span style="color:var(--text-muted)">' + (c.passed ? 'ok' : '&mdash;') + '</span>';
+      return (
+        '<div style="display:contents">' +
+        '<div>' + mark + '</div>' +
+        '<div style="color:var(--text-muted)">' + label + '</div>' +
+        '<div>' + detail + '</div>' +
+        '</div>'
+      );
+    })
+    .join('');
+  frappe.msgprint({
+    title: report.ok ? __(opts.ok_title) : __(opts.fail_title),
+    indicator: report.ok ? 'green' : 'red',
+    message: rows
+      ? '<div style="display:grid;grid-template-columns:auto max-content 1fr;gap:6px 12px;align-items:baseline">' +
+        rows + '</div>'
+      : __('Nothing to check — the form is blank.'),
+  });
+}
+
 window.tatva_webhook_random_token = function tatva_webhook_random_token() {
   const bytes = new Uint8Array(30);
   window.crypto.getRandomValues(bytes);

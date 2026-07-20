@@ -12,7 +12,11 @@ frappe.ui.form.on('CRM Push Settings', {
         method: 'tatva_connect.notifications.api.validate_push_config',
         freeze: true,
         freeze_message: __('Asking Firebase…'),
-        callback: (r) => tatva_show_push_report(r.message || {}),
+        callback: (r) =>
+          tatva_show_check_report(r.message || {}, {
+            ok_title: 'Push is configured',
+            fail_title: 'Push is not ready',
+          }),
       });
     });
 
@@ -34,20 +38,3 @@ frappe.ui.form.on('CRM Push Settings', {
   },
 });
 
-// The report is a list of checks, each pass/fail with the reason — an operator should never have to read a log to find out which field is wrong.
-function tatva_show_push_report(report) {
-  const rows = (report.checks || [])
-    .map((c) => {
-      const mark = c.passed ? '✅' : '❌';
-      const detail = c.detail
-        ? ` <span style="color:var(--text-muted)">— ${frappe.utils.escape_html(c.detail)}</span>`
-        : '';
-      return `<div style="margin-bottom:4px">${mark} ${frappe.utils.escape_html(c.label)}${detail}</div>`;
-    })
-    .join('');
-  frappe.msgprint({
-    title: report.ok ? __('Push is configured') : __('Push is not ready'),
-    indicator: report.ok ? 'green' : 'red',
-    message: rows || __('Nothing to check — the form is blank.'),
-  });
-}

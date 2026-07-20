@@ -38,6 +38,9 @@ override_doctype_class = {
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
 	"WhatsApp Account": "tatva_connect.whatsapp.account.ChannelWhatsAppAccount",
+	# Mask secrets on every Error Log row, whichever app wrote it: frappe's own make_request logs the
+	# failing URL before our handler runs. Infrastructure, never a toggleable automation, hence bound here.
+	"Error Log": "tatva_connect.observability.error_log.MaskedErrorLog",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from the account's provider (read-only mirror), not Meta — for the desk button and any caller.
@@ -92,10 +95,16 @@ permission_query_conditions = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
 	# Picklist Engine: clamp any generic list read of CRM Picklist Value to the caller's entitled grains, so get_list can't bypass the scoped picklist_query.
 	"CRM Picklist Value": "tatva_connect.access.picklist.get_picklist_value_permission_query_conditions",
+	"CRM Workflow Run": "tatva_connect.workflow_engine.permissions.get_run_permission_query_conditions",
+	"CRM Workflow Event": "tatva_connect.workflow_engine.permissions.get_event_permission_query_conditions",
+	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
 	"CRM Call Log": "tatva_connect.telephony.permissions.has_call_log_permission",
+	"CRM Workflow Run": "tatva_connect.workflow_engine.permissions.has_run_permission",
+	"CRM Workflow Event": "tatva_connect.workflow_engine.permissions.has_event_permission",
+	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 }
@@ -159,6 +168,10 @@ doc_events = {
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
 	},
+	# LMS resolves an embed once, at paste time in the author's browser, and stores the iframe src in the block — so a Microsoft share link is claimable server-side, with no fork of the LMS frontend.
+	"Course Lesson": {
+		"before_save": "tatva_connect.learning.embeds.rewrite_office_links",
+	},
 	# the partner-API catalog is data-driven (cached read of CRM Lead API Field); drop the cache on any catalog row change so the API picks it up at once.
 	"CRM Lead API Field": {
 		"on_update": "tatva_connect.api.partner.clear_catalog_cache",
@@ -190,7 +203,7 @@ doc_events = {
 			# Bond an offloaded file to the record whose Attach field names it — core's linker skips remote URLs.
 			"tatva_connect.storage.file_events.link_attach_fields",
 			"tatva_connect.workflow_engine.triggers.on_updated",
-			# Workflow engine (Phase 3): a CRM Task flipping to Done delivers `review_done` to the parked journey (a lifecycle event AS a signal source, §12); dormant + in_workflow-guarded, cheap early-return otherwise.
+			# Workflow engine: a CRM Task reaching a terminal status emits its outcome, correlated by the token its node stamped; dormant + in_workflow-guarded, cheap early-return otherwise.
 			"tatva_connect.workflow_engine.triggers.on_task_done",
 		],
 		"on_trash": [
@@ -251,6 +264,8 @@ scheduler_events = {
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
+		# Nightly: re-read Facebook Pages and lead forms, so a published or reworded question is seen without a button press.
+		"0 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	},
 }
 
@@ -388,12 +403,8 @@ fixtures = [
 		"CRM Lead-custom_origin_vertical-ignore_user_permissions",
 		# Program is rep-editable within a line: drop its field-level lock (permlevel 1 -> 0); vertical + group stay permlevel 1 (only managers/integration move a lead between lines).
 		"CRM Lead-custom_current_program-permlevel",
-		# Field governance (Phase 3): clinical + patient fields are API-owned -> read-only; lead-detail fields stay writable; global default grid columns via in_list_view on child profile DocFields.
-		"CRM Lead-mobile_no-read_only",
-		"CRM Lead-first_name-read_only",
-		"CRM Lead-last_name-read_only",
-		"CRM Lead-custom_gender-read_only",
-		"CRM Lead-custom_dob-read_only",
+		# Field governance: clinical fields are API-owned -> read-only. Identity fields (name/mobile/gender/dob) are NOT: a person must type them on the create form to bring a lead into existence (the lead does not exist yet). Making them read_only enforced nothing server-side and only hid them from the empty create form. Post-creation role-based lock is a separate server-side lifecycle rule, not a field flag. See patches/drop_lead_identity_read_only.py.
+		# custom_patient_id stays read-only: it is minted by the source-system API, never typed on create.
 		"CRM Lead-custom_patient_id-read_only",
 		"CRM Lab Profile-hba1c-read_only",
 		"CRM Lab Profile-fbs-read_only",

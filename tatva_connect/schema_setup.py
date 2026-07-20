@@ -24,12 +24,11 @@ from tatva_connect.patches import (
 	add_crm_task_metrics_index,
 	add_integration_request_index,
 	add_observability_indexes,
-	add_workflow_instance_indexes,
-	add_workflow_signal_indexes,
 	backfill_webhook_token_digests,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
+	reindex_screening_answers_by_hash,
 	rekey_task_types_composite,
 	retire_activity_legacy_columns,
 	retire_lead_import_coordinates,
@@ -49,12 +48,6 @@ _STEPS = (
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter
 	# select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
-	# Composite + UNIQUE(active_key) indexes on CRM Workflow Instance — the timer/signal/scope/retention
-	# queries and the single-live-instance guard, none expressible in doctype JSON.
-	add_workflow_instance_indexes,
-	# Composite (subject_name, signal_name, status) + (creation) on the CRM Workflow Signal inbox — the
-	# _consume_signal / reconciler lookup and retention; a composite is not expressible in doctype JSON.
-	add_workflow_signal_indexes,
 	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
 	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
 	rekey_task_types_composite,
@@ -75,6 +68,12 @@ _STEPS = (
 	add_clinic_anchor_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
+	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab's
+	# read of one lead's answers and the Smart View join both select on them. install-app baselines
+	# patches.txt without running it, so a fresh site would otherwise full-scan the table forever with
+	# nothing going red. The pre_model_sync half that drops the superseded text indexes is not repeated
+	# here: a fresh site never had them.
+	reindex_screening_answers_by_hash,
 )
 
 

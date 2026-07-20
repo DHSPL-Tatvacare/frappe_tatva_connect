@@ -120,6 +120,28 @@ class TestIntakeRouting(FrappeTestCase):
 		self.assertIsNone(intake.target_doctype(""))
 		self.assertIsNone(intake.target_doctype("not-a-section"))
 
+	def test_a_submission_that_leaves_the_row_date_blank_still_creates_the_lead(self):
+		"""A multi-row section is addressed by its date, and a patient who leaves it blank used to take the
+		whole submission down: `_apply_multi_row` threw, the router raised, the transaction rolled back, and
+		the patient saw an error with no lead created. The row is stamped with its arrival instead — a
+		surface that KNOWS when the row happened sends it, one that does not gets now, and nothing degrades
+		to a blank key that no later write could ever address."""
+		builder.sync_form(self.cfg)
+		frappe.get_doc({
+			"doctype": self.dt, "intake_form": self.cfg.name,
+			"phone": _PHONE, "patient_name": "Asha NoDate",
+			"weight_field": "58.0",  # a lab fact with NO lab_date_field beside it
+		}).insert(ignore_permissions=True)
+
+		lead_name = frappe.db.get_value("CRM Lead", {"mobile_no": to_e164(_PHONE)}, "name")
+		self.assertIsNotNone(lead_name, "a blank row date must not cost the patient their lead")
+		lead = frappe.get_doc("CRM Lead", lead_name)
+		self.assertEqual(len(lead.custom_lab_profile), 1)
+		row = lead.custom_lab_profile[0]
+		self.assertAlmostEqual(float(row.weight_kg), 58.0, places=2)
+		self.assertTrue(row.report_date, "the row must carry an address, not a blank key")
+		self.assertEqual(str(row.report_date), frappe.utils.today(), "stamped with when it arrived")
+
 	# --- the fold: acq / lab / lead / note all route off the section brain -----
 	def test_submission_routes_every_section_via_brain(self):
 		builder.sync_form(self.cfg)

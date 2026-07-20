@@ -7,6 +7,11 @@
 // Seeded by tatva_connect/client_scripts_seed.py. Mirrors crm_azure_storage_settings.js.
 
 frappe.ui.form.on("CRM Maps Settings", {
+	refresh(frm) {
+		// Both keys are Password fields, which hold only asterisks once saved, so the stock eye reveals nothing.
+		tatva_enable_secret_reveal(frm, ["google_maps_api_key", "google_maps_browser_key"]);
+	},
+
 	check_connection(frm) {
 		frappe.call({
 			method: "tatva_connect.location.api.test_connection",
