@@ -26,6 +26,8 @@ Security:
     routing field). A field_key outside it is rejected — a crafted payload can never reach
     routing/owner/out-of-grain/read-only fields (no mass-assignment).
 """
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import cstr
@@ -73,6 +75,30 @@ def _is_empty(value):
 	if isinstance(value, (list, tuple, dict)):
 		return len(value) == 0
 	return False  # 0 / False are real values, never "empty"
+
+
+def empty_everywhere(values):
+	"""The panel's "nothing to show here" flag — NOT a predicate on the ONE displayed value.
+
+	`hideEmpty` is ON by default and the panel drops whatever it is told is empty, taking the field's More
+	button with it. A field blank on the latest row but filled on an earlier one therefore had its history
+	made unreachable. Empty means empty in EVERY row the field is kept in; decided on the SERVER because
+	the flag the panel filters on is served, and a second opinion in the client would be a rival brain.
+	One rule, both shapes: each branch hands it the rows it keeps."""
+	return all(_is_empty(v) for v in values)
+
+
+_SECTION_SEPARATORS = re.compile(r"[:#]")
+
+
+def parse_field_key(field_key):
+	"""A field key as (section_key, member) — the ONE parse, for BOTH shapes.
+
+	`acq:utm_campaign` and `screening#<identity>` differ only in the separator their shape happens to use,
+	and the separator decides NOTHING: what a key addresses is decided by the SECTION it names. Splitting
+	on `#` alone read `acq:utm_campaign` as a section called "acq:utm_campaign" and the lookup blew up."""
+	parts = _SECTION_SEPARATORS.split(cstr(field_key), maxsplit=1)
+	return parts[0], (parts[1] if len(parts) > 1 else "")
 
 
 # ------------------------------- frappe-bound core -------------------------------
@@ -149,6 +175,25 @@ def _child_row(doc, section):
 	return children[0]
 
 
+def _has_history(doc, section):
+	"""Does a field of this section have anything behind the value the panel shows?
+
+	Only a multi-row section keeps more than one row of a field, so only it can. A single-row section and
+	a parent-section field hold exactly the one value on screen, and a More button there would open on
+	itself. Read off the section brain, never off a list of section names kept here."""
+	if not (section.is_multi_row and section.child_table_field):
+		return False
+	return len(doc.get(section.child_table_field) or []) > 1
+
+
+def _field_values(doc, section, fieldname, value):
+	"""Every value this field is kept under — one per row on a multi-row section, else the one on show.
+	What `empty_everywhere` decides over; the panel still displays only `value`."""
+	if not (section.is_multi_row and section.child_table_field):
+		return [value]
+	return [child.get(fieldname) for child in doc.get(section.child_table_field) or []]
+
+
 def _value(doc, section, row):
 	if section.child_table_field:
 		child = _child_row(doc, section)
@@ -201,6 +246,7 @@ def _screening_answers(doc, section):
 	for identity, rows in _answers_by_question(doc, section).items():
 		row = keyvalue.newest_first(rows)[0]
 		value = row.get(section.value_field)
+		has_more = len(rows) > 1
 		entries.append({
 			"field_key": f"{section.name}#{identity}",
 			"label": row.get(section.label_field) or row.get(section.question_field) or _("(no question)"),
@@ -209,9 +255,9 @@ def _screening_answers(doc, section):
 			"options": "",
 			"value": value,
 			"display": None,
-			"empty": _is_empty(value),
+			"empty": empty_everywhere([r.get(section.value_field) for r in rows]),
 			"read_only": True,
-			"has_more": len(rows) > 1,
+			"has_more": has_more,
 			# After every catalogued field: an operator reads the named answers first, the backlog last.
 			"_idx": 20_000,
 		})
@@ -229,7 +275,7 @@ def _display_label(df, value):
 @frappe.whitelist()
 def lead_detail(lead):
 	"""Read projection: {sections:[{key,label,order,fields:[{field_key,label,fieldname,fieldtype,
-	options,value,empty,read_only}]}]}. Permission-gated; values resolved server-side."""
+	options,value,display,empty,has_more,read_only}]}]}. Permission-gated; values resolved server-side."""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	doc = frappe.get_doc("CRM Lead", lead)
 	buckets = {}
@@ -238,6 +284,7 @@ def lead_detail(lead):
 		bucket = buckets.setdefault(section.name, {"key": section.name, "label": section.title, "order": section.display_order, "fields": []})
 		df = _docfield(section.target_doctype, row.get("fieldname"))
 		value = _value(doc, section, row)
+		has_more = _has_history(doc, section)
 		bucket["fields"].append({
 			"field_key": fk,
 			"label": row.get("label") or row.get("fieldname"),
@@ -246,7 +293,8 @@ def lead_detail(lead):
 			"options": (df.options or "") if df else "",
 			"value": value,
 			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
-			"empty": _is_empty(value),
+			"empty": empty_everywhere(_field_values(doc, section, row.get("fieldname"), value)),
+			"has_more": has_more,
 			"read_only": _is_readonly(section, row.get("fieldname")),
 			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
 			"_idx": df.idx if df else 10_000,
@@ -280,37 +328,72 @@ def _stage_write(doc, section, row, value):
 	child.set(fieldname, value)
 
 
-@frappe.whitelist()
-def section_history(lead, field_key):
-	"""Every answer behind one field of the panel, newest first — what the More button opens.
+def _entry(value, display, on, source):
+	"""THE history entry shape, written once. Both branches return it, so the modal renders one thing
+	however the rows behind it are kept: `on` is when the row is stamped, `source` where it came from
+	(a key-value row names its form; a multi-row row is our own record and names nothing)."""
+	return {"value": value, "display": display, "empty": _is_empty(value), "on": on, "source": source}
 
-	`field_key` is the key the panel already handed the caller, so a reader can ask for nothing it was
-	not shown. Gated on read of the LEAD, exactly as `lead_detail` is: an answer hangs off a lead, and a
-	lead outside the caller's line is unreadable, so its history is too."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
-	section_key, _hash, identity = cstr(field_key).partition("#")
-	section = frappe.get_cached_doc("CRM Lead Section", section_key)
-	if not section.is_key_value:
-		frappe.throw(_("{0} keeps no history.").format(section.title), title=_("No history"))
 
-	doc = frappe.get_doc("CRM Lead", lead)
-	# The same grain gate the panel applies, or the modal would answer what the panel just declined to show.
+def _key_value_history(doc, section, identity):
+	"""Every answer a lead has given to ONE question of a key-value section, newest first.
+
+	Gated at GRAIN, not per field: a key-value section declares no catalogued field, so there is no tick
+	to resolve — exactly the gate `lead_detail` opens these sections behind."""
 	if not _entitled_to_lead_grain(doc):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
-	rows = _answers_by_question(doc, section).get(identity) or []
-	newest = keyvalue.newest_first(rows)
+	newest = keyvalue.newest_first(_answers_by_question(doc, section).get(identity) or [])
 	return {
 		"label": (newest[0].get(section.label_field) if newest else "") or _("(no question)"),
 		"entries": [
-			{
-				"value": r.get(section.value_field),
-				"empty": _is_empty(r.get(section.value_field)),
-				"on": r.get("creation"),
-				"source": r.get("form"),
-			}
+			_entry(r.get(section.value_field), None, r.get("creation"), r.get("form"))
 			for r in newest
 		],
 	}
+
+
+def _multi_row_history(doc, field_key):
+	"""Every row's value for ONE catalogued field of a multi-row section, newest first.
+
+	Gated by `_select` — the panel's own field gate — so the modal can never answer a field the panel
+	declined to show, and an out-of-grain or unentitled key is refused rather than quietly answered.
+	Ordering is not invented here: `multirow.sorted_child_rows` is the same rule whose head the panel is
+	already displaying. Routing comes off the catalog row's section Link, never off the parsed key."""
+	row = _select(doc).get(cstr(field_key))
+	if row is None:
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	section = _section_of(row)
+	fieldname = row.get("fieldname") or ""
+	df = _docfield(section.target_doctype, fieldname)
+	children = multirow.sorted_child_rows(doc.get(section.child_table_field) or [], section.row_key_field)
+	entries = []
+	for child in children:
+		value = child.get(fieldname)
+		entries.append(_entry(value, _display_label(df, value), child.get(section.row_key_field), None))
+	return {"label": row.get("label") or fieldname, "entries": entries}
+
+
+@frappe.whitelist()
+def section_history(lead, field_key):
+	"""Everything behind one field of the panel, newest first — what the More button opens.
+
+	`field_key` is the key the panel already handed the caller, so a reader can ask for nothing it was
+	not shown. Gated on read of the LEAD, exactly as `lead_detail` is: a row hangs off a lead, and a lead
+	outside the caller's line is unreadable, so its history is too.
+
+	ONE parse, then the SECTION decides which history this is — never the separator the key happened to
+	carry. A section that keeps one row of a field keeps no history, and says so instead of failing."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	section_key, member = parse_field_key(field_key)
+	if not frappe.db.exists("CRM Lead Section", section_key):
+		frappe.throw(_("{0} keeps no history.").format(field_key), title=_("No history"))
+	section = frappe.get_cached_doc("CRM Lead Section", section_key)
+	doc = frappe.get_doc("CRM Lead", lead)
+	if section.is_key_value:
+		return _key_value_history(doc, section, member)
+	if section.is_multi_row:
+		return _multi_row_history(doc, field_key)
+	frappe.throw(_("{0} keeps no history.").format(section.title), title=_("No history"))
 
 
 @frappe.whitelist()
