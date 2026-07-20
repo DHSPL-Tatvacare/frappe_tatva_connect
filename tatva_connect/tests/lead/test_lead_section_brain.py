@@ -35,15 +35,19 @@ PHONE = "+916100010001"  # a distinctive range this module owns outright, purged
 # The end state, declared here — never read back from the seeder, or this would test itself. This
 # structure is OURS (partner_api/section_seed.py declares it); the field rows that name a section are
 # the operator's, so no count of them appears anywhere below.
-# section_key -> (title, display_order, child_table_field, target_doctype, is_multi_row, row_key_field)
+# section_key -> (title, display_order, child_table_field, target_doctype, is_multi_row, row_key_field,
+#                 is_key_value, value_field)
 SECTIONS = {
-	"lead":    ("Lead Details",     10, "",                              "CRM Lead",                   0, ""),
-	"acq":     ("Acquisition",      20, "custom_acquisition_profile",    "CRM Acquisition Profile",    0, ""),
-	"plan":    ("Plan",             30, "custom_plan_profile",           "CRM Plan Profile",           0, ""),
-	"lab":     ("Lab",              40, "custom_lab_profile",            "CRM Lab Profile",            1, "report_date"),
-	"care":    ("Care & Providers", 60, "custom_care_providers_profile", "CRM Care Providers Profile", 0, ""),
-	"drug":    ("Drug Program",     70, "custom_drug_program_profile",   "CRM Drug Program Profile",   1, "cycle_date"),
-	"metrics": ("Activity Metrics", 80, "custom_lead_activity_metrics",  "CRM Lead Activity Metrics",  0, ""),
+	"lead":      ("Lead Details",     10, "",                              "CRM Lead",                   0, "",            0, ""),
+	# Multi-row since a patient is acquired more than once: every campaign that reaches them is its own
+	# row, keyed by when it reached them, so the latest shows and the earlier ones survive.
+	"acq":       ("Acquisition",      20, "custom_acquisition_profile",    "CRM Acquisition Profile",    1, "touch_at",    0, ""),
+	"plan":      ("Plan",             30, "custom_plan_profile",           "CRM Plan Profile",           0, "",            0, ""),
+	"lab":       ("Lab",              40, "custom_lab_profile",            "CRM Lab Profile",            1, "report_date", 0, ""),
+	"screening": ("Screening",        50, "custom_screening_answers",      "CRM Lead Screening Answer",  0, "question_hash", 1, "value"),
+	"care":      ("Care & Providers", 60, "custom_care_providers_profile", "CRM Care Providers Profile", 0, "",            0, ""),
+	"drug":      ("Drug Program",     70, "custom_drug_program_profile",   "CRM Drug Program Profile",   1, "cycle_date",  0, ""),
+	"metrics":   ("Activity Metrics", 80, "custom_lead_activity_metrics",  "CRM Lead Activity Metrics",  0, "",            0, ""),
 }
 
 
@@ -109,13 +113,14 @@ class TestLeadSectionBrain(FrappeTestCase):
 
 	# -- the seven rows ------------------------------------------------------
 
-	def test_4_1_the_seven_sections_are_the_declared_end_state(self):
-		"""Exactly seven. `clinical` is not among them: it never had a lead field, only two CRM Task rows."""
+	def test_4_1_the_sections_are_the_declared_end_state(self):
+		"""`clinical` is not among them: it never had a lead field, only two CRM Task rows."""
 		self.assertEqual(set(frappe.get_all(DT, pluck="name")), set(SECTIONS))
 		for key, want in SECTIONS.items():
 			doc = frappe.get_doc(DT, key)
 			got = (doc.title, doc.display_order, doc.child_table_field or "",
-			       doc.target_doctype, doc.is_multi_row, doc.row_key_field or "")
+			       doc.target_doctype, doc.is_multi_row, doc.row_key_field or "",
+			       doc.is_key_value, doc.value_field or "")
 			self.assertEqual(got, want, f"section {key}")
 
 	def test_4_2_lab_is_multi_row_keyed_on_report_date(self):
@@ -173,6 +178,50 @@ class TestLeadSectionBrain(FrappeTestCase):
 		doc = self._draft(target_doctype="CRM Lab Profile")
 		self.assertRaises(frappe.ValidationError, doc.insert)
 
+	def test_4_6b_validate_refuses_key_value_without_both_columns(self):
+		"""One column names the field a row answers, the other holds the answer. Neither is optional:
+		without both there is no address to upsert at and nothing to read back."""
+		for missing in ({"row_key_field": "question"}, {"value_field": "value"}):
+			doc = self._draft(target_doctype="CRM Lead Screening Answer",
+			                  child_table_field="custom_screening_answers", is_key_value=1, **missing)
+			self.assertRaises(frappe.ValidationError, doc.insert)
+
+	def test_4_6c_validate_refuses_key_value_and_multi_row_together(self):
+		"""A section is keyed by a field or dated by a row key, never both."""
+		doc = self._draft(target_doctype="CRM Lead Screening Answer",
+		                  child_table_field="custom_screening_answers", is_key_value=1,
+		                  row_key_field="question", value_field="value", is_multi_row=1)
+		self.assertRaises(frappe.ValidationError, doc.insert)
+
+	def test_4_6d_validate_refuses_a_value_field_that_is_not_a_column(self):
+		doc = self._draft(target_doctype="CRM Lead Screening Answer",
+		                  child_table_field="custom_screening_answers", is_key_value=1,
+		                  row_key_field="question", value_field="not_a_column")
+		self.assertRaises(frappe.ValidationError, doc.insert)
+
+	def test_4_5b_a_key_value_section_reports_its_own_sql_source(self):
+		"""A key-value section's columns are not the row's, so a consumer that reads it as a child table
+		would read the identity column as if it were the field."""
+		self.assertEqual(crm_lead_section.sql_source(frappe.get_doc(DT, "screening")), "answer")
+
+	# -- what a catalog fieldname means is the section's answer ---------------
+
+	def test_4_16_a_fieldname_that_is_not_a_column_is_refused_outside_a_key_value_section(self):
+		"""Everywhere but key-value, `fieldname` names a column; a name that is not one reaches no value."""
+		doc = frappe.get_doc({
+			"doctype": CATALOG, "field_key": "lab:zz_not_a_column", "label": "Nope",
+			"section": "lab", "fieldname": "zz_not_a_column",
+		})
+		self.assertRaises(frappe.ValidationError, doc.insert)
+
+	def test_4_17_a_key_value_fieldname_is_a_row_identity_so_no_column_need_exist(self):
+		key = "screening:zz_no_column_needed"
+		frappe.get_doc({
+			"doctype": CATALOG, "field_key": key, "label": "Concept",
+			"section": "screening", "fieldname": "zz_no_column_needed",
+		}).insert(ignore_permissions=True)
+		self.assertTrue(frappe.db.exists(CATALOG, key))
+
 	# -- nothing a partner sees moved ---------------------------------------
 
 	def test_4_9_a_key_is_routed_to_the_table_its_section_names(self):
@@ -214,7 +263,7 @@ class TestLeadSectionBrain(FrappeTestCase):
 		rekey_lead_catalog_sections.execute()
 		self.assertEqual(self._fingerprint(), before)
 
-	def test_the_seeder_is_the_one_home_of_the_seven_rows(self):
+	def test_the_seeder_is_the_one_home_of_the_section_rows(self):
 		"""after_migrate and the patch call the SAME function, so they can never declare two end states."""
 		section_seed.ensure_rows()
 		self.assertEqual(set(frappe.get_all(DT, pluck="name")), set(SECTIONS))

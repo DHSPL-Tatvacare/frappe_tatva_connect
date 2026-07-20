@@ -28,10 +28,11 @@ Security:
 """
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
 from tatva_connect.access import entitlement
-from tatva_connect.lead import multirow
-from tatva_connect.taxonomy import labels
+from tatva_connect.lead import keyvalue, multirow
+from tatva_connect.taxonomy import grain, labels
 
 # Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
 # (vertical/group) is the dedup anchor; program transitions happen via deliberate routing
@@ -95,12 +96,16 @@ def _docfield(target_doctype, fieldname):
 		return None
 
 
-def _is_readonly(target_doctype, fieldname):
-	"""Read-only iff a protected routing field, or the docfield is read_only, or unknown
-	(fail-closed: an unresolvable field is never writable)."""
-	if fieldname in _PROTECTED_FIELDS:
+def _is_readonly(section, fieldname):
+	"""Read-only iff a protected routing field, the section's own row key, the docfield says so, or the
+	field is unknown (fail-closed: an unresolvable field is never writable).
+
+	A multi-row section's row key is the row's ADDRESS, not a value on it: editing it re-keys the row, so
+	the next write naming the original key appends a duplicate instead of updating. Read off the section
+	that declares it, never restated here — a single-row section declares none and loses nothing."""
+	if fieldname in _PROTECTED_FIELDS or fieldname == (section.row_key_field or ""):
 		return True
-	df = _docfield(target_doctype, fieldname)
+	df = _docfield(section.target_doctype, fieldname)
 	return bool(df.read_only) if df else True
 
 
@@ -109,7 +114,7 @@ def writable_keys(selected, is_readonly):
 	Target doctype is read off the section brain; `is_readonly(target_doctype, fieldname)` is injected."""
 	out = set()
 	for fk, row in selected.items():
-		if not is_readonly(_section_of(row).target_doctype, row.get("fieldname") or ""):
+		if not is_readonly(_section_of(row), row.get("fieldname") or ""):
 			out.add(fk)
 	return out
 
@@ -151,6 +156,68 @@ def _value(doc, section, row):
 	return doc.get(row.get("fieldname"))
 
 
+def _key_value_sections():
+	"""The sections whose rows are their own fields, read from the section brain rather than listed here."""
+	return [
+		frappe.get_cached_doc("CRM Lead Section", name)
+		for name in frappe.get_all("CRM Lead Section", filters={"is_key_value": 1}, pluck="name")
+	]
+
+
+def _entitled_to_lead_grain(doc):
+	"""Does the viewer's entitlement reach THIS lead's grain?
+
+	A key-value section declares no catalogued field, so there is no per-field tick to resolve and
+	`_select` never admits it — which is how these answers previously reached anyone holding read on the
+	lead, ungated, while every named field beside them was grain-filtered. The section is admitted at
+	grain level instead, through `taxonomy.grain.covers`: the one wildcard matcher, never a tuple lookup."""
+	grains = entitlement.entitled_grains()
+	if grains == entitlement.ALL_GRAINS:
+		return True
+	lead = (doc.get("custom_vertical") or "", doc.get("custom_group") or "",
+	        doc.get("custom_current_program") or "")
+	return any(
+		grain.covers({"vertical": v, "group": g, "program": p}, *lead)
+		for v, g, p in grains
+	)
+
+
+def _answers_by_question(doc, section):
+	"""A key-value section's rows grouped by the question they answer, newest last."""
+	grouped = {}
+	for row in doc.get(section.child_table_field) or []:
+		grouped.setdefault(row.get(section.row_key_field) or "", []).append(row)
+	return grouped
+
+
+def _screening_answers(doc, section):
+	"""The latest answer to each question a key-value section holds, under the wording the patient saw.
+
+	A question answered more than once — the same question on a later campaign, answered differently —
+	keeps every answer, and this shows the newest through the SAME rule every multi-row consumer uses.
+	`has_more` tells the panel to offer the history; the rest is read only, because a screening question
+	is declared nowhere and there is no field to write an answer back through."""
+	entries = []
+	for identity, rows in _answers_by_question(doc, section).items():
+		row = keyvalue.newest_first(rows)[0]
+		value = row.get(section.value_field)
+		entries.append({
+			"field_key": f"{section.name}#{identity}",
+			"label": row.get(section.label_field) or row.get(section.question_field) or _("(no question)"),
+			"fieldname": "",
+			"fieldtype": "Data",
+			"options": "",
+			"value": value,
+			"display": None,
+			"empty": _is_empty(value),
+			"read_only": True,
+			"has_more": len(rows) > 1,
+			# After every catalogued field: an operator reads the named answers first, the backlog last.
+			"_idx": 20_000,
+		})
+	return entries
+
+
 def _display_label(df, value):
 	"""The panel's label for a Link value. None for a non-Link field, which tells the panel to render
 	the raw value."""
@@ -180,10 +247,21 @@ def lead_detail(lead):
 			"value": value,
 			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
 			"empty": _is_empty(value),
-			"read_only": _is_readonly(section.target_doctype, row.get("fieldname")),
+			"read_only": _is_readonly(section, row.get("fieldname")),
 			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
 			"_idx": df.idx if df else 10_000,
 		})
+	# A key-value section owns no catalogued field, so the loop above never opens a bucket for it: its
+	# rows are the section. Opened here from the section itself, and only when the lead has answers.
+	for section in _key_value_sections() if _entitled_to_lead_grain(doc) else []:
+		answers = _screening_answers(doc, section)
+		if not answers:
+			continue
+		bucket = buckets.setdefault(
+			section.name,
+			{"key": section.name, "label": section.title, "order": section.display_order, "fields": []},
+		)
+		bucket["fields"] += answers
 	for b in buckets.values():
 		b["fields"].sort(key=lambda f: (f.pop("_idx"), f["label"]))
 	sections = sorted(buckets.values(), key=lambda s: s["order"])
@@ -200,6 +278,39 @@ def _stage_write(doc, section, row, value):
 		return
 	child = _child_row(doc, section) or doc.append(table, {})
 	child.set(fieldname, value)
+
+
+@frappe.whitelist()
+def section_history(lead, field_key):
+	"""Every answer behind one field of the panel, newest first — what the More button opens.
+
+	`field_key` is the key the panel already handed the caller, so a reader can ask for nothing it was
+	not shown. Gated on read of the LEAD, exactly as `lead_detail` is: an answer hangs off a lead, and a
+	lead outside the caller's line is unreadable, so its history is too."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	section_key, _hash, identity = cstr(field_key).partition("#")
+	section = frappe.get_cached_doc("CRM Lead Section", section_key)
+	if not section.is_key_value:
+		frappe.throw(_("{0} keeps no history.").format(section.title), title=_("No history"))
+
+	doc = frappe.get_doc("CRM Lead", lead)
+	# The same grain gate the panel applies, or the modal would answer what the panel just declined to show.
+	if not _entitled_to_lead_grain(doc):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	rows = _answers_by_question(doc, section).get(identity) or []
+	newest = keyvalue.newest_first(rows)
+	return {
+		"label": (newest[0].get(section.label_field) if newest else "") or _("(no question)"),
+		"entries": [
+			{
+				"value": r.get(section.value_field),
+				"empty": _is_empty(r.get(section.value_field)),
+				"on": r.get("creation"),
+				"source": r.get("form"),
+			}
+			for r in newest
+		],
+	}
 
 
 @frappe.whitelist()

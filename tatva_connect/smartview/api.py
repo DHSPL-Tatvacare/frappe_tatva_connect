@@ -25,7 +25,7 @@ from frappe.utils import cint, cstr
 from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
-from tatva_connect.access import entitlement
+from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.taxonomy import labels
@@ -34,6 +34,7 @@ LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
 PAGE_DEFAULT = 50
+_NO_JOIN_SOURCES = ("parent", "task", "payload")  # sql_source values answered off the driving row, no join
 
 # Operators a predicate/filter condition may use -> a qb criterion builder.
 _OPS = {
@@ -78,7 +79,8 @@ def _sections():
 			r.name: r
 			for r in frappe.get_all(
 				"CRM Lead Section",
-				fields=["name", "target_doctype", "child_table_field", "is_multi_row", "row_key_field"],
+				fields=["name", "target_doctype", "child_table_field", "is_multi_row", "row_key_field",
+				        "is_key_value", "value_field"],
 			)
 		}
 
@@ -106,6 +108,7 @@ def _lead_catalog():
 				continue  # a row whose section does not resolve names no table to be read from
 			r.sql_source = crm_lead_section.sql_source(section)
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
+			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
 			rows[r.field_key] = r
 		return rows
@@ -144,6 +147,48 @@ def _activity_catalog(activity_type):
 	return rows
 
 
+def _answer_catalog():
+	"""The questions a key-value section actually holds, offered as columns and filters.
+
+	Read from the DATA rather than from a catalog, because a screening question is declared nowhere: what
+	has been asked is the only true list, and it grows on its own as campaigns run. The digest is the
+	fieldname, so the same question is one column across every form that asked it.
+
+	Request-cached — one read per request, like every other catalog here."""
+	def build():
+		rows = {}
+		for section in frappe.get_all(
+			"CRM Lead Section",
+			filters={"is_key_value": 1},
+			fields=["name", "target_doctype", *crm_lead_section.COLUMN_FIELDS],
+		):
+			for q in frappe.get_all(
+				section.target_doctype,
+				filters={section.row_key_field: ("is", "set")},
+				fields=[f"{section.row_key_field} as identity", f"{section.label_field} as label",
+				        f"{section.question_field} as question"],
+				group_by=section.row_key_field,
+			):
+				key = f"{section.name}:{q.identity}"
+				rows[key] = frappe._dict(
+					field_key=key,
+					label=q.label or q.question or q.identity,
+					fieldname=q.identity,
+					sql_source="answer",
+					row_key_field=section.row_key_field,
+					value_field=section.value_field,
+					target_doctype=section.target_doctype,
+					filterable=1,
+					sortable=1,
+					surface="worklist",
+					fieldtype="Data",
+					options="",
+				)
+		return rows
+
+	return entitlement.request_cache("tatva_connect:smartview_answers", "all", build)
+
+
 def _catalog_fields(base_object, activity_type, grains, roles):
 	"""Catalog rows usable by a view of this base object/type, keyed by field_key, after entitlement:
 	visible in `grains`, minus the fields restricted for `roles`, plus the universal floor. The composer
@@ -153,8 +198,12 @@ def _catalog_fields(base_object, activity_type, grains, roles):
 	An Activity view resolves the TYPE's schema and nothing else: its rows are CRM Tasks, so a CRM Lead
 	column has no column on this query to come from. The type's key already carries its grain, so its
 	fields need no second grain filter — resolve_fields still applies the role restrictions."""
-	rows = _activity_catalog(activity_type) if base_object == "Activity" else _lead_catalog()
-	return entitlement.resolve_fields(rows, grains, roles)
+	if base_object == "Activity":
+		return entitlement.restrict_fields(_activity_catalog(activity_type), roles)
+	# Screening answers are added AFTER entitlement, deliberately: a question is declared nowhere, so
+	# there is no catalog row to tick and nothing for resolve_fields to judge. Row visibility still
+	# holds — an answer hangs off a lead, and a lead outside the caller's line is unreadable. ADR 0005.
+	return {**entitlement.resolve_fields(_lead_catalog(), grains, roles), **_answer_catalog()}
 
 
 def _grains_for_view(v):
@@ -321,42 +370,29 @@ def _driving(base_object):
 	return (LEAD_DOCTYPE, DocType(LEAD_DOCTYPE)) if base_object == "Lead" else (TASK_DOCTYPE, DocType(TASK_DOCTYPE))
 
 
-def _pqc_criterion(driving_name, driving_table):
-	"""The framework's permission scope for the driving doctype, as a qb criterion to AND in
-	(on rows AND count). Fail-closed: ALWAYS applied when a PQC exists.
+def _starter_columns(cat):
+	"""What a view projects when it has chosen nothing — the driving row's OWN fields, never a join.
 
-	The PQC is the framework's own opaque string (Task -> tasks.permissions; Lead -> crm PQC +
-	match conditions), and it references the driving doctype's columns UNQUALIFIED (e.g. bare
-	`name`, `lead_owner`). The moment our query LEFT JOINs a child table (every Activity view, and
-	any view projecting a child field) those bare columns collide with the child's `name`/`owner`
-	-> MySQL 1052 "ambiguous". So we never AND the raw string into the joined query. Instead we
-	scope the driving PK through a SINGLE-TABLE subquery where the bare columns resolve cleanly:
-	    driving.name IN (SELECT name FROM `tabX` WHERE <pqc>)
-	Semantically identical — the PQC only ever constrains the driving doctype's own rows."""
-	from frappe.model.db_query import DatabaseQuery
-
-	cond = (DatabaseQuery(driving_name).get_permission_query_conditions() or "").strip()
-	if not cond:
-		return None
-	# Fresh DocType -> renders as `tab<Doctype>` (NOT aliased), so a PQC that prefixes
-	# `tabX`.col still binds, and a bare col binds to the subquery's only table.
-	src = DocType(driving_name)
-	sub = frappe.qb.from_(src).select(src.name).where(PseudoColumn(f"({cond})"))  # sqli-ok: framework PQC string from get_permission_query_conditions() — not user input
-	return driving_table.name.isin(sub)
+	Stock CRM declares a default column set per doctype (`default_list_data`); this is the same idea,
+	read off the brain instead of hardcoded. Child and answer fields are excluded by construction, and
+	that is what keeps a column-less view under MariaDB's 61-table join ceiling however many screening
+	questions exist. `empty` therefore means this set — it has never meant "every field"."""
+	return [
+		k for k, r in cat.items()
+		if (r.surface or "worklist") == "worklist" and r.sql_source in _NO_JOIN_SOURCES
+	]
 
 
 def _column_field_keys(view, cat):
-	"""The catalog field_keys this view projects, defaulting to every worklist field
-	if the saved columns list is empty/invalid. Catalog-bounded."""
+	"""The catalog field_keys this view projects. A saved list is used as-is (catalog-bounded);
+	a view carrying none falls to the starter set."""
 	try:
 		keys = frappe.parse_json(view.columns) if view.columns else []
 	except Exception:
 		frappe.log_error(title="smartview: bad saved columns JSON")
 		keys = []
 	keys = [k for k in (keys or []) if k in cat]
-	if not keys:
-		keys = [k for k, r in cat.items() if (r.surface or "worklist") == "worklist"]
-	return keys
+	return keys or _starter_columns(cat)
 
 
 def _predicate_keys(node, acc):
@@ -379,9 +415,17 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	a JSON_EXTRACT off the task's custom_activity_payload (no join, display-only)."""
 	field_terms = {}
 	join_specs = {}  # alias -> (aliased child table, order_field, child doctype)
+	answer_specs = {}  # alias -> the catalog row whose field this join answers
 	for key in needed_keys:
 		r = cat.get(key)
 		if not r:
+			continue
+		if r.sql_source == "answer":
+			# One row per field, so one join per field the view selects. The alias is positional
+			# because a field_key is not a SQL identifier.
+			alias = f"_tc_ans_{len(answer_specs)}"
+			answer_specs[alias] = (key, r)
+			field_terms[key] = DocType(r.target_doctype).as_(alias)[r.value_field]
 			continue
 		if r.sql_source in ("parent", "task"):
 			field_terms[key] = driving_table[r.fieldname]
@@ -413,6 +457,24 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	driving_tbl = f"tab{driving_name}"
 
 	def apply(query):
+		# One row per parent: the question's NEWEST answer, ordered by idx like `keyvalue.newest_first`.
+		for spec_alias, (_spec_key, r) in answer_specs.items():
+			inner = DocType(r.target_doctype)
+			match = inner[r.row_key_field] == r.fieldname
+			rn = RowNumber().over(inner.parent).orderby(inner.idx, order=frappe.qb.desc)
+			ranked = (
+				frappe.qb.from_(inner)
+				.select(inner.star, rn.as_("_tc_rn"))
+				.where((inner.parenttype == driving_name) & match)
+			)
+			sub = (
+				frappe.qb.from_(ranked)
+				.select(PseudoColumn("*"))
+				.where(PseudoColumn("`_tc_rn` = 1"))
+			).as_(spec_alias)
+			query = query.left_join(sub).on(
+				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
+			)
 		# Every child join yields ONE row per parent — the newest by its order field (blank -> creation).
 		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
 		# a plain join would multiply the parent for a multi-row child, inflating rows AND the count.
@@ -443,6 +505,13 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	return apply, field_terms
 
 
+def _never_matches():
+	"""A condition that selects nothing — how a saved view fails CLOSED when a field cannot be resolved.
+	`1=0` is the same constant `access/visibility.py` uses to deny, wrapped the way this file already
+	wraps the framework's own PQC fragment."""
+	return PseudoColumn("1=0")  # sqli-ok: a constant, no user value reaches this string
+
+
 def _criterion(field_term, op, value):
 	builder = _OPS.get(op)
 	if not builder:
@@ -468,7 +537,11 @@ def _predicate_where(node, cat, field_terms):
 	key = node.get("field")
 	r = cat.get(key)
 	if not r or not r.filterable or key not in field_terms:
-		return None
+		# A SAVED predicate is the view's definition, so a condition that cannot be resolved narrows to
+		# nothing rather than disappearing. Dropped, it widened the view instead: a filter on a question
+		# no lead currently answers returned every lead, and one naming a field outside the caller's
+		# grain returned more rows than the view was written to show. Ad-hoc filters stay tolerant.
+		return _never_matches()
 	return _criterion(field_terms[key], node.get("operator") or "=", node.get("value"))
 
 
@@ -512,8 +585,11 @@ def _col_docfield(r):
 	dt = (r.target_doctype or "").strip()
 	if not dt:
 		return None
+	# A key-value row's `fieldname` addresses a ROW, so the column its answer is read from is the
+	# section's value column, and that is the type the worklist must format.
+	fieldname = r.value_field if r.sql_source == "answer" else r.fieldname
 	try:
-		return frappe.get_meta(dt).get_field(r.fieldname)
+		return frappe.get_meta(dt).get_field(fieldname)
 	except Exception:
 		return None
 
@@ -548,18 +624,12 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 	col_keys = _column_field_keys(v, cat)
 	# Interactive column override wins over the saved set, but stays catalog-bounded: an
-	# unknown key is dropped; an empty/invalid request falls back to the saved columns.
+	# A requested projection is validated against the SAME allowlist the save path uses: an unknown key
+	# throws instead of being dropped, so a wrong client key surfaces on the first click, not months later.
 	if columns is not None:
-		if isinstance(columns, str):
-			try:
-				columns = frappe.parse_json(columns)
-			except Exception:
-				frappe.log_error(title="smartview: bad columns override JSON")
-				columns = None
-		if isinstance(columns, (list, tuple)):
-			req = [k for k in columns if k in cat]
-			if req:
-				col_keys = req
+		req = _validate_columns(columns, cat)
+		if req:
+			col_keys = req
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
@@ -585,7 +655,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if base_object == "Activity" and activity_type:
 		tc = driving_table.custom_task_type == activity_type
 		crit = tc if crit is None else (crit & tc)
-	pqc = _pqc_criterion(driving_name, driving_table)
+	pqc = visibility.readable_criterion(driving_name, driving_table)
 	if pqc is not None:
 		crit = pqc if crit is None else (crit & pqc)
 
@@ -708,7 +778,9 @@ def upsert_view(view):
 	program = view.get("program") or None
 	grains = _grains_from_axes(vertical, group, program)
 	cat = _catalog_fields(base_object, activity_type, grains, frappe.get_roles())
-	columns = _validate_columns(view.get("columns"), cat)
+	# Materialised on save, so a view's projection is always an explicit stored list. What "empty" meant
+	# then stops depending on what the catalog happens to hold later.
+	columns = _validate_columns(view.get("columns"), cat) or _starter_columns(cat)
 	predicate = view.get("predicate")
 	if isinstance(predicate, str):
 		predicate = frappe.parse_json(predicate) if predicate else None

@@ -13,6 +13,7 @@ System-Manager sentinel that matches every field without enumerating the masters
 import frappe
 
 from tatva_connect.access import request_cache
+from tatva_connect.taxonomy import grain as taxonomy_grain
 
 # System Manager sees every field — a sentinel so we never enumerate the grain masters.
 ALL_GRAINS = "__all__"
@@ -148,6 +149,86 @@ def field_in_grains_via_contract(field_key, grains):
 	return False
 
 
+def entitled_to_field(field_key, grains):
+	"""Could ANY of the caller's ENTITLED grains reach this field?
+
+	An entitlement is a RULE: a user granted a whole vertical carries a blank group meaning ANY. So this
+	is the `overlaps` question, and `field_in_grains_via_contract` beside it is the `covers` one — that
+	answers about a real LEAD, whose blank axis is a literal blank. Asking the lead question about an
+	entitlement collapsed a vertical-wide admin to the universal floor while the rep beneath them saw
+	their group's full set. `taxonomy/grain.py` names this trap in its own docstring."""
+	if grains == ALL_GRAINS:
+		return True
+	return any(field_in_any_grain_overlapping(field_key, g) for g in grains)
+
+
+def _rule_axes(rule_grain):
+	"""A rule grain as three normalised axes. Blank stays blank — it MEANS ANY and must never be
+	back-filled with a value, which is what makes it safe to hand to `taxonomy.grain.overlaps`."""
+	v, g, p = (rule_grain or ("", "", ""))
+	return (v or ""), (g or ""), (p or "")
+
+
+def field_in_any_grain_overlapping(field_key, rule_grain):
+	"""Could a RULE declaring `rule_grain` EVER be allowed this field? The wildcard-aware sibling of
+	`field_in_grains_via_contract`.
+
+	The one above asks about a real lead, so its grain is DATA and blank is the literal empty string. This
+	one is asked by author-time surfaces — a workflow's declared grain, where a blank axis means ANY — and
+	answering it with the data-grain matcher hides every field a MORE SPECIFIC contract ticks: a workflow
+	scoped to a whole vertical was offered only the fields of contracts equally blank, though execution
+	would have allowed far more. Same catalog, same ticks, same `taxonomy.grain` module — a different,
+	honestly-named question, exactly as `is_set_declared` sits beside `is_settable`.
+	"""
+	rv, rg, rp = _rule_axes(rule_grain)
+	for contract_grain, keys in _internal_ticks().items():
+		if field_key not in keys:
+			continue
+		candidate = dict(zip(taxonomy_grain.AXES, contract_grain, strict=True))
+		if taxonomy_grain.overlaps(candidate, rv, rg, rp):
+			return True
+	return False
+
+
+def grain_overlaps_entitlement(rule_grain, user=None):
+	"""Could a RULE at `rule_grain` ever concern a record this user may act on?
+
+	The possibility question, for author-time surfaces. `grain_entitled` is the actuality question and
+	takes a real record's DATA grain; this takes a rule grain whose blank axis means ANY on the ASKING
+	side too, so it is symmetric and resolves through `taxonomy.grain.overlaps`. Handing a rule grain to
+	`grain_entitled` would compare that wildcard as the empty string and answer confidently wrong.
+	"""
+	grains = entitled_grains(user)
+	if grains == ALL_GRAINS:
+		return True
+	rv, rg, rp = _rule_axes(rule_grain)
+	return any(
+		taxonomy_grain.overlaps({"vertical": gv, "group": gg, "program": gp}, rv, rg, rp)
+		for gv, gg, gp in grains
+	)
+
+
+def users_entitled_to(rule_grain, txt=None, limit=20, scan=500):
+	"""The users a rule at this grain may legitimately name — the picker's answer.
+
+	Deliberately a FILTER over candidates rather than a reverse query over Assignment Rule rows: the
+	forward question ("is this user entitled here") already has exactly one answer, and a reverse query
+	would be a second matcher free to disagree with it — which is the defect class this brain exists to
+	remove. `scan` bounds the sweep so a picker can never walk an unbounded user table, and `txt` narrows
+	it the way an ordinary Link search does.
+	"""
+	filters = {"enabled": 1, "user_type": "System User"}
+	if txt:
+		filters["name"] = ["like", f"%{txt}%"]
+	found = []
+	for user in frappe.get_all("User", filters=filters, pluck="name", limit=scan, order_by="name asc"):
+		if grain_overlaps_entitlement(rule_grain, user=user):
+			found.append(user)
+			if len(found) >= limit:
+				break
+	return found
+
+
 def is_universal_field(field_key):
 	"""Contract-era 'universal': True iff `field_key` is ticked by EVERY internal contract (belongs to all
 	grains). Request-cached off the same _internal_ticks() map. No contracts at all → False (fail-closed)."""
@@ -170,7 +251,9 @@ def grain_entitled(grain, user=None):
 		return True
 	rv, rg, rp = grain
 	for gv, gg, gp in grains:
-		if (not gv or gv == rv) and (not gg or gg == rg) and (not gp or gp == rp):
+		# The ONE wildcard-match predicate. This loop used to spell the rule out a second time, and a
+		# second copy of "blank means ANY" is exactly the defect that hid 129 fields from 1,894 leads.
+		if taxonomy_grain.covers({"vertical": gv, "group": gg, "program": gp}, rv, rg, rp):
 			return True
 	return False
 
@@ -186,22 +269,27 @@ def _restricted_keys(roles):
 	return hidden
 
 
+def restrict_fields(catalog_rows, roles):
+	"""The ROLE half alone: the same rows, minus any field hidden from these roles.
+
+	For a catalog whose grain is already settled. An activity type's key IS its grain — the type is
+	reached through the view's grain and a caller not entitled to it never gets this far — so its fields
+	need no second admission, only this. `resolve_fields` below is this plus the grain question, and is
+	the right call whenever the grain is still open."""
+	hidden = _restricted_keys(roles)
+	return {k: r for k, r in catalog_rows.items() if k in UNIVERSAL_KEYS or k not in hidden}
+
+
 def resolve_fields(catalog_rows, grains, roles):
 	"""The internal field list: catalog rows visible in `grains`, minus any field restricted for
 	`roles`, plus the universal keys (always present). `catalog_rows` is the already scope-filtered
 	catalog ({field_key: row}) so this stays the single grain+restriction brain with no second
 	catalog read. Returns the surviving {field_key: row} dict, order preserved."""
-	hidden = _restricted_keys(roles)
-	out = {}
-	for key, row in catalog_rows.items():
-		if key in UNIVERSAL_KEYS:
-			out[key] = row  # universal floor — never grain/restriction filtered
-			continue
-		if key in hidden:
-			continue
-		if field_in_grains_via_contract(row["field_key"], grains):
-			out[key] = row
-	return out
+	return {
+		key: row
+		for key, row in restrict_fields(catalog_rows, roles).items()
+		if key in UNIVERSAL_KEYS or entitled_to_field(row["field_key"], grains)
+	}
 
 
 @frappe.whitelist()

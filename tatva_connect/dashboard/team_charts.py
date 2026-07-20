@@ -13,6 +13,7 @@ Dispatched from the fork via thin `# TATVA` `get_*` shims (logic lives here). Tw
 """
 import frappe
 from frappe import _
+from tatva_connect.access import visibility
 from frappe.query_builder import Case, DocType
 from frappe.query_builder.functions import Coalesce, Count, Date, Sum
 
@@ -46,7 +47,7 @@ def _kpi(title, tooltip, value):
 
 def total_tasks(user=None):
 	Task = DocType("CRM Task")
-	q = frappe.qb.from_(Task).select(Count("*"))
+	q = visibility.scope(frappe.qb.from_(Task).select(Count("*")), "CRM Task", Task)
 	if user:
 		q = q.where(_owner(Task) == user)
 	return _kpi(_("Total Tasks"), _("All tasks"), _count(q))
@@ -54,7 +55,7 @@ def total_tasks(user=None):
 
 def pending_tasks(user=None):
 	Task = DocType("CRM Task")
-	q = frappe.qb.from_(Task).select(Count("*")).where(Task.status.isin(_OPEN))
+	q = visibility.scope(frappe.qb.from_(Task).select(Count("*")).where(Task.status.isin(_OPEN)), "CRM Task", Task)
 	if user:
 		q = q.where(_owner(Task) == user)
 	return _kpi(_("Pending Tasks"), _("Tasks not yet completed"), _count(q))
@@ -69,6 +70,7 @@ def overdue_tasks(user=None):
 		.where(Task.due_date.isnotnull())
 		.where(Task.due_date < frappe.utils.now())
 	)
+	q = visibility.scope(q, "CRM Task", Task)
 	if user:
 		q = q.where(_owner(Task) == user)
 	return _kpi(_("Overdue Tasks"), _("Pending tasks past their due date"), _count(q))
@@ -82,6 +84,7 @@ def tasks_due_today(user=None):
 		.where(Task.status.isin(_OPEN))
 		.where(Date(Task.due_date) == frappe.utils.nowdate())
 	)
+	q = visibility.scope(q, "CRM Task", Task)
 	if user:
 		q = q.where(_owner(Task) == user)
 	return _kpi(_("Due Today"), _("Pending tasks due today"), _count(q))
@@ -89,7 +92,7 @@ def tasks_due_today(user=None):
 
 def completed_tasks(user=None):
 	Task = DocType("CRM Task")
-	q = frappe.qb.from_(Task).select(Count("*")).where(Task.status == "Done")
+	q = visibility.scope(frappe.qb.from_(Task).select(Count("*")).where(Task.status == "Done"), "CRM Task", Task)
 	if user:
 		q = q.where(_owner(Task) == user)
 	return _kpi(_("Completed Tasks"), _("Tasks marked done"), _count(q))
@@ -113,6 +116,7 @@ def leads_by_owner(from_date=None, to_date=None, user=None):
 		.orderby(Count("*"), order=frappe.qb.desc)
 		.limit(_TOP_N)
 	)
+	query = visibility.scope(query, "CRM Lead", Lead)
 	if user:
 		query = query.where(Lead.lead_owner == user)
 	return {
@@ -153,6 +157,7 @@ def tasks_by_owner(user=None):
 		.orderby(Count("*"), order=frappe.qb.desc)
 		.limit(_TOP_N)
 	)
+	query = visibility.scope(query, "CRM Task", Task)
 	if user:
 		query = query.where(owner == user)
 	return {

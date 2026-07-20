@@ -64,6 +64,33 @@ class TestDetailPureLogic(FrappeTestCase):
 		b = {"field_key": "drug:psp_name", "section": "drug", "fieldname": "psp_name"}
 		self.assertEqual(len(detail.dedup_rows([a, b])), 2)
 
+	def test_a_multi_row_sections_row_key_is_never_writable(self):
+		"""The row key is the row's ADDRESS, not a value on it. A rep editing a lab report's date re-keys
+		that row, so the next sync for the original date creates a DUPLICATE instead of updating it —
+		visible weeks later as two lab rows for one report.
+
+		Asserted on `_is_readonly`, the one place the decision is made and what `writable_keys` builds the
+		endpoint's allowlist from. Read off the section, never a list kept here."""
+		for name in frappe.get_all("CRM Lead Section", filters={"is_multi_row": 1}, pluck="name"):
+			section = frappe.get_cached_doc("CRM Lead Section", name)
+			with self.subTest(section=name):
+				self.assertTrue(section.row_key_field, "a multi-row section must declare its row key")
+				self.assertTrue(
+					detail._is_readonly(section, section.row_key_field),
+					f"{name}.{section.row_key_field} is the row's address and must never be writable",
+				)
+		# The control: an ordinary, editable field on a multi-row section stays editable.
+		self.assertFalse(
+			detail._is_readonly(frappe.get_cached_doc("CRM Lead Section", "lab"), "primary_condition"),
+			"protecting the address must not freeze the rest of the row",
+		)
+
+	def test_a_single_row_section_has_no_row_key_to_protect(self):
+		"""`row_key_field` is blank there, so the rule must not accidentally freeze an ordinary field."""
+		section = frappe.get_cached_doc("CRM Lead Section", "plan")
+		self.assertFalse(section.row_key_field)
+		self.assertFalse(detail._is_readonly(section, "plan_name"))
+
 	def test_writable_keys_excludes_readonly(self):
 		# Target doctype is resolved off the section brain; the injected resolver marks mobile_no
 		# read-only (API-owned), so it is excluded while first_name stays writable.

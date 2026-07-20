@@ -16,6 +16,7 @@ to its parent via `substage_of` rather than reading the empty `custom_stage`.
 """
 import frappe
 from frappe import _
+from tatva_connect.access import visibility
 from frappe.query_builder import Case, DocType
 from frappe.query_builder.functions import Coalesce, Count, Date
 
@@ -57,6 +58,7 @@ def leads_by_vertical(from_date=None, to_date=None, user=None):
 		.groupby(Lead.custom_vertical)
 		.orderby(Count("*"), order=frappe.qb.desc)
 	)
+	query = visibility.scope(query, "CRM Lead", Lead)
 	if user:
 		query = query.where(Lead.lead_owner == user)
 	return {
@@ -86,6 +88,7 @@ def leads_by_substage(from_date=None, to_date=None, user=None, vertical=None, pr
 		.groupby(Stage.name, Stage.display_label, Stage.position)
 		.orderby(Stage.position)
 	)
+	query = visibility.scope(query, "CRM Lead", Lead)
 	if user:
 		query = query.where(Lead.lead_owner == user)
 	if vertical:
@@ -120,6 +123,7 @@ def leads_by_stage(from_date=None, to_date=None, user=None, vertical=None, progr
 		.groupby(Par.name, Par.display_label, Par.position)
 		.orderby(Par.position)
 	)
+	query = visibility.scope(query, "CRM Lead", Lead)
 	if user:
 		query = query.where(Lead.lead_owner == user)
 	if vertical:
