@@ -224,6 +224,45 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 		finally:
 			frappe.db.set_single_value("CRM Partner API Settings", "async_file_max_records", 50000)
 
+	def _workbook_job(self, rows):
+		"""A real job row carrying a workbook, read back as xlsx. Returns (job, raw).
+
+		The row is inserted as csv and read as xlsx: the record cap is what is under test, and the
+		doctype's own Select is a separate concern that would only be exercised after a migrate."""
+		from tatva_connect import tabular
+		raw = tabular.write(["mobile_no", "first_name"], rows, "xlsx")
+		with patch("frappe.enqueue"):
+			name = partner_bulk_job.submit_job(PARTNER, "lead_create", "csv", raw)
+		job = frappe.get_doc("CRM Bulk Job", name)
+		job.input_format = "xlsx"
+		return job, raw
+
+	def test_a_workbook_is_not_rejected_by_a_newline_count(self):
+		"""An xlsx is a ZIP, so its 0x0A bytes are binary noise and say nothing about its row count.
+
+		The cheap pre-check is sound for a line-based payload and meaningless for a workbook: at roughly
+		one newline byte in 256, a large-but-shallow workbook would be refused for a limit it never
+		reached. Three rows under a cap of five, in a file whose binary carries more than five newlines."""
+		frappe.set_user("Administrator")
+		job, raw = self._workbook_job([[f"+91610000{80 + i:04d}", f"{NAME_PREFIX}X{i}"] for i in range(3)])
+		self.assertGreater(raw.count(b"\n"), 5, "fixture does not exercise the newline pre-check")
+		frappe.db.set_single_value("CRM Partner API Settings", "async_file_max_records", 5)
+		try:
+			self.assertEqual(len(partner_bulk_worker._to_batch(job, raw)), 3)
+		finally:
+			frappe.db.set_single_value("CRM Partner API Settings", "async_file_max_records", 50000)
+
+	def test_a_workbook_over_the_record_cap_is_still_refused(self):
+		"""The true count is enforced after parsing, for every format — not only the cheap bound."""
+		frappe.set_user("Administrator")
+		job, raw = self._workbook_job([[f"+91610000{90 + i:04d}", f"{NAME_PREFIX}Y{i}"] for i in range(4)])
+		frappe.db.set_single_value("CRM Partner API Settings", "async_file_max_records", 2)
+		try:
+			with self.assertRaises(partner_bulk_worker.PayloadRejected):
+				partner_bulk_worker._to_batch(job, raw)
+		finally:
+			frappe.db.set_single_value("CRM Partner API Settings", "async_file_max_records", 50000)
+
 	def test_ragged_csv_row_fails_alone(self):
 		content = ("mobile_no,first_name\n"
 		           f"+916100000080,{NAME_PREFIX}R80\n"

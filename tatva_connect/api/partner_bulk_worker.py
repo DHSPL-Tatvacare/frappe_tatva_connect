@@ -26,6 +26,7 @@ from tatva_connect.automation import settings as automation
 from tatva_connect.storage import file_screening
 
 _ASYNC_REAPER = "Partner::AsyncBulk::reaper"  # dormant toggle for the stranded-InProgress reaper
+_LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
 
 
 class PayloadRejected(Exception):
@@ -185,16 +186,23 @@ def _screen(job, raw):
 
 
 def _to_batch(job, raw):
-	"""The batch: CSV -> flat lead-core dicts (native reader); else -> raw JSONL lines parsed per-chunk.
-	Enforces the record cap cheaply (a newline count, before materialising) and sets `total`."""
+	"""The batch: CSV/XLSX -> dicts (native readers); JSONL -> raw lines parsed per-chunk. Sets `total`.
+
+	The record cap is enforced twice for a line-based payload and once for a workbook. A newline count
+	is a sound upper bound on the records in CSV or JSONL and refuses an oversized file before it is
+	materialised — but an XLSX is a ZIP, so its 0x0A bytes are binary noise (roughly one in 256) and
+	would refuse a large-but-shallow workbook for a limit it never reached. The true count, after
+	parsing, is what every format is actually held to."""
 	cap = _cfg()["async_file_max_records"]
-	if raw.count(b"\n") + 1 > cap:  # upper bound on record count, before the file is materialised
+	if job.input_format in _LINE_FORMATS and raw.count(b"\n") + 1 > cap:
 		raise PayloadRejected(_("Exceeds the {0} record limit.").format(cap))
-	if job.input_format in ("csv", "xlsx"):
+	if job.input_format in tabular.FORMATS:
 		batch = tabular.read(raw, job.input_format)
 	else:
 		text = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
 		batch = [line for line in text.splitlines() if line.strip()]
+	if len(batch) > cap:
+		raise PayloadRejected(_("Exceeds the {0} record limit.").format(cap))
 	frappe.db.set_value("CRM Bulk Job", job.name, "total", len(batch), update_modified=False)
 	return batch
 
