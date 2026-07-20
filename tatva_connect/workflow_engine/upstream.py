@@ -89,15 +89,23 @@ def _ancestors(by_id, node_id):
 	return order
 
 
-def _shaped(name, ftype, label, source):
-	"""One field, in the builder contract's own shape — `{key, label, type}`.
+def _shaped(name, ftype, label, source, source_label):
+	"""One field, in the builder contract's own shape — `{key, label, type, source, source_label}`.
 
 	Deliberately NO per-field `operators`: the contract resolves them by TYPE, from `operators_by_type`,
 	which is composed from the evaluator's own operator families. A per-field list here would be a second
 	vocabulary, and the one that already exists (`describe.operators_for`) emits SYMBOLS the evaluator
 	rejects outright — offering them would build a predicate that can never match.
+
+	`source` is the namespace a reference is written with (`crm_lead`, `api`); `source_label` is how a
+	PERSON is told where the value came from. Both are answered here because only this module knows both —
+	deriving the label in the picker would be a second brain guessing that `crm_lead` means the lead, and
+	it would guess wrong for every node source, whose name is the author's own.
 	"""
-	return {"key": name, "label": label or name, "type": ftype or "Data", "source": source}
+	return {
+		"key": name, "label": label or name, "type": ftype or "Data",
+		"source": source, "source_label": source_label or source,
+	}
 
 
 def _emitted_by(node):
@@ -109,8 +117,14 @@ def _emitted_by(node):
 
 	emitted = [*emitted, *_declared_writes(node, config)]
 
+	# The author named the node, so the node's own id leads the group label — that is what they will look
+	# for. The type follows so a bare id like `n3` still says what it is.
+	group = _("{0} · {1}").format(node["node_id"], _(registry.declaration(node["node_type"])["label"]))
 	return [
-		_shaped(refs.of_node(node["node_id"], value["name"]), value.get("type"), value.get("about"), node["node_id"])
+		_shaped(
+			refs.of_node(node["node_id"], value["name"]), value.get("type"), value.get("about"),
+			node["node_id"], group,
+		)
 		for value in emitted
 	]
 
@@ -266,7 +280,8 @@ def _subject_fields(by_id):
 	if not subject or not frappe.db.exists("DocType", subject):
 		return []
 	return [
-		_shaped(f["key"], f["type"], f["label"], refs.slug(subject)) for f in refs.readable_for(subject)
+		_shaped(f["key"], f["type"], f["label"], refs.slug(subject), _(subject))
+		for f in refs.readable_for(subject)
 	]
 
 

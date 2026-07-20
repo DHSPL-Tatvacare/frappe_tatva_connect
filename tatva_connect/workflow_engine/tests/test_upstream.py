@@ -100,6 +100,22 @@ class TestUpstream(FrappeTestCase):
 			{v["source"] for v in offered}, {"api", "crm_lead"},
 			"neither value may eat the other — that ambiguity is what the contract removes",
 		)
+		self.assertEqual(
+			len({v["source_label"] for v in offered}), 2,
+			"two sources must read as two DIFFERENT headings, or the picker shows one `Status` twice",
+		)
+
+	def test_a_source_says_in_words_where_it_came_from(self):
+		"""The label a person reads, decided here and not in the picker.
+
+		A node's group leads with the id the author themselves typed, because that is what they will scan
+		for; the subject's group is the doctype. Deriving either in JS would be a second brain that knows
+		`crm_lead` means the lead and cannot know what `api` means, since that name is the author's.
+		"""
+		found = {v["key"]: v for v in upstream.available_at(_graph(), "b1")}
+		self.assertEqual(found["crm_lead.status"]["source_label"], "CRM Lead")
+		self.assertIn("api", found["api.status"]["source_label"])
+		self.assertIn("Call API", found["api.status"]["source_label"])
 
 	def test_a_value_from_another_branch_is_not_offered(self):
 		"""`note` sits on the FAILED leg. Nothing it writes can be read by `b1` on the succeeded leg —
@@ -125,8 +141,9 @@ class TestUpstream(FrappeTestCase):
 		per-field `operators`: the contract resolves those by TYPE, and a per-field list here would be a
 		second operator vocabulary — the existing one emits symbols the evaluator rejects outright."""
 		for value in upstream.available_at(_graph(), "b1"):
-			self.assertEqual(set(value), {"key", "label", "type", "source"}, value)
+			self.assertEqual(set(value), {"key", "label", "type", "source", "source_label"}, value)
 			self.assertTrue(value["label"], "a value must be nameable to a person")
+			self.assertTrue(value["source_label"], "a value must say, in words, where it came from")
 
 	def test_an_unknown_node_resolves_to_nothing(self):
 		self.assertEqual(upstream.available_at(_graph(), "no-such-node"), [])
