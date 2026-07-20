@@ -14,15 +14,15 @@ from frappe import _
 
 # ONE resolver, shared with the save-time validation — target_table -> the doctype whose
 # fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
-from tatva_connect.access import entitlement
 from tatva_connect.intake.intake import target_doctype as _resolve_doctype
+from tatva_connect.lead import mapping
 
 
 @frappe.whitelist()
 def list_target_fields(target_table, intake_form=None, vertical=None, group=None, program=None):
 	"""The fields this form may map into `target_table`, as [{fieldname, label, fieldtype}].
 
-	The list is the ONE brain (`CRM Lead API Field`), scoped to the section AND to the form's grain —
+	The list is the ONE mapping seam (`lead/mapping.py`), scoped to the section AND to the form's grain —
 	NOT a raw get_meta walk, which offered every column on the doctype including ones this grain must
 	never write. The grain axes come from the CALLER (the open, possibly unsaved builder form), so the
 	list narrows the moment an operator picks a grain — no save, no round trip.
@@ -31,27 +31,15 @@ def list_target_fields(target_table, intake_form=None, vertical=None, group=None
 	"""
 	frappe.has_permission("CRM Intake Form", "read", throw=True)
 
-	dt = _resolve_doctype(target_table)
-	if not dt:
+	if not _resolve_doctype(target_table):
 		return []  # note (free-text) or unknown table -> nothing to pick
 
 	grain = ((vertical or "").strip(), (group or "").strip(), (program or "").strip())
 	if not any(grain):
 		return []  # no grain chosen yet — the client shows "pick the grain first"
 
-	meta = frappe.get_meta(dt)
-	out = []
-	for row in frappe.get_all(
-		"CRM Lead API Field", filters={"section": target_table}, fields=["field_key", "fieldname", "label"]
-	):
-		if not entitlement.field_in_grains_via_contract(row.field_key, [grain]):
-			continue
-		df = meta.get_field(row.fieldname)
-		if not df or df.fieldtype in frappe.model.no_value_fields:
-			continue  # catalogued but not a live data column — never offer it
-		out.append({"fieldname": row.fieldname, "label": _(row.label or df.label or row.fieldname),
-		            "fieldtype": df.fieldtype})
-	return sorted(out, key=lambda f: f["label"])
+	return [{"fieldname": f["fieldname"], "label": f["label"], "fieldtype": f["fieldtype"]}
+	        for f in mapping.mappable_fields(section=target_table, grain=grain)]
 
 
 @frappe.whitelist()

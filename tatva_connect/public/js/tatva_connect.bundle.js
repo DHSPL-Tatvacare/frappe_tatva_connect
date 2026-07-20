@@ -2,6 +2,34 @@
 // `tatva_enable_secret_reveal(frm, fieldnames)` — make the eye on a Password field reveal the real secret (a saved one holds only asterisks).
 // `tatva_webhook_random_token()` — generate a URL-safe-ish secret for a fresh token.
 // `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) server-side and paint the banner; remembers them for the Copy button.
+// `tatva_set_grid_row_options(grid, cdn, fieldname, data)` — feed ONE opened grid row's dropdown (per-row option sets).
+// `tatva_set_grid_column_options(grid, fieldname, values)` — feed a grid column's dropdown for EVERY row (one option set).
+
+// Per-row grid options; the control exists only once the row is OPEN, so callers use `form_render`.
+window.tatva_set_grid_row_options = function tatva_set_grid_row_options(grid, cdn, fieldname, data) {
+  const grid_row = grid && grid.grid_rows_by_docname && grid.grid_rows_by_docname[cdn];
+  const field = grid_row && grid_row.grid_form && grid_row.grid_form.fields_dict
+    ? grid_row.grid_form.fields_dict[fieldname]
+    : null;
+  if (!field) return;
+  // Autocomplete takes {value,label} pairs; Select/Data fall back to a "\n" options string.
+  if (typeof field.set_data === 'function') {
+    field.set_data(data || []);
+  } else {
+    field.df.options = ['', ...(data || []).map((d) => d.value)].join('\n');
+    field.refresh();
+  }
+}
+
+// Column-wide options: the same set for every row, so it goes on the docfield rather than a row control.
+window.tatva_set_grid_column_options = function tatva_set_grid_column_options(grid, fieldname, values) {
+  if (!grid) return;
+  try {
+    grid.update_docfield_property(fieldname, 'options', ['', ...(values || [])].join('\n'));
+  } catch (e) {
+    // Field absent / grid not built yet — a safe no-op, exactly as the surfaces this replaces treated it.
+  }
+}
 
 // A saved Password field holds only asterisks, so the eye must fetch the plaintext from the server to reveal anything.
 window.tatva_enable_secret_reveal = function tatva_enable_secret_reveal(frm, fieldnames) {

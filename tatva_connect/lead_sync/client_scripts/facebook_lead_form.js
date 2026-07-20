@@ -32,19 +32,8 @@ function tatva_fb_cache_mappable_fields(frm) {
   });
 }
 
-// Feed the opened grid row's Autocomplete (native control, no DOM injection).
+// Feed the opened grid row's Autocomplete through the shared helper (native control, no DOM injection).
 function tatva_fb_set_mapped_field_options(frm, cdn) {
-  const data = frm.__tatva_mappable || [];
   const grid = frm.fields_dict.questions && frm.fields_dict.questions.grid;
-  const grid_row = grid && grid.grid_rows_by_docname && grid.grid_rows_by_docname[cdn];
-  const field = grid_row && grid_row.grid_form && grid_row.grid_form.fields_dict
-    ? grid_row.grid_form.fields_dict.mapped_to_crm_field
-    : null;
-  if (!field) return;
-  if (typeof field.set_data === 'function') {
-    field.set_data(data);
-  } else {
-    field.df.options = ['', ...data.map((d) => d.value)].join('\n');
-    field.refresh();
-  }
+  tatva_set_grid_row_options(grid, cdn, 'mapped_to_crm_field', frm.__tatva_mappable || []);
 }

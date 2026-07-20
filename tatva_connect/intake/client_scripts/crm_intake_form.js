@@ -1,24 +1,12 @@
 // Desk Client Script — CRM Intake Form builder (Frappe Desk, /app/crm-intake-form).
 // Two affordances, both native, no DOM hacks, no innerHTML of user content:
 //   1) Mappings grid dropdowns driven by LIVE meta:
-//        - target_table  -> the live CRM Lead Section keys + `note` (column-wide, same set for
-//          every row, via grid.update_docfield_property). No hardcoded list — the section brain
-//          is the only source, so a new/renamed section shows up here with no client change.
-//        - target_field  -> the pickable fields of the row's target_table (resolved server-side
-//          via list_target_fields, which is has_permission-gated and read-only). Per-row, so it
-//          is set on the OPENED row control in `form_render`.
-//        - show_if_field -> the OTHER rows' source_field values (a function of the whole grid,
-//          so it is set column-wide via grid.update_docfield_property).
-//   2) Buttons: Publish/Unpublish (toggles the linked Web Form's `published` via a gated server
-//      call) and Advanced (opens the native Web Form builder at /app/web-form/<route>).
+//        - target_table  -> live CRM Lead Section keys + `note`, column-wide; the section brain is the only source.
+//        - target_field  -> the row's pickable fields, resolved server-side by list_target_fields, per-row.
+//        - show_if_field -> the OTHER rows' source_field values, column-wide.
+//   2) Buttons: Publish/Unpublish (gated server call) and Advanced (native Web Form builder).
 // 100% no-op until the form has a linked Web Form (i.e. has been saved & scaffolded).
-//
-// Native grid mechanism (verified against frappe v15 grid.js / grid_row.js):
-//   * update_docfield_property(fieldname, "options", [...]) feeds a Select/Autocomplete dropdown
-//     for ALL rows — correct for show_if_field (same option set every row).
-//   * For per-row options (target_field), the opened row's control is reached through
-//     grid.grid_rows_by_docname[cdn].grid_form.fields_dict[fieldname] and fed via set_data /
-//     "options" + refresh — escaped native controls only, never raw HTML.
+// The grid mechanism lives in tatva_connect.bundle.js (tatva_set_grid_*), shared by every mapping surface.
 
 frappe.ui.form.on('CRM Intake Form', {
   refresh(frm) {
@@ -55,13 +43,7 @@ function tatva_intake_showif_options(frm) {
   const names = (frm.doc.mappings || [])
     .map((r) => (r.source_field || '').trim())
     .filter(Boolean);
-  // Select control reads options as a "\n"-joined string; a leading blank allows clearing.
-  const opts = ['', ...Array.from(new Set(names))].join('\n');
-  try {
-    grid.update_docfield_property('show_if_field', 'options', opts);
-  } catch (e) {
-    // Field absent / grid not built yet — safe no-op.
-  }
+  tatva_set_grid_column_options(grid, 'show_if_field', Array.from(new Set(names)));
 }
 
 // target_table: the live CRM Lead Section keys + note, column-wide (same for all rows). No
@@ -70,13 +52,7 @@ function tatva_intake_target_table_options(frm) {
   const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
   if (!grid) return;
   frappe.db.get_list('CRM Lead Section', { fields: ['section_key'], order_by: 'display_order asc' }).then((rows) => {
-    const keys = (rows || []).map((r) => r.section_key);
-    const opts = ['', ...keys, 'note'].join('\n');
-    try {
-      grid.update_docfield_property('target_table', 'options', opts);
-    } catch (e) {
-      // Field absent / grid not built yet — safe no-op.
-    }
+    tatva_set_grid_column_options(grid, 'target_table', [...(rows || []).map((r) => r.section_key), 'note']);
   });
 }
 
@@ -100,7 +76,8 @@ function tatva_intake_target_field_options(frm, cdt, cdn) {
       const fields = (r && r.message) || [];
       // {value,label} pairs — frappe escapes these in the dropdown; we never build HTML.
       const data = fields.map((f) => ({ value: f.fieldname, label: f.label || f.fieldname }));
-      tatva_intake_set_row_options(frm, cdn, 'target_field', data);
+      const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
+      tatva_set_grid_row_options(grid, cdn, 'target_field', data);
       if (!data.length && row.target_table !== 'note') {
         // Empty list has exactly one cause worth naming: no grain chosen yet.
         const g = [frm.doc.custom_vertical, frm.doc.custom_group, frm.doc.custom_current_program];
@@ -110,23 +87,6 @@ function tatva_intake_target_field_options(frm, cdt, cdn) {
       }
     },
   });
-}
-
-// Set a dropdown's options on a SINGLE opened grid row (native control, no DOM injection).
-function tatva_intake_set_row_options(frm, cdn, fieldname, data) {
-  const grid = frm.fields_dict.mappings && frm.fields_dict.mappings.grid;
-  const grid_row = grid && grid.grid_rows_by_docname && grid.grid_rows_by_docname[cdn];
-  const field = grid_row && grid_row.grid_form && grid_row.grid_form.fields_dict
-    ? grid_row.grid_form.fields_dict[fieldname]
-    : null;
-  if (!field) return;
-  // Autocomplete control: feed it the list; Select/Data fall back to a "\n" options string.
-  if (typeof field.set_data === 'function') {
-    field.set_data(data);
-  } else {
-    field.df.options = ['', ...data.map((d) => d.value)].join('\n');
-    field.refresh();
-  }
 }
 
 // ---- buttons ----------------------------------------------------------------

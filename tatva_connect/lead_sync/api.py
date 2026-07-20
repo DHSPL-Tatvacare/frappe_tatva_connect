@@ -1,14 +1,14 @@
 """Desk-facing reads for the Facebook forms: the mappable catalog, the token verdict, and the refresh.
 
 Read-only where it can be: the list of catalog field_keys a form's questions may map to, scoped to the
-grain of the contract its Lead Sync Source is created against. The SAME set `allowed_field_keys` hands
-ingestion — so what an operator can pick and what a lead can actually carry are one answer, not two.
+grain of the contract its Lead Sync Source is created against. The seam hands ingestion the SAME set —
+so what an operator can pick and what a lead can actually carry are one answer, not two.
 """
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from tatva_connect.lead_sync.contract import allowed_field_keys
+from tatva_connect.lead import mapping
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
 from tatva_connect.lead_sync.token import app_credentials, expiry_date, page_of_form, token_info
@@ -35,19 +35,9 @@ def list_mappable_fields(facebook_lead_form):
 	if not contract:
 		return []
 
-	keys = allowed_field_keys(contract)
-	if not keys:
-		return []
-
-	rows = frappe.get_all(
-		"CRM Lead API Field",
-		filters={"field_key": ("in", list(keys))},
-		fields=["field_key", "label", "section"],
-		order_by="section asc, label asc",
-	)
 	return [
-		{"value": r.field_key, "label": f"{r.label or r.field_key} ({r.section})", "section": r.section}
-		for r in rows
+		{"value": f["field_key"], "label": f"{f['label']} ({f['section']})", "section": f["section"]}
+		for f in mapping.mappable_fields(contract=contract)
 	]
 
 
