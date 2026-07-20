@@ -1,9 +1,8 @@
 """Read the contract a lead source is created against — grain and ticked field_keys, nothing local."""
 import frappe
 
-from tatva_connect.lead import keyvalue
-
 from tatva_connect.api.partner import _catalog
+from tatva_connect.lead import keyvalue
 
 CONTRACT = "CRM Lead API Mapping"
 

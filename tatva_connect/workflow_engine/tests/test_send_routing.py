@@ -31,6 +31,7 @@ one test that needs a live path patches `sends_enabled` and the mail boundary in
 config is touched and no message can leave.
 """
 import json
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -170,7 +171,7 @@ class TestTheSendVerbsRouteThroughTheOneMechanism(FrappeTestCase):
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
 		frappe.db.commit()
 
-	_CONFIGS = {
+	_CONFIGS: ClassVar[dict] = {
 		"Send WhatsApp": {"whatsapp_template": "probe"},
 		"Send Email": {"email_recipient": "ops@tatvacare.invalid", "email_subject": "s", "email_body": "b"},
 	}

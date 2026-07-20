@@ -16,8 +16,8 @@ from tatva_connect.lead_sync.contract import (
 	allowed_field_keys,
 	allowed_programs,
 	contract_of,
-	stage,
 	screening_key,
+	stage,
 )
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift

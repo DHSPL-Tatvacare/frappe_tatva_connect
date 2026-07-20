@@ -17,8 +17,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.lead_sync import token
-from tatva_connect.lead_sync import notification_seed
+from tatva_connect.lead_sync import notification_seed, token
 
 
 def _epoch_in_days(days):

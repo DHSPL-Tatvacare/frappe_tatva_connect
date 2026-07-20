@@ -44,6 +44,9 @@ RAW_CONDITIONS = "have_you_been_diagnosed_with_any_of_these_conditions?"
 RAW_TREATMENT = "what_is_your_current_diabetes_treatment?"
 RAW_AGE = "what_is_your_age_group?_(diabetes_affects_different_ages_differently)"
 
+# A grain the fixture never mints, for asserting what a viewer outside the lead's grain is refused.
+OUT_OF_GRAIN = {("ZZ Other Vertical", "ZZ Other Group", "")}
+
 _CACHE_BUCKETS = (
 	"tatva_connect:smartview_catalog", "tatva_connect:smartview_sections", "tatva_connect:smartview_answers",
 	"tatva_connect:internal_contract_ticks", "tatva_connect:internal_universal_fields",
@@ -499,15 +502,13 @@ class TestScreeningAnswers(FrappeTestCase):
 
 	# -- screening answers are grain-gated like every field beside them --------
 
-	OUT_OF_GRAIN = {("ZZ Other Vertical", "ZZ Other Group", "")}
-
 	def test_screening_is_hidden_from_a_viewer_outside_the_leads_grain(self):
 		"""A key-value section declares no catalogued field, so `_select` never admits it — and the answers
 		reached anyone holding read on the lead, ungated, while every NAMED field beside them was
 		grain-filtered. The gate is `taxonomy.grain.covers`, the same wildcard matcher used everywhere else."""
 		lead = self._sync("fb-52", {RAW_HBA1C: ["7.5-9"]})
 		self.assertTrue(self._screening_fields(lead.name), "in grain, the answers show")
-		with patch.object(entitlement, "entitled_grains", return_value=self.OUT_OF_GRAIN):
+		with patch.object(entitlement, "entitled_grains", return_value=OUT_OF_GRAIN):
 			self.assertEqual(
 				self._screening_fields(lead.name), [],
 				"out of grain, the answers must not be served at all",
@@ -517,7 +518,7 @@ class TestScreeningAnswers(FrappeTestCase):
 		"""Or the modal answers precisely what the panel just declined to show."""
 		lead = self._sync("fb-53", {RAW_HBA1C: ["7.5-9"]})
 		field = next(f for f in self._screening_fields(lead.name) if f["label"] == "Latest HbA1c")
-		with patch.object(entitlement, "entitled_grains", return_value=self.OUT_OF_GRAIN):
+		with patch.object(entitlement, "entitled_grains", return_value=OUT_OF_GRAIN):
 			with self.assertRaises(frappe.PermissionError):
 				detail.section_history(lead.name, field["field_key"])
 

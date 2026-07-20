@@ -178,7 +178,7 @@ def _declared_writes(node, config):
 	would reject correct workflows.
 	"""
 	found = []
-	for field, keys in _write_fields(node, config):
+	for _field, keys in _write_fields(node, config):
 		if keys is None:
 			found.append({
 				"name": "*", "type": "Data", "opaque": True,

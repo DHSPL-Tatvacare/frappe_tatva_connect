@@ -33,7 +33,7 @@ from tatva_connect.api import (
 	partner_file,
 	partner_note,
 )
-from tatva_connect.api._base import DEFAULTS, ERROR_CODES, _RATE_ENFORCEMENT
+from tatva_connect.api._base import _RATE_ENFORCEMENT, DEFAULTS, ERROR_CODES
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
 MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, partner_bulk_job)

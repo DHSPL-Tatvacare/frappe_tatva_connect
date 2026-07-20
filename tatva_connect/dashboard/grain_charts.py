@@ -16,9 +16,10 @@ to its parent via `substage_of` rather than reading the empty `custom_stage`.
 """
 import frappe
 from frappe import _
-from tatva_connect.access import visibility
 from frappe.query_builder import Case, DocType
 from frappe.query_builder.functions import Coalesce, Count, Date
+
+from tatva_connect.access import visibility
 
 
 def _range(from_date, to_date):

@@ -41,8 +41,6 @@ from frappe import _
 from frappe.utils import cstr, now_datetime, today
 
 from tatva_connect import automation
-from tatva_connect.lead import keyvalue
-from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.api._base import (
 	ACTION_DELETED,
 	ACTION_FETCHED,
@@ -65,6 +63,8 @@ from tatva_connect.api._base import (
 	stamp_external_id,
 	validate_external_id,
 )
+from tatva_connect.lead import keyvalue
+from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:
@@ -564,7 +564,7 @@ def _catalogued_answers(doc, cf, section):
 		return []
 	source = _key_value_columns(section)
 	return [
-		dict(zip(KEY_VALUE_VIEW, (row.get(c) for c in source)), name=row.get("name"))
+		dict(zip(KEY_VALUE_VIEW, [row.get(c) for c in source], strict=True), name=row.get("name"))
 		for row in (doc.get(cf) or [])
 		if row.get(section.row_key_field) in shown
 	]
@@ -802,7 +802,7 @@ def lead_schema(**_kwargs):
 			"key_field": None,
 			"fields": [
 				_key_value_descriptor(public, meta.get_field(column))
-				for public, column in zip(KEY_VALUE_VIEW, _key_value_columns(section))
+				for public, column in zip(KEY_VALUE_VIEW, _key_value_columns(section), strict=True)
 			],
 		}
 	for section, cf in cat["section_child"].items():

@@ -181,7 +181,9 @@ def _template_parameters(adapter, account, template, values, ctx):
 	thing this whole change exists to prevent is putting a blank into a message to a patient. Neither case
 	sends. An author who genuinely wants a blank writes a Literal row and gets one.
 	"""
-	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this module
+	from tatva_connect.workflow_engine import (
+		contract,  # lazy: registry imports actions, which imports this module
+	)
 
 	names = adapter.template_variables(account, template)
 	declared = contract.value_rows_map(values)
@@ -338,7 +340,9 @@ def resolve_recipient(declared, context):
 	agree by construction rather than by two authors remembering the same rule. A literal address still
 	works, and must: most authors type one.
 	"""
-	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this module
+	from tatva_connect.workflow_engine import (
+		contract,  # lazy: registry imports actions, which imports this module
+	)
 
 	if not contract.is_free_text_reference(declared):
 		return declared

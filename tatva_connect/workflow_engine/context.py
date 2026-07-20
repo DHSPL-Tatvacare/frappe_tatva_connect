@@ -30,9 +30,8 @@ save first would leave it empty at exactly the moment it matters.
 import frappe
 from frappe import _
 
-from tatva_connect.workflow_engine import registry, upstream
-
 from tatva_connect.taxonomy.grain import AXES as _GRAIN_AXES
+from tatva_connect.workflow_engine import registry, upstream
 
 
 @frappe.whitelist()

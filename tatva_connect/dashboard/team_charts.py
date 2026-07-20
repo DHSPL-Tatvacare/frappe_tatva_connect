@@ -13,9 +13,10 @@ Dispatched from the fork via thin `# TATVA` `get_*` shims (logic lives here). Tw
 """
 import frappe
 from frappe import _
-from tatva_connect.access import visibility
 from frappe.query_builder import Case, DocType
 from frappe.query_builder.functions import Coalesce, Count, Date, Sum
+
+from tatva_connect.access import visibility
 
 # Open = not yet closed. CRM Task status is one of Backlog / Todo / In Progress / Done / Canceled.
 _OPEN = ["Backlog", "Todo", "In Progress"]

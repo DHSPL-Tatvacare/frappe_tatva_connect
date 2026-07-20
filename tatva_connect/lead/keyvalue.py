@@ -19,6 +19,7 @@ import hashlib
 
 from frappe.utils import cint
 
+
 def identity_of(question: str) -> str:
 	"""The stable identity of a question key. Fixed width for any input, so no index depends on a length."""
 	return hashlib.sha256((question or "").encode()).hexdigest()  # not SQL — a deterministic row identity

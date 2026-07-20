@@ -23,7 +23,7 @@ from tatva_connect.workflow_engine import registry
 # declared `writes` kind, so the shape is stated once per kind rather than once per node type. `assign` is
 # a Python expression (read by AST); `accepts` is JSON (read by the interpreter's own parser).
 _BY_KIND = {
-	"expression_dict": lambda name: "{%r: 1}" % name,
+	"expression_dict": lambda name: f"{{{name!r}: 1}}",
 	"payload_map": lambda name: json.dumps({"some.path": name}),
 }
 
