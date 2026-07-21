@@ -551,10 +551,14 @@ def _call_endpoint(endpoint, payload_doc):
 		request_headers=headers or None,
 		reference_doctype=payload_doc.doctype, reference_docname=payload_doc.name,
 	)
+	# `frappe.as_json`, exactly as Frappe's own `enqueue_webhook` sends: `as_dict()` hands back real
+	# datetimes and requests' `json=` raises on them, so EVERY call died before the network and the graph
+	# quietly took its failure edge. Content-Type is only defaulted — a curated header still wins.
+	headers.setdefault("Content-Type", "application/json")
 	try:
 		reply = get_request_session().request(
 			(hook.request_method or "POST").upper(), url,
-			json=payload, headers=headers or None, timeout=_API_TIMEOUT_SECONDS,
+			data=frappe.as_json(payload), headers=headers, timeout=_API_TIMEOUT_SECONDS,
 		)
 	except Exception as transport:
 		result = {"status": 0, "ok": False, "body": None, "error": str(transport)}

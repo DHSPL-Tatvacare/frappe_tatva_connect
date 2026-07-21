@@ -90,6 +90,31 @@ class TestCallApi(FrappeTestCase):
 		# node id and can never be confused with a lead column of the same name.
 		return row, frappe.parse_json(row.state_json or "{}").get("call", {})
 
+	# --- the request actually leaves ----------------------------------------------------------------------
+
+	def test_the_payload_survives_serialisation_and_the_call_reaches_the_network(self):
+		"""THE ONE TEST THAT IS NOT MOCKED, and the reason this bug lived.
+
+		Every other test here patches `_call_endpoint` — the exact function that builds the request — so
+		the suite was green while the node could not send anything at all. `payload_doc.as_dict()` hands
+		back real `datetime` objects (`creation`, `modified`, every Date field), `requests`' `json=` cannot
+		serialise them, and the raise was caught by the transport guard and turned into the `failed` edge.
+		Every Frappe document has those fields, so EVERY Call API call died before it reached the network
+		and the graph simply took its failure branch, silently and for ever.
+
+		The endpoint is `example.invalid`, so this test resolves no DNS and sends nothing. That is the
+		point: it must fail at the NETWORK, not at serialisation, and the two are told apart by the error.
+		"""
+		from tatva_connect.automation import actions
+
+		result = actions._call_endpoint(_ENDPOINT, frappe.get_doc("CRM Lead", self.lead.name))
+
+		self.assertEqual(result["status"], 0, "an unroutable host cannot answer")
+		self.assertNotIn(
+			"JSON serializable", result["error"] or "",
+			"the payload must serialise: this failing means the request never left the process",
+		)
+
 	# --- capture ----------------------------------------------------------------------------------------
 
 	def test_the_response_lands_in_named_variables(self):
