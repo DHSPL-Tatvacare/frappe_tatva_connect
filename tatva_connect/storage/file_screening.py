@@ -5,11 +5,14 @@
 on inbound uploads, plus the per-upload verdict log (CRM File Scan Log).
 
 Three checks, cheapest first, one verdict: is the type one System Settings accepts, do the bytes match
-the type they claim, and is the content free of malware. There is exactly ONE extension list and it is
+the type they claim, and is the content free of malware. The bytes are read by `filetype`, the library
+frappe already ships and already sniffs uploads with (`core/doctype/file/utils.py:76-80`) — a hand-written
+magic-number table would be a second, staler copy of it. There is exactly ONE extension list and it is
 Frappe's (`System Settings -> allowed_file_extensions`) — two lists was a second brain, and it is what let
 a PDF be allowed here and refused there. One list read two ways is the same defect, so the value judged
 here is core's OWN `set_file_type()` derivation, never a suffix we parsed off the filename. We own only
-the byte-signature check Frappe has not got, and we run the list without Frappe's no-request early-out
+the DECISION to refuse bytes that contradict their name — Frappe reads them and never judges them — and
+we run the list without Frappe's no-request early-out
 (`file.py:458`), so jobs cannot bypass it.
 
 ONE call site: `FileOverride.before_insert`, before core writes a byte to disk. There is no per-channel
@@ -20,13 +23,17 @@ Activation is config-driven, not code-driven: `screen()` runs ONLY when the mast
 `Storage::File::screening` toggle is on AND the resolved `channel` is listed in
 `CRM File Screening Settings -> Active Channels`. Turning a wired channel on/off tomorrow is a
 config edit (add/remove a row), never a deploy. Everything else the screener consults — scanner
-host/port/timeout, which verdicts block, the byte-signature table, how long a verdict is kept —
-lives on the same Single, and every blank field falls back to DEFAULTS below. There are no baked
-form values: the code holds the default, the form holds the operator's departure from it. Needs the
-`clamav` container + the `clamd` dep (pyproject) for the virus scan; the magic-byte sniff is local
-and needs neither.
+host/port/timeout, which verdicts block, how long a verdict is kept — lives on the same Single, and
+every blank field falls back to DEFAULTS below. There are no baked form values: the code holds the
+default, the form holds the operator's departure from it. Needs the `clamav` container + the `clamd`
+dep (pyproject) for the virus scan; the byte sniff is local and needs neither.
 """
+import mimetypes
+
+import filetype
 import frappe
+from filetype.types.archive import Zip
+from filetype.types.document import ZippedDocumentBase
 from frappe import _
 from frappe.monitor import get_trace_id
 from frappe.utils import now_datetime
@@ -49,28 +56,16 @@ _DISALLOWED = "Type Not Allowed"
 _MISMATCH = "Type Mismatch"
 _UNAVAILABLE = "Scanner Unavailable"
 
-# The shipped byte-signature table, in the operator's own notation: one `TYPE = HEX, HEX` line per type,
-# keyed on core's set_file_type() value (the SAME derivation _allowed reads, so .jpeg and .jpg are ONE
-# entry). Native allowlists the type; this only asserts the CONTENT matches it. The Office types share the
-# container they are really built on — a .docx IS a zip, a .doc IS an OLE2 compound file — so a renamed
-# .html or .exe wearing an Office suffix is refused on the same rule that catches one wearing .pdf.
-# CSV and TXT are deliberately absent: plain text carries no fingerprint, so there is nothing to contradict.
-_SIGNATURES = """PDF = 25504446
-PNG = 89504E470D0A1A0A
-JPG = FFD8FF
-GIF = 474946383761, 474946383961
-DOCX = 504B0304, 504B0506, 504B0708
-XLSX = 504B0304, 504B0506, 504B0708
-PPTX = 504B0304, 504B0506, 504B0708
-ZIP = 504B0304, 504B0506, 504B0708
-DOC = D0CF11E0A1B11AE1
-XLS = D0CF11E0A1B11AE1
-PPT = D0CF11E0A1B11AE1"""
+# The zip-container family, taken from filetype's OWN registry rather than listed here: a .docx, .xlsx,
+# .pptx and their OpenDocument counterparts ARE zips, so a real one may read as its precise format or as
+# the bare container, and both answers are the truth about the same bytes.
+_ZIP_FAMILY = {t.MIME for t in filetype.TYPES if isinstance(t, (ZippedDocumentBase, Zip))}
+_FINGERPRINTABLE = {t.MIME for t in filetype.TYPES}  # read from the library's own registry, never listed here
 
-# The verdicts that refuse an upload. Scanner Unavailable is NOT here: it is not a fact about the file but
-# an outage of ours, so it is decided once by `scanner_unavailable` (which is also why it answers 503, not
-# 400). One decider per verdict — a verdict named in two places is a second brain.
-_BLOCKING = f"{_DISALLOWED}\n{_MISMATCH}\n{_INFECTED}"
+# The verdicts that refuse an upload (also the CRM Screened Verdict `verdict` Select options). Scanner
+# Unavailable is NOT here: it is not a fact about the file but an outage of ours, so it is decided once by
+# `scanner_unavailable` (which is also why it answers 503, not 400). One decider per verdict.
+_BLOCKING = [_DISALLOWED, _MISMATCH, _INFECTED]
 
 # Blank Single fields fall back here (Invariant A.4 — no baked form values).
 DEFAULTS = {
@@ -79,7 +74,6 @@ DEFAULTS = {
 	"clamav_timeout": 30,
 	"scanner_unavailable": "block",
 	"blocking_verdicts": _BLOCKING,
-	"type_signatures": _SIGNATURES,
 	"scan_log_retention_days": 90,
 }
 
@@ -97,19 +91,9 @@ def _active_channels():
 	return {r.channel for r in _settings().active_channels}
 
 
-def parse_signatures(text):
-	"""Read the byte-signature table out of its `TYPE = HEX, HEX` lines into {TYPE: [bytes, ...]}.
-
-	The operator's notation is hex because that is how a magic number is written everywhere it is
-	published, and because a raw byte does not survive a text field. Shared with the settings doctype's
-	own validate(), so a table that cannot be read is refused at the form rather than at the upload."""
-	table = {}
-	for line in text.splitlines():
-		name, _sep, hexes = line.partition("=")
-		prefixes = [bytes.fromhex(part.strip()) for part in hexes.split(",") if part.strip()]
-		if name.strip() and prefixes:
-			table[name.strip().upper()] = prefixes
-	return table
+def _blocking_verdicts():
+	"""The verdicts the operator has listed as refusing an upload. Empty grid = the shipped three."""
+	return [r.verdict for r in _settings().blocking_verdicts] or DEFAULTS["blocking_verdicts"]
 
 
 def _channel(attached_to_doctype, attached_to_name):
@@ -161,7 +145,7 @@ def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_n
 	if isinstance(raw, str):
 		raw = raw.encode("utf-8", "ignore")
 
-	verdict, signature = _classify(file_type, raw)
+	verdict, signature = _classify(file_name, file_type, raw)
 	blocked = _is_blocked(verdict)
 	_log_scan(
 		channel=channel, source=frappe.session.user, verdict=verdict, signature=signature,
@@ -177,13 +161,13 @@ def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_n
 
 # -- classify (pure, no side effects) ----------------------------------------
 
-def _classify(file_type, raw):
+def _classify(file_name, file_type, raw):
 	"""Decide the verdict without acting. Cheapest first: the type the operator allows, then the bytes
 	behind it, then ClamAV. `file_type` is core's own set_file_type() value, never a suffix we parsed.
 	Returns (verdict, signature); signature is the clamd match name for an infection, else ''."""
 	if not _allowed(file_type):
 		return _DISALLOWED, ""
-	if not _sniff(file_type, raw):
+	if not _sniff(file_name, raw):
 		return _MISMATCH, ""
 	status, signature = _scan(raw)
 	return {"clean": _CLEAN, "infected": _INFECTED, "unavailable": _UNAVAILABLE}[status], signature
@@ -195,10 +179,10 @@ def _is_blocked(verdict):
 
 	Two fields, because they answer two different questions and each verdict has exactly one decider:
 	Blocking Verdicts says what a bad FILE costs the caller, `scanner_unavailable` says what an outage of
-	OURS costs them. Blank Blocking Verdicts is the shipped list, never 'block nothing'."""
+	OURS costs them. An empty Blocking Verdicts grid is the shipped list, never 'block nothing'."""
 	if verdict == _UNAVAILABLE:
 		return _cfg("scanner_unavailable") == "block"
-	return verdict in [line.strip() for line in _cfg("blocking_verdicts").splitlines()]
+	return verdict in _blocking_verdicts()
 
 
 def _block_notice(verdict):
@@ -260,19 +244,26 @@ def _allowed(file_type):
 	return file_type in allowed.splitlines()
 
 
-def _sniff(file_type, raw):
-	"""True if the leading bytes match the type core derived (or it is not one the operator fingerprints).
-	False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf, a .docx or a .xlsx.
+def _sniff(file_name, raw):
+	"""True if what the bytes REALLY are agrees with the type the name claims. False on a mismatch — a
+	renamed .exe or .png posing as a .pdf, a .pdf posing as a .docx.
 
-	A type absent from the table is waved through, which is the honest answer: some types (CSV, TXT) have
-	no fingerprint at all, so a missing row means 'nothing can contradict this', never 'not checked yet'."""
-	sigs = _signatures().get(file_type)
-	return not sigs or any(raw.startswith(s) for s in sigs)
+	Both sides are read the frappe way and nothing is hand-rolled. What the bytes are comes from
+	`filetype.match`, the same library and the same call frappe sniffs uploads with (file/utils.py:76-80).
+	What the name claims comes from `mimetypes.guess_type`, the same call core's `set_file_type` makes
+	(file.py:439) — the mime rather than its round-tripped extension, because the round trip renames
+	image/tiff to TIF and would refuse every genuine .tif.
 
-
-def _signatures():
-	"""The operator's byte-signature table, parsed. Blank field = the shipped table in DEFAULTS."""
-	return parse_signatures(_cfg("type_signatures"))
+	The question is asked of the CLAIMED type, never of the bytes. A type filetype can fingerprint must be
+	proved: a .pdf holding `<html>` is refused, because PDF has a signature and these bytes are not it.
+	A type it cannot fingerprint is waved through: CSV, TXT and JSON have no signature at all, so nothing
+	could ever contradict them. Asking it of the bytes instead lets an unrecognisable payload wear any
+	extension it likes — filetype answers None for HTML, and a .pdf full of HTML would sail past."""
+	claimed = mimetypes.guess_type(file_name)[0]
+	if not claimed or claimed not in _FINGERPRINTABLE:
+		return True
+	kind = filetype.match(raw)
+	return bool(kind) and (claimed == kind.mime or _ZIP_FAMILY >= {claimed, kind.mime})
 
 
 def _scan(raw):
