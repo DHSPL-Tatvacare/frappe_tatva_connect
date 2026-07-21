@@ -234,9 +234,7 @@ doc_events = {
 	},
 	# Azure Blob offload: push bytes after the row + local file exist, delete the blob on File delete; gated by the CRM Azure Storage Settings kill-switch.
 	"File": {
-		# Screen enrolment-submission uploads beyond native checks (magic-byte + ClamAV); scoped + gated inside guard_file, no-op for every other file.
-		"before_insert": "tatva_connect.intake.guards.guard_file",
-		"validate": "tatva_connect.storage.file_events.apply_privacy_policy",
+		# Privacy + screening are NOT here on purpose: a doc_event runs after the controller, i.e. after core has already written the bytes — both live in FileOverride.before_insert.
 		"after_insert": "tatva_connect.storage.file_events.after_insert",
 		"on_trash": "tatva_connect.storage.file_events.on_trash",
 	},

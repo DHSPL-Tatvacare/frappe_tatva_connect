@@ -606,7 +606,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Storage::File::privacy",
 		fires_on="Doc Event",
-		trigger_detail="File · validate",
+		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
 			"Every attachment's privacy is decided at upload: a patient's file is held private, and "
 			"only the doctypes the operator has whitelisted — logos and the like — are made public. "
@@ -614,7 +614,8 @@ AUTOMATIONS = [
 			"Example: a patient's lab report is uploaded and marked private, so only an authorised "
 			"user can open it."
 		),
-		backs=["tatva_connect.storage.file_events.apply_privacy_policy"],
+		# apply_privacy_policy is called by FileOverride.before_insert, an override_doctype_class seam and NOT a doc_event (as a hook it ran after core had written the bytes), so backs is empty — drift walks only doc_event/scheduler paths and this target stays OUT of the registry.
+		backs=[],
 	),
 	Auto(
 		key="Lead::CRM Lead::headline",
@@ -671,7 +672,7 @@ AUTOMATIONS = [
 	Auto(
 		key="Storage::File::screening",
 		fires_on="Doc Event",
-		trigger_detail="File · before_insert (intake) + partner file API",
+		trigger_detail="File · before_insert (FileOverride class override)",
 		purpose=(
 			"The master switch for the shared file screener: a file's bytes are sniffed against the "
 			"type it claims to be, and the file is scanned by ClamAV, over and above frappe's native "
@@ -682,7 +683,8 @@ AUTOMATIONS = [
 			"Example: with Partner API listed as active, an .exe renamed to .pdf and sent to "
 			"file_attach is refused, and an infected upload is blocked."
 		),
-		backs=["tatva_connect.intake.guards.guard_file"],
+		# file_screening.screen is called by FileOverride.before_insert, an override_doctype_class seam and NOT a doc_event (as a hook it scanned bytes already on disk), so backs is empty — drift walks only doc_event/scheduler paths and this target stays OUT of the registry.
+		backs=[],
 		activator="tatva_connect.storage.file_screening.apply_scan_logging",
 	),
 	Auto(

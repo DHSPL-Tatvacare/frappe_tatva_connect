@@ -23,15 +23,17 @@ from tatva_connect.api._base import (
 	async_volume_exhausted,
 )
 from tatva_connect.automation import settings as automation
-from tatva_connect.storage import file_screening
 
 _ASYNC_REAPER = "Partner::AsyncBulk::reaper"  # dormant toggle for the stranded-InProgress reaper
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
 
 
 class PayloadRejected(Exception):
-	"""The payload was refused whole (virus / disallowed type, or over the record cap) — the file is
-	purged and the job Failed, with nothing parsed."""
+	"""The payload was refused whole (over the record cap) — the file is purged and the job Failed, with
+	nothing parsed. A virus or a disallowed type never reaches here: the payload was screened when its
+	File was inserted, so a bad upload has no CRM Bulk Job to drain. That holds on BOTH submit lanes —
+	the screener keys a payload on the CRM Bulk Job it is owned by, not on who submitted it, so the Desk
+	import is screened exactly as the API is (`file_screening._channel`)."""
 
 
 def process_job(bulk_job_id):
@@ -50,7 +52,6 @@ def process_job(bulk_job_id):
 		return  # a pre-start cancel aborted it first — nothing to drain
 	try:
 		raw = _payload_bytes(job)
-		_screen(job, raw)  # ClamAV + magic-byte, before a byte is parsed; a block raises PayloadRejected
 		_drain(job, _to_batch(job, raw))
 	except PayloadRejected as exc:
 		_purge_payload(job)
@@ -170,19 +171,6 @@ def _payload_bytes(job):
 		return b""
 	content = frappe.get_doc("File", name).get_content()
 	return content.encode("utf-8") if isinstance(content, str) else content
-
-
-def _screen(job, raw):
-	"""Screen the payload via the existing brain (ClamAV + magic-byte + allowlist) BEFORE a byte is
-	parsed. Inline bytes are our OWN validated serialization (never an upload) so they are not screened.
-	The screener throws on a block; translate it to PayloadRejected so the caller purges + fails."""
-	if not raw or job.input_format == "inline":
-		return
-	try:
-		file_screening.screen(file_name=f"{job.name}.{job.input_format}", raw=raw,
-		                      channel="Partner API", source=job.partner)
-	except frappe.ValidationError as exc:
-		raise PayloadRejected(str(exc)) from exc
 
 
 def _to_batch(job, raw):

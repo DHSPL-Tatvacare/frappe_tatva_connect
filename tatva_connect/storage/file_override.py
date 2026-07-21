@@ -23,7 +23,9 @@ import tempfile
 import frappe
 from frappe.core.doctype.file.file import File
 
+from tatva_connect.storage import file_screening
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
+from tatva_connect.storage.file_events import apply_privacy_policy
 
 _HYDRATED = "_tatva_hydrated_files"  # per-request temp paths, so one download serves every reader
 
@@ -51,8 +53,41 @@ def discard_hydrated(**_kwargs):
 
 class FileOverride(File):
 	def before_insert(self):
+		"""THE seam. Both of our decisions are made here, in this order, because core's own before_insert
+		WRITES THE BYTES — `save_file` -> `save_file_on_filesystem` picks public/ or private/ from
+		is_private at that instant (file.py:815-821), and its byte-mover handle_is_private_changed is
+		gated on `not self.is_new()` (file.py:176) so it never fires for a new file. A doc_event cannot
+		do this: `Document.hook` runs the controller method first and app hooks second
+		(model/document.py:1576-1590), which is exactly why privacy-as-validate landed private files in
+		the public directory and screening-as-before_insert scanned bytes already on disk."""
 		self._inherit_file_name()  # before core's set_file_name() (file.py:112) carves a name out of the URL
-		super().before_insert()
+		apply_privacy_policy(self)  # decide privacy BEFORE core reads it to pick the directory
+		self._screen_content()  # refuse bad bytes BEFORE core writes them
+		super().before_insert()  # core writes the bytes, now to the directory the checkpoint chose
+
+	def _screen_content(self):
+		"""The ONE screening call site, for every channel — the channel itself is resolved in the screener.
+
+		Core's OWN derivations are run first, never re-implemented: set_file_name() carves the name out of
+		file_url when the caller sent none, and set_file_type() is the single mimetype derivation whose
+		answer core's validate_file_extension then judges (file.py:456-468). Screening the literal filename
+		suffix instead was a second reading of the one System Settings list: core resolves 'report.jpeg' to
+		JPG and allows it against an entry of 'JPG', while a suffix match refused it. Both are idempotent,
+		so core re-running them inside super().before_insert() changes nothing.
+		"""
+		if self.is_folder or not self.content:
+			return  # a folder, or a link whose bytes were never ours — core sets content to b"" for both
+		self.set_file_name()
+		self.set_file_type()
+		# Core's get_content CONSUMES self.decode without rewriting self.content, so a base64 upload resolves exactly once: bank the resolved bytes here or core's own later save_file(content=self.get_content()) writes the BASE64 TEXT to disk.
+		self.content = self.get_content()
+		file_screening.screen(
+			file_name=self.file_name,
+			file_type=self.file_type,
+			raw=self.content,
+			attached_to_doctype=self.attached_to_doctype,
+			attached_to_name=self.attached_to_name,
+		)
 
 	def validate(self):
 		self._guard_private_url_reference()

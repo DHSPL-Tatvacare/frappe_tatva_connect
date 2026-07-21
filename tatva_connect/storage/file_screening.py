@@ -1,23 +1,23 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""Generic file screening — the ONE brain for the extension allowlist + magic-byte sniff + ClamAV virus
-scan on inbound uploads, plus the per-upload verdict log (CRM File Scan Log). Channel-agnostic: it takes
-bytes + context, never a File doc or a request, so every ingress calls the SAME `screen()`.
+"""Generic file screening — the ONE brain for the extension check + magic-byte sniff + ClamAV virus scan
+on inbound uploads, plus the per-upload verdict log (CRM File Scan Log).
 
-Three checks, cheapest first, one verdict: is the extension one the operator accepts, do the bytes match
-the extension they claim, and is the content free of malware. The allowlist is deliberately NOT frappe's
-`allowed_file_extensions` (System Settings): that one is global (it would police desk uploads to gate a
-partner) and it silently returns early when there is no request (`file.py:458`), so migrations and jobs
-would bypass it. One screener, one operator page, every channel.
+Three checks, cheapest first, one verdict: is the type one System Settings accepts, do the bytes match
+the type they claim, and is the content free of malware. There is exactly ONE extension list and it is
+Frappe's (`System Settings -> allowed_file_extensions`) — two lists was a second brain, and it is what let
+a PDF be allowed here and refused there. One list read two ways is the same defect, so the value judged
+here is core's OWN `set_file_type()` derivation, never a suffix we parsed off the filename. We own only
+the byte-signature check Frappe has not got, and we run the list without Frappe's no-request early-out
+(`file.py:458`), so jobs cannot bypass it.
 
-Activated at exactly two call sites (there is NO universal File hook — internal/Desk uploads are
-untouched):
-  * Intake public forms  — `intake.guards.guard_file` (File before_insert, scoped to the submission)
-  * Partner file API     — `api.partner_file._attach_one` (before the File is saved)
+ONE call site: `FileOverride.before_insert`, before core writes a byte to disk. There is no per-channel
+hook and no caller names its own channel — `_channel()` below resolves it, once, from the request and
+from what the file IS (a bulk payload is screened on both its submit lanes, Desk and API alike).
 
 Activation is config-driven, not code-driven: `screen()` runs ONLY when the master
-`Storage::File::screening` toggle is on AND the caller's `channel` is listed in
+`Storage::File::screening` toggle is on AND the resolved `channel` is listed in
 `CRM File Screening Settings -> Active Channels`. Turning a wired channel on/off tomorrow is a
 config edit (add/remove a row), never a deploy. Scanner config (clamd host/port, unavailable
 policy) lives in the same Single; blanks fall back to DEFAULTS. Needs the `clamav` container + the
@@ -35,6 +35,11 @@ _SETTINGS = "CRM File Screening Settings"
 _SCAN_LOG = "CRM File Scan Log"
 _RETENTION_DAYS = 90
 
+# Channels (also the CRM Screened Channel `channel` Select options).
+_INTAKE = "Intake"
+_PARTNER = "Partner API"
+_BULK_JOB = "CRM Bulk Job"  # the doctype a bulk payload file is owned by, on BOTH submit lanes
+
 # Verdicts (also the CRM File Scan Log `verdict` Select options).
 _CLEAN = "Clean"
 _INFECTED = "Infected"
@@ -45,13 +50,11 @@ _UNAVAILABLE = "Scanner Unavailable"
 # Blank Single fields fall back here (Invariant A.4 — no baked form values).
 DEFAULTS = {"clamav_host": "clamav", "clamav_port": 3310, "scanner_unavailable": "block"}
 
-# extension -> accepted leading bytes. Native already allowlists the extension; this only asserts
-# the CONTENT matches it, so a renamed .html/.svg/.exe can't pose as a .pdf.
+# file_type -> accepted leading bytes, keyed on core's set_file_type() value (the SAME derivation _allowed reads, so .jpeg and .jpg are ONE entry): native allowlists the type, this only asserts the CONTENT matches it.
 _MAGIC = {
-	"pdf": [b"%PDF"],
-	"png": [b"\x89PNG\r\n\x1a\n"],
-	"jpg": [b"\xff\xd8\xff"],
-	"jpeg": [b"\xff\xd8\xff"],
+	"PDF": [b"%PDF"],
+	"PNG": [b"\x89PNG\r\n\x1a\n"],
+	"JPG": [b"\xff\xd8\xff"],
 }
 
 
@@ -68,31 +71,63 @@ def _active_channels():
 	return {r.channel for r in _settings().active_channels}
 
 
-def _is_active(channel):
-	"""Screening runs for `channel` only when the master switch is on AND the operator has listed
-	that channel in CRM File Screening Settings. Both gates are required; either off = dormant."""
-	return automation.is_enabled(TOGGLE) and channel in _active_channels()
+def _channel(attached_to_doctype, attached_to_name):
+	"""THE channel resolver — which ingress this upload arrived on, decided ONCE from the request.
+
+	A bulk payload is keyed on what it IS, not on who submitted it, and so is tested FIRST: submit_job is
+	one path with two lanes, and the Desk lane carries no partner_ctx, is not Guest and hangs off no
+	intake sink — so a request-only resolver screened the API lane and waved the Desk lane straight
+	through. The one exception is `input_format == "inline"`, which is our OWN serialization of an
+	already-parsed JSON body: it is never an upload and there is nothing to screen.
+
+	Partner API is otherwise the @_api preamble's own per-request stash, so every partner endpoint answers
+	the same way without naming itself. Intake is an attachment on a live submission sink, or ANY Guest
+	upload — every CRM Intake Form publishes with login_required=0 and no other upload surface in the
+	product is reachable by Guest, and a web-form upload arrives unattached (attach.js:80 sends no
+	doctype), so the sink test alone would miss every patient upload. Anything else — Desk, internal
+	jobs — is not a screened channel and returns None."""
+	from tatva_connect.intake.intake import _intake_doctypes
+
+	if attached_to_doctype == _BULK_JOB:
+		return None if _is_inline_job(attached_to_name) else _PARTNER
+	if getattr(frappe.local, "partner_ctx", None) is not None:
+		return _PARTNER
+	if attached_to_doctype in _intake_doctypes() or frappe.session.user == "Guest":
+		return _INTAKE
+	return None
+
+
+def _is_inline_job(job_name):
+	"""True for a payload the app serialized itself from an inline JSON body — never an uploaded file."""
+	return frappe.db.get_value(_BULK_JOB, job_name, "input_format") == "inline"
 
 
 # -- public entry ------------------------------------------------------------
 
-def screen(*, file_name, raw, channel, source, attached_to_doctype=None, attached_to_name=None,
-	web_form=None, phone=None, source_ip=None):
-	"""Screen one upload's bytes: classify -> log -> act. Dormant unless the master toggle is on AND
-	`channel` is an active channel (config). Logs every verdict (accepted or blocked) to CRM File
-	Scan Log, then `frappe.throw`s on a block — which each caller's framework surfaces natively
-	(web-form dialog / partner `_fail`)."""
-	if not _is_active(channel):
+def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_name=None):
+	"""Screen one upload's bytes: master toggle -> resolve channel -> classify -> log -> act. Dormant
+	unless the master toggle is on AND the resolved channel is an active channel (config). Logs every
+	verdict (accepted or blocked) to CRM File Scan Log, then `frappe.throw`s on a block — which each
+	ingress's framework surfaces natively (web-form dialog / partner `_fail`).
+
+	The master toggle is read FIRST and on its own: this runs on EVERY File insert on the bench, and
+	resolving the channel costs a cached-settings read plus a db lookup. Dormant must mean zero work."""
+	if not automation.is_enabled(TOGGLE):
+		return
+	channel = _channel(attached_to_doctype, attached_to_name)
+	if not channel or channel not in _active_channels():
 		return
 	if isinstance(raw, str):
 		raw = raw.encode("utf-8", "ignore")
 
-	verdict, signature = _classify(file_name, raw)
+	verdict, signature = _classify(file_type, raw)
 	blocked = _is_blocked(verdict)
 	_log_scan(
-		channel=channel, source=source, verdict=verdict, signature=signature, blocked=blocked,
-		file_name=file_name, size=len(raw), attached_to_doctype=attached_to_doctype,
-		attached_to_name=attached_to_name, web_form=web_form, phone=phone, source_ip=source_ip,
+		channel=channel, source=frappe.session.user, verdict=verdict, signature=signature,
+		blocked=blocked, file_name=file_name, size=len(raw),
+		attached_to_doctype=attached_to_doctype, attached_to_name=attached_to_name,
+		web_form=frappe.form_dict.get("web_form"), phone=_phone(channel),
+		source_ip=getattr(frappe.local, "request_ip", None),
 	)
 	if blocked:
 		message, title = _block_notice(verdict)
@@ -101,13 +136,13 @@ def screen(*, file_name, raw, channel, source, attached_to_doctype=None, attache
 
 # -- classify (pure, no side effects) ----------------------------------------
 
-def _classify(file_name, raw):
-	"""Decide the verdict without acting. Cheapest first: the extension the operator allows, then the
-	bytes behind it, then ClamAV. Returns (verdict, signature); signature is the clamd match name for
-	an infection, else ''."""
-	if not _allowed(file_name):
+def _classify(file_type, raw):
+	"""Decide the verdict without acting. Cheapest first: the type the operator allows, then the bytes
+	behind it, then ClamAV. `file_type` is core's own set_file_type() value, never a suffix we parsed.
+	Returns (verdict, signature); signature is the clamd match name for an infection, else ''."""
+	if not _allowed(file_type):
 		return _DISALLOWED, ""
-	if not _sniff(file_name, raw):
+	if not _sniff(file_type, raw):
 		return _MISMATCH, ""
 	status, signature = _scan(raw)
 	return {"clean": _CLEAN, "infected": _INFECTED, "unavailable": _UNAVAILABLE}[status], signature
@@ -134,29 +169,37 @@ def _block_notice(verdict):
 	return _("File could not be security-scanned. Please try again later."), _("Upload failed")
 
 
-def _extension(file_name):
-	"""The claimed extension, lowercased, without the dot. '' when the name carries none."""
-	return (file_name.rsplit(".", 1)[-1] if "." in (file_name or "") else "").lower()
+def _phone(channel):
+	"""The submitting patient's phone, for an intake upload only — read through the ONE parser that also
+	keys the per-phone rate limit, never a second copy. No other channel carries a submit payload."""
+	from tatva_connect.intake.guards import _submitted_phone
+
+	return _submitted_phone() if channel == _INTAKE else None
 
 
-def _allowed(file_name):
-	"""True if the operator accepts this extension. The allowlist is the FIRST gate and the only one
-	that can refuse a type outright: the magic-byte sniff below can prove a .pdf is really an .html, but
-	it cannot refuse an .exe that genuinely is one, because there is no fingerprint to contradict.
+def _allowed(file_type):
+	"""True if System Settings accepts this type. It is the FIRST gate and the only one that can refuse a
+	type outright: the magic-byte sniff below can prove a .pdf is really an .html, but it cannot refuse an
+	.exe that genuinely is one, because there is no fingerprint to contradict.
 
-	Blank = every extension is accepted (the dormant default — a config, never a code, decision). The
-	operator fills this in before go-live; the go-live checklist names it."""
-	allowed = _cfg("allowed_extensions")
-	if not allowed:
+	This is core's `validate_file_extension` rule (file.py:456-468), expressed against the SAME field and
+	the SAME core-derived `file_type`, with exactly ONE deliberate difference: core early-returns when
+	there is no `frappe.request`, so it does not police jobs, migrations or integrations, and we do. The
+	comparison must stay byte-for-byte core's — no strip, no lower, no dot handling — because a second
+	reading of one list is a second brain. Locked by test_file_lifecycle_seam.TestOneExtensionList.
+
+	Blank list = every type accepted, which is Frappe's own default. No file_type means core could not
+	derive one, and core allows that too. `System Settings -> Files` is the one place an operator sets it."""
+	allowed = frappe.get_system_settings("allowed_file_extensions")
+	if not file_type or not allowed:
 		return True
-	listed = {line.strip().lstrip(".").lower() for line in str(allowed).splitlines() if line.strip()}
-	return _extension(file_name) in listed
+	return file_type in allowed.splitlines()
 
 
-def _sniff(file_name, raw):
-	"""True if the leading bytes match the claimed extension (or the extension is not one we
-	fingerprint). False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf."""
-	sigs = _MAGIC.get(_extension(file_name))
+def _sniff(file_type, raw):
+	"""True if the leading bytes match the type core derived (or it is not one we fingerprint).
+	False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf."""
+	sigs = _MAGIC.get(file_type)
 	return not sigs or any(raw.startswith(s) for s in sigs)
 
 

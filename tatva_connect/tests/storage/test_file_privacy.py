@@ -26,7 +26,8 @@ class TestFilePrivacy(FrappeTestCase):
 	def _decide(self, attached_to_doctype, toggle_on, listed_doctypes=""):
 		frappe.db.set_value("CRM Tatva Automation", _TOGGLE, "enabled", 1 if toggle_on else 0)
 		frappe.db.set_single_value(_SETTINGS, _LIST_FIELD, listed_doctypes)
-		doc = frappe._dict(attached_to_doctype=attached_to_doctype, is_private=0)
+		doc = frappe._dict(attached_to_doctype=attached_to_doctype,
+						   attached_to_name=attached_to_doctype, is_private=0)
 		file_events.apply_privacy_policy(doc)
 		return doc.is_private
 

@@ -9,9 +9,10 @@ have and get a consistent result. This removes the per-site hand-rolled `frappe.
 boilerplate + duplicated lookups that let behaviour drift across sites (e.g. the absolute-vs-relative
 proxy-URL break).
 
-Cross-cutting persistence — fail-closed privacy + Azure offload — is NOT re-implemented here: it is
-enforced by the File doc_events (storage.file_events), which run for ANY File insert/save no matter who
-creates it. This facade sits on top of that one bond; it never bypasses it.
+Cross-cutting persistence — fail-closed privacy + Azure offload — is NOT re-implemented here: privacy is
+decided by FileOverride.before_insert and the offload by the File doc_events (storage.file_events), and
+both run for ANY File insert no matter who creates it. This facade sits on top of that one bond; it never
+bypasses it.
 """
 
 import frappe
@@ -29,13 +30,13 @@ def save(
 	attached_to_field=None,
 	meta=None,
 ):
-	"""Create + persist a File from bytes. The doc_events apply the fail-closed privacy policy and
-	offload to Azure — this only assembles the row. `meta` sets extra File fields (e.g.
-	{"custom_wa_message_id": id}). Returns the File doc.
+	"""Create + persist a File from bytes. FileOverride.before_insert applies the fail-closed privacy
+	policy and the doc_events offload to Azure — this only assembles the row. `meta` sets extra File
+	fields (e.g. {"custom_wa_message_id": id}). Returns the File doc.
 
-	Privacy is NOT a parameter. apply_privacy_policy (File.validate) overwrites is_private from the ONE
-	checkpoint, so a `private=` argument here only looked like a decision — a caller could ask for public
-	on a patient document and be silently overruled. Ask the checkpoint, not the caller."""
+	Privacy is NOT a parameter. apply_privacy_policy (FileOverride.before_insert) overwrites is_private
+	from the ONE checkpoint, so a `private=` argument here only looked like a decision — a caller could ask
+	for public on a patient document and be silently overruled. Ask the checkpoint, not the caller."""
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_name": filename,
@@ -50,7 +51,7 @@ def save(
 def link(file_url, *, attached_to_doctype, attached_to_name, meta=None):
 	"""Surface an already-stored file on a record — a File row pointing at an existing blob URL (no
 	re-upload), so the file also shows in that record's attachments. Privacy is decided by the checkpoint
-	on File.validate, never by the caller (see save())."""
+	in FileOverride.before_insert, never by the caller (see save())."""
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_url": file_url,
@@ -90,9 +91,15 @@ def rehome(file, attached_to_doctype, attached_to_name, *, meta=None):
 	row. Returns the (possibly new) proxy URL. Centralises WhatsApp's outbound 'adopt' so the re-key
 	rule lives once.
 
-	Privacy is NOT an argument here. This writes with db.set_value, which skips File.validate and so
-	skips the privacy checkpoint — a `private=` flag would have been a second authority deciding what is
-	public. It calls the ONE checkpoint (file_events.may_be_public) instead, exactly as validate does."""
+	Privacy is NOT an argument here. apply_privacy_policy runs on INSERT, so a re-home is outside it — a
+	`private=` flag would have been a second authority deciding what is public. It calls the ONE checkpoint
+	(file_events.may_be_public) instead, exactly as the insert path does.
+
+	db_set, never save(): a re-homed file is already offloaded, so its url is an Azure PROXY url — one of
+	core's own URL_PREFIXES (file.py:44) — and core's byte-mover handle_is_private_changed early-returns on
+	is_remote_file (file.py:313). There are no local bytes to move; a save would only add a validate() pass
+	that re-raises the enforce_public_file_restrictions 403, a modified bump and a Version row. db_set is
+	core's own writer and updates the in-memory doc the caller still holds, in the same call."""
 	from tatva_connect.storage.file_events import may_be_public
 
 	new_url = file.file_url
@@ -103,17 +110,11 @@ def rehome(file, attached_to_doctype, attached_to_name, *, meta=None):
 		if (old_key or "").split("/")[0:3] != new_key.split("/")[0:3]:
 			new_url = store.upload(new_key, store.download(old_key), file.file_name)
 			store.delete(old_key)
-	frappe.db.set_value(
-		"File",
-		file.name,
-		{
-			"attached_to_doctype": attached_to_doctype,
-			"attached_to_name": attached_to_name,
-			"attached_to_field": None,
-			"is_private": 0 if may_be_public(attached_to_doctype) else 1,
-			"file_url": new_url,
-			**(meta or {}),
-		},
-		update_modified=False,
-	)
+	file.db_set(dict({
+		"attached_to_doctype": attached_to_doctype,
+		"attached_to_name": attached_to_name,
+		"attached_to_field": None,
+		"file_url": new_url,
+		"is_private": 0 if may_be_public(attached_to_doctype, attached_to_name) else 1,
+	}, **(meta or {})), update_modified=False)
 	return new_url

@@ -31,10 +31,13 @@ def _public_attachment_doctypes() -> set:
 	return {line.strip() for line in raw.replace(",", "\n").splitlines() if line.strip()}
 
 
-def may_be_public(attached_to_doctype) -> bool:
-	"""A file may be public ONLY if its record's doctype is on the operator's allowlist and the toggle is
-	on. An unattached file belongs to no doctype, so it can never qualify — the floor, not a guess."""
-	return bool(attached_to_doctype) and automation.is_enabled("Storage::File::privacy") \
+def may_be_public(attached_to_doctype, attached_to_name) -> bool:
+	"""A file may be public ONLY if a REAL owner — BOTH doctype and name — is on the operator's allowlist
+	and the toggle is on. The pair is the owner, never the doctype alone: core's own before_insert nulls a
+	doctype that carries no name (file.py:104-106), so a lone doctype describes an UNATTACHED file, and
+	unattached is the private floor. Reading it as an owner here made a public file core then orphaned."""
+	return bool(attached_to_doctype) and bool(attached_to_name) \
+		and automation.is_enabled("Storage::File::privacy") \
 		and attached_to_doctype in _public_attachment_doctypes()
 
 
@@ -44,8 +47,13 @@ def _is_external_link(file_url) -> bool:
 		and not blob_store.blob_key_from_url(file_url)
 
 
-def apply_privacy_policy(doc, method=None):
-	"""THE privacy checkpoint (File.validate): private unless the doctype is on the operator's allowlist.
+def apply_privacy_policy(doc):
+	"""THE privacy checkpoint, called by FileOverride.before_insert BEFORE core writes a byte.
+
+	It is not a doc_event and must not become one: a doc_event runs AFTER the controller method, and core
+	picks public/ vs private/ from is_private inside its own before_insert — so as a hook this decided the
+	privacy of a file already written to the wrong directory. Private unless the doctype is on the
+	operator's allowlist.
 
 	The caller never decides — a rep cannot make a patient document public by ticking a box, and no other
 	code may write is_private. Unattached = no doctype = private (the floor); the allowlist is re-applied
@@ -55,7 +63,7 @@ def apply_privacy_policy(doc, method=None):
 	if _is_external_link(doc.file_url):
 		doc.is_private = 0  # not ours to lock — say so plainly rather than draw a padlock over a public URL
 		return
-	doc.is_private = 0 if may_be_public(doc.attached_to_doctype) else 1
+	doc.is_private = 0 if may_be_public(doc.attached_to_doctype, doc.attached_to_name) else 1
 
 
 def offload(doc) -> bool:
@@ -174,14 +182,14 @@ def link_attach_fields(doc, method=None):
 			"attached_to_field": None,
 		})
 		if unattached:  # bond ONLY a free row: an email/comment alias of the same blob is already spoken for
+			# db.set_value, never save(): every row reaching here holds an Azure PROXY url, which is one of core's own URL_PREFIXES (file.py:44), so core's byte-mover handle_is_private_changed early-returns on is_remote_file (file.py:313) and moves nothing — a save would only buy a validate() pass that re-raises the enforce_public_file_restrictions 403, plus a modified bump and a Version row.
 			frappe.db.set_value("File", unattached, {
 				"attached_to_name": doc.name,
 				"attached_to_doctype": doc.doctype,
 				"attached_to_field": df.fieldname,
-				# The bond is the first moment the doctype is known, so it is where the allowlist can finally
-				# be applied: an avatar/logo comes back out public, everything else stays on the floor.
-				"is_private": 0 if may_be_public(doc.doctype) else 1,
-			})
+				# The bond is the first moment the owner is known, so it is where the allowlist finally applies.
+				"is_private": 0 if may_be_public(doc.doctype, doc.name) else 1,
+			}, update_modified=False)
 
 
 def on_trash(doc, method=None):

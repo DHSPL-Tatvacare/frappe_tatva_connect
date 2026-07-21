@@ -2,13 +2,11 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-07-10 00:00:00.000000",
- "description": "Config for the shared file screener. Screening runs ONLY for the channels listed in Active Channels, and ONLY while the Storage::File::screening toggle is on. Blank scanner fields fall back to code defaults.",
+ "description": "Config for the shared file screener. Screening runs ONLY for the channels listed in Active Channels, and ONLY while the Storage::File::screening toggle is on. Blank scanner fields fall back to code defaults. Allowed file extensions are NOT set here: System Settings > Files owns that list, for this screener and for Frappe alike.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "types_section",
-  "allowed_extensions",
   "scanner_section",
   "clamav_host",
   "clamav_port",
@@ -17,8 +15,6 @@
   "active_channels"
  ],
  "fields": [
-  {"fieldname": "types_section", "fieldtype": "Section Break", "label": "Allowed File Types"},
-  {"fieldname": "allowed_extensions", "fieldtype": "Small Text", "label": "Allowed Extensions", "description": "One extension per line, without the dot (pdf, png, jpg, jpeg). An upload whose extension is not listed is refused before its bytes are scanned. Blank = every extension is accepted, which is the default."},
   {"fieldname": "scanner_section", "fieldtype": "Section Break", "label": "Virus Scanner (ClamAV)"},
   {"fieldname": "clamav_host", "fieldtype": "Data", "label": "ClamAV Host", "description": "clamd host. Blank = clamav (the compose service)."},
   {"fieldname": "clamav_port", "fieldtype": "Int", "label": "ClamAV Port", "description": "clamd TCP port. Blank = 3310."},
@@ -29,7 +25,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-10 00:00:00.000000",
+ "modified": "2026-07-21 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Storage",
  "name": "CRM File Screening Settings",

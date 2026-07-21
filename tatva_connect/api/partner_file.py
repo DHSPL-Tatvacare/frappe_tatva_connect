@@ -47,7 +47,6 @@ from tatva_connect.api._base import (
 	_list_ok,
 	_ok,
 	_page,
-	_read_list,
 	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
@@ -57,7 +56,7 @@ from tatva_connect.api._base import (
 	validate_external_id,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
-from tatva_connect.storage import file_manager, file_screening
+from tatva_connect.storage import file_manager
 
 # All numeric caps (list page sizes, the download timeout) come from the CRM Partner API
 # Settings Single via _cfg() — one source of truth, no module-local copy.
@@ -245,18 +244,7 @@ def _create_one(data, mp, is_sysmgr):
 
 	target_doctype, target_name = _resolve_target(data, lead_name)
 	content = _load_bytes(data)
-	# Screen the bytes BEFORE the File is saved (shared brain; dormant unless the operator has
-	# activated the "Partner API" channel in CRM File Screening Settings). A block throws a
-	# ValidationError, which @_api returns as a structured _fail — no File is created.
-	file_screening.screen(
-		file_name=filename, raw=content, channel="Partner API", source=frappe.session.user,
-		attached_to_doctype=target_doctype, attached_to_name=target_name,
-		source_ip=getattr(frappe.local, "request_ip", None),
-	)
-	# ALWAYS private (Invariant #15) — the privacy checkpoint on File.validate decides it; the File
-	# doc_events enforce the private floor regardless. The category + the caller's label are the
-	# collected columns, so both land on the row in one insert; the source is ours, not the caller's.
-	# No _apply_fields seam (unlike note/call): a file carries BYTES, so collect() feeds file_manager.save's meta dict directly — there is no doc to overlay.
+	# FileOverride.before_insert screens the bytes and decides privacy for every channel, so neither is a parameter here; collect() feeds file_manager.save's meta dict directly because a file carries BYTES and there is no doc to overlay.
 	doc = file_manager.save(
 		content,
 		filename=filename,
