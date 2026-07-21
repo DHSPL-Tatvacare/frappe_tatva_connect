@@ -31,7 +31,7 @@ import frappe
 from frappe import _
 
 from tatva_connect.taxonomy.grain import AXES as _GRAIN_AXES
-from tatva_connect.workflow_engine import registry, upstream
+from tatva_connect.workflow_engine import ENGINE_SWITCH, registry, upstream
 
 
 @frappe.whitelist()
@@ -60,6 +60,42 @@ def node_context(nodes, node_id):
 		"operators_by_type": schema.get("operators_by_type") or {},
 		"operator_shapes": schema.get("operator_shapes") or {},
 	}
+
+
+@frappe.whitelist()
+def test_call(endpoint, request_body=None, lead=None):
+	"""Fire a Call API node's request for real, so an author can map what actually comes back.
+
+	THE SAME PATH A RUN TAKES — `actions._call_endpoint`, unchanged. A preview that built its own request
+	would show the author a response the run never receives, which is worse than no preview: it would be
+	confidently wrong. Endpoint, method, headers and secret still come off the curated `Webhook`; the
+	author supplies only the body, exactly as at runtime.
+
+	Gated on the ENGINE switch, so a site whose automation is dormant makes no outbound call from an
+	authoring screen either. Answering `{"armed": False}` rather than throwing lets the control say why.
+
+	It says WHICH lead it used. A response is shaped by the record behind it, and an author reading a tree
+	built from a lead they did not choose would map paths that do not exist for the next one.
+	"""
+	if not frappe.has_permission("CRM Workflow", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	from tatva_connect import automation
+	from tatva_connect.automation import actions
+	from tatva_connect.automation.context import context_for
+
+	if not automation.is_enabled(ENGINE_SWITCH):
+		return {"armed": False}
+
+	subject = lead or frappe.db.get_value("CRM Lead", {}, "name", order_by="modified desc")
+	if not subject:
+		return {"armed": True, "error": _("There is no lead to build a request from yet.")}
+
+	doc = frappe.get_doc("CRM Lead", subject)
+	doc.check_permission("read")  # the author sees this record's data in the tree, so they must be able to
+	body = actions.build_request_body(request_body, context_for(doc, changed=None)) if request_body else None
+	response = actions._call_endpoint(endpoint, doc, body)
+	return {"armed": True, "lead": subject, "sent": body, **response}
 
 
 def _trigger_config(nodes):

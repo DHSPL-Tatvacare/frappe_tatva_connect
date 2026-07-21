@@ -161,6 +161,32 @@ class TestCallApi(FrappeTestCase):
 			"what publish checks and what the run resolves must be the same set, or the gate is decorative",
 		)
 
+	def test_a_test_call_makes_no_request_while_the_engine_is_dormant(self):
+		"""An authoring screen is still the product. A site whose automation is switched off must not make
+		an outbound request because someone opened a node and pressed a button — 'the flag is off so X did
+		not happen' is correct behaviour, and the control is told WHY rather than left to guess."""
+		from tatva_connect.workflow_engine import context as node_context
+
+		was = fx.arm_engine(False)
+		try:
+			answer = node_context.test_call(_ENDPOINT)
+		finally:
+			fx.arm_engine(bool(was))
+
+		self.assertFalse(answer["armed"])
+		self.assertNotIn("status", answer, "a dormant engine answers about itself, it does not call out")
+
+	def test_a_test_call_says_which_lead_it_built_the_request_from(self):
+		"""A response is shaped by the record behind it. An author mapping a tree built from a lead they
+		did not choose would capture paths that do not exist for the next one."""
+		from tatva_connect.workflow_engine import context as node_context
+
+		answer = node_context.test_call(_ENDPOINT, lead=self.lead.name)
+
+		self.assertTrue(answer["armed"])
+		self.assertEqual(answer["lead"], self.lead.name)
+		self.assertEqual(answer["status"], 0, "example.invalid cannot answer, which is the point")
+
 	# --- capture ----------------------------------------------------------------------------------------
 
 	def test_the_response_lands_in_named_variables(self):

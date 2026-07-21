@@ -23,9 +23,12 @@ log it claims to summarise. A failed run's reason is the detail of its last `fai
 row `interpreter._fail` wrote — not a copy of it. "Stuck" is a predicate over the run's own park
 columns, not a fifth value of `status`.
 
-The one derived value that costs a query per run is the failure reason, so it is answered by
-`run_state` (one run) and deliberately NOT by `runs_for_subject` (a page of runs): folding it into
-the list would be an N+1 on the exact screen that loads first.
+The one derived value that costs a query is the failure reason. It was deliberately kept out of
+`runs_for_subject` to avoid an N+1 on the page that loads first — and that was reversed on
+2026-07-22, because the list could then say "Failed at send_welcome" and never say because what,
+which is the one thing the reader opened the tab for. The cost is bounded by construction:
+`_failure` returns None on every status but `Failed` before it touches the log, so a page of runs
+asks once per FAILED run, not once per run.
 
 THE GATE
 --------
@@ -216,9 +219,7 @@ def _summary(row):
 		"last_activity": row.modified,
 		"waiting_on": _waiting_on(row),
 		"stuck": _is_stuck(row),
-		# The third derived answer. Without it a list can say "Failed at send_welcome" and never say
-		# because what, which is the one thing the reader is looking for. Costs a query only for a run
-		# that really failed — `_failure` returns None on every other status before it asks the log.
+		# The third derived answer; costs a query only for a run that really failed.
 		"failure": _failure(row),
 	}
 

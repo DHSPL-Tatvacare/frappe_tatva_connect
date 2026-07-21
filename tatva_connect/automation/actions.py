@@ -555,9 +555,7 @@ def _call_endpoint(endpoint, payload_doc, body=None):
 		request_headers=headers or None,
 		reference_doctype=payload_doc.doctype, reference_docname=payload_doc.name,
 	)
-	# `frappe.as_json`, exactly as Frappe's own `enqueue_webhook` sends: `as_dict()` hands back real
-	# datetimes and requests' `json=` raises on them, so EVERY call died before the network and the graph
-	# quietly took its failure edge. Content-Type is only defaulted — a curated header still wins.
+	# `frappe.as_json` like Frappe's own enqueue_webhook: `as_dict()` returns datetimes and `json=` raises.
 	headers.setdefault("Content-Type", "application/json")
 	try:
 		reply = get_request_session().request(
@@ -853,7 +851,12 @@ VERBS = {
 			{"name": "request_body", "label": "Request Body", "type": "Code", "options": "JSON",
 			 "reads": "ctx_json", "depends_on_value": {"webhook_payload_source": ["Custom"]},
 			 "placeholder": '{"model": "gpt-4o", "messages": [{"role": "user", "content": "$ctx.crm_lead.first_name"}]}'},
-			{"name": "capture", "label": "Capture", "type": "Mapping"},
+			# `preview` declares that this control can fetch a REAL answer: the method, and its sibling args.
+			{"name": "capture", "label": "Capture", "type": "Mapping",
+			 "preview": {
+				 "method": "tatva_connect.workflow_engine.context.test_call",
+				 "args": {"endpoint": "webhook_endpoint", "request_body": "request_body"},
+			 }},
 			{"name": "success_when", "label": "Succeeded when", "type": "Predicate"},
 		],
 	},

@@ -117,8 +117,7 @@ def _emitted_by(node):
 
 	emitted = [*emitted, *_declared_writes(node, config)]
 
-	# The author named the node, so the node's own id leads the group label — that is what they will look
-	# for. The type follows so a bare id like `n3` still says what it is.
+	# The author's own node id leads the group label; the type follows so a bare `n3` still says what it is.
 	group = _("{0} · {1}").format(node["node_id"], _(registry.declaration(node["node_type"])["label"]))
 	return [
 		_shaped(
