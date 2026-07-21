@@ -168,6 +168,10 @@ def _summary(row):
 		"last_activity": row.modified,
 		"waiting_on": _waiting_on(row),
 		"stuck": _is_stuck(row),
+		# The third derived answer. Without it a list can say "Failed at send_welcome" and never say
+		# because what, which is the one thing the reader is looking for. Costs a query only for a run
+		# that really failed — `_failure` returns None on every other status before it asks the log.
+		"failure": _failure(row),
 	}
 
 

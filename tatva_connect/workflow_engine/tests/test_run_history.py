@@ -202,6 +202,29 @@ class TestRunHistory(FrappeTestCase):
 		self.assertEqual(failure["detail"], "the one that stuck")
 		self.assertEqual(failure["node_id"], "n3")
 
+	def test_the_list_carries_the_failure_reason_not_only_the_detail_view(self):
+		"""A rep scanning a lead's runs must be able to read WHY one failed without opening it.
+
+		`_failure` has always been derived, but only `run_state` returned it — so the list could say
+		"Failed at send_welcome" and never say because what. The row already carries the two other derived
+		answers (`waiting_on`, `stuck`); this is the third, and it costs a query only for runs that
+		actually failed, because `_failure` returns None for every other status before querying.
+		"""
+		run = self._run(status="Failed")
+		self._step(run, "n2", "failed", detail="template rejected by the provider")
+		frappe.db.commit()
+		row = next(r for r in history.runs_for_subject(self.lead.doctype, self.lead.name)["runs"] if r["run"] == run)
+		self.assertEqual(row["failure"]["detail"], "template rejected by the provider")
+		self.assertEqual(row["failure"]["node_id"], "n2")
+
+	def test_a_run_that_did_not_fail_carries_no_reason_in_the_list(self):
+		"""The negative half, and the reason the extra query stays cheap: a Done run never asks the log."""
+		run = self._run(status="Done")
+		self._step(run, "n1", "done")
+		frappe.db.commit()
+		row = next(r for r in history.runs_for_subject(self.lead.doctype, self.lead.name)["runs"] if r["run"] == run)
+		self.assertIsNone(row["failure"])
+
 	def test_a_step_that_failed_is_not_a_run_that_failed(self):
 		"""A run can carry a `failed` step and still finish: a verb that routes on its own result leaves
 		by a failure edge and the graph carries on. The reason is reported for a FAILED RUN, never for
