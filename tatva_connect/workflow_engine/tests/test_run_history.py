@@ -225,6 +225,57 @@ class TestRunHistory(FrappeTestCase):
 		row = next(r for r in history.runs_for_subject(self.lead.doctype, self.lead.name)["runs"] if r["run"] == run)
 		self.assertIsNone(row["failure"])
 
+	# ------------------------------------------------------ counts on the canvas
+
+	def test_only_a_resting_run_is_counted(self):
+		"""The whole rule, in one test. A run only comes to REST when it parks or dies — everywhere else
+		the interpreter walks a whole segment in one pass, so a run is present for milliseconds.
+
+		Counting anything else would put a permanent 0 on every Branch and Update Field and call it
+		information. Running and Done are therefore counted nowhere.
+
+		Every count test pins its own version, because `_run` COMMITS: without it, one test's parked run is
+		counted by the next and the suite passes or fails on alphabetical order.
+		"""
+		version = "v-resting"
+		self._run(status="Parked", current_node="w1", workflow_version=version)
+		self._run(status="Parked", current_node="w1", workflow_version=version)
+		self._run(status="Failed", current_node="send", workflow_version=version)
+		self._run(status="Running", current_node="b1", workflow_version=version)
+		self._run(status="Done", current_node="end", workflow_version=version)
+		frappe.db.commit()
+
+		found = history.node_counts(self.workflow.name, workflow_version=version)
+		self.assertEqual(found["waiting"].get("w1"), 2)
+		self.assertEqual(found["failed"].get("send"), 1)
+		self.assertNotIn("b1", found["waiting"], "a Running run is passing through, not resting")
+		self.assertNotIn("end", found["waiting"], "a Done run is not anywhere")
+		self.assertNotIn("end", found["failed"])
+
+	def test_waiting_and_failed_are_never_added_together(self):
+		"""Two numbers with different meanings and different colours. A node that has both must report
+		both, or an author reads 'failed' as 'waiting' and leaves a real fault alone."""
+		version = "v-both"
+		self._run(status="Parked", current_node="same", workflow_version=version)
+		self._run(status="Failed", current_node="same", workflow_version=version)
+		frappe.db.commit()
+
+		found = history.node_counts(self.workflow.name, workflow_version=version)
+		self.assertEqual(found["waiting"].get("same"), 1)
+		self.assertEqual(found["failed"].get("same"), 1)
+
+	def test_a_count_is_scoped_to_one_version(self):
+		"""`b1` in v3 and `b1` in v4 may be different nodes, so a figure summed across versions describes
+		no graph that ever existed. The badge belongs to the version on screen."""
+		self._run(status="Parked", current_node="w1", workflow_version="v-old")
+		frappe.db.commit()
+
+		self.assertEqual(history.node_counts(self.workflow.name, workflow_version="v-old")["waiting"].get("w1"), 1)
+		self.assertEqual(
+			history.node_counts(self.workflow.name, workflow_version="v-never-used")["waiting"], {},
+			"another version's runs are not this version's runs",
+		)
+
 	def test_a_step_that_failed_is_not_a_run_that_failed(self):
 		"""A run can carry a `failed` step and still finish: a verb that routes on its own result leaves
 		by a failure edge and the graph carries on. The reason is reported for a FAILED RUN, never for

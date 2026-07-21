@@ -136,6 +136,49 @@ def stuck_runs(limit=25, start=0, workflow=None):
 	}
 
 
+@frappe.whitelist()
+def node_counts(workflow, workflow_version=None):
+	"""How many runs are RESTING on each node — `{"waiting": {node: n}, "failed": {node: n}}`.
+
+	A run only comes to rest in two situations, because the interpreter walks a whole segment in one pass:
+	it PARKS (only a Wait parks a run) or it DIES. Everywhere else it is present for milliseconds, so a
+	count on a Branch would read 0 for ever and be noise dressed as information. Running and Done are
+	counted nowhere: one is passing through, the other is not anywhere.
+
+	The two numbers are never added. They mean different things and they are read in different colours —
+	a node carrying both must report both, or an author reads a real fault as a queue.
+
+	Version-scoped: `b1` in v3 and `b1` in v4 may be different nodes, so a figure summed across versions
+	describes no graph that ever existed. `workflow_version` is optional only so a caller may ask about the
+	whole workflow deliberately; the canvas always passes the version it is showing.
+
+	Scoped by `get_list`, exactly as `_stuck_page` is, so the run table's registered
+	permission_query_conditions apply IN SQL rather than through a second rule written here.
+
+	Tallied in Python rather than by a GROUP BY: `get_list` refuses a raw SQL function in `fields`, and its
+	dict form aliases the result under a name this code would have to guess. Two columns of the resting
+	runs of ONE version is a small read, and the honest tradeoff is stated here rather than hidden — if a
+	program ever parks tens of thousands at one node, this becomes an aggregate behind the same signature.
+
+	The signature is free to take a tick later (Phase P): a scheduled workflow will want these split by the
+	tick that produced them, and that must be an added argument, not a rewrite.
+	"""
+	if not frappe.has_permission("CRM Workflow", "read", workflow):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	filters = {"workflow": workflow, "status": ("in", ("Parked", "Failed"))}
+	if workflow_version:
+		filters["workflow_version"] = workflow_version
+
+	found = {"waiting": {}, "failed": {}}
+	for row in frappe.get_list(RUN_DT, filters=filters, fields=["status", "current_node"], limit_page_length=0):
+		if not row.current_node:
+			continue  # a run that died before it reached a node has nowhere to be counted
+		bucket = found["waiting"] if row.status == "Parked" else found["failed"]
+		bucket[row.current_node] = bucket.get(row.current_node, 0) + 1
+	return found
+
+
 def _stuck_page(filters, window):
 	"""One bounded page off the run table through `get_list`, so the row-visibility brain's
 	permission_query_conditions apply in SQL when the operator has switched them on. The
