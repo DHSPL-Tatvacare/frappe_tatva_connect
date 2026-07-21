@@ -18,7 +18,10 @@ Every failure returns the same envelope, so there is only one to handle. A stack
 - `status` is always `"error"` on a failure.
 - `error.code` is a stable, machine-readable string. It is the value that application code branches on to decide how to handle each failure. The message text can change and must not be matched in code.
 - `error.message` is human-readable and safe to display to an operator.
-- Some errors carry extras: `error.fields` (the offending field names on a `validation_error`) and `error.retry_after` (seconds, on `rate_limited`).
+- Some errors carry extras:
+  - `error.fields` — the offending field names, on a refusal that is about a named input.
+  - `error.detail` — the structured verdict of the check that refused, when it reached one. Today that is the file screener: `{check, verdict, file_name, signature}`. It is additive, so it is read by key and never destructured positionally.
+  - `error.retry_after` — seconds to wait, present only when a real recovery time is known. See `server_busy` below.
 
 <Mermaid chart={`
 flowchart TD
@@ -32,7 +35,7 @@ flowchart TD
 
 | `error.code` | HTTP | Meaning | Handling |
 |---|---|---|---|
-| `validation_error` | 400 | A field failed validation. **A document that fails the malware scan is reported here too.** | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. A document rejected by the scan carries the message "This file failed a security scan and was not accepted"; it is not stored, and a clean copy is sent instead. See [Files](/files). |
+| `validation_error` | 400 | A field failed validation. **A document the malware scan REFUSES is reported here too** — but a document the scanner could not reach is `server_busy` (503), not this. | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. A document refused by the scan carries `error.detail.verdict` (`Type Not Allowed`, `Type Mismatch` or `Infected`); it is not stored, and a clean copy is sent instead. See [Files](/files). |
 | `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
@@ -42,7 +45,7 @@ flowchart TD
 | `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
 | `rate_limited` | 429 | A request or volume budget is exhausted. | `error.retry_after` seconds are waited, then the call is retried. See [Rate limits](/rate-limits). |
 | `server_error` | 500 | Unexpected, and logged server-side. | Retry with exponential backoff. If it persists, the request and response are sent to Ops. |
-| `server_busy` | 503 | The server is overloaded. **This is not a rate limit.** The key's own budget was not exceeded and was not consumed. | `error.retry_after` seconds are waited, then the **same call** is retried unchanged. It is a real number, not an estimate. Slowing down does not help and is not the fix. |
+| `server_busy` | 503 | Something on our side was unavailable — the shared capacity is spent, or a dependency such as the malware scanner could not be reached. **This is not a rate limit.** The key's own budget was not exceeded and was not consumed. | The **same call** is retried unchanged. When `error.retry_after` is present it is a real, measured number and is obeyed exactly. It is **absent** when the recovery time is genuinely unknown — a screening-service outage, a database deadlock — and exponential backoff is used instead. Slowing down does not help and is not the fix. `error.detail` names the dependency when there was one. |
 | `write_conflict` | 503 | A concurrent write conflicted with a bulk call and the database rolled it back. **Nothing was saved**, not even the records that had already succeeded inside the call. | `error.retry_after` seconds are waited, then the **whole call** is retried. Transient and expected under concurrency; it is not a fault in the request. Sending bulk calls one at a time avoids it. See [Rate limits](/rate-limits). |
 
 :::caution{title="Not-found is intentionally vague"}
@@ -76,7 +79,7 @@ The most common causes are:
 
 ## Errors inside a bulk call
 
-A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry carries its own `status`, and a failed row carries the same `error` block:
+A bulk call returns HTTP 200 even when some rows fail. Each `results[]` entry carries its own `status`, and a failed row carries the same `error` block — including `error.fields` and `error.detail` when they apply, exactly as a singular failure would:
 
 ```json
 // HTTP 200

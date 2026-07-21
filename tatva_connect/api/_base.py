@@ -11,7 +11,10 @@ Holds:
   * `_resolve_caller`  — (user, mapping-or-None, is_sysmgr); 403 if neither
   * `_norm_phone`      — phone normaliser
   * `_ok` / `_fail`    — unified success / failure response writers
-  * `_classify` + `_ERROR_MAP` — exception -> (code, http, message, fields)
+  * `checked_code`     — the closed-vocabulary gate every `error.code` writer passes through
+  * `throw_field`      — the ONE refusal that names the offending input in `error.fields`
+  * `_classify` + `_ERROR_MAP` — exception -> (code, http, message, fields, detail)
+  * `request_error`    — the ONE error verdict for this request, for observability to read
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
   * `_cfg`             — fresh read of the CRM Partner API Settings Single (DEFAULTS + 0-rules)
   * `_rate_check`      — per-token + global token-bucket limiter (cost = records)
@@ -29,6 +32,7 @@ import contextlib
 import functools
 import hashlib
 import time
+from collections import Counter
 
 import frappe
 from frappe import _
@@ -51,6 +55,19 @@ ACTION_FETCHED = "fetched"
 ACTION_DELETED = "deleted"
 
 
+def throw_field(message, fields, exc=frappe.ValidationError):
+	"""Refuse a request and NAME the inputs that caused it, in `error.fields` — the ONE way this API
+	says which key was wrong.
+
+	frappe.throw() carries a message and nothing else (its other parameters are Desk-dialog hints), so
+	the offending fieldnames ride on the exception and `_classify` lifts them onto the envelope. Every
+	refusal that is ABOUT a specific input goes through here — a caller should never have to parse
+	English prose to learn which key it sent wrong. `fields` is a list; there is no scalar form."""
+	e = exc(message)
+	e.fields = fields
+	frappe.throw(message, e)
+
+
 def validate_external_id(doctype, external_id):
 	"""Guard the caller's label before the entity writes anything — the one check every per-record core
 	runs, so one input gets one answer. Three of the four entities write the label with db.set_value
@@ -60,12 +77,10 @@ def validate_external_id(doctype, external_id):
 	field = frappe.get_meta(doctype).get_field(EXTERNAL_ID_FIELD)
 	limit = (field.length if field else 0) or 0
 	if limit and len(str(external_id)) > limit:
-		message = _("external_id must be at most {0} characters (got {1}).").format(
-			limit, len(str(external_id))
+		throw_field(
+			_("external_id must be at most {0} characters (got {1}).").format(limit, len(str(external_id))),
+			["external_id"],
 		)
-		e = frappe.ValidationError(message)
-		e.fields = ["external_id"]  # surfaced as error.fields, so the caller knows WHICH field
-		frappe.throw(message, e)
 
 
 def stamp_external_id(doctype, name, external_id):
@@ -429,15 +444,24 @@ def _ok(action=None, data=None, **extra):
 	frappe.local.response.update(resp)
 
 
+def checked_code(code):
+	"""THE closed-vocabulary gate. Every path that puts a string in `error.code` — the response envelope
+	(`_fail`) and the batch verdict (`_stamp_bulk_failures`) alike — passes through here, so a code a
+	partner cannot look up cannot reach either the caller or the request log.
+
+	The vocabulary is closed: a code the caller cannot look up is worse than no code. Emitting an
+	undeclared one is a bug in US, so it is loud in dev and degrades to the generic code in prod rather
+	than shipping a string no partner can branch on."""
+	if code in ERROR_CODES:
+		return code
+	frappe.log_error(title=f"Partner API: undeclared error code {code!r}")
+	if frappe.conf.developer_mode:
+		raise ValueError(f"{code!r} is not in _base.ERROR_CODES — declare it and publish it")
+	return "server_error"
+
+
 def _fail(code, message, http, **extra):
-	# The vocabulary is closed: a code the caller cannot look up is worse than no code. Emitting an
-	# undeclared one is a bug in US, so it is loud in dev and degrades to the generic code in prod
-	# rather than shipping a string no partner can branch on.
-	if code not in ERROR_CODES:
-		frappe.log_error(title=f"Partner API: undeclared error code {code!r}")
-		if frappe.conf.developer_mode:
-			raise ValueError(f"{code!r} is not in _base.ERROR_CODES — declare it and publish it")
-		code = "server_error"
+	code = checked_code(code)
 	frappe.clear_messages()
 	frappe.local.error_log = []
 	err = {"code": code, "message": message}
@@ -445,6 +469,17 @@ def _fail(code, message, http, **extra):
 	frappe.local.response.update({"status": "error", "error": err})
 	frappe.local.response["http_status_code"] = http
 	return True  # denial sentinel for throttle guards; body already set, so guards bare-`return`
+
+
+def request_error():
+	"""The ONE error verdict for this request, exactly as the API decided it — never re-derived.
+
+	Two places hold it, because a bulk call answers 200 by contract even when every record failed:
+	the response envelope (`_fail`), and the batch verdict `_stamp_bulk_failures` stashes for a call
+	whose HTTP status cannot tell the truth. Observability reads THIS, so the log and the caller can
+	never tell two stories."""
+	return (frappe.local.response.get("error")
+	        or getattr(frappe.local, "partner_bulk_error", None) or {})
 
 
 # -- error mapping + rate limit ----------------------------------------------
@@ -456,6 +491,8 @@ _ERROR_MAP = {
 	frappe.PermissionError: ("forbidden", 403),
 	frappe.DoesNotExistError: ("not_found", 404),
 	frappe.ValidationError: ("validation_error", 400),
+	# Our own outage, not the caller's file: the native 503 exception (http_status_code = 503) reuses the retryable server_busy code rather than telling a partner their upload was invalid.
+	frappe.ServiceUnavailableError: ("server_busy", 503),
 	# Python builtins (no frappe equivalent) — Frappe's field coercion raises these on bad input (e.g. a malformed date); the caller's fault -> 400, not an opaque 500.
 	ValueError: ("validation_error", 400),
 	TypeError: ("validation_error", 400),
@@ -497,21 +534,27 @@ ERROR_CODES = frozenset({
 
 
 def _classify(e, fn_name):
-	"""(code, http, message, fields) for an exception. Authored throws keep their
-	text; a child-write validation error carries the offending `fields` (else None);
-	anything unexpected is logged and returned generically as a 500."""
+	"""(code, http, message, fields, detail) for an exception. Authored throws keep their
+	text; a child-write validation error carries the offending `fields` (else None); a check that
+	reached a structured verdict carries `detail` (else None); anything unexpected is logged and
+	returned generically as a 500.
+
+	`fields` and `detail` are both read off the exception because frappe.throw() has no seam for
+	either — its parameters are Desk-dialog hints. The thrower attaches them; this is the one place
+	they are lifted onto the contract."""
 	# A delete blocked by a linked record (LinkExistsError) -> a 409 conflict with a GENERIC message:
 	# the native text names the linking doctypes and docs, which would enumerate what exists on the
 	# line, so we replace it (never leak the link list). "record", not "lead": _classify is the one
 	# error brain for all four entities, and this fired verbatim on an activity, a file or a call.
 	if isinstance(e, frappe.LinkExistsError):
-		return "cannot_delete", 409, _("This record cannot be deleted because it has linked records."), None
+		return "cannot_delete", 409, _("This record cannot be deleted because it has linked records."), None, None
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
-			return code, http, (str(e) or _("Request failed")), getattr(e, "fields", None)
+			return (code, http, (str(e) or _("Request failed")),
+			        getattr(e, "fields", None), getattr(e, "detail", None))
 	# The caller rolls back before classifying, then commits this row on its own; deferring it to redis instead would lose it on an eviction and re-stamp its creation at flush time.
 	frappe.log_error(title=f"Partner API error: {fn_name}")
-	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None
+	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None, None
 
 
 # The (global, per-token) bucket pair, evaluated atomically. Each bucket is a HASH
@@ -940,7 +983,7 @@ def _api(fn=None, *, bulk=False, read=False):
 			# normally, so Frappe's sync_database() would otherwise commit what the failed endpoint
 			# already wrote. _idempotency_begin commits its claim separately, so the release still lands.
 			frappe.db.rollback()
-			code, http, message, fields = _classify(e, fn.__name__)
+			code, http, message, fields, detail = _classify(e, fn.__name__)
 			# _classify wrote an Error Log row for an unexpected failure. The rollback above cleared every
 			# other pending write, so this commit persists that row and nothing else - the same reason
 			# observability.capture.log_request commits its own row here. Without it the traceback dies with
@@ -948,11 +991,10 @@ def _api(fn=None, *, bulk=False, read=False):
 			if code == "server_error":
 				frappe.db.commit()
 			extra = {"fields": fields} if fields else {}
-			# A 503 without a Retry-After leaves the caller guessing, which is the one thing a retryable failure must never do.
-			if http == 503:
-				extra["retry_after"] = _cfg()["bulk_window_seconds"]
-				# _fail writes the BODY only — without this the header contradicts the body by being absent.
-				frappe.local.response_headers["Retry-After"] = str(extra["retry_after"])
+			# The check already reached a structured verdict; carrying it means the partner and the request log read the SAME answer instead of parsing one English sentence.
+			if detail:
+				extra["detail"] = detail
+			# No retry_after on this path: a scanner outage, a deadlock and a lock timeout have no known recovery time, and the bulk rate-limit window is an unrelated quantity. Only the limiter and the bulk write-conflict compute a real one, and both call _fail directly.
 			_fail(code, message, http, **extra)
 			if idem:
 				_idempotency_release(idem)
@@ -966,13 +1008,15 @@ def _api(fn=None, *, bulk=False, read=False):
 def _bulk_error(i, e, fn_name):
 	"""One failed record -> its entry in a bulk `results` array. Shared by the write and read
 	lanes so a per-record failure looks IDENTICAL whichever bulk endpoint produced it."""
-	code, _http, message, fields = _classify(e, fn_name)
+	code, _http, message, fields, detail = _classify(e, fn_name)
 	# the throw populated message_log -> clear it so build_response doesn't leak `_server_messages` into the (otherwise clean) bulk envelope.
 	frappe.clear_messages()
 	frappe.local.message_log = []
 	err = {"code": code, "message": message}
 	if fields:
 		err["fields"] = fields
+	if detail:
+		err["detail"] = detail
 	return {"index": i, "status": "error", "error": err}
 
 
@@ -1046,6 +1090,40 @@ def _process_bulk(items, fn):
 	return results, {"total": len(items), "succeeded": ok, "failed": len(items) - ok}
 
 
+# How many per-record failures the batch verdict carries. Observability writes the verdict to a Code column on the logging hot path, so this is a sample, not the list; `summary` holds the true total.
+_BULK_FAILURE_SAMPLE = 20
+
+
+def _stamp_bulk_failures(results, summary):
+	"""Record a partially- or wholly-failed batch as a FAILURE, without touching the response.
+
+	The partial-success envelope is the partner contract and does not change: a bulk call answers 200
+	with a per-record `results` array whatever happened inside it. But that made the request log claim
+	a clean success for a call where 100 of 100 records were refused — HTTP 200, is_error 0, blank
+	error columns — so the one place an operator looks was the one place the failure was invisible.
+	The verdict is stashed on the request-local; `request_error()` is what reads it back.
+
+	Two things this must NOT do. It must not file the batch under whichever code happened to land first
+	— 99 validation_errors behind one server_busy is a validation_error batch — so the code is the MODAL
+	one (ties break on first occurrence, which is Counter's own ordering). And it must not carry every
+	failure: observability writes this dict verbatim to a Code column on the logging hot path, so a
+	5000-record all-fail batch would write a multi-megabyte row. `summary` already holds the true total;
+	`failures` is a bounded sample."""
+	if not summary["failed"]:
+		return
+	failures = [dict(r["error"], index=r["index"]) for r in results if r.get("status") == "error"]
+	code = Counter(f["code"] for f in failures).most_common(1)[0][0]
+	frappe.local.partner_bulk_error = {
+		"code": checked_code(code),
+		"message": _("{0} of {1} records failed.").format(summary["failed"], summary["total"]),
+		"detail": {
+			"summary": summary,
+			"failures": failures[:_BULK_FAILURE_SAMPLE],
+			"failures_sampled": min(len(failures), _BULK_FAILURE_SAMPLE),
+		},
+	}
+
+
 def _run_bulk(items, fn, entity=None):
 	"""WRITE lane (sync). Guard, process, emit. A deadlock stays a retryable 503 (unchanged): the whole
 	txn is gone, so nothing was saved and the caller retries the whole call — a mid-request retry would
@@ -1062,6 +1140,7 @@ def _run_bulk(items, fn, entity=None):
 			  "Nothing was saved. Retry the whole call."),
 			503, retry_after=_cfg()["bulk_window_seconds"],
 		)
+	_stamp_bulk_failures(results, summary)
 	_ok(summary=summary, results=results)
 
 
@@ -1079,7 +1158,9 @@ def _bulk_read(names, load, entity=None):
 			ok += 1
 		except Exception as e:
 			results.append(_bulk_error(i, e, "bulk_read"))
-	_ok(summary={"total": len(names), "succeeded": ok, "failed": len(names) - ok}, results=results)
+	summary = {"total": len(names), "succeeded": ok, "failed": len(names) - ok}
+	_stamp_bulk_failures(results, summary)
+	_ok(summary=summary, results=results)
 
 
 def _list_ok(collection, rows, total, offset, limit):

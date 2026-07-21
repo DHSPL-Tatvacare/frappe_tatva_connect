@@ -458,9 +458,13 @@
                 },
                 "description": "Present on some `validation_error`s, the field name(s) that failed."
               },
+              "detail": {
+                "type": "object",
+                "description": "Present when the check that refused reached a STRUCTURED verdict rather than only a sentence. Today this is the file screener: `{check: \"file_screening\", verdict, file_name, signature}`, where `verdict` is one of `Type Not Allowed`, `Type Mismatch`, `Infected`, `Scanner Unavailable` and `signature` is the malware signature name (null unless `verdict` is `Infected`). Additive by design \u2014 new keys may appear, so it is read by key and never destructured positionally."
+              },
               "retry_after": {
                 "type": "integer",
-                "description": "Present only on `rate_limited` (429): seconds until the key's budget resets."
+                "description": "Seconds to wait before retrying. Present only when a REAL recovery time is known: `rate_limited` (429, the limiter computes it), a capacity `server_busy` (503) and `write_conflict` (503, the bulk window). Absent on a `server_busy` whose recovery time is genuinely unknown, such as a screening-service outage \u2014 back off exponentially there rather than reading a number that was never measured."
               }
             }
           }
@@ -608,13 +612,24 @@
           },
           "error": {
             "type": "object",
-            "description": "Present on a failed row: `{code, message}`.",
+            "description": "Present on a failed row. The SAME block a singular failure returns: `{code, message}`, plus `fields` when the refusal is about a named input and `detail` when the check reached a structured verdict.",
             "properties": {
               "code": {
                 "type": "string"
               },
               "message": {
                 "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The field name(s) that failed, when the refusal is about a named input."
+              },
+              "detail": {
+                "type": "object",
+                "description": "The structured verdict of the check that refused this row, identical in shape to `PartnerError.error.detail`."
               }
             }
           }
@@ -5308,7 +5323,7 @@
               }
             ],
             "bytes": "The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent. The maximum download size is 25 MB.",
-            "screening": "Every file is scanned for malware before it is stored. A file that fails the scan is rejected outright and nothing is written: the response is a 400 with `error.code` `validation_error` and the message \"This file failed a security scan and was not accepted.\" The scan runs on the bytes themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches. A rejected file is not quarantined and cannot be retrieved; a clean copy is sent instead.",
+            "screening": "Every file is scanned for malware before it is stored, and nothing is written unless it passes. A file the scan REFUSES is the caller's: the response is a 400 with `error.code` `validation_error`, and `error.detail` names the verdict (`Type Not Allowed`, `Type Mismatch` or `Infected`), the file name and, for an infection, the signature. A scanner we cannot REACH is ours: the file was never judged, so the response is a 503 with `error.code` `server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried with exponential backoff. The scan runs on the bytes themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches. A refused file is not quarantined and cannot be retrieved; a clean copy is sent instead.",
             "privacy": "Every file attached through this API is private. `is_private` always reads true and `file_url` is always a proxy url, never a raw storage key or a local path.",
             "target": "A file is attached to its lead by default. Passing `activity` (a CRM Task name) homes it on that activity; passing `note` (an FCRM Note name) homes it on that note. Either must belong to the same lead.",
             "immutable": "A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old."
@@ -6844,7 +6859,7 @@
         }
       },
       "Retry-After": {
-        "description": "Seconds to wait before retrying, per RFC 9110. Sent on a 429 (your budget is spent) and on a 503 (the shared capacity is spent), and mirrors `error.retry_after` in the body. It is the wait for ONE request, so it is normally shorter than `X-RateLimit-Reset`. Always obey it.",
+        "description": "Seconds to wait before retrying, per RFC 9110. Sent whenever a REAL recovery time is known \u2014 a 429 (your budget is spent), a capacity 503 and a bulk write-conflict 503 \u2014 and it mirrors `error.retry_after` in the body. It is absent when the recovery time is genuinely unknown, such as a screening-service outage; back off exponentially there. It is the wait for ONE request, so it is normally shorter than `X-RateLimit-Reset`. Always obey it.",
         "schema": {
           "type": "integer",
           "example": 42
@@ -6906,6 +6921,16 @@
             "$ref": "#/components/headers/Retry-After"
           }
         },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PartnerError"
+            }
+          }
+        }
+      },
+      "ScreeningUnavailable": {
+        "description": "The malware screening service could not be reached, so the document was never judged. This is an outage on our side, not a fault in the request: the document is NOT rejected as invalid and nothing was stored. `error.code` is `server_busy` and `error.detail.verdict` is `Scanner Unavailable`. There is no `Retry-After` \u2014 the recovery time is genuinely unknown \u2014 so the same call is retried with exponential backoff.",
         "content": {
           "application/json": {
             "schema": {
@@ -9148,6 +9173,9 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ScreeningUnavailable"
           }
         },
         "parameters": [

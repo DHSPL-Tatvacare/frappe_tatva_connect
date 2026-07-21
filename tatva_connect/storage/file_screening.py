@@ -19,9 +19,12 @@ from what the file IS (a bulk payload is screened on both its submit lanes, Desk
 Activation is config-driven, not code-driven: `screen()` runs ONLY when the master
 `Storage::File::screening` toggle is on AND the resolved `channel` is listed in
 `CRM File Screening Settings -> Active Channels`. Turning a wired channel on/off tomorrow is a
-config edit (add/remove a row), never a deploy. Scanner config (clamd host/port, unavailable
-policy) lives in the same Single; blanks fall back to DEFAULTS. Needs the `clamav` container + the
-`clamd` dep (pyproject) for the virus scan; the magic-byte sniff is local and needs neither.
+config edit (add/remove a row), never a deploy. Everything else the screener consults — scanner
+host/port/timeout, which verdicts block, the byte-signature table, how long a verdict is kept —
+lives on the same Single, and every blank field falls back to DEFAULTS below. There are no baked
+form values: the code holds the default, the form holds the operator's departure from it. Needs the
+`clamav` container + the `clamd` dep (pyproject) for the virus scan; the magic-byte sniff is local
+and needs neither.
 """
 import frappe
 from frappe import _
@@ -33,7 +36,6 @@ from tatva_connect import automation
 TOGGLE = "Storage::File::screening"
 _SETTINGS = "CRM File Screening Settings"
 _SCAN_LOG = "CRM File Scan Log"
-_RETENTION_DAYS = 90
 
 # Channels (also the CRM Screened Channel `channel` Select options).
 _INTAKE = "Intake"
@@ -47,14 +49,38 @@ _DISALLOWED = "Type Not Allowed"
 _MISMATCH = "Type Mismatch"
 _UNAVAILABLE = "Scanner Unavailable"
 
-# Blank Single fields fall back here (Invariant A.4 — no baked form values).
-DEFAULTS = {"clamav_host": "clamav", "clamav_port": 3310, "scanner_unavailable": "block"}
+# The shipped byte-signature table, in the operator's own notation: one `TYPE = HEX, HEX` line per type,
+# keyed on core's set_file_type() value (the SAME derivation _allowed reads, so .jpeg and .jpg are ONE
+# entry). Native allowlists the type; this only asserts the CONTENT matches it. The Office types share the
+# container they are really built on — a .docx IS a zip, a .doc IS an OLE2 compound file — so a renamed
+# .html or .exe wearing an Office suffix is refused on the same rule that catches one wearing .pdf.
+# CSV and TXT are deliberately absent: plain text carries no fingerprint, so there is nothing to contradict.
+_SIGNATURES = """PDF = 25504446
+PNG = 89504E470D0A1A0A
+JPG = FFD8FF
+GIF = 474946383761, 474946383961
+DOCX = 504B0304, 504B0506, 504B0708
+XLSX = 504B0304, 504B0506, 504B0708
+PPTX = 504B0304, 504B0506, 504B0708
+ZIP = 504B0304, 504B0506, 504B0708
+DOC = D0CF11E0A1B11AE1
+XLS = D0CF11E0A1B11AE1
+PPT = D0CF11E0A1B11AE1"""
 
-# file_type -> accepted leading bytes, keyed on core's set_file_type() value (the SAME derivation _allowed reads, so .jpeg and .jpg are ONE entry): native allowlists the type, this only asserts the CONTENT matches it.
-_MAGIC = {
-	"PDF": [b"%PDF"],
-	"PNG": [b"\x89PNG\r\n\x1a\n"],
-	"JPG": [b"\xff\xd8\xff"],
+# The verdicts that refuse an upload. Scanner Unavailable is NOT here: it is not a fact about the file but
+# an outage of ours, so it is decided once by `scanner_unavailable` (which is also why it answers 503, not
+# 400). One decider per verdict — a verdict named in two places is a second brain.
+_BLOCKING = f"{_DISALLOWED}\n{_MISMATCH}\n{_INFECTED}"
+
+# Blank Single fields fall back here (Invariant A.4 — no baked form values).
+DEFAULTS = {
+	"clamav_host": "clamav",
+	"clamav_port": 3310,
+	"clamav_timeout": 30,
+	"scanner_unavailable": "block",
+	"blocking_verdicts": _BLOCKING,
+	"type_signatures": _SIGNATURES,
+	"scan_log_retention_days": 90,
 }
 
 
@@ -69,6 +95,21 @@ def _cfg(field):
 def _active_channels():
 	"""The set of channels the operator has activated (config, not code). Empty = dormant."""
 	return {r.channel for r in _settings().active_channels}
+
+
+def parse_signatures(text):
+	"""Read the byte-signature table out of its `TYPE = HEX, HEX` lines into {TYPE: [bytes, ...]}.
+
+	The operator's notation is hex because that is how a magic number is written everywhere it is
+	published, and because a raw byte does not survive a text field. Shared with the settings doctype's
+	own validate(), so a table that cannot be read is refused at the form rather than at the upload."""
+	table = {}
+	for line in text.splitlines():
+		name, _sep, hexes = line.partition("=")
+		prefixes = [bytes.fromhex(part.strip()) for part in hexes.split(",") if part.strip()]
+		if name.strip() and prefixes:
+			table[name.strip().upper()] = prefixes
+	return table
 
 
 def _channel(attached_to_doctype, attached_to_name):
@@ -130,8 +171,8 @@ def screen(*, file_name, file_type, raw, attached_to_doctype=None, attached_to_n
 		source_ip=getattr(frappe.local, "request_ip", None),
 	)
 	if blocked:
-		message, title = _block_notice(verdict)
-		frappe.throw(message, title=title)
+		exc, message, title = _block_exception(verdict, signature, file_name)
+		frappe.throw(message, exc, title=title)
 
 
 # -- classify (pure, no side effects) ----------------------------------------
@@ -149,13 +190,15 @@ def _classify(file_type, raw):
 
 
 def _is_blocked(verdict):
-	"""Block a hard fail, or an unavailable scanner under the fail-closed `block` policy.
-	Unavailable + operator policy `allow` is accepted (still logged, never thrown)."""
-	if verdict in (_DISALLOWED, _MISMATCH, _INFECTED):
-		return True
+	"""Block a verdict the operator listed as blocking, or an unavailable scanner under the fail-closed
+	`block` policy. Unavailable + operator policy `allow` is accepted (still logged, never thrown).
+
+	Two fields, because they answer two different questions and each verdict has exactly one decider:
+	Blocking Verdicts says what a bad FILE costs the caller, `scanner_unavailable` says what an outage of
+	OURS costs them. Blank Blocking Verdicts is the shipped list, never 'block nothing'."""
 	if verdict == _UNAVAILABLE:
-		return (_cfg("scanner_unavailable") or "block") == "block"
-	return False
+		return _cfg("scanner_unavailable") == "block"
+	return verdict in [line.strip() for line in _cfg("blocking_verdicts").splitlines()]
 
 
 def _block_notice(verdict):
@@ -167,6 +210,27 @@ def _block_notice(verdict):
 	if verdict == _INFECTED:
 		return _("This file failed a security scan and was not accepted."), _("Invalid file")
 	return _("File could not be security-scanned. Please try again later."), _("Upload failed")
+
+
+def _block_exception(verdict, signature, file_name):
+	"""(exception, message, title) for a blocked upload — WHOSE fault it was decides the class.
+
+	A disallowed type, a byte/type mismatch and an infection are all facts about the file the caller
+	sent: ValidationError, which the partner contract maps to 400. A scanner we could not reach is an
+	outage of OURS — the file was never judged — so it is frappe.ServiceUnavailableError, native 503
+	(`http_status_code = 503`), which _base maps to the retryable `server_busy` with a Retry-After.
+	Telling a partner their file was invalid because our clamd was down is a lie.
+
+	The verdict rides on `detail`, the same way a field name rides on `fields`: frappe.throw() carries
+	no structure, so the exception does, and _classify lifts it onto the error envelope — which is where
+	both the partner and the request log read it from."""
+	message, title = _block_notice(verdict)
+	exc = frappe.ServiceUnavailableError(message) if verdict == _UNAVAILABLE else frappe.ValidationError(message)
+	exc.detail = {
+		"check": "file_screening", "verdict": verdict,
+		"file_name": file_name, "signature": signature or None,
+	}
+	return exc, message, title
 
 
 def _phone(channel):
@@ -197,10 +261,18 @@ def _allowed(file_type):
 
 
 def _sniff(file_type, raw):
-	"""True if the leading bytes match the type core derived (or it is not one we fingerprint).
-	False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf."""
-	sigs = _MAGIC.get(file_type)
+	"""True if the leading bytes match the type core derived (or it is not one the operator fingerprints).
+	False on a mismatch — a renamed .html/.svg/.exe posing as a .pdf, a .docx or a .xlsx.
+
+	A type absent from the table is waved through, which is the honest answer: some types (CSV, TXT) have
+	no fingerprint at all, so a missing row means 'nothing can contradict this', never 'not checked yet'."""
+	sigs = _signatures().get(file_type)
 	return not sigs or any(raw.startswith(s) for s in sigs)
+
+
+def _signatures():
+	"""The operator's byte-signature table, parsed. Blank field = the shipped table in DEFAULTS."""
+	return parse_signatures(_cfg("type_signatures"))
 
 
 def _scan(raw):
@@ -212,8 +284,9 @@ def _scan(raw):
 	try:
 		import clamd
 
-		port = int(_cfg("clamav_port") or DEFAULTS["clamav_port"])
-		cd = clamd.ClamdNetworkSocket(host=_cfg("clamav_host"), port=port, timeout=30)
+		cd = clamd.ClamdNetworkSocket(
+			host=_cfg("clamav_host"), port=int(_cfg("clamav_port")), timeout=int(_cfg("clamav_timeout"))
+		)
 		result = cd.instream(io.BytesIO(raw))
 	except Exception:
 		frappe.log_error(title="File virus scan unavailable", message=frappe.get_traceback())
@@ -273,13 +346,21 @@ def _write_scan_log(**fields):
 
 
 def apply_scan_logging(enabled):
-	"""Activator for `Storage::File::screening`: register/deregister the scan log with Log Settings
-	so its daily cleanup trims it at `_RETENTION_DAYS`. Mirrors observability.capture.apply_logging."""
+	"""Activator for `Storage::File::screening`: register/deregister the scan log with Log Settings so its
+	daily cleanup trims it at the operator's retention. Mirrors observability.capture.apply_logging.
+
+	The enabled branch declares an end state rather than a creation: an existing row has its `days` set
+	too, so re-saving the settings with a new retention is what applies it, and the toggle need not be
+	cycled. Log Settings is the ONE place a retention is executed; this only registers the doctype."""
+	days = int(_cfg("scan_log_retention_days"))
 	settings = frappe.get_doc("Log Settings")
 	row = next((r for r in settings.logs_to_clear if r.ref_doctype == _SCAN_LOG), None)
-	if enabled and not row:
-		settings.append("logs_to_clear", {"ref_doctype": _SCAN_LOG, "days": _RETENTION_DAYS})
+	if enabled:
+		if row:
+			row.days = days
+		else:
+			settings.append("logs_to_clear", {"ref_doctype": _SCAN_LOG, "days": days})
 		settings.save(ignore_permissions=True)  # authz-ok: tier-a — scan-log row (background worker) / operator activator
-	elif not enabled and row:
+	elif row:
 		settings.remove(row)
 		settings.save(ignore_permissions=True)  # authz-ok: tier-a — scan-log row (background worker) / operator activator

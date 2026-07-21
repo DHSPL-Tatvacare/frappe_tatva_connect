@@ -45,7 +45,8 @@ A document is passed through an antivirus service **before** it is stored. The s
 themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches
 on the caller's behalf.
 
-A document that fails the scan is **rejected outright, and nothing is written**:
+A document the scan **refuses** is rejected outright, and nothing is written. `error.detail` carries
+the verdict, so the reason is machine-readable and does not have to be read out of the message:
 
 ```json
 // HTTP 400
@@ -53,13 +54,59 @@ A document that fails the scan is **rejected outright, and nothing is written**:
   "status": "error",
   "error": {
     "code": "validation_error",
-    "message": "This file failed a security scan and was not accepted."
+    "message": "This file failed a security scan and was not accepted.",
+    "detail": {
+      "check": "file_screening",
+      "verdict": "Infected",
+      "file_name": "prescription.pdf",
+      "signature": "Eicar-Test-Signature"
+    }
   }
 }
 ```
 
+`detail.verdict` is one of:
+
+| `verdict` | Meaning |
+|---|---|
+| `Type Not Allowed` | the file type is not one the platform accepts |
+| `Type Mismatch` | the bytes do not match the type the filename claims |
+| `Infected` | the antivirus matched a signature; `detail.signature` names it |
+| `Scanner Unavailable` | the scanner could not be reached — see below, this one is **not** a 400 |
+
 The document is not quarantined and cannot be retrieved afterwards; there
 is nothing to fetch, because nothing was stored. A clean copy is sent instead.
+
+### When the scanner itself is unavailable
+
+If the scanning service cannot be reached, the document was **never judged**. That is an outage on our
+side, not a fault in the request, so it is never reported as an invalid file. The answer is a retryable
+`503`:
+
+```json
+// HTTP 503
+{
+  "status": "error",
+  "error": {
+    "code": "server_busy",
+    "message": "File could not be security-scanned. Please try again later.",
+    "detail": {
+      "check": "file_screening",
+      "verdict": "Scanner Unavailable",
+      "file_name": "prescription.pdf",
+      "signature": null
+    }
+  }
+}
+```
+
+Nothing was stored and no budget was spent. There is **no** `Retry-After` on this response — the
+recovery time is genuinely unknown, and a number that was never measured would be worse than none — so
+the same call is retried with exponential backoff. See [Errors](/partner-errors#every-code) for
+`server_busy`.
+
+Inside a bulk attach the same outage appears per row: the row's `error` block carries `server_busy` and
+the same `detail`, while the call itself still answers `200`.
 
 The scan is the reason a file attach is measurably slower than any other write — roughly a second
 against tens of milliseconds. That cost is expected, and it is why files carry their own, smaller

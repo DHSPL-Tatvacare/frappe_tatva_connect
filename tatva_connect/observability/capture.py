@@ -22,7 +22,7 @@ from frappe.monitor import get_trace_id
 from frappe.utils import now_datetime
 
 from tatva_connect import automation
-from tatva_connect.api._base import _PARTNER_PATH
+from tatva_connect.api._base import _PARTNER_PATH, request_error
 from tatva_connect.telephony import handler as _telephony_handler
 from tatva_connect.telephony.adapters.acefone import TELEPHONY_MEDIUM
 from tatva_connect.whatsapp import webhook as _whatsapp_webhook
@@ -73,9 +73,11 @@ def log_request(response=None, request=None):
 		# last dotted segment of the method path, e.g. ...partner.lead_create -> lead_create
 		endpoint = path.rstrip("/").rsplit("/", 1)[-1].rsplit(".", 1)[-1] or path
 
-		# The API already decided WHY it refused — `_fail` put the code+message on the response envelope
-		# before this hook runs. Read it; never re-derive it, or the log and the caller tell two stories.
-		error = (getattr(frappe.local, "response", None) or {}).get("error") or {}
+		# The API already decided WHY it refused — `_fail` put the code+message on the response envelope,
+		# and a bulk call stashed its batch verdict, both before this hook runs. Read that ONE answer;
+		# never re-derive it, or the log and the caller tell two stories.
+		error = request_error()
+		detail = error.get("detail")
 
 		frappe.get_doc({
 			"doctype": "CRM API Request Log",
@@ -85,11 +87,14 @@ def log_request(response=None, request=None):
 			"source": source,
 			"http_method": getattr(req, "method", None),
 			"status_code": code,
-			"is_error": 1 if code >= 400 else 0,
+			# A bulk partial failure is a 200 by contract, so the status code alone cannot decide this.
+			"is_error": 1 if (code >= 400 or error) else 0,
 			"duration_ms": duration_ms,
 			"trace_id": get_trace_id(),
 			"error_code": error.get("code"),
 			"error_message": (error.get("message") or "")[:500] or None,
+			# Bounded upstream: _stamp_bulk_failures caps its failure list at _BULK_FAILURE_SAMPLE, so a 5000-record all-fail batch cannot write a multi-megabyte row on this hot path.
+			"error_detail": frappe.as_json(detail) if detail else None,
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator
 		# Commit the log row explicitly. By the time after_request runs, Frappe has already
 		# committed (success) or rolled back (error) the handler's own transaction, so the

@@ -53,6 +53,7 @@ from tatva_connect.api._base import (
 	_schema_ok,
 	resolve_lead,
 	scoped_by_lead,
+	throw_field,
 	validate_external_id,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
@@ -130,7 +131,7 @@ def _resolve_target(data, lead_name):
 			doctype, name, ["reference_doctype", "reference_docname"], as_dict=True
 		)
 		if not ref or ref.reference_doctype != "CRM Lead" or ref.reference_docname != lead_name:
-			frappe.throw(_("{0} not found").format(doctype), frappe.DoesNotExistError)
+			throw_field(_("{0} not found").format(doctype), [key], frappe.DoesNotExistError)
 		return doctype, name
 	return "CRM Lead", lead_name
 
@@ -157,34 +158,34 @@ def _load_bytes(data):
 				allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
 			)  # nosec B113
 			if 300 <= resp.status_code < 400:
-				frappe.throw(_("file_url must resolve directly, without redirects"))
+				throw_field(_("file_url must resolve directly, without redirects"), ["file_url"])
 			resp.raise_for_status()
 			# The stream is inside the guard: a connection that dies mid-download raises here, not at
 			# the get(). Our own throws are ValidationError, so they pass through untouched.
 			for chunk in resp.iter_content(64 * 1024):
 				total += len(chunk)
 				if total > max_bytes:
-					frappe.throw(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]))
+					throw_field(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]), ["file_url"])
 				chunks.append(chunk)
 		except requests.exceptions.RequestException as e:
-			frappe.throw(_("file_url could not be fetched: {0}").format(type(e).__name__))
+			throw_field(_("file_url could not be fetched: {0}").format(type(e).__name__), ["file_url"])
 		return b"".join(chunks)
 	if content_b64:
 		try:
 			return base64.b64decode(content_b64, validate=True)
 		except (binascii.Error, ValueError):
-			frappe.throw(_("content_base64 is not valid base64"))
-	frappe.throw(_("file_url or content_base64 is required"))
+			throw_field(_("content_base64 is not valid base64"), ["content_base64"])
+	throw_field(_("file_url or content_base64 is required"), ["file_url", "content_base64"])
 
 
 def _scoped_file(name, mp, is_sysmgr):
 	"""Load a File by name, grain-scoped: the lead it (or its task) hangs off MUST be on the
 	caller's vertical+group. Missing AND out-of-scope return the SAME generic not-found."""
 	if not name:
-		frappe.throw(_("name (the File id) is required"))
+		throw_field(_("name (the File id) is required"), ["name"])
 	doc = frappe.db.exists("File", name) and frappe.get_doc("File", name)
 	if not doc:
-		frappe.throw(_("File not found"), frappe.DoesNotExistError)
+		throw_field(_("File not found"), ["name"], frappe.DoesNotExistError)
 
 	# A file finds its lead indirectly: through the task or note it hangs off, or from the lead itself.
 	scoped_by_lead(_file_lead(doc), mp, is_sysmgr, "File")
@@ -239,7 +240,7 @@ def _create_one(data, mp, is_sysmgr):
 
 	filename = data.get("filename")
 	if not filename:
-		frappe.throw(_("filename is required"))
+		throw_field(_("filename is required"), ["filename"])
 	validate_external_id("File", data.get("external_id"))
 
 	target_doctype, target_name = _resolve_target(data, lead_name)
@@ -291,11 +292,14 @@ def file_schema(**_kwargs):
 				cfg["file_download_max_mb"])
 		),
 		screening=(
-			"Every file is scanned for malware before it is stored. A file that fails the scan is "
-			"rejected outright and nothing is written: the response is a 400 with `error.code` "
-			"`validation_error` and the message \"This file failed a security scan and was not "
-			"accepted.\" The scan runs on the bytes themselves, so it applies equally to a "
-			"`content_base64` upload and to a `file_url` the server fetches. A rejected file is not "
+			"Every file is scanned for malware before it is stored, and nothing is written unless it "
+			"passes. A file the scan REFUSES is the caller's: the response is a 400 with `error.code` "
+			"`validation_error`, and `error.detail` names the verdict (`Type Not Allowed`, `Type "
+			"Mismatch` or `Infected`), the file name and, for an infection, the signature. A scanner we "
+			"cannot REACH is ours: the file was never judged, so the response is a 503 with `error.code` "
+			"`server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried "
+			"with exponential backoff. The scan runs on the bytes themselves, so it applies equally to a "
+			"`content_base64` upload and to a `file_url` the server fetches. A refused file is not "
 			"quarantined and cannot be retrieved; a clean copy is sent instead."
 		),
 		privacy=(

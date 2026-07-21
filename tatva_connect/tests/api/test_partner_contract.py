@@ -736,7 +736,7 @@ class TestPartnerContract(unittest.TestCase):
 	def test_cannot_delete_does_not_name_the_wrong_entity(self):
 		"""_classify is the one error brain for all four entities; its LinkExistsError branch said
 		"this LEAD cannot be deleted" while deleting an activity, a file or a call."""
-		code, http, message, _fields = _base._classify(frappe.LinkExistsError("x"), "activity_delete")
+		code, http, message, _fields, _detail = _base._classify(frappe.LinkExistsError("x"), "activity_delete")
 		self.assertEqual((code, http), ("cannot_delete", 409))
 		self.assertNotIn("lead", message.lower(), "the shared message must not name one entity")
 		self.assertIn("record", message.lower())

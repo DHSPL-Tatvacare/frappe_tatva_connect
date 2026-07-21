@@ -32,12 +32,13 @@
   {
    "child": 1,
    "collapsible": 1,
-   "icon": "hard-drive",
+   "icon": "sliders-horizontal",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Azure Blob",
-   "link_to": "CRM Azure Storage Settings",
+   "label": "Platform File Limits",
+   "link_to": "System Settings",
    "link_type": "DocType",
+   "navigate_to_tab": "files_tab",
    "show_arrow": 0,
    "type": "Link"
   },
@@ -56,11 +57,47 @@
   {
    "child": 1,
    "collapsible": 1,
+   "icon": "hard-drive",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Azure Blob",
+   "link_to": "CRM Azure Storage Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Files",
+   "link_to": "File",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
    "icon": "scroll-text",
    "indent": 0,
    "keep_closed": 0,
    "label": "File Scan Log",
    "link_to": "CRM File Scan Log",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "timer",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Log Settings",
+   "link_to": "Log Settings",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -89,7 +126,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-14 14:30:00.000000",
+ "modified": "2026-07-21 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Infrastructure",

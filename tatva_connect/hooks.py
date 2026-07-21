@@ -710,9 +710,7 @@ after_job = [
 # Automatically update python controller files with type annotations for this app.
 # export_python_type_annotations = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+# NO default_log_clearing_doctypes hook: LogSettings.validate() re-appends every hooked doctype (add_default_logtypes), so the hook would defeat the activators' deregistration and run retention while the toggle is off. capture.apply_logging and file_screening.apply_scan_logging own this, tied to the operator toggle.
 
 # Translation
 # ------------
