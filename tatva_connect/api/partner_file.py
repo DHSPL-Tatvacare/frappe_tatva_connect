@@ -51,6 +51,8 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	base64_message,
+	file_size_message,
 	resolve_lead,
 	scoped_by_lead,
 	throw_field,
@@ -131,7 +133,11 @@ def _resolve_target(data, lead_name):
 			doctype, name, ["reference_doctype", "reference_docname"], as_dict=True
 		)
 		if not ref or ref.reference_doctype != "CRM Lead" or ref.reference_docname != lead_name:
-			throw_field(_("{0} not found").format(doctype), [key], frappe.DoesNotExistError)
+			throw_field(_(
+				"No {0} on this lead has the id `{1}`. A file is homed only on a record that belongs to "
+				"the same lead — check the id against that lead's own list endpoint, or omit `{2}` to "
+				"attach the file to the lead itself."
+			).format(doctype, name, key), [key], frappe.DoesNotExistError)
 		return doctype, name
 	return "CRM Lead", lead_name
 
@@ -146,7 +152,7 @@ def _load_bytes(data):
 
 		from tatva_connect.utils import assert_safe_public_url
 
-		assert_safe_public_url(file_url)  # SSRF: block internal/metadata targets before fetching
+		assert_safe_public_url(file_url, field="file_url")  # SSRF: block internal/metadata targets before fetching
 		cfg = _cfg()
 		max_bytes = cfg["file_download_max_mb"] * 1024 * 1024
 		# The URL is the caller's input, so one that will not fetch is a 400, never a 500. Every requests failure is a RequestException; unmapped, _classify would call it a server_error.
@@ -158,34 +164,51 @@ def _load_bytes(data):
 				allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
 			)  # nosec B113
 			if 300 <= resp.status_code < 400:
-				throw_field(_("file_url must resolve directly, without redirects"), ["file_url"])
+				throw_field(_(
+					"`file_url` answered {0} and a redirect is not followed, because only the host that "
+					"was named is vetted. Send the final URL the redirect points at."
+				).format(resp.status_code), ["file_url"])
 			resp.raise_for_status()
 			# The stream is inside the guard: a connection that dies mid-download raises here, not at
 			# the get(). Our own throws are ValidationError, so they pass through untouched.
 			for chunk in resp.iter_content(64 * 1024):
 				total += len(chunk)
 				if total > max_bytes:
-					throw_field(_("File exceeds the {0} MB limit").format(cfg["file_download_max_mb"]), ["file_url"])
+					throw_field(file_size_message(cfg["file_download_max_mb"]), ["file_url"])
 				chunks.append(chunk)
-		except requests.exceptions.RequestException as e:
-			throw_field(_("file_url could not be fetched: {0}").format(type(e).__name__), ["file_url"])
+		except requests.exceptions.RequestException:
+			# The requests class name (ConnectTimeout, SSLError) names OUR client library, not anything the caller can change.
+			throw_field(_(
+				"The bytes at `file_url` could not be downloaded within {0} seconds. Check that the URL "
+				"is reachable from the public internet and serves the file directly, then retry — or "
+				"send the bytes as `content_base64` instead."
+			).format(cfg["file_download_timeout_seconds"]), ["file_url"])
 		return b"".join(chunks)
 	if content_b64:
 		try:
 			return base64.b64decode(content_b64, validate=True)
 		except (binascii.Error, ValueError):
-			throw_field(_("content_base64 is not valid base64"), ["content_base64"])
-	throw_field(_("file_url or content_base64 is required"), ["file_url", "content_base64"])
+			throw_field(base64_message(), ["content_base64"])
+	throw_field(_(
+		"This attach carries no bytes. Send `content_base64` with the file's contents, or `file_url` "
+		"pointing at a publicly reachable copy for the server to download."
+	), ["file_url", "content_base64"])
 
 
 def _scoped_file(name, mp, is_sysmgr):
 	"""Load a File by name, grain-scoped: the lead it (or its task) hangs off MUST be on the
 	caller's vertical+group. Missing AND out-of-scope return the SAME generic not-found."""
 	if not name:
-		throw_field(_("name (the File id) is required"), ["name"])
+		throw_field(_(
+			"No file was named. Send `name`, the File id returned when the file was attached; it is "
+			"also carried by every row of a file_list response."
+		), ["name"])
 	doc = frappe.db.exists("File", name) and frappe.get_doc("File", name)
 	if not doc:
-		throw_field(_("File not found"), ["name"], frappe.DoesNotExistError)
+		throw_field(_(
+			"No file on this API key's line has the id `{0}`. Check the value against a file_list "
+			"response for the lead it was attached to."
+		).format(name), ["name"], frappe.DoesNotExistError)
 
 	# A file finds its lead indirectly: through the task or note it hangs off, or from the lead itself.
 	scoped_by_lead(_file_lead(doc), mp, is_sysmgr, "File")
@@ -240,7 +263,10 @@ def _create_one(data, mp, is_sysmgr):
 
 	filename = data.get("filename")
 	if not filename:
-		throw_field(_("filename is required"), ["filename"])
+		throw_field(_(
+			"The file has no name to be stored under. Send `filename`, including the extension the "
+			"bytes match — the extension is what the type check is run against."
+		), ["filename"])
 	validate_external_id("File", data.get("external_id"))
 
 	target_doctype, target_name = _resolve_target(data, lead_name)

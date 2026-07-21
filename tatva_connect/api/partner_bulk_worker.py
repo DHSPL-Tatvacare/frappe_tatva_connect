@@ -18,9 +18,11 @@ from tatva_connect import tabular
 from tatva_connect.api._base import (
 	BulkDeadlock,
 	_cfg,
+	_classify,
 	_process_bulk,
 	_resolve_caller,
 	async_volume_exhausted,
+	record_cap_message,
 )
 from tatva_connect.automation import settings as automation
 
@@ -51,15 +53,34 @@ def process_job(bulk_job_id):
 	if not won:
 		return  # a pre-start cancel aborted it first — nothing to drain
 	try:
+		# The SAME stash @_api sets on a request. An API job is a partner's call that happens to run in
+		# a worker, so a rule that words itself by audience (throw_by_audience) must answer the partner
+		# here too — without it a Desk dialog would land in a result row. `lead_import` is the Desk
+		# lane by construction (it is not in partner_bulk_job._OPERATIONS), so it keeps Desk wording.
+		if job.operation != "lead_import":
+			frappe.local.partner_ctx = _resolve_caller()
 		raw = _payload_bytes(job)
 		_drain(job, _to_batch(job, raw))
 	except PayloadRejected as exc:
 		_purge_payload(job)
-		finish_job(job.name, "Failed", error=f"File rejected: {exc}"[:500])
+		finish_job(job.name, "Failed", error=str(exc)[:500])
 	except Exception as exc:
 		_rollback()  # drop the failed chunk's stale webhook queue so finish_job re-registers the flush (B1)
-		finish_job(job.name, "Failed", error=f"{type(exc).__name__}: {exc}"[:500])
+		finish_job(job.name, "Failed", error=_crash_summary(exc)[:500])
 		frappe.log_error(title=f"Partner bulk job {job.name} failed")
+	finally:
+		frappe.local.partner_ctx = None
+
+
+def _crash_summary(exc):
+	"""A crashed drain's `error_summary` — the ONLY thing a partner is told about a mid-drain failure, so
+	it goes through the SAME `_classify` the sync lane answers with rather than shipping a Python class
+	name. The verdict is a code plus the sentence that code carries, then what to do about it."""
+	code, _http, message, _fields, _detail = _classify(exc, "partner_bulk_worker.process_job")
+	return _(
+		"The job stopped before every record was processed ({0}): {1} Read partner_bulk_job.results for "
+		"the records that did complete, then resubmit the records that carry no result row."
+	).format(code, message)
 
 
 def _drain(job, items):
@@ -75,7 +96,11 @@ def _drain(job, items):
 			return
 		batch = items[start:start + chunk_size]
 		if async_volume_exhausted(len(batch), mp):
-			finish_job(job.name, "Failed", error="Async write quota exhausted; retry after the daily window.")
+			finish_job(job.name, "Failed", error=_(
+				"The daily async write quota for this API key is spent, so the remaining records were "
+				"not processed. Read partner_bulk_job.results for the records that did complete, then "
+				"resubmit the rest once the quota window has rolled over."
+			))
 			return
 		records, parse_fails = _parse(batch)
 		results, summary = _retry_deadlock(lambda: _process_bulk([rec for _o, rec in records], creator))
@@ -103,8 +128,12 @@ def _parse(batch):
 		else:
 			try:
 				records.append((offset, json.loads(item)))
-			except Exception as exc:
-				fails.append((offset, str(exc)[:200]))
+			except Exception:
+				# The parser's own text (`Expecting value: line 1 column 1`) is about OUR read of the line, not about what the caller must change.
+				fails.append((offset, _(
+					"This line is not a JSON object. Send one complete JSON object per line, with no "
+					"trailing comma and no line break inside a record."
+				)))
 	return records, fails
 
 
@@ -143,7 +172,11 @@ _RESULT_ACTION = {"updated": "merged", "validated": "validated"}
 
 def _write_results(job_name, start, records, results, parse_fails):
 	"""One CRM Bulk Job Result per record. `results` is index-aligned with `records` (the parsed rows);
-	`parse_fails` are lines that never parsed. Both addressed by their input row index."""
+	`parse_fails` are lines that never parsed. Both addressed by their input row index.
+
+	The WHOLE error object is carried, not just its code and message. `_bulk_error` already computed
+	`fields` and `detail`; dropping them here made the same failure carry less information purely because
+	it ran async, and a client that branches on structure in the sync lane could not branch in this one."""
 	for r in results:
 		offset = records[r["index"]][0]
 		if r["status"] == "success":
@@ -152,15 +185,20 @@ def _write_results(job_name, start, records, results, parse_fails):
 		else:
 			err = r.get("error") or {}
 			_insert_result(job_name, start + offset, "failed",
-			               error_code=err.get("code"), error_message=(err.get("message") or "")[:500])
+			               error_code=err.get("code"), error_message=(err.get("message") or "")[:500],
+			               error_fields=err.get("fields"), error_detail=err.get("detail"))
 	for offset, msg in parse_fails:
-		_insert_result(job_name, start + offset, "failed", error_code="bad_request", error_message=msg)
+		_insert_result(job_name, start + offset, "failed", error_code="bad_request", error_message=msg,
+		               error_detail={"check": "payload_parse"})
 
 
-def _insert_result(job_name, record_index, action, record_name=None, error_code=None, error_message=None):
+def _insert_result(job_name, record_index, action, record_name=None, error_code=None, error_message=None,
+                   error_fields=None, error_detail=None):
 	row = frappe.new_doc("CRM Bulk Job Result")
 	row.update({"job": job_name, "record_index": record_index, "action": action,
-	            "record_name": record_name, "error_code": error_code, "error_message": error_message})
+	            "record_name": record_name, "error_code": error_code, "error_message": error_message,
+	            "error_fields": frappe.as_json(error_fields) if error_fields else None,
+	            "error_detail": frappe.as_json(error_detail) if error_detail else None})
 	row.insert(ignore_permissions=True)  # authz-ok: tier-b — system bookkeeping, gated by the job
 
 
@@ -182,15 +220,16 @@ def _to_batch(job, raw):
 	would refuse a large-but-shallow workbook for a limit it never reached. The true count, after
 	parsing, is what every format is actually held to."""
 	cap = _cfg()["async_file_max_records"]
-	if job.input_format in _LINE_FORMATS and raw.count(b"\n") + 1 > cap:
-		raise PayloadRejected(_("Exceeds the {0} record limit.").format(cap))
+	lines = raw.count(b"\n") + 1
+	if job.input_format in _LINE_FORMATS and lines > cap:
+		raise PayloadRejected(record_cap_message(cap, lines, _("file payload")))
 	if job.input_format in tabular.FORMATS:
 		batch = tabular.read(raw, job.input_format)
 	else:
 		text = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
 		batch = [line for line in text.splitlines() if line.strip()]
 	if len(batch) > cap:
-		raise PayloadRejected(_("Exceeds the {0} record limit.").format(cap))
+		raise PayloadRejected(record_cap_message(cap, len(batch), _("file payload")))
 	frappe.db.set_value("CRM Bulk Job", job.name, "total", len(batch), update_modified=False)
 	return batch
 
@@ -293,11 +332,16 @@ def reap_stranded_jobs():
 	rather than let it sit half-done forever. finish_job fires the webhook so the partner is told."""
 	if not automation.is_enabled(_ASYNC_REAPER):
 		return
-	cutoff = add_to_date(now_datetime(), seconds=-_cfg()["async_job_timeout_seconds"])
+	timeout = _cfg()["async_job_timeout_seconds"]
+	cutoff = add_to_date(now_datetime(), seconds=-timeout)
 	stranded = frappe.get_all("CRM Bulk Job",
 	                          filters={"status": "InProgress", "started_at": ["<", cutoff]}, pluck="name")
 	for name in stranded:
 		_purge_payload(frappe.get_doc("CRM Bulk Job", name))
-		finish_job(name, "Failed", error="Worker did not finish within the job timeout (reaped).")
+		finish_job(name, "Failed", error=_(
+			"The job did not finish within its {0} second timeout and was stopped. Read "
+			"partner_bulk_job.results for the records that did complete, then resubmit the records that "
+			"carry no result row in smaller jobs."
+		).format(timeout))
 	if stranded:
 		frappe.db.commit()

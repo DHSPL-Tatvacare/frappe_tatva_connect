@@ -102,13 +102,25 @@ class FileOverride(File):
 
 		Only pypdf's own errors are caught. A bare `except Exception` would relabel a PermissionError or a
 		frappe throw as a type mismatch, and PermissionError does not subclass ValidationError.
+
+		This check and the screener's byte sniff both refuse a file whose contents contradict its name,
+		but they are different checks reading different things — so this one carries its OWN `detail`,
+		the same way `file_screening._block_exception` carries the screener's. Sharing one string with no
+		verdict left a partner unable to tell which of the two had fired.
 		"""
 		from pypdf.errors import PdfReadError
 
 		try:
 			super().check_content()
 		except PdfReadError:
-			frappe.throw(frappe._("This file's contents don't match its type."), frappe.ValidationError)
+			message = frappe._(
+				"This file is named as a PDF but its structure could not be read, so its contents "
+				"could not be checked. Re-export the PDF and attach it again, or send the file under "
+				"the extension its bytes really are."
+			)
+			exc = frappe.ValidationError(message)
+			exc.detail = {"check": "pdf_structure", "verdict": "Unreadable PDF", "file_name": self.file_name}
+			frappe.throw(message, exc)
 
 	def _inherit_file_name(self):
 		"""A copy carries the human filename, not our storage hash (core would derive it from the URL)."""

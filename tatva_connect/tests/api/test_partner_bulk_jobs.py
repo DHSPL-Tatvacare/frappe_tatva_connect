@@ -286,14 +286,16 @@ class TestPartnerAsyncBulkJobs(FrappeTestCase):
 			settings.save(ignore_permissions=True)
 		frappe.db.commit()
 		try:
+			# Screening moved into FileOverride.before_insert, so the payload is judged as it is written
+			# rather than when the worker drains it: an infected file never becomes a job at all.
 			resp = self._submit_file("lead_create", "jsonl", eicar)
-			job_id = resp["data"]["job_id"]
-			partner_bulk_worker.process_job(job_id)
 			frappe.set_user("Administrator")
-			job = frappe.get_doc("CRM Bulk Job", job_id)
-			self.assertEqual((job.status, job.succeeded), ("Failed", 0))  # blocked, nothing parsed
+			self.assertNotIn("data", resp, "an infected payload was accepted and queued")
+			self.assertEqual(resp["error"]["code"], "validation_error")
+			self.assertEqual(resp["error"]["detail"]["verdict"], "Infected")
+			self.assertEqual(resp["error"]["detail"]["signature"], "Eicar-Test-Signature")
 			self.assertFalse(frappe.db.exists(
-				"File", {"attached_to_doctype": "CRM Bulk Job", "attached_to_name": job_id}))  # purged
+				"File", {"file_name": ["like", "%.jsonl"], "attached_to_doctype": "CRM Bulk Job"}))
 		finally:
 			frappe.db.set_value("CRM Tatva Automation", "Storage::File::screening", "enabled", 0)
 			frappe.db.commit()

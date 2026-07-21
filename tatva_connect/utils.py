@@ -6,6 +6,7 @@ from typing import NoReturn
 from urllib.parse import urlparse
 
 import frappe
+from frappe import _
 
 # A field NAME that carries a secret, whatever the value looks like. This is the general rule: a new
 # secret is covered by being named like one, so no per-secret code is ever added here.
@@ -54,7 +55,8 @@ def mask_secrets(text: str, extra=()) -> str:
 	return _SHAPED_SECRET.sub(lambda m: mask_value(m.group(0)), text)
 
 
-def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None) -> None:
+def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None,
+                            field: "str | None" = None) -> None:
 	"""Block an outbound fetch whose host resolves to an internal / non-public address (SSRF).
 
 	Fail-closed: raises frappe.ValidationError on anything unsafe (bad scheme/host, off-domain,
@@ -67,27 +69,48 @@ def assert_safe_public_url(url: str, allowed_hosts: "str | list | None" = None) 
 	`allowed_hosts` is an optional host or list of hosts (e.g. an operator-configured per-account
 	allowlist): when non-empty the URL host must equal or be a sub-domain of one of them; an
 	empty/blank allowlist applies no host restriction (the private-IP block still runs).
+
+	`field` names the request argument the URL arrived in, so an API caller reads it from `error.fields`
+	instead of parsing the sentence. A Desk or internal caller names none and the refusal carries none.
 	"""
 	parsed = urlparse(url or "")
 	host = parsed.hostname
 	if parsed.scheme not in ("http", "https") or not host:
-		_block(url, "scheme must be http/https with a host")
+		_block(url, field,
+		       _("its scheme is neither http nor https, or it names no host"),
+		       _("Send an absolute URL that begins with https:// and carries a host name."))
 
 	hosts = [allowed_hosts] if isinstance(allowed_hosts, str) else list(allowed_hosts or [])
 	if hosts and not any(host == h or host.endswith("." + h) for h in hosts):
-		_block(url, f"host is not in the allowlist {hosts}")
+		_block(url, field,
+		       _("its host `{0}` is not one of the hosts the operator allowed: {1}").format(
+			       host, ", ".join(hosts)),
+		       _("Send a URL on one of those hosts, or ask the operator to add this host to the allowlist."))
 
 	try:
 		infos = socket.getaddrinfo(host, None)
 	except OSError:
-		_block(url, "host does not resolve")
+		_block(url, field,
+		       _("its host `{0}` does not resolve").format(host),
+		       _("Check the host name, then send a URL on a host that resolves from the public internet."))
 
 	for info in infos:
 		ip = info[4][0]
 		if not ipaddress.ip_address(ip).is_global:
-			_block(url, f"resolves to non-public address {ip}")
+			_block(url, field,
+			       _("its host resolves to {0}, which is not a public internet address").format(ip),
+			       _("Send a URL whose host resolves to a public address; an address on the internal "
+			         "network is never fetched."))
 
 
-def _block(url: str, reason: str) -> NoReturn:
-	frappe.log_error(title="Blocked unsafe outbound URL", message=f"{reason}: {url}")
-	raise frappe.ValidationError(f"Refusing to fetch unsafe URL ({reason}).")
+def _block(url: str, field: "str | None", cause: str, next_step: str) -> NoReturn:
+	"""The ONE unsafe-URL refusal: what was found, then the one thing to do about it.
+
+	Routed through `_base.throw_field` — the app's single seam for naming the offending input — rather
+	than attaching `fields` here, so this does not become a second copy of that mechanism. The import is
+	function-level because utils is the lower layer; `taxonomy/program_mode.py` reaches for it the same way."""
+	from tatva_connect.api._base import throw_field
+
+	frappe.log_error(title="Blocked unsafe outbound URL", message=f"{cause}: {url}")
+	throw_field(_("This call names an unsafe URL — {0}. {1}").format(cause, next_step),
+	            [field] if field else [])

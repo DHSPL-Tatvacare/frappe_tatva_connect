@@ -188,12 +188,23 @@ def _is_blocked(verdict):
 def _block_notice(verdict):
 	"""Patient/caller-facing (message, title) for a blocked upload."""
 	if verdict == _DISALLOWED:
-		return _("This file type is not accepted."), _("Invalid file")
+		return _(
+			"Files of this type are not accepted here. Send the document as a PDF or an image instead."
+		), _("File not accepted")
 	if verdict == _MISMATCH:
-		return _("This file's contents don't match its type."), _("Invalid file")
+		return _(
+			"This file's contents do not match the type its name claims. Send it under the extension "
+			"its bytes really are, or re-save it in the format the name says."
+		), _("File not accepted")
 	if verdict == _INFECTED:
-		return _("This file failed a security scan and was not accepted."), _("Invalid file")
-	return _("File could not be security-scanned. Please try again later."), _("Upload failed")
+		return _(
+			"This file did not pass the malware scan and was not stored. Send a clean copy; nothing "
+			"was kept and it can be attached again."
+		), _("File not accepted")
+	return _(
+		"The malware scanner could not be reached, so this file was never judged and was not stored. "
+		"Nothing was kept — send the same file again shortly."
+	), _("Upload failed")
 
 
 def _block_exception(verdict, signature, file_name):

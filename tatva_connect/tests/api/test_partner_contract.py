@@ -556,7 +556,13 @@ class TestPartnerContract(unittest.TestCase):
 			partner._update_one(
 				lead.name, frappe._dict({"custom_current_program": "__not_permitted__"}),
 				mp, False, pf, ca, allowed_programs=programs)
-		self.assertIn("not permitted", str(ctx.exception))
+		# The BEHAVIOUR, not the prose: the refusal classifies as a 400 validation_error and names the
+		# field it is about. Matching a substring of the sentence is the coupling that made rewording a
+		# message break a test that was never about the wording.
+		code, http, _message, fields, _detail = _base._classify(ctx.exception, "lead_update")
+		self.assertEqual((code, http), ("validation_error", 400))
+		self.assertEqual(fields, ["custom_current_program"],
+		                 "the refusal must name the field in error.fields")
 
 	# -- P3: the label is written the same way on every entity ---------------
 

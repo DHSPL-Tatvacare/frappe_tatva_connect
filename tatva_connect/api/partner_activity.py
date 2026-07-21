@@ -59,6 +59,7 @@ from tatva_connect.api._base import (
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
+	throw_field,
 	trusted_permissions,
 	validate_external_id,
 )
@@ -76,14 +77,20 @@ def _scoped_task(name, mp, is_sysmgr):
 	"""Load an activity CRM Task by name, scope-checked through its lead. Missing AND
 	out-of-scope both raise the SAME generic not-found (no probing which ids exist)."""
 	if not name:
-		frappe.throw(_("name (the CRM Task id) is required"))
+		throw_field(_(
+			"No activity was named. Send `name`, the CRM Task id returned when the activity was "
+			"created; it is also carried by every row of an activity_list response."
+		), ["name"])
 	row = frappe.db.get_value(
 		"CRM Task", name,
 		["name", "reference_doctype", "reference_docname", "custom_task_type", "status"],
 		as_dict=True,
 	)
 	if not row or row.reference_doctype != "CRM Lead":
-		frappe.throw(_("Activity not found"), frappe.DoesNotExistError)
+		throw_field(_(
+			"No activity on this API key's line has the id `{0}`. Check the value against an "
+			"activity_list response for the lead it was created on."
+		).format(name), ["name"], frappe.DoesNotExistError)
 	scoped_by_lead(row.reference_docname, mp, is_sysmgr, "Activity")
 	return row
 
@@ -129,7 +136,10 @@ def _resolve_task_type(lead, task_type):
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		resolved = activity_brain.resolve_type_for_lead(lead, task_type)
 	if not resolved:
-		frappe.throw(_("Task type '{0}' is not available for this lead.").format(task_type))
+		throw_field(_(
+			"`{0}` is not an activity type this lead's grain runs. Call activity_schema for this lead "
+			"and send one of the `name` values it lists."
+		).format(task_type), ["task_type"])
 	return resolved
 
 
@@ -151,7 +161,10 @@ def _create_one(item, mp, is_sysmgr):
 	lead = resolve_lead(mp, is_sysmgr, item)
 	task_type = item.get("task_type")
 	if not task_type:
-		frappe.throw(_("task_type is required"))
+		throw_field(_(
+			"No activity type was named. Send `task_type`; call activity_schema for this lead to see "
+			"the types its grain runs and the fields each one takes."
+		), ["task_type"])
 	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
 
@@ -170,7 +183,10 @@ def _update_one(name, item, mp, is_sysmgr):
 	row = _scoped_task(name, mp, is_sysmgr)
 	task_type = item.get("task_type") or row.custom_task_type
 	if not task_type:
-		frappe.throw(_("task_type is required"))
+		throw_field(_(
+			"No activity type was named. Send `task_type`; call activity_schema for this lead to see "
+			"the types its grain runs and the fields each one takes."
+		), ["task_type"])
 	validate_external_id("CRM Task", item.get("external_id"))
 	values = item.get("values") or {}
 

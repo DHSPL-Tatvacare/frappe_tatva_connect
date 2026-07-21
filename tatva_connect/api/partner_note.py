@@ -57,6 +57,7 @@ from tatva_connect.api._base import (
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
+	throw_field,
 	validate_external_id,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
@@ -129,10 +130,16 @@ def _note_view(doc):
 def _scoped_note(name, mp, is_sysmgr):
 	"""Load an FCRM Note by name, scope-checked through its lead by the shared `scoped_by_lead` brain."""
 	if not name:
-		frappe.throw(_("name (the FCRM Note id) is required"))
+		throw_field(_(
+			"No note was named. Send `name`, the FCRM Note id returned when the note was created; it is "
+			"also carried by every row of a note_list response."
+		), ["name"])
 	doc = frappe.db.exists("FCRM Note", name) and frappe.get_doc("FCRM Note", name)
 	if not doc:
-		frappe.throw(_("Note not found"), frappe.DoesNotExistError)
+		throw_field(_(
+			"No note on this API key's line has the id `{0}`. Check the value against a note_list "
+			"response for the lead it was created on."
+		).format(name), ["name"], frappe.DoesNotExistError)
 	lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
 	scoped_by_lead(lead, mp, is_sysmgr, "Note")
 	return doc
@@ -172,7 +179,10 @@ def _create_one(data, mp, is_sysmgr):
 	key, so a re-POST yields a second note. Retries are made safe with Idempotency-Key."""
 	content = data.get("content")
 	if not content or not str(content).strip():
-		frappe.throw(_("content is required"))
+		throw_field(_(
+			"A note with no body is not stored. Send `content` with the note's text; it is an HTML body "
+			"and plain text is accepted."
+		), ["content"])
 	validate_external_id("FCRM Note", data.get("external_id"))
 
 	# A note is never left unattached: unlike a call, an orphan note has no value and a misattached one is a clinical hazard. resolve_lead raises the generic not-found when the lead is off the line.

@@ -61,6 +61,7 @@ from tatva_connect.api._base import (
 	is_writable,
 	resolve_lead,
 	stamp_external_id,
+	throw_field,
 	validate_external_id,
 )
 from tatva_connect.lead import keyvalue
@@ -392,11 +393,9 @@ def _resolve_picklists(parent, children, grain):
 
 
 def _child_error(message, field):
-	"""Raise a ValidationError that carries the offending field so the unified error
-	contract can emit `error.fields` (frappe.throw alone only carries a message)."""
-	e = frappe.ValidationError(message)
-	e.fields = [field]
-	frappe.throw(message, e)
+	"""A child-row refusal, named by its child-table fieldname. One-arg spelling of the ONE field-naming
+	refusal (`_base.throw_field`) — this module's callers pass a scalar field, that helper takes a list."""
+	throw_field(message, [field])
 
 
 def _merge_row(target, incoming):
@@ -411,7 +410,8 @@ def _apply_single_row(doc, cf, incoming, title):
 	"""single-row child: merge sent fields onto the one row (create if none).
 	A 2nd distinct incoming row is ambiguous -> 400."""
 	if len(incoming) > 1:
-		_child_error(_("{0} accepts a single row").format(title), cf)
+		_child_error(_("{1} holds one row per lead and {0} arrived. Merge them into a single object "
+		               "before sending.").format(len(incoming), title), cf)
 	rows = doc.get(cf) or []
 	if rows:
 		_merge_row(rows[0], incoming[0])
@@ -448,7 +448,8 @@ def _apply_multi_row(doc, cf, incoming, key_field, title):
 			# A delete still needs one: you cannot name the row to drop by not naming it.
 			if (row or {}).get("_delete"):
 				_child_error(
-					_("{0} is required to identify the {1} row to delete").format(key_field, title), key_field
+					_("A {1} row is deleted by its key and this row names none. Send `{0}` with the "
+					  "value of the row to drop.").format(key_field, title), key_field
 				)
 			raw = _row_arrival_key(doc, cf, key_field)
 			row = {**(row or {}), key_field: raw}
@@ -627,7 +628,10 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	"""Create-or-upsert one lead from a dict. Returns (doc, action)."""
 	mobile = _norm_phone(item.get(LEAD_IDENTITY))
 	if not mobile:
-		frappe.throw(_("{0} is required").format(LEAD_IDENTITY))
+		throw_field(_(
+			"A lead is identified by its phone number and this record carries none. Send `{0}` in E.164 "
+			"(for example +919876543210)."
+		).format(LEAD_IDENTITY), [LEAD_IDENTITY])
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	parent[LEAD_IDENTITY] = mobile
@@ -707,7 +711,10 @@ def _stamp_label(doc, item):
 def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
 	"""Update one lead by CRM name. Returns (doc, 'updated'). Scope-checked for partners."""
 	if not name:
-		frappe.throw(_("name (the CRM Lead id) is required for an update"))
+		throw_field(_(
+			"No lead was named. Send `name`, the CRM Lead id returned when the lead was created; an "
+			"update addresses a lead by id, never by phone number."
+		), ["name"])
 	doc = frappe.get_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr))
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
@@ -739,7 +746,10 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 def _delete_one(name, mp, is_sysmgr=False):
 	"""Delete one lead by CRM name. Scope-checked for partners."""
 	if not name:
-		frappe.throw(_("name (the CRM Lead id) is required to delete"))
+		throw_field(_(
+			"No lead was named. Send `name`, the CRM Lead id returned when the lead was created; a "
+			"delete addresses a lead by id, never by phone number."
+		), ["name"])
 	frappe.delete_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr), ignore_permissions=True)  # authz-ok: tier-b — gated by _scoped_lead, before the delete
 
 
@@ -889,7 +899,11 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 		filters["custom_group"] = mp.crm_group
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
+		throw_field(_(
+			"No lead on this API key's line matches `{0}`. Check the value against a lead_list "
+			"response, or create the lead with lead_create first."
+		).format(by), [by], frappe.DoesNotExistError)
 	return _curate(frappe.get_doc("CRM Lead", cstr(lead_name)), parent_fields, child_allow)
 
 
@@ -902,7 +916,10 @@ def lead_get(**_kwargs):
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict
 	if not (data.get("name") or data.get("mobile_no")):
-		frappe.throw(_("name or mobile_no is required"))
+		throw_field(_(
+			"No lead was named. Send `name` (the CRM Lead id) or `mobile_no` (the patient's number in "
+			"E.164) — a lead is readable by either."
+		), ["name", "mobile_no"])
 	by = "name" if data.get("name") else "mobile_no"
 	_ok(action=ACTION_FETCHED, data=_read_one(data.get(by), by, mp, parent_fields, child_allow))
 
@@ -1002,7 +1019,10 @@ def lead_get_bulk(**_kwargs):
 	names = _read_list(data, "names")
 	mobiles = _read_list(data, "mobile_nos")
 	if not names and not mobiles:
-		frappe.throw(_("names or mobile_nos is required"))
+		throw_field(_(
+			"No leads were named. Send `names` (a JSON array of CRM Lead ids) or `mobile_nos` (a JSON "
+			"array of numbers in E.164) — a batch read takes either."
+		), ["names", "mobile_nos"])
 
 	by = "name" if names else "mobile_no"
 	requested = list(names or mobiles or [])

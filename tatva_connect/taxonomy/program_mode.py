@@ -12,7 +12,6 @@ Two mouths (partner API key, enrolment form), one brain: change this function an
 paths change together — there is no second copy to drift. Identity is always
 mobile + vertical + group; program is a mutable attribute resolved here.
 """
-import frappe
 from frappe import _
 
 
@@ -25,15 +24,25 @@ def resolve_program(forced_program, allowed_programs, submitted_program,
 	* submitted_program- what the caller/form supplied (may be blank).
 	* field_label/source_label - shape the error text per caller (keeps messages exact).
 
-	Returns the resolved program name, or None for NONE mode. Raises on a bad LIST pick.
+	Returns the resolved program name, or None for NONE mode. Raises on an unlisted LIST pick.
 	"""
+	from tatva_connect.api._base import throw_field
+
 	if forced_program:
 		return forced_program  # FORCED
 	submitted = (submitted_program or "").strip()
 	if not allowed_programs:
 		return None  # NONE
 	if not submitted:
-		frappe.throw(_("{0} is required for this {1}").format(field_label, source_label))
+		throw_field(
+			_("This {1} runs more than one programme, so it cannot pick for the caller. Send `{0}` as "
+			  "one of: {2}.").format(field_label, source_label, ", ".join(allowed_programs)),
+			[field_label],
+		)
 	if submitted not in allowed_programs:
-		frappe.throw(_("Program '{0}' is not permitted for this {1}").format(submitted, source_label))
+		throw_field(
+			_("`{0}` reads `{1}` and this {2} runs only: {3}. Send one of those values.").format(
+				field_label, submitted, source_label, ", ".join(allowed_programs)),
+			[field_label],
+		)
 	return submitted  # LIST

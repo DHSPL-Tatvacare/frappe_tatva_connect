@@ -85,10 +85,17 @@ def enforce_checklist(doc, method=None):
 		return
 	pending = [r.item for r in (doc.custom_checklist or []) if r.required and not r.done]
 	if pending:
-		frappe.throw(
+		from tatva_connect.api._base import throw_by_audience
+
+		throw_by_audience(
 			_("Cannot mark Done — {0} checklist item(s) still pending: {1}").format(
 				len(pending), ", ".join(pending)
 			),
+			_("This activity's checklist has {0} required item(s) still open: {1}. A checklist is "
+			  "ticked by the assigned rep, so leave `status` as it is until they close it.").format(
+				len(pending), ", ".join(pending)
+			),
+			["status"],
 			title=_("Checklist incomplete"),
 		)
 
@@ -129,9 +136,19 @@ def enforce_location(doc, method=None):
 	if location_required(doc.custom_task_type, doc.reference_docname, values) is None:
 		return
 	if not (doc.custom_location_latitude and doc.custom_location_longitude):
-		frappe.throw(
+		from tatva_connect.api._base import throw_by_audience
+
+		# ONE rule, two readers: a rep has a Tasks list and a capture button, an HTTP caller has neither
+		# and cannot send coordinates at all (they are not a writable activity field), so it is told the
+		# only thing it CAN do. The audience is decided once, in throw_by_audience.
+		throw_by_audience(
 			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
 			  "Tasks list or open the task."),
+			_("A {0} activity records where the visit happened, and coordinates are captured by the "
+			  "field app on the device — they cannot be sent over the API. Leave `status` as it is and "
+			  "let the assigned rep complete the visit, or ask the operator to lift Require Location for "
+			  "this activity type.").format(labels.label(doc.custom_task_type, labels.TASK_TYPE)),
+			["status"],
 			title=_("Location required"),
 		)
 	if not doc.custom_location_captured_at:
@@ -149,8 +166,14 @@ def enforce_activity_logged(doc, method=None):
 	if not automation.is_enabled("Task::CRM Task::guards"):
 		return
 	if activity_is_unlogged(doc):
-		frappe.throw(
+		from tatva_connect.api._base import throw_by_audience
+
+		throw_by_audience(
 			_("Log this activity's details before marking it Done — open the task and fill its form."),
+			_("This activity carries no logged details, so it cannot be marked Done. Send its fields "
+			  "under `values` in the same call that sets `status` — activity_schema lists the fields "
+			  "{0} takes.").format(labels.label(doc.custom_task_type, labels.TASK_TYPE)),
+			["values"],
 			title=_("Activity not logged"),
 		)
 
@@ -178,9 +201,13 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	fires (automation engine / assignment / inbound) for the same lead can't slip two tasks past
 	the check-then-insert."""
 	from tatva_connect.activity.api import scope_applies_to_lead
+	from tatva_connect.api._base import throw_field
 
 	if not frappe.db.exists("CRM Lead", lead):
-		frappe.throw(_("Lead {0} not found").format(lead))
+		throw_field(_(
+			"No lead has the id `{0}`, so no follow-up can be raised against it. Check the value "
+			"against a lead_list response."
+		).format(lead), ["lead"], frappe.DoesNotExistError)
 
 	# Gate the user-facing entrypoint: raising a follow-up task writes to the lead's record set, so the
 	# caller must hold lead write. Internal automations (assignment / engine / inbound) run in the
@@ -189,14 +216,19 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 
 	if not scope_applies_to_lead(task_type, lead):
-		frappe.throw(
-			_("{0} is not available for this lead.").format(labels.label(task_type, labels.TASK_TYPE)),
-			title=_("Out of scope"),
+		throw_field(
+			_("`{0}` is not an activity type this lead's grain runs, so no task of it can be raised. "
+			  "Call activity_schema for this lead and pick a type it lists.").format(
+				labels.label(task_type, labels.TASK_TYPE)),
+			["task_type"],
 		)
 
-	# Valid enabled assignee only (a task's assignee can see its lead reference) — never Guest/disabled.
+	# An enabled, non-Guest assignee only (a task's assignee can see its lead reference).
 	if assigned_to and (assigned_to == "Guest" or not frappe.db.get_value("User", {"name": assigned_to, "enabled": 1})):
-		frappe.throw(_("Invalid assignee: {0}").format(assigned_to))
+		throw_field(_(
+			"`{0}` is not an enabled user, and a task is assigned only to one that can open the lead it "
+			"references. Send the id of an enabled user, or omit `assigned_to` to leave it unassigned."
+		).format(assigned_to), ["assigned_to"])
 
 	# Lock the lead row so the check-then-insert below is serialized per lead (no duplicate task).
 	frappe.db.get_value("CRM Lead", lead, "name", for_update=True)

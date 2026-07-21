@@ -54,6 +54,7 @@ from tatva_connect.api._base import (
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
+	throw_field,
 	validate_external_id,
 )
 from tatva_connect.api.field_spec import FieldSpec, collect, describe
@@ -150,10 +151,16 @@ def _scoped_call(name, mp, is_sysmgr):
 	"""Load a CRM Call Log by name, grain-scoped through its linked lead. Missing AND
 	out-of-scope both raise the SAME generic not-found (no probing which ids exist)."""
 	if not name:
-		frappe.throw(_("name (the CRM Call Log id) is required"))
+		throw_field(_(
+			"No call was named. Send `name`, the CRM Call Log id returned when the call was created; it "
+			"is also carried by every row of a call_list response."
+		), ["name"])
 	doc = frappe.db.exists("CRM Call Log", name) and frappe.get_doc("CRM Call Log", name)
 	if not doc:
-		frappe.throw(_("Call not found"), frappe.DoesNotExistError)
+		throw_field(_(
+			"No call on this API key's line has the id `{0}`. Check the value against a call_list "
+			"response; a call that matched no lead is not readable by a partner key."
+		).format(name), ["name"], frappe.DoesNotExistError)
 	# An UNLINKED call is never visible to a partner; a trusted sysmgr (no mapping) still sees it.
 	if mp:
 		lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
@@ -171,7 +178,10 @@ def _apply_fields(doc, data, lead_name):
 	fields = collect(CALL_FIELDS, data)
 	direction = data.get("direction")
 	if direction and direction not in _DIRECTION_TYPE:
-		frappe.throw(_("direction must be Inbound or Outbound"))
+		throw_field(_(
+			"`direction` reads `{0}` and a call is either Inbound or Outbound. Send one of those two "
+			"values."
+		).format(direction), ["direction"])
 	if direction:
 		doc.type = _DIRECTION_TYPE[direction]
 
@@ -206,7 +216,10 @@ def _create_one(data, mp, is_sysmgr):
 	caller key, so a re-POST yields a second call. Retries are made safe with Idempotency-Key."""
 	direction = data.get("direction")
 	if not direction or direction not in _DIRECTION_TYPE:
-		frappe.throw(_("direction (Inbound or Outbound) is required"))
+		throw_field(_(
+			"`direction` reads `{0}` and every call is logged as Inbound or Outbound — it also decides "
+			"which number is the patient's. Send one of those two values."
+		).format(direction or ""), ["direction"])
 	validate_external_id("CRM Call Log", data.get("external_id"))
 
 	lead_name = _attribute_lead(data, mp, is_sysmgr)
@@ -392,7 +405,10 @@ def call_list(**_kwargs):
 	direction = data.get("direction")
 	if direction:
 		if direction not in _DIRECTION_TYPE:
-			frappe.throw(_("direction must be Inbound or Outbound"))
+			throw_field(_(
+			"`direction` reads `{0}` and a call is either Inbound or Outbound. Send one of those two "
+			"values."
+		).format(direction), ["direction"])
 		filters["type"] = _DIRECTION_TYPE[direction]
 	if data.get("status"):
 		filters["status"] = data.get("status")

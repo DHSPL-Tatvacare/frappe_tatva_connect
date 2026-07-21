@@ -29,6 +29,11 @@ from tatva_connect.api._base import (
 	_page,
 	_request,
 	_resolve_caller,
+	base64_message,
+	file_size_message,
+	parse_json_arg,
+	record_cap_message,
+	throw_field,
 )
 from tatva_connect.automation import settings as automation
 
@@ -75,10 +80,11 @@ def _uploaded_bytes(cfg):
 	body whole): multipart (frappe.request.files) or content_base64 (parity with the sync file endpoint,
 	and testable). None if neither is present."""
 	max_bytes = cfg["async_file_max_mb"] * 1024 * 1024
-	over = _("File exceeds the {0} MB limit.").format(cfg["async_file_max_mb"])
+	over = file_size_message(cfg["async_file_max_mb"])
 	req = _request()
 	files = getattr(req, "files", None) if req else None
 	if files:
+		# The multipart body IS the file, so no request key is at fault and there is no fieldname to name.
 		for f in files.values():
 			if f.content_length and f.content_length > max_bytes:
 				frappe.throw(over)
@@ -89,11 +95,11 @@ def _uploaded_bytes(cfg):
 	b64 = frappe.form_dict.get("content_base64")
 	if b64:
 		if len(b64) * 3 // 4 > max_bytes:  # base64 expands ~4/3; reject before decoding
-			frappe.throw(over)
+			throw_field(over, ["content_base64"])
 		try:
 			return base64.b64decode(b64, validate=True)
 		except (binascii.Error, ValueError):
-			frappe.throw(_("content_base64 is not valid base64"))
+			throw_field(base64_message(), ["content_base64"])
 	return None
 
 
@@ -114,9 +120,15 @@ def queue_pressure(user, per_caller):
 	cfg = _cfg()
 	if per_caller and frappe.db.count("CRM Bulk Job", {"partner": user, "status": ["in", _NON_TERMINAL]}) \
 			>= cfg["async_concurrent_jobs_per_partner"]:
-		return ("rate_limited", _("Too many jobs in flight; retry when one finishes."), 429)
+		return ("rate_limited", _(
+			"This API key already has {0} jobs in flight, which is the most it may hold at once. Poll "
+			"partner_bulk_job.get until one reaches a terminal state, then submit this job again."
+		).format(cfg["async_concurrent_jobs_per_partner"]), 429)
 	if frappe.db.count("CRM Bulk Job", {"status": ["in", _NON_TERMINAL]}) >= cfg["async_global_queue_max"]:
-		return ("server_busy", _("The bulk-job queue is full; retry shortly."), 503)
+		return ("server_busy", _(
+			"The bulk-job queue is holding its maximum of {0} jobs and this one was not accepted. "
+			"Nothing was submitted; retry after the number of seconds given in the Retry-After header."
+		).format(cfg["async_global_queue_max"]), 503)
 	return None
 
 
@@ -143,14 +155,22 @@ def create(**_kwargs):
 	"""Submit an async bulk-create job. Body: {operation, format?, records?}. Returns 202 {job_id, status}.
 	Idempotent on the Idempotency-Key header (a resubmit replays the same job)."""
 	if not automation.is_enabled(_ASYNC_BULK):
-		return _fail("forbidden", _("Async bulk jobs are not enabled."), 403)
+		return _fail("forbidden", _(
+			"The async bulk-job tier is not enabled on this site. Ask the operator to enable it, or send "
+			"the records through the synchronous bulk endpoint for this resource."
+		), 403)
 	user, mp, _is = _resolve_caller()
 	data = frappe.form_dict
 	operation, fmt = data.get("operation"), (data.get("format") or "inline")
 	if operation not in _OPERATIONS:
-		return _fail("validation_error", _("operation must be one of: {0}").format(", ".join(_OPERATIONS)), 400)
+		return _fail("validation_error", _(
+			"`operation` reads `{0}` and this tier runs only: {1}. Send one of those values."
+		).format(operation, ", ".join(_OPERATIONS)), 400, fields=["operation"])
 	if fmt not in _FORMATS:
-		return _fail("validation_error", _("format must be one of: {0}").format(", ".join(_FORMATS)), 400)
+		return _fail("validation_error", _(
+			"`format` reads `{0}` and this tier accepts only: {1}. Send one of those values, or omit "
+			"`format` to submit the records inline."
+		).format(fmt, ", ".join(_FORMATS)), 400, fields=["format"])
 
 	# Backpressure: a bounded queue refused cheaply; the caps themselves live in queue_pressure.
 	cfg = _cfg()
@@ -162,22 +182,35 @@ def create(**_kwargs):
 	# Inline is shape-checked here; a file's bytes are size-capped and stored as-is (the worker screens
 	# and parses). CSV carries only flat lead-core; activity needs the nesting of JSONL.
 	if fmt == "inline":
-		records = frappe.parse_json(data.get("records")) if isinstance(data.get("records"), str) else data.get("records")
+		records = parse_json_arg(data.get("records"), "records") if isinstance(data.get("records"), str) else data.get("records")
 		if not isinstance(records, list) or not records:
-			return _fail("validation_error", _("records must be a non-empty JSON array for an inline job."), 400)
+			return _fail("validation_error", _(
+				"An inline job carries its records in the body and `records` holds none. Send `records` "
+				"as a JSON array with at least one object in it."
+			), 400, fields=["records"])
 		if len(records) > cfg["async_inline_max_records"]:
-			return _fail("validation_error", _("Max {0} records per inline job; received {1}.").format(
-				cfg["async_inline_max_records"], len(records)), 400)
+			return _fail("validation_error", record_cap_message(
+				cfg["async_inline_max_records"], len(records), _("inline job")), 400, fields=["records"])
 		payload, total = "\n".join(json.dumps(r) for r in records), len(records)
 	else:
 		if fmt == "csv" and operation != "lead_create":
-			return _fail("validation_error", _("CSV is accepted only for lead_create; use jsonl for {0}.").format(operation), 400)
+			return _fail("validation_error", _(
+				"CSV carries flat lead columns only, so it cannot express a {0} record. Resubmit this "
+				"job with `format` set to jsonl."
+			).format(operation), 400, fields=["format"])
 		# Idempotency fingerprints form_dict only, so a multipart file is invisible; an idempotent file submit must use content_base64.
 		if _idem_key() and not data.get("content_base64"):
-			return _fail("validation_error", _("Use content_base64 (not a multipart upload) for an idempotent file submit."), 400)
+			return _fail("validation_error", _(
+				"A multipart upload cannot be replayed, because the Idempotency-Key fingerprint is taken "
+				"from the request body only. Send the same bytes as `content_base64`, or drop the "
+				"Idempotency-Key header."
+			), 400, fields=["content_base64"])
 		payload = _uploaded_bytes(cfg)
 		if payload is None:
-			return _fail("validation_error", _("A file upload or content_base64 is required for a {0} job.").format(fmt), 400)
+			return _fail("validation_error", _(
+				"A {0} job carries its records as a file and none arrived. Send the file as a multipart "
+				"upload, or send its bytes as `content_base64`."
+			).format(fmt), 400, fields=["content_base64"])
 		total = 0  # the worker counts records once it parses the file
 
 	job_name = submit_job(user, operation, fmt, payload, total=total, idempotency_key=_idem_key())
@@ -192,7 +225,10 @@ def get(**_kwargs):
 	user, mp, _is = _resolve_caller()
 	job = _owned_job(_job_id(), user, mp)
 	if not job:
-		return _fail("not_found", _("Job not found."), 404)
+		return _fail("not_found", _(
+			"No job submitted by this API key has the id `{0}`. Check the value against the `job_id` "
+			"returned by partner_bulk_job.create; a job is readable only by the key that submitted it."
+		).format(_job_id()), 404, fields=["job_id"])
 	_ok(action=ACTION_FETCHED, data=job)
 
 
@@ -203,15 +239,28 @@ def results(**_kwargs):
 	user, mp, _is = _resolve_caller()
 	job = _owned_job(_job_id(), user, mp)
 	if not job:
-		return _fail("not_found", _("Job not found."), 404)
+		return _fail("not_found", _(
+			"No job submitted by this API key has the id `{0}`. Check the value against the `job_id` "
+			"returned by partner_bulk_job.create; a job is readable only by the key that submitted it."
+		).format(_job_id()), 404, fields=["job_id"])
 	limit, offset = _page(frappe.form_dict)
 	total = frappe.db.count("CRM Bulk Job Result", {"job": job.name})
 	rows = frappe.get_all(
 		"CRM Bulk Job Result", filters={"job": job.name},
-		fields=["record_index", "action", "record_name", "error_code", "error_message"],
+		fields=["record_index", "action", "record_name", "error_code", "error_message",
+		        "error_fields", "error_detail"],
 		order_by="record_index asc", start=offset, page_length=limit,
 	)
-	_list_ok("results", rows, total, offset, limit)
+	_list_ok("results", [_result_view(r) for r in rows], total, offset, limit)
+
+
+def _result_view(row):
+	"""One stored result -> the partner shape. `error_fields` and `error_detail` are stored as JSON text
+	and handed back as JSON, so an async per-record failure reads EXACTLY like its sync twin's `error`
+	object rather than making a client parse a string one lane and a dict the other."""
+	row["error_fields"] = frappe.parse_json(row["error_fields"]) if row.get("error_fields") else None
+	row["error_detail"] = frappe.parse_json(row["error_detail"]) if row.get("error_detail") else None
+	return row
 
 
 @frappe.whitelist(methods=["POST"])
@@ -222,9 +271,15 @@ def cancel(**_kwargs):
 	user, mp, _is = _resolve_caller()
 	job = _owned_job(_job_id(), user, mp)
 	if not job:
-		return _fail("not_found", _("Job not found."), 404)
+		return _fail("not_found", _(
+			"No job submitted by this API key has the id `{0}`. Check the value against the `job_id` "
+			"returned by partner_bulk_job.create; a job is readable only by the key that submitted it."
+		).format(_job_id()), 404, fields=["job_id"])
 	if job.status in _TERMINAL:
-		return _fail("conflict", _("Job has already finished."), 409)
+		return _fail("conflict", _(
+			"This job already reached `{0}` and a finished job cannot be cancelled. Read "
+			"partner_bulk_job.results for what it wrote."
+		).format(job.status), 409)
 	from tatva_connect.api.partner_bulk_worker import finish_job
 	if finish_job(job.name, "Aborted", commit=False, guard_pre_start=True):
 		status = "Aborted"  # won the pre-start abort — the worker had not started, nothing was created

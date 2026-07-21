@@ -55,17 +55,64 @@ ACTION_FETCHED = "fetched"
 ACTION_DELETED = "deleted"
 
 
-def throw_field(message, fields, exc=frappe.ValidationError):
+def throw_field(message, fields, exc=frappe.ValidationError, title=None):
 	"""Refuse a request and NAME the inputs that caused it, in `error.fields` — the ONE way this API
 	says which key was wrong.
 
 	frappe.throw() carries a message and nothing else (its other parameters are Desk-dialog hints), so
 	the offending fieldnames ride on the exception and `_classify` lifts them onto the envelope. Every
 	refusal that is ABOUT a specific input goes through here — a caller should never have to parse
-	English prose to learn which key it sent wrong. `fields` is a list; there is no scalar form."""
+	English prose to learn which key it sent wrong. `fields` is a list; there is no scalar form.
+
+	`title` is frappe.throw's own Desk-dialog heading and never reaches the API envelope; it is carried
+	so a rule that fires on BOTH surfaces keeps its Desk dialog while gaining `error.fields`."""
 	e = exc(message)
 	e.fields = fields
-	frappe.throw(message, e)
+	frappe.throw(message, e, title=title)
+
+
+def throw_by_audience(desk_message, api_message, fields, exc=frappe.ValidationError, title=None):
+	"""ONE refusal, worded for whoever is actually reading it — the seam for a rule that guards BOTH the
+	Desk form and the partner API.
+
+	The rule stays in one place and fires once; only the sentence differs, because the two audiences can
+	take different actions. A rep can open the task and tick a box; an HTTP caller has no task list, no
+	form and no button, and needs a field name and a call to make instead. Writing the rule twice so each
+	surface could word it is what put a Desk dialog in an HTTP 400 body.
+
+	`frappe.local.partner_ctx` is the ONE stash that says which lane this request is on — set by the @_api
+	preamble, read here and by `file_screening._channel`, never re-derived."""
+	if getattr(frappe.local, "partner_ctx", None) is None:
+		frappe.throw(desk_message, exc, title=title)
+	throw_field(api_message, fields, exc)
+
+
+# -- shared refusals ---------------------------------------------------------
+# One CONDITION reads identically in every lane. Each of these fires in two or three places (sync bulk,
+# inline job, file payload), and each drifted into a differently-worded twin before it was named here.
+
+def record_cap_message(limit, received, lane):
+	"""The record-cap refusal, worded once for the sync call, the inline job and the file payload."""
+	return _(
+		"This {0} carries {1} records and at most {2} are accepted. Split it into batches of {2} or "
+		"fewer and send them one after another."
+	).format(lane, received, limit)
+
+
+def base64_message():
+	"""The base64 refusal, worded once for the single attach and the async job submit."""
+	return _(
+		"`content_base64` did not decode as base64. Send standard base64, padded to a multiple of four "
+		"characters and with no line breaks."
+	)
+
+
+def file_size_message(limit_mb):
+	"""The oversize-file refusal, worded once for the single attach and the async job submit."""
+	return _(
+		"The file is larger than the {0} MB limit. Send a file of {0} MB or less, or split it across "
+		"more than one upload."
+	).format(limit_mb)
 
 
 def validate_external_id(doctype, external_id):
@@ -78,7 +125,8 @@ def validate_external_id(doctype, external_id):
 	limit = (field.length if field else 0) or 0
 	if limit and len(str(external_id)) > limit:
 		throw_field(
-			_("external_id must be at most {0} characters (got {1}).").format(limit, len(str(external_id))),
+			_("`external_id` holds {1} characters and at most {0} are stored. Send a label of {0} "
+			  "characters or fewer.").format(limit, len(str(external_id))),
 			["external_id"],
 		)
 
@@ -346,9 +394,17 @@ def _load_caller():
 	# /api/resource. The mapping alone is not enough; a user without the role is refused
 	# even if a mapping row exists. (System Manager = trusted internal caller, exempt.)
 	if mp and not is_sysmgr and "Partner API User" not in roles:
-		frappe.throw(_("Not authorised: {0} lacks the Partner API User role").format(user), frappe.PermissionError)
+		frappe.throw(
+			_("The API key for {0} does not carry the Partner API User role. Ask the operator to add "
+			  "that role to the user, then retry the call.").format(user),
+			frappe.PermissionError,
+		)
 	if not mp and not is_sysmgr:
-		frappe.throw(_("Not authorised: no CRM Lead API Mapping for {0}").format(user), frappe.PermissionError)
+		frappe.throw(
+			_("No enabled CRM Lead API Mapping exists for {0}. Ask the operator to create a mapping for "
+			  "this user on the grain being addressed and enable it, then retry the call.").format(user),
+			frappe.PermissionError,
+		)
 	return user, mp, is_sysmgr
 
 
@@ -368,13 +424,23 @@ def resolve_lead(mp, is_sysmgr, data):
 	elif data.get("mobile_no"):
 		filters["mobile_no"] = _norm_phone(data.get("mobile_no"))
 	else:
-		frappe.throw(_("lead or mobile_no is required"))
+		throw_field(
+			_("No lead was named. Send `lead` (the CRM Lead id returned when it was created) or "
+			  "`mobile_no` (the patient's number in E.164)."),
+			["lead", "mobile_no"],
+		)
 	if mp:
 		filters["custom_vertical"] = mp.vertical
 		filters["custom_group"] = mp.crm_group
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
-		frappe.throw(_("Lead not found"), frappe.DoesNotExistError)
+		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
+		key = "lead" if data.get("lead") else "mobile_no"
+		throw_field(
+			_("No lead on this API key's line matches `{0}`. Check the value against a lead_list "
+			  "response, or create the lead with lead_create before attaching to it.").format(key),
+			[key], frappe.DoesNotExistError,
+		)
 	return lead_name
 
 
@@ -388,15 +454,36 @@ def scoped_by_lead(lead_name, mp, is_sysmgr, label):
 	hangs off). What must NOT differ, and used to be written out once per resource, is this decision.
 	Returns the lead name so a caller can reuse it.
 	"""
+	message = _(
+		"No {0} on this API key's line matches `name`. Check the id against the matching list endpoint "
+		"for the lead this record hangs off."
+	).format(label.lower())
 	if not lead_name:
-		frappe.throw(_("{0} not found").format(label), frappe.DoesNotExistError)
+		throw_field(message, ["name"], frappe.DoesNotExistError)
 	try:
 		return resolve_lead(mp, is_sysmgr, {"lead": lead_name})
 	except frappe.DoesNotExistError:
-		frappe.throw(_("{0} not found").format(label), frappe.DoesNotExistError)
+		throw_field(message, ["name"], frappe.DoesNotExistError)
 
 
 # -- request-arg helpers -----------------------------------------------------
+
+def parse_json_arg(value, key):
+	"""Parse a request arg the caller sent as a JSON string — the ONE place a parser failure becomes a
+	sentence.
+
+	frappe.parse_json is orjson, and orjson's own text (`invalid literal: line 1 column 1 (char 0)`)
+	describes OUR read of the bytes, not anything the caller can act on. Left uncaught it lands in
+	_ERROR_MAP as a plain ValueError and that text becomes the partner-facing message."""
+	try:
+		return frappe.parse_json(value)
+	except ValueError:
+		throw_field(
+			_("`{0}` arrived as text that does not read as JSON. Send `{0}` as a JSON array, one object "
+			  "per record, even when there is only one.").format(key),
+			[key],
+		)
+
 
 def _read_list(data, key):
 	"""Parse a request arg that should be a JSON list."""
@@ -404,7 +491,7 @@ def _read_list(data, key):
 	if val is None:
 		return None
 	if isinstance(val, str):
-		val = frappe.parse_json(val)
+		val = parse_json_arg(val, key)
 	if not isinstance(val, list):
 		val = [val]
 	return val
@@ -415,7 +502,9 @@ def _read_required_list(data, key):
 	mistyped key would make _run_bulk emit a 200 with total: 0. The one reader both bulk lanes call."""
 	items = _read_list(data, key)
 	if items is None:
-		frappe.throw(_("{0} is required").format(key))
+		throw_field(
+			_("The body carries no `{0}` key. Send `{0}` as a JSON array of records.").format(key), [key]
+		)
 	return items
 
 
@@ -547,14 +636,23 @@ def _classify(e, fn_name):
 	# line, so we replace it (never leak the link list). "record", not "lead": _classify is the one
 	# error brain for all four entities, and this fired verbatim on an activity, a file or a call.
 	if isinstance(e, frappe.LinkExistsError):
-		return "cannot_delete", 409, _("This record cannot be deleted because it has linked records."), None, None
+		return "cannot_delete", 409, _(
+			"This record still has records linked to it, so it cannot be deleted. Delete the records "
+			"that hang off it first, then delete this one."
+		), None, None
 	for exc_type, (code, http) in _ERROR_MAP.items():
 		if isinstance(e, exc_type):
-			return (code, http, (str(e) or _("Request failed")),
-			        getattr(e, "fields", None), getattr(e, "detail", None))
+			# A mapped exception that carries no text still owes the caller a sentence: a real code paired with a blank body is a dead end.
+			return (code, http, (str(e) or _(
+				"The request was refused and no reason was recorded. Retry the call; if it repeats, "
+				"contact support with the value of `error.code` and the time of the call."
+			)), getattr(e, "fields", None), getattr(e, "detail", None))
 	# The caller rolls back before classifying, then commits this row on its own; deferring it to redis instead would lose it on an eviction and re-stamp its creation at flush time.
 	frappe.log_error(title=f"Partner API error: {fn_name}")
-	return "server_error", 500, _("Something went wrong. Please try again or contact support."), None, None
+	return "server_error", 500, _(
+		"This call failed for a reason on our side and the failure was logged. Retry the call; if it "
+		"repeats, contact support with the time of the call."
+	), None, None
 
 
 # The (global, per-token) bucket pair, evaluated atomically. Each bucket is a HASH
@@ -868,14 +966,20 @@ def _idempotency_begin(user, key, fn_name):
 	if row:
 		if row.state == "pending":
 			if (now_datetime() - get_datetime(row.creation)).total_seconds() <= _IDEM_STALE_SECONDS:
-				_fail("conflict", _("A request with this Idempotency-Key is already in progress."), 409)
+				_fail("conflict", _(
+					"An earlier call with this Idempotency-Key is still running. Wait for it to answer "
+					"and read its response; retry with the same key only if no response arrives."
+				), 409)
 				return "conflict", None
 			# stale claim (a run that crashed mid-flight) -> reclaim it
 			frappe.db.set_value(_IDEM_DT, name, {"request_fingerprint": fp, "creation": now_datetime()})
 			frappe.db.commit()
 			return "run", name
 		if row.request_fingerprint != fp:
-			_fail("conflict", _("Idempotency-Key reused with different parameters."), 422)
+			_fail("conflict", _(
+				"This Idempotency-Key was already used for a call with a different body. Send a fresh "
+				"key for a new request, or resend the original body to replay the stored response."
+			), 422)
 			return "conflict", None
 		frappe.local.response.update(frappe.parse_json(row.response_body or "{}"))  # replay
 		return "replay", None
@@ -1033,10 +1137,11 @@ def _bulk_guard(items, direction, entity=None):
 	budget is exhausted (the caller bare-`return`s), else None. The 1-call RATE cost was already
 	charged by @_api(bulk=True)."""
 	if not isinstance(items, list):
-		frappe.throw(_("Expected a JSON array"))
+		frappe.throw(_("The records key of this body is not a JSON array. Send it as a JSON array, one "
+		               "object per record, even when there is only one."))
 	ceiling = bulk_max(entity)
 	if len(items) > ceiling:
-		frappe.throw(_("Max {0} records per call; received {1}. Page the rest.").format(ceiling, len(items)))
+		frappe.throw(record_cap_message(ceiling, len(items), _("call")))
 	return _meter_volume(len(items), direction)
 
 
@@ -1115,7 +1220,9 @@ def _stamp_bulk_failures(results, summary):
 	code = Counter(f["code"] for f in failures).most_common(1)[0][0]
 	frappe.local.partner_bulk_error = {
 		"code": checked_code(code),
-		"message": _("{0} of {1} records failed.").format(summary["failed"], summary["total"]),
+		"message": _("{0} of {1} records failed. Read the `results` array for each record's own "
+		             "`error`, then resend only the records that failed.").format(
+			summary["failed"], summary["total"]),
 		"detail": {
 			"summary": summary,
 			"failures": failures[:_BULK_FAILURE_SAMPLE],
@@ -1216,27 +1323,59 @@ def _schema_ok(entity, dedup, fields=None, **extra):
 # shares it: partner, partner_activity, partner_file, partner_call.
 _PARTNER_PATH = "/api/method/tatva_connect.api.partner"
 
-_GATEWAY_ERRORS = {
-	"AuthenticationError": ("unauthorized", 401, "Invalid or missing API key."),
-	"PermissionError": ("forbidden", 403, "Not permitted."),
-}
+# The framework layer answers with an exception CLASS, not a status, for the two errors it raises before
+# any status is set. Mapping it to a status here means the sentences below are written once, by status.
+_GATEWAY_STATUS = {"AuthenticationError": 401, "PermissionError": 403}
 
 
 def _normalise_partner_error(request, status_code, exc_type):
-	"""(code, http, message) for a framework-layer error on a partner path."""
-	if exc_type in _GATEWAY_ERRORS:
-		return _GATEWAY_ERRORS[exc_type]
-	if "JSONDecode" in (exc_type or "") or status_code == 400:
-		return "bad_request", 400, "Malformed request body."
-	if status_code == 401:
-		return "unauthorized", 401, "Invalid or missing API key."
-	if status_code == 403:
-		return "forbidden", 403, "Not permitted."
-	if status_code == 404:
-		return "not_found", 404, "Not found."
-	if status_code == 429:
-		return "rate_limited", 429, "Rate limit exceeded. Retry shortly."
-	return "server_error", status_code or 500, "Request could not be processed."
+	"""(code, http, message) for a framework-layer error on a partner path. Every branch names its own
+	subject and its own next step: this is the ONE answer for a call that never reached an endpoint, so a
+	caller who cannot act on it has nowhere else to look.
+
+	What this layer KNOWS is the status; what it does not know is which check produced it. A framework 403
+	covers a key without permission, a method that is not whitelisted and a refused guest call alike, so a
+	branch here may list what is worth checking but may never assert one cause — a confident wrong remedy
+	sends a developer to a second wrong turn, which is worse than the vague `Not permitted.` it replaced.
+	An endpoint that DOES know its cause answers through _fail and never reaches this function."""
+	status = _GATEWAY_STATUS.get(exc_type) or status_code
+	if "JSONDecode" in (exc_type or "") or status == 400:
+		return "bad_request", 400, _(
+			"The request body could not be read as JSON. Send a JSON body and set `Content-Type: "
+			"application/json`."
+		)
+	if status == 401:
+		return "unauthorized", 401, _(
+			"This call carried no usable API key. Send `Authorization: token <api_key>:<api_secret>` on "
+			"every request, and ask the operator to reissue the key if it has been rotated."
+		)
+	if status == 403:
+		return "forbidden", 403, _(
+			"This call was refused before it reached an endpoint, and the layer that refused it does not "
+			"record which check said no. Three things carry this outcome: check that the method name "
+			"matches an endpoint in the partner API reference, that the API key carries the Partner API "
+			"User role, and that an enabled CRM Lead API Mapping exists for the key on the grain being "
+			"addressed."
+		)
+	if status == 404:
+		return "not_found", 404, _(
+			"Nothing answered this call, and it was refused before any endpoint ran, so what was missing "
+			"is not recorded. Check the method name against the partner API reference — every endpoint is "
+			"called as /api/method/<module>.<method> — and check any record id in the body against the "
+			"list endpoint for that resource."
+		)
+	if status == 429:
+		return "rate_limited", 429, _(
+			"The call budget for this API key is spent. Retry after the number of seconds given in the "
+			"Retry-After header of this response."
+		)
+	# Deliberately does NOT claim the fault is ours or that it was logged: this branch also answers a 405, a 413 and a 415, and nothing here writes an Error Log row.
+	return "server_error", status or 500, _(
+		"This call was refused before it reached an endpoint and the framework answered with status {0}, "
+		"which does not record whether the cause was the request or this service. Check the HTTP method, "
+		"the path and the Content-Type against the partner API reference; if all three match, retry the "
+		"call and contact support with that status and the time of the call."
+	).format(status or 500)
 
 
 def normalise_partner_response(response=None, request=None):
@@ -1265,7 +1404,7 @@ def normalise_partner_response(response=None, request=None):
 		code, http, message = _normalise_partner_error(
 			request, response.status_code, (body or {}).get("exc_type")
 		)
-		error = {"code": code, "message": _(message)}
+		error = {"code": code, "message": message}
 		response.status_code = http
 		response.set_data(frappe.as_json({"status": "error", "error": error}))
 		response.headers["Content-Type"] = "application/json"

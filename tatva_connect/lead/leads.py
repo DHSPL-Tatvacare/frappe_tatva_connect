@@ -56,12 +56,17 @@ def stamp_entitled_grain(doc, method=None):
 	if not automation.is_enabled("Lead::CRM Lead::grain"):
 		return
 	from tatva_connect.access.entitlement import ALL_GRAINS, entitled_grains, grain_entitled
+	from tatva_connect.api._base import throw_field
 
 	grains = entitled_grains()
 	if grains == ALL_GRAINS:
 		return  # System Manager — trusts the form's pick (any grain).
 	if not grains:
-		frappe.throw(_("You have no grain entitlement to create a lead."), frappe.PermissionError)
+		frappe.throw(
+			_("This account is entitled to no grain, so it cannot create a lead. Ask the operator to "
+			  "grant an entitlement for the product line and group the lead belongs to."),
+			frappe.PermissionError,
+		)
 
 	if not any(doc.get(f) for f in ROUTING_FIELDS):
 		# Single grain → apply silently, no question. Multiple (manager) → the form must send the pick.
@@ -71,11 +76,28 @@ def stamp_entitled_grain(doc, method=None):
 			doc.custom_group = group or None
 			doc.custom_current_program = program or None
 			return
-		frappe.throw(_("Select a grain for this lead."))
+		# One message serves both readers here: the Desk wording named no field and offered no values
+		# either, so naming the three fields and listing the entitled grains is the fix for BOTH.
+		throw_field(
+			_("This lead carries no grain, and more than one is available. Set custom_vertical, "
+			  "custom_group and custom_current_program to one of: {0}.").format(_grain_options(grains)),
+			list(ROUTING_FIELDS),
+		)
 
 	grain = (doc.custom_vertical or "", doc.custom_group or "", doc.custom_current_program or "")
 	if not grain_entitled(grain):
-		frappe.throw(_("That grain is not within your entitlement."), frappe.PermissionError)
+		throw_field(
+			_("The grain {0} is not one this account may write to. Set custom_vertical, custom_group "
+			  "and custom_current_program to one of: {1}.").format(
+				_grain_options([grain]), _grain_options(grains)),
+			list(ROUTING_FIELDS), frappe.PermissionError,
+		)
+
+
+def _grain_options(grains):
+	"""Grain tuples rendered for a refusal — a blank axis reads `any`, the same wildcard meaning
+	`taxonomy/grain.py` gives it, so the values offered are the values that will actually match."""
+	return "; ".join(" / ".join(axis or "any" for axis in g) for g in sorted(grains))
 
 
 def normalize_lead_phones(doc, method=None):
@@ -122,12 +144,12 @@ def dedup_guard(doc, method=None):
 		"name",
 	)
 	if existing:
-		frappe.throw(
-			_(
-				"A lead with mobile number {0} already exists on this product line ({1}). "
-				"Update that lead instead."
-			).format(mobile, existing),
-			title=_("Duplicate lead"),
+		from tatva_connect.api._base import throw_field
+
+		throw_field(
+			_("A lead with mobile number {0} already exists on this product line ({1}). "
+			  "Update that lead instead.").format(mobile, existing),
+			["mobile_no"], title=_("Duplicate lead"),
 		)
 
 
@@ -149,18 +171,20 @@ def validate_stage(doc, method=None):
 	if not stage:
 		return
 
+	from tatva_connect.api._base import throw_field
+
 	program = doc.custom_current_program
 	if program and stage.program != program:
-		frappe.throw(
-			_("Stage {0} belongs to a different program. Pick a stage for {1}.").format(
-				doc.custom_substage, program
-			),
-			title=_("Invalid stage"),
+		throw_field(
+			_("Stage {0} belongs to the {1} programme and this lead is on {2}. Set custom_substage to a "
+			  "stage of {2}.").format(doc.custom_substage, stage.program, program),
+			["custom_substage"], title=_("Stage not on this programme"),
 		)
 	if not stage.selectable:
-		frappe.throw(
-			_("{0} is a grouping stage, not a pickable one. Pick a specific stage.").format(doc.custom_substage),
-			title=_("Invalid stage"),
+		throw_field(
+			_("{0} groups other stages and is not one a lead sits at. Set custom_substage to one of the "
+			  "stages it groups.").format(doc.custom_substage),
+			["custom_substage"], title=_("Stage not selectable"),
 		)
 
 	# custom_stage is a Link -> CRM Lead Stage, so it must hold a stage NAME (PK `program::stage`),
