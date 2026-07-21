@@ -78,9 +78,7 @@ def _upsert_page(page: dict, account_details: dict) -> None:
 		doc.update(values)
 		doc.save(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
 		return
-	frappe.get_doc({"doctype": "Facebook Page", "id": page["id"], **values}).insert(
-		ignore_permissions=True
-	)  # authz-ok: tier-c — operator-driven discovery of their own Pages
+	frappe.get_doc({"doctype": "Facebook Page", "id": page["id"], **values}).insert(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
 
 
 def list_forms(page_id: str, page_access_token: str) -> list[dict]:
