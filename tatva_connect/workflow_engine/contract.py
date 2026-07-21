@@ -161,11 +161,20 @@ def _expression_keys(value):
 
 
 def _ctx_json_keys(value):
-	data = frappe.parse_json(value) if isinstance(value, str) else value
-	if not isinstance(data, dict):
-		return set()
-	return {
-		v[len(_CTX_PREFIX):]
-		for v in data.values()
-		if isinstance(v, str) and v.startswith(_CTX_PREFIX) and v[len(_CTX_PREFIX):]
-	}
+	"""Every `$ctx.` reference a JSON map names, AT ANY DEPTH.
+
+	Asked of `actions`, which owns the walk the runtime itself performs. This used to iterate
+	`data.values()` — one level — which was true enough for a child row's flat field map and became a hole
+	the moment a node carried a real API body: `{"messages": [{"content": "$ctx.…"}]}` nests its reference
+	inside a list of objects, so the gate saw nothing, published green, and the run then sent the literal
+	string `$ctx.crm_lead.first_name` to a live provider.
+
+	One walk, two callers — locked by `test_the_gate_sees_every_reference_the_runtime_will_resolve`.
+	"""
+	from tatva_connect.automation import actions
+
+	raw = value if isinstance(value, str) else frappe.as_json(value)
+	try:
+		return set(actions.body_references(raw))
+	except ValueError:
+		return set()  # invalid JSON is the author's own error, reported by the field's validator

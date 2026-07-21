@@ -15,13 +15,14 @@ The HTTP call itself is the one thing stubbed: this suite is about what the engi
 and reaching a real endpoint would make it a network test. `_call_endpoint` is the seam — everything
 above it (capture, predicate, routing, state) runs for real.
 """
+import json
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tests.authz.grains import assert_masters_exist
-from tatva_connect.workflow_engine import interpreter
+from tatva_connect.workflow_engine import interpreter, refs
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _WORKFLOW = "call-api-probe"
@@ -113,6 +114,51 @@ class TestCallApi(FrappeTestCase):
 		self.assertNotIn(
 			"JSON serializable", result["error"] or "",
 			"the payload must serialise: this failing means the request never left the process",
+		)
+
+	# --- the author writes the body ---------------------------------------------------------------------
+
+	_BODY = json.dumps({
+		"model": "gpt-4o",
+		"metadata": {"lead": "$ctx.crm_lead.name"},
+		"messages": [{"role": "user", "content": "$ctx.crm_lead.first_name"}],
+	})
+
+	def test_an_authored_body_resolves_references_at_every_depth(self):
+		"""An API body is NESTED — `messages` is a list of objects — and the reference an author needs is
+		usually inside it. A flat resolver would send the literal string `$ctx.crm_lead.first_name` to the
+		provider, which is a wrong request that still gets a 200 from some of them."""
+		from tatva_connect.automation import actions
+
+		state = refs.Values(buckets={"crm_lead": {"name": "LEAD-1", "first_name": "Ramesh"}})
+		built = actions.build_request_body(self._BODY, state)
+
+		self.assertEqual(built["model"], "gpt-4o", "a literal is left alone")
+		self.assertEqual(built["metadata"]["lead"], "LEAD-1", "a reference nested in an object resolves")
+		self.assertEqual(
+			built["messages"][0]["content"], "Ramesh",
+			"a reference nested inside a LIST of objects resolves — this is where every real API body puts it",
+		)
+
+	def test_the_gate_sees_every_reference_the_runtime_will_resolve(self):
+		"""THE DIVERGENCE LOCK. The publish gate reads the body to refuse a reference nothing produces, and
+		the runtime reads it again to fill them in. Two walks over one structure is the exact shape that
+		drifts: a gate that sees fewer references than the runtime resolves blesses a workflow that then
+		sends a literal `$ctx.…` to a real provider.
+
+		`_ctx_json_keys` used to walk only `data.values()` — one level — so every reference inside
+		`messages` was invisible to it while the runtime resolved them happily.
+		"""
+		from tatva_connect.automation import actions
+		from tatva_connect.workflow_engine import contract
+
+		seen_by_gate = contract.reads_of("Call API", {
+			"webhook_endpoint": _ENDPOINT, "webhook_payload_source": "Custom", "request_body": self._BODY,
+		})
+		self.assertEqual(
+			{r["name"] for r in seen_by_gate},
+			set(actions.body_references(self._BODY)),
+			"what publish checks and what the run resolves must be the same set, or the gate is decorative",
 		)
 
 	# --- capture ----------------------------------------------------------------------------------------

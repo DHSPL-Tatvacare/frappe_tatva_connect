@@ -513,18 +513,21 @@ def _action_call_api(action, lead, context, axes, trigger_doc):
 	if not frappe.db.exists("Webhook", endpoint):
 		raise ValueError(f"Endpoint {endpoint!r} does not exist")
 
-	if (action.webhook_payload_source or "Lead") == "Trigger Doc" and trigger_doc is not None:
+	source = action.webhook_payload_source or "Lead"
+	if source == "Trigger Doc" and trigger_doc is not None:
 		payload_doc = frappe.get_doc(trigger_doc.doctype, trigger_doc.name)  # fresh load, same txn
 	else:
 		payload_doc = frappe.get_doc("CRM Lead", lead)
 
-	response = _call_endpoint(endpoint, payload_doc)
+	# Custom sends what the author composed; the other two send the record itself, unchanged.
+	body = build_request_body(action.request_body, context) if source == "Custom" else None
+	response = _call_endpoint(endpoint, payload_doc, body)
 	_write_response_state(action.capture, response, context)
 	context[refs.OUTPUT] = "succeeded" if _api_succeeded(action.success_when, response, context) else "failed"
 	return f"{response['status']} {'ok' if response['ok'] else 'failed'}"
 
 
-def _call_endpoint(endpoint, payload_doc):
+def _call_endpoint(endpoint, payload_doc, body=None):
 	"""Issue the request the curated Webhook describes, and shape the answer into one context.
 
 	Frappe's own plumbing, not our own: `get_request_session()` is the platform's HTTP session (pooled,
@@ -545,7 +548,8 @@ def _call_endpoint(endpoint, payload_doc):
 	validate_url(url, throw=True, valid_schemes=("http", "https"))
 
 	headers = {h.key: h.value for h in (hook.get("webhook_headers") or []) if h.get("key")}
-	payload = payload_doc.as_dict()
+	# The authored body when there is one, else the record itself — the request log records what really went.
+	payload = payload_doc.as_dict() if body is None else body
 	log = create_request_log(
 		payload, is_remote_request=1, service_name="Workflow Call API", url=url,
 		request_headers=headers or None,
@@ -843,7 +847,12 @@ VERBS = {
 		"params": [
 			{"name": "webhook_endpoint", "label": "Endpoint", "type": "Link", "link": "Webhook", "reqd": True},
 			{"name": "webhook_payload_source", "label": "Send", "type": "Select",
-			 "options": ["Lead", "Trigger Doc"]},
+			 "options": ["Lead", "Trigger Doc", "Custom"]},
+			# The author says WHAT is sent; the curated Webhook still says WHERE. `reads=ctx_json` is what
+			# makes its references visible to the publish gate, at any depth.
+			{"name": "request_body", "label": "Request Body", "type": "Code", "options": "JSON",
+			 "reads": "ctx_json", "depends_on_value": {"webhook_payload_source": ["Custom"]},
+			 "placeholder": '{"model": "gpt-4o", "messages": [{"role": "user", "content": "$ctx.crm_lead.first_name"}]}'},
 			{"name": "capture", "label": "Capture", "type": "Mapping"},
 			{"name": "success_when", "label": "Succeeded when", "type": "Predicate"},
 		],
@@ -961,6 +970,50 @@ def _resolve(spec, context):
 	if isinstance(spec, str) and spec.startswith("$ctx."):
 		return context.get(spec[5:])
 	return spec
+
+
+def _walk(value, leaf):
+	"""Rebuild a JSON structure with `leaf` applied to every scalar, at any depth.
+
+	ONE traversal, used by both halves of the request body: the publish gate collects references with it
+	and the runtime resolves them with it. A real API body nests — `messages` is a list of objects — and
+	two separate walks over that shape is precisely how a gate comes to check less than a run performs.
+	"""
+	if isinstance(value, dict):
+		return {k: _walk(v, leaf) for k, v in value.items()}
+	if isinstance(value, list):
+		return [_walk(v, leaf) for v in value]
+	return leaf(value)
+
+
+def _parsed_body(raw):
+	"""The authored body as data, or {} when there is none. Raises the author's own error on bad JSON."""
+	if not (raw or "").strip():
+		return {}
+	try:
+		return json.loads(raw)  # ALLOWLIST 2026-07-22: raw parse so the except gives a precise message.
+	except (ValueError, TypeError):
+		raise ValueError("invalid JSON in the Call API request body")
+
+
+def build_request_body(raw, context):
+	"""The body an author wrote, with every `$ctx.` reference resolved at any depth.
+
+	The author says WHAT is sent; the curated `Webhook` still says WHERE it goes and carries the secret.
+	That split is the whole security model — an author cannot point a request anywhere, only fill one in.
+	"""
+	return _walk(_parsed_body(raw), lambda v: _resolve(v, context))
+
+
+def body_references(raw):
+	"""Every run-state reference the authored body names — the same walk `build_request_body` performs.
+
+	Exported so the publish gate asks THIS module what the body reads, rather than re-deriving it from a
+	structure it would have to learn the shape of independently.
+	"""
+	found = []
+	_walk(_parsed_body(raw), lambda v: found.append(v[5:]) if isinstance(v, str) and v.startswith("$ctx.") else v)
+	return [name for name in found if name]
 
 
 def _resolve_map(raw, context):
