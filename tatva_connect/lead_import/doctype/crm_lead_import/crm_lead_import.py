@@ -1,5 +1,5 @@
-# Copyright (c) 2026, TatvaCare and Contributors
-# See license.txt
+# Copyright (c) 2026, TatvaCare and contributors
+# For license information, please see license.txt
 """A Desk lead import: a grain declaration, a file, a column mapping, and a mandatory validation gate.
 
 The grain is never typed and never read off the sheet. It is taken from the contract and clamped to what
