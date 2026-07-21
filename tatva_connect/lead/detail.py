@@ -155,7 +155,7 @@ def _select(doc):
 	lead_grain = (doc.get("custom_vertical") or "", doc.get("custom_group") or "",
 	              doc.get("custom_current_program") or "")
 	applicable = {k: r for k, r in visible.items()
-	              if k in entitlement.UNIVERSAL_KEYS or entitlement.field_in_grains_via_contract(r["field_key"], [lead_grain])}
+	              if _is_universal(r) or entitlement.field_in_grains_via_contract(r["field_key"], [lead_grain])}
 	deduped = dedup_rows(list(applicable.values()))
 	return {r["field_key"]: r for r in deduped}
 

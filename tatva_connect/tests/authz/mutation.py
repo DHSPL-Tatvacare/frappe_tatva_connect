@@ -222,10 +222,10 @@ def _remove_field_restriction_effect(role):
 	from tatva_connect.access import entitlement
 
 	def _restrictable_key():
-		"""A REAL catalogued lead field the restriction can target. CRM Lead Field Restriction.field is a Link to CRM Lead API Field, so an uncatalogued fieldname can never be restricted; UNIVERSAL_KEYS are excluded because resolve_fields returns them before it ever consults a restriction."""
+		"""A REAL catalogued lead field the restriction can target. CRM Lead Field Restriction.field is a Link to CRM Lead API Field, so an uncatalogued fieldname can never be restricted; a contract-universal field is skipped so the case exercises a grain-specific one."""
 		for row in frappe.get_all("CRM Lead API Field", filters={"section": "lead"},
 		                          fields=["field_key", "fieldname"], order_by="field_key asc"):
-			if row.field_key not in entitlement.UNIVERSAL_KEYS:
+			if not entitlement.is_universal_field(row.field_key):
 				return row.field_key, row.fieldname
 		return None, None
 

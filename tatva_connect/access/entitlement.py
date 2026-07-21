@@ -18,10 +18,6 @@ from tatva_connect.taxonomy import grain as taxonomy_grain
 # System Manager sees every field — a sentinel so we never enumerate the grain masters.
 ALL_GRAINS = "__all__"
 
-# Always present regardless of grain or role restriction — the minimum that lets a user
-# identify a lead (fail-closed floor; a restriction can never hide these).
-UNIVERSAL_KEYS = ("lead:name", "lead:mobile_no", "lead:status")
-
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _RESTRICT_CACHE = "tatva_connect:field_restrictions"
 _INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"
@@ -275,20 +271,32 @@ def restrict_fields(catalog_rows, roles):
 	For a catalog whose grain is already settled. An activity type's key IS its grain — the type is
 	reached through the view's grain and a caller not entitled to it never gets this far — so its fields
 	need no second admission, only this. `resolve_fields` below is this plus the grain question, and is
-	the right call whenever the grain is still open."""
+	the right call whenever the grain is still open.
+
+	A restriction hides a field outright: there is no exempt list. A floor written here would be a second
+	answer to "may this role see it", competing with the restriction seed that already decides."""
 	hidden = _restricted_keys(roles)
-	return {k: r for k, r in catalog_rows.items() if k in UNIVERSAL_KEYS or k not in hidden}
+	return {k: r for k, r in catalog_rows.items() if k not in hidden}
 
 
 def resolve_fields(catalog_rows, grains, roles):
-	"""The internal field list: catalog rows visible in `grains`, minus any field restricted for
-	`roles`, plus the universal keys (always present). `catalog_rows` is the already scope-filtered
-	catalog ({field_key: row}) so this stays the single grain+restriction brain with no second
-	catalog read. Returns the surviving {field_key: row} dict, order preserved."""
+	"""The internal field list: catalog rows visible in `grains`, minus any field restricted for `roles`.
+
+	"Universal" is what the contracts TICK (`is_universal_field`) — never a list held in code. A hardcoded
+	floor is a second brain: it drifts (one of its three keys named a field that does not exist), and it
+	disagreed with the seeds by 49 fields.
+
+	No entitlement means NO fields, not a courtesy floor. A caller with nothing configured has nothing to
+	show, and the surface says so plainly instead of handing them two fields and a dead end."""
+	rows = restrict_fields(catalog_rows, roles)
+	if grains == ALL_GRAINS:
+		return rows
+	if not grains:
+		return {}
 	return {
 		key: row
-		for key, row in restrict_fields(catalog_rows, roles).items()
-		if key in UNIVERSAL_KEYS or entitled_to_field(row["field_key"], grains)
+		for key, row in rows.items()
+		if is_universal_field(row["field_key"]) or entitled_to_field(row["field_key"], grains)
 	}
 
 

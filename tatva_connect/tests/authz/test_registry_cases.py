@@ -232,7 +232,7 @@ class TestRegistryCases(AuthzTestCase):
 			visible = entitlement.resolve_fields(
 				catalog, entitlement.entitled_grains(), frappe.get_roles())
 		for key in visible:
-			if key not in entitlement.UNIVERSAL_KEYS:
+			if not entitlement.is_universal_field(key):
 				return key
 		return None
 
