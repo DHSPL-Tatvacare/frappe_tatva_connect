@@ -16,7 +16,6 @@ Personas (from .creds/uat.json, logged in by http_engine.authenticate_all):
   admin         — used ONLY to seed foreign-owned targets + tear them down, never to attack.
 """
 import json
-import time
 
 from tatva_connect.tests.authz import http_engine
 
@@ -423,8 +422,7 @@ def v31(eng, ctx):  # installed apps — P4, accepted (own-entitled only)
 
 
 def v32(eng, ctx):  # getdoctype schema — accepted (field names, no data), FAIL only if record data leaks
-	lead = ctx["found"].get("CRM Lead")
-	code, body = _get(eng, "no_role", "frappe.desk.form.load.getdoctype", {"doctype": "CRM Lead"})
+	code, _ = _get(eng, "no_role", "frappe.desk.form.load.getdoctype", {"doctype": "CRM Lead"})
 	# schema is fine; a FAIL here would be actual row DATA riding along, which getdoctype never returns
 	return (False, f"HTTP {code} (schema only, no record data — accepted)")
 
@@ -485,13 +483,13 @@ def run(cfg=None):
 
 	personas = sorted(set(p for _, _, p, _, _, _ in VECTORS) | {"admin"})
 	ids = eng.authenticate_all([p for p in personas if p in cfg["personas"]])
-	print(f"authenticated: " + ", ".join(f"{p}={ids.get(p) or '?'}" for p in personas if p in ids))
+	print("authenticated: " + ", ".join(f"{p}={ids.get(p) or '?'}" for p in personas if p in ids))
 
 	ctx = seed(eng)
 	tally = {"PASS": 0, "FAIL": 0, "ACCEPTED": 0, "SKIP": 0, "ERROR": 0}
 	print("\n=== VAPT Jun'26 — 32 live attack vectors (low-privilege, over HTTP) ===")
 	try:
-		for n, sev, persona, name, expected, attack in VECTORS:
+		for n, sev, _persona, name, expected, attack in VECTORS:
 			try:
 				res = attack(eng, ctx)
 			except (http_engine.AuthError, http_engine.ThrottleError):
