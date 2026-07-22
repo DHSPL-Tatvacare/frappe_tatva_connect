@@ -25,7 +25,7 @@ Dormant by default behind `WhatsApp::Channel::recovery`, and only for a provider
 """
 import frappe
 
-from tatva_connect import automation
+from tatva_connect import automation, phone
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel, ingest
 
@@ -159,6 +159,6 @@ def _number_for_conversation(account, conversation_id):
 	if not row:
 		return None
 	# An Incoming row names the contact in `from`, an Outgoing one in `to`. Either identifies the thread.
-	return channel.normalize_number(row.get("from") or row.get("to")) or None
+	return phone.match_digits(row.get("from") or row.get("to")) or None
 
 

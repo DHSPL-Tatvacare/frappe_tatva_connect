@@ -133,14 +133,46 @@ def purge(*workflow_names):
 	frappe.db.commit()
 
 
-def arm_engine(enabled=True):
-	"""Arm or disarm the engine switch, returning what it was so the caller can put it back.
-
-	The engine is dormant by default, so a behavioural suite has to arm it deliberately — and a suite
-	that forgets to restore it leaves a live config change behind on the bench, which is how one test
-	once broke an unrelated API suite.
-	"""
-	was = frappe.db.get_value("CRM Tatva Automation", ENGINE_SWITCH, "enabled")
+def _set_engine(enabled):
 	frappe.db.set_value("CRM Tatva Automation", ENGINE_SWITCH, "enabled", 1 if enabled else 0)
 	frappe.db.commit()
+
+
+def arm_engine(enabled=True, cls=None):
+	"""Arm or disarm the engine switch, returning what it was.
+
+	PASS THE TEST CLASS. The restore is then REGISTERED rather than remembered: `addClassCleanup` runs
+	even when `setUpClass` raises after this call, which is the one door the old
+	save-it-in-an-attribute shape did not cover — `unittest` skips `tearDownClass` entirely when
+	`setUpClass` raises.
+
+	That gap did not merely leak one flag, it made the leak self-propagating. An aborted setUpClass left
+	the engine ON; every later suite then read `was = 1`, recorded it as "the original value" and
+	faithfully restored the engine to ON at the end, reporting a clean teardown. The bench drifted to
+	armed with nothing anywhere going red, and "no switches left on" stopped being falsifiable — which
+	matters most on the day a live trial sends to a real phone.
+
+	The restore goes to OFF, never to "whatever it was", and that is the second half of the fix. Restoring
+	the previous value is what PROPAGATES a poisoned baseline: one suite leaves it ON, the next reads
+	`was = 1`, calls that the original and puts it back ON, for ever. The engine is dormant by default
+	(B10), so OFF is the only correct resting state of a bench and there is nothing else to remember.
+
+	Arming a bench that is ALREADY armed therefore raises. A suite that finds the switch on has found a
+	leak — its own baseline is untrustworthy and so is every "no switches left on" claim made after it.
+	Loud beats inherited.
+
+	The `cls`-less form remains for a caller disarming and re-arming inside its own try/finally within a
+	single test, where the class-level arm above it already owns the restore.
+	"""
+	was = frappe.db.get_value("CRM Tatva Automation", ENGINE_SWITCH, "enabled")
+	if cls is not None:
+		if enabled and was:
+			raise AssertionError(
+				f"{ENGINE_SWITCH} was already ON before {cls.__name__} armed it. A suite left it behind, so "
+				"this bench's baseline cannot be trusted - disarm it and find what leaked before relying on "
+				"any run that follows."
+			)
+		# Registered BEFORE the write, so an abort between the two still disarms.
+		cls.addClassCleanup(_set_engine, False)
+	_set_engine(enabled)
 	return was

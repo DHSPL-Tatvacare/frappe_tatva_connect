@@ -39,8 +39,8 @@ _VALID_EXAMPLE = {
 	"Upsert Child Row": {"child_table": "x", "match_json": "{}", "set_json": "{}"},
 	"Call API": {"webhook_endpoint": "x"},
 	"Create Note": {},
-	"Send WhatsApp": {"whatsapp_template": "x"},
-	"Send Email": {"email_recipient": "a@b.c", "email_subject": "s"},
+	"Send WhatsApp": {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "x"},
+	"Send Email": {"email_recipient": "sv.email", "email_template": "x"},
 	"Assign to User": {"assign_mode": "Assign", "assignee_mode": "User", "assign_to_user": "x"},
 }
 
@@ -177,7 +177,7 @@ class TestRegistryConformance(unittest.TestCase):
 			field
 			for entry in registry.node_types()
 			for field in entry["config"]
-			if field.get("reads") == "value_rows"
+			if registry.read_kind_of(field) == "value_rows"
 		]
 		self.assertTrue(found, "no value_rows field is declared — this lock would pass vacuously")
 		for field in found:
@@ -189,7 +189,7 @@ class TestRegistryConformance(unittest.TestCase):
 		field with one way to be filled would have the inspector draw a switch with nothing to switch."""
 		for entry in registry.node_types():
 			for field in entry["config"]:
-				if field.get("reads") != "value_rows":
+				if registry.read_kind_of(field) != "value_rows":
 					with self.subTest(node_type=entry["type"], field=field.get("name")):
 						self.assertIsNone(field.get("modes"))
 

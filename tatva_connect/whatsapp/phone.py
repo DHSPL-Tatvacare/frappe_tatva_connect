@@ -1,20 +1,20 @@
 """Phone canonicalisation for the WhatsApp channel.
 
 One rule, one code path: numbers are stored canonical E.164 (`+<digits>`) and
-reduced to bare digits only at the provider boundary (channel.normalize_number). A
+reduced to comparable digits by `phone.match_digits` when two spellings must be matched. A
 provider's subscriber id is bare digits and stock leads were stored as
 `+91-XXXXXXXXXX`; without this they would never match.
 """
 import frappe
 
-from tatva_connect.whatsapp.channel import normalize_number
+from tatva_connect import phone as match
 
 
 def to_e164(number: str, default_cc: str = "91") -> str:
 	"""Canonical stored form: '+<digits>'. Strips hyphens/spaces; a bare 10-digit
 	Indian mobile gets the country code prepended, so 9876543210, +91-9876543210 and
 	919876543210 all become +919876543210. Empty -> returned unchanged."""
-	digits = normalize_number(number)
+	digits = match.match_digits(number)
 	if not digits:
 		return number or ""
 	if len(digits) == 10:

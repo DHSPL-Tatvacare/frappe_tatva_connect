@@ -38,31 +38,12 @@ import frappe
 
 from tatva_connect.workflow_engine import refs, registry
 
-_CTX_PREFIX = "$ctx."
+_CTX_PREFIX = refs.CTX_PREFIX
 
 # A `value_rows` row reads run state only in this mode. The vocabulary is `Update Field.value_mode`'s,
 # deliberately — one word for one idea across every verb that can take a value from either place.
 FROM_CONTEXT = "From Context"
 LITERAL = "Literal"
-
-
-def is_free_text_reference(value) -> bool:
-	"""Is this free-text value a REFERENCE to run state, or a literal the author typed?
-
-	THE one predicate, and it must stay the one predicate. `graph._reference_problems` uses it to decide
-	whether to demand an upstream producer, and `actions._action_send_email` uses it to decide whether to
-	resolve the value or send it as typed. When those two disagree the gate certifies a configuration the
-	runtime then gets wrong — which is exactly what `email_recipient` did: declared a Variable, enforced as
-	a Variable, and then handed to `frappe.sendmail` as a literal address.
-
-	`ops@tatvacare.in` cannot be a reference, so it is a literal. `crm_lead.email_id` is one, so it is a
-	reference. Locked by `test_send_routing.TestRecipientDeclarationMatchesRuntime`.
-
-	The shape question belongs to `refs`, which is the one module allowed to split on a dot — and it has to
-	be asked there, because a bare identifier is no longer a reference at all. Every value now says where
-	it came from, so `escalation_email` names nothing and is a literal; a reference carries its source.
-	"""
-	return refs.is_reference(value)
 
 
 def reads_of(node_type, config):
@@ -83,26 +64,24 @@ def reads_of(node_type, config):
 
 
 def _references(field, value):
-	"""The names one configured field references. Never raises: a malformed expression or a broken JSON
-	map is somebody else's problem to report, and losing the whole publish check to it would be worse."""
-	if field["type"] == "Variable":
-		if not isinstance(value, str):
-			return set()
-		if field.get("free_text") and not is_free_text_reference(value):
-			return set()
-		return {value}
+	"""The names one configured field references — resolved through the ONE table.
 
-	if field["type"] == "Predicate":
-		return _predicate_fields(value)
+	A type that can only read one way carries its kind in `FIELD_TYPES`; a type whose control serves
+	several semantics (`Code`, `Data`) carries the kind on the FIELD. `registry.read_kind_of` answers
+	which, so this function no longer switches on a type name and a new kind is one row elsewhere.
 
-	reads = field.get("reads")
-	if reads == "expression":
-		return _expression_keys(value)
-	if reads == "ctx_json":
-		return _ctx_json_keys(value)
-	if reads == "value_rows":
-		return value_row_keys(value)
-	return set()
+	Never raises: a malformed expression or a broken JSON map is somebody else's problem to report, and
+	losing the whole publish check to it would be worse.
+	"""
+	from tatva_connect.workflow_engine import registry
+
+	kind = registry.read_kind_of(field)
+	if not kind:
+		return set()
+	try:
+		return registry.READ_KINDS[kind]["keys"](value)
+	except Exception:
+		return set()
 
 
 def value_row_keys(rows):

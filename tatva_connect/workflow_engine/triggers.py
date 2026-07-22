@@ -216,7 +216,7 @@ def _trigger_config(version):
 	trigger = next((n for n in version.nodes if n.get("node_type") == registry.TRIGGER), None)
 	if trigger is None:
 		return None  # no trigger, nothing to qualify against
-	return frappe.parse_json(trigger.get("config_json") or "{}") or {}
+	return registry.config_of(trigger)
 
 
 def _requirements(version):
@@ -254,7 +254,8 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 	"""
 	frappe.enqueue(
 		"tatva_connect.workflow_engine.triggers.start_run",
-		queue="short",
+		# The workflow lane, its own worker: on `short` a burst of starts starves `wakeups.sweep`, which is the reconciler that rescues runs whose wake was lost.
+		queue="workflow",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.get("in_test")),
 		job_id=f"workflow-start::{workflow_name}::{lead_name}",

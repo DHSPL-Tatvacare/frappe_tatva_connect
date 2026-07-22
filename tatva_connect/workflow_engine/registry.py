@@ -106,6 +106,9 @@ NODE_TYPES = {
 		# Outputs depend on the mode: waiting only on an event has no timeout edge to draw or validate.
 		"outputs_by": {
 			"field": "mode",
+			# A Wait naming a source node that OFFERS buttons draws one edge per DECLARED button, so an author routes a tap by wiring rather than by writing a condition. The rows come from the SEND's own declaration - never from whatever button happened to arrive, which would let a provider invent edges on our canvas.
+			# `replaces` names the leg the rows stand in for, so Event-or-Timeout keeps the timeout edge it declares beside them - without it the rows replaced the whole map and the timer leg could not be wired.
+			"rows_from": {"node_field": "source_node", "declares": "buttons", "key": "id", "replaces": "event"},
 			"map": {
 				UNTIL_EVENT: ["event"],
 				FOR_DURATION: ["next"],
@@ -159,7 +162,33 @@ def outcomes_for(node_type):
 	return actions.outcomes_of(node_type)
 
 
-def outputs_for(node_type, config=None):
+def _rows_from(declared, config, graph_config):
+	"""Outputs that ARE the rows of another node's declaration, or None when this rule does not do that.
+
+	The second resolution mode of `outputs_by`, deliberately inside it rather than beside it: a node type
+	still has exactly ONE answer to "what can leave here" and one reader (B7). The first mode maps a config
+	value to a fixed list; this one turns a sibling node's declared rows into one edge each.
+
+	IT APPLIES ONLY WHEN THE FIELD IT READS APPLIES. `source_node` already declares its own gate, and this
+	used to ignore it: a Wait switched to a pure timer kept drawing one edge per button of the node it no
+	longer waits on, with no `next` handle to wire the timer path to and nothing saying why. The value is
+	only IGNORED, never cleared — an author flipping the mode twice must not lose their wiring.
+
+	`graph_config` is `{node_id: config}` for the graph being judged. It is optional because most callers
+	ask about a node in isolation; without it the rule simply does not apply and the map mode answers.
+	"""
+	spec = declared["outputs_by"].get("rows_from")
+	if not spec or not graph_config:
+		return None
+	reads = next((f for f in declared["config"] if f["name"] == spec["node_field"]), None)
+	if reads and not _applies(reads, config or {}):
+		return None
+	source = (config or {}).get(spec["node_field"])
+	rows = ((graph_config or {}).get(source) or {}).get(spec["declares"]) or []
+	return [row.get(spec["key"]) for row in rows if isinstance(row, dict) and row.get(spec["key"])]
+
+
+def outputs_for(node_type, config=None, graph_config=None):
 	"""The edge names that may leave this node, given its config.
 
 	The single answer to "what can leave here", used by the validator to reject an edge nobody declared
@@ -170,7 +199,17 @@ def outputs_for(node_type, config=None):
 	if "outputs" in declared:
 		return list(declared["outputs"])
 	rule = declared["outputs_by"]
-	return list(rule["map"].get((config or {}).get(rule["field"]), []))
+	mapped = list(rule["map"].get((config or {}).get(rule["field"]), []))
+	rows = _rows_from(declared, config, graph_config)
+	if not rows:
+		return mapped
+	# The rows stand in for ONE declared leg and land where it stood: every other leg this mode declares
+	# survives, and position is the contract the canvas draws its handles from.
+	leg = rule["rows_from"]["replaces"]
+	if leg not in mapped:
+		return mapped
+	at = mapped.index(leg)
+	return [*mapped[:at], *rows, *mapped[at + 1:]]
 
 
 def config_fields(node_type):
@@ -193,11 +232,82 @@ def problem(message, field=None):
 DRAFT, PUBLISH = "draft", "publish"
 
 
-def validate_node(node_type, config, edge_outputs, mode=PUBLISH):
+
+def _contract():
+	"""Lazy: `contract` reaches `registry`, so importing it at module scope is a cycle. Rejected
+	`frappe.get_attr` with dotted strings — it would resolve per call and hide a typo until that one
+	field was configured; a lambda fails at import like every other declaration here."""
+	from tatva_connect.workflow_engine import contract
+
+	return contract
+
+
+def _expression_problem(value):
+	"""The `reads=expression` check. `expr.assert_parses` was DEAD CODE — its only caller was a test —
+	which is why publish never syntax-checked an author's expression and a typo died on a live record."""
+	from tatva_connect.automation import expr
+
+	if not value:
+		return None
+	try:
+		expr.assert_parses(value)
+	except SyntaxError as e:
+		return _("{0} is not a valid expression: {1}").format(value, e.msg)
+	return None
+
+
+def _json_problem(value):
+	"""The `reads=ctx_json` / `writes=payload_map` check — it must PARSE. `frappe.parse_json` is the
+	platform's own reader and is what the runtime uses, so a body this accepts is one the run can read."""
+	if not value:
+		return None
+	try:
+		frappe.parse_json(value)
+	except Exception:
+		return _("This is not valid JSON.")
+	return None
+
+
+# WHICH NAMES a field of this kind references, and the check that kind carries. A field declares `reads`
+# only when its TYPE does not already imply one — see FIELD_TYPES.
+READ_KINDS = {
+	"variable": {"keys": lambda v: {v} if isinstance(v, str) and v else set(), "check": None},
+	"predicate": {"keys": lambda v: _contract()._predicate_fields(v), "check": None},
+	"expression": {"keys": lambda v: _contract()._expression_keys(v), "check": _expression_problem},
+	"ctx_json": {"keys": lambda v: _contract()._ctx_json_keys(v), "check": _json_problem},
+	"value_rows": {"keys": lambda v: _contract().value_row_keys(v), "check": None},
+}
+
+# WHICH NAMES a field of this kind contributes for later nodes to read. A resolver returning None means
+# "cannot be enumerated", which makes the node an opaque writer.
+WRITE_KINDS = {
+	"expression_dict": {"keys": lambda v: _upstream()._expression_dict_keys(v), "check": _expression_problem},
+	"payload_map": {"keys": lambda v: _upstream()._payload_map_keys(v), "check": _json_problem},
+}
+
+
+def _upstream():
+	from tatva_connect.workflow_engine import upstream
+
+	return upstream
+
+
+# THE ONE TABLE OF FIELD TYPES. A row per type: the control the inspector draws, the check the validator
+# applies, whether frappe-ui's own FormControl renders it, and the read kind the type IMPLIES.
+# `reads` is set only where a type can read exactly one way. `Code` and `Data` carry three and two
+# different semantics respectively across their fields, so those declare `reads` on the FIELD instead —
+# putting it here would force `Call API.request_body`, `Set Variables.assign` and `Wait.accepts` to share
+# one kind and the publish gate would extract references the wrong way for two of them, silently.
+def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_config=None):
 	"""Every rule a node must satisfy, in one place. Returns a list of `problem()` records.
 
 	Returns rather than throws so one save can report every problem at once — a builder that surfaces
 	them one per attempt makes the author fix a five-field node in five round trips.
+
+	`graph_config` is `{node_id: config}` for the graph this node sits in. A node whose outputs derive from
+	a SIBLING's declaration - a Wait drawing one branch per button its source node offers - cannot be
+	judged in isolation, so a caller that knows the graph passes it and one that does not still gets every
+	other rule.
 
 	`mode=DRAFT` defers the "this setting is required" rule and nothing else. A setting the type never
 	declared, a value outside its options, a malformed predicate or an edge on an undeclared output are
@@ -220,17 +330,19 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH):
 		value = config.get(field["name"])
 		if field.get("writes"):
 			problems.extend(problem(m, field["name"]) for m in _written_name_problems(node_type, config, field))
-		if field["type"] == "Requirements":
-			problems.extend(problem(m, field["name"]) for m in _requirement_problems(value, field))
-			continue  # a list of verbs, not a scalar — the generic option check below does not apply
-		if field["type"] == "Target":
-			continue  # a real doctype name, offered from the graph — no static option list to check against
-		if field["type"] == "Mapping":
-			problems.extend(problem(m, field["name"]) for m in _variable_problems(value, field))
-			continue  # a list of {path, variable} rows, not a scalar
-		if field["type"] == "Predicate":
-			problems.extend(problem(m, field["name"]) for m in _predicate_problems(value, field))
-			continue  # a tree, not a scalar
+		row = FIELD_TYPES[field["type"]]
+		if row["check"]:
+			problems.extend(problem(m, field["name"]) for m in row["check"](value, field))
+			continue  # a tree or a list of rows, not a scalar — the option check below cannot apply
+		kind = read_kind_of(field)
+		if kind and READ_KINDS[kind]["check"]:
+			found = READ_KINDS[kind]["check"](value)
+			if found:
+				problems.append(problem(found, field["name"]))
+		if field.get("writes") and WRITE_KINDS[field["writes"]]["check"]:
+			found = WRITE_KINDS[field["writes"]]["check"](config.get(field["name"]))
+			if found:
+				problems.append(problem(found, field["name"]))
 		options = field.get("options")
 		if value and isinstance(options, list) and value not in options:
 			problems.append(problem(
@@ -238,7 +350,7 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH):
 				field["name"],
 			))
 
-	allowed = set(outputs_for(node_type, config))
+	allowed = set(outputs_for(node_type, config, graph_config))
 	for output in sorted(set(edge_outputs or []) - allowed):
 		problems.append(problem(
 			_("{0} declares no output called {1}.").format(node_type, output)
@@ -373,6 +485,83 @@ def _requirement_problems(value, field):
 	return problems
 
 
+
+# `scalar` — does the stored value fit on a line as itself? A list or a tree does not, and a card that
+# prints one shows `[object Object]`. `summary` is how such a value is NAMED instead: `{"count": noun}`
+# renders "3 required", `{"phrase": text}` a fixed sentence where a count means nothing. Every non-scalar
+# type MUST declare a summary, and that pairing is locked — the card was the SEVENTH consumer of this
+# vocabulary to name types itself, and it named only three of the five it needed.
+FIELD_TYPES = {
+	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Select": {"control": "select", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Link": {"control": "link", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": None},
+	"Field": {"control": "field-picker", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
+	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
+	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
+	"Requirements": {"control": "requirements", "check": _requirement_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "required"}},
+	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
+	"Target": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+}
+
+
+def config_of(node):
+	"""A node's declared settings, as an object. THE one reader.
+
+	It was written out five times — `graph`, `interpreter`, `triggers` and twice in the node controller —
+	so a malformed blob had five chances to be handled five ways. `frappe.parse_json` is the platform's
+	own reader and is what the runtime already used; this only stops the fifth copy being written.
+	"""
+	return frappe.parse_json((node or {}).get("config_json") or "{}") or {}
+
+
+def read_kind_of(field):
+	"""The read kind this field resolves through — its TYPE's inherent kind, or the one it declares.
+
+	The ONE answer, so `contract._references` and the validator cannot disagree about what a field reads.
+	"""
+	return FIELD_TYPES[field["type"]]["reads"] or field.get("reads")
+
+
+def field_types():
+	"""The table as plain data for the inspector — the control and whether frappe-ui renders it. The
+	checks stay server-side; a control name is all the canvas needs to look one up."""
+	return {
+		name: {"control": row["control"], "primitive": row["primitive"], "summary": row["summary"]}
+		for name, row in FIELD_TYPES.items()
+	}
+
+
+@frappe.whitelist()
+def graph_outputs(nodes):
+	"""Every node's outputs, resolved for the graph it actually sits in. THE answer the canvas draws handles from.
+
+	`outputs_for` was re-implemented in JS — both resolution modes, `rows_from` included — under a comment
+	claiming it mirrored this module exactly. Nothing checked the claim, and that function rendered zero
+	nodes for a day. The canvas cannot ask a per-node endpoint for this: a Wait's outputs are a fact about
+	ANOTHER node's config, so the question is only answerable for a whole graph at once.
+
+	Answers for an UNSAVED graph, like every other authoring endpoint — handles have to redraw while the
+	author is still wiring, which is the only moment they matter.
+	"""
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	nodes = frappe.parse_json(nodes) if isinstance(nodes, str) else (nodes or [])
+	graph_config = {n["node_id"]: config_of(n) for n in nodes if n.get("node_id")}
+	return {
+		node["node_id"]: list(outputs_for(node["node_type"], graph_config[node["node_id"]], graph_config))
+		for node in nodes
+		if node.get("node_id")
+	}
+
+
 def _applies(field, config) -> bool:
 	"""Is this field in play, given the config? A field gated on another field's value is not required
 	while that gate is shut — a Wait on a pure timer must not be asked for an event name."""
@@ -455,10 +644,27 @@ def _scoped(field):
 	return {**field, "grain_scoped": True, "scope_kind": kind}
 
 
-def _wire(field):
-	"""One config field as the BUILDER receives it: grain scoping, plus any vocabulary its control would
-	otherwise have to re-type. Computed per request for the same reason `_scoped` is."""
-	return _value_modes(_scoped(field))
+def _wire(field, outputs_rule=None):
+	"""One config field as the BUILDER receives it: grain scoping, the vocabulary its control would
+	otherwise re-type, WHICH CONTROL to draw, and how a card names its value.
+
+	The control travels with the field so the inspector looks one up instead of carrying its own ladder of
+	type names. That ladder was the sixth consumer of the type vocabulary and the only one Python could not
+	lock — adding `Button List` meant remembering to edit a `v-if` chain in a .vue file.
+
+	`shapes_outputs` marks the ONE field a type keys its outputs on, so the canvas knows when handles must
+	be re-resolved without reading the resolution rule to find out. The inspector used to answer that by
+	reaching into `declaration.outputs_by.field` — interpreting the rule to decide when to ask about it.
+	"""
+	shaped = _value_modes(_scoped(field))
+	row = FIELD_TYPES[shaped["type"]]
+	return {
+		**shaped,
+		"control": row["control"],
+		"primitive": row["primitive"],
+		"summary": row["summary"],
+		"shapes_outputs": bool(outputs_rule) and field["name"] == outputs_rule.get("field"),
+	}
 
 
 def _value_modes(field):
@@ -472,7 +678,7 @@ def _value_modes(field):
 	Imported lazily: `contract` reaches `registry`, which builds its verb node types out of `actions` —
 	at module scope this is a cycle.
 	"""
-	if field.get("reads") != "value_rows":
+	if read_kind_of(field) != "value_rows":
 		return field
 
 	from tatva_connect.workflow_engine import contract
@@ -504,6 +710,10 @@ def node_types():
 
 	One endpoint: the frontend hardcodes no node type, no config field and no output name. A type added
 	here appears in the palette, renders its own inspector and validates itself, with no frontend change.
+
+	`outputs_by` is deliberately NOT shipped. It is a RESOLUTION RULE, and the canvas re-implemented it the
+	whole time it was on the wire. Resolved outputs come from `graph_outputs`, which can see the whole
+	graph; a rule handed to a client is an invitation to interpret it, and the invitation was accepted.
 	"""
 	return [
 		{
@@ -511,9 +721,8 @@ def node_types():
 			"label": declared["label"],
 			"description": declared["description"],
 			"singleton": declared.get("singleton", False),
-			"config": [_wire(f) for f in declared["config"]],
+			"config": [_wire(f, declared.get("outputs_by")) for f in declared["config"]],
 			"outputs": declared.get("outputs"),
-			"outputs_by": declared.get("outputs_by"),
 			"outcomes": outcomes_for(node_type),
 		}
 		for node_type, declared in NODE_TYPES.items()

@@ -22,7 +22,7 @@ class CRMWorkflowNode(Document):
 		"""This node's configuration as a dict. Invalid JSON is a validation error, not a crash later —
 		the interpreter reads this at run time, long after the author has gone."""
 		try:
-			return frappe.parse_json(self.config_json or "{}") or {}
+			return registry.config_of(self)
 		except Exception:
 			frappe.throw(_("Configuration is not valid JSON."), title=_("Bad configuration"))
 
@@ -36,12 +36,26 @@ class CRMWorkflowNode(Document):
 		# at publish, by the graph contract — not here, where it would refuse to save work in progress.
 		problems = registry.validate_node(
 			self.node_type, self.config(), [e.from_output for e in self.edges or []],
-			mode=registry.DRAFT,
+			mode=registry.DRAFT, graph_config=self._graph_config(),
 		)
 		if problems:
 			frappe.throw(
 				"<br>".join(p["message"] for p in problems), title=_("This node is not valid")
 			)
+
+	def _graph_config(self):
+		"""`{node_id: config}` for this node's siblings — what a Wait needs to know which buttons the node
+		it waits on OFFERS. A node whose outputs derive from a sibling cannot be judged alone, and judging
+		it alone is what rejected a correctly-wired button branch at save."""
+		if not self.workflow:
+			return {}
+		rows = frappe.get_all(
+			"CRM Workflow Node", filters={"workflow": self.workflow},
+			fields=["node_id", "config_json"],
+		)
+		graph = {r.node_id: registry.config_of(r) for r in rows}
+		graph[self.node_id] = self.config()
+		return graph
 
 	def validate_unique_node_id(self):
 		"""`node_id` is what an edge points at and what a parked Run stores as its cursor. Two nodes

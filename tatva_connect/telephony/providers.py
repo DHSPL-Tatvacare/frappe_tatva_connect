@@ -8,7 +8,7 @@ telephony provider is: write an adapter module exposing the surface below, regis
 add the Select option. No call-site changes, no parallel spines, no parallel brains.
 
 Adapter surface (duck-typed — already the shape of telephony/api.py):
-    click_to_call · get_call_records · normalize_number · base_url_of ·
+    click_to_call · get_call_records · base_url_of ·
     is_enabled · assert_enabled
 
 Outbound only. The INBOUND webhook adapter is registered separately, in webhooks/registry.py, because

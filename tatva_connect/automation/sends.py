@@ -99,7 +99,7 @@ def template_account_mismatch(template_name, account_name) -> str | None:
 	return f"template {template_name} belongs to account {template_account}, but the resolved account is {account_name}"
 
 
-def send_whatsapp(subject_lead, template_name, context=None, values=None):
+def send_whatsapp(subject_lead, contact_number, template_name, context=None, values=None, correlation=None):
 	"""Validate and resolve a template send to `subject_lead`'s `mobile_no`, then RETURN
 	`(output, deferred-thunk-or-marker)` instead of sending inline (R1, post-audit remediation). Every
 	check that can fail the segment (blank config, no routing, a disabled account, a template/account
@@ -115,15 +115,27 @@ def send_whatsapp(subject_lead, template_name, context=None, values=None):
 	`_output`, which `interpreter._verb_output` validates against the verb's DECLARED outputs. While
 	dormant the answer is `(SENT, marker)` - nothing to defer, nothing was queued.
 
+	`contact_number` is the REF the node declared, resolved here against run state. The lead's `mobile_no` is no longer read
+	here and there is no fallback to it: the author picks the contact field, and a recipient that resolves
+	to nothing is a routable refusal rather than a quiet substitution. Nobody choosing the recipient is
+	what put a real patient's message on a stranger's phone in another country.
+
+	`correlation` is the engine's own token for the node that is sending (`run::node`). It is carried
+	all the way to the `WhatsApp Message` row, which is what lets a delivery receipt arriving seconds
+	later wake THIS run rather than another run parked on the same lead. The provider's id does not exist
+	yet at this point - the run parks before the send job runs - so the token is what travels, and the row
+	is where the two identities finally meet.
+
 	`values` is the node's DECLARED template mapping, and it is the whole reason a placeholder is no
 	longer an invisible read of run state. `_template_parameters` builds the outbound list from it - this
 	stays the one and only place outbound WhatsApp parameters are assembled."""
 	if not template_name:
 		raise ValueError("Send WhatsApp action has no WhatsApp Template configured")
 	lead = frappe.get_doc("CRM Lead", subject_lead)
-	recipient = lead.get("mobile_no")
+	# A pure REFERENCE read. `resolve_recipient` is deliberately not used: it carries a literal path for Send Email's typed addresses, and a phone number must never be typed into a node.
+	recipient = (context or {}).get(contact_number) if contact_number else None
 	if not recipient:
-		return FAILED, f"failed: lead {subject_lead} has no mobile_no to send to"
+		return FAILED, f"failed: {contact_number or 'no contact number'} resolved to no number for lead {subject_lead}"
 
 	if not sends_enabled():
 		return SENT, DORMANT_MARKER
@@ -143,6 +155,11 @@ def send_whatsapp(subject_lead, template_name, context=None, values=None):
 	if mismatch:
 		raise ValueError(f"Send WhatsApp: lead {subject_lead} - {mismatch}")
 
+	# The one gate, after the author-error checks above so a broken node stays loud whatever this patient's data looks like.
+	to_number, refusal = channel.screen_send(adapter, recipient, "CRM Lead", subject_lead)
+	if refusal:
+		return FAILED, f"failed: {refusal}"
+
 	parameters, blank = _template_parameters(adapter, account, template, values, context if context is not None else {})
 	if blank:
 		return FAILED, "failed: {} resolved to nothing, so the message would have gone out with a blank in it".format(
@@ -150,12 +167,15 @@ def send_whatsapp(subject_lead, template_name, context=None, values=None):
 		)
 	return SENT, lambda: frappe.enqueue(
 		"tatva_connect.automation.sends._deliver_whatsapp",
+		# Named, not defaulted: `default` is consumed by BOTH worker services, so an unnamed send rides the same lane as the sweep that rescues parked runs.
+		queue="workflow",
 		enqueue_after_commit=True,
 		account_name=account_name,
-		to_number=channel.normalize_number(recipient),
+		to_number=to_number,
 		template=template_name,
 		parameters=parameters,
 		lead=subject_lead,
+		correlation=correlation,
 	)
 
 
@@ -228,7 +248,7 @@ def template_slots(template):
 	return resolve.adapter_for(account).template_variables(account, frappe.get_doc("WhatsApp Templates", template))
 
 
-def _deliver_whatsapp(account_name, to_number, template, parameters, lead):
+def _deliver_whatsapp(account_name, to_number, template, parameters, lead, correlation=None):
 	"""The deferred delivery `send_whatsapp` enqueues (R1). Runs inside the background job
 	`enqueue_after_commit=True` schedules - after the rule's segment has actually committed, never
 	before, so a rolled-back segment (nothing was ever enqueued) never reaches this function at all.
@@ -279,7 +299,7 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead):
 	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, the provider call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
 	try:
 		frappe.db.savepoint(_RECORD_SAVEPOINT)
-		_record_sent_message(account_name, to_number, template, parameters, result.correlation_id, lead)
+		_record_sent_message(account_name, to_number, template, parameters, result.correlation_id, lead, correlation, result.wamid)
 	except Exception:
 		try:
 			frappe.db.rollback(save_point=_RECORD_SAVEPOINT)
@@ -291,7 +311,7 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead):
 			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports
 
 
-def _record_sent_message(account_name, to_number, template, parameters, message_id, lead):
+def _record_sent_message(account_name, to_number, template, parameters, message_id, lead, correlation=None, wamid=None):
 	"""File the sent template on the lead. The row can NEVER re-send, by four independent guards:
 	`flags.tatva_ingested` short-circuits the controller's `send_outgoing` before any adapter call (the only
 	send seam an insert reaches); `send_outgoing` is called from `before_insert` and from the BULK
@@ -316,70 +336,109 @@ def _record_sent_message(account_name, to_number, template, parameters, message_
 		"whatsapp_account": account_name,
 		"reference_doctype": "CRM Lead",
 		"reference_name": lead,
+		# The two identities meet HERE and nowhere else: the provider's id and the run+node that sent it.
+		"custom_workflow_correlation": correlation,
+		# The tap-join key. `message_id` above stays the localMessageId, which is the only id status events echo.
+		"custom_outbound_wamid": wamid,
 	})
 	doc.flags.tatva_ingested = True  # already on the wire — the controller must not send it a second time
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — background job, no user context; the send was already gated by routing + adapter.assert_enabled
 
 
-def resolve_recipient(declared, context):
-	"""The address to send to, from a field DECLARED `Variable, free_text` — the fix for defect 3.
+def email_template_slots(template):
+	"""The named slots an `Email Template` really has — the EMAIL TWIN of `template_slots`, not a branch.
 
-	`email_recipient` is declared a Variable, `contract.reads_of` treats a bare identifier as a run-state
-	reference, and `graph._reference_problems` ENFORCES that something upstream produces it. The handler
-	then passed the raw string to `frappe.sendmail` as the address. So an author wiring
-	`Set Variables → {"escalation_email": "asm@…"}` and naming `escalation_email` as the recipient got a
-	green publish that ACTIVELY CERTIFIED the configuration, and Frappe queued mail to the literal string
-	`"escalation_email"`. The declaration and the runtime disagreed, and publish sided with the wrong one.
+	A WhatsApp template carries positional `{{1}}` slots the provider declares; an Email Template carries
+	NAMED Jinja variables in its subject and its body. Same mapping control for the author, two readers,
+	because the two questions have two different sources of truth.
 
-	Resolving is the right half to keep, not dropping the declaration: an author naming an upstream value
-	as the recipient is a real and necessary pattern (escalate to whoever the Call API said owns this
-	patient), and it is the pattern the gate was already built to check. Dropping the declaration would
-	delete a working check to match a broken runtime.
-
-	The SAME predicate decides both sides — `contract.is_free_text_reference`. That is what makes them
-	agree by construction rather than by two authors remembering the same rule. A literal address still
-	works, and must: most authors type one.
+	Read with Jinja's own parser rather than a regex: `meta.find_undeclared_variables` is what actually
+	decides what a template will ask for at render time, so the author is offered exactly the names
+	`frappe.render_template` will look up. A regex would drift from the renderer the first time a template
+	used a filter or a block.
 	"""
-	from tatva_connect.workflow_engine import (
-		contract,  # lazy: registry imports actions, which imports this module
-	)
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+	row = frappe.db.get_value("Email Template", template, ["subject", "use_html", "response_html", "response"], as_dict=True)
+	if not row:
+		return []
 
-	if not contract.is_free_text_reference(declared):
-		return declared
-	return context.get(declared) if context is not None else None
+	from jinja2 import Environment, meta
+
+	env = Environment()  # nosec B701 — parsed for variable names only; rendering goes through frappe.render_template
+	body = row.response_html if row.use_html else row.response
+	found = set()
+	for source in (row.subject, body):
+		found |= meta.find_undeclared_variables(env.parse(source or ""))
+	return sorted(found)
 
 
-def send_email(subject_lead, recipient, subject, body, context=None):
-	"""Queue (or, while dormant, record) a plain email. Returns `(output, marker)` — see this module's
-	docstring for which failures route and which raise.
+def send_email(subject_lead, contact_email, template_name, context=None, values=None):
+	"""Queue (or, while dormant, record) a templated email. Returns `(output, marker)`.
 
-	`context` resolves the recipient (see `resolve_recipient`); `email_subject`/`email_body` are plain
-	literal fields today.
+	The structural twin of `send_whatsapp`: the recipient is a DECLARED reference, the body comes from a
+	picked `Email Template`, and the template's named slots are filled from the node's declared mapping.
 
-	No `now=True` (R1, post-audit remediation): `frappe.sendmail` then only inserts an Email Queue row,
-	a normal DB write that rides the rule's own segment transaction - a rollback removes the queued row
-	with everything else it undid, so a later sibling action's failure means the mail never sends. This
-	is the most native ride-the-transaction fix; unlike Send WhatsApp it needs no deferred thunk, the
-	queue itself is the ride."""
-	if not recipient:
-		raise ValueError("Send Email action has no recipient configured")
-	if not subject:
-		raise ValueError("Send Email action has no subject")
-	if not body:
-		raise ValueError("Send Email action has no body")
+	`contact_email` is resolved as a PURE reference. The old `resolve_recipient` is deleted rather than
+	reused: it treated anything that did not look namespaced as a literal address, so a typed string was
+	mailed as-is. That is the same hole as the typed phone number that reached a stranger in Turkey.
 
-	address = resolve_recipient(recipient, context)
+	No `now=True`: `frappe.sendmail` only inserts an Email Queue row, a normal DB write that rides the
+	rule's own segment transaction, so a rolled-back segment sends nothing.
+	"""
+	if not template_name:
+		raise ValueError("Send Email action has no Email Template configured")
+	address = (context or {}).get(contact_email) if contact_email else None
 	if not address:
-		return FAILED, f"failed: {recipient} resolved to no address for lead {subject_lead}"
+		return FAILED, f"failed: {contact_email or 'no recipient'} resolved to no address for lead {subject_lead}"
+
+	slots = email_template_slots(template_name)
+	filled, blank = _slot_values(template_name, slots, values, context if context is not None else {})
+	if blank:
+		return FAILED, "failed: {} resolved to nothing, so the email would have gone out with a blank in it".format(
+			", ".join(sorted(blank))
+		)
 
 	if not sends_enabled():
 		return SENT, DORMANT_MARKER
 
+	row = frappe.db.get_value("Email Template", template_name, ["subject", "use_html", "response_html", "response"], as_dict=True)
+	body = row.response_html if row.use_html else row.response
 	frappe.sendmail(
 		recipients=[address],
-		subject=subject,
-		message=body,
+		subject=frappe.render_template(row.subject or "", filled),
+		message=frappe.render_template(body or "", filled),
 		reference_doctype="CRM Lead",
 		reference_name=subject_lead,
 	)
 	return SENT, f"queued: to={address}"
+
+
+def _slot_values(template_name, slots, values, ctx):
+	"""Fill the template's named slots from the node's DECLARED mapping. Returns `(filled, blank)`.
+
+	The same split `_template_parameters` makes for WhatsApp, for the same reasons: a slot with NO declared
+	row RAISES because it is author error wrong for every record equally, while a declared row that
+	RESOLVES BLANK routes to `failed` because that is a data state - and either way nothing goes out with
+	a hole in it.
+	"""
+	from tatva_connect.workflow_engine import contract
+
+	declared = contract.value_rows_map(values)
+	missing = [name for name in slots if name not in declared]
+	if missing:
+		raise ValueError(
+			"Send Email: template {} has no value declared for {} - every slot needs a row".format(
+				template_name, ", ".join(missing)
+			)
+		)
+
+	filled, blank = {}, []
+	for name in slots:
+		mode, value = declared[name]
+		resolved = ctx.get(value) if mode == contract.FROM_CONTEXT else value
+		if resolved is None or str(resolved) == "":
+			blank.append(name)
+			continue
+		filled[name] = str(resolved)
+	return filled, blank

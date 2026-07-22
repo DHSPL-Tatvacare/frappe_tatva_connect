@@ -22,6 +22,7 @@ Observed vocabularies, and nothing outside them:
 import frappe
 from frappe import parse_json
 
+from tatva_connect import phone
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony import resolve, writer
 
@@ -185,7 +186,7 @@ def _numbers(payload: dict, direction: str):
 	else:
 		customer, did = (dialled or spare), origin
 
-	return env.phone_digits(customer), env.phone_digits(did)
+	return phone.match_digits(customer, last=10), phone.match_digits(did, last=10)
 
 
 def _status(payload: dict, event) -> str:

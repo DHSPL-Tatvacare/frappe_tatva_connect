@@ -26,7 +26,7 @@ the agent's email. Nothing in the mapping is a guess.
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect import automation
+from tatva_connect import automation, phone
 from tatva_connect.telephony import api as acefone
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony import routing, writer
@@ -125,7 +125,7 @@ def _records_for_number(account_doc, number: str, days: int) -> list:
 	"""This lead's records out of the account's window.
 
 	The API takes a date range and ignores a customer-number filter, so the match is made here, on the
-	last-10 digits — the same reduction `envelope.phone_digits` applies to every number in the app.
+	last-10 digits — the same reduction `phone.match_digits(…, last=10)` applies everywhere in the app.
 	"""
 	now = now_datetime()
 	from_date = add_to_date(now, days=-int(days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -139,7 +139,7 @@ def _records_for_number(account_doc, number: str, days: int) -> list:
 		rows = _rows_from_report(resp)
 		if not rows:
 			break
-		mine.extend(r for r in rows if env.phone_digits(r.get("client_number")) == number)
+		mine.extend(r for r in rows if phone.match_digits(r.get("client_number"), last=10) == number)
 		if len(rows) < PAGE_SIZE:
 			break
 	else:
@@ -166,7 +166,7 @@ def reconcile_lead(lead_name: str, days: int = 7, dry_run: bool = True) -> dict:
 	account = routing.resolve_account_for_lead(lead)
 	if not account:
 		return {"ok": False, "reason": "no telephony route for this lead"}
-	number = env.phone_digits(lead.get("mobile_no"))
+	number = phone.match_digits(lead.get("mobile_no"), last=10)
 	if not number:
 		return {"ok": False, "reason": "lead has no mobile number"}
 

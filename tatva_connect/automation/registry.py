@@ -428,6 +428,24 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Access::Grain::registry",
+		fires_on="Permission",
+		trigger_detail="access/entitlement · entitled_grains + grain_entitled source",
+		purpose=(
+			"A user's business slice — product line, group, program — is read from the permissions they "
+			"already hold, and a lead may only be filed under a combination the operator has declared in "
+			"the grain registry. This reaches the people the old source never did: a manager, and a rep "
+			"entitled to a whole group, both resolve to their true slice instead of to nothing. Off, "
+			"which is how it ships, the slice is read from Assignment Rule membership exactly as before "
+			"and the registry is not consulted.\n"
+			"Example: a rep who covers all of Anaya opens a patient enrolled in any of its programs and "
+			"sees that patient's full record, where before the tab came up empty."
+		),
+		# A gate inside access/entitlement (keyed on this row), NOT a doc_event — so backs is empty, like
+		# the visibility rows. Drift walks only doc_event/scheduler paths.
+		backs=[],
+	),
+	Auto(
 		key="Task::CRM Task::visibility",
 		fires_on="Permission",
 		trigger_detail="CRM Task · permission_query_conditions + has_permission",

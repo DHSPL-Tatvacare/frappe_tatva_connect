@@ -66,13 +66,17 @@ BEFORE = "__before"
 
 # A source is a node id or a doctype slug. Both are `frappe.scrub`-shaped, so both are plain identifiers.
 # Enforced rather than assumed: without it `ops@tatvacare.in` parses as source `ops@tatvacare`, field
-# `in` — and `contract.is_free_text_reference` would then demand an upstream producer for every literal
+# `in` — and the publish gate would then demand an upstream producer for every literal
 # email address an author types.
 _SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # The engine's own namespace. Replaces the four scattered reserved names (`_token`, `_emitted`, `_corr`,
 # `_output`): an author's value is written under its NODE, so it can no longer land on engine bookkeeping
 # at all. Structural, not a check.
+# The prefix marking a value inside a JSON map as a run-state reference. Declared HERE because both the
+# contract and the action layer spell it, and contract imports registry which builds itself from actions.
+CTX_PREFIX = "$ctx."
+
 ENGINE = "_engine"
 
 TOKEN = f"{ENGINE}{SEP}token"

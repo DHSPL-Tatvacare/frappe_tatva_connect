@@ -56,7 +56,7 @@
    "label": "Outcome",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "What happened - ok, parked, resumed, done, or failed."
+   "description": "What happened at this node. For a node that runs a verb this is the verb's own DECLARED output - sent, failed, succeeded, assigned, nobody - so the audit says whether the thing actually happened. For a control node it is ok, parked, resumed, done, or failed."
   },
   {
    "fieldname": "detail",

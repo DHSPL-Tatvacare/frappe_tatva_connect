@@ -27,6 +27,90 @@ INSTANCE_DT = interpreter.INSTANCE_DT
 SIGNAL_DT = interpreter.SIGNAL_DT
 _PAGE_LIMIT = 200  # a sane cap per sweep — a huge backlog drains over several sweeps, not one giant job
 
+# The lane Frappe's own scheduler does not manage, so our RQ scheduler can service it without two
+# schedulers fighting. Registered in common_site_config `workers`, exactly as `partner_bulk` is.
+WAKE_QUEUE = "workflow"
+_WAKE_TIMEOUT = 1500
+
+
+def schedule_wake(name, resume_at):
+	"""Set the alarm for a parked run. The diary row is already written; this only makes it PUNCTUAL.
+
+	`frappe.enqueue` has no delay parameter, and Frappe hard-disables RQ's scheduler on both worker paths
+	(`background_jobs.py:359`, `:364-366`) so that its own scheduler is the only one running. That is a
+	reason not to run two schedulers, not a reason to reject delayed work: a queue Frappe's scheduler does
+	not manage is an empty lane. `enqueue_at` takes the identical job `enqueue_call` already builds, so
+	this mirrors `queue_args` and adds nothing to the queue layer.
+
+	AFTER COMMIT, always: the alarm must not exist for a segment that rolled back. Deduplicated on the run
+	name so a re-park cannot stack alarms. The payload is the NAME — `drive_instance` re-reads the row and
+	re-claims it, so a stale or duplicated job is a no-op and a lost one is caught by the sweep.
+	"""
+	from frappe.utils.background_jobs import create_job_id, get_queue
+
+	queue_args = {
+		"site": frappe.local.site,
+		"user": frappe.session.user,
+		"method": "tatva_connect.workflow_engine.wakeups.drive_instance",
+		"event": None,
+		"job_name": "workflow-wake",
+		"is_async": True,
+		"kwargs": {"name": name},
+	}
+	job_id = create_job_id(f"workflow-wake::{name}")
+	due = frappe.utils.get_datetime(resume_at)
+
+	def alarm():
+		queue = get_queue(WAKE_QUEUE)
+		_forget_wake(queue, job_id)
+		queue.enqueue_at(
+			_as_utc(due),
+			"frappe.utils.background_jobs.execute_job",
+			kwargs=queue_args,
+			job_timeout=_WAKE_TIMEOUT,
+			job_id=job_id,
+		)
+
+	frappe.db.after_commit.add(alarm)
+
+
+def _as_utc(due):
+	"""RQ schedules in UTC; `resume_at` is written in the site's timezone. Converted once, here, because a
+	timezone bug in an alarm is invisible until a patient is messaged at the wrong hour."""
+	from datetime import timezone
+	from zoneinfo import ZoneInfo
+
+	if due.tzinfo is None:
+		due = due.replace(tzinfo=ZoneInfo(frappe.utils.get_system_timezone()))
+	return due.astimezone(timezone.utc)
+
+
+def run_wake_scheduler(interval=1):
+	"""Service the alarms on the workflow lane. Runs as its own process, forever.
+
+	Frappe starts its own scheduler inside `FrappeWorker` and passes `with_scheduler=False` to RQ so the
+	two cannot both run. This lane is not one Frappe's scheduler manages, so an RQ scheduler here services
+	due alarms without contending with it. The W4 spike found a standalone process far easier to observe
+	than the one `Worker.work(with_scheduler=True)` forks, and the per-queue Redis lock (TTL =
+	interval + 60) already guarantees only one is ever moving jobs.
+
+	IT IS NOT LOAD-BEARING. Kill it and every run still wakes, late, off the sweep — which is exactly what
+	covers the ~61s window while a dead scheduler's lock expires.
+	"""
+	from frappe.utils.background_jobs import generate_qname, get_redis_conn
+	from rq.scheduler import RQScheduler
+
+	RQScheduler([generate_qname(WAKE_QUEUE)], connection=get_redis_conn(), interval=interval).work()
+
+
+def _forget_wake(queue, job_id):
+	"""Drop any alarm already set for this run, so a re-park replaces rather than stacks."""
+	from rq.registry import ScheduledJobRegistry
+
+	registry = ScheduledJobRegistry(queue=queue)
+	if job_id in registry.get_job_ids():
+		registry.remove(job_id, delete_job=True)
+
 
 def sweep():
 	"""The scheduled tick: timer wake, signal backstop, stale-signal purge. Double-gated (engine + sweep)."""

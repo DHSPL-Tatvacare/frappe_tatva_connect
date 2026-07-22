@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""What values are available AT a node — collected by walking the graph backwards from it.
+"""What is available AT a node — values and emitting nodes alike — by walking the graph backwards from it.
 
 An author configuring a Branch has to name a field. Until now the only way to do that was to type it,
 from memory, with nothing checking the spelling: a typo produced a condition that looked right, never
@@ -89,6 +89,47 @@ def _ancestors(by_id, node_id):
 	return order
 
 
+def node_label(node_id, node_type):
+	"""How a PERSON is told which node something came from — composed once, for every consumer.
+
+	The author's own node id leads; the type follows so a bare `n3` still says what it is. The inspector
+	spelt this itself for the Wait's picker while the value picker read it from here, so one graph could
+	show the same node under two spellings.
+	"""
+	return _("{0} · {1}").format(node_id, _(registry.declaration(node_type)["label"]))
+
+
+def emitters_at(nodes, node_id):
+	"""The nodes a Wait at `node_id` may legitimately wait on, with the outcomes each reports.
+
+	THE SAME `_ancestors` WALK `available_at` USES, and that is the whole point. Position decides what a
+	node can see — values AND outcomes — so both answers come out of one walk rather than a JS filter that
+	knew nothing about position. The canvas offered every emitting node in the graph including its own
+	descendants; publish then refused the result with "does not always run before it".
+
+	Two facts per entry because the inspector renders two pickers from them and they must not disagree:
+	the node, and what that node reports. `outcomes` is read from the node's declaration, never from a
+	frontend copy of it.
+
+	A node that emits nothing is left out: waiting on it builds a park nothing can ever satisfy.
+	"""
+	by_id = {n.get("node_id"): n for n in nodes if n.get("node_id")}
+	if node_id not in by_id:
+		return []
+
+	found = []
+	for ancestor_id in _ancestors(by_id, node_id):
+		node_type = by_id[ancestor_id].get("node_type")
+		outcomes = list(registry.outcomes_for(node_type))
+		if outcomes:
+			found.append({
+				"node_id": ancestor_id,
+				"label": node_label(ancestor_id, node_type),
+				"outcomes": outcomes,
+			})
+	return found
+
+
 def _shaped(name, ftype, label, source, source_label):
 	"""One field, in the builder contract's own shape — `{key, label, type, source, source_label}`.
 
@@ -117,8 +158,7 @@ def _emitted_by(node):
 
 	emitted = [*emitted, *_declared_writes(node, config)]
 
-	# The author's own node id leads the group label; the type follows so a bare `n3` still says what it is.
-	group = _("{0} · {1}").format(node["node_id"], _(registry.declaration(node["node_type"])["label"]))
+	group = node_label(node["node_id"], node["node_type"])
 	return [
 		_shaped(
 			refs.of_node(node["node_id"], value["name"]), value.get("type"), value.get("about"),
@@ -149,15 +189,6 @@ def _payload_map_keys(value):
 	return {str(key) for key in interpreter.accepts_map(value).values() if key}
 
 
-# How to enumerate the keys a field declaring `writes=<kind>` contributes. ONE mechanism, one resolver
-# per kind: a node type declares the kind on the field and needs no other change anywhere. A resolver
-# returning None means "cannot be enumerated", which makes the node an opaque writer.
-_WRITE_KINDS = {
-	"expression_dict": _expression_dict_keys,
-	"payload_map": _payload_map_keys,
-}
-
-
 def _write_fields(node, config):
 	"""Every configured field on this node that declares `writes`, with the keys it contributes.
 
@@ -169,7 +200,7 @@ def _write_fields(node, config):
 		kind = field.get("writes")
 		if not kind or not config.get(field["name"]):
 			continue
-		yield field, _WRITE_KINDS[kind](config[field["name"]])
+		yield field, registry.WRITE_KINDS[kind]["keys"](config[field["name"]])
 
 
 def write_fields_of(node_type, config):

@@ -25,6 +25,7 @@ from unittest import mock
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.channels import contract
 from tatva_connect.channels import event as channel_event
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.whatsapp import channel, ingest, recovery, transport
@@ -474,6 +475,7 @@ class TestWhatsAppRecovery(FrappeTestCase):
 		mute = adapter.DECLARATION.__class__(
 			channel="whatsapp", provider="Mute", account_doctype="WhatsApp Account",
 			outcomes=frozenset({"delivered"}), capabilities=frozenset(),
+			number_format=contract.E164_PLAIN,
 		)
 		payload = _status_payload()
 		with mock.patch.object(adapter, "DECLARATION", mute), mock.patch.object(frappe, "enqueue") as enqueued:

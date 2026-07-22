@@ -85,18 +85,30 @@ class ChannelWhatsAppMessage(WhatsAppMessage):
 			if not self.message_id:
 				self.send_template()
 			return
+		to_number = self._screened(adapter)
 		# Session message: an attachment (media) or free-text.
 		if self.attach and self.content_type in ("document", "image", "video", "audio"):
-			result = self._send_attachment(account, adapter)
+			result = self._send_attachment(account, adapter, to_number)
 		else:
-			result = adapter.send_session(account, self.to, self.message or "")
+			result = adapter.send_session(account, to_number, self.message or "")
 		self._apply_send_result(result)
 		if self.attach and self.content_type in ("document", "image", "video", "audio") \
 		   and self.reference_doctype == "CRM Lead" and self.reference_name:
 			from tatva_connect.whatsapp import media as media_module
 			self.attach = media_module.adopt_outbound_media(self.attach, self.reference_name, self.message_id)
 
-	def _send_attachment(self, account, adapter):
+	def _screened(self, adapter):
+		"""The one gate, for a surface with no graph to route down. A rep is not an author and has no
+		`failed` edge, so a refusal has to be a message they can read and act on — a silent drop would
+		leave them believing a clinical message went out."""
+		number, refusal = channel.screen_send(adapter, self.to, self.reference_doctype, self.reference_name)
+		if refusal:
+			frappe.throw(
+				_("This WhatsApp message was not sent: {0}").format(refusal), title=_("Send refused")
+			)
+		return number
+
+	def _send_attachment(self, account, adapter, to_number):
 		"""Send the row's attachment through the provider (the file itself, not its name).
 
 		Our own File rows (incl. Azure-backed proxy URLs) always send as BYTES — the provider cannot
@@ -111,9 +123,9 @@ class ChannelWhatsAppMessage(WhatsAppMessage):
 			fd = frappe.get_doc("File", filedoc)
 			filename = fd.file_name or self.attach.split("/")[-1]
 			mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-			return adapter.send_media(account, self.to, filename, fd.get_content(), mimetype, caption)
+			return adapter.send_media(account, to_number, filename, fd.get_content(), mimetype, caption)
 		# Not one of our File rows -> a true external URL.
-		return adapter.send_media_url(account, self.to, self.attach, caption)
+		return adapter.send_media_url(account, to_number, self.attach, caption)
 
 	def send_template(self):
 		account = self._channel_account()
@@ -122,12 +134,13 @@ class ChannelWhatsAppMessage(WhatsAppMessage):
 			return
 		channel.assert_enabled()
 		adapter = resolve.adapter_for(account)
+		to_number = self._screened(adapter)
 		template = frappe.get_doc("WhatsApp Templates", self.template)
 		variables = self._body_parameters(template, adapter, account)
 		# Save the resolved values so the CRM WhatsApp tab renders {{N}} filled (crm substitutes the display from template_parameters).
 		if variables:
 			self.template_parameters = frappe.as_json([v["value"] for v in variables])
-		self._apply_send_result(adapter.send_template(account, self.to, template, variables))
+		self._apply_send_result(adapter.send_template(account, to_number, template, variables))
 
 	def notify(self, data):
 		"""Backstop (guardrail #5): an adapter-backed account must never reach Meta's notify().

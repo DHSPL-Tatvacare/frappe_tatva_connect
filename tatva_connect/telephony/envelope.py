@@ -70,16 +70,6 @@ def build(
 	)
 
 
-def phone_digits(value) -> str:
-	"""Reduce a number to its last-10 subscriber digits; '' when it is not a full number.
-
-	A provider sends the same number both ways — '9911232686' and '+919911232686' — so normalizing
-	at the envelope boundary keeps two spellings of one number out of everything below.
-	"""
-	digits = re.sub(r"\D", "", str(value or ""))
-	return digits[-10:] if len(digits) >= PHONE_MIN_DIGITS else ""
-
-
 def parse_timestamp(value):
 	"""Parse a provider timestamp, or None when it cannot be read. Never guessed."""
 	if value in (None, "", "0"):

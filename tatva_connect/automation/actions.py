@@ -667,7 +667,10 @@ def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
 
 	output, result = sends.send_whatsapp(
 		resolve_target(action, lead, trigger_doc)[1],
+		action.contact_number,
 		action.whatsapp_template, context, action.template_values,
+		# The token `_run_verb` minted for THIS node, so a delivery receipt can find this run and no other.
+		correlation=context.get(refs.TOKEN),
 	)
 	context[refs.OUTPUT] = output
 	return result
@@ -680,7 +683,7 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 
 	output, result = sends.send_email(
 		resolve_target(action, lead, trigger_doc)[1],
-		action.email_recipient, action.email_subject, action.email_body, context,
+		action.email_recipient, action.email_template, context, action.template_values,
 	)
 	context[refs.OUTPUT] = output
 	return result
@@ -879,14 +882,20 @@ VERBS = {
 		# A send that did not reach the patient is DATA the author routes, not an exception that kills the
 		# run. The split between the two edges lives in `sends`; the names come from there too.
 		"outputs": [sends.SENT, sends.FAILED],
+		# The LATER events this send can emit come from the adapter's own declaration, never from a list typed here — see `outcomes_of`. `sent`/`failed` are the synchronous answer above and are excluded there.
+		"outcomes_channel": "whatsapp",
 		"params": [
+			# The recipient is DECLARED, in every trigger mode - the same field with the same picker, never conditional on anything else in the graph. Picked, never typed: a typed number is how a message reached the wrong country.
+			{"name": "contact_number", "label": "Contact number", "type": "Variable", "reqd": True},
 			{"name": "whatsapp_template", "label": "Template", "type": "Link",
 			 "link": "WhatsApp Templates", "reqd": True},
+			# Which buttons this send OFFERS. The author declares them; a downstream Wait draws one branch per row. Never synced from the provider and never inferred from whatever arrives.
+			{"name": "buttons", "label": "Buttons offered", "type": "Button List"},
 			# The template's placeholders, DECLARED. `reads=value_rows` is what makes them visible to
 			# `contract.reads_of` and therefore refusable by the publish gate; `slots_from` names the
 			# sibling holding the template whose real placeholder names the control offers.
 			{"name": "template_values", "label": "Template Values", "type": "Value Map",
-			 "reads": "value_rows", "slots_from": "whatsapp_template",
+			 "slots_from": "whatsapp_template",
 			 "slots_method": "tatva_connect.automation.sends.template_slots"},
 		],
 	},
@@ -896,9 +905,14 @@ VERBS = {
 		"description": "Sends an email after the segment commits, and routes on whether it could be sent.",
 		"outputs": [sends.SENT, sends.FAILED],
 		"params": [
-			{"name": "email_recipient", "label": "Recipient", "type": "Variable", "free_text": True, "reqd": True},
-			{"name": "email_subject", "label": "Subject", "type": "Data", "reqd": True},
-			{"name": "email_body", "label": "Body", "type": "Small Text"},
+			# Picked from the grouped picker, never typed. The literal path this used to carry mailed a phone-shaped string as an address.
+			{"name": "email_recipient", "label": "Recipient", "type": "Variable", "reqd": True},
+			# Frappe's own template store. There is no compose box: every message goes through the org's template chain.
+			{"name": "email_template", "label": "Template", "type": "Link", "link": "Email Template", "reqd": True},
+			# The same Value Map WhatsApp uses; only the slot SOURCE differs, because an Email Template names its variables.
+			{"name": "template_values", "label": "Template Values", "type": "Value Map",
+			 "slots_from": "email_template",
+			 "slots_method": "tatva_connect.automation.sends.email_template_slots"},
 		],
 	},
 }
@@ -924,8 +938,28 @@ def emits_of(verb, config=None):
 
 
 def outcomes_of(verb):
-	"""The events this verb can emit. Empty for a verb the world never answers."""
-	return list((VERBS.get(verb) or {}).get("outcomes") or [])
+	"""The events this verb can emit — the choices a downstream Wait may name. Empty for a verb the world
+	never answers.
+
+	A verb that acts on a CHANNEL declares the channel rather than a list, and the answer is derived from
+	what that channel's adapters declare they can truthfully report. So WATI declaring `delivered` is what
+	gives the node a waitable `delivered`, with nothing typed here and no code change.
+
+	Its own SYNCHRONOUS outputs are excluded, and that closes a race rather than tidying a taxonomy. The
+	send path already returned `sent`/`failed` to the run before any provider was called; a `sent` status
+	can arrive from WATI in under a second, while the row the bridge correlates through is only committed
+	when the background job ends. A Wait on `sent` could therefore never be woken reliably — so nothing may
+	declare one, and the verb's own `outputs` are the one place that fact is written.
+	"""
+	declared = VERBS.get(verb) or {}
+	channel = declared.get("outcomes_channel")
+	if not channel:
+		return list(declared.get("outcomes") or [])
+
+	from tatva_connect.channels import resolve
+
+	synchronous = set(declared.get("outputs") or [])
+	return [name for name in resolve.outcomes_for_channel(channel) if name.split(".", 1)[1] not in synchronous]
 
 
 def lane_of(verb):
@@ -970,7 +1004,7 @@ def _due_at(action, context):
 
 def _resolve(spec, context):
 	"""A value is literal unless it starts with `$ctx.` — then it's pulled from the activity context."""
-	if isinstance(spec, str) and spec.startswith("$ctx."):
+	if isinstance(spec, str) and spec.startswith(refs.CTX_PREFIX):
 		return context.get(spec[5:])
 	return spec
 
@@ -1015,7 +1049,7 @@ def body_references(raw):
 	structure it would have to learn the shape of independently.
 	"""
 	found = []
-	_walk(_parsed_body(raw), lambda v: found.append(v[5:]) if isinstance(v, str) and v.startswith("$ctx.") else v)
+	_walk(_parsed_body(raw), lambda v: found.append(v[len(refs.CTX_PREFIX):]) if isinstance(v, str) and v.startswith(refs.CTX_PREFIX) else v)
 	return [name for name in found if name]
 
 

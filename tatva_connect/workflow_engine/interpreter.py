@@ -141,8 +141,11 @@ def advance(instance):
 					if sig is not None:
 						state.writing_as(node.node_id).update(_map_payload(wait.get("accepts"), sig))
 						was_parked = False
+						# A tap leaves by the branch the SEND declared for that button. The engine matches an arrived id against DECLARED edges - it never invents one for an id nobody offered.
+						tapped = (sig or {}).get("button_id")
+						leaving = tapped if tapped and _edge(node, tapped) else "event"
 						_step_log(instance, node, "resumed", f"event {wait.get('event_name')}")
-						instance.current_node = _edge(node, "event")
+						instance.current_node = _edge(node, leaving)
 						continue
 				# No event buffered. If we were parked HERE and the clock is due, leave by the time edge.
 				if was_parked and node.node_id == entry_node and wait.get("mode") in _TIME_MODES and _clock_due(instance):
@@ -168,17 +171,23 @@ def advance(instance):
 			if actions.lane_of(node.node_type) == "effect":
 				step_deferred, marker = _run_verb(node, instance.subject_name, _trigger_doc(instance), state, _axes(instance.subject_doctype, instance.subject_name), run_name=instance.name)
 				deferred += step_deferred
-				nxt = _edge(node, _verb_output(node, state))
+				# The verb's DECLARED output is both where the run goes and what the audit records. It used to pick the edge and then be thrown away, so a refused send was filed as `ok` beside its own failure reason.
+				output = _verb_output(node, state)
+				nxt = _edge(node, output)
+				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
+				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
 			elif node.node_type in ("Branch", "Set Variables"):
 				nxt, detail = _next_control(node, state)  # the ONE control-flow step, shared with run_inline
+				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
 			elif node.node_type == registry.TRIGGER:
 				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
 				nxt, detail = _edge(node, "next"), "entered"
+				outcome = "ok"
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 
-			_step_log(instance, node, "ok", detail, int((time.monotonic() - started) * 1000))
+			_step_log(instance, node, outcome, detail, int((time.monotonic() - started) * 1000))
 			instance.current_node = nxt
 	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):  # real lock-wait / deadlock — TRANSIENT (F4)
 		frappe.db.rollback()  # back to the last durable suspend
@@ -213,7 +222,7 @@ def _trigger_doc(instance):
 def _config(node):
 	"""This node's own configuration. One reader — a node type's fields live in its `config_json`, so the
 	engine never grows a column-per-node-type and a new type needs no interpreter change."""
-	return frappe.parse_json(node.get("config_json") or "{}") or {}
+	return registry.config_of(node)
 
 
 def _edge(node, output):
@@ -440,6 +449,12 @@ def _park(instance, node, state):
 	else:
 		values["awaiting_signal"] = None
 	_persist(instance, values)
+	# The diary row is written; set the alarm so the clock is kept to the minute rather than to the */15
+	# sweep. After-commit and losable by design — the sweep still finds this row if the alarm never fires.
+	if values.get("resume_at"):
+		from tatva_connect.workflow_engine import wakeups
+
+		wakeups.schedule_wake(instance.name, values["resume_at"])
 	_step_log(instance, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
 
 

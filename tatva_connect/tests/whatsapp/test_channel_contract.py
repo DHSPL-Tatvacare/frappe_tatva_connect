@@ -83,12 +83,12 @@ class TestChannelContract(FrappeTestCase):
 		with self.assertRaises(ValueError):
 			contract.declare(
 				channel="whatsapp", provider="Imaginary", account_doctype="WhatsApp Account",
-				outcomes={"telepathed"}, capabilities=set(),
+				outcomes={"telepathed"}, capabilities=set(), number_format=contract.E164_PLAIN,
 			)
 		with self.assertRaises(ValueError):
 			contract.declare(
 				channel="whatsapp", provider="Imaginary", account_doctype="WhatsApp Account",
-				outcomes=set(), capabilities={"mind-reading"},
+				outcomes=set(), capabilities={"mind-reading"}, number_format=contract.E164_PLAIN,
 			)
 
 	def test_every_outcome_wati_declares_is_one_it_can_actually_emit(self):

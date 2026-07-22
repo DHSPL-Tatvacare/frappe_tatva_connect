@@ -21,8 +21,15 @@ WHAT A POSITION DETERMINES
   grain     — the vertical/group/program the Trigger declares. Scopes every choice drawn from
               grain-carrying data, everywhere, without being asked.
   variables — what ancestors emit, plus the subject's own readable fields.
+  emitters  — which ancestor NODES report an outcome, and which outcomes. The same question as
+              `variables`, asked about events rather than values, off the same ancestor walk.
   settable  — the fields automation is allowed to WRITE, already grain-scoped by the contract brain.
   operators — the comparison vocabulary, per field type.
+
+Everything above is positional, and that is why it is one answer rather than several. The Wait's picker
+was the one control that did NOT ask: it filtered the canvas's own graph array on can-emit and not-self,
+so it offered a Wait the nodes it blocks. Publish refused what it produced. A control that composes its
+own offer is outside this contract however reasonable its filter looks.
 
 Answers for an UNSAVED graph: the picker has to help while the author is still building, and requiring a
 save first would leave it empty at exactly the moment it matters.
@@ -56,6 +63,7 @@ def node_context(nodes, node_id):
 		"subject": subject,
 		"grain": grain,
 		"variables": upstream.available_at(nodes, node_id),
+		"emitters": upstream.emitters_at(nodes, node_id),
 		"settable": schema.get("set_targets") or [],
 		"operators_by_type": schema.get("operators_by_type") or {},
 		"operator_shapes": schema.get("operator_shapes") or {},

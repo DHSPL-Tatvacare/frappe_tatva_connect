@@ -17,7 +17,7 @@ runtime that disagreed, with publish siding with the wrong one.
    template with a `{{patient_name}}` slot that nothing upstream produces published GREEN and then sent
    "Hi ," to a real patient, silently, with nothing in the step log.
 
-3. `email_recipient` is declared `Variable, free_text`, and `graph._reference_problems` ENFORCES that a
+3. `email_recipient` was declared `Variable, free_text`, and `graph._reference_problems` ENFORCED that a
    bare name is produced upstream — while the handler passed the raw string to `frappe.sendmail` as the
    address. So publish actively CERTIFIED a node that queued mail to the literal string
    `"escalation_email"`.
@@ -82,11 +82,11 @@ class TestASendFailureRoutesInsteadOfKillingTheRun(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		fx.purge(_WORKFLOW)
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		cls.lead = fx.make_lead()
 		cls.workflow = fx.make_workflow(_WORKFLOW, [
 			fx.trigger(to="wa"),
-			fx.node("wa", "Send WhatsApp", config={"whatsapp_template": "probe"},
+			fx.node("wa", "Send WhatsApp", config={"contact_number": "crm_lead.mobile_no", "whatsapp_template": "probe"},
 			        edges={sends.SENT: "sent_end", sends.FAILED: "failed_end"}),
 			fx.node("sent_end", "Terminal"),
 			fx.node("failed_end", "Terminal"),
@@ -95,7 +95,6 @@ class TestASendFailureRoutesInsteadOfKillingTheRun(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WORKFLOW)
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
 		frappe.db.commit()
@@ -173,7 +172,7 @@ class TestTheSendVerbsRouteThroughTheOneMechanism(FrappeTestCase):
 
 	_CONFIGS: ClassVar[dict] = {
 		"Send WhatsApp": {"whatsapp_template": "probe"},
-		"Send Email": {"email_recipient": "ops@tatvacare.invalid", "email_subject": "s", "email_body": "b"},
+		"Send Email": {"email_recipient": "sv.email", "email_template": "probe"},
 	}
 
 	def test_a_verb_that_does_not_declare_next_always_names_its_output(self):
@@ -307,66 +306,3 @@ class TestTemplateParametersComeOnlyFromTheDeclaredRows(FrappeTestCase):
 		)
 		self.assertEqual(blank, ["diagnosis"])
 		self.assertEqual(parameters, [], "a message with a blank slot must not be assembled at all")
-
-
-class TestRecipientDeclarationMatchesRuntime(FrappeTestCase):
-	"""Defect 3 — the declaration said Variable, the runtime meant literal, and publish blessed the gap."""
-
-	def test_a_variable_recipient_resolves_to_the_address_it_names(self):
-		"""THE red. `escalation_email` used to be handed to `frappe.sendmail` verbatim."""
-		self.assertEqual(
-			sends.resolve_recipient("sv.escalation_email", {"sv.escalation_email": "asm@tatvacare.invalid"}),
-			"asm@tatvacare.invalid",
-		)
-
-	def test_a_literal_address_still_works(self):
-		"""Most authors type one, and an address cannot be a variable name."""
-		self.assertEqual(sends.resolve_recipient("ops@tatvacare.invalid", {}), "ops@tatvacare.invalid")
-
-	def test_the_gate_and_the_runtime_use_the_ONE_predicate(self):
-		"""The divergence lock (B3/B7). For every shape an author can type, "does publish demand an
-		upstream producer" and "does the runtime resolve it from run state" must be the same answer. They
-		were opposite answers for exactly one shape — the bare name — and that is the whole defect."""
-		for value in ("sv.escalation_email", "escalation_email", "ops@tatvacare.invalid",
-		              "asm.north@x.co.in", "_x", "9812345678"):
-			with self.subTest(value=value):
-				gate_treats_as_reference = bool(
-					contract.reads_of("Send Email", {"email_recipient": value, "email_subject": "s"})
-				)
-				runtime_resolved = sends.resolve_recipient(value, {}) is None
-				self.assertEqual(
-					gate_treats_as_reference, runtime_resolved,
-					f"publish and the runtime disagree about {value!r} — the gate would certify a node "
-					"the sender then gets wrong",
-				)
-
-	def test_the_resolved_address_is_what_reaches_the_mail_boundary(self):
-		"""Not "sendmail was called" — WHICH ADDRESS it was handed. `sends_enabled` is patched in-process
-		rather than switched on the bench, so nothing is left behind and no mail can leave."""
-		seen = {}
-
-		def _capture(**kwargs):
-			seen.update(kwargs)
-
-		with patch.object(sends, "sends_enabled", return_value=True), \
-		     patch.object(frappe, "sendmail", _capture):
-			output, _marker = sends.send_email(
-				"LEAD-PROBE", "sv.escalation_email", "s", "b", {"sv.escalation_email": "asm@tatvacare.invalid"},
-			)
-
-		self.assertEqual(output, sends.SENT)
-		self.assertEqual(
-			seen.get("recipients"), ["asm@tatvacare.invalid"],
-			"the variable's VALUE must be the address — not the variable's name",
-		)
-
-	def test_a_recipient_variable_that_resolves_to_nothing_routes_to_failed(self):
-		"""DATA: the upstream node produced no address for this record. The run must not die of it."""
-		output, marker = sends.send_email("LEAD-PROBE", "sv.escalation_email", "s", "b", {})
-		self.assertEqual(output, sends.FAILED)
-		self.assertIn("sv.escalation_email", marker)
-
-	def test_a_blank_recipient_on_the_node_still_raises(self):
-		"""AUTHOR ERROR stays loud. The author left the box empty; no data state can produce that."""
-		with self.assertRaises(ValueError):
-			sends.send_email("LEAD-PROBE", "", "s", "b", {})

@@ -65,6 +65,33 @@ def adapter_for_channel(channel, provider, account_hint=None):
 	return frappe.get_module(path)
 
 
+def outcomes_for_channel(channel) -> list:
+	"""Every outcome ANY registered adapter on this channel can truthfully report, as signal names.
+
+	The workflow node that sends on a channel offers exactly these as waitable events, so an author
+	branches on `delivered` because WATI DECLARED it can report `delivered` — never because someone typed
+	the word into a node type.
+
+	The UNION, deliberately, not the intersection. An adapter is only known at send time (the account is
+	resolved from the lead's grain), while the canvas and the publish gate ask at AUTHORING time, with no
+	lead in hand. The union is the honest static answer to "what can a send on this channel ever report".
+	Its cost is real and accepted: with two providers of unequal ability an author may name an outcome the
+	routed provider cannot report, and that Wait then leaves by its timeout edge — which is what the
+	timeout edge is for. The intersection would have hidden WATI's real `clicked` behind a poorer future
+	provider, impoverishing every graph to protect a case that already has an answer.
+
+	Namespaced by channel, matching `task.completed`: a bare `delivered` would collide the moment a second
+	channel reports one.
+	"""
+	cfg = registry.by_channel(channel)
+	if not cfg:
+		frappe.throw(_("No channel registered as '{0}'.").format(channel), title=_("Unknown channel"))
+	found = set()
+	for path in (cfg.get("adapters") or {}).values():
+		found.update(frappe.get_module(path).DECLARATION.outcomes)
+	return sorted(f"{channel}.{outcome}" for outcome in found)
+
+
 def adapter_for_payload(channel, payload, event=None):
 	"""The adapter that OWNS a payload, and the account it names. Returns (adapter, account).
 

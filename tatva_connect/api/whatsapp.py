@@ -301,10 +301,10 @@ def send_template_with_params(reference_doctype, reference_name, template, to, b
 	_enforce_manual_template_cap(reference_doctype, reference_name)
 
 	# Bind the recipient to the record — never send to a client-supplied arbitrary number.
-	from tatva_connect.whatsapp.channel import normalize_number
+	from tatva_connect import phone
 
 	expected = _recipient_number(reference_doctype, reference_name)
-	if not expected or normalize_number(to) != normalize_number(expected):
+	if not expected or phone.match_digits(to) != phone.match_digits(expected):
 		frappe.throw(_("Recipient must match the record's number."), frappe.PermissionError)
 
 	doc = frappe.new_doc("WhatsApp Message")

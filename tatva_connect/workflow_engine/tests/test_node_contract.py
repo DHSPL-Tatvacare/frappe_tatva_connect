@@ -68,31 +68,22 @@ class TestReadsDeclaration(FrappeTestCase):
 		})}
 		self.assertEqual(found, {"result"}, "a literal must not be read as a reference")
 
-	def test_a_literal_email_is_not_a_reference(self):
-		"""`email_recipient` is free text so an author may type a real address. Treating that as a variable
-		name would reject every correctly-authored Send Email."""
-		found = contract.reads_of("Send Email", {"email_recipient": "ops@tatvacare.in", "email_subject": "x"})
-		self.assertEqual(found, [])
+	def test_a_typed_address_is_now_a_reference_the_gate_will_refuse(self):
+		"""`free_text` is DELETED, so a Variable field holds a reference and nothing else. A typed address
+		is therefore read as a reference nothing upstream produces, and publish refuses it — which is the
+		whole point: an address is picked, never typed."""
+		found = contract.reads_of("Send Email", {"email_recipient": "ops@tatvacare.in"})
+		self.assertEqual([r["name"] for r in found], ["ops@tatvacare.in"])
 
-	def test_a_free_text_variable_that_is_namespaced_is_a_reference(self):
-		"""This used to read `escalation_email` — a BARE name — and assert it was a reference.
-
-		Under the value contract a bare name says nothing about where its value came from, so it names
-		nothing and is a literal. A reference carries its source, and `refs.is_reference` is the one
-		predicate that decides — the same one `sends.resolve_recipient` asks, which is what keeps the gate
-		and the runtime from disagreeing about the same string.
-		"""
-		found = contract.reads_of("Send Email", {"email_recipient": "sv.escalation_email", "email_subject": "x"})
+	def test_a_namespaced_recipient_is_a_reference(self):
+		found = contract.reads_of("Send Email", {"email_recipient": "sv.escalation_email"})
 		self.assertEqual([r["name"] for r in found], ["sv.escalation_email"])
 
-	def test_a_free_text_variable_that_is_a_bare_name_is_a_literal(self):
-		"""The mirror image, so the rule cannot drift back: `escalation_email` is text, not a reference."""
-		found = contract.reads_of("Send Email", {"email_recipient": "escalation_email", "email_subject": "x"})
-		self.assertEqual([r["name"] for r in found], [])
-
-	def test_plain_text_is_never_a_reference(self):
-		"""A subject line and a note are text. A field declaring no way to be read reads nothing."""
-		self.assertEqual(contract.reads_of("Send Email", {"email_recipient": "a@b.co", "email_subject": "Hello ctx"}), [])
+	def test_a_bare_name_is_a_reference_too_now_that_nothing_is_free_text(self):
+		"""The mirror image. While `free_text` existed a bare name was a LITERAL, and that split is exactly
+		what let the gate and the runtime disagree about one string."""
+		found = contract.reads_of("Send Email", {"email_recipient": "escalation_email"})
+		self.assertEqual([r["name"] for r in found], ["escalation_email"])
 
 	def test_a_reference_says_which_control_carries_it(self):
 		found = contract.reads_of("Update Field", {"value_mode": "From Context", "context_field": "nope"})

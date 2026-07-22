@@ -25,6 +25,7 @@ from every one of them. That is why recovery keys on the conversation and never 
 """
 import frappe
 
+from tatva_connect import phone
 from tatva_connect.channels import contract
 from tatva_connect.channels import event as channel_event
 from tatva_connect.whatsapp import channel, ingest, recovery, routing, transport
@@ -39,6 +40,8 @@ DECLARATION = contract.declare(
 	capabilities={
 		"templates", "media", "session", "backfill", "recover_message", "recover_media",
 	},
+	# Digits with the country code and NO `+`: every send puts the number straight into a URL (`?whatsappNumber=`, `/sendSessionMessage/{number}`), where a `+` decodes as a space. The country code is required because WATI resolves the dialling plan itself — handed `9059067237` it read the `90` as Turkey and delivered a patient's message to a stranger there on 2026-07-21.
+	number_format=contract.E164_PLAIN,
 )
 
 # WATI eventType -> the canonical outcome. Driven by eventType so a missing `statusString` still maps.
@@ -88,7 +91,7 @@ def _leads_for(digits: str, account=None):
 def normalize(payload, account=None):
 	"""One WATI payload -> one ChannelEvent, or None when it is not ours to ingest."""
 	ev = payload.get("eventType")
-	number = channel.normalize_number(payload.get("waId"))
+	number = phone.match_digits(payload.get("waId"))
 	common = {
 		"channel": DECLARATION.channel,
 		"provider": DECLARATION.provider,
@@ -160,7 +163,7 @@ def screen(payload, event=None, account=None):
 	not ingested instead of finding a row stuck at Queued with no explanation.
 	"""
 	ev = payload.get("eventType")
-	number = channel.normalize_number(payload.get("waId"))
+	number = phone.match_digits(payload.get("waId"))
 
 	if ev == "message" and _falsy(payload.get("owner")):
 		if _leads_for(number, account):
@@ -277,7 +280,8 @@ def _classify(resp) -> contract.SendResult:
 		# A file send returns the id as the `result` string itself.
 		or (result if isinstance(result, str) and result not in ("true", "false") else None)
 	)
-	return contract.SendResult(True, correlation_id, None)
+	# The wamid is captured as a SECOND id, never in place of the correlation id above: a row stored under a wamid never receives status updates, which is what the comment above records. It is what an inbound button tap points back at.
+	return contract.SendResult(True, correlation_id, None, wamid=msg.get("whatsappMessageId") or resp.get("whatsappMessageId"))
 
 
 def _send(call, *args, **kwargs) -> contract.SendResult:
@@ -315,7 +319,7 @@ def send_template(account, to, template, variables=None, broadcast_name=None) ->
 	return _send(
 		transport.send_template_message,
 		account,
-		to_number=channel.normalize_number(to),
+		to_number=to,
 		template_name=wire,
 		broadcast_name=broadcast_name or f"crm_{frappe.scrub(wire)}",
 		parameters=variables or [],
@@ -324,20 +328,20 @@ def send_template(account, to, template, variables=None, broadcast_name=None) ->
 
 def send_session(account, to, text) -> contract.SendResult:
 	"""Free text inside an open 24h session."""
-	return _send(transport.send_session_message, account, channel.normalize_number(to), text or "")
+	return _send(transport.send_session_message, account, to, text or "")
 
 
 def send_media(account, to, filename, content, mimetype, caption="") -> contract.SendResult:
 	"""Send bytes we hold. Our own File rows always go this way — the provider cannot authenticate to
 	our proxy URL, so a URL send would fail."""
 	return _send(
-		transport.send_session_file, account, channel.normalize_number(to), filename, content, mimetype, caption
+		transport.send_session_file, account, to, filename, content, mimetype, caption
 	)
 
 
 def send_media_url(account, to, file_url, caption="") -> contract.SendResult:
 	"""Send a genuine external link — one we never held the bytes for."""
-	return _send(transport.send_session_file_via_url, account, channel.normalize_number(to), file_url, caption)
+	return _send(transport.send_session_file_via_url, account, to, file_url, caption)
 
 
 def list_templates(account):

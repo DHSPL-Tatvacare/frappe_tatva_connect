@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect import phone
 from tatva_connect.telephony import envelope as env
 
 # Axes that form the composite-unique key + the autoname `format:` string.
@@ -76,7 +77,7 @@ class CRMTelephonyRouting(Document):
 		"""
 		seen = {}
 		for row in self.dids or []:
-			digits = env.phone_digits(row.did_number)
+			digits = phone.match_digits(row.did_number, last=10)
 			if not digits:
 				frappe.throw(
 					_("{0} is not a full phone number. A DID needs at least {1} digits.").format(

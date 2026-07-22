@@ -206,7 +206,12 @@ def _wait_problems(nodes):
 
 
 def upstream_ancestors(nodes, node_id):
-	"""The nodes that certainly run before this one — the same walk the authoring picker uses."""
+	"""The nodes that certainly run before this one — the same walk `upstream.emitters_at` offers from.
+
+	This sentence claimed to describe the authoring picker while being false: the picker filtered the raw
+	graph in JS and offered a Wait its own descendants, which this gate then refused. `emitters_at` now
+	answers that picker off `upstream._ancestors`, so the two really are one walk.
+	"""
 	return set(upstream._ancestors(_by_id(nodes), node_id))
 
 
@@ -219,12 +224,15 @@ def _node_problems(nodes):
 	it, and a workflow with an unconfigured Branch would activate and then die on a real lead.
 	"""
 	found = []
+	graph_config = {n["node_id"]: _config_of(n) for n in nodes}
 	for node in nodes:
 		config = _config_of(node)
 		outputs = [e["from_output"] for e in _edges_of(node)]
 		found += [
 			{"node_id": node["node_id"], **p}
-			for p in registry.validate_node(node["node_type"], config, outputs, mode=registry.PUBLISH)
+			for p in registry.validate_node(
+				node["node_type"], config, outputs, mode=registry.PUBLISH, graph_config=graph_config,
+			)
 		]
 	return found
 
@@ -232,7 +240,7 @@ def _node_problems(nodes):
 def _config_of(node):
 	"""A node arrives either as an authored row (`config_json` text) or as a test's plain `config`."""
 	if "config_json" in node:
-		return frappe.parse_json(node.get("config_json") or "{}") or {}
+		return registry.config_of(node)
 	return node.get("config") or {}
 
 
@@ -273,6 +281,8 @@ def _edge_problems(nodes):
 	subject takes the false path, and then dies with "node None is not in the frozen graph".
 	"""
 	known = _by_id(nodes)
+	# {node_id: config} for the graph being judged — what lets a Wait resolve the buttons its source node declares.
+	graph_config = {n["node_id"]: _config_of(n) for n in nodes}
 	found = []
 	for node in nodes:
 		config = _config_of(node)
@@ -285,7 +295,7 @@ def _edge_problems(nodes):
 					_("{0} points at {1}, which is not in this workflow.").format(node["node_id"], edge["to_node"]),
 				))
 
-		for output in registry.outputs_for(node["node_type"], config):
+		for output in registry.outputs_for(node["node_type"], config, graph_config):
 			if output not in wired:
 				found.append(_at(
 					node["node_id"],

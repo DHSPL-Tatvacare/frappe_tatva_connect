@@ -18,6 +18,7 @@ did disagree: a grain carried four DIDs and no routing rule, which left every pu
 """
 import frappe
 
+from tatva_connect import phone
 from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
@@ -63,7 +64,7 @@ def account_for_did(did_number):
 	account from the token; this is what the replay and reconcile paths use, and it must agree with
 	the token or the two paths would attribute the same call to different accounts.
 	"""
-	grain = grain_for({"did_number": env.phone_digits(did_number)})
+	grain = grain_for({"did_number": phone.match_digits(did_number, last=10)})
 	return grain.get("telephony_account") if grain else None
 
 

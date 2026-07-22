@@ -52,7 +52,8 @@ def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, external signal ingress
 	frappe.enqueue(
 		"tatva_connect.workflow_engine.signals.resume_for_signal",
-		queue="short",
+		# The workflow lane, so a burst of inbound receipts cannot starve the sweep that backstops them.
+		queue="workflow",
 		enqueue_after_commit=True,
 		now=bool(frappe.flags.get("in_test")),
 		job_id=f"workflow-signal::{subject_doctype}::{subject_name}::{signal_name}::{correlation or ''}",

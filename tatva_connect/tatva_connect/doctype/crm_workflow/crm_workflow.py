@@ -15,6 +15,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.workflow_engine import registry
 from tatva_connect.workflow_engine.registry import TRIGGER as TRIGGER_NODE_TYPE
 
 LIFECYCLE_STATES = ("Draft", "Published", "Active", "Suspended", "Archived")
@@ -55,7 +56,7 @@ class CRMWorkflow(Document):
 		it is the wildcard the one matcher understands as ANY.
 		"""
 		trigger = self.trigger_node()
-		config = frappe.parse_json(trigger.config_json or "{}") if trigger else {}
+		config = registry.config_of(trigger) if trigger else {}
 		for column, key in TRIGGER_INDEX.items():
 			self.set(column, (config or {}).get(key) or "")
 

@@ -30,7 +30,7 @@ class TestEventBridge(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		fx.purge(_WORKFLOW)
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		cls.lead = fx.make_lead()
 		cls.task_type = _task_type()
 		cls.workflow = fx.make_workflow(_WORKFLOW, [
@@ -46,7 +46,6 @@ class TestEventBridge(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WORKFLOW)
 		from tatva_connect.tests.activity import task_type_fixture as ttf
 

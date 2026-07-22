@@ -28,7 +28,12 @@ The declaration is the single source of truth, read by the ingress, the send pat
 read from a delivery must not be allowed to claim `read`, because a consumer downstream will believe
 it. `capabilities` is the same promise for the send side — the UI hides a template picker for a
 provider that has no templates rather than offering a button that will throw.
+
+`number_format` is the same logic applied to the address. It is a statement of what THIS provider
+really requires, not of what we wish were true — see `NUMBER_FORMATS` for why it cannot be one global
+rule, and what it cost the day it was one.
 """
+import re
 from dataclasses import dataclass
 
 from tatva_connect.channels.event import OUTCOMES
@@ -37,6 +42,19 @@ from tatva_connect.channels.event import OUTCOMES
 CAPABILITIES = (
 	"templates", "media", "session", "buttons", "lists", "backfill", "recover_message", "recover_media",
 )
+
+# How a provider spells a phone number ON THE WIRE. `+919059067237`, `919059067237` and `9059067237` are the same subscriber and no two providers agree on which to accept — WATI puts the number in a URL query (`?whatsappNumber=`), where a `+` decodes as a space; a voice provider wants the `+`. The format is therefore a fact about the PROVIDER and it is declared, never resolved centrally.
+E164_PLUS = "e164_plus"
+E164_PLAIN = "e164_plain"
+NATIONAL = "national"
+
+# `NATIONAL` is declared by no adapter today, and it exists on purpose. Without it "a country code is required" would be a global engine rule wearing a declaration's clothes — which is the fix that was rejected — and the refusal below could never be proven to be the ADAPTER's rather than the engine's. `CAPABILITIES` carries `buttons`/`lists` on the same footing: a vocabulary is the space of expressible requirements, not an inventory of today's providers.
+NUMBER_FORMATS = (E164_PLUS, E164_PLAIN, NATIONAL)
+
+# Separators a human or an importer may have typed. Everything else — most of all the leading `+` — is SIGNAL and is never stripped.
+_SEPARATORS = re.compile(r"[\s\-().]")
+_WITH_COUNTRY_CODE = re.compile(r"^\+(\d{8,15})$")
+_SUBSCRIBER_ONLY = re.compile(r"^(\d{4,15})$")
 
 
 class SendResult(tuple):
@@ -54,8 +72,8 @@ class SendResult(tuple):
 
 	__slots__ = ()
 
-	def __new__(cls, accepted, correlation_id=None, error=None, unknown=False):
-		return tuple.__new__(cls, (bool(accepted), correlation_id, error, bool(unknown)))
+	def __new__(cls, accepted, correlation_id=None, error=None, unknown=False, wamid=None):
+		return tuple.__new__(cls, (bool(accepted), correlation_id, error, bool(unknown), wamid))
 
 	@property
 	def accepted(self):
@@ -73,10 +91,17 @@ class SendResult(tuple):
 	def unknown(self):
 		return self[3]
 
+	@property
+	def wamid(self):
+		"""The provider's WhatsApp message id, when it gave one. A SECOND identity, never a substitute for
+		`correlation_id`: only the correlation id is echoed by status events, while only the wamid is what
+		an inbound button tap points back at through `replyContextId`. Two questions, two keys."""
+		return self[4]
+
 	def __repr__(self):
 		return (
 			f"SendResult(accepted={self.accepted!r}, correlation_id={self.correlation_id!r}, "
-			f"error={self.error!r}, unknown={self.unknown!r})"
+			f"error={self.error!r}, unknown={self.unknown!r}, wamid={self.wamid!r})"
 		)
 
 
@@ -89,6 +114,7 @@ class Declaration:
 	account_doctype: str
 	outcomes: frozenset
 	capabilities: frozenset
+	number_format: str
 
 	def __post_init__(self):
 		unknown = set(self.outcomes) - set(OUTCOMES)
@@ -97,6 +123,10 @@ class Declaration:
 		unknown = set(self.capabilities) - set(CAPABILITIES)
 		if unknown:
 			raise ValueError(f"{self.provider}: unknown capability/ies {sorted(unknown)}; known: {list(CAPABILITIES)}")
+		if self.number_format not in NUMBER_FORMATS:
+			raise ValueError(
+				f"{self.provider}: unknown number format {self.number_format!r}; known: {list(NUMBER_FORMATS)}"
+			)
 
 	def emits(self, outcome) -> bool:
 		"""Can this provider truthfully report this outcome?"""
@@ -106,6 +136,38 @@ class Declaration:
 		"""Does this provider have this capability?"""
 		return capability in self.capabilities
 
+	def conform_number(self, number) -> str | None:
+		"""This number as THIS provider spells it, or None when it cannot be known to be right.
+
+		THE DEFECT THIS EXISTS TO DELETE. A lead's number was stored `9059067237` — a bare Indian
+		10-digit — and the send path reduced it with a `\\D`-strip that called itself E.164. WATI read the
+		leading `90` as Turkey's dialling code and a real patient message reached a stranger in Turkey.
+		Nothing in the system had declared a country, so the PROVIDER guessed one.
+
+		The leading `+` is the ONLY in-band evidence that a country code is present: `919059067237` and
+		`9059067237` are both just digits, and deciding which is which means guessing a dialling plan.
+		So the judgement is symmetric and nothing is inferred in either direction — a `+`-carrying number
+		satisfies the two E.164 spellings and is REFUSED for `NATIONAL`, because a country code cannot be
+		stripped off without knowing how many digits it occupies; a plus-less number satisfies `NATIONAL`
+		alone. Separators are cosmetic and are removed; the `+` never is.
+
+		Refusal is the point, not a fallback: an ambiguous number is not sent at all. The caller turns
+		None into a routable `failed` outcome (`automation.sends.send_whatsapp`) so a badly stored number
+		is a data state the author routes on, never an exception that kills a journey.
+
+		A blank number returns None too, but no send path reaches this with one — `send_whatsapp` refuses
+		a missing `mobile_no` several lines earlier, with its own distinct marker, so "no number at all"
+		and "a number this provider cannot dial" stay two separately routable facts in the step log.
+		"""
+		bare = _SEPARATORS.sub("", number or "")
+		if self.number_format == NATIONAL:
+			subscriber = _SUBSCRIBER_ONLY.match(bare)
+			return subscriber.group(1) if subscriber else None
+		qualified = _WITH_COUNTRY_CODE.match(bare)
+		if not qualified:
+			return None
+		return qualified.group(1) if self.number_format == E164_PLAIN else "+" + qualified.group(1)
+
 	def as_dict(self) -> dict:
 		"""The declaration as plain data — what the chat UI and the config screens read."""
 		return {
@@ -114,16 +176,20 @@ class Declaration:
 			"account_doctype": self.account_doctype,
 			"outcomes": sorted(self.outcomes),
 			"capabilities": sorted(self.capabilities),
+			"number_format": self.number_format,
 		}
 
 
-def declare(*, channel, provider, account_doctype, outcomes, capabilities) -> Declaration:
+def declare(*, channel, provider, account_doctype, outcomes, capabilities, number_format) -> Declaration:
 	"""Build a declaration. Called once per adapter, at module scope, so an adapter that claims an
-	outcome the vocabulary does not have fails at IMPORT — not on the one payload that needed it."""
+	outcome the vocabulary does not have — or a number format nobody defined — fails at IMPORT, not on
+	the one payload that needed it. Every argument is required: a defaulted number format would be this
+	module quietly deciding an address rule on a provider's behalf, which is the whole defect."""
 	return Declaration(
 		channel=channel,
 		provider=provider,
 		account_doctype=account_doctype,
 		outcomes=frozenset(outcomes),
 		capabilities=frozenset(capabilities),
+		number_format=number_format,
 	)

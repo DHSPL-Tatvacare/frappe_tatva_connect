@@ -31,7 +31,7 @@ class TestEntryIsolation(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		fx.purge(_WAITING, _INLINE)
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		# A graph that PARKS — the durable path, the one that used to commit inside the user's save.
 		cls.waiting = fx.make_workflow(_WAITING, [
 			fx.trigger(to="w1"),
@@ -43,7 +43,6 @@ class TestEntryIsolation(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WAITING, _INLINE)
 		_clear_leads()
 		frappe.db.commit()

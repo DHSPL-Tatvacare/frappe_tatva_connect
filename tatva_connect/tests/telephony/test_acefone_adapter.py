@@ -13,6 +13,7 @@ import json
 import os
 import unittest
 
+from tatva_connect import phone
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony.adapters import acefone
 
@@ -120,9 +121,9 @@ class TestAcefoneParsing(unittest.TestCase):
 	def test_short_number_is_rejected_rather_than_suffix_matched(self):
 		"""A garbage number must NOT become a 2-digit suffix: `mobile_no LIKE '%5'` matches a
 		large slice of the lead table."""
-		self.assertEqual(env.phone_digits("55"), "")
-		self.assertEqual(env.phone_digits("+91 99112 32686"), "9911232686")
-		self.assertEqual(env.phone_digits("9911232686"), "9911232686")
+		self.assertEqual(phone.match_digits("55", last=10), "")
+		self.assertEqual(phone.match_digits("+91 99112 32686", last=10), "9911232686")
+		self.assertEqual(phone.match_digits("9911232686", last=10), "9911232686")
 
 	def test_agent_extension_is_never_treated_as_a_phone(self):
 		"""`Extension-0602141810347` is an agent extension. The old adapter fed it to a phone

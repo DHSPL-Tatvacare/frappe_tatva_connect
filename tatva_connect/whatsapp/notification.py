@@ -36,6 +36,19 @@ class ChannelWhatsAppNotification(WhatsAppNotification):
 		channel.assert_enabled()
 		adapter = resolve.adapter_for(account)
 
+		# The one gate. A notification has no rep to tell and no graph to route, so a refusal is recorded and the send simply does not happen.
+		to_number, refusal = channel.screen_send(
+			adapter, data.get("to"),
+			doc_data.doctype if doc_data else None, doc_data.name if doc_data else None,
+		)
+		if refusal:
+			frappe.msgprint(_("WhatsApp not sent: {0}").format(refusal), indicator="orange", alert=True)
+			frappe.get_doc({
+				"doctype": "WhatsApp Notification Log", "template": self.template,
+				"meta_data": {"refused": refusal},
+			}).insert(ignore_permissions=True)  # authz-ok: tier-b — audit of a refused send, gated by screen_send above
+			return
+
 		tpl = data.get("template", {}) or {}
 		params = self._variables_from_meta(tpl, adapter, account)
 		success = False
@@ -44,7 +57,7 @@ class ChannelWhatsAppNotification(WhatsAppNotification):
 			# Same success contract as the manual-send path (one brain): the adapter classifies. Only a genuine refusal raises — an unknown outcome may already be on the patient's phone.
 			result = adapter.send_template(
 				account,
-				data.get("to"),
+				to_number,
 				self.template,
 				params,
 				broadcast_name=f"crm_notif_{frappe.scrub(self.template or self.name)}",

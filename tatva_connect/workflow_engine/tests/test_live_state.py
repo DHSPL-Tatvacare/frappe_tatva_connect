@@ -26,7 +26,7 @@ class TestLiveState(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		fx.purge(_WF)
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		cls.lead = fx.make_lead()
 		# Parks on an event, so the run is still alive when the lead changes underneath it.
 		cls.workflow = fx.make_workflow(_WF, [
@@ -39,7 +39,6 @@ class TestLiveState(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WF)
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
 		frappe.db.commit()

@@ -171,6 +171,8 @@ def _apply_media(doc, event, lead, media):
 # Inbound — the customer wrote to us.
 # ---------------------------------------------------------------------------
 def _ingest_inbound(event) -> None:
+	# Before the lead lookup: the wamid names the exact message we sent, which beats resolving a lead by the number a tap came from.
+	_wake_workflow(event, rows_for_reply_context(event))
 	targets = _targets(event)
 	if not targets:
 		return
@@ -335,11 +337,84 @@ def rows_for_correlation(event):
 	return frappe.get_all("WhatsApp Message", filters=filters, pluck="name")
 
 
+def _waitable(event) -> str | None:
+	"""The workflow signal name for this outcome, or None when nothing may wait on it.
+
+	Asked of the ONE declaration a Wait's picker is built from (`registry.outcomes_for`), so the events
+	this bridge delivers and the events an author can select are the same set by construction rather than
+	by two lists agreeing. `sent`/`failed` are excluded there because the send path already returned them
+	synchronously - which is also why no `sent` status is reported unmappable below, since a `sent` can
+	legitimately arrive before the row it would correlate through is committed.
+	"""
+	from tatva_connect.workflow_engine import registry
+
+	name = f"{event.channel}.{event.outcome}"
+	return name if name in registry.outcomes_for("Send WhatsApp") else None
+
+
+def _wake_workflow(event, rows) -> None:
+	"""Wake the run that sent THIS message - never another run parked on the same lead.
+
+	The provider's id and the engine's own `run::node` token meet on the `WhatsApp Message` row: the send
+	job wrote both, this reads them back. Correlating on the lead alone would wake whichever run answered
+	first, which is the defect this exists to prevent when one lead is in two journeys.
+
+	A row with no token was not sent by a workflow (a rep's manual send, a notification) and is simply not
+	ours to wake - that is silence, not a loss.
+	"""
+	signal = _waitable(event)
+	if not signal:
+		return
+
+	from tatva_connect.workflow_engine import signals
+
+	for row in rows:
+		record = frappe.db.get_value(
+			"WhatsApp Message", row, ["custom_workflow_correlation", "reference_doctype", "reference_name"],
+			as_dict=True,
+		)
+		if not record or not record.custom_workflow_correlation or record.reference_doctype != "CRM Lead":
+			continue
+		signals.deliver_signal(
+			"CRM Lead", record.reference_name, signal,
+			correlation=record.custom_workflow_correlation,
+			payload={
+				"outcome": event.outcome, "message_id": event.correlation_id,
+				# WHICH button, machine-readable. The title is display text a marketer may reword.
+				"button_id": event.button_id, "button_title": event.button_title,
+			},
+		)
+
+
+def rows_for_reply_context(event):
+	"""The outbound row an inbound tap points BACK at, joined on the wamid the send stored.
+
+	A button tap carries `replyContextId` = the wamid of the message that offered the buttons. That is a
+	different identity from the `localMessageId` the status path joins on, which is why the send stores
+	both: only the correlation id is echoed by status events, and only the wamid is what a tap references.
+
+	Account-scoped for the same reason `rows_for_correlation` is: ids are minted per tenant, and a tap
+	delivered on account B must not reach a message sent on account A.
+	"""
+	if not event.reply_to:
+		return []
+	filters = {"custom_outbound_wamid": event.reply_to}
+	if event.account:
+		filters["whatsapp_account"] = event.account
+	return frappe.get_all("WhatsApp Message", filters=filters, pluck="name")
+
+
 def _update_status(event) -> None:
 	if not event.outcome:
 		return
 	rows = rows_for_correlation(event)
 	if not rows:
+		# A status we cannot place. Never dropped in silence: a run may be parked waiting for exactly this, and the operator's only clue would be a journey that stopped. `sent` cannot reach here (see `_waitable`), so this stays quiet in normal traffic.
+		if _waitable(event):
+			frappe.log_error(
+				title="whatsapp: delivery status matches no message",
+				message=f"outcome={event.outcome} correlation_id={event.correlation_id} account={event.account}",
+			)
 		return
 	values = {"status": event.outcome}
 	# A failure with no reason is an operator staring at the word "failed" with nowhere to go. The provider sent both halves; store them.
@@ -350,6 +425,8 @@ def _update_status(event) -> None:
 	for row in rows:
 		frappe.db.set_value("WhatsApp Message", row, values, update_modified=False)
 	frappe.db.commit()
+	# After the commit: the signal enqueues a resume that re-reads this row, so it must find it written.
+	_wake_workflow(event, rows)
 
 
 def _republish(leads) -> None:

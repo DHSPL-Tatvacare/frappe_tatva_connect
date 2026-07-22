@@ -43,12 +43,11 @@ class TestGuardLane(FrappeTestCase):
 			fx.node("end", "Terminal"),
 		])
 		cls._set_requirements([{"verb": "Require Fields", "params": {"require_fields": _REQUIRED_FIELD}}])
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WORKFLOW)
 		frappe.db.commit()
 

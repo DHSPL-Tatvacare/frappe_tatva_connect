@@ -29,7 +29,7 @@ Scheduled Job Type with their chosen cron. The manual entry (`refresh_history`) 
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
-from tatva_connect import automation
+from tatva_connect import automation, phone
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import channel, ingest, routing
 
@@ -43,7 +43,7 @@ def backfill_lead(lead_name: str, dry_run: bool = True) -> dict:
 	account = routing.resolve_account_for_lead(lead)
 	if not account:
 		return {"ok": False, "reason": "no WhatsApp route for this lead"}
-	number = channel.normalize_number(lead.get("mobile_no"))
+	number = phone.match_digits(lead.get("mobile_no"))
 	if not number:
 		return {"ok": False, "reason": "lead has no mobile number"}
 

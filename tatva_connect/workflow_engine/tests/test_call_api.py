@@ -40,7 +40,7 @@ class TestCallApi(FrappeTestCase):
 	def setUpClass(cls):
 		assert_masters_exist()
 		fx.purge(_WORKFLOW)
-		cls._was_armed = fx.arm_engine(True)
+		fx.arm_engine(True, cls)
 		cls.lead = fx.make_lead()
 		_ensure_endpoint()
 		cls.workflow = fx.make_workflow(_WORKFLOW, [
@@ -60,7 +60,6 @@ class TestCallApi(FrappeTestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		fx.arm_engine(bool(cls._was_armed))
 		fx.purge(_WORKFLOW)
 		if frappe.db.exists("Webhook", _ENDPOINT):
 			frappe.delete_doc("Webhook", _ENDPOINT, force=True, ignore_permissions=True)

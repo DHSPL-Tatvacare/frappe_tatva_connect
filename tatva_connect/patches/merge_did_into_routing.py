@@ -15,6 +15,7 @@ rule's keeps that account as a per-number override, so a grain reached by two pr
 """
 import frappe
 
+from tatva_connect import phone
 from tatva_connect.telephony import envelope as env
 
 OLD = "CRM Telephony DID"
@@ -31,7 +32,7 @@ def execute():
 		fields=["name", "did_number", "label", "telephony_account", "enabled",
 		        "vertical", "psp_group", "program"],
 	):
-		digits = env.phone_digits(row.did_number) or row.name
+		digits = phone.match_digits(row.did_number, last=10) or row.name
 		if not digits:
 			frappe.log_error(title="telephony merge: DID has no usable number", message=str(row))
 			continue

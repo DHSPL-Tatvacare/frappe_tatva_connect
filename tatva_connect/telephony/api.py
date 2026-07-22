@@ -22,7 +22,7 @@ import frappe
 from frappe import _
 from frappe.integrations.utils import make_get_request, make_post_request
 
-from tatva_connect import automation
+from tatva_connect import automation, phone
 
 API_VERSION = "v1"
 SETTINGS = "CRM Telephony Settings"
@@ -47,11 +47,6 @@ def assert_enabled():
 			_("Acefone is disabled (CRM Telephony Settings → Enabled is off)."),
 			title=_("Acefone disabled"),
 		)
-
-
-def normalize_number(number) -> str:
-	"""Canonicalise a phone number to bare digits (strip +, -, spaces, etc.)."""
-	return re.sub(r"\D", "", str(number or ""))
 
 
 def base_url_of(account) -> str:
@@ -96,12 +91,12 @@ def click_to_call(account, destination_number, agent_number, caller_id=None, cus
 	# Acefone wants BARE DIGITS — a leading "+" is rejected ("Unable to process this
 	# request"). Normalize all numbers here (the single choke point).
 	body = {
-		"agent_number": normalize_number(agent_number),
-		"destination_number": normalize_number(destination_number),
+		"agent_number": phone.match_digits(agent_number),
+		"destination_number": phone.match_digits(destination_number),
 		"async": "1",
 	}
 	if caller_id:
-		body["caller_id"] = normalize_number(caller_id)
+		body["caller_id"] = phone.match_digits(caller_id)
 	if custom_identifier:
 		body["custom_identifier"] = str(custom_identifier)
 	return _post(account, "click_to_call", body)

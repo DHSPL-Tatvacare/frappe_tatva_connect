@@ -224,7 +224,7 @@ class TestEmitsConformance(FrappeTestCase):
 
 	def test_send_email_writes_nothing_and_declares_nothing(self):
 		self._assert_conformant("Send Email", {
-			"email_recipient": "probe@example.invalid", "email_subject": "probe", "email_body": "probe",
+			"email_recipient": "sv.email", "email_template": "probe",
 		})
 
 	# --- the core node types ----------------------------------------------------------------------------

@@ -364,6 +364,10 @@ fixtures = [
 		# An interactive reply's machine-readable identity — the two facts the upstream doctype has nowhere to put.
 		"WhatsApp Message-custom_button_id",
 		"WhatsApp Message-custom_button_title",
+		# The run+node that sent this message — what makes a delivery receipt wake THAT run and no other.
+		"WhatsApp Message-custom_workflow_correlation",
+		# What an inbound button tap points back at. NOT custom_provider_message_id, which carries WATI's internal `id` and is the cross-path dedup key.
+		"WhatsApp Message-custom_outbound_wamid",
 		"Assignment Rule-grain_vertical",
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
