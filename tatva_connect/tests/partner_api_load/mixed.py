@@ -3,8 +3,8 @@
 """Two tests. One asks whether the system holds under realistic load; the other whether the ceiling
 actually refuses. They are different questions and they need different traffic.
 
-    python -m tatva_connect.tests.live.load.mixed anaya --mode load
-    python -m tatva_connect.tests.live.load.mixed anaya --mode burst
+    python -m tatva_connect.tests.partner_api_load.mixed anaya --mode load
+    python -m tatva_connect.tests.partner_api_load.mixed anaya --mode burst
 
 LOAD — every resource's single endpoint, together, spread the way a partner writes.
 
@@ -42,7 +42,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from requests.adapters import HTTPAdapter
 
-from tatva_connect.tests.live.load.config import (
+from tatva_connect.tests.partner_api_load.config import (
 	BASE_URL,
 	REPORTS,
 	SITE_HOST,
@@ -50,7 +50,7 @@ from tatva_connect.tests.live.load.config import (
 	lsq_creds,
 	partner_token,
 )
-from tatva_connect.tests.live.load.files import _download, _fresh_urls
+from tatva_connect.tests.partner_api_load.files import _download, _fresh_urls
 
 METHOD = "/api/method/tatva_connect.api"
 

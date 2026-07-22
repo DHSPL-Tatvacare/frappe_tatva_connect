@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from tatva_connect.tests.live.load.config import BASE_URL, SITE_HOST
+from tatva_connect.tests.partner_api_load.config import BASE_URL, SITE_HOST
 
 METHOD = "/api/method/tatva_connect.api"
 

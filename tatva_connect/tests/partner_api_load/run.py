@@ -10,8 +10,8 @@ Every write carries an Idempotency-Key derived from the source record's own id, 
 replayable: a second pass must create nothing and replay the stored responses instead. That is the
 test, not a convenience.
 
-    python -m tatva_connect.tests.live.load.run anaya --leads 250
-    python -m tatva_connect.tests.live.load.run anaya --leads 250 --replay
+    python -m tatva_connect.tests.partner_api_load.run anaya --leads 250
+    python -m tatva_connect.tests.partner_api_load.run anaya --leads 250 --replay
 """
 import argparse
 import base64
@@ -21,9 +21,9 @@ import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
-from tatva_connect.tests.live.load import shape
-from tatva_connect.tests.live.load.client import Partner, idempotency_key
-from tatva_connect.tests.live.load.config import (
+from tatva_connect.tests.partner_api_load import shape
+from tatva_connect.tests.partner_api_load.client import Partner, idempotency_key
+from tatva_connect.tests.partner_api_load.config import (
 	ACCOUNTS,
 	REPORTS,
 	account_dir,
@@ -31,8 +31,8 @@ from tatva_connect.tests.live.load.config import (
 	lsq_creds,
 	partner_token,
 )
-from tatva_connect.tests.live.load.files import _download, _fresh_urls
-from tatva_connect.tests.live.load.log import Logger
+from tatva_connect.tests.partner_api_load.files import _download, _fresh_urls
+from tatva_connect.tests.partner_api_load.log import Logger
 
 
 def _lead_files(creds, prospect_id, lead_name, logger=None):

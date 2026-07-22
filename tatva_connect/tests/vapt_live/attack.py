@@ -9,7 +9,7 @@ against the exported oracle expectation.
 
 Runs anywhere (laptop) — it imports only the frappe-FREE registry + the HTTP engine.
 
-    python -m tatva_connect.tests.live.uat.run --phase attack
+    python -m tatva_connect.tests.vapt_live.run --phase attack
 """
 import json
 import os

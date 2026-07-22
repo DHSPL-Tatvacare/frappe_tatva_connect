@@ -2,11 +2,11 @@
 # See license.txt
 """Layer-2/3 config — the UAT target and its credentials. Code is tracked; creds are NOT.
 
-Reads `tatva_connect/tests/live/.creds/uat.json`:
+Reads `tatva_connect/tests/vapt_live/.creds/uat.json`:
 
     {
-      "base": "https://uat.tatvacare.in",
-      "host": "uat.tatvacare.in",
+      "base": "https://<uat-host>",
+      "host": "<uat-host>",
       "admin_token": "key:secret",              # seeds/resolves foreign-owned targets, cleans up
       "personas": {
         "user_a":      {"token": "key:secret", "email": "a@..."},

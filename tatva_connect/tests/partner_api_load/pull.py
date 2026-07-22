@@ -12,16 +12,16 @@ LSQ is paced and read once. Notes and LSQ's own tasks are deliberately not fetch
 has no endpoint for either, so those reads would cost thousands of requests against someone else's
 production system and test nothing.
 
-    python -m tatva_connect.tests.live.load.pull anaya tatvapractice --leads 1000
+    python -m tatva_connect.tests.partner_api_load.pull anaya tatvapractice --leads 1000
 """
 import argparse
 import json
 import time
 from collections import defaultdict
 
-from tatva_connect.tests.live.load.config import ACCOUNTS, account_dir, field_map, lsq_creds
-from tatva_connect.tests.live.load.log import Logger
-from tatva_connect.tests.live.load.lsq import LSQ, LSQReadOnlyError
+from tatva_connect.tests.partner_api_load.config import ACCOUNTS, account_dir, field_map, lsq_creds
+from tatva_connect.tests.partner_api_load.log import Logger
+from tatva_connect.tests.partner_api_load.lsq import LSQ, LSQReadOnlyError
 
 PAGE = 1000
 FROM_DATE = "2024-01-01 00:00:00"

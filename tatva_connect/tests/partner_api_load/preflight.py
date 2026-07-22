@@ -4,9 +4,9 @@
 
 Runs INSIDE the backend container against the live site:
 
-    bench-python tatva_connect/tests/live/load/preflight.py check
-    bench-python tatva_connect/tests/live/load/preflight.py off
-    bench-python tatva_connect/tests/live/load/preflight.py restore
+    bench-python tatva_connect/tests/partner_api_load/preflight.py check
+    bench-python tatva_connect/tests/partner_api_load/preflight.py off
+    bench-python tatva_connect/tests/partner_api_load/preflight.py restore
 
 `off` snapshots every automation toggle to reports/toggles.snapshot.json and disables all of them
 except the two the run must exercise: file screening (ClamAV) and file privacy (fail-closed, never
@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 
 import frappe
+
+from tatva_connect.tests.partner_api_load.config import PARTNER_USER
 
 SNAPSHOT = Path(__file__).resolve().parent / "reports" / "toggles.snapshot.json"
 
@@ -198,7 +200,8 @@ def cmd_quota_restore():
 	return 0
 
 
-PARTNERS = ("partner-api-anaya@tatvacare.in", "partner-api-tp@tatvacare.in")
+# Live service-account logins are operator config, never source (public repo) — see config.PARTNER_USER.
+PARTNERS = tuple(PARTNER_USER.values())
 
 
 def cmd_wipe():

@@ -1,9 +1,11 @@
-# authz — Playwright lane
+# `authz_browser/` — the browser half of `authz` (Playwright)
+
+> Part of the test tree — start at [`tests/README.md`](../README.md).
 
 Drives the real CRM SPA (`http://dev.localhost:8000`) to prove the grain
 entitlement layer never leaks across grains, and that direct attacks (URL
 tamper, raw API calls, permlevel-1 field reads) are denied. This is the browser
-half of the `authz` framework — read `../TESTS.md` (§6, §7, §11) first.
+half of the `authz` framework — read `../README.md` (§6, §7, §11) first.
 
 ## SAFETY — the COMMS-OFF contract (non-negotiable)
 
@@ -81,6 +83,6 @@ gitignored — they are secrets. `node_modules/` is already ignored repo-wide.
 Add to the repo `.gitignore` if not already covered:
 
 ```
-tatva_connect/tests/live/browser/.auth/
-tatva_connect/tests/live/browser/authz_creds.json
+tatva_connect/tests/authz_browser/.auth/
+tatva_connect/tests/authz_browser/authz_creds.json
 ```

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Cross-app permission-surface drift guard (TESTS.md §4, bucket F).
+"""Cross-app permission-surface drift guard (README.md §4, bucket F).
 
 Generalizes lockdown.effective_all_guest_grants from {All, Guest} x {locked doctypes} to ANY
 role across ALL doctypes, then diffs the LIVE grant surface against the blessed allowlist.json.

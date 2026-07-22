@@ -4,7 +4,7 @@
 grain-tagged Assignment Rules, a partner mapping, and 100 dummy CRM Leads + CRM Tasks spread across
 the 5 canonical grains. DEV/TEST ONLY — never wired into after_migrate/seeds.
 
-Two lifecycles (TESTS.md §8):
+Two lifecycles (README.md §8):
   - In-process tests: call seed(commit=False) in setUpClass; IntegrationTestCase rolls it back per
     class. No teardown needed, nothing is committed.
   - Playwright / real HTTP: a standalone runner calls seed(commit=True) (browser runs on a separate

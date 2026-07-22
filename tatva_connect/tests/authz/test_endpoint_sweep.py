@@ -2,7 +2,7 @@
 # See license.txt
 """Layer 2 + 3 — the API-layer deny-sweep over REAL HTTP (the VAPT class).
 
-Standalone runner (the committed / Playwright lifecycle, TESTS.md section 8): a browser/HTTP request
+Standalone runner (the committed / Playwright lifecycle, README.md section 8): a browser/HTTP request
 runs on a separate connection and cannot see an uncommitted txn, so this seeds with commit=True and
 tears down by tag. It:
   1. asserts comms-off (never a real send),

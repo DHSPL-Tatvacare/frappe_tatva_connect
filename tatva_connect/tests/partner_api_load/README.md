@@ -1,4 +1,6 @@
-# Partner API load test
+# `partner_api_load/` — partner API volume test (local only, real PHI)
+
+> Part of the test tree — start at [`tests/README.md`](../README.md).
 
 Drives real LeadSquared data through the partner API at scale, on a local bench, and times every
 call. It answers two questions the unit suites cannot: does the API hold up under real volume, and
@@ -9,6 +11,19 @@ migration loader (`docs/go-live/7-migrate-data/`) writes through the ORM as a tr
 and can stamp who owned a record and when it was made. This harness is an ordinary partner: it holds
 no privileged handle, and the API refuses to be told those things. The two are read side by side, not
 swapped for one another.
+
+## Operator config (not in this repo)
+
+Account names and partner service-account logins are **live identifiers**, so they live in the
+gitignored creds dir, never in source (this repo is public):
+
+`docs/go-live/7-migrate-data/.creds/partner-accounts.json`
+```json
+{ "<account-name>": "<partner-service-account-email>" }
+```
+
+Without that file the harness reports **no accounts configured** rather than falling back to a
+default — a missing config must fail loudly, never leak one.
 
 ## Safety
 
@@ -29,15 +44,15 @@ Preflight first. It fails the run rather than repairing the site.
 ```bash
 docker exec tatvalocal-backend-1 bash -lc \
   'cd /home/frappe/frappe-bench/sites && ../env/bin/python -B \
-   /home/frappe/frappe-bench/apps/tatva_connect/tatva_connect/tests/live/load/preflight.py check'
+   /home/frappe/frappe-bench/apps/tatva_connect/tatva_connect/tests/partner_api_load/preflight.py check'
 ```
 
 Then pull, load, and replay:
 
 ```bash
-.venv/bin/python -m tatva_connect.tests.live.load.pull anaya tatvapractice --leads 250
-.venv/bin/python -m tatva_connect.tests.live.load.run  anaya tatvapractice
-.venv/bin/python -m tatva_connect.tests.live.load.run  anaya tatvapractice --replay
+.venv/bin/python -m tatva_connect.tests.partner_api_load.pull anaya tatvapractice --leads 250
+.venv/bin/python -m tatva_connect.tests.partner_api_load.run  anaya tatvapractice
+.venv/bin/python -m tatva_connect.tests.partner_api_load.run  anaya tatvapractice --replay
 ```
 
 The replay is the point, not a formality. Every write carries an `Idempotency-Key` derived from the
@@ -52,8 +67,8 @@ API gets exercised from outside the network, as a partner actually reaches it.
 
 ```bash
 # one terminal per grain; run them together and the concurrency is real
-.venv/bin/python -m tatva_connect.tests.live.load.uat --grain anaya         --leads 50 --base https://<uat> --site <uat-host>
-.venv/bin/python -m tatva_connect.tests.live.load.uat --grain tatvapractice --leads 50 --base https://<uat> --site <uat-host>
+.venv/bin/python -m tatva_connect.tests.partner_api_load.uat --grain anaya         --leads 50 --base https://<uat> --site <uat-host>
+.venv/bin/python -m tatva_connect.tests.partner_api_load.uat --grain tatvapractice --leads 50 --base https://<uat> --site <uat-host>
 ```
 
 Tokens come from `.creds/partner-api-tokens.uat.json` (`--tokens` to point elsewhere); a deployment's

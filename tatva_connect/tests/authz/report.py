@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Render + persist the authz run (TESTS.md §11 artifacts).
+"""Render + persist the authz run (README.md §11 artifacts).
 
 Two outputs, no DB needed for either:
   render(results)         -> a compact fixed-width ascii grid (rows=principals, cols=doctype×action);

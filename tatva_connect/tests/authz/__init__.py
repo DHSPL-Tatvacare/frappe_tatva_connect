@@ -2,7 +2,7 @@
 # See license.txt
 """authz — the permission / access / VAPT test framework.
 
-Read TESTS.md (same folder) for the philosophy and map. Spine modules:
+Read README.md (same folder) for the philosophy and map. Spine modules:
   comms.py    — the mandatory COMMS-OFF safety interlock (every test calls it first)
   grains.py   — the 5 canonical test grains + master-existence validation
   roster.py   — the always-on dummy-user roster (real roles only)

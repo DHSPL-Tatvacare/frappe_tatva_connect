@@ -15,7 +15,7 @@ future LMS upgrade cannot silently regress it:
   N3  check_answer already enforces `show_answers` server-side               -> pin
   N2  sequential single-attempt enforced; the RACE (count-then-insert) is    -> FIX (atomic lock);
       the real hole — proven in the LIVE HTTP replay, not here (a rolled-back    race proof is HTTP-native
-      FrappeTestCase cannot fire two committed concurrent connections)          (tests/live), see run_lms_replay
+      FrappeTestCase cannot fire two committed concurrent connections)          (tests/vapt_live)
   N4  LMS Test Case input/expected_output readable by a student              -> FIX (permlevel)
   N5  exercise (child test_cases) readable by a student via client.get       -> FIX (permlevel)
   N6  no server start-time exists; best-effort start-stamp on quiz-open       -> FIX (best-effort), residual

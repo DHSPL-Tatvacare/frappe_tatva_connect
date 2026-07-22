@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The 13 attack vectors — the directions in which access could break (TESTS.md §5).
+"""The 13 attack vectors — the directions in which access could break (README.md §5).
 
 Each vector names a breakage and the oracle that judges it (audit 2026-06-26: the oracle MUST
 match the surface — has_permission is blind to PQC and to permlevel-1 fields). `cases.py` attaches

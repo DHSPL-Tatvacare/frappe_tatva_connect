@@ -232,7 +232,7 @@ def get_job_details(job):
 # --- LMS quiz assessment integrity (VAPT Jul N2, N6) -------------------------------------------
 # Not authz — these harden the quiz SUBMISSION against a race and a client-side-only timer. Same seam
 # (wrap -> delegate to native), so no fork. N1 (server already re-grades) and N3 (check_answer already
-# enforces show_answers) need NO wrapper — proven live; tests/security/test_lms_vapt_jul.py pins them.
+# enforces show_answers) need NO wrapper — proven live; tests/security/test_lms_assessment.py pins them.
 _QUIZ_START_TTL = 24 * 60 * 60  # keep the start stamp a day so elapsed stays computable past the deadline
 _QUIZ_GRACE_SEC = 30  # clock skew + in-flight submit; a real submit lands well inside this
 

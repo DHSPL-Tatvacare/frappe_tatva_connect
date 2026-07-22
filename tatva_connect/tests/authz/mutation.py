@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Planted violations — the negative controls that prove the suite can go RED (TESTS.md §9).
+"""Planted violations — the negative controls that prove the suite can go RED (README.md §9).
 
 A green suite proves nothing unless we prove it can catch a real bug. So for EVERY attack vector
 (A1..A13) we plant at least one deliberate violation and confirm the matching detector flags it.

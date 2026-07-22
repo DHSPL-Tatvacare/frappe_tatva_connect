@@ -15,7 +15,7 @@ import time
 
 import requests
 
-from tatva_connect.tests.live.load.config import LSQ_BULK_ENDPOINTS, LSQ_READ_ENDPOINTS
+from tatva_connect.tests.partner_api_load.config import LSQ_BULK_ENDPOINTS, LSQ_READ_ENDPOINTS
 
 ACTIVITY_BY_EVENT = "ProspectActivity.svc/CustomActivity/RetrieveByActivityEvent"
 

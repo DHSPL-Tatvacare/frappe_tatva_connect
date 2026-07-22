@@ -12,8 +12,8 @@ is exactly the position a real partner is in, and the reason this run is worth m
 A grain is a process. Run two side by side and the concurrency is real: two partners, two tokens, two
 rate budgets, one server.
 
-    python -m tatva_connect.tests.live.load.uat --grain anaya         --leads 50 --base https://uat.example.in --site uat.example.in
-    python -m tatva_connect.tests.live.load.uat --grain tatvapractice --leads 50 --base https://uat.example.in --site uat.example.in
+    python -m tatva_connect.tests.partner_api_load.uat --grain anaya         --leads 50 --base https://uat.example.in --site uat.example.in
+    python -m tatva_connect.tests.partner_api_load.uat --grain tatvapractice --leads 50 --base https://uat.example.in --site uat.example.in
 
 The slice is activity-first: every mapped event code is swept, leads are ranked by how much history they
 carry, and the richest are taken. Fifty random leads would be fifty leads and almost nothing else, and
@@ -25,10 +25,10 @@ deployment the only way to find what you left behind is to have written it down.
 import argparse
 import sys
 
-from tatva_connect.tests.live.load import pull as pull_mod
-from tatva_connect.tests.live.load import run as run_mod
-from tatva_connect.tests.live.load.config import ACCOUNTS, BASE_URL, SITE_HOST, account_dir
-from tatva_connect.tests.live.load.log import Logger
+from tatva_connect.tests.partner_api_load import pull as pull_mod
+from tatva_connect.tests.partner_api_load import run as run_mod
+from tatva_connect.tests.partner_api_load.config import ACCOUNTS, BASE_URL, SITE_HOST, account_dir
+from tatva_connect.tests.partner_api_load.log import Logger
 
 LOCAL = ("localhost", "127.0.0.1", "dev.localhost")
 

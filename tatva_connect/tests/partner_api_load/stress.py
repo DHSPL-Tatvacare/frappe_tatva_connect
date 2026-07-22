@@ -11,7 +11,7 @@ Healthy looks like: a wall of 429s that each carry a Retry-After, no 5xx, and no
 dies. Unhealthy looks like 500s, connection resets, or a 429 with nothing telling the caller when to
 come back.
 
-    python -m tatva_connect.tests.live.load.stress anaya --workers 32 --leads 300
+    python -m tatva_connect.tests.partner_api_load.stress anaya --workers 32 --leads 300
 """
 import argparse
 import json
@@ -22,9 +22,9 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from requests.adapters import HTTPAdapter
 
-from tatva_connect.tests.live.load import shape
-from tatva_connect.tests.live.load.client import Partner
-from tatva_connect.tests.live.load.config import (
+from tatva_connect.tests.partner_api_load import shape
+from tatva_connect.tests.partner_api_load.client import Partner
+from tatva_connect.tests.partner_api_load.config import (
 	ACCOUNTS,
 	BASE_URL,
 	REPORTS,

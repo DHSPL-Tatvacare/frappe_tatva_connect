@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Tier-1 catastrophe sweeps (TESTS.md §4) — blanket DENY invariants over EVERY doctype.
+"""Tier-1 catastrophe sweeps (README.md §4) — blanket DENY invariants over EVERY doctype.
 
 Cheap, exhaustive, programmatic: one `has_permission` call per (doctype, role, action). The oracle is
 `native_doctype_capability` (doc=None) — sanctioned here because a doctype-level DENY is the strongest

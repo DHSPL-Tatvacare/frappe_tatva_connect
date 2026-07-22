@@ -8,7 +8,7 @@ copy. Those are separate claims and each is checked here against the tables them
 
 Runs INSIDE the backend container:
 
-    bench-python tatva_connect/tests/live/load/validate.py anaya
+    bench-python tatva_connect/tests/partner_api_load/validate.py anaya
 """
 import json
 import sys
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import frappe
 
-from tatva_connect.tests.live.load.config import PARTNER_USER
+from tatva_connect.tests.partner_api_load.config import PARTNER_USER
 
 REPORTS = Path(__file__).resolve().parent / "reports"
 

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Self-validation — proving the suite isn't blind (TESTS.md §9, the confusion matrix).
+"""Self-validation — proving the suite isn't blind (README.md §9, the confusion matrix).
 
 A green authz run proves nothing on its own: green can mean "safe" OR "the tests are asleep". This
 test validates the validator. For EVERY attack vector it plants a deliberate violation (a negative

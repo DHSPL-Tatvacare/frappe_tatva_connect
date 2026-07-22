@@ -114,7 +114,9 @@ python tatva_connect/tests/security/tcsec.py locks
 - **Refuses any host that isn't `localhost`/`dev.localhost`/`127.0.0.1`** unless you pass
   `--i-have-authorization`. **Never point it at production.**
 - Needs a logged-in session: `--cookie "sid=<session-id>"`. Probe POST bodies with `--data`.
-- `--level`/`--risk` default to `1` (low). Candidate endpoints live in `tatva_connect/tests/security/dast-targets.txt`.
+- `--level`/`--risk` default to `1` (low). Pass the endpoint to probe with `--target` — there is no
+  target list file; the authoritative attack surface is `tatva_connect/tests/authz/registry/endpoints.py`,
+  which the authz sweep drives (see [`tests/README.md`](../README.md)).
 
 ```bash
 python tatva_connect/tests/security/tcsec.py dast \

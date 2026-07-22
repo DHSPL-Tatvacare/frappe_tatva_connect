@@ -85,7 +85,6 @@ coverage.xml
 htmlcov/
 # The security cockpit (tcsec.py) is TRACKED — the local git hooks invoke it as the enforcement gate.
 # Only its local DAST target list (live endpoint URLs) stays OFF the public repo.
-tatva_connect/tests/security/dast-targets.txt
 
 # local audit-triage spikes + dashboard (internal security testing)
 tatva_connect/tests/authz/spikes/
@@ -97,15 +96,16 @@ tatva_connect/tests/authz/spikes/
 api-docs/http-client.private.env.json
 
 # security harness LIVE lane — runner .py stays TRACKED; only its creds/PHI/reports/browser artifacts ignore.
-tatva_connect/tests/live/.creds/
-tatva_connect/tests/live/**/.creds/
-tatva_connect/tests/live/**/data/
-tatva_connect/tests/live/**/reports/
-tatva_connect/tests/live/**/.auth/
-tatva_connect/tests/live/**/node_modules/
-tatva_connect/tests/live/**/test-results/
-tatva_connect/tests/live/**/playwright-report/
-tatva_connect/tests/live/**/.browsers/
+# Live-test secrets and payloads. Path-agnostic on purpose: these must stay ignored no matter how the
+# tests/ tree is reorganised (load/data holds REAL patient records; .creds holds live tokens).
+tatva_connect/tests/**/.creds/
+tatva_connect/tests/**/data/
+tatva_connect/tests/**/reports/
+tatva_connect/tests/**/.auth/
+tatva_connect/tests/**/node_modules/
+tatva_connect/tests/**/test-results/
+tatva_connect/tests/**/playwright-report/
+tatva_connect/tests/**/.browsers/
 
 # WhatsApp characterisation corpus — real webhook payloads harvested from the bench's Integration
 # Request rows. Scrubbed, but it is captured patient traffic and this repo is public. The tests that

@@ -1,4 +1,6 @@
-# `authz` — the permission / access / VAPT test framework
+# `authz/` — the permission / escalation engine
+
+> Part of the test tree — start at [`tests/README.md`](../README.md).
 
 > **One sentence:** **differential / metamorphic authz testing with mutation-based self-validation** — a data-driven framework that enumerates *who can act* × *how access could break*, judges each crossing against Frappe's own permission engine (never a hardcoded answer — assert `actual ⊆ native`, grain may narrow but never widen), and proves — by planting a known-bad per attack vector — that the suite can actually catch an escalation (`recall == 1.0` or the build fails). The differential/metamorphic half is §2; the mutation-based self-validation half is §9.
 
@@ -136,7 +138,7 @@ generator crosses every endpoint primitive with the hostile principals, and the 
 
 ```
 tatva_connect/tests/authz/
-├── TESTS.md                ← you are here (philosophy + map)
+├── README.md                ← you are here (philosophy + map)
 │
 │  ── REGISTRY (the curated surface, as DATA) ──
 ├── registry/
@@ -168,7 +170,7 @@ tatva_connect/tests/authz/
 ├── test_self_validation.py     runs mutation.py → asserts the suite goes RED (no FN)
 │
 │  ── PLAYWRIGHT (break it through the real browser) ──
-└── (moved) → tatva_connect/tests/live/browser/
+└── (moved) → tatva_connect/tests/authz_browser/
     ├── auth.setup.ts       reads creds.json → logs every persona in
     ├── leads.spec.ts       each grain user sees only in-grain leads/tasks
     ├── smartview.spec.ts   Smart View columns ⊆ grain∩role; no out-of-grain row data
@@ -177,7 +179,7 @@ tatva_connect/tests/authz/
 ```
 
 > The browser specs now live in the security harness's LIVE lane
-> (`tatva_connect/tests/live/browser/`), alongside the load and partner-API pentest runners —
+> (`tatva_connect/tests/authz_browser/`), alongside the load and partner-API pentest runners —
 > one hood for everything that hits a running deployment. They still consume the same
 > `authz_creds.json` this generator writes; only their folder changed.
 

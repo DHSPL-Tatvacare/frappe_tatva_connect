@@ -10,16 +10,16 @@ Records are synthetic but valid — a distinctive synthetic mobile range and nam
 identifiable and purgeable — and padded with an ignored key to reach the target size while staying under
 the file record cap (a 50 MB file is ~45k records of ~1 KB, not millions of tiny ones).
 
-    python -m tatva_connect.tests.live.load.async_bulk anaya --mb 25
-    python -m tatva_connect.tests.live.load.async_bulk anaya tatvapractice --mb 50
+    python -m tatva_connect.tests.partner_api_load.async_bulk anaya --mb 25
+    python -m tatva_connect.tests.partner_api_load.async_bulk anaya tatvapractice --mb 50
 """
 import argparse
 import json
 import time
 
-from tatva_connect.tests.live.load.client import METHOD, Partner
-from tatva_connect.tests.live.load.config import ACCOUNTS, BASE_URL, SITE_HOST, partner_token
-from tatva_connect.tests.live.load.log import Logger
+from tatva_connect.tests.partner_api_load.client import METHOD, Partner
+from tatva_connect.tests.partner_api_load.config import ACCOUNTS, BASE_URL, SITE_HOST, partner_token
+from tatva_connect.tests.partner_api_load.log import Logger
 
 NAME_PREFIX = "AsyncLoad"
 # +91 61 9X ...: a distinctive synthetic 10-digit range (61-90/61-91) that will not collide with real data.
@@ -122,7 +122,7 @@ def main():
 	ap = argparse.ArgumentParser(description="drive the async bulk-job tier end-to-end via the endpoints")
 	ap.add_argument("accounts", nargs="*", default=list(ACCOUNTS))
 	ap.add_argument("--mb", type=int, default=25, help="approx JSONL file size to submit (MB)")
-	ap.add_argument("--base", default=BASE_URL, help="target base URL, e.g. https://one-uat.tatvacare.in")
+	ap.add_argument("--base", default=BASE_URL, help="target base URL, e.g. https://<env>.example.com")
 	ap.add_argument("--site", default=SITE_HOST, help="Host header for the target site")
 	ap.add_argument("--tokens", default=None,
 	                help="partner tokens file under .creds (e.g. partner-api-tokens.uat.json)")

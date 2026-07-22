@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The registry — the curated test surface as DATA (TESTS.md §6).
+"""The registry — the curated test surface as DATA (README.md §6).
 
   dimensions.py  the tuple dimensions + values (for coverage auditing)
   attacks.py     the 13 attack vectors (the directions of breakage)

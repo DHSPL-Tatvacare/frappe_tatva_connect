@@ -11,10 +11,10 @@ built out of the VAPT), the personas from `tests/authz/roster`, the transport fr
 http_engine`, and the "did it do the thing" judgment from `tests/authz/test_endpoint_sweep`.
 
     # 1. on the bench (once per code change)
-    bench --site dev.localhost execute tatva_connect.tests.live.uat.baseline.build
+    bench --site dev.localhost execute tatva_connect.tests.vapt_live.baseline.build
 
     # 2+3. from anywhere, against the live target in .creds/uat.json
-    python -m tatva_connect.tests.live.uat.run
+    python -m tatva_connect.tests.vapt_live.run
 """
 import argparse
 

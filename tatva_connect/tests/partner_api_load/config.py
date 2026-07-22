@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent.parent.parent.parent  # load -> live -> tests -> tatva_connect -> repo
+REPO = HERE.parent.parent.parent  # partner_api_load -> tests -> tatva_connect -> repo
 MIGRATION = REPO / "docs" / "go-live" / "7-migrate-data"
 CREDS = MIGRATION / ".creds"
 DATA = HERE / "data"
@@ -24,13 +24,26 @@ SITE_HOST = os.environ.get("LOADTEST_SITE", "dev.localhost")
 # per environment rather than overwritten, and a run says which one it read.
 TOKENS_FILE = os.environ.get("LOADTEST_TOKENS", "partner-api-tokens.local.json")
 
-ACCOUNTS = ("anaya", "tatvapractice")
+# Account names and the partner user each one's traffic is sent as. These are LIVE identifiers (real
+# service-account logins and customer names), so they are operator config, not source: this repo is
+# PUBLIC. Read from the gitignored creds dir, with a non-identifying fallback so the module still
+# imports on a machine that has no creds (the run then fails loudly at token lookup, not at import).
+_ACCOUNTS_FILE = CREDS / "partner-accounts.json"
 
-# The partner user whose token each account's traffic is sent as. One key per grain.
-PARTNER_USER = {
-	"anaya": "partner-api-anaya@tatvacare.in",
-	"tatvapractice": "partner-api-tp@tatvacare.in",
-}
+
+def _load_accounts():
+	"""{account_name: partner_user_email} from .creds/partner-accounts.json. Absent -> empty, so the
+	harness reports 'no accounts configured' rather than leaking a default into the public repo."""
+	if not _ACCOUNTS_FILE.exists():
+		return {}
+	try:
+		return json.loads(_ACCOUNTS_FILE.read_text())
+	except (OSError, ValueError):
+		return {}
+
+
+PARTNER_USER = _load_accounts()
+ACCOUNTS = tuple(PARTNER_USER)
 
 # LSQ read endpoints this harness is allowed to reach. Read-only is enforced by allowlist, not by
 # HTTP verb, because LSQ's retrieve APIs are POST-based. Nothing that creates, updates, captures or

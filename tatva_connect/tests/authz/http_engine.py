@@ -4,7 +4,7 @@
 
 Layers 2 (endpoint sweep) and 3 (VAPT pins) run over real HTTP on a separate connection, so they use
 the COMMITTED seed (generator.seed(commit=True)) + creds.json, the same lifecycle Playwright uses
-(TESTS.md section 8). Token auth resolves to the SAME frappe.session.user as a browser login, so
+(README.md section 8). Token auth resolves to the SAME frappe.session.user as a browser login, so
 authorization behaves identically, without CSRF friction. One transport, reused by every HTTP case.
 
 `path` is the FULL dotted method, so a case can target ANY installed app or the generic Frappe

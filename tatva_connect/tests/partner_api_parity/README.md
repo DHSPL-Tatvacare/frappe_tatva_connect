@@ -1,4 +1,6 @@
-# pentest — partner-API parity + tuple-driven HTTP attack harness (local/UAT only)
+# `partner_api_parity/` — migration data-fidelity (NOT a security test)
+
+> Part of the test tree — start at [`tests/README.md`](../README.md).
 
 > **Not referenced by any INDEX/manifest/deploy path.** It just sits here. Runs on the LOCAL
 > host against `dev.localhost` via HTTP, exercising the **real gated partner API** as the scoped

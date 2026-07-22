@@ -12,8 +12,8 @@ use it. The migration loader answers both problems the same way and this does to
 HERE, seconds before the byte is fetched. An expired or deleted object is recorded and skipped — the
 subject of this test is our API, not LSQ's S3.
 
-    python -m tatva_connect.tests.live.load.files anaya --leads 20
-    python -m tatva_connect.tests.live.load.files anaya --leads 20 --no-clamav
+    python -m tatva_connect.tests.partner_api_load.files anaya --leads 20
+    python -m tatva_connect.tests.partner_api_load.files anaya --leads 20 --no-clamav
 """
 import argparse
 import base64
@@ -24,8 +24,8 @@ from collections import Counter, defaultdict
 
 import requests
 
-from tatva_connect.tests.live.load.client import Partner
-from tatva_connect.tests.live.load.config import REPORTS, lsq_creds, partner_token
+from tatva_connect.tests.partner_api_load.client import Partner
+from tatva_connect.tests.partner_api_load.config import REPORTS, lsq_creds, partner_token
 
 # EICAR: the industry-standard harmless string every scanner is required to flag. If ClamAV is live,
 # this MUST be rejected — and that rejection is the only proof the scanner is actually in the path.

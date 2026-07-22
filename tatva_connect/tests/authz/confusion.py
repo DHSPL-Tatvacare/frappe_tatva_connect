@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The confusion matrix — proving the suite isn't blind (TESTS.md §9).
+"""The confusion matrix — proving the suite isn't blind (README.md §9).
 
 A green run proves nothing on its own: green can mean "safe" OR "the tests are asleep". So we
 score the suite's own predictions against ground truth and report precision/recall.

@@ -11,7 +11,7 @@ What travels is a ROLE-semantic expectation, never a record id:
 so it stays valid on a UAT whose rows are different but whose ROLES are the same.
 
 Run on the bench:
-    bench --site dev.localhost execute tatva_connect.tests.live.uat.baseline.build
+    bench --site dev.localhost execute tatva_connect.tests.vapt_live.baseline.build
 """
 import json
 import os
