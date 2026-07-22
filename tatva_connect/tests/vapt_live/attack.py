@@ -25,17 +25,17 @@ REPORT_DIR = os.path.join(_HERE, "..", "reports")
 _SPEC_BY_KEY = {e.key: e for e in (*endpoints.GENERIC_ENDPOINTS, *endpoints.APP_ENDPOINTS)}
 
 
-def _resolve_targets(cfg, doctypes):
-	"""A real row per doctype on the LIVE target, found with the admin token. Explicit creds `targets`
-	win; anything unresolved is recorded as skip-no-target, never silently dropped."""
+def _resolve_targets(eng, cfg, doctypes, admin_persona="admin"):
+	"""A real row per doctype on the LIVE target, found through the ALREADY-authenticated admin session.
+	Explicit creds `targets` win; anything unresolved is recorded as skip-no-target, never silently
+	dropped. No data is seeded: an attack that reaches a row it should not is a finding regardless of
+	who created the row, so a live run needs no fixtures."""
 	resolved = dict(cfg.get("targets") or {})
-	admin = cfg.get("admin_token")
-	if not admin:
+	if admin_persona not in (cfg.get("personas") or {}):
 		return resolved
-	eng = http_engine.HttpEngine({"_admin": {"token": admin}}, base=cfg["base"], host=cfg["host"])
 	for dt in sorted(d for d in doctypes if d and d not in resolved):
 		try:
-			code, body = eng.call("_admin", "frappe.client.get_list", http="POST",
+			code, body = eng.call(admin_persona, "frappe.client.get_list", http="POST",
 			                      params={"doctype": dt, "limit_page_length": 1})
 			msg = body.get("message") if isinstance(body, dict) else None
 			if code == 200 and msg:
@@ -45,16 +45,30 @@ def _resolve_targets(cfg, doctypes):
 	return resolved
 
 
-def run(cfg=None, expectations_path=None, out_path=None):
+# One request every 2s by default. A live deployment may sit behind a WAF or an nginx/site_config
+# rate limit we cannot see from here, and a 429 is indistinguishable from a blocked attack unless we
+# stay under the limit — so the run is deliberately slow. ~484 cases at 2s is roughly 16 minutes.
+DEFAULT_DELAY_SEC = 2.0
+
+
+def run(cfg=None, expectations_path=None, out_path=None, delay=None):
 	cfg = cfg or config.load()
+	delay = DEFAULT_DELAY_SEC if delay is None else delay
 	expectations_path = expectations_path or os.path.join(_HERE, "expectations.json")
 	with open(expectations_path) as fh:
 		exported = json.load(fh)
 	rows = exported["cases"]
 
-	targets = _resolve_targets(cfg, {r["doctype"] for r in rows})
 	eng = http_engine.HttpEngine(config.engine_creds(cfg), base=cfg["base"], host=cfg["host"])
 	personas = set(cfg["personas"])
+
+	# PRE-FLIGHT — the run stops here unless every persona is really logged in AS ITSELF. Without this
+	# a dead credential answers 401 to every attack, _endpoint_allowed reads 401 as "denied", and the
+	# report says CLEAN having tested nothing. That happened once; it must never be possible again.
+	identities = eng.authenticate_all(sorted(personas))  # raises AuthError -> run aborts, scores nothing
+	print("[attack] authenticated: " + ", ".join(f"{p}={identities[p] or 'guest'}" for p in sorted(identities)))
+
+	targets = _resolve_targets(eng, cfg, {r["doctype"] for r in rows})
 
 	os.makedirs(REPORT_DIR, exist_ok=True)
 	run_id = f"uat-{int(time.time())}"
@@ -75,9 +89,17 @@ def run(cfg=None, expectations_path=None, out_path=None):
 			else:
 				params = endpoints.build_params(spec, r["doctype"], rec["target"])
 				try:
+					if fired:
+						time.sleep(delay)  # pace: stay under any WAF / site_config rate limit
 					code, body = eng.call(r["persona"], spec.method, http=spec.http, params=params)
 					rec.update(status=code, body=_snip(body), verdict="FIRED")
 					fired += 1
+				except (http_engine.AuthError, http_engine.ThrottleError) as e:
+					# Fatal by design: the request never reached the permission engine, so nothing after
+					# this point could be judged honestly. Write the row, then stop the whole run.
+					rec.update(verdict="ABORTED", reason=f"{type(e).__name__}: {str(e)[:160]}")
+					out.write(json.dumps(rec, default=str) + "\n")
+					raise
 				except Exception as e:
 					rec.update(verdict="ERROR", reason=f"{type(e).__name__}: {str(e)[:120]}")
 			if rec["verdict"] != "FIRED":

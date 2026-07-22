@@ -18,22 +18,31 @@ http_engine`, and the "did it do the thing" judgment from `tests/authz/test_endp
 """
 import argparse
 
-from . import attack, compare, config
+from . import attack, compare, config, vectors
 
 
 def main(argv=None):
 	ap = argparse.ArgumentParser(description="Live VAPT replay against a non-prod target")
-	ap.add_argument("--phase", choices=["attack", "compare", "all"], default="all")
+	ap.add_argument("--phase", choices=["vectors", "attack", "compare", "all"], default="vectors")
 	ap.add_argument("--corpus", help="existing corpus JSONL (for --phase compare)")
+	ap.add_argument("--delay", type=float, default=None,
+	                help=f"seconds between requests (default {attack.DEFAULT_DELAY_SEC}) — keeps the run "
+	                     "under any WAF / site_config rate limit")
 	ap.add_argument("--allow-unsafe-host", action="store_true",
 	                help="override the non-prod host guard (never for production)")
 	args = ap.parse_args(argv)
+
+	if args.phase == "vectors":
+		cfg = config.load(allow_unsafe_host=args.allow_unsafe_host)
+		print(f"[run] target={cfg['base']} host={cfg['host']}")
+		t = vectors.run(cfg)
+		raise SystemExit(1 if t['FAIL'] else 0)
 
 	corpus = args.corpus
 	if args.phase in ("attack", "all"):
 		cfg = config.load(allow_unsafe_host=args.allow_unsafe_host)
 		print(f"[run] target={cfg['base']} host={cfg['host']} personas={sorted(cfg['personas'])}")
-		corpus = attack.run(cfg)
+		corpus = attack.run(cfg, delay=args.delay)
 	if args.phase in ("compare", "all"):
 		if not corpus:
 			raise SystemExit("--phase compare needs --corpus <path>")

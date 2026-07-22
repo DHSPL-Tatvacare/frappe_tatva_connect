@@ -177,22 +177,59 @@ def run(base=None, host="dev.localhost"):
 		allowed = _endpoint_allowed(c.action, code, body)
 		native_ok = oracle.native_http_verdict(roster.email(c.principal), c.action, c.doctype, obj_id)
 		if _escalates(c.action, code, body, native_ok):
-			escalations.append({"case": c.id, "code": code, "method": spec.method})
+			rec = {"case": c.id, "code": code, "method": spec.method,
+			       "endpoint_key": c.endpoint_key, "doctype": c.doctype,
+			       "benign": findings.is_benign_residual(c.endpoint_key, c.doctype)}
+			escalations.append(rec)
 		results.append((c.id, code, allowed, native_ok))
 
 	uncovered = findings.uncovered(generated)
+	real = [e for e in escalations if not e["benign"]]
+	benign = [e for e in escalations if e["benign"]]
 	report = {"generated": len(generated), "skipped_no_target": skipped,
-	          "escalations": escalations, "vapt_uncovered": uncovered}
+	          "escalations": real, "benign_residuals": benign, "vapt_uncovered": uncovered}
 	# Print the verdict BEFORE teardown — teardown races the gunicorn connection and can throw, and the
 	# escalation list is the whole point of the run; it must never be lost to a cleanup flake.
 	print(f"[endpoint-sweep] cases={len(generated)} skipped={skipped} "
-	      f"escalations={len(escalations)} vapt_uncovered={len(uncovered)}")
-	for e in escalations:
+	      f"escalations={len(real)} benign_residuals={len(benign)} vapt_uncovered={len(uncovered)}")
+	for e in real:
 		print(f"  ESCALATION {e['case']} (HTTP {e['code']}) {e['method']}")
+	for e in benign:
+		print(f"  benign-residual {e['case']} ({e['endpoint_key']}/{e['doctype']}) — allowlisted")
 	if uncovered:
 		print(f"  VAPT COVERAGE GAP: {uncovered}")
+	assert_residuals_benign(eng)  # re-prove the allowlist is still non-sensitive (trap check)
 	_teardown_all()
 	return report
+
+
+def assert_residuals_benign(eng):
+	"""Re-prove, every run, that the allowlisted File-list residual is still NON-SENSITIVE: a foreign
+	PRIVATE file (owned by Administrator, attached to nothing) must appear in NONE of the three list
+	endpoints and be unreadable to a non-privileged persona. If it ever leaks, the allowlist is wrong and
+	the run FAILS — so 'benign' can never quietly rot into a real hole. Guards findings.BENIGN_RESIDUALS."""
+	trap = frappe.get_doc({"doctype": "File", "file_name": f"{TAG}-residual-trap.txt",
+	                       "is_private": 1, "content": f"{TAG}-trap-secret"}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	try:
+		leaked = []
+		for persona in ("no_role", "default_user"):
+			for method in ("frappe.client.get_list", "frappe.desk.reportview.get", "helpdesk.api.doc.get_list_data"):
+				_, body = eng.call(persona, method, "POST",
+				                   {"doctype": "File", "fields": ["name"], "limit_page_length": 2000})
+				msg = body.get("message") if isinstance(body, dict) else None
+				rows = msg if isinstance(msg, list) else ((msg.get("data") or msg.get("values") or []) if isinstance(msg, dict) else [])
+				if any(trap.name in str(r) for r in rows):
+					leaked.append(f"{persona}/{method}")
+			_, body = eng.call(persona, "frappe.client.get", "GET", {"doctype": "File", "name": trap.name})
+			if isinstance(body, dict) and not body.get("exc_type") and (body.get("message") or {}).get("file_url"):
+				leaked.append(f"{persona}/client.get(bytes)")
+		if leaked:
+			raise AssertionError(f"BENIGN RESIDUAL BROKEN — foreign private File leaked to: {leaked}. "
+			                     "findings.BENIGN_RESIDUALS is no longer safe.")
+	finally:
+		frappe.delete_doc("File", trap.name, force=True, ignore_permissions=True)
+		frappe.db.commit()
 
 
 def gate(base="http://localhost:8000", host="dev.localhost"):

@@ -7,12 +7,11 @@ Reads `tatva_connect/tests/vapt_live/.creds/uat.json`:
     {
       "base": "https://<uat-host>",
       "host": "<uat-host>",
-      "admin_token": "key:secret",              # seeds/resolves foreign-owned targets, cleans up
       "personas": {
-        "user_a":      {"token": "key:secret", "email": "a@..."},
-        "user_b":      {"token": "key:secret", "email": "b@..."},
-        "no_role":     {"token": "key:secret", "email": "n@..."},
-        "guest":       {"token": null}
+        "admin":   {"email": "...", "password": "..."},
+        "crm_user":{"email": "...", "password": "..."},
+        "no_role": {"email": "...", "password": "..."},
+        "guest":   {}
       },
       "targets": {"CRM Lead": "abc123"}         # optional; resolved via admin when absent
     }
@@ -23,7 +22,7 @@ import json
 import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-CREDS_PATH = os.path.join(_HERE, "..", ".creds", "uat.json")
+CREDS_PATH = os.path.join(_HERE, ".creds", "uat.json")
 
 # An active attack lane refuses anything that is not an explicitly allowed non-prod target.
 _ALLOWED_HOST_MARKERS = ("uat", "staging", "localhost", "127.0.0.1", "dev.")

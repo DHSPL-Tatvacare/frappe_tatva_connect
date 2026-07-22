@@ -55,13 +55,35 @@ VAPT_FINDINGS = [
 	_v("vapt-30-lms-quiz-questions", "P2", "lms-quiz-questions", "LMS Quiz"),
 ]
 
-# Known-benign residual escalations (verified live 2026-07-09, real DB): the wire stays LIVE (a NEW
-# escalation is the real signal), these are just non-sensitive by nature.
-#   * File list endpoints (client.get_list / reportview.get / hd-list-data) return the public folder
-#     SKELETON only (Home, Home/Attachments, ... — is_folder=1, is_private=0), never private content.
-#   * get_apps returns only the caller's own role-entitled app (e.g. LMS for an LMS Student), not the
+# Known-benign residual escalations. The wire stays LIVE (a NEW escalation on any OTHER endpoint/doctype
+# is still a real signal); only these exact (endpoint_key, doctype) pairs are subtracted from the gate.
+#
+# RE-VALIDATED live 2026-07-23 (dev DB, password personas no_role + default_user), correcting the earlier
+# "folder skeleton only" wording — which was WRONG: the File list endpoints DO return private, non-folder
+# rows. The security property is not "folders only", it is NATIVE FILE ENTITLEMENT:
+#   * client.get_list / reportview.get / hd-list-data on File return exactly the rows Frappe's own File
+#     has_permission entitles the caller to — own + attached-to-a-readable-doc + shared + public. Proven:
+#     a planted PRIVATE file owned by Administrator and attached to NOTHING (the trap) appears in NONE of
+#     the three lists for either persona AND its bytes are unreadable (frappe.client.get -> denied). The
+#     private rows that DO come back are wiki-space attachments the caller can read anyway (M1: a file's
+#     visibility follows its parent). test_endpoint_sweep.assert_residuals_benign() re-proves this every
+#     run, so "benign" is a CHECK, not a claim.
+#   * get_apps returns only the caller's own role-entitled app (['lms'] for an LMS Student), never the
 #     full namespace.
-# A File row with is_folder=0/is_private=1, or an app the caller has no role for, WOULD be a true leak.
+# A foreign private file surfacing in a list, or an app the caller has no role for, WOULD be a true leak
+# and is what the trap regression guards.
+BENIGN_RESIDUALS = {
+	("client-get-list", "File"),
+	("reportview-get", "File"),
+	("hd-list-data", "File"),
+	("installed-apps", None),  # get_apps — own entitled app only
+}
+
+
+def is_benign_residual(endpoint_key, doctype):
+	"""True iff this (endpoint_key, doctype) is a re-validated benign residual — subtracted from the gate,
+	never from the wire. `doctype` None in the allowlist means the endpoint carries no doctype."""
+	return (endpoint_key, doctype) in BENIGN_RESIDUALS or (endpoint_key, None) in BENIGN_RESIDUALS
 
 
 def _covers(finding, case):
