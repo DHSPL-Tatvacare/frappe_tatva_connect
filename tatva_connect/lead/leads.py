@@ -55,7 +55,7 @@ def stamp_entitled_grain(doc, method=None):
 		return
 	if not automation.is_enabled("Lead::CRM Lead::grain"):
 		return
-	from tatva_connect.access.entitlement import ALL_GRAINS, entitled_grains, grain_entitled
+	from tatva_connect.access.entitlement import ALL_GRAINS, REGISTRY_FLAG, entitled_grains, grain_entitled
 	from tatva_connect.api._base import throw_field
 
 	grains = entitled_grains()
@@ -67,6 +67,11 @@ def stamp_entitled_grain(doc, method=None):
 			  "grant an entitlement for the product line and group the lead belongs to."),
 			frappe.PermissionError,
 		)
+
+	# Entitlement is a REGION; a lead is a POINT. A region that wildcards an axis has to be resolved to
+	# one leaf before the lead can be filed. Flag OFF → skipped entirely, so the path below is today's.
+	if len(grains) == 1 and automation.is_enabled(REGISTRY_FLAG):
+		_resolve_wildcard_axes(doc, next(iter(grains)))
 
 	if not any(doc.get(f) for f in ROUTING_FIELDS):
 		# Single grain → apply silently, no question. Multiple (manager) → the form must send the pick.
@@ -92,6 +97,56 @@ def stamp_entitled_grain(doc, method=None):
 				_grain_options([grain]), _grain_options(grains)),
 			list(ROUTING_FIELDS), frappe.PermissionError,
 		)
+
+
+def _resolve_axis(supplied, options, fieldname, label):
+	"""One wildcard axis: the form's pick if it sent one, blank if the registry declares no children
+	under this node, otherwise a refusal that names the values which WOULD be accepted.
+
+	The pick is not trusted here — `grain_entitled` clamps it afterwards (region-covers AND a real
+	CRM Grain row), so an off-tree value is refused by the same brain that answers every other grain
+	question rather than by a second check written here."""
+	from tatva_connect.api._base import throw_field
+
+	if supplied:
+		return supplied
+	if not options:
+		return None  # nothing declared under this node — a genuinely programme-less group stays blank
+	throw_field(
+		_("This lead needs a {0}. This account covers the whole group, so each lead must be filed under "
+		  "exactly one of: {1}.").format(label, ", ".join(options)),
+		[fieldname],
+	)
+
+
+def _resolve_wildcard_axes(doc, region):
+	"""Fill the lead's grain from the acting user's REGION, requiring a pick where the region wildcards
+	an axis that has declared children. Flag-gated; the caller checks `Access::Grain::registry`.
+
+	The region's CONCRETE axes are applied silently — they were never a choice. A WILDCARD axis is taken
+	from the form's pick, and if nothing was picked while the registry declares children, the save is
+	refused instead of filing the lead under "any" — which is exactly how blank-programme leads were
+	produced before, and why a rep covering all of Anaya could not create a Nivolumab lead.
+
+	Cascading, because a programme is only meaningful under a settled group: the group is resolved first,
+	and the programme's options are read under the group that resolution produced. A wildcard VERTICAL is
+	left to the existing path — the registry exposes no verticals helper, and no entitlement in this
+	deployment wildcards it; inventing one here would be a second source for the same question."""
+	from tatva_connect.access.entitlement import groups_under, programs_under
+
+	vertical, group, program = region
+	if not vertical:
+		return
+	doc.custom_vertical = vertical
+	if not group:
+		group = _resolve_axis(doc.custom_group, groups_under(vertical), "custom_group", _("Group"))
+	doc.custom_group = group or None
+	if group and not program:
+		program = _resolve_axis(
+			doc.custom_current_program, programs_under(vertical, group),
+			"custom_current_program", _("Program"),
+		)
+	doc.custom_current_program = program or None
 
 
 def _grain_options(grains):

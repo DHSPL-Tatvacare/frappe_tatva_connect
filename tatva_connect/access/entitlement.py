@@ -2,8 +2,9 @@
 
 The catalog (`CRM Lead API Field`) is shared with the partner API, but this module is read
 ONLY on the internal Smart Views path. It never touches partner behaviour:
-  * `entitled_grains(user)` — the grains a principal owns (partner → mapping row; internal →
-    their Assignment Rule rows + reports_to roll-up; System Manager → all; nothing → universal).
+  * `entitled_grains(user)` — the grains a principal owns (partner → mapping row; internal → their
+    Assignment Rule rows + reports_to roll-up, or native User Permission once `Access::Grain::registry`
+    is armed; System Manager → all; nothing → universal).
   * `field_in_grains_via_contract(field_key, grains)` — is this field ticked by any grain's contract?
   * `resolve_fields(...)` — catalog ∩ grain − role-restricted ∪ universal (fail-closed).
 
@@ -12,17 +13,26 @@ System-Manager sentinel that matches every field without enumerating the masters
 """
 import frappe
 
+from tatva_connect import automation
 from tatva_connect.access import request_cache
 from tatva_connect.taxonomy import grain as taxonomy_grain
 
 # System Manager sees every field — a sentinel so we never enumerate the grain masters.
 ALL_GRAINS = "__all__"
 
+# Dormant. ON -> entitlement is read from native User Permission and clamped by the CRM Grain registry.
+REGISTRY_FLAG = "Access::Grain::registry"
+
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _RESTRICT_CACHE = "tatva_connect:field_restrictions"
 _INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"
 _UNIVERSAL_CACHE = "tatva_connect:internal_universal_fields"
+_REGISTRY_FLAG_CACHE = "tatva_connect:grain_registry_flag"
+_REGISTRY_ROWS_CACHE = "tatva_connect:grain_registry_rows"
 _REPORTS_TO_DEPTH = 10
+
+# The grain axes, in tuple order, as the master doctype a User Permission is granted on.
+_UP_AXES = ("CRM Vertical", "CRM Group", "CRM Program")
 
 
 def _grain(row):
@@ -87,11 +97,59 @@ def _internal_grains(user):
 	return grains
 
 
+def _registry_enabled():
+	"""Is the registry source armed? Request-cached because `settings.is_enabled` reads the DB fresh on
+	every call and `grain_entitled` is asked once PER ROW on the bulk-import path."""
+	return request_cache(_REGISTRY_FLAG_CACHE, "flag", lambda: automation.is_enabled(REGISTRY_FLAG))
+
+
+def _registry_grains():
+	"""Every declared `(vertical, group, program)` in the CRM Grain registry. Request-cached."""
+	def build():
+		return {
+			(r.vertical or "", r.group or "", r.program or "")
+			for r in frappe.get_all("CRM Grain", fields=["vertical", "`group` as `group`", "program"])
+		}
+	return request_cache(_REGISTRY_ROWS_CACHE, "all", build)
+
+
+def _grains_from_user_permission(user):
+	"""The user's entitled REGION, read from native User Permission — the flag-ON source.
+
+	Frappe AND-s User Permissions ACROSS doctypes: a lead must sit in the allowed vertical AND the allowed
+	group AND the allowed program. So the region is the cross product of the three axes, and an axis
+	carrying NO permission is left BLANK — a wildcard, exactly as `taxonomy.grain` reads it. That blank is
+	what lets a rep entitled to all of GoodFlip Care/Anaya work every programme under it, including one
+	whose first lead does not exist yet.
+
+	Read through frappe's own `get_allowed_docs_for_doctype`, never a raw User Permission query: our grain
+	permissions are narrow (`applicable_for`), so each is stored TWICE — once for CRM Lead and once for
+	CRM Deal. The native helper resolves `applicable_for` / `apply_to_all_doctypes` and returns only what
+	applies to CRM Lead; a raw query returns both rows and double-counts every axis.
+
+	No permission on ANY axis -> the empty set, never a blank `("", "", "")` tuple: that tuple would be a
+	three-way wildcard granting everything. A user with nothing configured is entitled to nothing — the
+	same fail-closed rule the Assignment-Rule source spells as `if any(g)`.
+	"""
+	from frappe.permissions import get_allowed_docs_for_doctype, get_user_permissions
+
+	permissions = get_user_permissions(user)
+	axes = [
+		sorted(get_allowed_docs_for_doctype(permissions.get(doctype, []), "CRM Lead"))
+		for doctype in _UP_AXES
+	]
+	if not any(axes):
+		return set()
+	verticals, groups, programs = (axis or [""] for axis in axes)
+	return {(v, g, p) for v in verticals for g in groups for p in programs}
+
+
 def entitled_grains(user=None):
 	"""The grains a principal may see fields for. Request-cached.
 	  * System Manager        -> ALL_GRAINS (every field).
 	  * partner (mapping row) -> that row's grain.
-	  * internal              -> their Assignment Rule grains + reports_to roll-up.
+	  * internal              -> native User Permission when `Access::Grain::registry` is armed,
+	                             else their Assignment Rule grains + reports_to roll-up.
 	  * none of the above     -> empty set (universal fields only; fail-closed)."""
 	user = user or frappe.session.user
 
@@ -101,6 +159,10 @@ def entitled_grains(user=None):
 		partner = _partner_grain(user)
 		if partner is not None:
 			return partner
+		# The swap. Flag OFF keeps the Assignment-Rule roll-up below byte-identical; the dead roll-up is
+		# removed only once the flag has proved out, so a disarm is a true revert and not a rebuild.
+		if _registry_enabled():
+			return _grains_from_user_permission(user)
 		return _internal_grains(user)
 
 	return request_cache(_GRAINS_CACHE, user, build)
@@ -244,14 +306,51 @@ def grain_entitled(grain, user=None):
 	The clamp that stops a client widening scope past entitled_grains() on the internal path."""
 	grains = entitled_grains(user)
 	if grains == ALL_GRAINS:
+		# System Manager keeps the bypass DELIBERATELY: the registry check below would otherwise lock an
+		# admin out of the very off-registry records they exist to remediate.
 		return True
 	rv, rg, rp = grain
+	# Flag ON, and ALONGSIDE the covers check below, never instead of it: a region can cover a tuple that
+	# is not a declared business slice (a typo'd group sits inside its vertical just as neatly as a real
+	# one), and being covered is not the same as existing. Structural enforcement, not a second matcher.
+	if _registry_enabled() and (rv, rg, rp) not in _registry_grains():
+		return False
 	for gv, gg, gp in grains:
 		# The ONE wildcard-match predicate. This loop used to spell the rule out a second time, and a
 		# second copy of "blank means ANY" is exactly the defect that hid 129 fields from 1,894 leads.
 		if taxonomy_grain.covers({"vertical": gv, "group": gg, "program": gp}, rv, rg, rp):
 			return True
 	return False
+
+
+def groups_under(vertical):
+	"""The groups declared under `vertical` in the CRM Grain registry, sorted.
+
+	INERT this phase — nothing calls it yet, exactly as nothing read CRM Grain in Phase 0. It exists so
+	the WRITE side (a create form resolving a wildcard axis to one concrete child) and the FILTER side
+	have one declared source to ask, rather than each growing its own `SELECT DISTINCT` over the masters.
+	"""
+	return sorted({
+		row.group
+		for row in frappe.get_all("CRM Grain", filters={"vertical": vertical}, fields=["`group` as `group`"])
+		if row.group
+	})
+
+
+def programs_under(vertical, group):
+	"""The concrete programmes declared under `(vertical, group)` in the CRM Grain registry, sorted.
+
+	A blank-programme row is a REGION, not a pickable child — a lead exists before programme enrolment —
+	so it is deliberately not returned: offering "" in a picker would ask a user to choose the absence of
+	a choice. INERT this phase, same as `groups_under`.
+	"""
+	return sorted({
+		row.program
+		for row in frappe.get_all(
+			"CRM Grain", filters={"vertical": vertical, "group": group}, fields=["program"]
+		)
+		if row.program
+	})
 
 
 def _restricted_keys(roles):
@@ -298,6 +397,43 @@ def resolve_fields(catalog_rows, grains, roles):
 		for key, row in rows.items()
 		if is_universal_field(row["field_key"]) or entitled_to_field(row["field_key"], grains)
 	}
+
+
+@frappe.whitelist()
+def my_grain_pick_options():
+	"""The create form's wildcard pickers: for each entitled region, the declared children of the axis
+	it leaves blank. `{region_key: {axis, fieldname, label, values}}`, region_key = `vertical::group::program`.
+
+	A create form has to land a lead on ONE leaf, so a region that wildcards an axis must ask. This is the
+	WRITE side, and it reads the REGISTRY — what the operator has declared — never the lead table, which is
+	the FILTER side's source. Merging the two would offer a programme only after somebody had already
+	managed to create a lead in it, so the first Sigrima lead could never be made.
+
+	Returns `{}` while `Access::Grain::registry` is dormant, so the form renders exactly as it does today
+	and the flag remains the single switch for this behaviour — the frontend needs no flag of its own.
+	Read-only: it enumerates config the caller may already read, and grants nothing.
+	"""
+	if not _registry_enabled():
+		return {}
+	grains = entitled_grains()
+	if grains == ALL_GRAINS or not grains:
+		return {}
+	out = {}
+	for vertical, group, program in grains:
+		if not vertical:
+			continue  # a wildcard vertical has no declared-children helper; the stamp leaves it alone too
+		key = f"{vertical}::{group or ''}::{program or ''}"
+		if not group:
+			values = groups_under(vertical)
+			axis, fieldname, label = "group", "custom_group", frappe._("Group")
+		elif not program:
+			values = programs_under(vertical, group)
+			axis, fieldname, label = "program", "custom_current_program", frappe._("Program")
+		else:
+			continue  # fully concrete — nothing to ask
+		if values:
+			out[key] = {"axis": axis, "fieldname": fieldname, "label": label, "values": values}
+	return out
 
 
 @frappe.whitelist()
