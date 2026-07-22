@@ -298,7 +298,7 @@ def _upstream():
 # different semantics respectively across their fields, so those declare `reads` on the FIELD instead —
 # putting it here would force `Call API.request_body`, `Set Variables.assign` and `Wait.accepts` to share
 # one kind and the publish gate would extract references the wrong way for two of them, silently.
-def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_config=None):
+def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=None):
 	"""Every rule a node must satisfy, in one place. Returns a list of `problem()` records.
 
 	Returns rather than throws so one save can report every problem at once — a builder that surfaces
@@ -330,10 +330,19 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_config=No
 		value = config.get(field["name"])
 		if field.get("writes"):
 			problems.extend(problem(m, field["name"]) for m in _written_name_problems(node_type, config, field))
+		# Three tables, three questions, and ALL of them run. This used to `continue` after the row check,
+		# so a type carrying both a row check and a read kind would silently skip the read check.
 		row = FIELD_TYPES[field["type"]]
 		if row["check"]:
-			problems.extend(problem(m, field["name"]) for m in row["check"](value, field))
-			continue  # a tree or a list of rows, not a scalar — the option check below cannot apply
+			# The context reaches a check only at PUBLISH. A rule ABOUT THE GRAPH cannot judge a node while
+			# the graph is still being built - the author may add the Trigger, or change the subject, after
+			# this node. These rules lived in the publish gate before they moved onto the table, and moving
+			# a rule must not change WHEN it fires: enforcing them at save refused a node an author was
+			# midway through writing, with no way forward.
+			problems.extend(
+				problem(m, field["name"])
+				for m in row["check"](value, field, config, graph_context if completeness else None)
+			)
 		kind = read_kind_of(field)
 		if kind and READ_KINDS[kind]["check"]:
 			found = READ_KINDS[kind]["check"](value)
@@ -343,14 +352,8 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_config=No
 			found = WRITE_KINDS[field["writes"]]["check"](config.get(field["name"]))
 			if found:
 				problems.append(problem(found, field["name"]))
-		options = field.get("options")
-		if value and isinstance(options, list) and value not in options:
-			problems.append(problem(
-				_("{0} is not a valid {1}. Choose one of: {2}").format(value, field["label"], ", ".join(options)),
-				field["name"],
-			))
 
-	allowed = set(outputs_for(node_type, config, graph_config))
+	allowed = set(outputs_for(node_type, config, (graph_context or {}).get("configs")))
 	for output in sorted(set(edge_outputs or []) - allowed):
 		problems.append(problem(
 			_("{0} declares no output called {1}.").format(node_type, output)
@@ -359,7 +362,7 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_config=No
 	return problems
 
 
-def _predicate_problems(value, field):
+def _predicate_problems(value, field, config=None, context=None):
 	"""Structural rules for a predicate tree. Empty is fine — an empty gate is open.
 
 	Shape only: whether a rule's FIELD exists is a question about the subject, and the subject is chosen
@@ -431,7 +434,7 @@ def _reserved_problems(names):
 	]
 
 
-def _variable_problems(value, field):
+def _variable_problems(value, field, config=None, context=None):
 	"""Every rule a captured variable name must satisfy."""
 	return _reserved_problems([
 		(row or {}).get("variable") for row in (value or []) if isinstance(row, dict)
@@ -465,7 +468,117 @@ def _written_name_problems(node_type, config, field):
 	return problems
 
 
-def _requirement_problems(value, field):
+def graph_context(nodes):
+	"""The graph-level facts a check may need, resolved ONCE for the whole graph.
+
+	There were two validators and a rule landed in whichever could REACH its facts: `validate_node` saw
+	one node and a config map, `graph.py` saw everything and was hand-written. So `Target` and `Field`
+	grew per-type switches in `graph.py` purely because that is where `subject` was reachable, and the
+	Trigger was looked up four separate times in that one file.
+
+	Generalised deliberately rather than passing `grain` alone: the next rule needing a different graph
+	fact would strand exactly the same way and get hand-written again.
+
+	`grain` is a RULE grain — a BLANK axis means ANY and is kept blank, never flattened to "". It is only
+	ever compared through `taxonomy.grain`, never as a tuple.
+	"""
+	triggers = [n for n in nodes if n.get("node_type") == TRIGGER]
+	trigger = triggers[0] if triggers else None
+	trigger_config = config_of(trigger) if trigger else {}
+	return {
+		"configs": {n["node_id"]: config_of(n) for n in nodes if n.get("node_id")},
+		"triggers": triggers,
+		"trigger": trigger,
+		"subject": trigger_config.get("subject_doctype") or "",
+		"grain": {axis: trigger_config.get(axis) or "" for axis in _GRAIN_AXES},
+	}
+
+
+def _target_problems(value, field, config, context):
+	"""A write must aim at a record the run can actually reach. MOVED off `graph._write_target_problems`.
+
+	Refuses: a doctype that is neither the Lead nor the subject the Trigger watches — `_resolve_write_target`
+	raises for anything else at runtime, so the author would find out from a dead run on a real patient.
+	Does NOT refuse: whether a particular record exists, or whether this lead has one. Both are runtime.
+	"""
+	if not value or not context:
+		return []
+	from tatva_connect.automation import actions
+
+	reachable = set(actions.reachable_targets(context["subject"]))
+	if value in reachable:
+		return []
+	return [_("{0} writes to {1}, which this workflow never touches. It can write to: {2}")
+	        .format(field["label"], value, ", ".join(sorted(reachable)))]
+
+
+def _settable_problems(value, field, config, context):
+	"""A written field must be one the operator allowed automation to set. MOVED off `graph`.
+
+	MEMBERSHIP ONLY, via `fields.is_set_declared`. The grain-specific decision stays at execution on
+	purpose: the workflow's grain is a RULE grain whose blank axis means ANY, and handing that to
+	`is_settable` — which expects a lead's DATA grain — is the exact defect this gate must not commit.
+	Does NOT refuse a field on a target that is itself already refused: one fault, one message.
+	"""
+	target = config.get(field.get("doctype_from") or "")
+	if not value or not context or not target:
+		return []
+	from tatva_connect.automation import actions, fields
+
+	if target not in set(actions.reachable_targets(context["subject"])):
+		return []
+	if fields.is_set_declared(target, value):
+		return []
+	return [_("{0} is not a field automation is allowed to set on {1}.").format(value, target)]
+
+
+def _link_grain_problems(value, field, config, context):
+	"""A grain-scoped link must name something the workflow's grain could ever reach.
+
+	Scoping is derived from the TARGET'S OWN SCHEMA (`_carries_grain`), exactly as `_scope_kind` derives
+	which controls are narrowed — never from a per-field flag someone has to remember to set. A link whose
+	target carries no axes (a Webhook, a template, a User) is not grain-scoped and is never checked here.
+
+	`grain.overlaps` is the ONE matcher and the right half of it: both sides are RULES, so EITHER may
+	leave an axis blank meaning ANY. `covers` would compare the workflow's blank axis as a literal empty
+	string — the shape that once hid 129 fields from 1,894 leads with every test green.
+
+	Refuses: a value whose own grain can never overlap the workflow's. Does NOT refuse a missing record,
+	nor anything about a lead — whether a given patient matches is a runtime fact publish cannot know.
+	"""
+	link = field.get("link")
+	if not value or not context or not link or not _carries_grain(link):
+		return []
+	from tatva_connect.taxonomy import grain as grain_brain
+
+	axes = frappe.db.get_value(link, value, _GRAIN_AXES, as_dict=True)
+	if not axes:
+		return []
+	if grain_brain.overlaps(axes, *(context["grain"].get(a) for a in _GRAIN_AXES)):
+		return []
+	return [_("{0} is outside this workflow's grain, so it could never be used.").format(value)]
+
+
+def _option_problems(value, field, config, context):
+	"""The value is one the field declares. MOVED here from `validate_node`'s body, where it read
+	`field.get("options")` for every type and only ever applied to this one.
+
+	Refuses: a stored value outside the declared list — a stale option after a rename, or a hand-edited
+	config_json. Deliberately does NOT refuse a blank: whether the setting is required is the `reqd` rule's
+	question, and answering it twice would give the author two messages for one mistake.
+
+	`options` is a list only where the type offers a fixed vocabulary; `Code` declares `options="JSON"` as
+	a control hint, so the isinstance guard is what keeps this from refusing every JSON body.
+	"""
+	options = field.get("options")
+	if not value or not isinstance(options, list) or value in options:
+		return []
+	return [
+		_("{0} is not a valid {1}. Choose one of: {2}").format(value, field["label"], ", ".join(options))
+	]
+
+
+def _requirement_problems(value, field, config=None, context=None):
 	"""Every rule a Requirements value must satisfy. Empty is fine — a workflow may demand nothing."""
 	if not value:
 		return []
@@ -491,21 +604,50 @@ def _requirement_problems(value, field):
 # renders "3 required", `{"phrase": text}` a fixed sentence where a count means nothing. Every non-scalar
 # type MUST declare a summary, and that pairing is locked — the card was the SEVENTH consumer of this
 # vocabulary to name types itself, and it named only three of the five it needed.
+#
+# `check(value, field, graph_config)` — what PUBLISH refuses for this type. A check may not invent: given
+# no `graph_config` it returns no problem rather than guessing, because a false problem blocks an author
+# who has no way to fix it. Why each row carries what it carries:
+#   Data / Small Text  no check — any string is a legal value; emptiness is the `reqd` rule's question.
+#   Select             the value is one the field declares. Blank is `reqd`'s business, not this one's.
+#   Code               no ROW check — it spans three semantics, so the parse belongs to its READ/WRITE
+#                      kind (`expression`, `ctx_json`, `payload_map`) and is already done there. A JSON
+#                      check here would refuse every valid `Set Variables.assign`.
+#   Link               no check YET — "is this value inside the workflow's grain" needs the Trigger's
+#                      grain, and `graph_config` is `{node_id: config}` with no node types, so the
+#                      Trigger cannot be found without guessing. Raised, not invented.
+#   Grain              no check — an axis is a link to a master and a BLANK axis means ANY, so there is
+#                      no wrong value to refuse; the master link is enforced by the Link field itself.
+#   Variable           no check — "does this resolve upstream" needs the whole graph and this node's
+#                      position in it. `graph._reference_problems` already answers it from
+#                      `upstream.available_map`; a row check would be a second implementation.
+#   Field              no check — that a field is settable is a whole-graph question about the write
+#                      TARGET, already answered by `graph._write_target_problems`.
+#   Predicate          the tree is well formed and its operators exist.
+#   Mapping            every captured name is a legal variable name.
+#   Value Map          no check — its rows are validated by the `value_rows` read kind.
+#   Requirements       every requirement names a verb the guard lane actually declares.
+#   Button List        no check — a button is an id and a label; a duplicate id is caught where it
+#                      becomes an edge, by `outputs_for`.
+#   Target/Node/Outcome  no check — all three name something ELSEWHERE in the graph, so they are answered
+#                      by `graph._write_target_problems` and `graph._wait_problems`.
+# NOTHING here refuses a runtime fact. Whether a lead has a number, whether a provider accepts it, and
+# whether a lead matches the grain are unknowable at publish and must not be pretended at.
 FIELD_TYPES = {
 	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
-	"Select": {"control": "select", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Select": {"control": "select", "check": _option_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Link": {"control": "link", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": None},
-	"Field": {"control": "field-picker", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Field": {"control": "field-picker", "check": _settable_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
 	"Requirements": {"control": "requirements", "check": _requirement_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "required"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
-	"Target": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 }
@@ -518,7 +660,14 @@ def config_of(node):
 	so a malformed blob had five chances to be handled five ways. `frappe.parse_json` is the platform's
 	own reader and is what the runtime already used; this only stops the fifth copy being written.
 	"""
-	return frappe.parse_json((node or {}).get("config_json") or "{}") or {}
+	node = node or {}
+	# Three shapes reach here: an authored row carrying `config_json` text, a Document, and a caller
+	# holding a plain `config` dict. Asked with `.get` because `in` is not a Document's contract, and
+	# `graph._config_of` used to know the dict/text split privately - a second reader beside THE one.
+	raw = node.get("config_json")
+	if raw is not None:
+		return frappe.parse_json(raw or "{}") or {}
+	return node.get("config") or {}
 
 
 def read_kind_of(field):

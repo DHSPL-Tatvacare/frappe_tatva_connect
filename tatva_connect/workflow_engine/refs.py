@@ -139,7 +139,9 @@ def resolve(ref, ctx):
 
 
 def readable_for(doctype):
-	"""Every value a record answers to, as `[{key, label, type}]` with NAMESPACED keys.
+	"""Every value a record answers to, as `[{ref, label, type}]` — NAMESPACED.
+
+	THE SEAM: describe's BARE `key` goes in, a `ref` comes out. Two different concepts wore one word here.
 
 	Delegates, never re-derives: `automation.describe.fields_for_doctype` is the brain that walks a
 	doctype's meta AND — for `CRM Task` alone — unions it with every distinct activity-schema fieldname by
@@ -152,11 +154,11 @@ def readable_for(doctype):
 	if not doctype:
 		return []
 	found = [
-		{"key": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"]}
+		{"ref": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"]}
 		for f in _describe().fields_for_doctype(doctype)
 	]
 	return found + [
-		{"key": of_record(doctype, key), "label": label, "type": ftype}
+		{"ref": of_record(doctype, key), "label": label, "type": ftype}
 		for key, ftype, label in _RECORD_KEYS
 	]
 

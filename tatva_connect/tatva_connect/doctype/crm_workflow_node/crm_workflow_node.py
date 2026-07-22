@@ -36,26 +36,29 @@ class CRMWorkflowNode(Document):
 		# at publish, by the graph contract — not here, where it would refuse to save work in progress.
 		problems = registry.validate_node(
 			self.node_type, self.config(), [e.from_output for e in self.edges or []],
-			mode=registry.DRAFT, graph_config=self._graph_config(),
+			mode=registry.DRAFT, graph_context=self._graph_context(),
 		)
 		if problems:
 			frappe.throw(
 				"<br>".join(p["message"] for p in problems), title=_("This node is not valid")
 			)
 
-	def _graph_config(self):
-		"""`{node_id: config}` for this node's siblings — what a Wait needs to know which buttons the node
-		it waits on OFFERS. A node whose outputs derive from a sibling cannot be judged alone, and judging
-		it alone is what rejected a correctly-wired button branch at save."""
+	def _graph_context(self):
+		"""The resolved graph this node sits in — what a Wait needs to know which buttons the node it waits
+		on OFFERS, and what a Target or a grain-scoped Link needs to be judged at all. A node whose outputs
+		derive from a sibling cannot be judged alone, and judging it alone is what rejected a correctly-wired
+		button branch at save."""
 		if not self.workflow:
-			return {}
+			return None
 		rows = frappe.get_all(
 			"CRM Workflow Node", filters={"workflow": self.workflow},
-			fields=["node_id", "config_json"],
+			fields=["node_id", "node_type", "config_json"],
 		)
-		graph = {r.node_id: registry.config_of(r) for r in rows}
-		graph[self.node_id] = self.config()
-		return graph
+		siblings = [r for r in rows if r.node_id != self.node_id]
+		return registry.graph_context([
+			*siblings,
+			{"node_id": self.node_id, "node_type": self.node_type, "config_json": self.config_json},
+		])
 
 	def validate_unique_node_id(self):
 		"""`node_id` is what an edge points at and what a parked Run stores as its cursor. Two nodes

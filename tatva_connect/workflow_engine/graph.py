@@ -38,67 +38,22 @@ def problems(nodes, entry_node=None):
 	if not nodes:
 		return [_at(None, _("This workflow has no nodes."))]
 
+	# Resolved ONCE and threaded: the Trigger, subject and grain used to be looked up four separate times
+	# in this file, and a per-type rule that needed one got hand-written here instead of onto its row.
+	context = registry.graph_context(nodes)
+
 	found = []
-	found += _node_problems(nodes)
-	found += _trigger_problems(nodes, entry_node)
-	found += _edge_problems(nodes)
-	found += _reachability_problems(nodes, entry_node)
+	found += _node_problems(nodes, context)
+	found += _trigger_problems(nodes, entry_node, context)
+	found += _edge_problems(nodes, context)
+	found += _reachability_problems(nodes, entry_node, context)
 	found += _loop_problems(nodes)
-	found += _reference_problems(nodes)
+	found += _reference_problems(nodes, context)
 	found += _wait_problems(nodes)
-	found += _write_target_problems(nodes)
 	return found
 
 
-def _write_target_problems(nodes):
-	"""A write must aim at a record the run can reach, and at a field the operator allowed automation to set.
-
-	Both were enforced only at EXECUTION. A workflow naming a misspelt field, or a doctype that is neither
-	the subject nor the lead, published green and then died `_Permanent` on the first live record — the
-	author finding out days later, from a real patient's lead.
-
-	Two rules, read from declarations rather than a list of verbs, so a second verb taking a `Target` or a
-	`Field` is covered the day it is added:
-
-	  • a `Target` value must be the Lead or the subject the Trigger watches. `_resolve_write_target`
-	    raises for anything else, and the trigger doc's doctype IS the subject doctype.
-	  • a `Field` value must be a can_set field of that target — MEMBERSHIP ONLY, via
-	    `fields.is_set_declared`. The grain-specific decision deliberately stays at execution: the
-	    workflow's declared grain is a RULE grain whose blank axis means ANY, and handing that to
-	    `is_settable` (which expects a lead's DATA grain) is the exact defect this gate must not commit.
-
-	A node whose target is already reported is not asked the field question too — one fault, one message.
-	"""
-	from tatva_connect.automation import actions, fields
-
-	subject = next(
-		(_config_of(n).get("subject_doctype") for n in nodes if n["node_type"] == registry.TRIGGER), None
-	)
-	reachable = set(actions.reachable_targets(subject))  # the ONE answer, shared with runtime + authoring
-
-	found = []
-	for node in nodes:
-		config = _config_of(node)
-		declared = registry.config_fields(node["node_type"])
-
-		for field in declared:
-			value = config.get(field["name"])
-			if field["type"] == "Target" and value and value not in reachable:
-				found.append(_at(node["node_id"], _("{0} writes to {1}, which this workflow never touches. It can write to: {2}")
-				                 .format(node["node_id"], value, ", ".join(sorted(reachable))), field["name"]))
-
-		for field in declared:
-			value = config.get(field["name"])
-			if field["type"] != "Field" or not value:
-				continue
-			target = config.get(field.get("doctype_from") or "")
-			if target and target in reachable and not fields.is_set_declared(target, value):
-				found.append(_at(node["node_id"], _("{0} is not a field automation is allowed to set on {1}.")
-				                 .format(value, target), field["name"]))
-	return found
-
-
-def _collision_problems(nodes):
+def _collision_problems(nodes, context):
 	"""A node id may not be the slug of a record the run can reach.
 
 	The namespaced contract makes two values with the same NAME distinguishable, and it does that by making
@@ -108,14 +63,12 @@ def _collision_problems(nodes):
 	cannot be resolved at runtime and it must not be publishable.
 
 	`actions.reachable_targets` is the ONE answer to what a run can reach, shared with the runtime write
-	resolver and with `_write_target_problems` above.
+	resolver and with the `Target` row's check in `registry`, which is where the write-target rule moved
+	when it stopped being hand-written here.
 	"""
 	from tatva_connect.automation import actions
 
-	subject = next(
-		(_config_of(n).get("subject_doctype") for n in nodes if n["node_type"] == registry.TRIGGER), None
-	)
-	taken = {refs.slug(dt): dt for dt in actions.reachable_targets(subject)}
+	taken = {refs.slug(dt): dt for dt in actions.reachable_targets(context["subject"])}
 	return [
 		_at(node["node_id"], _("{0} is also the name of the {1} this workflow reads. Rename the node.")
 		    .format(node["node_id"], taken[node["node_id"]]))
@@ -124,7 +77,7 @@ def _collision_problems(nodes):
 	]
 
 
-def _reference_problems(nodes):
+def _reference_problems(nodes, context):
 	"""Every value a node reads is one something upstream actually produces.
 
 	The half of the node contract that was declared and never enforced. `emits` said what each verb
@@ -143,18 +96,18 @@ def _reference_problems(nodes):
 	reference that resolved to the wrong value at runtime and reported nothing.
 	"""
 	available, opaque_after = upstream.available_map(nodes)
-	found = _collision_problems(nodes)
+	found = _collision_problems(nodes, context)
 	for node in nodes:
 		node_id = node["node_id"]
 		if node_id in opaque_after:
 			continue
 		for ref in contract.reads_of(node["node_type"], _config_of(node)):
-			if ref["name"] in available.get(node_id, set()):
+			if ref["ref"] in available.get(node_id, set()):
 				continue
 			found.append(_at(
 				node_id,
 				_("{0} reads {1}, which nothing before it produces and the subject does not have.")
-				.format(ref["label"], ref["name"]),
+				.format(ref["label"], ref["ref"]),
 				ref["field"],
 			))
 	return found
@@ -215,7 +168,7 @@ def upstream_ancestors(nodes, node_id):
 	return set(upstream._ancestors(_by_id(nodes), node_id))
 
 
-def _node_problems(nodes):
+def _node_problems(nodes, context):
 	"""Each node, judged for COMPLETENESS — the half `validate_node` defers while authoring.
 
 	A node save checks shape only, so an author can put a Branch on the canvas and configure it later.
@@ -224,24 +177,21 @@ def _node_problems(nodes):
 	it, and a workflow with an unconfigured Branch would activate and then die on a real lead.
 	"""
 	found = []
-	graph_config = {n["node_id"]: _config_of(n) for n in nodes}
 	for node in nodes:
-		config = _config_of(node)
 		outputs = [e["from_output"] for e in _edges_of(node)]
 		found += [
 			{"node_id": node["node_id"], **p}
 			for p in registry.validate_node(
-				node["node_type"], config, outputs, mode=registry.PUBLISH, graph_config=graph_config,
+				node["node_type"], _config_of(node), outputs, mode=registry.PUBLISH, graph_context=context,
 			)
 		]
 	return found
 
 
 def _config_of(node):
-	"""A node arrives either as an authored row (`config_json` text) or as a test's plain `config`."""
-	if "config_json" in node:
-		return registry.config_of(node)
-	return node.get("config") or {}
+	"""Delegates: both node shapes are `registry.config_of`'s business, and knowing it twice is how the
+	graph context and this file disagreed about what a node was configured with."""
+	return registry.config_of(node)
 
 
 def _at(node_id, message, field=None):
@@ -257,14 +207,14 @@ def _edges_of(node):
 	return [e for e in (node.get("edges") or []) if e.get("to_node")]
 
 
-def _trigger_problems(nodes, entry_node):
+def _trigger_problems(nodes, entry_node, context):
 	"""Exactly one Trigger, and it is where runs begin.
 
 	The entry used to fall back to "the first node by sequence" when `entry_node` was unset, so a graph
 	whose earliest-authored node was a Create Task started THERE and skipped the Trigger — silently
 	running a workflow that had never qualified its subject.
 	"""
-	triggers = [n for n in nodes if n["node_type"] == registry.TRIGGER]
+	triggers = context["triggers"]
 	if not triggers:
 		return [_at(None, _("This workflow has no Trigger, so nothing would ever start it."))]
 	if len(triggers) > 1:
@@ -274,15 +224,13 @@ def _trigger_problems(nodes, entry_node):
 	return []
 
 
-def _edge_problems(nodes):
+def _edge_problems(nodes, context):
 	"""Every edge lands on a node that exists, and every declared output is wired.
 
 	An unwired output is the quiet one: a Branch with only `true` connected runs fine until the day a
 	subject takes the false path, and then dies with "node None is not in the frozen graph".
 	"""
 	known = _by_id(nodes)
-	# {node_id: config} for the graph being judged — what lets a Wait resolve the buttons its source node declares.
-	graph_config = {n["node_id"]: _config_of(n) for n in nodes}
 	found = []
 	for node in nodes:
 		config = _config_of(node)
@@ -295,7 +243,7 @@ def _edge_problems(nodes):
 					_("{0} points at {1}, which is not in this workflow.").format(node["node_id"], edge["to_node"]),
 				))
 
-		for output in registry.outputs_for(node["node_type"], config, graph_config):
+		for output in registry.outputs_for(node["node_type"], config, context["configs"]):
 			if output not in wired:
 				found.append(_at(
 					node["node_id"],
@@ -304,14 +252,14 @@ def _edge_problems(nodes):
 	return found
 
 
-def _reachability_problems(nodes, entry_node):
+def _reachability_problems(nodes, entry_node, context):
 	"""Every node is reachable from the start, and the graph can actually end.
 
 	An unreachable node is usually a leftover the author forgot to delete, and it is worth saying so —
 	it will never run, and a reader of the canvas cannot tell that by looking.
 	"""
 	known = _by_id(nodes)
-	start = entry_node or next((n["node_id"] for n in nodes if n["node_type"] == registry.TRIGGER), None)
+	start = entry_node or (context["trigger"] or {}).get("node_id")
 	if not start or start not in known:
 		return []  # already reported by _trigger_problems
 

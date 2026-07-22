@@ -155,7 +155,7 @@ class TestCallApi(FrappeTestCase):
 			"webhook_endpoint": _ENDPOINT, "webhook_payload_source": "Custom", "request_body": self._BODY,
 		})
 		self.assertEqual(
-			{r["name"] for r in seen_by_gate},
+			{r["ref"] for r in seen_by_gate},
 			set(actions.body_references(self._BODY)),
 			"what publish checks and what the run resolves must be the same set, or the gate is decorative",
 		)

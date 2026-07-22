@@ -46,24 +46,24 @@ class TestReadsDeclaration(FrappeTestCase):
 
 	def test_a_variable_field_is_a_reference(self):
 		found = contract.reads_of("Update Field", {"value_mode": "From Context", "context_field": "patient_id"})
-		self.assertEqual([r["name"] for r in found], ["patient_id"])
+		self.assertEqual([r["ref"] for r in found], ["patient_id"])
 
 	def test_a_predicate_names_every_field_it_tests(self):
 		tree = {"type": "all", "children": [
 			{"type": "rule", "field": "status", "operator": "is", "value": "New"},
 			{"type": "rule", "field": "ok", "operator": "is", "value": 1},
 		]}
-		found = {r["name"] for r in contract.reads_of("Branch", {"condition": tree})}
+		found = {r["ref"] for r in contract.reads_of("Branch", {"condition": tree})}
 		self.assertEqual(found, {"status", "ok"})
 
 	def test_an_expression_names_the_context_keys_it_reads(self):
-		found = {r["name"] for r in contract.reads_of(
+		found = {r["ref"] for r in contract.reads_of(
 			"Create Task", {"due_mode": "Expression", "due_expression": 'add_days(ctx["report_date"], 3)'}
 		)}
 		self.assertEqual(found, {"report_date"})
 
 	def test_a_ctx_json_map_names_its_dollar_ctx_values(self):
-		found = {r["name"] for r in contract.reads_of("Append Child Row", {
+		found = {r["ref"] for r in contract.reads_of("Append Child Row", {
 			"child_table": "labs", "set_json": json.dumps({"value": "$ctx.result", "unit": "mg"}),
 		})}
 		self.assertEqual(found, {"result"}, "a literal must not be read as a reference")
@@ -73,17 +73,17 @@ class TestReadsDeclaration(FrappeTestCase):
 		is therefore read as a reference nothing upstream produces, and publish refuses it — which is the
 		whole point: an address is picked, never typed."""
 		found = contract.reads_of("Send Email", {"email_recipient": "ops@tatvacare.in"})
-		self.assertEqual([r["name"] for r in found], ["ops@tatvacare.in"])
+		self.assertEqual([r["ref"] for r in found], ["ops@tatvacare.in"])
 
 	def test_a_namespaced_recipient_is_a_reference(self):
 		found = contract.reads_of("Send Email", {"email_recipient": "sv.escalation_email"})
-		self.assertEqual([r["name"] for r in found], ["sv.escalation_email"])
+		self.assertEqual([r["ref"] for r in found], ["sv.escalation_email"])
 
 	def test_a_bare_name_is_a_reference_too_now_that_nothing_is_free_text(self):
 		"""The mirror image. While `free_text` existed a bare name was a LITERAL, and that split is exactly
 		what let the gate and the runtime disagree about one string."""
 		found = contract.reads_of("Send Email", {"email_recipient": "escalation_email"})
-		self.assertEqual([r["name"] for r in found], ["escalation_email"])
+		self.assertEqual([r["ref"] for r in found], ["escalation_email"])
 
 	def test_a_reference_says_which_control_carries_it(self):
 		found = contract.reads_of("Update Field", {"value_mode": "From Context", "context_field": "nope"})

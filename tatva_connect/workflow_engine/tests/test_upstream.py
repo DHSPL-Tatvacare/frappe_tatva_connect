@@ -42,7 +42,7 @@ def _graph():
 
 
 def _keys(node_id, graph=None):
-	return [v["key"] for v in upstream.available_at(graph or _graph(), node_id)]
+	return [v["ref"] for v in upstream.available_at(graph or _graph(), node_id)]
 
 
 class TestUpstream(FrappeTestCase):
@@ -61,7 +61,7 @@ class TestUpstream(FrappeTestCase):
 
 	def test_each_value_says_which_node_produced_it(self):
 		found = upstream.available_at(_graph(), "b1")
-		captured = next(v for v in found if v["key"] == "api.patient_id")
+		captured = next(v for v in found if v["ref"] == "api.patient_id")
 		self.assertEqual(captured["source"], "api", "an author must be able to see where a value came from")
 
 	# --- what a node must NOT see -----------------------------------------------------------------------
@@ -90,10 +90,10 @@ class TestUpstream(FrappeTestCase):
 		"""
 		offered = [
 			v for v in upstream.available_at(_graph(), "b1")
-			if v["key"] in ("api.status", "crm_lead.status")
+			if v["ref"] in ("api.status", "crm_lead.status")
 		]
 		self.assertEqual(
-			{v["key"] for v in offered}, {"api.status", "crm_lead.status"},
+			{v["ref"] for v in offered}, {"api.status", "crm_lead.status"},
 			"the node's status and the lead's status must both be offered, each saying where it came from",
 		)
 		self.assertEqual(
@@ -112,7 +112,7 @@ class TestUpstream(FrappeTestCase):
 		for; the subject's group is the doctype. Deriving either in JS would be a second brain that knows
 		`crm_lead` means the lead and cannot know what `api` means, since that name is the author's.
 		"""
-		found = {v["key"]: v for v in upstream.available_at(_graph(), "b1")}
+		found = {v["ref"]: v for v in upstream.available_at(_graph(), "b1")}
 		self.assertEqual(found["crm_lead.status"]["source_label"], "CRM Lead")
 		self.assertIn("api", found["api.status"]["source_label"])
 		self.assertIn("Call API", found["api.status"]["source_label"])
@@ -141,7 +141,7 @@ class TestUpstream(FrappeTestCase):
 		per-field `operators`: the contract resolves those by TYPE, and a per-field list here would be a
 		second operator vocabulary — the existing one emits symbols the evaluator rejects outright."""
 		for value in upstream.available_at(_graph(), "b1"):
-			self.assertEqual(set(value), {"key", "label", "type", "source", "source_label"}, value)
+			self.assertEqual(set(value), {"ref", "label", "type", "source", "source_label"}, value)
 			self.assertTrue(value["label"], "a value must be nameable to a person")
 			self.assertTrue(value["source_label"], "a value must say, in words, where it came from")
 

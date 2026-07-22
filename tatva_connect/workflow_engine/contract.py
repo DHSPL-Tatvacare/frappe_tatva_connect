@@ -47,7 +47,7 @@ LITERAL = "Literal"
 
 
 def reads_of(node_type, config):
-	"""Every run-state value this node references, as `{name, field, label}`.
+	"""Every run-state value this node references, as `{ref, field, label}` — the SAME word `upstream` uses for what a node writes, because it is the same string.
 
 	`field` and `label` travel with the name so a problem can be anchored on the control that carries the
 	bad reference rather than on the node as a whole — the author needs to know WHICH box to fix.
@@ -59,7 +59,7 @@ def reads_of(node_type, config):
 		if not value:
 			continue
 		for name in sorted(_references(field, value)):
-			found.append({"name": name, "field": field["name"], "label": field["label"]})
+			found.append({"ref": name, "field": field["name"], "label": field["label"]})
 	return found
 
 

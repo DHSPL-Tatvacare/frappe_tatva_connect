@@ -31,7 +31,7 @@ from tatva_connect.workflow_engine import refs, registry
 @frappe.whitelist()
 def available_at(nodes, node_id):
 	"""Every value a node may read, in the SAME field shape the predicate control already consumes:
-	`{key, label, type, source}`. One shape whatever the value came from, so the control does not need to
+	`{ref, label, type, source}`. One shape whatever the value came from, so the control does not need to
 	know whether it is testing a lead field or something an upstream node wrote. Operators are resolved by
 	TYPE, through the builder contract's `operators_by_type` — never per field.
 
@@ -50,8 +50,8 @@ def available_at(nodes, node_id):
 	seen = set()
 	for ancestor_id in _ancestors(by_id, node_id):
 		for value in _emitted_by(by_id[ancestor_id]):
-			if value["key"] not in seen:
-				seen.add(value["key"])
+			if value["ref"] not in seen:
+				seen.add(value["ref"])
 				found.append(value)
 
 	# The subject's own fields, and no de-duplication against the nodes above: every key here is
@@ -60,8 +60,8 @@ def available_at(nodes, node_id):
 	# node emitting `status` silently ATE the lead's own — the author was offered one `Status`, the wrong
 	# one, and the predicate they had built at the Trigger could not match at a Branch below the call.
 	for field in _subject_fields(by_id):
-		if field["key"] not in seen:
-			seen.add(field["key"])
+		if field["ref"] not in seen:
+			seen.add(field["ref"])
 			found.append(field)
 	return found
 
@@ -131,7 +131,7 @@ def emitters_at(nodes, node_id):
 
 
 def _shaped(name, ftype, label, source, source_label):
-	"""One field, in the builder contract's own shape — `{key, label, type, source, source_label}`.
+	"""One field, in the builder contract's own shape — `{ref, label, type, source, source_label}`.
 
 	Deliberately NO per-field `operators`: the contract resolves them by TYPE, from `operators_by_type`,
 	which is composed from the evaluator's own operator families. A per-field list here would be a second
@@ -144,7 +144,7 @@ def _shaped(name, ftype, label, source, source_label):
 	it would guess wrong for every node source, whose name is the author's own.
 	"""
 	return {
-		"key": name, "label": label or name, "type": ftype or "Data",
+		"ref": name, "label": label or name, "type": ftype or "Data",
 		"source": source, "source_label": source_label or source,
 	}
 
@@ -263,10 +263,10 @@ def available_map(nodes):
 
 	available, opaque_after = {}, set()
 	for node_id, node in by_id.items():
-		keys = {value["key"] for value in _emitted_by(node)}
+		keys = {value["ref"] for value in _emitted_by(node)}
 		opaque = False
 		for ancestor_id in _ancestors(by_id, node_id):
-			keys |= {value["key"] for value in _emitted_by(by_id[ancestor_id])}
+			keys |= {value["ref"] for value in _emitted_by(by_id[ancestor_id])}
 			opaque = opaque or _opaque_writer(by_id[ancestor_id])
 		available[node_id] = keys | subject
 		if opaque:
@@ -284,7 +284,7 @@ def _subject_readable(by_id):
 	reject every predicate on a site whose allowlist is not seeded yet — which is every fresh site, and
 	is exactly what the first run of this check did.
 	"""
-	return {f["key"] for f in _subject_fields(by_id)}
+	return {f["ref"] for f in _subject_fields(by_id)}
 
 
 def _subject_fields(by_id):
@@ -310,7 +310,7 @@ def _subject_fields(by_id):
 	if not subject or not frappe.db.exists("DocType", subject):
 		return []
 	return [
-		_shaped(f["key"], f["type"], f["label"], refs.slug(subject), _(subject))
+		_shaped(f["ref"], f["type"], f["label"], refs.slug(subject), _(subject))
 		for f in refs.readable_for(subject)
 	]
 

@@ -84,12 +84,12 @@ class TestContextCoherence(FrappeTestCase):
 			offered,
 			"the lead's own Status is not offered below a Call API — the node's `status` has eaten it",
 		)
-		return offered[0]["key"]
+		return offered[0]["ref"]
 
 	def _node_status_ref(self):
-		offered = [v for v in self._offered_at_branch() if v["source"] == _CAPTURING_NODE and v["key"].endswith("status")]
+		offered = [v for v in self._offered_at_branch() if v["source"] == _CAPTURING_NODE and v["ref"].endswith("status")]
 		self.assertTrue(offered, "the Call API's own HTTP status must still be offered")
-		return offered[0]["key"]
+		return offered[0]["ref"]
 
 	# --- the vocabulary -----------------------------------------------------------------------------
 
@@ -103,7 +103,7 @@ class TestContextCoherence(FrappeTestCase):
 	def test_every_reference_says_where_it_came_from(self):
 		"""Collision-free by construction, not by de-duplication: every key is `<source>.<field>`."""
 		for value in self._offered_at_branch():
-			self.assertIn(".", value["key"], f"{value['key']} does not say where it came from")
+			self.assertIn(".", value["ref"], f"{value['ref']} does not say where it came from")
 
 	# --- the coherence: ONE predicate, both places ---------------------------------------------------
 

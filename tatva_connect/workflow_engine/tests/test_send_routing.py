@@ -209,7 +209,7 @@ class TestTemplateVariablesAreDeclared(FrappeTestCase):
 			"whatsapp_template": "t",
 			"template_values": [{"name": "1", "mode": "From Context", "value": "patient_name"}],
 		})
-		self.assertEqual([r["name"] for r in found], ["patient_name"])
+		self.assertEqual([r["ref"] for r in found], ["patient_name"])
 
 	def test_a_literal_row_is_not_a_reference(self):
 		"""The negative half. An author filling a slot with typed text names no variable, and demanding an
