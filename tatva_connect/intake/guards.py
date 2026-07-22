@@ -19,12 +19,11 @@ native per-IP limit + the stricter limits here.)
 
 Config (rate caps) lives in the `CRM Intake Settings` Single; blanks fall back to DEFAULTS.
 """
-import re
-
 import frappe
 from frappe import _
 
 from tatva_connect import automation
+from tatva_connect.whatsapp.phone import to_e164
 
 _ACCEPT_CMD = "frappe.website.doctype.web_form.web_form.accept"
 
@@ -48,17 +47,18 @@ def _int_cfg(field):
 	return int(_cfg(field) or DEFAULTS[field])
 
 
-def _is_enrolment_webform():
-	"""accept() carries the web_form name; only act on forms whose doctype is a live intake sink — read
-	straight from the ONE brain the wildcard router uses, never through a local alias of it. Lazy import
-	avoids a load cycle."""
+def _intake_form_for_submit():
+	"""The CRM Intake Form being submitted, or None if this is not an intake web form at all.
+
+	accept() carries the web_form name; the sink->contract map is the ONE brain the wildcard router
+	already uses, never a local alias of it. Lazy import avoids a load cycle."""
 	from tatva_connect.intake.intake import _intake_doctypes
 
 	name = frappe.form_dict.get("web_form")
 	if not name:
-		return False
+		return None
 	dt = frappe.db.get_value("Web Form", name, "doc_type")
-	return bool(dt) and dt in _intake_doctypes()
+	return _intake_doctypes().get(dt) if dt else None
 
 
 # -- Rate limiting (before_request) ------------------------------------------
@@ -72,11 +72,12 @@ def throttle_intake():
 		return
 	if not automation.is_enabled("Intake::RateLimit::enforcement"):
 		return
-	if not _is_enrolment_webform():
+	intake_form = _intake_form_for_submit()
+	if not intake_form:
 		return
 
 	_bump("ip", frappe.local.request_ip or "unknown", _int_cfg("ip_per_hour"), 3600)
-	phone = _submitted_phone()
+	phone = _submitted_phone(intake_form)
 	if phone:
 		_bump("phone", phone, _int_cfg("phone_per_day"), 86400)
 
@@ -93,9 +94,31 @@ def _bump(scope, ident, limit, window):
 		)
 
 
-def _submitted_phone():
-	"""The phone in the submit payload, digits only (the per-phone counter key)."""
+def _submitted_phone(intake_form):
+	"""The submitted phone in its CANONICAL form — the per-phone counter key.
+
+	WHICH question carries it is declared by the contract (the mapping to lead -> mobile_no, the one
+	`validate` insists on exactly once). Reading a question literally named `phone` was a coincidence
+	that held for the first form ever built; any other name silently lost the per-phone limit.
+
+	Canonical via `to_e164`, NOT digits-only: `9000000011` and `+91 90000 00011` are one patient, and
+	a digits-only key made them two counters — the limit was evaded by retyping the number. This is
+	the same canonicalisation the lead is stored and deduped under, so the counter throttles the
+	person dedup would merge."""
+	field = _phone_question(intake_form)
+	if not field:
+		return None
 	data = frappe.form_dict.get("data")
 	if isinstance(data, str):
 		data = frappe.parse_json(data) or {}
-	return re.sub(r"\D", "", (data or {}).get("phone") or "") or None
+	# cstr first: an unquoted JSON number arrives as an int and the canonicaliser is a regex.
+	return to_e164(frappe.cstr((data or {}).get(field) or "")) or None
+
+
+def _phone_question(intake_form):
+	"""The contract's question that lands on lead -> mobile_no, or None if it declares none."""
+	cfg = frappe.get_cached_doc("CRM Intake Form", intake_form)
+	for m in cfg.mappings:
+		if (m.target_table or "").strip() == "lead" and (m.target_field or "").strip() == "mobile_no":
+			return (m.source_field or "").strip() or None
+	return None

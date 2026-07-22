@@ -29,22 +29,25 @@ def target_doctype(target_table):
 _INTAKE_DOCTYPES_CACHE_KEY = "tatva_connect:intake_doctypes"
 
 
-def _intake_doctypes() -> set:
-	"""The DocType names that are an enabled intake form's submission sink — the cheap
-	guard set the wildcard router checks. Memoised; busted on any CRM Intake Form write
-	(and on every sync_form). Names are DERIVED from the form name via the builder, so
-	there is no stored column to read."""
+def _intake_doctypes() -> dict:
+	"""Submission sink DocType -> the CRM Intake Form it belongs to, for every ENABLED form.
+
+	The cheap guard the wildcard router checks (`doc.doctype not in _intake_doctypes()`), and —
+	because it is a map, not a set — the ONE way back from a sink to its contract. The throttle
+	needs that reverse hop to find which question carries the phone; a second walk of the same
+	rows to answer it would be a second brain. Memoised; busted on any CRM Intake Form write
+	(and on every sync_form). Names are DERIVED via the builder, so there is no column to read."""
 	cached = frappe.cache().get_value(_INTAKE_DOCTYPES_CACHE_KEY)
 	if cached is None:
 		from tatva_connect.intake.builder import safe_doctype_name_for
 
-		cached = set()
+		cached = {}
 		# The wildcard fires site-wide, incl. during install before the contract table exists.
 		if frappe.db.table_exists("CRM Intake Form"):
 			for cfg in frappe.get_all("CRM Intake Form", filters={"enabled": 1}, fields=["name", "form_name"]):
 				dt = safe_doctype_name_for(frappe._dict(cfg))  # None for a legacy/invalid name
 				if dt and frappe.db.exists("DocType", dt):
-					cached.add(dt)
+					cached[dt] = cfg.name
 		frappe.cache().set_value(_INTAKE_DOCTYPES_CACHE_KEY, cached)
 	return cached
 

@@ -24,7 +24,7 @@ _INTAKE_FORM_FIELD = "intake_form"
 
 # Layout / display fieldtypes — they appear on the Web Form for structure but are NOT
 # storage columns on the submission DocType (and never map to a lead field).
-_LAYOUT_FIELDTYPES = {"Section Break", "Column Break", "Page Break", "HTML"}
+LAYOUT_FIELDTYPES = {"Section Break", "Column Break", "Page Break", "HTML"}
 
 # Mirror of frappe's own DocType-name rule (doctype.py START_WITH_LETTERS_PATTERN):
 # start with a letter, then letters / digits / space / underscore / hyphen. We
@@ -142,7 +142,7 @@ def _docfields(cfg) -> list[dict]:
 		},
 	]
 	for r in _row_fields(cfg):
-		if r["fieldtype"] in _LAYOUT_FIELDTYPES:
+		if r["fieldtype"] in LAYOUT_FIELDTYPES:
 			continue
 		df = {"fieldname": r["fieldname"], "label": r["label"], "fieldtype": r["fieldtype"], "reqd": r["reqd"]}
 		if r["options"]:
@@ -215,7 +215,7 @@ def _web_form_fields(cfg) -> list[dict]:
 	editor and published form are the same set, in the same order — no shadow representation."""
 	rows: list[dict] = []
 	for r in _row_fields(cfg):
-		is_layout = r["fieldtype"] in _LAYOUT_FIELDTYPES
+		is_layout = r["fieldtype"] in LAYOUT_FIELDTYPES
 		row = {"fieldname": r["fieldname"], "label": r["label"], "fieldtype": r["fieldtype"]}
 		if r["reqd"] and not is_layout:
 			row["reqd"] = 1
@@ -269,16 +269,15 @@ def _web_form_route(cfg) -> str:
 def _ensure_web_form(cfg, dt: str) -> str:
 	"""Create / update the public Web Form bound to the per-form DocType. Idempotent:
 	rebuilt from the contract each sync — the contract is the ONE writer of these columns.
-	Access defaults (anonymous / no-login / multiple) live as a code fallback so a blank
-	contract is still sane; an operator value always wins. Returns the Web Form name."""
+	Returns the Web Form name."""
 	values = {
 		"title": cfg.form_name,
 		"route": _web_form_route(cfg),
 		"doc_type": dt,
-		# Code fallback (Invariant A.4): structural defaults when the contract leaves them blank.
-		"anonymous": 1 if cfg.get("anonymous") is None else cfg.get("anonymous"),
-		"login_required": cfg.get("login_required") or 0,
-		"allow_multiple": 1 if cfg.get("allow_multiple") is None else cfg.get("allow_multiple"),
+		# Check fields carry their default in the DocType JSON — the declaration IS the fallback.
+		"anonymous": cfg.get("anonymous"),
+		"login_required": cfg.get("login_required"),
+		"allow_multiple": cfg.get("allow_multiple"),
 		# Introduction (Text Editor, sanitised HTML incl. any inline banner image) -> introduction_text.
 		"introduction_text": cfg.get("introduction"),
 		"web_form_fields": _web_form_fields(cfg),
@@ -304,19 +303,87 @@ def _ensure_web_form(cfg, dt: str) -> str:
 	return wf.name
 
 
+# The one operator kill-switch for the whole intake feature (builder + runtime fold).
+_INTAKE_SWITCH = "Lead::Enrolment::intake"
+
+
+def _switch_off_reason() -> str | None:
+	"""Site state, not form state — `validate()` cannot see it, so `readiness` must."""
+	if not automation.is_enabled(_INTAKE_SWITCH):
+		return _("The intake feature switch ({0}) is off, so nothing is scaffolded.").format(_INTAKE_SWITCH)
+	return None
+
+
+def _unnameable_reason(cfg) -> str | None:
+	"""A name that yields no valid submission table — the case `safe_doctype_name_for` swallows."""
+	if not safe_doctype_name_for(cfg):
+		return _("Form Name '{0}' does not yield a valid submission table.").format(cfg.form_name)
+	return None
+
+
+def readiness(cfg) -> list[str]:
+	"""Why this form may NOT go live — an empty list means it may. THE readiness decision.
+
+	It names only what the controller's `validate()` cannot catch, so no rule exists twice:
+	select-without-options, unknown targets, out-of-grain targets and the exactly-one-phone rule
+	are already enforced on save and are deliberately absent here.
+
+	Two readers, one decision: `publish` refuses on it, the Desk script explains it (N3)."""
+	reasons = [r for r in (_switch_off_reason(), _unnameable_reason(cfg)) if r]
+	if not cfg.get("enabled"):
+		reasons.append(_("The form is disabled — enable it before taking it live."))
+	if not cfg.get("mappings"):
+		reasons.append(_("The form has no questions yet."))
+	return reasons
+
+
+def web_form_name_for(cfg) -> str | None:
+	"""The Web Form this contract owns, or None before the first sync. ONE resolver — the client
+	never names a Web Form, and nothing else re-derives it from the route (a route is not a name)."""
+	dt = safe_doctype_name_for(cfg)
+	return frappe.db.get_value("Web Form", {"doc_type": dt}, "name") if dt else None
+
+
+def publish(cfg, state: bool) -> bool:
+	"""Take this form's Web Form live, or withdraw it. The ONE writer of `published`.
+
+	`wf.save()` IS the publish: `WebsiteGenerator.on_update` clears the routing cache, so the route
+	is served — or withdrawn — in this same request. The raw `db.set_value` this replaces skipped
+	the controller, and `get_published_web_forms` (@redis_cache, 1h) kept serving the old list: the
+	DB said published and the public URL 404'd. Nothing here clears a cache by hand; that would be
+	the same bypass in a different coat.
+
+	Going live is a decision `readiness` may veto, and publishing re-syncs first so a form can never
+	go live from a stale scaffold. Taking a form DOWN is never vetoed: a form that went live before
+	the feature switch was turned off must still be withdrawable, or it stays public with no way to
+	stop it."""
+	if state:
+		reasons = readiness(cfg)
+		if reasons:
+			frappe.throw(reasons, title=_("Cannot Publish"), as_list=True)
+		sync_form(cfg)
+
+	wf_name = web_form_name_for(cfg)
+	if not wf_name:
+		frappe.throw(_("This form has no Web Form yet — save it first."), title=_("Nothing To Publish"))
+	wf = frappe.get_doc("Web Form", wf_name)
+	wf.published = 1 if state else 0
+	wf.save(ignore_permissions=True)  # authz-ok: tier-a — intake builder, operator-run
+	return bool(wf.published)
+
+
 def sync_form(cfg, method=None):
 	"""Scaffold (or re-sync) the runtime sink for one `CRM Intake Form`.
 
 	Server-internal only — callers are the form's own controller / an operator action,
 	both already System-Manager gated (the builder doctype is System-Manager-only).
-	Returns (doctype_name, web_form_name), or (None, None) when it deliberately skips."""
-	# Operator kill-switch: the whole intake feature (builder + runtime fold) is one switch.
-	if not automation.is_enabled("Lead::Enrolment::intake"):
-		return None, None
-	# Skip gracefully (never throw on a plain save) if the name can't yield a runtime
-	# DocType (odd/test names): a bad name must not block saving the contract.
-	if not safe_doctype_name_for(cfg):
-		return None, None
+	Returns (doctype_name, web_form_name), or (None, None) when it skips — and a skip is
+	always SAID. A silent skip is what let an operator edit a form and believe the live one had
+	changed. The doc still saves: a draft with a bad name must stay editable."""
+	for reason in (_switch_off_reason(), _unnameable_reason(cfg)):
+		if reason:
+			frappe.msgprint(reason, title=_("Not Scaffolded"), indicator="orange")
+			return None, None
 	dt = _ensure_doctype(cfg)
 	wf = _ensure_web_form(cfg, dt)
 

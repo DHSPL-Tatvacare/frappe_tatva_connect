@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from tatva_connect.intake.builder import LAYOUT_FIELDTYPES
 from tatva_connect.intake.intake import target_doctype
 from tatva_connect.taxonomy.normalize import normalize_field
 
@@ -43,6 +44,7 @@ class CRMIntakeForm(Document):
 			field = (m.target_field or "").strip()
 			if not table:
 				continue  # unmapped input / layout field — nothing lands on the lead
+			self._validate_stores_a_value(m, table)
 			if not field:
 				frappe.throw(
 					_("Field '{0}' maps to '{1}' but has no Target Field.").format(
@@ -66,6 +68,19 @@ class CRMIntakeForm(Document):
 					title=_("Invalid Target Field"),
 				)
 			self._validate_target_in_brain(m, table, field)
+
+	def _validate_stores_a_value(self, m, table):
+		"""A layout field is web-form furniture and gets no column on the submission table, so a target
+		on one can never land — today it saves clean and the answer quietly goes nowhere. The set of
+		layout types is the builder's ONE declaration, read here rather than copied."""
+		fieldtype = (m.get("fieldtype") or "Data").strip()
+		if fieldtype in LAYOUT_FIELDTYPES:
+			frappe.throw(
+				_("'{0}' is a {1} — it stores no answer, so it cannot map to '{2}'.").format(
+					m.source_field or "?", fieldtype, table
+				),
+				title=_("Layout Field Cannot Map"),
+			)
 
 	def _validate_target_in_brain(self, m, table, field):
 		"""Backstop for the grain-scoped picker: the target must be one the ONE mapping seam offers for

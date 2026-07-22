@@ -1,16 +1,17 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Builder discovery + Web Form publish toggle for the CRM Intake Form Desk form.
+"""The Desk form's read + command surface for CRM Intake Form. Permission gates that DELEGATE.
 
-Read-only schema discovery (`list_target_fields`) and a single guarded mutation
-(`toggle_published`) that flips the linked Web Form's `published`. Both gate on
-`frappe.has_permission("CRM Intake Form", ..., throw=True)` — the same discipline as
-every other tatva_connect whitelisted method. No DDL, no eval, no user-string execution:
-the field list comes straight from live `get_meta`, and the only thing written is the
-boolean `published` on the form the scaffolder already owns.
+Nothing here writes a Web Form. `list_target_fields` delegates to the mapping seam,
+`toggle_published` to `builder.publish`, `form_state` to `builder.readiness` — so the field list,
+the publish write and the readiness decision each live in exactly one place, and this module is
+only the gate in front of them. Every method gates on
+`frappe.has_permission("CRM Intake Form", ..., throw=True)`, the same discipline as every other
+tatva_connect whitelisted method. No DDL, no eval, no user-string execution.
 """
 import frappe
-from frappe import _
+
+from tatva_connect.intake import builder
 
 # ONE resolver, shared with the save-time validation — target_table -> the doctype whose
 # fields can be picked (lead = CRM Lead; child tables -> the child doctype; note -> None).
@@ -44,19 +45,39 @@ def list_target_fields(target_table, intake_form=None, vertical=None, group=None
 
 @frappe.whitelist()
 def toggle_published(intake_form):
-	"""Flip the linked Web Form's `published` for one CRM Intake Form. Gated on write to
-	CRM Intake Form; resolves the form via the scaffolder's derived doctype name, so the
-	client never names a Web Form directly. Returns the new published state (0/1)."""
+	"""Take one form live, or withdraw it. Gated on write to CRM Intake Form, then DELEGATED —
+	`builder` is the one writer of the Web Form, exactly as `list_target_fields` delegates to
+	`mapping`. Returns the new published state."""
 	frappe.has_permission("CRM Intake Form", "write", throw=True)
 
-	from tatva_connect.intake.builder import doctype_name_for
+	cfg = frappe.get_doc("CRM Intake Form", intake_form)
+	return builder.publish(cfg, not _published(cfg))
+
+
+@frappe.whitelist()
+def form_state(intake_form):
+	"""Everything the Desk form paints, in ONE call: is it live, at what address, why it cannot go
+	live, and the grain it stamps. The script decides none of this — `readiness` is the server's
+	one answer, and the script only renders it (N3)."""
+	frappe.has_permission("CRM Intake Form", "read", throw=True)
 
 	cfg = frappe.get_doc("CRM Intake Form", intake_form)
-	dt = doctype_name_for(cfg)
-	wf_name = frappe.db.get_value("Web Form", {"doc_type": dt}, "name")
-	if not wf_name:
-		frappe.throw(_("No Web Form is linked yet — Save the form first."), title=_("Not Published"))
+	return {
+		# The Web Form NAME (autonamed off the title), never the route — they coincide by accident.
+		"web_form": builder.web_form_name_for(cfg),
+		"published": _published(cfg),
+		"route": cfg.route,
+		"reasons": builder.readiness(cfg),
+		"grain": {
+			"vertical": cfg.custom_vertical,
+			"group": cfg.custom_group,
+			"program": cfg.custom_current_program,
+			"source": cfg.source,
+		},
+	}
 
-	new_state = 0 if frappe.db.get_value("Web Form", wf_name, "published") else 1
-	frappe.db.set_value("Web Form", wf_name, "published", new_state)
-	return new_state
+
+def _published(cfg) -> bool:
+	"""Is this form's Web Form live? One source, already indexed — no shadow flag."""
+	wf_name = builder.web_form_name_for(cfg)
+	return bool(wf_name and frappe.db.get_value("Web Form", wf_name, "published"))

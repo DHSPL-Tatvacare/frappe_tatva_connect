@@ -43,7 +43,8 @@ def seed():
 	for name, dt, view, rel in SCRIPTS:
 		path = os.path.join(base, rel)
 		if not os.path.exists(path):
-			continue
+			# A declared file that isn't there is an unfinished rename; skipping it lost a whole Desk UI.
+			frappe.throw(f"Client Script '{name}' declares a missing file: {rel}")
 		with open(path) as f:
 			js = f.read()
 		doc = frappe.get_doc("Client Script", name) if frappe.db.exists("Client Script", name) \
