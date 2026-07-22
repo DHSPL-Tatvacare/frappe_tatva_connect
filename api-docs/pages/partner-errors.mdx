@@ -23,6 +23,8 @@ Every failure returns the same envelope, so there is only one to handle. A stack
   - `error.detail` — the structured verdict of the check that refused, when it reached one. Today that is the file screener: `{check, verdict, file_name, signature}`. It is additive, so it is read by key and never destructured positionally.
   - `error.retry_after` — seconds to wait, present only when a real recovery time is known. See `server_busy` below.
 
+Every message states what happened, with the real values, and then the one step that resolves it. The wording is not a contract: the same condition can be worded differently depending on which layer refused it — a file type the platform does not accept is refused by the platform when screening is dormant, and by the screener when it is active, and only the second carries `error.detail`. Both are `validation_error`. Code branches on `error.code`, reads `error.fields` to know which input to correct, and reads `error.detail` when a check reached a structured verdict. It never matches the message.
+
 <Mermaid chart={`
 flowchart TD
   A["response body"] --> B{"status"}

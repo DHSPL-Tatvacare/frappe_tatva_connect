@@ -460,11 +460,11 @@
               },
               "detail": {
                 "type": "object",
-                "description": "Present when the check that refused reached a STRUCTURED verdict rather than only a sentence. Today this is the file screener: `{check: \"file_screening\", verdict, file_name, signature}`, where `verdict` is one of `Type Not Allowed`, `Type Mismatch`, `Infected`, `Scanner Unavailable` and `signature` is the malware signature name (null unless `verdict` is `Infected`). Additive by design \u2014 new keys may appear, so it is read by key and never destructured positionally."
+                "description": "Present when the check that refused reached a STRUCTURED verdict rather than only a sentence. Today this is the file screener: `{check: \"file_screening\", verdict, file_name, signature}`, where `verdict` is one of `Type Not Allowed`, `Type Mismatch`, `Infected`, `Scanner Unavailable` and `signature` is the malware signature name (null unless `verdict` is `Infected`). Additive by design — new keys may appear, so it is read by key and never destructured positionally."
               },
               "retry_after": {
                 "type": "integer",
-                "description": "Seconds to wait before retrying. Present only when a REAL recovery time is known: `rate_limited` (429, the limiter computes it), a capacity `server_busy` (503) and `write_conflict` (503, the bulk window). Absent on a `server_busy` whose recovery time is genuinely unknown, such as a screening-service outage \u2014 back off exponentially there rather than reading a number that was never measured."
+                "description": "Seconds to wait before retrying. Present only when a REAL recovery time is known: `rate_limited` (429, the limiter computes it), a capacity `server_busy` (503) and `write_conflict` (503, the bulk window). Absent on a `server_busy` whose recovery time is genuinely unknown, such as a screening-service outage — back off exponentially there rather than reading a number that was never measured."
               }
             }
           }
@@ -3712,7 +3712,10 @@
               "status": "error",
               "error": {
                 "code": "validation_error",
-                "message": "mobile_no is required"
+                "message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919876543210).",
+                "fields": [
+                  "mobile_no"
+                ]
               }
             }
           ]
@@ -5225,7 +5228,10 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "Activity not found"
+                "message": "No activity on this API key's line has the id `9f2c1ab77e`. Check the value against an activity_list response for the lead it was created on.",
+                "fields": [
+                  "name"
+                ]
               }
             }
           ]
@@ -5871,7 +5877,10 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "Lead not found"
+                "message": "No lead on this API key's line matches `name`. Check the value against a lead_list response, or create the lead with lead_create first.",
+                "fields": [
+                  "name"
+                ]
               }
             }
           ]
@@ -6098,7 +6107,10 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "Activity not found"
+                "message": "No activity on this API key's line has the id `9f2c1ab77e`. Check the value against an activity_list response for the lead it was created on.",
+                "fields": [
+                  "name"
+                ]
               }
             }
           ]
@@ -6264,7 +6276,10 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "Call not found"
+                "message": "No call on this API key's line has the id `9f2c1ab77e`. Check the value against a call_list response; a call that matched no lead is not readable by a partner key.",
+                "fields": [
+                  "name"
+                ]
               }
             }
           ]
@@ -6406,7 +6421,10 @@
               "status": "error",
               "error": {
                 "code": "not_found",
-                "message": "File not found"
+                "message": "No file on this API key's line has the id `9f2c1ab77e`. Check the value against a file_list response for the lead it was attached to.",
+                "fields": [
+                  "name"
+                ]
               }
             }
           ]
@@ -6859,7 +6877,7 @@
         }
       },
       "Retry-After": {
-        "description": "Seconds to wait before retrying, per RFC 9110. Sent whenever a REAL recovery time is known \u2014 a 429 (your budget is spent), a capacity 503 and a bulk write-conflict 503 \u2014 and it mirrors `error.retry_after` in the body. It is absent when the recovery time is genuinely unknown, such as a screening-service outage; back off exponentially there. It is the wait for ONE request, so it is normally shorter than `X-RateLimit-Reset`. Always obey it.",
+        "description": "Seconds to wait before retrying, per RFC 9110. Sent whenever a REAL recovery time is known — a 429 (your budget is spent), a capacity 503 and a bulk write-conflict 503 — and it mirrors `error.retry_after` in the body. It is absent when the recovery time is genuinely unknown, such as a screening-service outage; back off exponentially there. It is the wait for ONE request, so it is normally shorter than `X-RateLimit-Reset`. Always obey it.",
         "schema": {
           "type": "integer",
           "example": 42
@@ -6930,7 +6948,7 @@
         }
       },
       "ScreeningUnavailable": {
-        "description": "The malware screening service could not be reached, so the document was never judged. This is an outage on our side, not a fault in the request: the document is NOT rejected as invalid and nothing was stored. `error.code` is `server_busy` and `error.detail.verdict` is `Scanner Unavailable`. There is no `Retry-After` \u2014 the recovery time is genuinely unknown \u2014 so the same call is retried with exponential backoff.",
+        "description": "The malware screening service could not be reached, so the document was never judged. This is an outage on our side, not a fault in the request: the document is NOT rejected as invalid and nothing was stored. `error.code` is `server_busy` and `error.detail.verdict` is `Scanner Unavailable`. There is no `Retry-After` — the recovery time is genuinely unknown — so the same call is retried with exponential backoff.",
         "content": {
           "application/json": {
             "schema": {
@@ -7163,7 +7181,10 @@
                   "status": "error",
                   "error": {
                     "code": "not_found",
-                    "message": "Lead not found"
+                    "message": "No lead on this API key's line matches `name`. Check the value against a lead_list response, or create the lead with lead_create first.",
+                    "fields": [
+                      "name"
+                    ]
                   }
                 }
               }
@@ -7526,7 +7547,10 @@
                   "status": "error",
                   "error": {
                     "code": "not_found",
-                    "message": "Lead not found"
+                    "message": "No lead on this API key's line matches `name`. Check the value against a lead_list response, or create the lead with lead_create first.",
+                    "fields": [
+                      "name"
+                    ]
                   }
                 }
               }
@@ -7633,7 +7657,10 @@
                   "status": "error",
                   "error": {
                     "code": "not_found",
-                    "message": "Lead not found"
+                    "message": "No lead on this API key's line matches `name`. Check the value against a lead_list response, or create the lead with lead_create first.",
+                    "fields": [
+                      "name"
+                    ]
                   }
                 }
               }

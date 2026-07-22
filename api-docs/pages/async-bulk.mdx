@@ -75,7 +75,8 @@ stateDiagram-v2
   per-record failure is reported in the results, not on the job.
 - **Failed** — the job did not complete: the file was rejected whole (a virus, a disallowed type, or
   over the record limit), was unparseable, or a write quota ran out mid-drain. It may carry the results
-  of the chunks that committed before it stopped.
+  of the chunks that committed before it stopped. **`error_summary` on the job says why** — it is the
+  only job-level reason, and the per-record results explain nothing about a job that stopped as a whole.
 - **Aborted** — the job was cancelled (see below).
 
 ## Monitoring
@@ -117,11 +118,15 @@ Authorization: token <api_key>:<api_secret>
     "results": [
       { "record_index": 0, "action": "created", "record_name": "a7f3c9e12b" },
       { "record_index": 7, "action": "failed", "error_code": "validation_error",
-        "error_message": "mobile_no is required" } ] } }
+        "error_message": "A lead is identified by its phone number and this record carries none. Send `mobile_no` in E.164 (for example +919876543210).",
+        "error_fields": ["mobile_no"] } ] } }
 ```
 
 `action` is `created`, `merged` (an existing lead was updated — leads deduplicate exactly as they do
 synchronously) or `failed`.
+
+A failed row carries the same refusal a singular call would: `error_code`, `error_message`, and
+`error_fields` and `error_detail` when they apply. The last two are JSON, not text.
 
 ## Retrying
 
