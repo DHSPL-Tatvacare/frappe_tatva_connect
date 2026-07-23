@@ -1,0 +1,73 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_status",
+  "enabled",
+  "last_build_at",
+  "section_break_maintenance",
+  "rebuild"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_status",
+   "fieldtype": "Section Break",
+   "label": "Global Search"
+  },
+  {
+   "default": "0",
+   "description": "Turns the spotlight (⌘K) search on. It ships OFF, and stays OFF through a data migration — while OFF no index exists, so imported records cost nothing to save. Once the migration has settled it is switched ON, which builds the index once over the existing data in the background; from then on every new or edited lead, note, task, call and file is indexed as it is saved.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Global Search"
+  },
+  {
+   "description": "When the last full index build finished. Blank until search has been enabled at least once.",
+   "fieldname": "last_build_at",
+   "fieldtype": "Datetime",
+   "label": "Last Index Build",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_maintenance",
+   "fieldtype": "Section Break",
+   "label": "Maintenance"
+  },
+  {
+   "default": "0",
+   "description": "Rebuilds the whole index from scratch in the background, then clears itself. Needed only if the index is suspected to have drifted from the data; routine changes are indexed automatically and never require this.",
+   "fieldname": "rebuild",
+   "fieldtype": "Check",
+   "label": "Rebuild Index Now"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Search Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

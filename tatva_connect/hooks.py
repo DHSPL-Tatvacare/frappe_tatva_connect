@@ -109,6 +109,10 @@ has_permission = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 }
 
+# Global spotlight search — a native Frappe FTS5 search class. List-valued hook: this ADDS our class
+# alongside helpdesk's and wiki's, each writing its own index db. Dormant until CRM Search Settings is on.
+sqlite_search = ["tatva_connect.search.index.CRMLeadSearch"]
+
 # Event-driven automations: each side-effect lives in its feature module; providers persist only their own records, every side-effect hangs off here.
 doc_events = {
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
