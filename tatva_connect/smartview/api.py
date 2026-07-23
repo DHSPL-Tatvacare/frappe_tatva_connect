@@ -103,7 +103,7 @@ def _sections():
 			r.name: r
 			for r in frappe.get_all(
 				"CRM Lead Section",
-				fields=["name", "target_doctype", "child_table_field", "is_multi_row", "row_key_field",
+				fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row", "row_key_field",
 				        "is_key_value", "value_field"],
 			)
 		}
@@ -134,6 +134,7 @@ def _lead_catalog():
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
 			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
+			r.section_title = section.title  # composed into the flat picker/grid label; the Data tab reads the plain label under its own section header
 			rows[r.field_key] = r
 		return rows
 
@@ -275,6 +276,12 @@ def _grains_from_axes(vertical, group, program):
 	return entitlement.entitled_grains()
 
 
+def _flat_label(r):
+	"""The label for a flat surface (picker, results grid) that has no section header to lean on: the section title prefixes the plain column label so a column reads unambiguously. The stored label stays the plain column name; activity fields (no section) render as-is."""
+	base = r.label or r.fieldname
+	return f"{r.section_title} — {r.label}" if r.get("section_title") and r.label else base
+
+
 @frappe.whitelist()
 def field_catalog(base_object, activity_type=None, vertical=None, group=None, program=None):
 	"""The allowed fields for the picker/condition builder — type + grain scoped, role-restricted.
@@ -289,7 +296,7 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 		fieldtype, options = _col_type(r)
 		out.append({
 			"field_key": r.field_key,
-			"label": r.label or r.fieldname,
+			"label": _flat_label(r),
 			"fieldname": r.fieldname,
 			"sql_source": r.sql_source,
 			"filterable": bool(r.filterable),
@@ -740,7 +747,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows = rows_q.run(as_dict=True)
 
 	columns = [
-		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0]}
+		{"key": k, "label": _flat_label(cat[k]), "fieldtype": _col_type(cat[k])[0]}
 		for k in col_keys if k in field_terms
 	]
 	return {"columns": columns, "rows": rows, "total": total}
