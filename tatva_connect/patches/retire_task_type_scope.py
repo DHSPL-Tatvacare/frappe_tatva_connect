@@ -26,8 +26,20 @@ def execute():
 
 
 def _drop_grainless_types():
+	"""A grainless (name-keyed) type is dormant — _grain_matches calls its all-blank grain never-raisable,
+	so the row only ever advertised an activity that does not exist. A USED site can still carry a legacy
+	task tagged with it (a pre-re-key 'Call Lead' from before the assignment resolver guard). Untype those
+	tasks first — a CRM Task with no custom_task_type is a valid state, exactly what a native call-log task
+	is (crm.integrations.api.add_task_to_call_log sets none) — so the meaningless tag is cleared, nothing is
+	orphaned, and the type deletes. delete_doc stays force-less: a NON-task link (a rule/view) is a real
+	reference the operator must resolve, and it still fails loud."""
 	for name in frappe.get_all("CRM Task Type", filters={"name": ["not like", "%::%"]}, pluck="name"):
-		frappe.delete_doc("CRM Task Type", name)  # no force: a real link must fail loud, never orphan
+		tagged = frappe.get_all("CRM Task", filters={"custom_task_type": name}, pluck="name")
+		for task in tagged:
+			frappe.db.set_value("CRM Task", task, "custom_task_type", None, update_modified=False)  # untype, never orphan
+		if tagged:
+			print(f"  retire_task_type_scope: untyped {len(tagged)} legacy task(s) of '{name}' before delete")
+		frappe.delete_doc("CRM Task Type", name)  # force-less: a non-task link still fails loud
 
 
 def _drop_scope_doctype():
