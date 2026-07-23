@@ -11,6 +11,7 @@ Every assertion here reads a response body or a stored row. None asserts that a 
 """
 import json
 import re
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -19,7 +20,7 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.api import _base, partner, partner_bulk_job, partner_bulk_worker, partner_file
 
 PARTNER = "errparity.lock.partner@example.test"
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 TOGGLE = "Partner::AsyncBulk::jobs"
 NAME_PREFIX = "ErrParity"
 
@@ -92,7 +93,7 @@ class TestPartnerErrorParity(FrappeTestCase):
 
 	# The one bad record both lanes are driven with: a lead carrying no phone number, which is the
 	# identity field — so `mobile_no` is the named input and the refusal must say so, in both lanes.
-	_BAD_LEAD = {"first_name": f"{NAME_PREFIX}NoPhone"}
+	_BAD_LEAD: ClassVar[dict] = {"first_name": f"{NAME_PREFIX}NoPhone"}
 
 	def _sync_bulk_error(self):
 		frappe.set_user(PARTNER)
