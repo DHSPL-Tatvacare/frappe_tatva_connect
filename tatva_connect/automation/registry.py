@@ -869,6 +869,27 @@ AUTOMATIONS = [
 		),
 		backs=["tatva_connect.learning.embeds.rewrite_office_links"],
 	),
+	Auto(
+		key="Search::Index::indexing",
+		fires_on="Doc Event",
+		trigger_detail="frappe sqlite_search · index-on-save + query gate",
+		purpose=(
+			"The global spotlight search is switched on: leads, notes, tasks, call logs and file names "
+			"are held in a full-text index, and a record is added to it as it is saved and dropped as it "
+			"is deleted, so a rep can jump to a patient by name, number or id from anywhere. On enable, "
+			"the whole existing set is indexed once in the background; a search only ever returns the "
+			"records the caller may already see. Off, which is how it ships, nothing is indexed and the "
+			"search returns nothing — the state to hold through a data migration, so imported records "
+			"cost nothing, before it is switched on against the settled data.\n"
+			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
+			"that lead, without opening a single list or filter."
+		),
+		# A gate read by CRMLeadSearch.is_search_enabled; the per-save indexing rides frappe's native
+		# sqlite_search doc_events (core-owned, not tatva_connect's), so backs is empty — drift walks
+		# only this app's doc_event/scheduler paths. The activator builds the index once on enable.
+		activator="tatva_connect.search.activation.apply",
+		backs=[],
+	),
 ]
 
 

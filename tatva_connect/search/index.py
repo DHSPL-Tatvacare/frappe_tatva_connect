@@ -19,8 +19,10 @@ from frappe.search.sqlite_search import SQLiteSearch
 from tatva_connect.access import entitlement
 from tatva_connect.access.visibility import _ref_parent
 from tatva_connect.api.partner_file import _file_lead
+from tatva_connect.automation.settings import is_enabled
 
-SETTINGS = "CRM Search Settings"
+# The dormant operator toggle that gates the whole feature — a CRM Tatva Automation row, like every switch.
+TOGGLE = "Search::Index::indexing"
 
 # Which lead-detail tab a hit opens (frontend navigates via the URL hash). A lead opens the detail root.
 TAB = {"CRM Lead": None, "FCRM Note": "notes", "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
@@ -49,35 +51,23 @@ class CRMLeadSearch(SQLiteSearch):
 	}
 
 	def is_search_enabled(self):
-		"""The one switch. OFF -> no index file, so every doc-event hook no-ops on `index_exists()`; that
-		is the bulk guard through the LSQ migration. Flip ON post-migration to kick the native build."""
-		return bool(frappe.db.get_single_value(SETTINGS, "enabled"))
+		"""The one switch, read from the automation registry. OFF -> no index file, so every doc-event
+		hook no-ops on `index_exists()`; that is the bulk guard through the LSQ migration. Flipping the
+		toggle ON post-migration fires the activator, which kicks the native build."""
+		return is_enabled(TOGGLE)
 
 	def get_search_filters(self):
-		"""Scope by grain axes, expanded from the ONE entitlement brain — never a second matcher.
+		"""Scope to the leads the caller may actually SEE — the same visibility the lead list uses.
 
-		A blank axis on the caller's grain means ANY, so we OMIT that axis's filter entirely (never NULL,
-		never []: an empty IN becomes 1=0 and matches nothing). Emitting an IN only when EVERY grain sets
-		the axis is what prevents the overlaps-vs-covers trap — the defect that once hid 129 fields from
-		1,894 leads. System Manager sees everything; a principal with no entitlement sees nothing.
+		Lead visibility is org-hierarchy, not grain (grain governs field visibility, a different axis), so
+		we run the real permission engine via get_list and filter the index by those lead names. Every row
+		carries `lead`, so one IN-clause scopes children too. System Manager (ALL_GRAINS) is exempt and
+		sees everything; everyone else is bounded to their org subtree. limit_page_length=0 = no 20-row cap.
 		"""
-		grains = entitlement.entitled_grains()
-		if grains == entitlement.ALL_GRAINS:
+		if entitlement.entitled_grains() == entitlement.ALL_GRAINS:
 			return {}
-		filters = {}
-		verticals = {g[0] for g in grains}
-		groups = {g[1] for g in grains}
-		programs = {g[2] for g in grains}
-		if grains and all(verticals):
-			filters["vertical"] = sorted(verticals)
-		if grains and all(groups):
-			filters["group"] = sorted(groups)
-		if grains and all(programs):
-			filters["program"] = sorted(programs)
-		# No entitlement at all -> fail closed: an impossible filter so nothing matches.
-		if not grains:
-			filters["lead"] = []
-		return filters
+		accessible = frappe.get_list("CRM Lead", pluck="name", limit_page_length=0)
+		return {"lead": accessible}
 
 	def prepare_document(self, doc):
 		"""Compose the searchable text and stamp the parent lead + its grain onto every row.

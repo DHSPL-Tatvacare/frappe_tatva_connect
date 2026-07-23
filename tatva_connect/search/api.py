@@ -51,3 +51,14 @@ def _shape(r):
 	if dt == "File":
 		hit["file_url"] = frappe.db.get_value("File", r.get("name"), "file_url")
 	return hit
+
+
+@frappe.whitelist()
+def rebuild_index():
+	"""Force a full background rebuild — the Rebuild button on the search toggle's form. System Manager
+	only; the framework's own long-queue build, deduplicated, so it is safe to press twice."""
+	frappe.only_for("System Manager")
+	from tatva_connect.search.activation import enqueue_build
+
+	enqueue_build(force=True)
+	return {"queued": True}
