@@ -2,7 +2,7 @@
 # See license.txt
 """The WRITE side: a wildcard entitlement axis resolved to one concrete leaf on the create form.
 
-Entitlement is a REGION; a lead is a POINT. A rep entitled to all of GoodFlip Care/Anaya must file each
+Entitlement is a REGION; a lead is a POINT. A rep entitled to all of Goodflip-Care/Anaya must file each
 lead under ONE of its programmes — before this, the stamp copied the region straight onto the lead and a
 blank programme axis landed as a blank column, so that rep could not create a Nivolumab lead at all.
 
@@ -24,13 +24,13 @@ import frappe
 
 from tatva_connect.lead.leads import stamp_entitled_grain
 
-V, G = "GoodFlip Care", "Anaya"
+V, G = "Goodflip-Care", "Anaya"
 P1, P2 = "Nivolumab", "Sigrima"
-OFF_TREE = "Niva Bupa"
+OFF_TREE = "Niva-Bupa"
 
 WILDCARD = {(V, G, "")}          # entitled to the whole group — the axis that must be picked
 CONCRETE = {(V, G, P1)}          # nothing to ask
-PROGRAMLESS = {("GoodFlip", "Insurers", "")}   # a group the registry declares no programmes under
+PROGRAMLESS = {("Goodflip", "Insurers", "")}   # a group the registry declares no programmes under
 
 _ENABLED = "tatva_connect.lead.leads.automation.is_enabled"
 _GRAINS = "tatva_connect.access.entitlement.entitled_grains"
@@ -128,7 +128,7 @@ class TestGrainWritePick(unittest.TestCase):
 		patch(_GROUPS, return_value=["Insurers"]).start()
 		doc = _doc()
 		stamp_entitled_grain(doc)
-		self.assertEqual(self._axes(doc), ("GoodFlip", "Insurers", None))
+		self.assertEqual(self._axes(doc), ("Goodflip", "Insurers", None))
 
 	def test_flag_off_keeps_todays_behaviour(self):
 		"""Disarmed, a wildcard region still stamps a blank programme — the old behaviour, byte-identical.

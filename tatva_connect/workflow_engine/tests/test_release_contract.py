@@ -267,5 +267,6 @@ class TestProblemShape(FrappeTestCase):
 		), entry_node="start")
 		self.assertTrue(found)
 		for p in found:
-			self.assertEqual(set(p), {"node_id", "field", "message"}, p)
+			self.assertEqual(set(p), {"node_id", "field", "message", "code", "severity", "fix"}, p)
 			self.assertTrue(p["message"], "a problem must always be explainable to a person")
+			self.assertIn(p["severity"], (registry.BLOCKS, registry.WARNS))

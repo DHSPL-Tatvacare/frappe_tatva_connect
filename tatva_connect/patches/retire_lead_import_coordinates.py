@@ -1,4 +1,4 @@
-"""Retire CRM Lead's dead coordinate pair (custom_latitude / custom_longitude): a duplicate of the clinic anchor that nothing ever read or wrote. The TatvaPractice load writes custom_clinic_latitude/longitude (the anchor Near Me and the automation geofence both read), so these two are surplus — no carry, nothing to preserve. Idempotent: the Custom Field doc AND the physical column go, each guarded."""
+"""Retire CRM Lead's dead coordinate pair (custom_latitude / custom_longitude): a duplicate of the clinic anchor that nothing ever read or wrote. The Tatvapractice load writes custom_clinic_latitude/longitude (the anchor Near Me and the automation geofence both read), so these two are surplus — no carry, nothing to preserve. Idempotent: the Custom Field doc AND the physical column go, each guarded."""
 import frappe
 
 from tatva_connect.patches import _schema

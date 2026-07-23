@@ -78,7 +78,7 @@ class TestSettableRuleGrain(FrappeTestCase):
 
 	def test_a_workflow_on_another_vertical_is_not_offered_it(self):
 		"""Wildcard-aware is not permissive. A SET axis that disagrees still excludes the field."""
-		offered = describe._settable_fields("CRM Lead", "GoodFlip Care", "", "")
+		offered = describe._settable_fields("CRM Lead", "Goodflip-Care", "", "")
 		self.assertNotIn(_LEAD_FIELD, _keys(offered))
 
 	def test_overlaps_is_symmetric_and_covers_is_not(self):
@@ -87,10 +87,10 @@ class TestSettableRuleGrain(FrappeTestCase):
 		`covers` asks about a real record and is one-directional: only the CANDIDATE may wildcard.
 		`overlaps` asks about two rules and is symmetric. Using the first where the second belongs is
 		what hid the field above."""
-		contract = {"vertical": "TatvaPractice", "group": "India", "program": "FieldSales"}
-		self.assertFalse(taxonomy_grain.covers(contract, "TatvaPractice", "", ""))
-		self.assertTrue(taxonomy_grain.overlaps(contract, "TatvaPractice", "", ""))
-		self.assertFalse(taxonomy_grain.overlaps(contract, "GoodFlip Care", "", ""))
+		contract = {"vertical": "Tatvapractice", "group": "India", "program": "Field-Sales"}
+		self.assertFalse(taxonomy_grain.covers(contract, "Tatvapractice", "", ""))
+		self.assertTrue(taxonomy_grain.overlaps(contract, "Tatvapractice", "", ""))
+		self.assertFalse(taxonomy_grain.overlaps(contract, "Goodflip-Care", "", ""))
 		self.assertTrue(taxonomy_grain.overlaps(contract, "", "", ""))
 
 	def test_the_rule_grain_resolver_is_not_the_data_grain_one(self):

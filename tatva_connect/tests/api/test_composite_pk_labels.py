@@ -4,7 +4,7 @@
 
 Six doctypes carry a `format:` autoname built from the grain, so their primary key is data:
 `CRM Task Type` is `{vertical}::{group}::{program}::{type_name}`. Printing it gives a rep
-`GoodFlip Care::Anaya::::Identify PSP Category`.
+`Goodflip-Care::Anaya::::Identify PSP Category`.
 
 Two mechanisms keep it out of the UI, and they are tested separately here:
 
@@ -26,7 +26,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
 # Keys whose value is user free text or a saved filter tree: a `::` there is the user's, not a leak.
 FREE_TEXT_KEYS = {"description", "file_name", "address", "predicate", "content", "title"}

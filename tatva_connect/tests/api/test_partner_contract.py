@@ -37,7 +37,7 @@ from tatva_connect.api._base import (
 	_run_bulk,
 )
 
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 BULK_SUMMARY_KEYS = ["failed", "succeeded", "total"]
 
 

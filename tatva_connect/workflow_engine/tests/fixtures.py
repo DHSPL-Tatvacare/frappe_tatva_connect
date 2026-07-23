@@ -22,7 +22,7 @@ EVENT_DT = "CRM Workflow Event"
 VERSION_DT = "CRM Workflow Version"
 STEP_LOG_DT = "CRM Workflow Step Log"
 
-GRAIN = GRAINS[2]  # TatvaPractice / India / FieldSales
+GRAIN = GRAINS[2]  # Tatvapractice / India / Field-Sales
 AXES = (GRAIN["vertical"], GRAIN["group"], GRAIN["program"])
 
 

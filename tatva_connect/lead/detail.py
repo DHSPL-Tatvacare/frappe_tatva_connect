@@ -148,7 +148,7 @@ def writable_keys(selected, is_readonly):
 def _select(doc):
 	"""The entitled (VIEWER's grains) ∧ applicable (THIS LEAD's grain) ∧ deduped {field_key: row}.
 	Two grain axes, ONE brain (entitlement.field_in_grains_via_contract): a field shows only if the VIEWER may see
-	it AND it belongs to the LEAD's grain — so an Anaya lead never shows TatvaPractice fields even for
+	it AND it belongs to the LEAD's grain — so an Anaya lead never shows Tatvapractice fields even for
 	an admin entitled to every grain. Universal keys always pass. (Sections are display groups; the
 	frontend hides empties.)"""
 	visible = entitlement.resolve_fields(_catalog_rows(), entitlement.entitled_grains(), frappe.get_roles())

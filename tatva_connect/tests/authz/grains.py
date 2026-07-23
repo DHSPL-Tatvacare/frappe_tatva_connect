@@ -3,9 +3,9 @@
 """The 5 canonical test grains (Product Line / Group / Program) + master-existence validation.
 
 Chosen so every isolation boundary has population on both sides:
-  #1/#2 share vertical+group (GoodFlip Care · Anaya), differ on program  -> program-axis isolation
-  #3/#4 share vertical+group (TatvaPractice · India), differ on program
-  #4/#5 share the PROGRAM NAME "InsideSales" but differ on vertical+group -> the escalation trap:
+  #1/#2 share vertical+group (Goodflip-Care · Anaya), differ on program  -> program-axis isolation
+  #3/#4 share vertical+group (Tatvapractice · India), differ on program
+  #4/#5 share the PROGRAM NAME "Inside-Sales" but differ on vertical+group -> the escalation trap:
         if grain matching ever keys on program alone, #4's user would see #5's leads.
 
 Grain axes are Link fields to real masters (CRM Vertical / CRM Group / CRM Program), so the
@@ -32,11 +32,11 @@ def _g(vertical, group, program):
 
 
 GRAINS = [
-	_g("GoodFlip Care", "Anaya", "Nivolumab"),
-	_g("GoodFlip Care", "Anaya", "Tukavo"),
-	_g("TatvaPractice", "India", "FieldSales"),
-	_g("TatvaPractice", "India", "InsideSales"),
-	_g("GoodFlip", "India", "InsideSales"),
+	_g("Goodflip-Care", "Anaya", "Nivolumab"),
+	_g("Goodflip-Care", "Anaya", "Tukavo"),
+	_g("Tatvapractice", "India", "Field-Sales"),
+	_g("Tatvapractice", "India", "Inside-Sales"),
+	_g("Goodflip", "India", "Inside-Sales"),
 ]
 
 WILDCARD = _g("", "", "")  # blank axes = universal (visible to everyone) — for over-show checks

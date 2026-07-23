@@ -30,7 +30,7 @@ from tatva_connect.partner_api import section_seed
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _RATE_SWITCH = "Intake::RateLimit::enforcement"
 
-_VERTICAL = "GoodFlip Care"
+_VERTICAL = "Goodflip-Care"
 _GROUP = "Anaya"
 _PROGRAM = "Nivolumab"
 _SOURCE = "Enrolment Form"

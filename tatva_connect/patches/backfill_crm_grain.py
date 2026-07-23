@@ -10,7 +10,7 @@ is authoritative config, and bulk-inserting whatever the lead table holds would 
 valid business slices. One tuple was rejected on exactly that ground — see REJECTED below.
 
 Blank program is a real combination, not a gap: a lead exists before programme enrolment (9 live Anaya
-leads sit there) and a group may be declared as a whole region (GoodFlip/Insurers).
+leads sit there) and a group may be declared as a whole region (Goodflip/Insurers).
 
 A fresh site gets these from the seed (db-seeds/2026-07-22-crm-grain.sql); this heals an existing one.
 """
@@ -18,20 +18,22 @@ import frappe
 
 # The curated registry. (vertical, group, program) — "" program means the combination has no programme axis.
 GRAINS = [
-	("GoodFlip", "India", "InsideSales"),
-	("GoodFlip", "Insurers", ""),
-	("GoodFlip", "Insurers", "Niva Bupa"),
-	("GoodFlip Care", "Anaya", ""),
-	("GoodFlip Care", "Anaya", "Nivolumab"),
-	("GoodFlip Care", "Anaya", "Sigrima"),
-	("GoodFlip Care", "Anaya", "Tukavo"),
-	("GoodFlip Care", "Anaya", "Ujvira"),
-	("TatvaPractice", "India", "FieldSales"),
-	("TatvaPractice", "India", "InsideSales"),
+	("Goodflip", "India", "Inside-Sales"),
+	("Goodflip", "Insurers", ""),
+	("Goodflip", "Insurers", "Niva-Bupa"),
+	("Goodflip", "Zydus", ""),
+	("Goodflip", "Zydus", "Liver-Forever"),
+	("Goodflip-Care", "Anaya", ""),
+	("Goodflip-Care", "Anaya", "Nivolumab"),
+	("Goodflip-Care", "Anaya", "Sigrima"),
+	("Goodflip-Care", "Anaya", "Tukavo"),
+	("Goodflip-Care", "Anaya", "Ujvira"),
+	("Tatvapractice", "India", "Field-Sales"),
+	("Tatvapractice", "India", "Inside-Sales"),
 ]
 
 # REJECTED, and why — kept here so a future backfill does not silently re-adopt it from the lead table.
-# ("GoodFlip", "GoodFlip", "InsideSales") — 1 lead. Its group is the VERTICAL's name; the real GoodFlip
+# ("Goodflip", "Goodflip", "Inside-Sales") — 1 lead. Its group is the VERTICAL's name; the real Goodflip
 # groups are India and Insurers. A data error, not a business slice. It surfaces in the off-registry
 # report below as a cleanup item rather than being blessed into config.
 

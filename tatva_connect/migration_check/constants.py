@@ -5,7 +5,7 @@
 this runs. `grains.json` is generated from it by `_generate_grains.py` — see REMOVE-ME.md.
 
 EVERYTHING VARIES BY GRAIN: which LeadSquared account holds the lead, which event codes were agreed
-to move, which fields map where, and even which rows the page may show. TatvaPractice and Inside
+to move, which fields map where, and even which rows the page may show. Tatvapractice and Inside
 Sales migrate no calls at all, so a Calls row must not appear for them — 0 vs 0 would imply calls
 were expected. Nothing here may be hardcoded to one account.
 """

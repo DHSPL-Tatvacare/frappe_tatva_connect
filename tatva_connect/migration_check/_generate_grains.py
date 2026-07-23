@@ -22,9 +22,9 @@ OUT = pathlib.Path(__file__).resolve().parent / "grains.json"
 # account slug -> the label an operator picks from. Vertical – group, never program: one account
 # serves many programs (Anaya alone covers Nivolumab, Sigrima, Tukavo, Ujvira).
 ACCOUNTS = {
-	"anaya": "GoodFlip Care \u2013 Anaya",
-	"tatvapractice": "TatvaPractice \u2013 India",
-	"goodflip_inside_sales": "GoodFlip \u2013 India (Inside Sales)",
+	"anaya": "Goodflip-Care \u2013 Anaya",
+	"tatvapractice": "Tatvapractice \u2013 India",
+	"goodflip_inside_sales": "Goodflip \u2013 India (Inside Sales)",
 }
 
 

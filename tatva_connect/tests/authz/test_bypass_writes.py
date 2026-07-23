@@ -19,7 +19,7 @@ PART A — `test_every_ignore_permissions_write_is_gated` (the audit's I4, drift
 PART B — `TestBypassWrites` (audit M-1, differential on the Tier-B partner paths):
   The partner lead API writes with `ignore_permissions=True` AFTER its own grain/scope gate (the gate
   lives in `_upsert_one`/`_update_one`/`_delete_one`, BEFORE the save — verified in api/partner.py).
-  We exercise that gate AS the `partner` persona (mapped to grain_1: GoodFlip Care / Anaya /
+  We exercise that gate AS the `partner` persona (mapped to grain_1: Goodflip-Care / Anaya /
   Nivolumab) and prove (a) it REFUSES an out-of-grain create/update/delete, and (b) for an ALLOWED
   in-grain write, the bypass does not grant MORE than the permission-checked path would — i.e. the
   ignore_permissions hole is not an escalation over native `has_permission`.
@@ -170,7 +170,7 @@ class TestBypassEnumerationAudit(AuthzTestCase):
 class TestBypassWrites(AuthzTestCase):
     """PART B — differential tests for the Tier-B partner lead paths (audit M-1).
 
-    As the `partner` persona (mapped to grain_1 = GoodFlip Care / Anaya / Nivolumab), the
+    As the `partner` persona (mapped to grain_1 = Goodflip-Care / Anaya / Nivolumab), the
     ignore_permissions write must never reach a lead outside that grain, and an allowed in-grain
     write must not exceed what the permission-checked path would grant.
     """
@@ -180,8 +180,8 @@ class TestBypassWrites(AuthzTestCase):
         super().setUpClass()  # comms-off gate + class rollback floor
         generator.seed(commit=False)
         cls.partner_user = roster.email("partner")
-        cls.in_grain = grains.GRAINS[0]      # GoodFlip Care / Anaya / Nivolumab — the partner's line
-        cls.out_grain = grains.GRAINS[2]     # TatvaPractice / India / FieldSales — a foreign line
+        cls.in_grain = grains.GRAINS[0]      # Goodflip-Care / Anaya / Nivolumab — the partner's line
+        cls.out_grain = grains.GRAINS[2]     # Tatvapractice / India / Field-Sales — a foreign line
 
     # ---- helpers -------------------------------------------------------------
 

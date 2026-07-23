@@ -8,8 +8,8 @@ import frappe
 
 USER = "zmulti-agent@example.com"
 PWD = "zmulti-pass-2026"
-GA = ("TatvaPractice", "India", "FieldSales")
-GB = ("TatvaPractice", "India", "GoodFlip")
+GA = ("Tatvapractice", "India", "Field-Sales")
+GB = ("Tatvapractice", "India", "Goodflip")
 FA = "zma:onlyA"   # catalog field tagged to grain A only
 FB = "zmb:onlyB"   # catalog field tagged to grain B only
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")

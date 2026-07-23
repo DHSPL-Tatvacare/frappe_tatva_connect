@@ -22,8 +22,8 @@ from tatva_connect.tests.partner_api_load.config import PARTNER_USER
 REPORTS = Path(__file__).resolve().parent / "reports"
 
 GRAIN = {
-	"anaya": ("GoodFlip Care", "Anaya"),
-	"tatvapractice": ("TatvaPractice", "India"),
+	"anaya": ("Goodflip-Care", "Anaya"),
+	"tatvapractice": ("Tatvapractice", "India"),
 }
 
 

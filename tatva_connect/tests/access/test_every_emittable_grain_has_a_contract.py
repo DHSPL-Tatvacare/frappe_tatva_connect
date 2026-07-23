@@ -35,9 +35,12 @@ class TestEveryEmittableGrainHasAContract(FrappeTestCase):
 
 	def _emittable_grains(self):
 		grains = set()
-		# Partner mapping grains (the grain _partner_grain hands a partner caller).
+		# Partner mapping grains — EXACTLY what entitlement._partner_grain can hand a caller: it resolves
+		# {"partner_user": user, "enabled": 1}, so a mapping with no partner_user (e.g. the Facebook
+		# ingestion contract) is handed to nobody and is not emittable. Mirror that filter, or the guard
+		# flags a grain no principal can actually hold.
 		for m in frappe.get_all(
-			"CRM Lead API Mapping", filters={"is_internal": 0},
+			"CRM Lead API Mapping", filters={"is_internal": 0, "enabled": 1, "partner_user": ["is", "set"]},
 			fields=["vertical", "crm_group", "program"],
 		):
 			g = _g(m.vertical, m.crm_group, m.program)

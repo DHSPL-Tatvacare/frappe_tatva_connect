@@ -31,11 +31,11 @@ files; the runner copies it out next to these specs (or point `AUTHZ_CREDS` at
 it). Shape:
 
 ```json
-[{ "persona": "grain_4", "email": "...", "password": "...", "grain_key": "TatvaPractice::India::InsideSales" }]
+[{ "persona": "grain_4", "email": "...", "password": "...", "grain_key": "Tatvapractice::India::Inside-Sales" }]
 ```
 
 `grain_key` is `vertical::group::program`. `grain_4` and `grain_5` share the
-program `InsideSales` — the A2 same-program / different-vertical trap the specs
+program `Inside-Sales` — the A2 same-program / different-vertical trap the specs
 target.
 
 ## Running

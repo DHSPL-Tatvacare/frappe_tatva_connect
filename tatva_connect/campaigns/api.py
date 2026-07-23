@@ -197,12 +197,16 @@ def publish(name):
 	they name. Raising here would give the author a 417 and a stack trace for the ordinary act of
 	publishing something unfinished, and would carry no node ids for the canvas to use.
 	"""
+	from tatva_connect.workflow_engine import registry
+
 	doc = frappe.get_doc(DOCTYPE, name)
 	doc.check_permission("write")
 	problems = doc.publish_problems()
-	if problems:
+	blockers = [p for p in problems if p["severity"] == registry.BLOCKS]
+	if blockers:
 		return {"ok": False, "problems": problems}
-	return {"ok": True, **_transition(name, PUBLISHED)}
+	# A warns-only graph publishes; the warnings ride along so the canvas can still surface them.
+	return {"ok": True, "problems": problems, **_transition(name, PUBLISHED)}
 
 
 @frappe.whitelist()

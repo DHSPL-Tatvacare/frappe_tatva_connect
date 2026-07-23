@@ -11,7 +11,7 @@ internal user in that grain may see. Edit here (add a field to a grain) — ther
 
 # (vertical, group, program) -> [field_key, ...] visible in that grain.
 GRAIN_FIELDS = {
-	('GoodFlip Care', 'Anaya', ''): [
+	('Goodflip-Care', 'Anaya', ''): [
 		'acq:custom_signed_up_on_app',
 		'acq:dx_address_at',
 		'acq:dx_confirmed_at',
@@ -142,7 +142,7 @@ GRAIN_FIELDS = {
 		'plan:plan_name',
 		'plan:program_start_date',
 	],
-	('GoodFlip', 'Insurers', ''): [
+	('Goodflip', 'Insurers', ''): [
 		'acq:dx_address_at',
 		'acq:dx_confirmed_at',
 		'acq:dx_details_at',
@@ -215,7 +215,7 @@ GRAIN_FIELDS = {
 		'plan:priority_text',
 		'plan:program_start_date',
 	],
-	('GoodFlip', 'Insurers', 'Niva Bupa'): [
+	('Goodflip', 'Insurers', 'Niva-Bupa'): [
 		'acq:dx_address_at',
 		'acq:dx_confirmed_at',
 		'acq:dx_details_at',
@@ -288,7 +288,7 @@ GRAIN_FIELDS = {
 		'plan:priority_text',
 		'plan:program_start_date',
 	],
-	('TatvaPractice', 'India', 'FieldSales'): [
+	('Tatvapractice', 'India', 'Field-Sales'): [
 		'acq:custom_source_campaign',
 		'acq:custom_source_medium',
 		'acq:dx_address_at',

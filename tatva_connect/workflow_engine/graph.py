@@ -36,7 +36,8 @@ def problems(nodes, entry_node=None):
 	"""Every whole-graph fault, as human sentences. `nodes` is the authored graph:
 	`[{node_id, node_type, edges: [{from_output, to_node}], config}]`."""
 	if not nodes:
-		return [_at(None, _("This workflow has no nodes."))]
+		return [_at(None, _("This workflow has no nodes."), code="graph.empty",
+		            fix=_("Add a Trigger node to start the workflow."))]
 
 	# Resolved ONCE and threaded: the Trigger, subject and grain used to be looked up four separate times
 	# in this file, and a per-type rule that needed one got hand-written here instead of onto its row.
@@ -71,7 +72,8 @@ def _collision_problems(nodes, context):
 	taken = {refs.slug(dt): dt for dt in actions.reachable_targets(context["subject"])}
 	return [
 		_at(node["node_id"], _("{0} is also the name of the {1} this workflow reads. Rename the node.")
-		    .format(node["node_id"], taken[node["node_id"]]))
+		    .format(node["node_id"], taken[node["node_id"]]),
+		    code="node.name-collision", fix=_("Rename the node so it does not shadow a record the run reads."))
 		for node in nodes
 		if node["node_id"] in taken
 	]
@@ -109,6 +111,8 @@ def _reference_problems(nodes, context):
 				_("{0} reads {1}, which nothing before it produces and the subject does not have.")
 				.format(ref["label"], ref["ref"]),
 				ref["field"],
+				code="ref.unresolved",
+				fix=_("Pick a value that a node before this one produces, or a field of the subject."),
 			))
 	return found
 
@@ -136,7 +140,8 @@ def _wait_problems(nodes):
 		node_id = node["node_id"]
 		if not config.get("event_name"):
 			found.append(_at(node_id, _("{0} waits on an outcome but does not say which one.")
-			                 .format(node_id), "event_name"))
+			                 .format(node_id), "event_name", code="wait.no-event",
+			                 fix=_("Choose the outcome this Wait resumes on.")))
 		source = config.get("source_node")
 		if not source:
 			# Legitimate: a signal delivered from OUTSIDE the graph carries no node token, and such a Wait
@@ -144,17 +149,20 @@ def _wait_problems(nodes):
 			continue
 		if source not in by_id:
 			found.append(_at(node_id, _("{0} waits on {1}, which is not in this workflow.")
-			                 .format(node_id, source), "source_node"))
+			                 .format(node_id, source), "source_node", code="wait.source-missing",
+			                 fix=_("Wait on a node that is in this workflow.")))
 			continue
 		if source not in upstream_ancestors(nodes, node_id):
 			found.append(_at(node_id, _("{0} waits on {1}, which does not always run before it — the run would park for ever.")
-			                 .format(node_id, source), "source_node"))
+			                 .format(node_id, source), "source_node", code="wait.source-unreachable",
+			                 fix=_("Wait on a node that always runs before this one.")))
 			continue
 		outcome = config.get("event_name")
 		emits = registry.outcomes_for(by_id[source]["node_type"])
 		if outcome and outcome not in emits:
 			found.append(_at(node_id, _("{0} never reports {1}. It reports: {2}")
-			                 .format(source, outcome, ", ".join(emits) or _("nothing")), "event_name"))
+			                 .format(source, outcome, ", ".join(emits) or _("nothing")), "event_name",
+			                 code="wait.outcome-unknown", fix=_("Pick an outcome this node can actually report.")))
 	return found
 
 
@@ -194,9 +202,14 @@ def _config_of(node):
 	return registry.config_of(node)
 
 
-def _at(node_id, message, field=None):
-	"""A graph-level fault, tagged with the node it belongs to (or None when it belongs to the graph)."""
-	return {"node_id": node_id, "field": field, "message": message}
+def _at(node_id, message, field=None, code=None, severity=registry.BLOCKS, fix=None):
+	"""A graph-level fault, tagged with the node it belongs to (or None when it belongs to the graph).
+
+	Adds `node_id` to the ONE problem shape — it does NOT build a second dict, so the Bouncer and the node
+	validator speak one vocabulary. `code`/`severity`/`fix` are the call site's own: the rule that catches
+	the fault is the authority on how bad it is and what to do about it.
+	"""
+	return {"node_id": node_id, **registry.problem(message, field, code=code, severity=severity, fix=fix)}
 
 
 def _by_id(nodes):
@@ -216,11 +229,14 @@ def _trigger_problems(nodes, entry_node, context):
 	"""
 	triggers = context["triggers"]
 	if not triggers:
-		return [_at(None, _("This workflow has no Trigger, so nothing would ever start it."))]
+		return [_at(None, _("This workflow has no Trigger, so nothing would ever start it."),
+		            code="trigger.missing", fix=_("Add a Trigger node."))]
 	if len(triggers) > 1:
-		return [_at(None, _("A workflow may have only one Trigger; this one has {0}.").format(len(triggers)))]
+		return [_at(None, _("A workflow may have only one Trigger; this one has {0}.").format(len(triggers)),
+		            code="trigger.duplicate", fix=_("Keep exactly one Trigger."))]
 	if entry_node and entry_node != triggers[0]["node_id"]:
-		return [_at(entry_node, _("Runs must begin at the Trigger, not at {0}.").format(entry_node))]
+		return [_at(entry_node, _("Runs must begin at the Trigger, not at {0}.").format(entry_node),
+		            code="trigger.entry", fix=_("Make the Trigger the entry node."))]
 	return []
 
 
@@ -241,6 +257,8 @@ def _edge_problems(nodes, context):
 				found.append(_at(
 					node["node_id"],
 					_("{0} points at {1}, which is not in this workflow.").format(node["node_id"], edge["to_node"]),
+					code=registry.CODE_NODE_NOT_IN_GRAPH,
+					fix=_("Point this edge at a node that exists, or delete it."),
 				))
 
 		for output in registry.outputs_for(node["node_type"], config, context["configs"]):
@@ -248,6 +266,8 @@ def _edge_problems(nodes, context):
 				found.append(_at(
 					node["node_id"],
 					_("{0} has nothing connected to its {1} output.").format(node["node_id"], output),
+					code="output.unwired",
+					fix=_("Connect this output to a node."),
 				))
 	return found
 
@@ -275,10 +295,12 @@ def _reachability_problems(nodes, entry_node, context):
 	found = []
 	for node in nodes:
 		if node["node_id"] not in seen:
-			found.append(_at(node["node_id"], _("{0} cannot be reached from the Trigger, so it would never run.").format(node["node_id"])))
+			found.append(_at(node["node_id"], _("{0} cannot be reached from the Trigger, so it would never run.").format(node["node_id"]),
+			                 code="node.unreachable", fix=_("Wire this node into the graph, or delete it.")))
 
 	if not any(known[n]["node_type"] == "Terminal" for n in seen):
-		found.append(_at(None, _("No End node can be reached, so a run would never finish.")))
+		found.append(_at(None, _("No End node can be reached, so a run would never finish."),
+		                 code="graph.no-terminal", fix=_("Add an End node the graph can reach.")))
 	return found
 
 
@@ -297,7 +319,7 @@ def _loop_problems(nodes):
 			if not any(known[n]["node_type"] == _SUSPENDS for n in ring):
 				found.append(_at(node_id, _("{0} loops back on itself with no Wait in between, so a run would spin.").format(
 					" → ".join(ring)
-				)))
+				), code="loop.no-wait", fix=_("Put a Wait on the loop, or break the cycle.")))
 			return
 		if node_id in done:
 			return

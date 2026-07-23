@@ -5,7 +5,7 @@
   "lead": "CRM-LEAD-2026-02612",
   "task_types": [
    {
-    "name": "GoodFlip Care::Anaya::::Chemo Readiness",
+    "name": "Goodflip-Care::Anaya::::Chemo Readiness",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -67,7 +67,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Document Upload",
+    "name": "Goodflip-Care::Anaya::::Document Upload",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -137,7 +137,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Document Verification Status",
+    "name": "Goodflip-Care::Anaya::::Document Verification Status",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -199,7 +199,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Identify PSP Category",
+    "name": "Goodflip-Care::Anaya::::Identify PSP Category",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -229,7 +229,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::Nivolumab::Nivolumab Order Punch",
+    "name": "Goodflip-Care::Anaya::Nivolumab::Nivolumab Order Punch",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -323,7 +323,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::Nivolumab::Nivolumab Welcome call",
+    "name": "Goodflip-Care::Anaya::Nivolumab::Nivolumab Welcome call",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -369,7 +369,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Order Punch Reminder",
+    "name": "Goodflip-Care::Anaya::::Order Punch Reminder",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -399,7 +399,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Order Punch Status",
+    "name": "Goodflip-Care::Anaya::::Order Punch Status",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -557,7 +557,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Order Status Update",
+    "name": "Goodflip-Care::Anaya::::Order Status Update",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -651,7 +651,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Physio or Dietician",
+    "name": "Goodflip-Care::Anaya::::Physio or Dietician",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -681,7 +681,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Post Chemo Health Check",
+    "name": "Goodflip-Care::Anaya::::Post Chemo Health Check",
     "is_logged_complete": 1,
     "fields": [
      {
@@ -759,7 +759,7 @@
     ]
    },
    {
-    "name": "GoodFlip Care::Anaya::::Welcome Call",
+    "name": "Goodflip-Care::Anaya::::Welcome Call",
     "is_logged_complete": 1,
     "fields": [
      {

@@ -62,7 +62,7 @@ _STEPS = (
 	# token in the Password store for it to digest.
 	backfill_webhook_token_digests,
 	# CRM Lead's dead custom_latitude/custom_longitude pair — a duplicate of the clinic anchor the
-	# TatvaPractice load actually writes; the fixture sync never drops a field, so remove it here too.
+	# Tatvapractice load actually writes; the fixture sync never drops a field, so remove it here too.
 	retire_lead_import_coordinates,
 	# Composite (clinic lat, clinic lng) — Near Me's bounding-box prefilter scanned the table without it.
 	add_clinic_anchor_index,

@@ -4,7 +4,7 @@
 
 Six doctypes are named by a `format:` autoname built from the grain, so their primary key is data:
 `CRM Task Type` is `{vertical}::{group}::{program}::{type_name}`. Printing that key gives a rep
-`GoodFlip Care::Anaya::::Identify PSP Category`. The clean name is the doctype's own `title_field`,
+`Goodflip-Care::Anaya::::Identify PSP Category`. The clean name is the doctype's own `title_field`,
 read from meta, never a hardcoded doctype/field pair.
 
 Where a payload carries the key AND the label, the contract is:

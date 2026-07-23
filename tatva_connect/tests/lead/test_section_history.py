@@ -117,10 +117,14 @@ class TestMultiRowHistoryEndpoint(FrappeTestCase):
 		# The panel serves a field only where the LEAD's grain is covered by a contract ticking it. A lead
 		# with no grain is covered by none, so the fixture mints both rather than asserting an empty panel.
 		partner_fixture.mint_grain()
+		# Tick the multi-row field under test AND one parent field (lead:status): the panel shows a field
+		# only where the LEAD's grain is covered by a contract ticking it, and a contract this narrow makes
+		# every OTHER field non-universal — so the parent-field case (test_a_parent_section_field_never_
+		# offers_more) needs its subject granted here, exactly as the multi-row field is.
 		cls.contract = frappe.get_doc({
 			"doctype": "CRM Lead API Mapping", "contract_name": "ZZ Section History Contract", "enabled": 1,
 			"is_internal": 1, "vertical": partner_fixture.VERTICAL, "crm_group": partner_fixture.GROUP,
-			"allowed_fields": [{"field": FIELD_KEY}],
+			"allowed_fields": [{"field": FIELD_KEY}, {"field": "lead:status"}],
 		}).insert(ignore_permissions=True).name
 		frappe.db.commit()
 

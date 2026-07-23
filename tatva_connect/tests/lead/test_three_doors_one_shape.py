@@ -59,6 +59,12 @@ class TestThreeDoorsOneShape(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
+		# builder.sync_form (below) SKIPS and returns (None, None) while the intake switch is off — and it
+		# runs HERE in setUpClass, before any setUp arms it. Arm it for the class so the sink DocType is
+		# actually scaffolded; restored in tearDownClass so no live switch state outlives the suite.
+		cls._class_switch_was = frappe.db.get_value("CRM Tatva Automation", INTAKE_SWITCH, "enabled")
+		if cls._class_switch_was is not None:
+			frappe.db.set_value("CRM Tatva Automation", INTAKE_SWITCH, "enabled", 1)
 		cls._purge_leads()
 		partner_fixture.mint_grain()
 		partner_fixture.mint_partner(cls.PARTNER_USER)  # empty grid = the whole catalog, like the FB contract
@@ -66,6 +72,16 @@ class TestThreeDoorsOneShape(FrappeTestCase):
 		cls.fb_contract = frappe.get_doc({
 			"doctype": "CRM Lead API Mapping", "contract_name": cls.SOURCE, "enabled": 1,
 			"is_internal": 0, "vertical": partner_fixture.VERTICAL, "crm_group": partner_fixture.GROUP,
+		}).insert(ignore_permissions=True).name
+
+		# The intake DOOR is grain-scoped: crm_intake_form._validate_target_in_brain only lets a form map a
+		# field the grain's INTERNAL contract ticks (mapping.mappable_fields, grain path). The partner/FB
+		# contracts above are is_internal=0, so the fixture grain has no internal visibility and the intake
+		# form below would reject mobile_no. Mint the internal contract ticking the two fields it maps.
+		cls.internal_contract = frappe.get_doc({
+			"doctype": "CRM Lead API Mapping", "contract_name": "ZZ Doors Internal", "enabled": 1,
+			"is_internal": 1, "vertical": partner_fixture.VERTICAL, "crm_group": partner_fixture.GROUP,
+			"allowed_fields": [{"field": "lead:mobile_no"}, {"field": "lead:first_name"}],
 		}).insert(ignore_permissions=True).name
 
 		frappe.get_doc({
@@ -111,11 +127,14 @@ class TestThreeDoorsOneShape(FrappeTestCase):
 			("Facebook Lead Form", cls.FB_FORM),
 			("Facebook Page", cls.PAGE),
 			("CRM Lead API Mapping", cls.fb_contract),
+			("CRM Lead API Mapping", cls.internal_contract),
 		):
 			if frappe.db.exists(dt, name):
 				frappe.delete_doc(dt, name, force=True, ignore_permissions=True)
 		intake.bust_intake_doctype_cache()
 		partner_fixture.teardown()
+		if cls._class_switch_was is not None:
+			frappe.db.set_value("CRM Tatva Automation", INTAKE_SWITCH, "enabled", cls._class_switch_was)
 		frappe.db.commit()
 		super().tearDownClass()
 

@@ -112,7 +112,7 @@ class Partner:
 
 		One paged read instead of one count call per type — eight separate counts would each queue
 		on the bulk gate. `task_type` comes back as a grain-scoped composite key
-		("GoodFlip Care::Anaya::::Welcome Call"); the operator only needs the name on the end.
+		("Goodflip-Care::Anaya::::Welcome Call"); the operator only needs the name on the end.
 		"""
 		by_type: dict[str, int] = {}
 		offset, total, guard = 0, 0, 0

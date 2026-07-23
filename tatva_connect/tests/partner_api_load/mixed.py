@@ -129,7 +129,7 @@ def seed(client, account, want_leads, want_docs):
 	for i in range(want_leads):
 		r = client.post("partner.lead_create", {
 			"mobile_no": f"+9196{random.randint(10000000, 99999999)}",
-			"first_name": f"Load pool {i}", "custom_vertical": "GoodFlip Care",
+			"first_name": f"Load pool {i}", "custom_vertical": "Goodflip-Care",
 			"custom_group": "Anaya", "custom_current_program": "Nivolumab"})
 		if r["status"] == 200:
 			leads.append(r.get("name"))
@@ -181,7 +181,7 @@ def seed(client, account, want_leads, want_docs):
 
 def _lead_body():
 	return {"mobile_no": f"+9197{random.randint(10000000, 99999999)}",
-	        "first_name": "Mixed load", "custom_vertical": "GoodFlip Care",
+	        "first_name": "Mixed load", "custom_vertical": "Goodflip-Care",
 	        "custom_group": "Anaya", "custom_current_program": "Nivolumab"}
 
 

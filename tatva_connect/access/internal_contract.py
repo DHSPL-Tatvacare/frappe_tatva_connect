@@ -73,6 +73,14 @@ def _ticked_keys(grain, catalog):
 	return sorted(keys | _row_key_keys(sections, catalog))
 
 
+def fields_for_grain(grain, catalog=None):
+	"""The field_keys a grain exposes — the ONE brain both internal contracts and partner mappings tick from.
+	`grain` is a (vertical, group, program) tuple; pass a prebuilt `catalog` set to skip re-querying."""
+	if catalog is None:
+		catalog = set(frappe.get_all("CRM Lead API Field", pluck="field_key"))
+	return _ticked_keys(grain, catalog)
+
+
 _AXIS_DOCTYPE = (("CRM Vertical", 0), ("CRM Group", 1), ("CRM Program", 2))
 
 
@@ -109,7 +117,7 @@ def ensure_internal_contracts():
 		if grain not in existing and not _masters_exist(grain):
 			continue  # fresh site: master data not seeded yet — a later migrate seeds this grain's contract
 		vertical, group, program = grain
-		keys = _ticked_keys(grain, catalog)
+		keys = fields_for_grain(grain, catalog)
 		if grain in existing:
 			doc = frappe.get_doc("CRM Lead API Mapping", existing[grain])
 		else:

@@ -28,7 +28,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Label",
-   "description": "What this number is used for, e.g. 'Niva Bupa hotline'. Read by people only; nothing routes on it."
+   "description": "What this number is used for, e.g. 'Niva-Bupa hotline'. Read by people only; nothing routes on it."
   },
   {
    "columns": 3,

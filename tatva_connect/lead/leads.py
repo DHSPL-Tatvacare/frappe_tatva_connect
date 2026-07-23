@@ -244,7 +244,7 @@ def validate_stage(doc, method=None):
 
 	# custom_stage is a Link -> CRM Lead Stage, so it must hold a stage NAME (PK `program::stage`),
 	# never a bare label. Two-level grain (the leaf has a parent) -> the parent's PK; flat grain
-	# (no parent, e.g. Anaya/TatvaPractice) -> the leaf itself IS the stage, so mirror the sub-stage.
+	# (no parent, e.g. Anaya/Tatvapractice) -> the leaf itself IS the stage, so mirror the sub-stage.
 	doc.custom_stage = stage.substage_of or doc.custom_substage
 
 

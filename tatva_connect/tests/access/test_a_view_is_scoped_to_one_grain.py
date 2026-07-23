@@ -5,7 +5,7 @@
 A view's rows are leads; its columns are a fixed set for the whole table. Resolve those columns against
 several grains at once and the table carries grain A's columns beside grain B's leads — structurally
 blank for most rows, and contradicting the rule the Data Tab states in its own docstring: *"an Anaya
-lead never shows TatvaPractice fields even for an admin entitled to every grain"*.
+lead never shows Tatvapractice fields even for an admin entitled to every grain"*.
 
 `_grains_from_axes` unions the caller's entitled grains when a view names none. That is right for the
 EDITOR — before a grain is picked, the picker must offer everything the caller could pick — and wrong
@@ -83,7 +83,12 @@ class TestAViewIsScopedToOneGrain(FrappeTestCase):
 	def _save(self, label, grains, axes=None):
 		frappe.set_user(USER)
 		try:
-			with patch.object(entitlement, "entitled_grains", return_value=grains):
+			# entitled_grains is mocked to fix the caller's grains; _registry_enabled is mocked OFF because
+			# grain_entitled ALSO clamps an explicit grain to the CRM Grain registry when the flag is armed,
+			# and these synthetic ZZ grains are not registry rows. This suite tests view SCOPING, not the
+			# registry gate, so both stay under the test's control instead of ambient site config.
+			with patch.object(entitlement, "entitled_grains", return_value=grains), \
+			     patch.object(entitlement, "_registry_enabled", return_value=False):
 				return smartview.upsert_view({"label": label, "base_object": "Lead", **(axes or {})})["name"]
 		finally:
 			frappe.set_user("Administrator")

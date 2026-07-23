@@ -1317,7 +1317,7 @@
    "columns": 0,
    "fetch_if_empty": 0,
    "fieldname": "custom_last_visit_date",
-   "fieldtype": "Date",
+   "fieldtype": "Datetime",
    "hidden": 0,
    "hide_border": 0,
    "hide_days": 0,

@@ -34,12 +34,20 @@ GROUP_FOREIGN = "ZZ Real User Group Foreign"
 USER = "zz-real-user-gate@example.invalid"
 RULE = "ZZ Real User Gate Rule"
 
+# This suite proves the Assignment-Rule entitlement source (entitlement._internal_grains). That source is
+# live only while `Access::Grain::registry` is OFF — armed, entitled_grains reads native User Permission
+# instead and the rule fixture below is ignored. The flag is site config (armed on some benches), so the
+# suite pins it OFF for its lifetime and restores it, rather than depending on ambient state.
+REGISTRY_FLAG = "Access::Grain::registry"
+
 _MAPPING = "CRM Lead API Mapping"
 _CACHES = (
 	"tatva_connect:entitled_grains",
 	"tatva_connect:internal_contract_ticks",
 	"tatva_connect:internal_universal_fields",
 	"tatva_connect:field_restrictions",
+	"tatva_connect:grain_registry_flag",
+	"tatva_connect:grain_registry_rows",
 )
 
 
@@ -48,6 +56,11 @@ class TestResolveFieldsGatesARealUser(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
+		# Pin the registry flag OFF so entitled_grains reads the Assignment Rule this suite mints, not
+		# native User Permission. Saved and restored in tearDownClass — no live config change outlives us.
+		cls._registry_flag_was = frappe.db.get_value("CRM Tatva Automation", REGISTRY_FLAG, "enabled")
+		if cls._registry_flag_was:
+			frappe.db.set_value("CRM Tatva Automation", REGISTRY_FLAG, "enabled", 0)
 		if not frappe.db.exists("CRM Vertical", VERTICAL):
 			frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": VERTICAL}).insert(ignore_permissions=True)
 		for group in (GROUP_HELD, GROUP_FOREIGN):
@@ -117,6 +130,8 @@ class TestResolveFieldsGatesARealUser(FrappeTestCase):
 		                      ("CRM Vertical", VERTICAL)):
 			if frappe.db.exists(doctype, name):
 				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+		if cls._registry_flag_was:
+			frappe.db.set_value("CRM Tatva Automation", REGISTRY_FLAG, "enabled", cls._registry_flag_was)
 		cls._forget()
 		frappe.db.commit()
 		super().tearDownClass()

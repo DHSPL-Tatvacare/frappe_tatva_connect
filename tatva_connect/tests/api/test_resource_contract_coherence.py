@@ -13,7 +13,7 @@ naming every declared field, without writing a row — so ingestion is read from
 path runs on, never re-implemented.
 
 The metrics are the same law from the other end, and the answer was NOT code. `CRM Lead Activity
-Metrics` is computed, and TatvaPractice's contract ticked all 33 — so a partner could overwrite a number
+Metrics` is computed, and Tatvapractice's contract ticked all 33 — so a partner could overwrite a number
 the CRM derived for itself. Teaching the API to read Frappe's `read_only` flag closed it and took
 mobile_no, first_name and the whole lab panel with it (Anaya 117->109, TP 96->56, Niva 59->41), because
 that flag is FRAPPE's and means "not editable in a form". One factor, one meaning: the metrics are kept

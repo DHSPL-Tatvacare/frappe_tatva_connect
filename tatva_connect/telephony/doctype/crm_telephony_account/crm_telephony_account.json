@@ -44,7 +44,7 @@
    "label": "Account Name",
    "reqd": 1,
    "unique": 1,
-   "description": "The operator's name for this provider tenant, e.g. 'Acefone TatvaPractice'."
+   "description": "The operator's name for this provider tenant, e.g. 'Acefone Tatvapractice'."
   },
   {
    "fieldname": "provider",

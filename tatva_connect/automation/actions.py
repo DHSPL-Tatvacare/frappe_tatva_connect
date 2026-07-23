@@ -250,8 +250,8 @@ def _assert_entitled_to_act(user, axes):
 	"""Refuse an assignment to someone the record's grain does not entitle.
 
 	This node was completely ungrained: `assign_to_user` is a `Link` to `User`, `User` carries no grain
-	axis, so nothing scoped the picker and nothing checked the pick. A workflow on GoodFlip Care/Anaya
-	could hand a lead to a rep entitled only to TatvaPractice, on both sides, silently.
+	axis, so nothing scoped the picker and nothing checked the pick. A workflow on Goodflip-Care/Anaya
+	could hand a lead to a rep entitled only to Tatvapractice, on both sides, silently.
 
 	Asked of the ONE entitlement brain — the same `access.entitlement` that decides which leads and fields
 	that rep may see. No second notion of user-grain entitlement, and no query against the permission

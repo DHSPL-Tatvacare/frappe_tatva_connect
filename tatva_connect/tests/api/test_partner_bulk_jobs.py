@@ -20,7 +20,7 @@ from tatva_connect.api import partner_bulk_job, partner_bulk_worker
 
 PARTNER = "bulkjob.lock.partner@example.test"
 OTHER = "bulkjob.lock.other@example.test"
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 TOGGLE = "Partner::AsyncBulk::jobs"
 NAME_PREFIX = "BulkJobTest"
 

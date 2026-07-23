@@ -122,7 +122,7 @@ class TestRegistryCases(AuthzTestCase):
 		"""Map a CaseSpec.target token to a concrete seeded CRM Lead name (or None when N/A).
 		  in_grain                    -> a lead in the principal's own grain
 		  out_of_grain                -> a lead in a DIFFERENT vertical+group
-		  same_program_diff_vertical  -> grain_5's lead (shares program 'InsideSales' with grain_4)
+		  same_program_diff_vertical  -> grain_5's lead (shares program 'Inside-Sales' with grain_4)
 		"""
 		own = self._principal_grain(c.principal)
 		if c.target == "in_grain":
@@ -132,7 +132,7 @@ class TestRegistryCases(AuthzTestCase):
 			              if not own or (g["vertical"], g["group"]) != (own["vertical"], own["group"])), None)
 			return self._lead_in_grain(other) if other else None
 		if c.target == "same_program_diff_vertical":
-			# THE trap: grain_5 (GoodFlip/B2C/InsideSales) — same program name as grain_4, other axes.
+			# THE trap: grain_5 (Goodflip/B2C/Inside-Sales) — same program name as grain_4, other axes.
 			return self._lead_in_grain(self._principal_grain("grain_5"))
 		return None
 
@@ -155,7 +155,7 @@ class TestRegistryCases(AuthzTestCase):
 	def test_A2_same_program_diff_vertical(self):
 		for c in registry_cases.cases_for("A2"):
 			with self.subTest(case=c.id):
-				# grain_4 must get ZERO grain_5 leads despite the shared program 'InsideSales'.
+				# grain_4 must get ZERO grain_5 leads despite the shared program 'Inside-Sales'.
 				self._run_list_case(c)
 
 	def _run_list_case(self, c):

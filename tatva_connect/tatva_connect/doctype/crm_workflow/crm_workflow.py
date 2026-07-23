@@ -100,26 +100,52 @@ class CRMWorkflow(Document):
 		return {"columns": columns, "rows": rows}
 
 	def publish_problems(self):
-		"""Every reason this graph cannot run, as `{node_id, field, message}`. The ONE reader.
+		"""Every fault and every warning about this graph, as `{node_id, field, message, code, severity,
+		fix}`. The ONE reader.
 
 		Returns rather than throws, so the API can hand the list to the canvas and let it mark the
-		offending nodes. `apply_transition` raises on the same list, because a programmatic caller must
-		never publish a broken graph by ignoring a return value.
+		offending nodes. `apply_transition` raises on the BLOCKS in the same list, because a programmatic
+		caller must never publish a broken graph by ignoring a return value. A `warns` is a true statement
+		that does not stop a publish (see `_deployment_warnings`).
 		"""
 		from tatva_connect.workflow_engine import graph
 
-		return graph.problems(self.authored_graph(), self.entry_node)
+		return graph.problems(self.authored_graph(), self.entry_node) + self._deployment_warnings()
+
+	def _deployment_warnings(self):
+		"""True statements about THIS bench that are NOT reasons to refuse a publish. The engine switch
+		ships off by design (dormant automation, CLAUDE.md #4/#6), so a published workflow is mute until an
+		operator arms it — an author may legitimately publish ahead of that. It WARNS rather than blocks, so
+		the fact reaches the author without turning the intended resting state into an error.
+
+		This is not a graph rule, so it does not live in `graph.problems` — that gate is pure and answers a
+		question about the GRAPH, while this answers one about the DEPLOYMENT. It still speaks the one
+		problem vocabulary, through the one constructor.
+		"""
+		from tatva_connect.automation import settings
+		from tatva_connect.workflow_engine import ENGINE_SWITCH, registry
+
+		if settings.is_enabled(ENGINE_SWITCH):
+			return []
+		return [{"node_id": None, **registry.problem(
+			_("The workflow engine is switched off, so this workflow will not run until an operator turns it on."),
+			code="engine.muted", severity=registry.WARNS,
+			fix=_("Ask an operator to enable the {0} switch when you are ready to go live.").format(ENGINE_SWITCH),
+		)}]
 
 	def assert_publishable(self):
 		"""Refuse to publish a graph that cannot run. Every fault at once, not one per attempt.
 
-		Publish is the last moment a fault is cheap. After it, the same fault is a failed run on a real
-		patient's record, days later, found by someone who did not author it.
+		Counts BLOCKS only — a `warns` (the engine being off) is a fact the author should see, not a reason
+		to refuse the save. Publish is the last moment a blocker is cheap: after it, the same fault is a
+		failed run on a real patient's record, days later, found by someone who did not author it.
 		"""
-		found = self.publish_problems()
-		if found:
+		from tatva_connect.workflow_engine import registry
+
+		blockers = [p for p in self.publish_problems() if p["severity"] == registry.BLOCKS]
+		if blockers:
 			frappe.throw(
-				"<br>".join(frappe.utils.escape_html(p["message"]) for p in found),
+				"<br>".join(frappe.utils.escape_html(p["message"]) for p in blockers),
 				title=_("This workflow cannot run yet"),
 			)
 

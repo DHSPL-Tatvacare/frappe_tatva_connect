@@ -217,12 +217,29 @@ def config_fields(node_type):
 	return list(declaration(node_type)["config"])
 
 
-def problem(message, field=None):
-	"""One authoring fault, as DATA. The canvas needs to know WHICH field on WHICH node is wrong so it can
-	mark it; a sentence can only be shown in a toast, and a toast naming `b1` in a graph of twenty nodes
-	is barely better than silence. `node_id` is added by the caller, which is the only layer that knows it.
+# A fault's severity. `blocks` stops a publish — the graph cannot run. `warns` is a true statement that is
+# NOT a reason to refuse: a switch shipped off leaves a node mute, which is the intended resting state, not
+# an error. Publish counts blocks; the author still sees the warns. There are exactly these two.
+BLOCKS, WARNS = "blocks", "warns"
+
+# The ONE code shared across the author-time gate and the runtime engine. An edge to a node that is not in
+# the graph is caught by the Bouncer (`graph._edge_problems`) and, if it ever slips past, by the engine
+# (`interpreter._Permanent`). They name it by THIS constant so the two can never drift into two catalogs —
+# every other code is a call-site literal, but this one must match across a layer boundary, so it is named.
+CODE_NODE_NOT_IN_GRAPH = "node-not-in-graph"
+
+
+def problem(message, field=None, code=None, severity=BLOCKS, fix=None):
+	"""One authoring fault, as DATA — the ONE constructor every fault flows through. The canvas needs to
+	know WHICH field on WHICH node is wrong so it can mark it; a sentence can only be shown in a toast, and
+	a toast naming `b1` in a graph of twenty nodes is barely better than silence. `node_id` is added by the
+	caller, the only layer that knows it — `graph._at` wraps this rather than building a second dict.
+
+	Five keys: `code` is a stable lint-rule id (survives a reworded message and gives the rule list a key),
+	`severity` decides whether publish refuses, `message` is what is wrong, `fix` is the one line on what to
+	do. The call site is the authority on all four, because the check that KNOWS the fault names it.
 	"""
-	return {"field": field, "message": message}
+	return {"code": code, "severity": severity, "field": field, "message": message, "fix": fix}
 
 
 # When a rule is enforced. A node is authored over many saves, so SHAPE is checked every time and
@@ -320,16 +337,26 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 
 	known = {f["name"] for f in declared["config"]}
 	for name in sorted(set(config) - known):
-		problems.append(problem(_("{0} does not take a setting called {1}.").format(node_type, name), name))
+		problems.append(problem(
+			_("{0} does not take a setting called {1}.").format(node_type, name), name,
+			code="field.unknown", fix=_("Remove this setting — the node type does not use it."),
+		))
 
 	for field in declared["config"]:
 		if field.get("reqd") and not _applies(field, config):
 			continue
 		if completeness and field.get("reqd") and not config.get(field["name"]):
-			problems.append(problem(_("{0} needs {1}.").format(node_type, field["label"]), field["name"]))
+			problems.append(problem(
+				_("{0} needs {1}.").format(node_type, field["label"]), field["name"],
+				code="field.required", fix=_("Fill in {0}.").format(field["label"]),
+			))
 		value = config.get(field["name"])
 		if field.get("writes"):
-			problems.extend(problem(m, field["name"]) for m in _written_name_problems(node_type, config, field))
+			problems.extend(
+				problem(m, field["name"], code="field.not-settable",
+				        fix=_("Pick a field automation is allowed to write."))
+				for m in _written_name_problems(node_type, config, field)
+			)
 		# Three tables, three questions, and ALL of them run. This used to `continue` after the row check,
 		# so a type carrying both a row check and a read kind would silently skip the read check.
 		row = FIELD_TYPES[field["type"]]
@@ -340,24 +367,28 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 			# a rule must not change WHEN it fires: enforcing them at save refused a node an author was
 			# midway through writing, with no way forward.
 			problems.extend(
-				problem(m, field["name"])
+				problem(m, field["name"], code="field.invalid", fix=_("Correct {0}.").format(field["label"]))
 				for m in row["check"](value, field, config, graph_context if completeness else None)
 			)
 		kind = read_kind_of(field)
 		if kind and READ_KINDS[kind]["check"]:
 			found = READ_KINDS[kind]["check"](value)
 			if found:
-				problems.append(problem(found, field["name"]))
+				problems.append(problem(found, field["name"], code="field.reads-invalid",
+				                        fix=_("Fix {0} so it parses.").format(field["label"])))
 		if field.get("writes") and WRITE_KINDS[field["writes"]]["check"]:
 			found = WRITE_KINDS[field["writes"]]["check"](config.get(field["name"]))
 			if found:
-				problems.append(problem(found, field["name"]))
+				problems.append(problem(found, field["name"], code="field.writes-invalid",
+				                        fix=_("Fix {0} so it parses.").format(field["label"])))
 
 	allowed = set(outputs_for(node_type, config, (graph_context or {}).get("configs")))
 	for output in sorted(set(edge_outputs or []) - allowed):
 		problems.append(problem(
 			_("{0} declares no output called {1}.").format(node_type, output)
-			if allowed else _("{0} has no outgoing edges.").format(node_type)
+			if allowed else _("{0} has no outgoing edges.").format(node_type),
+			code="output.undeclared",
+			fix=_("Wire only outputs this node declares."),
 		))
 	return problems
 

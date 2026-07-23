@@ -77,16 +77,16 @@ def generate_http_cases():
 CASES = [
 	# A1 — horizontal grain leak: a grain user must see only their own grain's leads.
 	CaseSpec("A1-grain4-lead-read-list", "A1",
-	         "grain_4 (TatvaPractice/India/InsideSales) lists CRM Lead — sees only its grain's leads",
+	         "grain_4 (Tatvapractice/India/Inside-Sales) lists CRM Lead — sees only its grain's leads",
 	         "grain_4", "CRM Lead", "read", "list", "in_grain", "allow"),
 	CaseSpec("A1-grain4-othergrain-read-list", "A1",
-	         "grain_4 must NOT see grain_1 (GoodFlip Care/Anaya) leads in the list",
+	         "grain_4 must NOT see grain_1 (Goodflip-Care/Anaya) leads in the list",
 	         "grain_4", "CRM Lead", "read", "list", "out_of_grain", "deny"),
 
-	# A2 — THE trap: #4 and #5 share program 'InsideSales' but differ on vertical+group.
+	# A2 — THE trap: #4 and #5 share program 'Inside-Sales' but differ on vertical+group.
 	CaseSpec("A2-grain4-grain5-read-list", "A2",
-	         "grain_4 must NOT see grain_5 (GoodFlip/B2C/InsideSales) leads despite the shared "
-	         "program name 'InsideSales' — matching keys on ALL axes, never program alone",
+	         "grain_4 must NOT see grain_5 (Goodflip/B2C/Inside-Sales) leads despite the shared "
+	         "program name 'Inside-Sales' — matching keys on ALL axes, never program alone",
 	         "grain_4", "CRM Lead", "read", "list", "same_program_diff_vertical", "deny"),
 
 	# A4 — grain-vs-role contradiction: a CRM Lead Field Restriction must win over grain visibility.
@@ -114,7 +114,7 @@ CASES = [
 
 	# A6 — bypass-write escalation: partner mapped to grain_1 must not write an out-of-grain lead.
 	CaseSpec("A6-partner-out-of-grain-write", "A6",
-	         "partner (mapped to grain_1) writing a TatvaPractice lead is rejected BEFORE the "
+	         "partner (mapped to grain_1) writing a Tatvapractice lead is rejected BEFORE the "
 	         "ignore_permissions save (partner out-of-grain raises DoesNotExistError)",
 	         "partner", "CRM Lead", "write", "bypass_write", "out_of_grain", "deny"),
 

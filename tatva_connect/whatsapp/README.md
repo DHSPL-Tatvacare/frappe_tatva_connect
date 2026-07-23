@@ -160,7 +160,7 @@ tatva_connect/patches/add_whatsapp_message_id_unique_index.py
 
 ## Setting up MULTIPLE WATI accounts + routing rules
 
-Each WATI tenant (e.g. Anaya, GoodFlip) is its own WATI account with its own base
+Each WATI tenant (e.g. Anaya, Goodflip) is its own WATI account with its own base
 URL, its own templates, and its own WhatsApp number. In Frappe each maps to **one
 `WhatsApp Account` record**. Here's the full setup for adding a second (or third…)
 account without crossing wires.
@@ -200,7 +200,7 @@ Examples:
 | Rule | Means |
 |---|---|
 | Program = `Anaya Nivolumab` → Anaya account | leads in that program send via Anaya |
-| Group = `Insurers` → GoodFlip account | any lead in the Insurers group (with no more-specific rule) sends via GoodFlip |
+| Group = `Insurers` → Goodflip account | any lead in the Insurers group (with no more-specific rule) sends via Goodflip |
 | Product Line = `Oncology` → Anaya account | a broad catch for all Oncology |
 | (all three blank) → some account | an explicit catch-all (only if you choose to make one) |
 

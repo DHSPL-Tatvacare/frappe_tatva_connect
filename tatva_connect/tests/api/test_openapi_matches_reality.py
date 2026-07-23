@@ -41,7 +41,7 @@ MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, 
 # Endpoints _drive() deliberately does not exercise, each with the reason. EMPTY, and verified empty:
 # all 48 are driven. An entry here buys silence for one endpoint, so it is a decision, never a default.
 UNDRIVEN = frozenset()
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
 
 def _code_endpoints():

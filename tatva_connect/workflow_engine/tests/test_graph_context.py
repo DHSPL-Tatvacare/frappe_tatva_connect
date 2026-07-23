@@ -30,7 +30,7 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.workflow_engine import graph, registry
 
 _SUBJECT = "CRM Lead"
-_GRAIN = {"vertical": "TatvaPractice", "group": "India", "program": ""}
+_GRAIN = {"vertical": "Tatvapractice", "group": "India", "program": ""}
 
 
 def _node(node_id, node_type, config=None, edges=None):
@@ -68,7 +68,7 @@ class TestTheContextResolvesTheGraphOnce(FrappeTestCase):
 	def test_it_resolves_the_workflows_grain(self):
 		"""A RULE grain: a blank axis means ANY and must survive as blank, never as a literal empty
 		string compared exactly. That defect once hid 129 fields from 1,894 leads with tests green."""
-		self.assertEqual(_context()["grain"]["vertical"], "TatvaPractice")
+		self.assertEqual(_context()["grain"]["vertical"], "Tatvapractice")
 		self.assertFalse(_context()["grain"].get("program"), "a blank axis must stay blank")
 
 	def test_it_still_carries_the_config_map_every_caller_already_used(self):

@@ -39,7 +39,16 @@ _TIME_MODES = frozenset({"For Duration", "Until Time", "Event-or-Timeout"})
 
 class _Permanent(Exception):
 	"""A permanent (non-retryable) failure - bad config, a bad expression, a broken graph. Terminal:
-	the Instance goes Failed, so a re-drive cannot storm."""
+	the Instance goes Failed, so a re-drive cannot storm.
+
+	`code` is optional and matches the Bouncer's code for the SAME fault where both layers can hit it — so
+	an edge to a node that is not in the graph is named identically whether publish catches it or the run
+	does. It stays None for faults only the runtime can reach; the drift test proves the shared ones agree.
+	"""
+
+	def __init__(self, *args, code=None):
+		super().__init__(*args)
+		self.code = code
 
 
 def wait_deadline(wait_mode, wait_expression, state, base=None):
@@ -124,7 +133,8 @@ def advance(instance):
 		while True:
 			node = nodes.get(instance.current_node)
 			if node is None:
-				raise _Permanent(f"node {instance.current_node!r} is not in the frozen graph")
+				raise _Permanent(f"node {instance.current_node!r} is not in the frozen graph",
+				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 
 			if node.node_type == "Terminal":
 				_persist(instance, {"status": "Done", "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
@@ -292,7 +302,8 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 		while True:
 			node = nodes.get(cursor)
 			if node is None:
-				raise _Permanent(f"node {cursor!r} is not in the frozen graph")
+				raise _Permanent(f"node {cursor!r} is not in the frozen graph",
+				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 			if node.node_type == "Terminal":
 				break
 			if node.node_type == "Wait":

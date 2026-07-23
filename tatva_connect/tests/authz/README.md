@@ -104,7 +104,7 @@ and `_assert_role_fidelity()` fails the seed on drift.
 | # | Attack vector | Plain meaning |
 |---|---|---|
 | A1 | Horizontal grain leak | see another grain's rows |
-| A2 | Same-program / diff-vertical | grains #4 & #5 share program "InsideSales" — must NOT leak |
+| A2 | Same-program / diff-vertical | grains #4 & #5 share program "Inside-Sales" — must NOT leak |
 | A3 | Vertical escalation | role1 user gains role2's perms |
 | A4 | Grain-vs-role contradiction | grain shows a field/row a role restriction should hide (who wins?) |
 | A5 | Roll-up over-widening | manager inherits MORE than reports' union; cycle; depth bypass |

@@ -25,7 +25,7 @@ import frappe
 from tatva_connect.api import partner, partner_call, partner_file, partner_note
 from tatva_connect.api._base import ACTION_CREATED
 
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
 
 class _TrustedCallerCase(unittest.TestCase):

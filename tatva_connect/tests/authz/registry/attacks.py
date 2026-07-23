@@ -18,7 +18,7 @@ ATTACKS = {
 	"A1": {"title": "Horizontal grain leak", "oracle": "visible_names",
 	       "desc": "see another grain's rows"},
 	"A2": {"title": "Same-program / different-vertical leak", "oracle": "visible_names",
-	       "desc": "grains #4 & #5 share program 'InsideSales' — must not leak across vertical/group"},
+	       "desc": "grains #4 & #5 share program 'Inside-Sales' — must not leak across vertical/group"},
 	"A3": {"title": "Vertical (privilege) escalation", "oracle": "capability",
 	       "desc": "role1 user gains role2's perms"},
 	"A4": {"title": "Grain-vs-role contradiction", "oracle": "permitted_fields",

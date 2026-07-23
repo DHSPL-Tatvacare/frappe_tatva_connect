@@ -1,7 +1,7 @@
 {
  "anaya": {
-  "label": "GoodFlip Care – Anaya",
-  "vertical": "GoodFlip Care",
+  "label": "Goodflip-Care – Anaya",
+  "vertical": "Goodflip-Care",
   "group": "Anaya",
   "activity_task_types": {
    "235": "Order Punch Status",
@@ -443,8 +443,8 @@
   ]
  },
  "tatvapractice": {
-  "label": "TatvaPractice – India",
-  "vertical": "TatvaPractice",
+  "label": "Tatvapractice – India",
+  "vertical": "Tatvapractice",
   "group": "India",
   "activity_task_types": {
    "210": "Contact Type",
@@ -763,8 +763,8 @@
   ]
  },
  "goodflip_inside_sales": {
-  "label": "GoodFlip – India (Inside Sales)",
-  "vertical": "GoodFlip",
+  "label": "Goodflip – India (Inside Sales)",
+  "vertical": "Goodflip",
   "group": "India",
   "activity_task_types": {
    "241": "Phone Conversation New",

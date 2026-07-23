@@ -393,7 +393,7 @@ fixtures = [
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
 		"CRM Drug Program Profile-nivo_indication-fieldtype",
 		"CRM Drug Program Profile-nivo_indication-options",
-		# Facebook question label/key are Data(140); live GoodFlip forms carry 292-char qualification questions. The key is FB's slug of the label, so it is always the same length and widens with it — truncating it would silently stop the field_data match. See docs/plans/2026-07-16-facebook-lead-sync-remediation.md.
+		# Facebook question label/key are Data(140); live Goodflip forms carry 292-char qualification questions. The key is FB's slug of the label, so it is always the same length and widens with it — truncating it would silently stop the field_data match. See docs/plans/2026-07-16-facebook-lead-sync-remediation.md.
 		"Facebook Lead Form Question-label-fieldtype",
 		"Facebook Lead Form Question-key-fieldtype",
 		# The page token is derived from a long-lived User token and never expires on its own; it is stored encrypted, not as plaintext Small Text.

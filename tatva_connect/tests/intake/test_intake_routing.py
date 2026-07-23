@@ -21,7 +21,7 @@ from tatva_connect.whatsapp.phone import to_e164
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _DEDUP_SWITCH = "Lead::CRM Lead::dedup"
 
-_VERTICAL = "GoodFlip Care"
+_VERTICAL = "Goodflip-Care"
 _GROUP = "Anaya"
 _PROGRAM = "Nivolumab"
 _SOURCE = "Enrolment Form"

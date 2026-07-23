@@ -62,7 +62,7 @@ class TestMetricCompositeLookup(FrappeTestCase):
 
 	def test_plain_type_extracts_last_component(self):
 		self.assertEqual(
-			metrics._plain_type("FieldSales::India::TP::Demo Scheduled Status Field Visit"),
+			metrics._plain_type("Field-Sales::India::TP::Demo Scheduled Status Field Visit"),
 			"Demo Scheduled Status Field Visit",
 		)
 		# a pre-composite (bare) value has no '::' and is returned unchanged

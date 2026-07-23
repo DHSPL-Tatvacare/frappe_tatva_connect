@@ -28,7 +28,13 @@ BANNED = ("get_site_path", "get_local_image")
 # line number, so a comment added above a site does not read as a new violation.
 # Empty, and verified empty: this app has no disk reads today. An entry here is a deliberate exception,
 # never a convenience. If this set grows, M2 is eroding.
-REVIEWED = set()
+REVIEWED = {
+	# This module writes its OWN run artifacts (a JSON per run) into a scratch directory and reads them
+	# back from the same place. They are never `File` documents, so nothing offloads them and there is no
+	# remote copy to be out of step with — the M2 threat model (a File's bytes moved, the reader still
+	# opening a disk) does not apply here. The module is temporary; this entry goes when it does.
+	"migration_check/storage.py:_root",
+}
 
 _SKIP_DIRS = {"tests", "__pycache__", "node_modules"}
 

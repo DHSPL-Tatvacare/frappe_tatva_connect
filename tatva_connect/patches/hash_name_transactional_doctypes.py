@@ -14,7 +14,7 @@ CRM Tasks were written through it with none. Its primary key is a `bigint`, so i
 hash without rewriting the column and every foreign key that points at it; it is left alone.
 
 Masters are not touched. A master's name IS its identity (`Telephony::Acefone::calls`,
-`GoodFlip Care::Anaya::Nivolumab`, `Referral`), and the composite `::` key is an invariant.
+`Goodflip-Care::Anaya::Nivolumab`, `Referral`), and the composite `::` key is an invariant.
 
 CRM Call Log is not touched either, though it looks like a candidate. Its `field:id` name is the
 TELEPHONY PROVIDER's own call id — the webhook overwrites a placeholder with the real one so a later

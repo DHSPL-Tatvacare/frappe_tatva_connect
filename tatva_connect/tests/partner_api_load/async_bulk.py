@@ -25,7 +25,7 @@ NAME_PREFIX = "AsyncLoad"
 # +91 61 9X ...: a distinctive synthetic 10-digit range (61-90/61-91) that will not collide with real data.
 _PREFIX = {"anaya": "6190", "tatvapractice": "6191"}
 # A valid program for each grain — the create brain requires it on this key (custom_current_program).
-_PROGRAM = {"anaya": "Nivolumab", "tatvapractice": "FieldSales"}
+_PROGRAM = {"anaya": "Nivolumab", "tatvapractice": "Field-Sales"}
 _TERMINAL = ("JobComplete", "Failed", "Aborted")
 _MAX_RECORDS = 45000  # stay under the 50k file record cap
 

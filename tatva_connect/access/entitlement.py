@@ -119,7 +119,7 @@ def _grains_from_user_permission(user):
 	Frappe AND-s User Permissions ACROSS doctypes: a lead must sit in the allowed vertical AND the allowed
 	group AND the allowed program. So the region is the cross product of the three axes, and an axis
 	carrying NO permission is left BLANK — a wildcard, exactly as `taxonomy.grain` reads it. That blank is
-	what lets a rep entitled to all of GoodFlip Care/Anaya work every programme under it, including one
+	what lets a rep entitled to all of Goodflip-Care/Anaya work every programme under it, including one
 	whose first lead does not exist yet.
 
 	Read through frappe's own `get_allowed_docs_for_doctype`, never a raw User Permission query: our grain
@@ -189,7 +189,7 @@ def _internal_ticks():
 def _contract_covers(contract_grain, grain):
 	"""THE grain-match rule, identical to taxonomy.grain._score and every other matcher: a SET axis on the
 	CONTRACT must equal the target's; a BLANK axis is a wildcard. Contracts are declared at the level
-	visibility is granted (a rep sees all of GoodFlip Care/Anaya whatever program the patient enrolled
+	visibility is granted (a rep sees all of Goodflip-Care/Anaya whatever program the patient enrolled
 	into), so a blank program covers every program — it never means the empty string."""
 	# strict=True: a grain that is not a full 3-tuple is a defect (every input surface populates all three axes), and a short one would zip to nothing and match EVERYTHING.
 	return all(c == "" or c == t for c, t in zip(contract_grain, grain, strict=True))

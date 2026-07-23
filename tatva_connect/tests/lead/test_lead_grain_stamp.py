@@ -19,8 +19,8 @@ import frappe
 from tatva_connect.access.entitlement import ALL_GRAINS
 from tatva_connect.lead.leads import stamp_entitled_grain
 
-ONE = ("GoodFlip Care", "Anaya", "Nivolumab")
-TWO = {("GoodFlip Care", "Anaya", "Nivolumab"), ("TatvaPractice", "India", "FieldSales")}
+ONE = ("Goodflip-Care", "Anaya", "Nivolumab")
+TWO = {("Goodflip-Care", "Anaya", "Nivolumab"), ("Tatvapractice", "India", "Field-Sales")}
 
 _ENABLED = "tatva_connect.lead.leads.automation.is_enabled"
 _GRAINS = "tatva_connect.access.entitlement.entitled_grains"
@@ -89,9 +89,9 @@ class TestLeadGrainStamp(unittest.TestCase):
 
 	def test_provided_grain_in_entitlement_passes(self):
 		self._entitlement(TWO, entitled=True)
-		doc = _doc(vertical="GoodFlip Care", group="Anaya", program="Nivolumab")
+		doc = _doc(vertical="Goodflip-Care", group="Anaya", program="Nivolumab")
 		stamp_entitled_grain(doc)
-		self.assertEqual(doc.custom_vertical, "GoodFlip Care")  # kept as picked
+		self.assertEqual(doc.custom_vertical, "Goodflip-Care")  # kept as picked
 
 	def test_provided_grain_out_of_entitlement_is_rejected(self):
 		self._entitlement(TWO, entitled=False)

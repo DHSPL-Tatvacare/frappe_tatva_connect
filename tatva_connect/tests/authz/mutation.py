@@ -277,12 +277,12 @@ def _share_child_parent(grain_idx, other_idx):
 
 def _partner_write_out_of_grain():
 	"""DATA (A13/A6 partner abuse): grant the partner user write on an out-of-grain lead via DocShare.
-	The partner's mapping is grain_1; sharing a TatvaPractice lead with write is a cross-tenant write
+	The partner's mapping is grain_1; sharing a Tatvapractice lead with write is a cross-tenant write
 	grant. native_would_allow on that concrete doc must now report write allowed — the attribution
 	abuse / bypass-write effect made visible on a real row."""
 	def plant():
 		user = roster.email("partner")
-		leaked = _lead_in_grain(2)  # TatvaPractice/India/FieldSales — outside the partner's grain_1
+		leaked = _lead_in_grain(2)  # Tatvapractice/India/Field-Sales — outside the partner's grain_1
 		_grant_docshare("CRM Lead", leaked, user, read=1, write=1)
 		return {"user": user, "doc": frappe.get_doc("CRM Lead", leaked)}
 
@@ -597,7 +597,7 @@ def _build_mutations():
 		 "untestable_without_code_mutation": None},
 
 		{"attack": "A13", "id": "MUT-A13-partner-cross-tenant-write",
-		 "english": "the partner (mapped to grain_1) is DocShared write on a TatvaPractice lead -> "
+		 "english": "the partner (mapped to grain_1) is DocShared write on a Tatvapractice lead -> "
 		            "cross-tenant write grant (attribution abuse, invariant 16)",
 		 "plant": a13p, "detect": a13d, "expected_detector": "oracle.native_would_allow",
 		 "untestable_without_code_mutation": None},

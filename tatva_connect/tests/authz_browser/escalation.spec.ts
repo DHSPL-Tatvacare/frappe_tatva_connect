@@ -10,7 +10,7 @@ import {
  * escalation.spec.ts — ACTIVE break attempts (A1/A2/A6/A7/A10).
  *
  * Pairs an attacker grain persona against a victim grain persona in a DIFFERENT
- * vertical (grain_4 vs grain_5, which share program "InsideSales" — the A2
+ * vertical (grain_4 vs grain_5, which share program "Inside-Sales" — the A2
  * trap). The victim's own session is used ONLY to discover a real lead name in
  * the victim's grain; every actual attack is performed AS THE ATTACKER.
  *
@@ -27,8 +27,8 @@ const creds: Persona[] = loadCreds();
 const byVertical = (v: string) =>
   creds.find((c) => (c.grain_key || "").split("::")[0] === v);
 
-const attacker = byVertical("TatvaPractice"); // grain_4
-const victim = byVertical("GoodFlip") || byVertical("GoodFlip Care"); // grain_5
+const attacker = byVertical("Tatvapractice"); // grain_4
+const victim = byVertical("Goodflip") || byVertical("Goodflip-Care"); // grain_5
 
 const havePair = Boolean(attacker && victim);
 

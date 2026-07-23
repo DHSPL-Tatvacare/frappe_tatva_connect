@@ -4,8 +4,8 @@
 
 `assign_to_user` is a plain `Link` to `User`. `registry._scoped` only marks a link grain-scoped when the
 TARGET DOCTYPE carries all three axes, and `User` carries none and never will — so the picker offered every
-user on the site and execution asserted nothing. A workflow scoped to GoodFlip Care/Anaya could hand a lead
-to a rep entitled only to TatvaPractice, and no layer would say a word.
+user on the site and execution asserted nothing. A workflow scoped to Goodflip-Care/Anaya could hand a lead
+to a rep entitled only to Tatvapractice, and no layer would say a word.
 
 TWO HALVES, ONE BRAIN
 ---------------------
@@ -32,7 +32,7 @@ from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _ENTITLED = "wf-assign-entitled@example.invalid"
 _FOREIGN = "wf-assign-foreign@example.invalid"
-_FOREIGN_GRAIN = GRAINS[0]  # GoodFlip Care / Anaya / Nivolumab — a different vertical AND group
+_FOREIGN_GRAIN = GRAINS[0]  # Goodflip-Care / Anaya / Nivolumab — a different vertical AND group
 _RULE_PREFIX = "WF Assign Grain"
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 
@@ -116,7 +116,7 @@ class TestAssignGrain(FrappeTestCase):
 		self.assertEqual(self._assign(self.entitled).get("a.assigned_to"), self.entitled)
 
 	def test_a_rep_entitled_to_another_grain_is_refused(self):
-		"""The defect. A GoodFlip Care rep could be handed a TatvaPractice lead and nothing objected."""
+		"""The defect. A Goodflip-Care rep could be handed a Tatvapractice lead and nothing objected."""
 		_forget_grains()
 		with self.assertRaises(PermissionError):
 			self._assign(self.foreign)

@@ -22,7 +22,7 @@ import frappe
 
 from tatva_connect.activity.api import save_activity
 
-VERTICAL, GROUP = "GoodFlip Care", "Anaya"
+VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
 
 class TestDormantLocationWritesNothing(unittest.TestCase):

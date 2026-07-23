@@ -2,7 +2,7 @@
 # See license.txt
 """THE grain-match rule, locked: a BLANK axis on a contract is a WILDCARD, never the empty string.
 
-A contract is declared at the level visibility is granted — a rep sees all of GoodFlip Care/Anaya
+A contract is declared at the level visibility is granted — a rep sees all of Goodflip-Care/Anaya
 whatever program the patient enrolled into — so its program axis is deliberately blank. The DATA always
 carries all three axes. An earlier build compared the two with an exact tuple lookup, so a lead whose
 program was set matched no contract and its whole Data tab collapsed to the universal keys. Every other

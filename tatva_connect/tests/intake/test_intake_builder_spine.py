@@ -2,7 +2,7 @@
 # See license.txt
 """Phase A spine — the form-builder scaffolder + the wildcard router, end to end.
 
-Proves the two halves of the spine on a real grain (GoodFlip Care / Anaya / Nivolumab):
+Proves the two halves of the spine on a real grain (Goodflip-Care / Anaya / Nivolumab):
 
   1. `builder.sync_form(cfg)` scaffolds a runtime per-form `custom=1` DocType (and its DB
      table) plus a public Web Form bound to it (anonymous, no login) — idempotently.
@@ -23,7 +23,7 @@ from tatva_connect.whatsapp.phone import to_e164
 _INTAKE_SWITCH = "Lead::Enrolment::intake"
 _DEDUP_SWITCH = "Lead::CRM Lead::dedup"
 
-_VERTICAL = "GoodFlip Care"
+_VERTICAL = "Goodflip-Care"
 _GROUP = "Anaya"
 _PROGRAM = "Nivolumab"
 _SOURCE = "Enrolment Form"

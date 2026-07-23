@@ -12,9 +12,9 @@ import {
  * For each grain persona, load /crm/leads with that persona's session and
  * assert the visible rows contain NO out-of-grain vertical. The forbidden
  * verticals are data-driven from grain_key:
- *   grain_4 (TatvaPractice::India::InsideSales) → must show no GoodFlip rows
- *   grain_5 (GoodFlip::B2C::InsideSales)        → must show no TatvaPractice rows
- * (grain_4 & grain_5 share program "InsideSales" — the A2 trap.)
+ *   grain_4 (Tatvapractice::India::Inside-Sales) → must show no Goodflip rows
+ *   grain_5 (Goodflip::B2C::Inside-Sales)        → must show no Tatvapractice rows
+ * (grain_4 & grain_5 share program "Inside-Sales" — the A2 trap.)
  *
  * Only personas that hold a concrete grain are exercised. System Manager /
  * no-grain personas are skipped here (they belong to the sweep tier).

@@ -7,8 +7,8 @@ a real RECORD and only the candidate may wildcard, `overlaps` asks about two RUL
 `resolve_fields` was handed `entitled_grains()` — rules — and asked the record question about them, so an
 entitlement carrying a blank axis matched only contracts blank in the same place.
 
-Measured before the fix, on live contracts: a viewer entitled to `('GoodFlip Care','Anaya','')` resolved
-131 fields; one entitled to `('GoodFlip Care','','')` — the same vertical, no group named, which is what a
+Measured before the fix, on live contracts: a viewer entitled to `('Goodflip-Care','Anaya','')` resolved
+131 fields; one entitled to `('Goodflip-Care','','')` — the same vertical, no group named, which is what a
 cross-functional admin holds — resolved **2**. The admin saw less than the rep beneath them, and their
 Smart View filter and column pickers came up empty.
 

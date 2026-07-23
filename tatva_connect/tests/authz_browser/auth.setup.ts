@@ -53,16 +53,16 @@ export function storageStateFor(persona: string): string {
 /** The vertical a grain persona must NEVER see leak (A2 same-program trap). */
 export function forbiddenVerticalsFor(grainKey: string): string[] {
   const vertical = (grainKey || "").split("::")[0] || "";
-  // The two grain personas that share program "InsideSales":
-  //   grain_4 = TatvaPractice::India::InsideSales
-  //   grain_5 = GoodFlip::B2C::InsideSales
+  // The two grain personas that share program "Inside-Sales":
+  //   grain_4 = Tatvapractice::India::Inside-Sales
+  //   grain_5 = Goodflip::B2C::Inside-Sales
   // Each must show zero rows from the OTHER vertical's verticals.
-  const ALL_VERTICALS = ["TatvaPractice", "GoodFlip", "GoodFlip Care"];
-  // "GoodFlip" and "GoodFlip Care" are sibling verticals; a TatvaPractice
-  // persona must see neither; a GoodFlip persona must not see TatvaPractice.
-  if (vertical === "TatvaPractice") return ["GoodFlip", "GoodFlip Care"];
-  if (vertical === "GoodFlip" || vertical === "GoodFlip Care")
-    return ["TatvaPractice"];
+  const ALL_VERTICALS = ["Tatvapractice", "Goodflip", "Goodflip-Care"];
+  // "Goodflip" and "Goodflip-Care" are sibling verticals; a Tatvapractice
+  // persona must see neither; a Goodflip persona must not see Tatvapractice.
+  if (vertical === "Tatvapractice") return ["Goodflip", "Goodflip-Care"];
+  if (vertical === "Goodflip" || vertical === "Goodflip-Care")
+    return ["Tatvapractice"];
   // Unknown vertical: be conservative — forbid everything that isn't it.
   return ALL_VERTICALS.filter((v) => v !== vertical);
 }

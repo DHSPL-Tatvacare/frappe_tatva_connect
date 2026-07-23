@@ -8,7 +8,7 @@ CRM Lead Stage is scoped by PROGRAM (PK `{program}::{stage}`; no vertical/group 
 stage belongs to a different program.
 
 These tests prove a stage for one grain does not leak as a stage for another — where "grain" for
-stages means PROGRAM. Note the design fact: grains #4 and #5 both map to program "InsideSales", so
+stages means PROGRAM. Note the design fact: grains #4 and #5 both map to program "Inside-Sales", so
 they legitimately SHARE stages — that is expected, NOT leakage, and is asserted explicitly so a
 future change can't quietly turn shared-by-design into a real cross-grain leak.
 
@@ -22,8 +22,8 @@ from tatva_connect.tests.authz import generator
 from tatva_connect.tests.authz.base import AuthzTestCase
 
 STAGE_SWITCH = "Lead::CRM Lead::stage"
-# The program each canonical grain maps to (grains.py order). #4 and #5 share "InsideSales".
-GRAIN_PROGRAMS = ("Nivolumab", "Tukavo", "FieldSales", "InsideSales")
+# The program each canonical grain maps to (grains.py order). #4 and #5 share "Inside-Sales".
+GRAIN_PROGRAMS = ("Nivolumab", "Tukavo", "Field-Sales", "Inside-Sales")
 
 
 class TestStageLeakage(AuthzTestCase):
@@ -69,7 +69,7 @@ class TestStageLeakage(AuthzTestCase):
 
 	def test_known_cross_program_stage_does_not_leak(self):
 		"""A real Tukavo stage must never appear in a Nivolumab lead's resolver (and vice versa)."""
-		pairs = (("Nivolumab", "Tukavo"), ("FieldSales", "InsideSales"))
+		pairs = (("Nivolumab", "Tukavo"), ("Field-Sales", "Inside-Sales"))
 		for own, foreign in pairs:
 			with self.subTest(own=own, foreign=foreign):
 				lead = self._lead_for_program(own)
@@ -83,18 +83,18 @@ class TestStageLeakage(AuthzTestCase):
 				)
 
 	def test_same_program_grains_share_stages_by_design(self):
-		"""grains #4 and #5 both map to program InsideSales -> identical stage sets. EXPECTED (stages
+		"""grains #4 and #5 both map to program Inside-Sales -> identical stage sets. EXPECTED (stages
 		are program-scoped, not full-grain). Asserted so a change can't silently make it a leak."""
 		leads = frappe.get_all(
 			"CRM Lead",
-			filters={"lead_name": ["like", generator.TAG + "%"], "custom_current_program": "InsideSales"},
+			filters={"lead_name": ["like", generator.TAG + "%"], "custom_current_program": "Inside-Sales"},
 			pluck="name", limit=2,
 		)
 		if len(leads) < 2:
-			self.skipTest("need two InsideSales leads (grains #4 and #5)")
+			self.skipTest("need two Inside-Sales leads (grains #4 and #5)")
 		a = {s["name"] for s in lead_stages(leads[0])}
 		b = {s["name"] for s in lead_stages(leads[1])}
-		self.assertEqual(a, b, "two InsideSales leads see different stage sets — program scoping broke")
+		self.assertEqual(a, b, "two Inside-Sales leads see different stage sets — program scoping broke")
 
 	# -- enforcement backstop (validate_stage) ----------------------------------------------------
 
