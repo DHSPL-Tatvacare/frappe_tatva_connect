@@ -365,7 +365,7 @@ def email_template_slots(template):
 
 	from jinja2 import Environment, meta
 
-	env = Environment()  # nosec B701 — parsed for variable names only; rendering goes through frappe.render_template
+	env = Environment(autoescape=True)  # parsed for variable names only and never rendered; autoescape is set anyway so no scanner has to be told a second time
 	body = row.response_html if row.use_html else row.response
 	found = set()
 	for source in (row.subject, body):
