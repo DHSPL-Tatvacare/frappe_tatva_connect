@@ -109,8 +109,17 @@ def _existing_internal():
 
 
 def ensure_internal_contracts():
-	"""Idempotent: one is_internal=1 CRM Lead API Mapping per grain, its Allowed Fields = the grain's
-	visible field_keys (per GRAIN_FIELDS). Re-running produces the same rows and the same ticks."""
+	"""ADDITIVE, never destructive: one is_internal=1 CRM Lead API Mapping per grain, whose Allowed
+	Fields is the UNION of the GRAIN_FIELDS baseline and whatever an operator has ticked in the desk form.
+
+	Each migrate ADDS any baseline field_key the grain is missing and REMOVES NOTHING — so a new baseline
+	field flows in on the next deploy, and a field an operator added by hand survives every future deploy.
+	The list is the baseline seeded ONCE plus the operator's own edits, forever. Removal is a deliberate
+	desk act, never a silent side-effect of deploying.
+
+	(Was a wipe-and-rebuild — `set([], allowed_fields)` then re-add the baseline — which erased every desk
+	edit on every migrate and reset any grain absent from GRAIN_FIELDS to empty. That is the defect this
+	replaces.)"""
 	existing = _existing_internal()
 	catalog = set(frappe.get_all("CRM Lead API Field", pluck="field_key"))
 	for grain in sorted(_contract_grains()):
@@ -129,8 +138,11 @@ def ensure_internal_contracts():
 			doc.program = program or None
 		doc.is_internal = 1
 		doc.enabled = 1
-		doc.set("allowed_fields", [])
-		for key in keys:
-			doc.append("allowed_fields", {"field": key})
-		doc.save(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
+		# UNION: add only the baseline keys not already ticked; keep every existing row (baseline + desk).
+		present = {row.field for row in (doc.get("allowed_fields") or [])}
+		added = [key for key in keys if key not in present]
+		if doc.is_new() or added:
+			for key in added:
+				doc.append("allowed_fields", {"field": key})
+			doc.save(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 	frappe.db.commit()
