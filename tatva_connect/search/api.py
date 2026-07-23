@@ -1,9 +1,7 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""The one whitelisted endpoint the spotlight modal calls. It runs the native FTS5 search (already
-grain-scoped by `get_search_filters`) and shapes each hit for the frontend — which filters, ranks and
-decides nothing. All visibility is server-side and fail-closed."""
+"""The one whitelisted endpoint the spotlight modal calls; the frontend renders its shape and decides nothing."""
 import frappe
 
 from tatva_connect.search.index import TAB, CRMLeadSearch
@@ -13,8 +11,7 @@ _MIN = 3
 
 @frappe.whitelist()
 def search(query, type=None, limit=20):
-	"""Return `{results, total}`. Empty for a short/blank query or while search is dormant — never a
-	round-trip that scans. `type` is an optional doctype facet (CRM Lead / FCRM Note / ...)."""
+	# Empty for a short/blank query or while dormant; `type` is an optional doctype facet.
 	query = (query or "").strip()
 	if len(query) < _MIN:
 		return {"results": [], "total": 0}
@@ -26,14 +23,18 @@ def search(query, type=None, limit=20):
 	filters = {"doctype": type} if type else None
 	res = engine.search(query, filters=filters) or {}
 
-	results = [_shape(r) for r in res.get("results", [])[: int(limit)]]
+	# Leads first, then notes, then files; within a group, by relevance.
+	results = [_shape(r) for r in res.get("results", [])]
+	results.sort(key=lambda h: (_RANK.get(h["doctype"], 9), -(h.get("score") or 0)))
 	total = res.get("summary", {}).get("total_matches", len(results))
-	return {"results": results, "total": total}
+	return {"results": results[: int(limit)], "total": total}
+
+
+_RANK = {"CRM Lead": 0, "FCRM Note": 1, "File": 2}
 
 
 def _shape(r):
-	"""Flatten a framework hit into what the row + click-through need. A File also carries its `file_url`
-	so the modal can open the bytes with window.open — resolved here (few hits), never indexed."""
+	# Flatten a framework hit for the row + click-through; a File also carries its file_url for window.open.
 	dt = r.get("doctype")
 	hit = {
 		"doctype": dt,
@@ -43,9 +44,10 @@ def _shape(r):
 		"title": r.get("title"),
 		"snippet": r.get("content"),
 		"phone": r.get("phone"),
+		"status": r.get("status"),
 		"vertical": r.get("vertical"),
-		"group": r.get("group"),
-		"owner": r.get("owner"),
+		"group": r.get("lead_group"),
+		"assignee": r.get("assignee"),
 		"score": r.get("score"),
 	}
 	if dt == "File":
@@ -55,8 +57,7 @@ def _shape(r):
 
 @frappe.whitelist()
 def rebuild_index():
-	"""Force a full background rebuild — the Rebuild button on the search toggle's form. System Manager
-	only; the framework's own long-queue build, deduplicated, so it is safe to press twice."""
+	# Force a full background rebuild — the Rebuild button on the toggle's form; System Manager only, deduplicated.
 	frappe.only_for("System Manager")
 	from tatva_connect.search.activation import enqueue_build
 

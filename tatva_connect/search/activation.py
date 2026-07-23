@@ -1,9 +1,7 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""Toggle activator for `Search::Index::indexing`. Called with the enabled state at deploy
-(reconcile_activations) and on every runtime flip (CRM Tatva Automation.on_update), plus the manual
-Rebuild button. All it does is enqueue Frappe's OWN build on the long queue — no custom indexing."""
+"""Activator for the Search::Index::indexing toggle — enqueues Frappe's own long-queue build; no custom indexing."""
 import frappe
 
 from tatva_connect.search.index import CRMLeadSearch
@@ -13,9 +11,7 @@ _CLASS = "tatva_connect.search.index.CRMLeadSearch"
 
 
 def apply(enabled):
-	"""On enable, build the index once if it is missing; steady-state (already built) is a no-op, and
-	the framework's 3-hourly cron resumes any build the queue cut short. Disable is inert — the flag
-	read by is_search_enabled already stops indexing and blanks results."""
+	# On enable, build once if missing; already-built is a no-op and the 3-hourly cron resumes a cut-short build.
 	if not enabled:
 		return
 	if CRMLeadSearch().index_exists():
@@ -24,7 +20,7 @@ def apply(enabled):
 
 
 def enqueue_build(force=False):
-	"""Enqueue the native full build, deduplicated by class path so a double-trigger cannot stack two."""
+	# The native full build, deduplicated by class path so a double-trigger cannot stack two.
 	frappe.enqueue(
 		_BUILD,
 		queue="long",

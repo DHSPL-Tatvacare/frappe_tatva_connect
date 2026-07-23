@@ -884,9 +884,7 @@ AUTOMATIONS = [
 			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
 			"that lead, without opening a single list or filter."
 		),
-		# A gate read by CRMLeadSearch.is_search_enabled; the per-save indexing rides frappe's native
-		# sqlite_search doc_events (core-owned, not tatva_connect's), so backs is empty — drift walks
-		# only this app's doc_event/scheduler paths. The activator builds the index once on enable.
+		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events, so backs is empty. The activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
 		backs=[],
 	),
