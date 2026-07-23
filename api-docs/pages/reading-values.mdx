@@ -17,9 +17,9 @@ A field lives at a dotted path from the body. Child rows are arrays and are inde
 | The latest lab's HbA1c | `data.custom_lab_profile[0].hba1c` |
 | A specific lab row's date | `data.custom_lab_profile[1].report_date` |
 | An error code | `error.code` |
-| The third item in a bulk reply | `results[2].status`, `results[2].name` |
+| The third item in a bulk reply | `results[2].status`, `results[2].data.name` |
 
-Child arrays are returned newest first, so `[0]` is the most recent row. Bulk `results[]` is input-ordered, so `results[2]` is the outcome of the third item sent.
+Child arrays are returned newest first, so `[0]` is the most recent row. Bulk `results[]` is input-ordered, so `results[2]` is the outcome of the third item sent; a successful row's record sits at `results[2].data.name`, never `results[2].name`.
 
 ## Reading one value
 

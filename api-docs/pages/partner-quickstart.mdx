@@ -38,7 +38,7 @@ curl -H 'Authorization: token <api_key>:<api_secret>' \
      "$BASE_URL/api/method/tatva_connect.api.partner.lead_schema"
 ```
 
-The response is a `data` object listing the `lead` fields, the `children` (each with `multi_row` and `key_field`), and the `routing` (fixed to the key, and therefore not set by the caller). The full walkthrough is on [Schema discovery](/discover-schema).
+The response is a `data` object listing the `fields` (each with `multi_row` and `key_field` under `children`), and the `routing` (fixed to the key, and therefore not set by the caller). The full walkthrough is on [Schema discovery](/discover-schema).
 
 ## 3. Create the first lead
 

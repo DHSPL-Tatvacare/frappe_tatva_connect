@@ -59,9 +59,9 @@ Every response reports the current state of the request budget, so a client can 
 
 | Header | Meaning |
 |---|---|
-| `RateLimit-Limit` | the request budget for the window |
-| `RateLimit-Remaining` | requests left in the current window |
-| `RateLimit-Reset` | seconds until the window resets |
+| `X-RateLimit-Limit` | the request budget for the window |
+| `X-RateLimit-Remaining` | requests left in the current window |
+| `X-RateLimit-Reset` | seconds until the window resets |
 | `Retry-After` | on a 429 or 503 only, seconds to wait before retrying |
 
 ## Retry handling

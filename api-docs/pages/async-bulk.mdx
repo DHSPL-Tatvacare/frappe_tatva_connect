@@ -12,7 +12,7 @@ deduplication rules the synchronous create uses. Nothing new is validated; only 
 
 | | Synchronous create / bulk | Bulk job |
 | --- | --- | --- |
-| Shape | one record, or up to 100 per call | thousands per submission |
+| Shape | one record, or up to 25 per call | thousands per submission |
 | Response | the outcome, in the same call | a job id; the outcome is polled |
 | Input | JSON body | inline JSON, or an uploaded CSV / JSONL file |
 | Best for | interactive writes, small batches | backfills and periodic loads |

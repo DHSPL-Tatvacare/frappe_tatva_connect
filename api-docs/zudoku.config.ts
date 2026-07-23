@@ -170,6 +170,10 @@ const config: ZudokuConfig = {
             } catch {
               /* no storage (SSR) */
             }
+            // Zudoku 0.79.1 sends try-it bodies as text/plain; Frappe (make_form_dict) parses a body only when the content-type says JSON, else it is dropped and every write reports a missing field. Force it whenever a body is present.
+            if (request.body !== null) {
+              request.headers.set("Content-Type", "application/json");
+            }
             return request;
           },
         },

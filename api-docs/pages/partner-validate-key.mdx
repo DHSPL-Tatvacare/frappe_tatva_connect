@@ -33,9 +33,9 @@ A `200` response has the following shape, trimmed. The `data` block is the exact
 {
   "status": "success",
   "data": {
-    "lead": [
-      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "required": false },
-      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false }
+    "fields": [
+      { "fieldname": "mobile_no", "label": "Mobile No", "type": "Data", "behavior": "OPTIONAL", "required": false },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL", "required": false }
     ],
     "children": { "...": "..." },
     "routing": { "mode": "forced", "...": "..." }

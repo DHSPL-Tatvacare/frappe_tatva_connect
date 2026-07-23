@@ -23,30 +23,33 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
 {
   "status": "success",
   "data": {
-    "lead": [
-      { "fieldname": "mobile_no",  "label": "Mobile No",  "type": "Data", "required": false, "options": null },
-      { "fieldname": "first_name", "label": "First Name", "type": "Data", "required": false, "options": null },
-      { "fieldname": "status",     "label": "Status",     "type": "Link", "required": true,  "options": "CRM Lead Status" }
+    "entity": "lead",
+    "identity": { "addressed_by": "name" },
+    "fields": [
+      { "fieldname": "mobile_no",  "label": "Mobile No",  "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null },
+      { "fieldname": "first_name", "label": "First Name", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null },
+      { "fieldname": "status",     "label": "Status",     "type": "Link", "behavior": "REQUIRED", "required": true,  "options": "CRM Lead Status" }
     ],
     "children": {
       "custom_lab_profile": {
         "multi_row": true,
         "key_field": "report_date",
         "fields": [
-          { "fieldname": "hba1c",       "label": "HbA1c",       "type": "Float", "required": false, "options": null },
-          { "fieldname": "report_date", "label": "Report Date", "type": "Date",  "required": true,  "options": null }
+          { "fieldname": "hba1c",       "label": "HbA1c",       "type": "Float", "behavior": "OPTIONAL", "required": false, "options": null },
+          { "fieldname": "report_date", "label": "Report Date", "type": "Date",  "behavior": "REQUIRED", "required": true,  "options": null }
         ]
       },
       "custom_plan_profile": {
         "multi_row": false,
         "key_field": null,
         "fields": [
-          { "fieldname": "policy_number", "label": "Policy Number", "type": "Data", "required": false, "options": null }
+          { "fieldname": "policy_number", "label": "Policy Number", "type": "Data", "behavior": "OPTIONAL", "required": false, "options": null }
         ]
       }
     },
     "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
-    "bulk": { "max_per_call": 25, "list_page_max": 200, "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"] },
+    "bulk": { "max_per_call": 25, "list_page_max": 200, "list_page_default": 20 },
+    "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"],
     "routing": {
       "mode": "list",
       "source": "…", "vertical": "…", "group": "…",
@@ -65,19 +68,20 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
 |---|---|
 | `data.entity` | The entity the schema describes, for example `lead`. |
 | `data.identity` | How a record is addressed: `addressed_by` names the field, always the CRM `name`, never an `external_id`. |
-| `data.lead[]` | The top-level lead fields available to the key. Each carries `fieldname`, `label`, `type`, `required`, and, for Link and Select fields, the allowed `options`. |
+| `data.fields[]` | The top-level lead fields available to the key. Each carries `fieldname`, `label`, `type`, `behavior`, `required`, and, for Link and Select fields, the allowed `options`. |
 | `data.children` | One entry per child table available to the key, keyed by its array name (for example `custom_lab_profile`). |
 | `data.children.<t>.multi_row` | `true` means the table holds many rows, addressed by a key. `false` means a single row that is merged into. |
 | `data.children.<t>.key_field` | On a multi-row table, the field that addresses each row. `null` on single-row tables. |
-| `data.children.<t>.fields[]` | The fields available in that table, in the same shape as `lead[]`. The `key_field` is always present and `required`. |
+| `data.children.<t>.fields[]` | The fields available in that table, in the same shape as `fields[]`. The `key_field` is always present and `required`. |
 | `data.routing.mode` | `forced` (one program stamped by the key), `list` (`custom_current_program` is sent, one of `allowed_programs`), or `none` (no program). Product line and group are always assigned from the key. |
 | `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required: true` means a create must carry `custom_current_program`. |
 | `data.dedup` | The rule that makes a lead unique: phone, product line, and group. Program is an attribute, not identity. |
-| `data.bulk` | Bulk caps and the filters `lead_list` accepts. |
+| `data.bulk` | The per-call bulk ceiling (`max_per_call`) and list paging (`list_page_max`, `list_page_default`). |
+| `data.list_filters` | The filter fields `lead_list` accepts. |
 
 ### Field attributes
 
-Every entry in `lead[]` (and in a child table's `fields[]`) describes one field:
+Every entry in `fields[]` (and in a child table's `fields[]`) describes one field:
 
 | Attribute | Meaning |
 |---|---|

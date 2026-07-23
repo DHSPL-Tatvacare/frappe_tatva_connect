@@ -14,8 +14,8 @@
       "description": "Production"
     },
     {
-      "url": "http://dev.localhost:8000",
-      "description": "Local dev bench"
+      "url": "https://one-uat.tatvacare.in",
+      "description": "UAT (sandbox for testing)"
     }
   ],
   "x-tagGroups": [
@@ -64,27 +64,27 @@
     },
     {
       "name": "Leads",
-      "description": "Leads are the root entity. Every activity, file and call hangs off one.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `lead_schema` | Discovery: the fields this key may send and read, plus its routing. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| GET | `lead_list` | List leads on the key's line, filtered and paginated. |\n| POST | `lead_create` | Create or update, deduped by phone within the line and group. |\n| PUT | `lead_update` | Update a lead by `name`. |\n| DELETE | `lead_delete` | Delete a lead by `name`. |\n| POST | `lead_get_bulk` | `{\"names\":[...]}` or `{\"mobile_nos\":[...]}` (up to 100). |\n| POST | `lead_create_bulk` | `{\"leads\":[...]}` (up to 100). |\n| PUT | `lead_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `lead_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Identity and dedup\n\nA lead is unique per `(mobile_no, product line, group)` — the CRM's own rule, never an `external_id`. Re-sending the same patient updates that lead. The program is a mutable attribute and is NOT part of identity: the same patient sent with a different program transitions the SAME lead. A changed phone number is a new patient and mints a new lead.\n\n`mobile_no` is a valid address here, and only here, because phone is the lead's natural key. Every other entity is addressed by `name` alone.\n\n### Discover before sending\n\n`lead_schema` returns exactly what THIS key may send and read, each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. Two keys calling it receive different field lists. A field list is never hardcoded.",
+      "description": "Leads are the root entity. Every activity, file and call hangs off one.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `lead_schema` | Discovery: the fields this key may send and read, plus its routing. |\n| GET | `lead_get` | Read one lead by `name` or `mobile_no`. |\n| GET | `lead_list` | List leads on the key's line, filtered and paginated. |\n| POST | `lead_create` | Create or update, deduped by phone within the line and group. |\n| PUT | `lead_update` | Update a lead by `name`. |\n| DELETE | `lead_delete` | Delete a lead by `name`. |\n| POST | `lead_get_bulk` | `{\"names\":[...]}` or `{\"mobile_nos\":[...]}` (up to 25). |\n| POST | `lead_create_bulk` | `{\"leads\":[...]}` (up to 25). |\n| PUT | `lead_update_bulk` | `{\"updates\":[...]}` (up to 25). |\n| DELETE | `lead_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Identity and dedup\n\nA lead is unique per `(mobile_no, product line, group)` — the CRM's own rule, never an `external_id`. Re-sending the same patient updates that lead. The program is a mutable attribute and is NOT part of identity: the same patient sent with a different program transitions the SAME lead. A changed phone number is a new patient and mints a new lead.\n\n`mobile_no` is a valid address here, and only here, because phone is the lead's natural key. Every other entity is addressed by `name` alone.\n\n### Discover before sending\n\n`lead_schema` returns exactly what THIS key may send and read, each field marked `REQUIRED`, `OPTIONAL` or `OUTPUT_ONLY`. Two keys calling it receive different field lists. A field list is never hardcoded.",
       "x-zudoku-collapsed": false
     },
     {
       "name": "Activities",
-      "description": "Activities are logged on a lead. An activity is a task of a configured activity type, scoped to the lead's product line and group. The same key that writes leads writes activities: there is no per-entity enablement, and one key governs all four entity APIs.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `activity_schema` | Discovery by lead: the activity types available to a lead, each with its field schema. |\n| GET | `activity_get` | Read one activity by `name`. |\n| GET | `activity_list` | List a lead's activities, filtered and paginated. |\n| POST | `activity_create` | Create an activity; returns its `name`. |\n| PUT | `activity_update` | Update an activity by `name`. |\n| DELETE | `activity_delete` | Delete an activity by `name`. |\n| POST | `activity_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `activity_create_bulk` | `{\"activities\":[...]}` (up to 100). |\n| PUT | `activity_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `activity_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Discover before sending\n\nActivity fields are scoped to the lead: different leads expose different types and fields. `activity_schema?lead=<id>` (or `?mobile_no=`) is called first, and values are sent and read keyed by the schema `fieldname` under `values`. A field list is never hardcoded.\n\n### Identity\n\nAn activity is addressed by `name`, returned when it was created. A POST **creates**: it does not deduplicate, so a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `created_at` backdates the activity for a historical load.",
+      "description": "Activities are logged on a lead. An activity is a task of a configured activity type, scoped to the lead's product line and group. The same key that writes leads writes activities: there is no per-entity enablement, and one key governs all four entity APIs.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `activity_schema` | Discovery by lead: the activity types available to a lead, each with its field schema. |\n| GET | `activity_get` | Read one activity by `name`. |\n| GET | `activity_list` | List a lead's activities, filtered and paginated. |\n| POST | `activity_create` | Create an activity; returns its `name`. |\n| PUT | `activity_update` | Update an activity by `name`. |\n| DELETE | `activity_delete` | Delete an activity by `name`. |\n| POST | `activity_get_bulk` | `{\"names\":[...]}` (up to 25). |\n| POST | `activity_create_bulk` | `{\"activities\":[...]}` (up to 25). |\n| PUT | `activity_update_bulk` | `{\"updates\":[...]}` (up to 25). |\n| DELETE | `activity_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Discover before sending\n\nActivity fields are scoped to the lead: different leads expose different types and fields. `activity_schema?lead=<id>` (or `?mobile_no=`) is called first, and values are sent and read keyed by the schema `fieldname` under `values`. A field list is never hardcoded.\n\n### Identity\n\nAn activity is addressed by `name`, returned when it was created. A POST **creates**: it does not deduplicate, so a re-sent create produces a second activity. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `created_at` backdates the activity for a historical load.",
       "x-zudoku-collapsed": true
     },
     {
       "name": "Files",
-      "description": "Files are attached to a lead, or to a scoped activity or note on that lead. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `file_schema` | Discovery: the attach payload contract. |\n| GET | `file_get` | Read one file's metadata and proxy url by `name`. |\n| GET | `file_list` | List a lead's files, filtered and paginated. |\n| POST | `file_attach` | Decode or download the bytes and attach to a lead, activity or note. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 100). |\n| DELETE | `file_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` always reads `true` and `file_url` is always a proxy url, never a raw storage key or a local path. The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Identity\n\nA file is addressed by `name`, returned when it was attached. A POST **attaches**: it does not deduplicate, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\n### No update\n\nA file's bytes are immutable. There is deliberately no update method: replacing a file means attaching the new one and deleting the old.",
+      "description": "Files are attached to a lead, or to a scoped activity or note on that lead. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `file_schema` | Discovery: the attach payload contract. |\n| GET | `file_get` | Read one file's metadata and proxy url by `name`. |\n| GET | `file_list` | List a lead's files, filtered and paginated. |\n| POST | `file_attach` | Decode or download the bytes and attach to a lead, activity or note. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_get_bulk` | `{\"names\":[...]}` (up to 25). |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 5). |\n| DELETE | `file_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` always reads `true` and `file_url` is always a proxy url, never a raw storage key or a local path. The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Identity\n\nA file is addressed by `name`, returned when it was attached. A POST **attaches**: it does not deduplicate, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\n### No update\n\nA file's bytes are immutable. There is deliberately no update method: replacing a file means attaching the new one and deleting the old.",
       "x-zudoku-collapsed": true
     },
     {
       "name": "Calls",
-      "description": "Calls are logged on a lead. A call is stored in the same call log the telephony integration writes to. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `call_schema` | Discovery: the call payload contract. |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | List a lead's calls, filtered and paginated. |\n| POST | `call_create` | Create a call log; returns its `name`. |\n| PUT | `call_update` | Update a call by `name`. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_get_bulk` | `{\"names\":[...]}` (up to 100). |\n| POST | `call_create_bulk` | `{\"calls\":[...]}` (up to 100). |\n| PUT | `call_update_bulk` | `{\"updates\":[...]}` (up to 100). |\n| DELETE | `call_delete_bulk` | `{\"names\":[...]}` (up to 100). |\n\n### Attribution: `lead` is always read\n\n`lead` or `mobile_no` attaches the call explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`, never on the wrong lead. `lead` is always read back to confirm whether the call was linked.\n\n### Identity\n\nA call is addressed by `name`, returned when it was created — which is NOT the `external_id`. A POST **creates**: it does not deduplicate, so a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `started_at` backdates the call on insert.",
+      "description": "Calls are logged on a lead. A call is stored in the same call log the telephony integration writes to. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `call_schema` | Discovery: the call payload contract. |\n| GET | `call_get` | Read one call by `name`. |\n| GET | `call_list` | List a lead's calls, filtered and paginated. |\n| POST | `call_create` | Create a call log; returns its `name`. |\n| PUT | `call_update` | Update a call by `name`. |\n| DELETE | `call_delete` | Delete a call by `name`. |\n| POST | `call_get_bulk` | `{\"names\":[...]}` (up to 25). |\n| POST | `call_create_bulk` | `{\"calls\":[...]}` (up to 25). |\n| PUT | `call_update_bulk` | `{\"updates\":[...]}` (up to 25). |\n| DELETE | `call_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Attribution: `lead` is always read\n\n`lead` or `mobile_no` attaches the call explicitly, scoped to the line. Omitting both lets the server strict-match the customer number (`from_number` on Inbound, `to_number` on Outbound), scoped to the line. No match, or an ambiguous match, leaves the call unlinked and `lead` reads `null`, never on the wrong lead. `lead` is always read back to confirm whether the call was linked.\n\n### Identity\n\nA call is addressed by `name`, returned when it was created — which is NOT the `external_id`. A POST **creates**: it does not deduplicate, so a re-sent create produces a second call. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\nOptional `started_at` backdates the call on insert.",
       "x-zudoku-collapsed": true
     },
     {
       "name": "Notes",
-      "description": "Free-text notes on a lead. A note is addressed by `name`, the id returned when it was created. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n**Attribution is strict.** Unlike a call, a note is never left unattached and is never matched by guesswork: `lead` or `mobile_no` must name a lead on the caller's line, or the write is refused. A clinical note on the wrong patient is worse than a refused write.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `note_schema` | The note payload contract |\n| GET | `note_get` | One note by `name` |\n| GET | `note_list` | A lead's notes, paginated |\n| POST | `note_create` | Create a note |\n| PUT | `note_update` | Update a note by `name` |\n| DELETE | `note_delete` | Delete a note by `name` |\n| POST | `note_get_bulk` | Read up to 100 by `names` |\n| POST | `note_create_bulk` | Create up to 100 |\n| PUT | `note_update_bulk` | Update up to 100 |\n| DELETE | `note_delete_bulk` | Delete up to 100 |\n"
+      "description": "Free-text notes on a lead. A note is addressed by `name`, the id returned when it was created. `external_id` is the caller's own label: echoed back, never interpreted, never a dedup key. A POST creates; retries are made safe with the `Idempotency-Key` header.\n\n**Attribution is strict.** Unlike a call, a note is never left unattached and is never matched by guesswork: `lead` or `mobile_no` must name a lead on the caller's line, or the write is refused. A clinical note on the wrong patient is worse than a refused write.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `note_schema` | The note payload contract |\n| GET | `note_get` | One note by `name` |\n| GET | `note_list` | A lead's notes, paginated |\n| POST | `note_create` | Create a note |\n| PUT | `note_update` | Update a note by `name` |\n| DELETE | `note_delete` | Delete a note by `name` |\n| POST | `note_get_bulk` | Read up to 25 by `names` |\n| POST | `note_create_bulk` | Create up to 25 |\n| PUT | `note_update_bulk` | Update up to 25 |\n| DELETE | `note_delete_bulk` | Delete up to 25 |\n"
     },
     {
       "name": "Async Bulk Jobs",
@@ -1128,15 +1128,15 @@
         "required": [
           "names"
         ],
-        "description": "A batch addressed by `name` — the primary keys returned when the records were created. Up to 100 per call.",
+        "description": "A batch addressed by `name` — the primary keys returned when the records were created. Up to 25 per call.",
         "properties": {
           "names": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "maxItems": 100,
-            "description": "The records' `name`s. Up to 100."
+            "maxItems": 25,
+            "description": "The records' `name`s. Up to 25."
           }
         }
       },
@@ -1145,11 +1145,11 @@
         "required": [
           "updates"
         ],
-        "description": "A batch of activity updates, each addressed by `name`. Up to 100 per call.",
+        "description": "A batch of activity updates, each addressed by `name`. Up to 25 per call.",
         "properties": {
           "updates": {
             "type": "array",
-            "maxItems": 100,
+            "maxItems": 25,
             "items": {
               "$ref": "#/components/schemas/ActivityUpsertRequest"
             },
@@ -1162,11 +1162,11 @@
         "required": [
           "updates"
         ],
-        "description": "A batch of call updates, each addressed by `name`. Up to 100 per call.",
+        "description": "A batch of call updates, each addressed by `name`. Up to 25 per call.",
         "properties": {
           "updates": {
             "type": "array",
-            "maxItems": 100,
+            "maxItems": 25,
             "items": {
               "$ref": "#/components/schemas/CallUpsertRequest"
             },
@@ -1249,11 +1249,11 @@
         "required": [
           "updates"
         ],
-        "description": "A batch of note updates, each addressed by `name`. Up to 100 per call.",
+        "description": "A batch of note updates, each addressed by `name`. Up to 25 per call.",
         "properties": {
           "updates": {
             "type": "array",
-            "maxItems": 100,
+            "maxItems": 25,
             "items": {
               "$ref": "#/components/schemas/NoteUpsertRequest"
             },
@@ -1667,7 +1667,7 @@
             },
             "dedup": "A lead is unique per (mobile_no, product line, group) — the CRM's own rule, never an `external_id`. Re-sending the same patient updates that lead. Program is NOT part of identity: the same patient sent with a different program transitions the SAME lead. A changed phone number is a new patient and mints a new lead.",
             "bulk": {
-              "max_per_call": 100,
+              "max_per_call": 25,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -4064,7 +4064,7 @@
             },
             "dedup": "None. Every POST creates a new activity and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
             "bulk": {
-              "max_per_call": 100,
+              "max_per_call": 25,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -5349,7 +5349,7 @@
             },
             "dedup": "None. Every POST creates a new call log and returns a new `name`. Retries are made safe with the Idempotency-Key header; `external_id` does not deduplicate.",
             "bulk": {
-              "max_per_call": 100,
+              "max_per_call": 25,
               "list_page_max": 200,
               "list_page_default": 20
             },
@@ -7688,7 +7688,7 @@
           "Leads"
         ],
         "summary": "Bulk Read Leads",
-        "description": "Up to 100 leads are read, addressed by `names` OR `mobile_nos`. `results` is input-ordered, so `results[i]` is the i-th requested id. A lead that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "description": "Up to 25 leads are read, addressed by `names` OR `mobile_nos`. `results` is input-ordered, so `results[i]` is the i-th requested id. A lead that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7698,19 +7698,19 @@
                 "properties": {
                   "names": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `a7f3c9e12b`). Use this OR `mobile_nos`."
+                    "description": "Up to 25 lead IDs (e.g. `a7f3c9e12b`). Use this OR `mobile_nos`."
                   },
                   "mobile_nos": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 phone numbers (auto-normalized). Use this OR `names`."
+                    "description": "Up to 25 phone numbers (auto-normalized). Use this OR `names`."
                   }
                 },
                 "description": "Send exactly one of `names` / `mobile_nos`."
@@ -7798,7 +7798,7 @@
           "Leads"
         ],
         "summary": "Bulk Create",
-        "description": "Create or update up to 100 leads in one call, body `{\"leads\": [... ]}`. Same idempotent identity and field rules as Create Lead; each row commits in its own savepoint, so one bad row reports its error while the rest still commit (**partial success**). Over 100 rows is rejected.",
+        "description": "Create or update up to 25 leads in one call, body `{\"leads\": [... ]}`. Same idempotent identity and field rules as Create Lead; each row commits in its own savepoint, so one bad row reports its error while the rest still commit (**partial success**). Over 25 rows is rejected.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7808,11 +7808,11 @@
                 "properties": {
                   "leads": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "$ref": "#/components/schemas/UpsertLeadRequest"
                     },
-                    "description": "Up to 100 lead payloads (same shape as `lead_create`)."
+                    "description": "Up to 25 lead payloads (same shape as `lead_create`)."
                   }
                 }
               },
@@ -7901,7 +7901,7 @@
           "Leads"
         ],
         "summary": "Bulk Update",
-        "description": "Update up to 100 leads in one call, body `{\"updates\": [ {\"name\":...,...} ]}`. Each entry needs the lead's `name` plus the fields to change; same merge semantics and line scope as Update Lead, per record in its own savepoint (**partial success**).",
+        "description": "Update up to 25 leads in one call, body `{\"updates\": [ {\"name\":...,...} ]}`. Each entry needs the lead's `name` plus the fields to change; same merge semantics and line scope as Update Lead, per record in its own savepoint (**partial success**).",
         "requestBody": {
           "required": true,
           "content": {
@@ -7911,7 +7911,7 @@
                 "properties": {
                   "updates": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "allOf": [
                         {
@@ -7929,7 +7929,7 @@
                         }
                       ]
                     },
-                    "description": "Up to 100 update payloads; each carries `name` + allowed fields."
+                    "description": "Up to 25 update payloads; each carries `name` + allowed fields."
                   }
                 }
               },
@@ -8018,7 +8018,7 @@
           "Leads"
         ],
         "summary": "Bulk Delete",
-        "description": "Delete up to 100 leads by `name`, body `{\"names\": [... ]}`. Each delete runs in its own savepoint (**partial success**) and is line-scoped; a lead with linked activity fails for that row while the rest proceed.",
+        "description": "Delete up to 25 leads by `name`, body `{\"names\": [... ]}`. Each delete runs in its own savepoint (**partial success**) and is line-scoped; a lead with linked activity fails for that row while the rest proceed.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8028,11 +8028,11 @@
                 "properties": {
                   "names": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 100 lead IDs (e.g. `a7f3c9e12b`) to delete."
+                    "description": "Up to 25 lead IDs (e.g. `a7f3c9e12b`) to delete."
                   }
                 }
               },
@@ -8718,7 +8718,7 @@
           "Activities"
         ],
         "summary": "Bulk Read Activities",
-        "description": "Up to 100 activities are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "description": "Up to 25 activities are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8806,7 +8806,7 @@
           "Activities"
         ],
         "summary": "Bulk Create Activities",
-        "description": "Up to 100 activities are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of activities. A retry is made safe with the `Idempotency-Key` header.",
+        "description": "Up to 25 activities are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of activities. A retry is made safe with the `Idempotency-Key` header.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8816,11 +8816,11 @@
                 "properties": {
                   "activities": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "$ref": "#/components/schemas/ActivityUpsertRequest"
                     },
-                    "description": "Up to 100 activity payloads (same shape as `activity_create`)."
+                    "description": "Up to 25 activity payloads (same shape as `activity_create`)."
                   }
                 }
               },
@@ -9302,7 +9302,7 @@
           "Files"
         ],
         "summary": "Bulk Attach Files",
-        "description": "Up to 100 files are attached. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **attaches**. It does not deduplicate, so a re-sent batch attaches a second set of files.",
+        "description": "Up to 5 files are attached. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **attaches**. It does not deduplicate, so a re-sent batch attaches a second set of files.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9312,11 +9312,11 @@
                 "properties": {
                   "files": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 5,
                     "items": {
                       "$ref": "#/components/schemas/FileAttachRequest"
                     },
-                    "description": "Up to 100 file payloads (same shape as `file_attach`)."
+                    "description": "Up to 5 file payloads (same shape as `file_attach`)."
                   }
                 }
               },
@@ -9808,7 +9808,7 @@
           "Calls"
         ],
         "summary": "Bulk Create Calls",
-        "description": "Up to 100 call logs are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of calls.",
+        "description": "Up to 25 call logs are created. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.\n\nA POST **creates**. It does not deduplicate, so a re-sent batch produces a second set of calls.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9818,11 +9818,11 @@
                 "properties": {
                   "calls": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "$ref": "#/components/schemas/CallUpsertRequest"
                     },
-                    "description": "Up to 100 call payloads (same shape as `call_create`)."
+                    "description": "Up to 25 call payloads (same shape as `call_create`)."
                   }
                 }
               },
@@ -9911,7 +9911,7 @@
           "Activities"
         ],
         "summary": "Bulk Update Activities",
-        "description": "Up to 100 activities are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.",
+        "description": "Up to 25 activities are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit. `results` is input-ordered.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10036,7 +10036,7 @@
           "Activities"
         ],
         "summary": "Bulk Delete Activities",
-        "description": "Up to 100 activities are deleted, each addressed by its `name`. Each record is handled in its own savepoint. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "description": "Up to 25 activities are deleted, each addressed by its `name`. Each record is handled in its own savepoint. An activity that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10243,7 +10243,7 @@
           "Files"
         ],
         "summary": "Bulk Read Files",
-        "description": "Up to 100 files are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A file that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
+        "description": "Up to 25 files are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A file that does not exist, or lies outside the key's line and group, reports the same generic not-found in place.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10363,7 +10363,7 @@
           "Files"
         ],
         "summary": "Bulk Delete Files",
-        "description": "Up to 100 files are deleted, each addressed by its `name`. Each record is handled in its own savepoint. The stored blob is dropped with its last reference.",
+        "description": "Up to 25 files are deleted, each addressed by its `name`. Each record is handled in its own savepoint. The stored blob is dropped with its last reference.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10692,7 +10692,7 @@
           "Calls"
         ],
         "summary": "Bulk Read Calls",
-        "description": "Up to 100 calls are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A call that does not exist, lies outside the key's line and group, or is unlinked reports the same generic not-found in place.",
+        "description": "Up to 25 calls are read, each addressed by its `name`. `results` is input-ordered, so `results[i]` is the i-th requested name. A call that does not exist, lies outside the key's line and group, or is unlinked reports the same generic not-found in place.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10812,7 +10812,7 @@
           "Calls"
         ],
         "summary": "Bulk Update Calls",
-        "description": "Up to 100 calls are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.",
+        "description": "Up to 25 calls are updated, each addressed by its `name`. Each record is handled in its own savepoint, so one bad row reports its error while the rest still commit.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -10937,7 +10937,7 @@
           "Calls"
         ],
         "summary": "Bulk Delete Calls",
-        "description": "Up to 100 calls are deleted, each addressed by its `name`. Each record is handled in its own savepoint.",
+        "description": "Up to 25 calls are deleted, each addressed by its `name`. Each record is handled in its own savepoint.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -11647,7 +11647,7 @@
           "Notes"
         ],
         "summary": "Bulk Read Notes",
-        "description": "Reads many notes by `names` (max 100). Input-ordered; out-of-scope or unknown names are reported `not_found` in place.",
+        "description": "Reads many notes by `names` (max 25). Input-ordered; out-of-scope or unknown names are reported `not_found` in place.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -11767,7 +11767,7 @@
           "Notes"
         ],
         "summary": "Bulk Create Notes",
-        "description": "Creates many notes (max 100). Each record is enforced in its own savepoint, so one bad record does not sink the batch — partial success.",
+        "description": "Creates many notes (max 25). Each record is enforced in its own savepoint, so one bad record does not sink the batch — partial success.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11777,11 +11777,11 @@
                 "properties": {
                   "notes": {
                     "type": "array",
-                    "maxItems": 100,
+                    "maxItems": 25,
                     "items": {
                       "$ref": "#/components/schemas/NoteUpsertRequest"
                     },
-                    "description": "Up to 100 note payloads (same shape as `note_create`)."
+                    "description": "Up to 25 note payloads (same shape as `note_create`)."
                   }
                 }
               },
@@ -11870,7 +11870,7 @@
           "Notes"
         ],
         "summary": "Bulk Update Notes",
-        "description": "Updates many notes (max 100). Partial success.",
+        "description": "Updates many notes (max 25). Partial success.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
@@ -11995,7 +11995,7 @@
           "Notes"
         ],
         "summary": "Bulk Delete Notes",
-        "description": "Deletes many notes (max 100). Partial success.",
+        "description": "Deletes many notes (max 25). Partial success.",
         "responses": {
           "200": {
             "description": "Partial success. HTTP 200 even when records fail — `results[].status` is checked per record.",
