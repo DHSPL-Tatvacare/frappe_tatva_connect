@@ -2,62 +2,117 @@
 
 > Part of the test tree — start at [`tests/README.md`](../README.md).
 
-Fires the **same attack cases** the `authz` engine generates, but over HTTP at a **running deployment**
-(UAT), as real logged-in users. This is the dress rehearsal for what an external pen-test does.
+Fires the **32 VAPT Jun'26 findings** as real attacks over HTTP at a running deployment (UAT), as real
+logged-in low-privilege users — the same thing an external pen-test does. `vectors.py` is the runnable
+list; each vector is built from the endpoint's real signature and is **self-proving** (see below).
 
-**It reuses, never re-implements:** cases come from `authz/registry/`, personas from `authz/roster.py`,
-transport from `authz/http_engine.py`, and the "did the endpoint do the thing?" judgment from
-`authz/test_endpoint_sweep.py` — so the live verdict can never drift from the bench verdict.
+## What a run tells you
 
-## ⚠️ Current status — NOT usable against UAT yet
+One legible line per finding:
 
-| Problem | Detail |
-|---|---|
-| **No password login** | `authz/http_engine.py` only sends `Authorization: token <api_key>:<api_secret>`. There is no `/api/method/login`, no session, no cookie. You cannot hand it a username + password. |
-| **A failed login reads as a blocked attack** | The judge treats any non-2xx as "denied", so a `401` (never logged in) is indistinguishable from a `403` (logged in, correctly refused). **Wrong credentials produce a perfect green report.** |
-| **Proven, not theoretical** | A local dogfood run reported `430 CORRECT / 0 escalations` while every single request had returned `401`. Nothing was actually tested. |
-
-**Do not trust a green result from this folder until the two fixes below land.**
-
-## Required fixes (scoped in `docs/plans/test-rejig/`)
-
-1. **Password login** — `POST /api/method/login {usr, pwd}` → capture the `sid` cookie → send it on every
-   request. Belongs in `authz/http_engine.py` so both the bench sweep and this folder gain it.
-2. **Auth pre-flight** — after login, every persona calls `whoami` and must come back as the expected
-   user. Any persona that fails → the run **aborts loudly**; its cases are marked `INVALID`, never
-   `CORRECT`.
-
-## The three layers
-
-| Layer | File | Runs where | Job |
-|---|---|---|---|
-| 1 | `baseline.py` | **bench** | Ask the oracle what each persona *should* be allowed → export `expectations.json` |
-| 2 | `attack.py` | anywhere | Fire the cases at the live URL, record a corpus JSONL. **No judging.** |
-| 3 | `compare.py` | anywhere | Diff actual vs expected → `CORRECT` / `ESCALATION` / `OVER_BLOCK` |
-
-The oracle needs a bench, so it cannot run remotely — layer 1 exports its **answer**, keyed by
-`(persona, endpoint, doctype, target_relation)` rather than record ids, so it stays valid on a target
-whose rows differ but whose roles match.
-
-```bash
-# 1. on the bench, once per code change
-bench --site dev.localhost execute tatva_connect.tests.vapt_live.baseline.build
-
-# 2 + 3. against the target in .creds/uat.json
-python -m tatva_connect.tests.vapt_live.run
+```
+[05] PASS  P2  Read all Contacts (get_data)  |  attacker=PermissionError control=HTTP200  |  denied by the permission layer
 ```
 
-## Config and safety
+| Verdict | Meaning |
+|---|---|
+| **PASS** | attacker refused **by the permission layer**, and `admin` proved the endpoint really works |
+| **FAIL** | attacker reached the data / the write landed → **finding STILL OPEN** |
+| **ACCEPTED** | public-by-design (job board, programs, installed apps, schema) — reachable, nothing sensitive |
+| **BROKEN** | the request crashed (500 / TypeError) or admin couldn't run it — **never a pass**; the payload is wrong |
+| **SKIP** | no target of that type on the site |
 
-`config.py` reads the **gitignored** `.creds/uat.json` (base URL, host, personas, admin token). It
-**refuses to run against anything that looks like production** — a host must match a non-prod marker
-or carry an explicit override. Active attacks are UAT-only, never prod.
+**Why you can trust it:** every read fires twice — as the attacker (must be denied) and as `admin` (must
+succeed). A crash can never be scored as a pass; it is flagged `BROKEN`. Login failures abort the whole
+run (a refused login is indistinguishable from a blocked attack, so scoring it would be a lie).
 
-## Known gaps beyond login
+---
 
-- **Baseline picks a weak target** — it takes any row per doctype, where the bench sweep uses a
-  *tagged foreign-owned* one (e.g. a genuinely private File). Verdicts are softer than they should be.
-- **Over-block artifacts** — `client.insert` fires `{"doc":{"doctype":X}}` (empty), so the live call
-  fails *validation*, not permission. These need triaging into a declared known-benign list.
-- **Phase A never built** — the disabled-account check (login, API token, password grant, OAuth,
-  password reset must all refuse a disabled user) exists only as prose. It is not implemented anywhere.
+## RUNBOOK — testing UAT
+
+### Phase 0 — prerequisites (you / DevOps), once
+
+1. **Deploy the fixes to UAT** — push `develop`, deploy, `bench migrate`, **restart workers** (N2/N6 are
+   `override_whitelisted_methods` and only load at worker boot).
+2. **Enable password login** on UAT temporarily (it is normally SSO-only). Confirm **2FA is OFF**.
+3. **Check the API rate limit**: `sites/<site>/site_config.json` → `rate_limit`. If present, note
+   `{limit, window}`; the runner paces 1 req / 2s by default (`--delay` to change).
+4. **Three accounts** on UAT with known passwords:
+   | persona | role | purpose |
+   |---|---|---|
+   | `admin` | System Manager | control (proves each payload works) + seeds/teardown |
+   | `no_role` | No App Access | the strict-floor attacker |
+   | `default_user` | LMS Student (or a real signup) | the LMS quiz/exercise attacker |
+
+### Phase 1 — credentials (gitignored)
+
+Create `tatva_connect/tests/vapt_live/.creds/uat.json` (this path is gitignored — verify with
+`git check-ignore`):
+
+```json
+{
+  "base": "https://one-uat.tatvacare.in",
+  "host": "one-uat.tatvacare.in",
+  "personas": {
+    "admin":        {"email": "...", "password": "..."},
+    "no_role":      {"email": "...", "password": "..."},
+    "default_user": {"email": "...", "password": "..."},
+    "guest":        {}
+  }
+}
+```
+
+The host guard **refuses to run against production** — the host must carry a non-prod marker (`uat`,
+`staging`, `localhost`). `one.tatvacare.in` / `www.` are rejected.
+
+### Phase 2 — run it
+
+Run from the local docker bench (it has the package; HTTP goes out to UAT):
+
+```bash
+docker exec <backend-container> bash -lc \
+  'cd /home/frappe/frappe-bench && bench --site dev.localhost execute tatva_connect.tests.vapt_live.vectors.run'
+```
+
+- `<backend-container>` is your local backend (e.g. `tatvalocal-backend-1`) — it only supplies the Python
+  runtime; the attacks travel over HTTPS to the UAT URL in `.creds/uat.json`.
+- Reads its target and logins from `.creds/uat.json`, logs each persona in ONCE (safe against a 3/60s
+  lockout), paces 1 req / 2s, and prints the 32-line table + a tally.
+
+### Phase 3 — read the result
+
+- **`0 FAIL`** → every finding the report raised is closed on UAT. Sleep.
+- **any `FAIL`** → that finding is still open on UAT — the line names the endpoint and shows the attacker
+  got in. Do **not** sign off.
+- **any `BROKEN`** → the run could not judge that vector (payload/target problem); fix before trusting.
+- **`SKIP`** → no target of that type on UAT; seed dummy data of that doctype and re-run for full coverage.
+
+### Phase 4 — after
+
+- The run seeds a few throwaway records (a comment, a private file, an LMS quiz/exercise) as `admin` and
+  **deletes them itself** in teardown. Nothing is left behind by design.
+- **Disable password login on UAT again** and rotate the three test passwords.
+- Delete `.creds/uat.json` (or leave it — it is gitignored and never leaves your machine).
+
+---
+
+## Files
+
+| File | Role |
+|---|---|
+| `vectors.py` | the 32 findings as self-proving attack vectors + `run()` |
+| `config.py` | reads the gitignored `.creds/uat.json`; **refuses production** |
+| `attack.py` / `baseline.py` / `compare.py` | the older oracle-diff sweep (bench baseline → live diff); `vectors.py` is the simpler, report-faithful path and the one to use for a UAT rehearsal |
+
+## The engine underneath (reused, not reinvented)
+
+Login, session, and fail-loud safety live in `../authz/http_engine.py` — `login()` (password → sid
+cookie), `whoami()` pre-flight, and hard aborts on 401 / 429 / CSRF. So the bench sweep and this live
+runner share one transport and can never drift on "did the attack actually land".
+
+## Known limits
+
+- **Timer vector (16)** needs a real >quiz-duration wait; it SKIPs here and is proven by the bench test
+  `tests/security/test_lms_assessment.py` instead.
+- Coverage depends on target data existing on UAT — a doctype with no rows SKIPs. Seed dummy data for a
+  complete 32/32 run.
