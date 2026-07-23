@@ -19,7 +19,7 @@ DT = "CRM Lead API Field"
 
 def execute():
 	for name, label in frappe.get_all(DT, fields=["name", "label"], as_list=True):
-		head, sep, tail = (label or "").partition(" — ")
+		_head, sep, tail = (label or "").partition(" — ")
 		if sep and tail and tail != label:
 			frappe.db.set_value(DT, name, "label", tail, update_modified=False)
 	frappe.db.commit()
