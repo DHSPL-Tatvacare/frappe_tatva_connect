@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import frappe
 from frappe.search.sqlite_search import SQLiteSearch
+from frappe.utils import strip_html_tags
 
 _NON_DIGIT = re.compile(r"\D")
 
@@ -40,8 +41,10 @@ _PLACEHOLDER = [{"title": "name"}, {"content": "creation"}]
 class CRMLeadSearch(SQLiteSearch):
 	INDEX_NAME = "crm_lead_search.db"
 
-	# Metadata is stored + returned but not tokenized; `lead_group` avoids the SQL reserved word `group`.
+	# `keys` is tokenized + searched but never displayed (ids/phones/owner); the snippet only ever shows
+	# `content`. Metadata is stored + returned but not tokenized; `lead_group` avoids the reserved word `group`.
 	INDEX_SCHEMA: ClassVar[dict] = {
+		"text_fields": ["title", "content", "keys"],
 		"metadata_fields": ["lead", "phone", "status", "vertical", "lead_group", "assignee"],
 		"tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.+'",
 	}
@@ -79,7 +82,8 @@ class CRMLeadSearch(SQLiteSearch):
 			return None
 		# Overwrite the placeholder title/content the base filled from name/creation.
 		document["title"] = ctx.get("title") or lead
-		document["content"] = self._content_of(doc, ctx)
+		document["content"] = self._content_of(doc)
+		document["keys"] = self._keys_of(doc, ctx)
 		document["lead"] = lead
 		document["phone"] = ctx.get("phone")
 		document["status"] = ctx.get("status")
@@ -127,22 +131,27 @@ class CRMLeadSearch(SQLiteSearch):
 			"group": row.custom_group,
 		}
 
-	def _content_of(self, doc, ctx):
-		# The tokenized text: the record's own primary key + business ids + free text, then the owner for name+owner queries.
+	def _content_of(self, doc):
+		# The DISPLAYED snippet — clean human text only; ids and the owner are search-only (see _keys_of).
 		dt = doc.doctype
-		if dt == "CRM Lead":
-			parts = [doc.get("name"), doc.get("mobile_no"), doc.get("custom_alternate_number"), doc.get("custom_patient_id"), doc.get("custom_lsq_prospect_id")]
-			parts += [*_phone_tokens(doc.get("mobile_no")), *_phone_tokens(doc.get("custom_alternate_number"))]
-		elif dt == "FCRM Note":
-			parts = [doc.get("name"), doc.get("title"), doc.get("content")]
+		if dt == "FCRM Note":
+			text = " ".join(p for p in [doc.get("title"), doc.get("content")] if p)
 		elif dt == "CRM Task":
-			parts = [doc.get("name"), doc.get("title"), doc.get("description")]
+			text = " ".join(p for p in [doc.get("title"), doc.get("description")] if p)
 		elif dt == "CRM Call Log":
-			parts = [doc.get("name"), doc.get("from"), doc.get("to")]
+			text = " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
 		elif dt == "File":
-			parts = [doc.get("name"), doc.get("file_name")]
-		else:
-			parts = []
+			text = doc.get("file_name") or ""
+		else:  # CRM Lead — the row shows phone/vertical/group, never a snippet.
+			text = ""
+		return strip_html_tags(text).strip() if text else ""
+
+	def _keys_of(self, doc, ctx):
+		# Searchable but never shown: the record's ids + normalized phones + owner, so a punched id/phone resolves.
+		parts = [doc.get("name")]
+		if doc.doctype == "CRM Lead":
+			parts += [doc.get("mobile_no"), doc.get("custom_alternate_number"), doc.get("custom_patient_id"), doc.get("custom_lsq_prospect_id")]
+			parts += [*_phone_tokens(doc.get("mobile_no")), *_phone_tokens(doc.get("custom_alternate_number"))]
 		parts += [ctx.get("owner_name"), ctx.get("owner")]
 		return " ".join(str(p) for p in parts if p)
 
