@@ -9,6 +9,8 @@ DOCTYPE = "CRM Notification Subscription"
 
 
 def execute():
+	# Read reality, not the cache: an earlier patch in the same migrate changed this table, and frappe's cached column list would answer from before that. Its own successor already does this.
+	_schema.refresh(f"tab{DOCTYPE}")
 	if not frappe.db.has_column(DOCTYPE, "grain_key"):
 		return
 	frappe.reload_doc("notifications", "doctype", "crm_notification_subscription")

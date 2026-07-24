@@ -27,11 +27,12 @@ def execute():
 		return
 
 	# sqli-ok: table and column names are code constants; no user input reaches this statement.
+	# NULL only. An EMPTY string is a value MariaDB constrains like any other, so excluding it here checked for duplicates the index does not care about and missed the ones it does: two blank-phone leads on the same grain then raised 1062, the except below swallowed it, and the index silently never landed.
 	dupes = frappe.db.sql(
 		f"""
 		SELECT mobile_no, custom_vertical, custom_group, COUNT(*) AS n
 		FROM `{table}`
-		WHERE mobile_no IS NOT NULL AND mobile_no != ''
+		WHERE mobile_no IS NOT NULL
 		GROUP BY mobile_no, custom_vertical, custom_group
 		HAVING COUNT(*) > 1
 		LIMIT 10

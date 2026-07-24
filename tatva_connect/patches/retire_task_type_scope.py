@@ -19,6 +19,15 @@ from tatva_connect.patches import _schema
 SCOPE_DT = "CRM Task Type Scope"
 SCOPE_TABLE = "tabCRM Task Type Scope"
 
+# EVERY Link that points at CRM Task Type. delete_doc's link check refuses a referenced row, so all five are cleared or the patch aborts the migrate — CRM Visit Audit alone is written on every geofence check, so the rows exist.
+_REFERRERS = (
+	("CRM Task", "custom_task_type"),
+	("CRM Visit Audit", "task_type"),
+	("CRM Smart View", "activity_type"),
+	("CRM Task Checklist Template", "task_type"),
+	("CRM Program", "custom_first_activity_type"),
+)
+
 
 def execute():
 	_drop_grainless_types()
@@ -27,19 +36,28 @@ def execute():
 
 def _drop_grainless_types():
 	"""A grainless (name-keyed) type is dormant — _grain_matches calls its all-blank grain never-raisable,
-	so the row only ever advertised an activity that does not exist. A USED site can still carry a legacy
-	task tagged with it (a pre-re-key 'Call Lead' from before the assignment resolver guard). Untype those
-	tasks first — a CRM Task with no custom_task_type is a valid state, exactly what a native call-log task
-	is (crm.integrations.api.add_task_to_call_log sets none) — so the meaningless tag is cleared, nothing is
-	orphaned, and the type deletes. delete_doc stays force-less: a NON-task link (a rule/view) is a real
-	reference the operator must resolve, and it still fails loud."""
+	so the row only ever advertised an activity that does not exist. A USED site can still carry records
+	tagged with it: a legacy task (a pre-re-key 'Call Lead'), a Visit Audit row written by a geofence
+	check, a Smart View, a checklist template, a program's first activity. Untag them all first — a blank
+	Link is a valid state on every one of them, exactly what a native call-log task is
+	(crm.integrations.api.add_task_to_call_log sets none) — so the meaningless tag is cleared, nothing is
+	orphaned, and the type deletes. delete_doc stays force-less: a link we have NOT declared here is a
+	reference nobody accounted for, and it must still fail loud rather than orphan silently."""
 	for name in frappe.get_all("CRM Task Type", filters={"name": ["not like", "%::%"]}, pluck="name"):
-		tagged = frappe.get_all("CRM Task", filters={"custom_task_type": name}, pluck="name")
-		for task in tagged:
-			frappe.db.set_value("CRM Task", task, "custom_task_type", None, update_modified=False)  # untype, never orphan
-		if tagged:
-			print(f"  retire_task_type_scope: untyped {len(tagged)} legacy task(s) of '{name}' before delete")
-		frappe.delete_doc("CRM Task Type", name)  # force-less: a non-task link still fails loud
+		for doctype, fieldname in _REFERRERS:
+			_untag(doctype, fieldname, name)
+		frappe.delete_doc("CRM Task Type", name)  # force-less: an UNDECLARED link still fails loud
+
+
+def _untag(doctype, fieldname, task_type):
+	"""Clear one referrer's Link. Guarded on live reality — a doctype or column that never landed on this site is not an error, it is simply nothing to clear."""
+	if not (frappe.db.exists("DocType", doctype) and frappe.db.has_column(doctype, fieldname)):
+		return
+	tagged = frappe.get_all(doctype, filters={fieldname: task_type}, pluck="name")
+	for row in tagged:
+		frappe.db.set_value(doctype, row, fieldname, None, update_modified=False)  # untag, never orphan
+	if tagged:
+		print(f"  retire_task_type_scope: untagged {len(tagged)} {doctype} row(s) of '{task_type}' before delete")
 
 
 def _drop_scope_doctype():

@@ -24,26 +24,48 @@ from frappe.modules.import_file import import_file_by_path
 _RETIRED = (("Desktop Icon", "Partner API"), ("Workspace Sidebar", "Partner API"),
             ("Workspace", "Partner API"))
 
-_REIMPORT = (
+# The three that ARE the replacement — Desktop Icon -> Workspace Sidebar -> Workspace, the chain a Desk
+# tile needs whole. The retirement below happens only if all three land.
+_REPLACEMENT = (
 	("tatva_connect", "workspace", "external_leads", "external_leads.json"),
+	("workspace_sidebar", "external_leads.json"),
+	("desktop_icon", "external_leads.json"),
+)
+
+# The two spaces the moved groups came OUT of. Their failure costs a stale group, not a lost surface.
+_REIMPORT = (
 	("tatva_connect", "workspace", "communications", "communications.json"),
 	("tatva_connect", "workspace", "field_operations", "field_operations.json"),
-	("workspace_sidebar", "external_leads.json"),
 	("workspace_sidebar", "field_operations.json"),
-	("desktop_icon", "external_leads.json"),
 )
 
 
 def execute():
-	for doctype, name in _RETIRED:
-		if frappe.db.exists(doctype, name):
-			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)  # authz-ok: tier-a — patch, runs at migrate
-
+	# Import BEFORE delete. Deleting first meant a failed import left the deletes standing, the error
+	# swallowed, the migrate green — and no External Leads surface AND no Partner API one either.
+	landed = all([_reimport(parts) for parts in _REPLACEMENT])  # a list, not a generator: every file is attempted, not short-circuited on the first failure
 	for parts in _REIMPORT:
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {parts[-1]} failed", message=frappe.get_traceback())
+		_reimport(parts)
+
+	if landed:
+		for doctype, name in _RETIRED:
+			if frappe.db.exists(doctype, name):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)  # authz-ok: tier-a — patch, runs at migrate
+	else:
+		# Partner API stays: a reachable old space beats no space at all, and the next migrate retries.
+		frappe.log_error(
+			title="reimport external_leads desk: replacement did not land",
+			message="The External Leads workspace/sidebar/icon did not all import, so the Partner API space was KEPT rather than leaving the Desk with neither.",
+		)
 
 	frappe.clear_cache()
+
+
+def _reimport(parts):
+	"""Import one standard desk file, force. True only if it really landed."""
+	path = frappe.get_app_path("tatva_connect", *parts)
+	try:
+		return bool(import_file_by_path(path, force=True))
+	except Exception:
+		frappe.log_error(title=f"reimport {parts[-1]} failed", message=frappe.get_traceback())
+		return False

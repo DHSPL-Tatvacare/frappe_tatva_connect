@@ -28,6 +28,9 @@ def _current_options(doctype: str, fieldname: str) -> str:
 
 
 def _add_option(doctype: str, fieldname: str):
+	# Both targets are crm-fork doctypes: get_meta on one this site does not have raises, and this step runs on EVERY migrate from schema_setup.
+	if not frappe.db.exists("DocType", doctype):
+		return
 	if not frappe.get_meta(doctype).get_field(fieldname):
 		# Field missing (unexpected crm version) — log and skip, don't abort migrate.
 		frappe.log_error(

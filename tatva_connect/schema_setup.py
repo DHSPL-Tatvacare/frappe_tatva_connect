@@ -89,6 +89,8 @@ def apply_schema():
 	if failures:
 		# Each step isolates its own failure above (rollback + log) so the rest still run — but a
 		# real structural gap must NOT pass as a green migrate. Fail loud once every step ran.
+		# COMMIT FIRST: this throw fires inside @atomic post_schema_updates, so without it the whole migrate rolls back — INCLUDING the Patch Log rows written earlier in the same run, which made every retry re-run all 52 patches from scratch and nothing ever record as done.
+		frappe.db.commit()
 		frappe.throw(_("Schema setup failed for: {0}. See Error Log for tracebacks.").format(", ".join(failures)))
 
 

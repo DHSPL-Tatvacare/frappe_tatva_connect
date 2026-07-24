@@ -29,6 +29,23 @@ _DEAD_CHILD_DOCTYPES = (
 )
 
 
+def _fits(old, new):
+	"""The source expression, truncated to the target's width when the target is a character column.
+
+	`custom_visit_status` was a free Data column and `custom_outcome` is a fixture-declared one; a single
+	legacy value longer than the target is a 1406 that aborts the whole migrate. Truncating keeps the
+	value (visibly clipped) instead of losing the migrate. A Datetime target has no width and is copied
+	whole — LEFT() on one would corrupt every row.
+	"""
+	width = frappe.db.sql(
+		"""SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+		   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tabCRM Task' AND COLUMN_NAME = %s""",
+		(new,),
+	)
+	limit = width[0][0] if width else None
+	return f"LEFT(`{old}`, {int(limit)})" if limit else f"`{old}`"
+
+
 def _retire_column(fieldname):
 	"""Drop a retired CRM Task field end to end: delete the Custom Field doc AND the physical column (deletion alone leaves the column); a Table field has no parent column, so only its doc is removed."""
 	cf = "CRM Task-" + fieldname
@@ -46,7 +63,7 @@ def execute():
 			continue
 		frappe.db.sql(
 			f"""UPDATE `tabCRM Task`
-			   SET `{new}` = `{old}`
+			   SET `{new}` = {_fits(old, new)}
 			   WHERE NULLIF(CAST(`{old}` AS CHAR), '') IS NOT NULL
 			     AND NULLIF(CAST(`{new}` AS CHAR), '') IS NULL"""
 		)

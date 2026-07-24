@@ -48,7 +48,7 @@ tatva_connect.patches.widen_lsq_attachment_id  # post — File.custom_lsq_attach
 tatva_connect.patches.add_lead_dedup_unique_index  # post — UNIQUE (mobile_no, vertical, group): the partner API's dedup rule, enforced by the DB
 tatva_connect.patches.add_call_log_reference_index  # post — index (reference_doctype, reference_docname): call_list full-scanned without it
 tatva_connect.patches.reimport_infrastructure_desk  # post — File Screening + File Scan Log had no route from any workspace; the standard import skips a desk doc whose DB copy looks newer than the file, so force it (same reason as reimport_communications_desk)
-tatva_connect.patches.reimport_partner_api_desk  # post — the async bulk-jobs tile (CRM Bulk Job shortcut) never appears on a site whose Partner API workspace looks newer than the file, so force-reimport it (same reason as the two above)
+# reimport_partner_api_desk REMOVED — it re-imported tatva_connect/workspace/partner_api/partner_api.json, which does not exist in this repo: the space was replaced by External Leads (reimport_external_leads_desk). The patch found no file, returned False and did nothing on every site that ran it.
 tatva_connect.patches.reimport_automations_desk  # post — the workflow-engine config surfaces (Action Groups, Workflows) + queue/log views were added to the Automations workspace + sidebar; the standard import skips a desk doc whose DB copy looks newer than the file, so force both (same reason as the reimports above)
 # L3 trace (Invariant 14): the dead `debug_log_payloads` Check + its `section_break_debug`
 # Section Break were removed from CRM WhatsApp Settings JSON — never wired into the spine (the

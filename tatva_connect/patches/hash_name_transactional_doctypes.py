@@ -49,6 +49,8 @@ def _set(doctype, autoname, naming_rule):
 				"property_type": "Data",
 			},
 			is_system_generated=False,
+			# A Property Setter insert otherwise triggers a full validate_fields over the doctype, and this runs from schema_setup right after other steps deleted Custom Fields in the same pass — a stale meta then throws on a field that is legitimately gone. We change a naming rule, not a field, so there is nothing here for that pass to validate.
+			validate_fields_for_doctype=False,
 		)
 
 

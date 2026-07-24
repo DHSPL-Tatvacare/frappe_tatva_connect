@@ -85,6 +85,8 @@ def _catalog_targets(r):
 	if r.get("doctype_name") == _LEAD_DT:
 		out = []
 		for lf in frappe.get_all("CRM Lead API Field", filters={"fieldname": fieldname}, fields=["name", "section"]):
+			if not lf.section:
+				continue  # a row with no section has no routing to compare; get_cached_doc on a blank name raises DoesNotExistError and aborts the migrate
 			sec = frappe.get_cached_doc("CRM Lead Section", lf.section)
 			if (sec.child_table_field or "") == (r.get("child_table_field") or ""):
 				out.append(("CRM Lead API Field", lf.name))

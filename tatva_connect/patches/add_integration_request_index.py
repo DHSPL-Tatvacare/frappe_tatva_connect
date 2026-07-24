@@ -19,4 +19,8 @@ def execute():
 		return
 	if frappe.db.has_index(f"tab{DOCTYPE}", INDEX):
 		return
-	frappe.db.add_index(DOCTYPE, list(COLUMNS), index_name=INDEX)
+	try:
+		frappe.db.add_index(DOCTYPE, list(COLUMNS), index_name=INDEX)
+	except Exception:
+		# The only index step that was not isolated. A missing index is a slow query, never a reason to abort a migrate — same stance as its siblings.
+		frappe.log_error(title="Integration Request index failed", message=frappe.get_traceback())

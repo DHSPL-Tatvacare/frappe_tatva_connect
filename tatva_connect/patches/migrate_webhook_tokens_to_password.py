@@ -10,7 +10,8 @@ _TARGETS = (
 
 def execute():
 	for doctype, fieldname in _TARGETS:
-		if not frappe.db.table_exists(doctype):
+		# The DocType ROW, not just the table: get_all resolves meta, so an orphan table with no doctype (or a doctype with no table) fails either way. Both must be there.
+		if not (frappe.db.exists("DocType", doctype) and frappe.db.table_exists(doctype)):
 			continue
 		for name in frappe.get_all(doctype, pluck="name"):
 			_migrate_one(doctype, name, fieldname)

@@ -23,10 +23,9 @@ from tatva_connect.patches import _schema
 DT = "CRM Lead API Field"
 TABLE = "tabCRM Lead API Field"
 
-# The copy's rows are the ones that are not lead fields. `section` is the Link every lead row carries
-# (rekey_lead_catalog_sections); a row that resolves to no section has no table, no target and no row
-# key — which is precisely what a CRM Task row was doing in the lead catalog.
-_LEAD_FIELD_LINK = "section"
+# `applies_to` is the copy's OWN marker — the column that held a task type's name and addressed these
+# rows. A row that carries one IS a copy row; nothing else in this table ever set it.
+_COPY_MARKER = "applies_to"
 
 
 def execute():
@@ -36,13 +35,19 @@ def execute():
 
 
 def _delete_the_copy():
-	"""Every row that names no lead section. delete_doc, not a DELETE: the rows are Links' targets
-	(CRM Lead API Mapping Field, CRM Lead Field Restriction) and the framework clears them."""
-	sections = set(frappe.get_all("CRM Lead Section", pluck="name"))
-	for r in frappe.get_all(DT, fields=["name", _LEAD_FIELD_LINK]):
-		if r.get(_LEAD_FIELD_LINK) in sections:
-			continue
-		frappe.delete_doc(DT, r.name, force=True, ignore_permissions=True)  # authz-ok: tier-c — post patch, no session user
+	"""Every row the copy's own marker addresses. delete_doc, not a DELETE: the rows are Links' targets
+	(CRM Lead API Mapping Field, CRM Lead Field Restriction) and the framework clears them.
+
+	Identified POSITIVELY, by the marker. Identifying it negatively — "names no lead section" — makes the
+	delete depend on the section table being complete, and it is not guaranteed to be: section_seed is
+	skip-until-ready, so a section whose child field has not synced yet is absent during a patch pass, and
+	every legitimate row pointing at it would be destroyed. Up to all 607 of them.
+	"""
+	_schema.refresh(TABLE)
+	if not frappe.db.has_column(DT, _COPY_MARKER):
+		return  # the marker went with the copy; there is nothing here left to address
+	for name in frappe.get_all(DT, filters={_COPY_MARKER: ["is", "set"]}, pluck="name"):
+		frappe.delete_doc(DT, name, force=True, ignore_permissions=True)  # authz-ok: tier-c — post patch, no session user
 
 
 def _drop_the_copys_columns():
