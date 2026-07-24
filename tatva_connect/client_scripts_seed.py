@@ -45,6 +45,11 @@ def seed():
 		if not os.path.exists(path):
 			# A declared file that isn't there is an unfinished rename; skipping it lost a whole Desk UI.
 			frappe.throw(f"Client Script '{name}' declares a missing file: {rel}")
+		if not frappe.db.exists("DocType", dt):
+			# A script for a doctype this site does not have binds to nothing. Losing a Desk helper is a
+			# gap; aborting post_schema_updates over one kills the whole deploy. Named, not silent.
+			frappe.log_error(title="client_scripts_seed: target doctype missing", message=f"'{name}' targets {dt}, which is not installed; skipped.")
+			continue
 		with open(path) as f:
 			js = f.read()
 		doc = frappe.get_doc("Client Script", name) if frappe.db.exists("Client Script", name) \

@@ -102,35 +102,87 @@ def _ensure_new_modules():
 	runs BEFORE after_migrate and skips a module whose Module Def doesn't yet exist — so its
 	doctype JSONs never land. This guard (after_migrate) creates the missing Module Def and imports
 	that module's doctype files on the SAME migrate, so a new module builds on first migrate too.
-	Idempotent: a no-op once the Module Def + tables exist. Isolates its own failure."""
-	try:
-		import os
 
-		from frappe.modules.import_file import import_file_by_path
+	The end state is "every declared doctype EXISTS", not "the Module Def exists". Keying it on the
+	Module Def made this a one-shot that could never self-heal: the Def is committed before the
+	imports, so an import that failed left the Def behind, and every later migrate skipped the module
+	and never retried the doctype. That is how CRM Lead Import stayed missing across eight deploys.
+	Isolates its own failure, per module, so one bad module cannot cost the others theirs."""
+	import os
 
-		app_path = frappe.get_app_path("tatva_connect")
-		modules = [m.strip() for m in (frappe.get_module_list("tatva_connect") or []) if m.strip()]
-		_tables = set(frappe.db.get_tables())
-		for module in modules:
-			if frappe.db.exists("Module Def", module):
-				continue
-			md = frappe.new_doc("Module Def")
-			md.module_name = module
-			md.app_name = "tatva_connect"
-			md.insert(ignore_permissions=True)  # authz-ok: tier-a — schema setup, runs at migrate
-			frappe.db.commit()
-			scrubbed = frappe.scrub(module)
-			dt_dir = os.path.join(app_path, scrubbed, "doctype")
+	from frappe.modules.import_file import import_file_by_path
+
+	app_path = frappe.get_app_path("tatva_connect")
+	modules = [m.strip() for m in (frappe.get_module_list("tatva_connect") or []) if m.strip()]
+	for module in modules:
+		try:
+			if not frappe.db.exists("Module Def", module):
+				md = frappe.new_doc("Module Def")
+				md.module_name = module
+				md.app_name = "tatva_connect"
+				md.insert(ignore_permissions=True)  # authz-ok: tier-a — schema setup, runs at migrate
+				frappe.db.commit()
+
+			# The module->app map is built from a REDIS-cached modules.txt snapshot, not from Module Def.
+			# A worker that booted on the previous image caches a map with no entry for a module added
+			# since, and DocType.on_update -> run_module_method -> get_module_app then throws
+			# "Module X not found" on import. The row exists, the map does not. Rebuild it from disk
+			# before importing, or the doctype can never land on a site whose cache predates the module.
+			if frappe.scrub(module) not in (frappe.local.module_app or {}):
+				frappe.cache.delete_value("app_modules")
+				frappe.client_cache.delete_value("installed_app_modules")
+				frappe.setup_module_map()
+
+			dt_dir = os.path.join(app_path, frappe.scrub(module), "doctype")
 			if not os.path.isdir(dt_dir):
+				# A module declared in modules.txt whose folder is not in the RUNNING IMAGE lands nothing, and the first consumer dies far from the cause. Silence is what made this cost eight deploys.
+				frappe.log_error(title="apply_schema: module folder absent from this image", message=f"Module '{module}' is in modules.txt but {dt_dir} does not exist here.")
 				continue
-			for dt_folder in os.listdir(dt_dir):
-				json_path = os.path.join(dt_dir, dt_folder, dt_folder + ".json")
-				if os.path.exists(json_path):
-					import_file_by_path(json_path, force=True)
-			frappe.db.commit()
-	except Exception:
-		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "apply_schema: ensure_new_modules")
+
+			# Two passes: listdir order is arbitrary, so a parent can be reached before the child table
+			# doctype it declares. The first pass lands whatever it can, the second retries the rest.
+			missing = _missing_doctypes(dt_dir)
+			for _pass in (1, 2):
+				if not missing:
+					break
+				for json_path in missing:
+					try:
+						import_file_by_path(json_path, force=True)
+					except Exception:
+						frappe.db.rollback()
+				frappe.db.commit()
+				missing = _missing_doctypes(dt_dir)
+
+			if missing:
+				# Loud. A declared doctype that is still absent kills the first consumer that Links to it,
+				# far from this cause — which is exactly how client_scripts_seed died on CRM Lead Import.
+				frappe.log_error(
+					title="apply_schema: declared doctypes did not land",
+					message=f"Module '{module}' still has no DocType row for:\n" + "\n".join(missing),
+				)
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(frappe.get_traceback(), f"apply_schema: ensure_new_modules ({module})")
+
+
+def _missing_doctypes(dt_dir):
+	"""The doctype JSONs in this folder with no DocType row yet — read from the file, never guessed."""
+	import json
+	import os
+
+	out = []
+	for dt_folder in sorted(os.listdir(dt_dir)):
+		json_path = os.path.join(dt_dir, dt_folder, dt_folder + ".json")
+		if not os.path.exists(json_path):
+			continue
+		try:
+			with open(json_path) as f:
+				name = json.load(f).get("name")
+		except Exception:  # nosec B112 — an unreadable/!DocType json is not a doctype to land; the caller only needs the ones that are
+			continue
+		if name and not frappe.db.exists("DocType", name):
+			out.append(json_path)
+	return out
 
 
 def _assert_observability_bands():
