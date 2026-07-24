@@ -1,16 +1,20 @@
 """Make `CRM Workflow Run.active_key` unique, and back-fill it for live runs.
 
-The double-start guard was declared but never real: the column carried no unique constraint and no code
-ever wrote it, so `UniqueValidationError` could not be raised and every matching save started another
-journey on the same lead — each one raising its own tasks and sending its own messages.
+The double-start guard was declared but never real: the column carried no unique constraint and nothing
+wrote it then, so `UniqueValidationError` could not be raised and every matching save started another
+journey on the same lead — each one raising its own tasks and sending its own messages. The engine writes
+it now (`workflow_engine/triggers.py`) and relies on this index as the double-start guard.
 
 Declared end state: every live (Running/Parked) run carries `workflow::subject_name`, terminal runs carry
 NULL, and the column is unique. Duplicates that already exist are collapsed — the OLDEST live run per
 (workflow, subject) keeps running and the rest are marked Failed, because they are duplicates that should
 never have started, and leaving them live would keep them acting on the lead.
 
-Idempotent; a no-op on a fresh site. The unique index itself is created by `bench migrate` from the
-doctype JSON — this patch only makes the data satisfy it, and MUST run before that index is applied.
+Idempotent; a no-op on a fresh site. The unique index is created from the doctype JSON during model sync;
+this patch runs after that, in [post_model_sync], and only makes the data satisfy it. That ordering is safe
+because `active_key` is all-NULL when the index is built and MariaDB does not constrain NULLs — if the field
+ever gains a default, or a writer that runs before the index exists, this collapse must move to
+[pre_model_sync] and pre-create the index through `patches/_schema.py`.
 """
 import frappe
 
