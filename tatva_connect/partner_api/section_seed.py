@@ -25,8 +25,12 @@ _STRUCTURAL = ("target_doctype", "child_table_field", "is_multi_row", "row_key_f
 
 def ensure_rows():
 	"""Idempotent: the structure our code depends on is asserted, and an operator's presentation is left alone."""
+	lead_meta = frappe.get_meta("CRM Lead")
 	for row in _ROWS:
 		if not frappe.db.exists("CRM Lead Section", row["section_key"]):
+			# skip-until-ready: a pre-fixtures patch caller can run before this child field syncs; the after_migrate pass seeds the row then. Same contract as the grain seeds' _masters_exist guard.
+			if row["child_table_field"] and not lead_meta.get_field(row["child_table_field"]):
+				continue
 			frappe.get_doc({"doctype": "CRM Lead Section", **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 			continue
 		declared = {f: row[f] for f in _STRUCTURAL}
