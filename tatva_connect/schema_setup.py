@@ -20,9 +20,11 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_call_log_reference_index,
 	add_clinic_anchor_index,
 	add_crm_task_metrics_index,
 	add_integration_request_index,
+	add_lead_dedup_unique_index,
 	add_observability_indexes,
 	backfill_webhook_token_digests,
 	hash_name_transactional_doctypes,
@@ -45,34 +47,27 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
-	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter
-	# select on both, and frappe declares no index on a table it keeps for 90 days.
+	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
-	# Re-key CRM Task Type to grain-scoped composite keys (ADR). Runs after the doctype JSON sync adds
-	# the parent grain fields; idempotent (skips already-`::` names). Cascades the custom_task_type Link.
+	# UNIQUE (mobile_no, custom_vertical, custom_group) on CRM Lead — the partner API's dedup rule; a composite unique cannot be declared in crm's JSON, so this is its only fresh-install path.
+	add_lead_dedup_unique_index,
+	# (reference_doctype, reference_docname) on CRM Call Log — call_list and every Desk reference filter select on both; composite, so not JSON-declarable.
+	add_call_log_reference_index,
+	# Re-key CRM Task Type to grain-scoped composite keys (ADR); runs after the doctype JSON sync adds the parent grain fields, idempotent, and cascades the custom_task_type Link.
 	rekey_task_types_composite,
 	# A naming_series name is minted from ONE tabSeries row whose lock is held to commit, so concurrent creates deadlock (1 of 32 survived a 32-way burst; the partner API turned that into 124 HTTP 500s). A patch alone would never reach a fresh site — install-app baselines it — so the rule is applied here too. Idempotent: it skips a doctype already named by hash.
 	hash_name_transactional_doctypes,
-	# Carry existing webhook tokens into the Password store after the Data->Password flip.
-	# install-app baselines patches.txt without running it, so this is the path that lands the
-	# carry on an existing DB's first redeploy; a fresh install has blank tokens (clean no-op).
+	# Carry existing webhook tokens into the Password store after the Data->Password flip; a fresh install has blank tokens (clean no-op).
 	migrate_webhook_tokens_to_password,
-	# Inbound auth resolves an account by digest in one indexed read; a Password field cannot be
-	# indexed, so the digest is derived. Runs AFTER the token carry above, which is what puts a
-	# token in the Password store for it to digest.
+	# Inbound auth resolves an account by digest in one indexed read; runs AFTER the token carry above, which is what puts a token in the Password store to digest.
 	backfill_webhook_token_digests,
-	# CRM Lead's dead custom_latitude/custom_longitude pair — a duplicate of the clinic anchor the
-	# Tatvapractice load actually writes; the fixture sync never drops a field, so remove it here too.
+	# CRM Lead's dead custom_latitude/custom_longitude pair duplicated the clinic anchor; the fixture sync never drops a field, so remove it here too.
 	retire_lead_import_coordinates,
 	# Composite (clinic lat, clinic lng) — Near Me's bounding-box prefilter scanned the table without it.
 	add_clinic_anchor_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
-	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab's
-	# read of one lead's answers and the Smart View join both select on them. install-app baselines
-	# patches.txt without running it, so a fresh site would otherwise full-scan the table forever with
-	# nothing going red. The pre_model_sync half that drops the superseded text indexes is not repeated
-	# here: a fresh site never had them.
+	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.
 	reindex_screening_answers_by_hash,
 )
 
