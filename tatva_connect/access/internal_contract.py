@@ -11,13 +11,18 @@ grain an internal user could be entitled to (via `entitled_grains`) has a contra
 import frappe
 
 from tatva_connect.access.internal_contract_seed import GRAIN_FIELDS
+from tatva_connect.taxonomy import grain
 
 # Fixed contract_name for every internal row; the grain axes make the autoname id unique per grain.
 _CONTRACT_NAME = "Internal Visibility"
 
 
 def _grain_tuple(vertical, group, program):
-	return (vertical or "", group or "", program or "")
+	"""The comparable form of a grain. Canonical, because this tuple is a DICT KEY compared against
+	tuples built from the database — and MariaDB calls 'GoodFlip' and 'Goodflip' one value while Python
+	calls them two. Uncanonicalised, a contract that exists reads as missing, gets created, and dies on
+	its own composite primary key."""
+	return tuple(grain.canon(axis, value) for axis, value in zip(grain.AXES, (vertical, group, program)))
 
 
 def _contract_grains():
@@ -59,13 +64,20 @@ def _row_key_keys(section_keys, catalog):
 	return out
 
 
+def _canon_grain_fields():
+	"""GRAIN_FIELDS re-keyed to the masters' own spelling. The keys are hand-maintained literals and the
+	grains they are looked up by come from the database; keyed raw, a case drift here does not error — it
+	returns an EMPTY tick set and quietly builds a contract that shows a rep nothing."""
+	return {_grain_tuple(*g): keys for g, keys in GRAIN_FIELDS.items()}
+
+
 def _ticked_keys(grain, catalog):
 	"""The field_keys visible in `grain` per the PRIMARY seed — the tick set, by definition, intersected with
 	the catalog rows that actually exist (`catalog`), PLUS the row key of every section the grain can see.
 	The old seeder only ever iterated existing catalog rows, so this stays byte-identical where the full
 	catalog is present, and never ticks a Link to an absent row on a partial catalog (fresh install seeds the
 	catalog before this runs; a missing key simply waits its turn)."""
-	keys = {k for k in GRAIN_FIELDS.get(grain, []) if k in catalog}
+	keys = {k for k in _canon_grain_fields().get(grain, []) if k in catalog}
 	# Section comes off the catalog row (a Link), never from splitting field_key on ':' — that shape is a naming convention, not the routing brain.
 	sections = set(frappe.get_all(
 		"CRM Lead API Field", filters={"field_key": ("in", list(keys))}, pluck="section", distinct=True

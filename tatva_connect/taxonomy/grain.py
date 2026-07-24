@@ -16,6 +16,33 @@ _WEIGHTS = (("program", 4), ("group", 2), ("vertical", 1))
 
 AXES = ("vertical", "group", "program")
 
+# The master each axis is named by. A grain value is that master's PRIMARY KEY, never free text.
+_MASTER = {"vertical": "CRM Vertical", "group": "CRM Group", "program": "CRM Program"}
+
+
+def same(a, b) -> bool:
+	"""Are these two grain axis values the same value?
+
+	MariaDB stores these under utf8mb4_unicode_ci and therefore calls 'GoodFlip' and 'Goodflip' ONE
+	key; Python calls them two strings. Comparing them with `==` is how the app comes to believe a row
+	is missing that the database will refuse to create — and, worse, how a rule scoped to a vertical
+	silently fails to cover its own leads. The database owns the semantics; this matches it.
+	"""
+	return (a or "").casefold() == (b or "").casefold()
+
+
+def canon(axis, value):
+	"""The master's OWN spelling of this value — use it whenever a grain value is written or keyed on.
+
+	`same` makes comparison agree with the database, but a value that is merely equal is not enough
+	when it lands in a composite primary key (`{vertical}::{group}::{program}::...`): there the exact
+	characters ARE the identity. Ask the master. An unknown value is returned untouched so a genuinely
+	missing master still fails loudly at the Link check rather than being silently invented here.
+	"""
+	if not value:
+		return ""
+	return frappe.db.get_value(_MASTER[axis], value, "name") or value
+
 
 def _score(candidate, vertical, group, program):
 	"""Score a candidate against the lead axes, or None if a set axis mismatches."""
@@ -24,7 +51,7 @@ def _score(candidate, vertical, group, program):
 	for axis, weight in _WEIGHTS:
 		cval = candidate.get(axis) or ""
 		if cval:
-			if cval != lead[axis]:
+			if not same(cval, lead[axis]):
 				return None
 			score += weight
 	return score
@@ -58,7 +85,7 @@ def overlaps(candidate, vertical, group, program) -> bool:
 	target = {"vertical": vertical or "", "group": group or "", "program": program or ""}
 	for axis, _weight in _WEIGHTS:
 		cval = candidate.get(axis) or ""
-		if cval and target[axis] and cval != target[axis]:
+		if cval and target[axis] and not same(cval, target[axis]):
 			return False
 	return True
 

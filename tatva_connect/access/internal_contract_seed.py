@@ -142,7 +142,7 @@ GRAIN_FIELDS = {
 		'plan:plan_name',
 		'plan:program_start_date',
 	],
-	('Goodflip', 'Insurers', ''): [
+	('GoodFlip', 'Insurers', ''): [
 		'acq:dx_address_at',
 		'acq:dx_confirmed_at',
 		'acq:dx_details_at',
@@ -215,7 +215,7 @@ GRAIN_FIELDS = {
 		'plan:priority_text',
 		'plan:program_start_date',
 	],
-	('Goodflip', 'Insurers', 'Niva-Bupa'): [
+	('GoodFlip', 'Insurers', 'Niva-Bupa'): [
 		'acq:dx_address_at',
 		'acq:dx_confirmed_at',
 		'acq:dx_details_at',
@@ -288,7 +288,7 @@ GRAIN_FIELDS = {
 		'plan:priority_text',
 		'plan:program_start_date',
 	],
-	('Tatvapractice', 'India', 'Field-Sales'): [
+	('TatvaPractice', 'India', 'Field-Sales'): [
 		'acq:custom_source_campaign',
 		'acq:custom_source_medium',
 		'acq:dx_address_at',
@@ -398,7 +398,7 @@ GRAIN_FIELDS = {
 		'plan:plan_name',
 		'plan:program_start_date',
 	],
-	('Goodflip', 'India', 'Inside-Sales'): [
+	('GoodFlip', 'India', 'Inside-Sales'): [
 		'acq:custom_whatsapp_inbound_count',
 		'acq:signup_date',
 		'acq:user_source',
