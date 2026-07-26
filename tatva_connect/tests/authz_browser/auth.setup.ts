@@ -1,6 +1,5 @@
 import { test as setup, expect, request as pwRequest } from "@playwright/test";
 import * as fs from "fs";
-import * as path from "path";
 
 /**
  * auth.setup.ts — the gatekeeper + login bootstrap.
@@ -17,55 +16,13 @@ import * as path from "path";
  *    The authenticated storageState is saved to .auth/<persona>.json.
  */
 
-const AUTH_DIR = path.join(__dirname, ".auth");
+// The creds/persona helpers live in `harness.ts` — a NON-test module, because Playwright refuses to
+// let a spec import a test file and this IS one. Re-exported so every existing import keeps working.
+import { loadCreds, storageStateFor, forbiddenVerticalsFor, AUTH_STATE_DIR as AUTH_DIR } from "./harness";
+import type { Persona } from "./harness";
 
-export type Persona = {
-  persona: string;
-  email: string;
-  password: string;
-  grain_key: string; // "vertical::group::program"
-};
-
-/** Resolve and parse the creds file. */
-export function loadCreds(): Persona[] {
-  const credsPath =
-    process.env.AUTHZ_CREDS || path.join(__dirname, "authz_creds.json");
-  if (!fs.existsSync(credsPath)) {
-    throw new Error(
-      `authz creds not found at "${credsPath}". Set AUTHZ_CREDS or place ` +
-        `authz_creds.json next to the specs. The Python generator writes it ` +
-        `into the bench site's private files; the runner copies it out.`,
-    );
-  }
-  const raw = fs.readFileSync(credsPath, "utf-8");
-  const creds = JSON.parse(raw) as Persona[];
-  if (!Array.isArray(creds) || creds.length === 0) {
-    throw new Error(`authz creds at "${credsPath}" is empty or not an array.`);
-  }
-  return creds;
-}
-
-/** storageState path for a persona. */
-export function storageStateFor(persona: string): string {
-  return path.join(AUTH_DIR, `${persona}.json`);
-}
-
-/** The vertical a grain persona must NEVER see leak (A2 same-program trap). */
-export function forbiddenVerticalsFor(grainKey: string): string[] {
-  const vertical = (grainKey || "").split("::")[0] || "";
-  // The two grain personas that share program "Inside-Sales":
-  //   grain_4 = Tatvapractice::India::Inside-Sales
-  //   grain_5 = Goodflip::B2C::Inside-Sales
-  // Each must show zero rows from the OTHER vertical's verticals.
-  const ALL_VERTICALS = ["Tatvapractice", "Goodflip", "Goodflip-Care"];
-  // "Goodflip" and "Goodflip-Care" are sibling verticals; a Tatvapractice
-  // persona must see neither; a Goodflip persona must not see Tatvapractice.
-  if (vertical === "Tatvapractice") return ["Goodflip", "Goodflip-Care"];
-  if (vertical === "Goodflip" || vertical === "Goodflip-Care")
-    return ["Tatvapractice"];
-  // Unknown vertical: be conservative — forbid everything that isn't it.
-  return ALL_VERTICALS.filter((v) => v !== vertical);
-}
+export { loadCreds, storageStateFor, forbiddenVerticalsFor };
+export type { Persona };
 
 setup("comms-off interlock", async () => {
   expect(
