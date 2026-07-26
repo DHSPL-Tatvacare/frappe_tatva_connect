@@ -42,6 +42,12 @@ _PERMISSION_TTL = 60
 # One tier of the doctype preference, wide enough to dominate every other factor in the scoring pipeline.
 _TIER_SPREAD = 100
 
+# How long SQLite waits on a locked index before giving up; frappe sets none, so its default of 0 raises on the first collision.
+_BUSY_TIMEOUT_MS = 500
+
+# The ONE title every index write failure is logged under, so a single Error Log notification rule catches them all.
+_WRITE_ERROR = "Search Index Error"
+
 # THE ID RULE, declared ONCE: a unique ID is INPUT — indexed so a punched ID finds its record, never shown in a
 # row except in the one dedicated slot, when that ID is what the user typed. This tuple is the whole declaration:
 # it fills `keys` (searched), stores the value as returned metadata, and names which ID a typed query matched.
@@ -228,6 +234,25 @@ class CRMLeadSearch(SQLiteSearch):
 		if self.__dict__.get("_enabled") is None:
 			self.__dict__["_enabled"] = is_enabled(TOGGLE)
 		return self.__dict__["_enabled"]
+
+	def _set_pragmas(self, cursor, is_read=False):
+		# WAL admits ONE writer and the framework sets no busy timeout, so SQLite's default of 0 raises `database is locked` on the first collision rather than waiting the millisecond the other write takes.
+		super()._set_pragmas(cursor, is_read)
+		cursor.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS};")
+
+	def index_doc(self, doctype, docname):
+		# Runs INLINE in the caller's save (`update_doc_index` is a `*` on_update event, wrapped in nothing), so a failed write leaves a stale row and an Error Log entry instead of costing a rep their work; `_visible_rows` gates every hit through get_list, so a stale row can never be shown.
+		try:
+			super().index_doc(doctype, docname)
+		except Exception:
+			frappe.log_error(title=_WRITE_ERROR, message=f"index {doctype}:{docname}\n\n{frappe.get_traceback()}")
+
+	def remove_doc(self, doctype, docname):
+		# The same rule on the delete leg (`delete_doc_index`, a `*` on_trash event): a deletion the user asked for is never refused because the index would not take it.
+		try:
+			super().remove_doc(doctype, docname)
+		except Exception:
+			frappe.log_error(title=_WRITE_ERROR, message=f"remove {doctype}:{docname}\n\n{frappe.get_traceback()}")
 
 	def build_index(self, batch_size=1000, is_continuation=False):
 		# Both native entrypoints — the enqueued build_index and the 3-hourly build_index_if_not_exists — land here.
@@ -479,10 +504,8 @@ def reindex_lead(lead):
 		if doctype in engine.doc_configs and name:
 			targets.add((doctype, name))
 	for doctype, name in sorted(targets):
-		try:
-			engine.index_doc(doctype, name)
-		except Exception:
-			frappe.log_error(title="Search Reindex Error", message=f"{doctype}:{name} (lead {lead})")
+		# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
+		engine.index_doc(doctype, name)
 
 
 def _enqueue_reindex(lead):
