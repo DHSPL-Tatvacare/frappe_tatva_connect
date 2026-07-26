@@ -104,7 +104,7 @@ def _log_missing(source, live_ids: set) -> None:
 
 
 def _log_questions(source, added: set, removed: set) -> None:
-	"""Names what changed, so a reworded question is seen as the new unmapped key it is rather than as missing data."""
+	"""Names what changed, so a question whose key has changed is reported as the new unmapped key it is rather than as missing data."""
 	_log(
 		source,
 		LOG_TYPE_QUESTIONS,

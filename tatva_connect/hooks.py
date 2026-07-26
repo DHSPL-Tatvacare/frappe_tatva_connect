@@ -283,7 +283,7 @@ scheduler_events = {
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
-		# Nightly: re-read Facebook Pages and lead forms, so a published or reworded question is seen without a button press.
+		# Nightly: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
 		"0 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	},
 }

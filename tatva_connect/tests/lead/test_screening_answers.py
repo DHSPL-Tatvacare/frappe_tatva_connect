@@ -37,7 +37,7 @@ from tatva_connect.tests.api import partner_fixture
 ANSWERS_TABLE = "custom_screening_answers"
 PHONE = "+916100020001"
 
-# The wording marketing shipped. A question is stored under its own wording, so a rewording is simply a
+# The wording as shipped. A question is stored under its own wording, so changed wording is simply a
 # different question, which is the honest reading: it was asked differently.
 RAW_HBA1C = "do_you_know_your_latest_hba1c_level?_(hba1c_is_the_key_marker)"
 RAW_CONDITIONS = "have_you_been_diagnosed_with_any_of_these_conditions?"

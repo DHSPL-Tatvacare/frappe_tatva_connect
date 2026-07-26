@@ -103,8 +103,9 @@ def upsert_lead_form(form: dict, page_id: str) -> None:
 	"""Store a form and its questions, refreshing an existing one. THE form writer: it lives here rather
 	than in the fork because it decides what a question row holds, and that is a rule this app owns.
 
-	Skipping an existing form is what hid every edited form: marketing rewords a question far more often
-	than it publishes a new one, and a reworded question is a new key that nothing would ever see.
+	An existing form is refreshed rather than skipped, which is what hid a changed question set: a question
+	is addressed by its key, so a changed one arrives as a key nothing is mapped to, and a skipped form
+	never surfaced it at all.
 
 	An ABSENT (or null) `questions` key means Graph was not asked, which is not the same as a form
 	carrying none: the stored questions and every operator mapping on them are left exactly as they are.
@@ -147,8 +148,8 @@ def _question_rows(form: dict):
 
 
 def refresh_all_sources() -> None:
-	"""Nightly pass: every enabled Facebook source re-runs discovery, so a form published or reworded
-	today is visible tomorrow without anyone pressing a button.
+	"""Nightly pass: every enabled Facebook source re-runs discovery, so a form published today, and a
+	change to the questions on a form already held, are both visible tomorrow without a button press.
 
 	Gated on its own operator switch like every other automation in this app: off, which is how it ships,
 	the nightly pass does nothing and the forms stay as the last refresh left them.
@@ -217,7 +218,7 @@ def _carry_mappings(existing_rows, questions: list[dict]) -> None:
 	"""A refresh replaces the question rows, so the operator's mapping is carried across onto the question
 	it was made against. Without this every refresh would silently unmap every form that had been mapped.
 
-	Facebook's question `id` is the identifier that survives a rewording, so it is matched on first and
+	Facebook's question `id` is the identifier that survives a change of wording, so it is matched on first and
 	`key` is the fallback for a row stored before an id was kept. A key that appears on more than one
 	stored row with DIFFERENT mappings identifies nothing, so it carries NOTHING rather than applying one
 	operator decision to a question it was never made for: the form shows both questions unmapped, which

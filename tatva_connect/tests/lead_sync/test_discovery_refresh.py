@@ -3,8 +3,8 @@
 """Discovery refreshes rather than skips, and a refresh never costs the operator their mapping.
 
 Discovery used to run once, at source creation, and to skip any Page or form it had already stored. A
-re-pasted token therefore never reached the Page the crawl reads, and a form edited by marketing was
-never re-read, so a reworded question arrived as an answer with nowhere to land.
+re-pasted token therefore never reached the Page the crawl reads, and a form whose questions had changed
+was never re-read, so an answer under the changed key arrived with nowhere to land.
 
 Graph is stubbed throughout: these assert OUR handling of its answer, never Facebook's availability.
 
@@ -124,8 +124,8 @@ class TestFormRefresh(FrappeTestCase):
 		self._store([_question("age_group", "Age group")])
 		self.assertNotIn("hba1c", self._rows())
 
-	def test_a_reworded_question_arrives_as_a_new_key(self):
-		"""Marketing rewords far more often than it adds; the new wording is a new key, and unmapped."""
+	def test_a_changed_question_wording_arrives_as_a_new_key(self):
+		"""A question is addressed by its key, so changed wording is a new key, and it arrives unmapped."""
 		self._store([_question("are_you_physical_active?", "Are you physical active?")])
 		self._store([_question("are_you_physically_active?", "Are you physically active?")])
 		rows = self._rows()
@@ -183,8 +183,8 @@ class TestFormRefresh(FrappeTestCase):
 		self._store([])
 		self.assertEqual(self._rows(), {})
 
-	def test_a_mapping_is_carried_by_question_id_across_a_rewording(self):
-		"""Facebook's question id survives a rewording, so the operator's mapping does too."""
+	def test_a_mapping_is_carried_by_question_id_across_a_wording_change(self):
+		"""Facebook's question id survives a change of wording, so the operator's mapping does too."""
 		self._store([{**_question("are_you_active?", "Are you active?"), "id": "q-stable"}])
 		form = frappe.get_doc("Facebook Lead Form", FORM)
 		form.questions[0].mapped_to_crm_field = IDENTITY_KEY

@@ -399,13 +399,14 @@ AUTOMATIONS = [
 		fires_on="Schedule",
 		trigger_detail="daily 01:00",
 		purpose=(
-			"Each Facebook Page and lead form is re-read from Facebook every night, so a form published "
-			"today and a question reworded today are both visible the next morning, and each Page's own "
-			"access token is renewed in step. Off, the forms and questions stay frozen at whatever the "
-			"last refresh stored, a newly published form is never offered, and a reworded question "
-			"arrives as an answer with nowhere to land.\n"
-			"Example: a campaign form gains a question in the afternoon; by the next morning it is "
-			"listed on the form's mapping table, waiting to be pointed at a screening concept."
+			"Every Facebook Page and lead form is re-read from Facebook each night, and each Page's own "
+			"access token is renewed in the same pass. A form returned for the first time is added with "
+			"its questions; a form already held has its stored questions replaced by the ones Facebook "
+			"returns for it. Off, nothing is re-read: the forms and questions stay as the last refresh "
+			"left them, a form published since is not listed, and an answer to a question that is not "
+			"stored has no mapping to land on.\n"
+			"Example: a form is published in the afternoon; by the next morning it is listed with its "
+			"questions, each waiting to be pointed at a screening concept."
 		),
 		backs=["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	),
