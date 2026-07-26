@@ -317,6 +317,7 @@ def _field_descriptor(f):
 		"target": f.target or "",
 		"section": (f.get("section") or ""),
 		"source": (f.get("source") or ""),
+		"read_only": 0,  # fill-once closes a lead field for THIS lead; stamped by _mark_lead_read_only
 		"depends_on": (f.get("depends_on") or ""),
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
 	})
@@ -678,8 +679,6 @@ def write_lead_fields(lead, fields, values, shown):
 
 	The task keeps no copy (D11). A refusal or a failed lead save throws, which rolls the activity back with
 	it — one transaction, per D31."""
-	from tatva_connect.automation import fields as automation_fields
-
 	# A blank is "not sent", never "erase this" — the rule the partner API already carries, and the reason a
 	# form that merely showed a lead field cannot blank the patient record by being saved without it.
 	changes = {f.fieldname: values.get(f.fieldname) for f in fields
@@ -692,10 +691,45 @@ def write_lead_fields(lead, fields, values, shown):
 	axes = _lead_axes(lead)
 	doc = frappe.get_doc("CRM Lead", lead)
 	for fieldname, value in changes.items():
-		if not automation_fields.is_settable(automation_fields.LEAD_DT, fieldname, axes):
+		# The SAME predicate the form painted read-only with, so the rep is never shown a box this refuses.
+		if not lead_field_is_open(lead, fieldname, axes, doc.get(fieldname)):
 			frappe.throw(_("{0} cannot be written on this lead.").format(fieldname), title=_("Not permitted"))
 		doc.set(fieldname, value)
 	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+
+
+def lead_field_is_open(lead, fieldname, axes, current):
+	"""THE fill-once rule: may this activity form write `fieldname` onto this lead?
+
+	Two conditions, both about the LEAD and neither about the form. The grain's contract must tick the
+	field settable (`automation.fields.is_settable` — the same gate the Set Field action asks, so an
+	activity can never write what an automation may not). And the lead must not already hold a value:
+	a patient record is filled once from an activity and corrected on the lead's own page, never
+	overwritten sideways by a follow-up call.
+
+	ONE predicate, asked twice: `_lead_field_state` paints the form read-only with it, and
+	`write_lead_fields` refuses with it. The rep therefore cannot be shown a box the save would reject."""
+	from tatva_connect.automation import fields as automation_fields
+
+	if not automation_fields.is_settable(automation_fields.LEAD_DT, fieldname, axes):
+		return False
+	return current in (None, "")
+
+
+def _mark_lead_read_only(descriptors, lead, values):
+	"""Stamp `read_only` on every lead-sourced descriptor the fill-once rule closes for THIS lead.
+
+	`read_only` rather than a map of its own because that is the key the fork's controls already bind
+	their `disabled` to (`SidePanelLayout.vue`) — one descriptor shape, no second vocabulary. Answered
+	off the same values the form is prefilled with, so what is greyed out and what the save refuses
+	cannot be two answers."""
+	if not lead:
+		return
+	axes = _lead_axes(lead)
+	for d in descriptors:
+		if (d.get("source") or "") != LEAD_SOURCE:
+			continue
+		d["read_only"] = 0 if lead_field_is_open(lead, d["fieldname"], axes, values.get(d["fieldname"])) else 1
 
 
 def lead_field_values(lead, task_type):
@@ -941,6 +975,7 @@ def type_config(task_type, lead=None):
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
 	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
+	_mark_lead_read_only(cfg["fields"], lead, cfg["lead_values"])
 	return cfg
 
 
