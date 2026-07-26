@@ -52,6 +52,12 @@ def normalise(text):
 	return _SPACE.sub(" ", _PUNCT.sub(" ", (text or "").lower())).strip()
 
 
+def _typed(text):
+	# normalise's twin without the lowercasing: identical token boundaries, the user's own spelling kept, so a
+	# leftover word is shown back as it was typed instead of flattened to lower case.
+	return _SPACE.sub(" ", _PUNCT.sub(" ", text or "")).strip().split()
+
+
 def terms():
 	"""Every term the index can filter on -> the meanings it carries, as ((column, value), ...) in a stable order."""
 	return _vocabulary().terms
@@ -73,12 +79,17 @@ def match(query):
 	"""Split a query into the (column, value) filters the index can apply and the words only full text can."""
 	vocab = _vocabulary()
 	words = normalise(query).split()
+	# The user's own spelling, token for token, so leftover reads back as typed; falls back to the normalised
+	# word if the two tokenisations ever disagree, because a wrong SPELLING is better than a wrong WORD.
+	typed = _typed(query)
+	if len(typed) != len(words):
+		typed = words
 	out = frappe._dict(matched=[], ambiguous=[], leftover=[])
 	i = 0
 	while i < len(words):
 		hit = _longest(vocab, words, i)
 		if not hit:
-			out.leftover.append(words[i])
+			out.leftover.append(typed[i])
 			i += 1
 			continue
 		phrase, meanings = hit
@@ -88,7 +99,7 @@ def match(query):
 		else:
 			# A term that means two things is REPORTED, never resolved; its words still reach the full-text lane.
 			out.ambiguous.append((phrase, meanings))
-			out.leftover.extend(words[i : i + span])
+			out.leftover.extend(typed[i : i + span])
 		i += span
 	return out
 

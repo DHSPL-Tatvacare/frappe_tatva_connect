@@ -20,11 +20,8 @@ def search(query, type=None, limit=20):
 	# Empty for a short/blank query or while dormant; `type` is an optional doctype facet.
 	query = (query or "").strip()
 	engine = CRMLeadSearch()
-	status = _status(engine)
-	if len(query) < _MIN:
-		return {"results": [], "total": 0, "status": status}
-
-	if not engine.is_search_enabled() or not engine.index_exists():
+	status = _status(engine, query)
+	if status != "ready":
 		return {"results": [], "total": 0, "status": status}
 
 	filters = {"doctype": type} if type else None
@@ -71,10 +68,15 @@ def _split(query):
 	return text, {"filters": shown, "text": text}
 
 
-def _status(engine):
-	# Why an empty list is empty — dormant, not yet built, or a real no-match; the engine's own predicates decide it, nothing here re-derives them.
+def _status(engine, query):
+	"""Why an empty list is empty: dormant, too little typed, not yet built, or a real no-match.
+
+	This is the ONE place the query floor is decided. The frontend holds no minimum of its own — it renders
+	the status it is handed — so the rule cannot drift between the two and silently swallow a valid search."""
 	if not engine.is_search_enabled():
 		return "disabled"
+	if len(query) < _MIN:
+		return "too_short"
 	if not engine.index_exists() or not engine._is_indexing_complete():
 		return "building"
 	return "ready"

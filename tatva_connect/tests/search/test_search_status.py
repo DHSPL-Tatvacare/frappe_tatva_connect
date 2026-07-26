@@ -85,13 +85,24 @@ class TestSearchStatus(FrappeTestCase):
 		self.assertEqual(payload["results"], [])
 		self.assertEqual(payload["status"], "ready")
 
-	def test_the_short_query_early_return_still_carries_a_status(self):
-		# The frontend never reaches the empty state without this: a 2-char query returns before any search.
+	def test_a_query_below_the_floor_says_so_rather_than_reporting_ready(self):
+		# The endpoint owns the floor, so it must NAME it: the frontend holds no minimum and renders this status.
+		# Reported "ready" before, which is indistinguishable from a genuine no-match and left the rule duplicated.
 		self._ready_index()
 		payload = search("ka")
 		self.assertEqual(payload["results"], [])
-		self.assertEqual(payload["status"], "ready")
+		self.assertEqual(payload["status"], "too_short")
 
-	def test_the_short_query_early_return_reports_disabled_while_dormant(self):
+	def test_the_floor_is_the_endpoint_s_alone(self):
+		# One clock: a query at the boundary is answered, one below it is refused, and both decisions are the
+		# server's. If a second minimum ever grows on the client this test is what makes the drift visible.
+		self._ready_index()
+		self.assertEqual(search("k").get("status"), "too_short")
+		self.assertEqual(search("ka").get("status"), "too_short")
+		self.assertEqual(search("kav").get("status"), "ready")
+
+	def test_dormant_beats_too_short(self):
+		# A dormant feature is dormant whatever was typed — the operator toggle is never surfaced as a hint.
 		frappe.db.set_value("CRM Tatva Automation", TOGGLE, "enabled", 0)
 		self.assertEqual(search("ka").get("status"), "disabled")
+		self.assertEqual(search("kavita").get("status"), "disabled")
