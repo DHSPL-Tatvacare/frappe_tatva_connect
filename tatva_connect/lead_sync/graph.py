@@ -70,10 +70,11 @@ def usage_records(response) -> list:
 		raw = (getattr(response, "headers", None) or {}).get(header)
 		if not raw:
 			continue
+		# A malformed usage header is Meta's problem, and the response it rides on is still good data we already paid for — so it is skipped, never raised.
 		try:
 			body = frappe.parse_json(raw)
-		except Exception:
-			continue  # an unreadable usage header is not worth failing a good response over
+		except Exception:  # nosec B112 — deliberate: telemetry must not fail a successful fetch
+			continue
 		if not isinstance(body, dict):
 			continue
 		if body and all(isinstance(v, list) for v in body.values()):
