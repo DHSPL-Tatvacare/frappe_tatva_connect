@@ -88,9 +88,7 @@ def _readable_old_homes():
 def ensure_section_rows():
 	"""Idempotent: re-reads the old homes and writes only the row that is missing or disagrees, so a second
 	run changes nothing and an interrupted one heals. Safe to call before the sections exist."""
-	if not frappe.db.table_exists("CRM Task Section"):
-		return  # skip-until-ready: the sections have not synced, so no field has a new home to reach
-	if not frappe.get_all("CRM Task Section", filters={"is_key_value": 1}, limit=1):
+	if not activity_api.sections_ready():
 		return  # skip-until-ready: the default home is seeded in after_migrate, which is what completes this
 	if not _readable_old_homes():
 		return  # done-and-dropped: Phase 7 removed every old home, so no answer is anywhere else any more
@@ -158,6 +156,13 @@ def audit(limit=0):
 	refusal can never disagree. `limit` stops at the first N unhomed, which is all a refusal needs to know.
 	Writes nothing: `_put_section_value` only mutates the loaded doc, which is then discarded."""
 	routed, unhomed = 0, []
+	if not activity_api.sections_ready():
+		# The SAME skip-until-ready guard `ensure_section_rows` has. It was missing here, and this is the
+		# half a column DROP asks before removing an old home: without it the audit raised IndexError deep
+		# inside `field_target` and aborted the migrate — and had it merely returned empty, "nothing is
+		# unhomed" would have been read as "safe to drop" on a site where nothing had been copied yet.
+		# Callers that act on the answer must ask `activity_api.sections_ready()` themselves first.
+		return routed, unhomed
 	if not _readable_old_homes():
 		return routed, unhomed  # every old home is already dropped, so nothing can be sitting in one
 	for task_type in frappe.get_all("CRM Task Type", pluck="name"):

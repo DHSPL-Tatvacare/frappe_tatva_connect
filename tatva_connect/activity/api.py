@@ -50,15 +50,35 @@ def field_target(f):
 		return section, target
 	if target in COMMON_COLUMNS:
 		return None, target
-	return _key_value_section(), f.get("fieldname")
+	key_value = _key_value_section()
+	if key_value is None:
+		# Never (None, fieldname) — that reads as "the task row itself", and the caller would write the
+		# answer to a column of that name which does not exist. Say what is actually wrong instead.
+		frappe.throw(_("No CRM Task Section is declared key-value, so `{0}` has nowhere to land. The "
+		               "declaration is seeded by section_seed.ensure_rows on after_migrate.").format(
+			f.get("fieldname")))
+	return key_value, f.get("fieldname")
 
 
 def _key_value_section():
 	"""The section a field carrying no shape of its own answers in — the one the operator declared
-	key-value, so the default home is read off the declaration and never named in code."""
-	return frappe.get_all(
+	key-value, so the default home is read off the declaration and never named in code.
+
+	None when the declaration has not been seeded yet. `CRM Task Section` rows are written by
+	`section_seed.ensure_rows` on **after_migrate**, which runs AFTER post-model-sync patches — so a patch
+	asking this question on a site mid-upgrade has to be able to hear "not yet" instead of an IndexError
+	that aborts the whole migrate. It did abort one, on 2026-07-27."""
+	rows = frappe.get_all(
 		"CRM Task Section", filters={"is_key_value": 1}, order_by="display_order", limit=1, pluck="name"
-	)[0]
+	)
+	return rows[0] if rows else None
+
+
+def sections_ready():
+	"""Has the operator's CRM Task Section declaration landed? THE readiness question, asked by everything
+	that can run before `after_migrate` has seeded it — so a caller can skip-until-ready rather than crash,
+	and so no caller has to know which row proves it."""
+	return _key_value_section() is not None
 
 
 # The column a declared fieldtype's answer can be COMPARED in beside the one it is read from, and the

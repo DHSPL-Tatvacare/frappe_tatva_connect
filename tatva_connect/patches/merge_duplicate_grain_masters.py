@@ -44,16 +44,20 @@ _AXIS_FIELDNAMES = ("vertical", "group", "psp_group", "crm_group", "program")
 
 
 def execute():
-	for master, old, new in _PAIRS:
-		if frappe.db.exists(master, old):
-			# merge= when the dashed master ALREADY exists (a site that carries BOTH spellings — the very
-			# "two of everything" state this patch remediates), else a plain rename. Assume nothing about
-			# prior state: a bare rename onto an existing name would abort the migrate on DuplicateEntryError.
-			frappe.rename_doc(master, old, new, merge=frappe.db.exists(master, new), force=True)
-		_repoint_user_permissions(master, old, new)          # Dynamic Link — rename_doc misses it
-		_rewrite_data_axes(old, new)                         # axes stored as Data (CRM Picklist Value)
-	_remint_composite_names()                                # names that embed the grain
-	frappe.db.commit()
+	"""SUPERSEDED, and deliberately inert — see `normalise_grain_spelling`, which runs right after.
+
+	This patch aborted a UAT migrate on 2026-07-26. It asked "is this name taken?" with
+	`WHERE BINARY name = %s`, a BYTE comparison, while the PRIMARY KEY it was protecting is
+	`utf8mb4_unicode_ci` and therefore CASE-INSENSITIVE. `Tatvapractice::India::Field-Sales::Unpaid`
+	sat invisibly on the key `TatvaPractice::India::Field-Sales::Unpaid` was being renamed onto, so the
+	rename went out as a plain UPDATE and MariaDB raised 1062. Fifty-one rows would have done this.
+
+	It is left as a no-op rather than repaired because its targets are also out of date: the owner
+	settled the vocabulary on 2026-07-27 (`Tatvapractice`, `Goodflip`, `Pillup`, ...), and this file
+	renames TOWARDS spellings that are no longer authorised — `Pill-Up` above is now `Pillup`. A patch
+	that has already run somewhere cannot be corrected in place anyway; the end state is declared once,
+	in the successor, which assumes nothing about whether this ever ran."""
+	return
 
 
 def _repoint_user_permissions(master, old, new):

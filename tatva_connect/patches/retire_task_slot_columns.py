@@ -30,6 +30,7 @@ second run are both free.
 """
 import frappe
 
+from tatva_connect.activity import api as activity_api
 from tatva_connect.activity import backfill
 from tatva_connect.patches import _schema
 
@@ -79,6 +80,21 @@ def execute():
 		return
 	if not any(_still_declared(f) for f in _DEAD):
 		return  # the end state is already true: nothing to delete, nothing to drop, no task to read
+	if not activity_api.sections_ready():
+		# The copy has not even been POSSIBLE yet — `CRM Task Section` is seeded by section_seed.ensure_rows
+		# on after_migrate, which runs after this line. An audit asked now reports nothing unhomed simply
+		# because it cannot route anything, and reading that as "safe to drop" would delete every answer
+		# still living only in a slot. Refuse; the after_migrate pass copies, and the next migrate drops.
+		frappe.log_error(
+			title="retire_task_slot_columns: refused, the section declaration is not seeded yet",
+			message=(
+				"No CRM Task Section is declared key-value, so no answer can have been copied to its new "
+				"home and the audit cannot route one. The columns were left in place. "
+				"`section_seed.ensure_rows` and `activity.backfill.ensure_section_rows` are after_migrate "
+				"hooks, so this migrate seeds and copies, and the drop lands on the run after it."
+			),
+		)
+		return
 	_routed, unhomed = backfill.audit(limit=_NAME_AT_MOST)
 	if unhomed:
 		# LOUD, and not a throw: this runs inside the migrate (and inside schema_setup's after_migrate pass),

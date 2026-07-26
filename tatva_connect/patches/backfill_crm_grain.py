@@ -20,17 +20,16 @@ from tatva_connect.taxonomy import grain as taxonomy_grain
 
 # The curated registry. (vertical, group, program) — "" program means the combination has no programme axis.
 GRAINS = [
-	("GoodFlip", "India", "Inside-Sales"),
-	("GoodFlip", "Insurers", ""),
-	("GoodFlip", "Insurers", "Niva-Bupa"),
+	("Goodflip", "India", "Inside-Sales"),
+	("Goodflip", "Insurers", "Niva-Bupa"),
 	("Goodflip-Care", "Anaya", ""),
 	("Goodflip-Care", "Anaya", "Nivolumab"),
 	("Goodflip-Care", "Anaya", "Sigrima"),
 	("Goodflip-Care", "Anaya", "Tukavo"),
 	("Goodflip-Care", "Anaya", "Ujvira"),
 	("Goodflip-Care", "Zydus", "Liver-Forever"),
-	("TatvaPractice", "India", "Field-Sales"),
-	("TatvaPractice", "India", "Inside-Sales"),
+	("Tatvapractice", "India", "Field-Sales"),
+	("Tatvapractice", "India", "Inside-Sales"),
 ]
 
 # REJECTED, and why — kept here so a future backfill does not silently re-adopt it from the lead table.

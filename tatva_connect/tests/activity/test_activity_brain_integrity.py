@@ -57,6 +57,10 @@ _NAMED_EXCEPTIONS = {
 		"trigger's own file_url, not caller input, and the shell it lands on was already grain-gated",
 	"notifications.events:_notify_due":
 		"stamps the notified-at marker column so a rep is told once — never an activity field",
+	"automation.actions:_stamp_workflow_token":
+		"ties a raised task back to the node that raised it via `custom_workflow_token` — engine "
+		"bookkeeping on an already-brained task, not a field a user or a rule may set, and written only "
+		"where there is none so a re-used open task keeps its own node",
 	"activity.backfill:_backfill_one":
 		"history reconstruction — there is no submitted form for compute_activity to resolve; every value "
 		"is read by field_column and homed by field_target, the brain's own router (Phase 3)",
