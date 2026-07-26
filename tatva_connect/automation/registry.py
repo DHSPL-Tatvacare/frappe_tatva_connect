@@ -595,7 +595,6 @@ AUTOMATIONS = [
 			"and the upload's signal resumes it weeks later exactly where it parked."
 		),
 		backs=[
-			"tatva_connect.workflow_engine.triggers.run_guards",
 			"tatva_connect.workflow_engine.triggers.on_created",
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			"tatva_connect.workflow_engine.triggers.on_trash",

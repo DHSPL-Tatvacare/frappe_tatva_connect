@@ -34,7 +34,7 @@ LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
 PAGE_DEFAULT = 50
-_NO_JOIN_SOURCES = ("parent", "task", "payload")  # sql_source values answered off the driving row, no join
+_NO_JOIN_SOURCES = ("parent", "task")  # sql_source values answered off the driving row, no join
 
 # Operators a predicate/filter condition may use -> a qb criterion builder.
 _OPS = {
@@ -494,8 +494,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
 	No order_field -> join on parent=name + parenttype ordered by creation; a row_key_field -> a subquery
 	picking the newest row per parent. The driving table's own (parent/task) fields resolve straight off
-	driving_table; payload fields resolve to a JSON_EXTRACT off the task's custom_activity_payload (no
-	join, display-only).
+	driving_table.
 
 	The two term maps differ for exactly one shape (D17): a key-value answer is PROJECTED from the column
 	its section declares and COMPARED in the typed column the catalog names, so a Datetime answer filters
@@ -519,15 +518,6 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			continue
 		if r.sql_source in ("parent", "task"):
 			field_terms[key] = driving_table[r.fieldname]
-			continue
-		if r.sql_source == "payload":
-			# Display-only: JSON_UNQUOTE(JSON_EXTRACT(<task>.custom_activity_payload, '$.<key>')).
-			# The catalog marks payload rows filterable=0/sortable=0, so this term is only ever
-			# projected — it never reaches a WHERE/ORDER BY (enforced in _predicate_where/_apply_*).
-			field_terms[key] = Function(
-				"JSON_UNQUOTE",
-				Function("JSON_EXTRACT", driving_table.custom_activity_payload, f"$.{r.fieldname}"),
-			)
 			continue
 		# child (CRM Lead child table) -> needs a join
 		child_dt = (r.target_doctype or "").strip()

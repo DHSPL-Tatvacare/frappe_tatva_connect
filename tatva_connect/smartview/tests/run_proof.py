@@ -2,10 +2,9 @@
 
     bench --site dev.localhost execute tatva_connect.smartview.tests.run_proof.run
 
-Proves the composer end-to-end on real SQL (unified 9-column activity model):
-  * the promoted CRM Task columns project in a row (custom_outcome / custom_reference / …),
-  * a display-only payload column projects via JSON_EXTRACT(custom_activity_payload),
-  * filter + sort on a PROMOTED column work,
+Proves the composer end-to-end on real SQL:
+  * the retained CRM Task columns project in a row (custom_outcome / custom_scheduled_at / …),
+  * filter + sort on a retained column work,
   * the PQC is ANDed in (a non-privileged user sees FEWER rows than Administrator),
   * `total` (the PQC-scoped count) matches the returned/visible row count.
 
@@ -65,16 +64,14 @@ def _make_lead(first):
 
 
 def _make_task(lead, owner, outcome, order_id, units, shipped_by):
-	# The unified model: outcome/order_id/shipped_by land in promoted columns; the type-specific
-	# leftover (cycle_category) lands in the display-only JSON payload.
+	# Phase 7: the slots and the JSON payload are gone. An answer lives on a retained common column or in
+	# its section row, so this proof writes only what the task row still carries.
 	t = frappe.get_doc({
 		"doctype": "CRM Task", "title": f"{order_id} {TAG}",
 		"custom_task_type": TYPE, "status": "Todo",
 		"reference_doctype": "CRM Lead", "reference_docname": lead,
 		"custom_outcome": outcome,
-		"custom_reference": order_id,
 		"custom_scheduled_at": shipped_by,
-		"custom_activity_payload": frappe.as_json({"cycle_category": f"Cycle-{units}"}),
 	})
 	t.insert(ignore_permissions=True)
 	# stamp owner explicitly (PQC keys off owner/assigned_to)

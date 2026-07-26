@@ -73,8 +73,8 @@ def fields_for_doctype(doctype):
 	TATVA v2 (Task 13): for CRM Task specifically, the meta alone UNDER-describes what a rule can
 	actually reference. A completed activity's real business signal (outcome/training_status/
 	call_completed_next_steps/...) is a per-task-type SCHEMA field (`CRM Task Type Field`) that
-	`activity.api.compute_activity` either promotes onto one of the 9 shared columns or folds into
-	the `custom_activity_payload` JSON blob - it is NEVER a CRM Task doctype field itself. So the
+	`activity.api.compute_activity` homes through `field_target` — a retained common column on the task
+	row, or the section row that addresses it - it is NEVER a CRM Task doctype field itself. So the
 	vocabulary here is unioned with every distinct activity-schema fieldname (meta wins on a name
 	clash) - the SAME union `crm_automation_field._require_real_field` accepts for a can_read/
 	can_set row and `router._activity_values` resolves at fire time (one brain, no drift)."""

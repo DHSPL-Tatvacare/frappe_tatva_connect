@@ -87,6 +87,8 @@ override_whitelisted_methods = {
 	# a best-effort server-side timer (N6); get_quiz_with_questions stamps the open time the timer reads.
 	"lms.lms.doctype.lms_quiz.lms_quiz.submit_quiz": "tatva_connect.access.native_guards.submit_quiz",
 	"lms.lms.utils.get_quiz_with_questions": "tatva_connect.access.native_guards.get_quiz_with_questions",
+	# A CRM Task Type carrying disable_bulk_complete refuses the list's bulk complete AT THE ENTRY POINT — core's _bulk_action swallows a per-doc validate throw into `failed` and the rep still sees success.
+	"frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs": "tatva_connect.tasks.tasks.submit_cancel_or_update_docs",
 }
 
 # Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.
@@ -197,17 +199,10 @@ doc_events = {
 	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
-	# Automation engine (Task 5): the GUARD lane rides validate, synchronous, BEFORE the save commits -
-	# a matched rule's guard actions (e.g. Require Fields) can frappe.throw and block the save.
 	# Automation engine (Task 10): Deleted rides on_trash - the row still exists there (before removal),
 	# so router.on_deleted captures subject + context synchronously; the effect lane still runs
 	# after-commit like Created/Updated (router.py's on_deleted docstring has the full nuance).
 	"*": {
-		# Workflow engine: the Flow GUARD lane — a Require Location / Require Fields Flow enforces at
-		# save time and can frappe.throw to block; dormant + in_workflow-guarded, cheap early-return.
-		"validate": [
-			"tatva_connect.workflow_engine.triggers.run_guards",
-		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
 			# Workflow engine: run/start a Flow when a Created-entry Definition's grain + When match.

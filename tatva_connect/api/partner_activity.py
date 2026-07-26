@@ -3,8 +3,8 @@
 Activities are CRM Tasks of an activity type (a CRM Task Type carrying a grain scope).
 This module is the partner-facing REST surface; it owns NO write logic. Every create/
 update routes through the ONE activity brain (`tatva_connect.activity.api`):
-  * `compute_activity` — grain-validates the type, splits promoted columns vs JSON
-    payload, enforces required, runs the location guard. The ONLY computer.
+  * `compute_activity` — grain-validates the type, routes every answer by `field_target`,
+    enforces required, runs the location guard. The ONLY computer.
   * `save_activity`    — the ONE writer (shell insert + compute + save). No second writer.
   * `list_types_for_lead` / `get_schema` — discovery of the grain-scoped type catalog.
   * `_task_values`     — re-keys a saved task back to its schema fieldnames for reads.
@@ -99,7 +99,7 @@ def _scoped_task(name, mp, is_sysmgr):
 # so a page never re-reads per row.
 _PAYLOAD_FIELDS = [
 	"name", "reference_docname", "custom_task_type", "status", "description",
-	"custom_activity_payload", *activity_brain.PROMOTED_COLUMNS,
+	*activity_brain.COMMON_COLUMNS,
 	"custom_location_latitude", "custom_location_longitude",
 	"custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD,
 ]

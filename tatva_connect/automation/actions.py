@@ -1,31 +1,32 @@
-"""The automation engine's verb handlers — every GUARD/EFFECT action body + its resolver helpers +
+"""The automation engine's verb handlers — every EFFECT action body + its resolver helpers +
 the `VERBS` declaration.
 
 Extracted from `dispatcher.py` (Task 5 co-located the verb bodies with the two-lane executor for the
-initial split; Task 6 finishes the separation so dispatcher.py owns only orchestration — run_guards/
+initial split; Task 6 finishes the separation so dispatcher.py owns only orchestration —
 run_effects/`_run_action` dispatch/Run Log/error factory — and this module owns every verb's
 implementation). A move, not a rewrite (A.8/A.12) — behavior, docstrings and security annotations are
 unchanged from their originals. Every consumer reads `VERBS`
 and `_action_label`; nothing here imports `dispatcher` (the executor depends on the verbs, never the
 reverse — no circular import).
+
+NO VERB MAY BLOCK A SAVE (Phase 11). `Require Fields` and `Require Location` used to live here as GUARD
+verbs that ran inside `validate` and raised, so an authored workflow decided whether a rep could save.
+That is a second brain over a rule the record's own doctype already owns, and it is deleted: a workflow
+decides whether IT runs, never whether a rep may save. What each verb demanded is said instead on the
+Trigger's `predicate` — `is set` / `is not set` already ship (`automation/rules.py:_PRESENCE_OPS`) — and
+the location rule stays declared once on the task type (`visit_mode` / `location_when`), enforced by
+`location.api` off `activity.api.compute_activity` with `tasks.enforce_location` as its backstop.
 """
 import json
 
 import frappe
 from frappe import _
 from frappe.integrations.utils import create_request_log
-from frappe.utils import flt, get_request_session, validate_url
+from frappe.utils import get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends
 from tatva_connect.taxonomy import labels
 from tatva_connect.workflow_engine import refs
-
-# The location guard reads a CRM Task's own fields, so it names them in the CRM Task namespace. Composed
-# through `refs.of_record` rather than typed as `"crm_task.custom_task_type"`: the slug is `frappe.scrub`'s
-# to decide, and a hand-spelled one is a second rule about the same name.
-_TASK_TYPE_REF = refs.of_record("CRM Task", "custom_task_type")
-_TASK_LAT_REF = refs.of_record("CRM Task", "custom_location_latitude")
-_TASK_LNG_REF = refs.of_record("CRM Task", "custom_location_longitude")
 
 
 def _action_label(a):
@@ -73,57 +74,6 @@ class _ParkSignal(Exception):
 # A workflow must not hang on an endpoint that never answers; a timeout is the `failed` output.
 _API_TIMEOUT_SECONDS = 30
 _LOG_LIMIT = 10000  # an Integration Request records the shape of an answer, never an unbounded body
-
-
-def _action_require_fields(action, subject, context):
-	"""REQUIRE_FIELDS (guard, Task 5) — the first guard verb, exercising the guard lane end to end.
-	Comma-separated fieldnames read off the rule's subject (the sync context `run_guards` built); a
-	blank one blocks the save. Fail-closed, native `frappe.throw` — this raise IS the block and must
-	reach `validate` unswallowed (S.1/S.3)."""
-	for fieldname in (action.require_fields or "").split(","):
-		fieldname = fieldname.strip()
-		if not fieldname:
-			continue
-		if context.get(fieldname) in (None, ""):
-			frappe.throw(_("Field {0} is required").format(fieldname))
-
-
-def _action_require_location(action, subject, context):
-	"""REQUIRE_LOCATION (guard, Task 8) — the second guard verb, same shape as Require Fields but
-	delegating the required-decision to the ONE existing brain (location.api.location_required, A.8) —
-	never a second copy of that logic. `subject` is the lead the router's guard lane resolved (the
-	rule's subject); `context` is the triggering doc's own field dict (the same sync context Require
-	Fields reads), so a rule On CRM Task Updated reads its custom_task_type / custom_location_latitude /
-	custom_location_longitude straight off it. Fail-closed, native `frappe.throw` — same message intent
-	as the `tasks.enforce_location` hook this verb supersedes once a rule is authored for a task type."""
-	from tatva_connect.location import api as location_api
-
-	radius = location_api.location_required(context.get(_TASK_TYPE_REF), subject, context)
-	if radius is None:
-		return  # not required for this task type / submitted values — same non-match as the old hook
-	lat, lng = context.get(_TASK_LAT_REF), context.get(_TASK_LNG_REF)
-	if not (lat and lng):
-		frappe.throw(
-			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
-			  "Tasks list or open the task."),
-			title=_("Location required"),
-		)
-	geofence = flt(action.geofence_meters)
-	if geofence <= 0:
-		return  # no radius configured on this action — the location_required check above is enough
-	site_lat, site_lng = frappe.db.get_value(
-		"CRM Lead", subject, ["custom_clinic_latitude", "custom_clinic_longitude"]
-	) or (None, None)
-	if not (site_lat and site_lng):
-		return  # no clinic anchor yet to measure against — nothing to enforce a radius on
-	distance = location_api.haversine(flt(lat), flt(lng), site_lat, site_lng)
-	if distance > geofence:
-		frappe.throw(
-			_("You are {0} m from the doctor's location — outside the allowed {1} m geofence.").format(
-				round(distance), geofence
-			),
-			title=_("Out of range"),
-		)
 
 
 # -- the record a verb acts on ------------------------------------------------
@@ -720,19 +670,21 @@ def wait_resume_at(wait_expression, context, base):
 
 
 
-# The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by both
-# `run_guards` (guard-lane actions) and `run_effects`/`_run_action` (effect-lane actions). Adding a
-# verb = one row here, never a second lane table. `Require Fields` is the first guard verb (Task 5);
-# `Require Location` (Task 8) is the second. `CRMAutomationRule.validate()` rejects any action_type
-# not present here at author time (Task 8) — a verb sitting in the Select with no row here (e.g. Wait,
-# before Task 9) can never reach a rule.
+# The ONE action-lane registry (A.8): every verb's lane is declared exactly once here, read by
+# `run_effects`/`_run_action`. Adding a verb = one row here, never a second lane table.
+# `CRMAutomationRule.validate()` rejects any action_type not present here at author time (Task 8) — a
+# verb sitting in the Select with no row here (e.g. Wait, before Task 9) can never reach a rule.
 # THE verb declaration. One entry per verb: which lane it runs in, which handler runs it, how it reads
 # to an author, and the parameters it takes. The parameters used to live in `describe._VERB_PARAMS`,
 # which meant the thing that DECLARED a verb's inputs and the thing that READ them were in different
 # modules and could disagree. They are now next to the handler that consumes them.
 #
-#   lane "guard"  — runs inside validate and may BLOCK a save by raising.
 #   lane "effect" — runs after the save, inside the node's savepoint, and may never block.
+#
+# There is NO guard lane any more (Phase 11): `Require Fields` and `Require Location` were the only two
+# verbs in it, they ran inside `validate` and raised, and a workflow that can refuse a rep's save is a
+# second brain over the record's own rules. What they demanded is a Trigger `predicate` about the
+# workflow itself; the location rule is the task type's, enforced once by `location.api`.
 #
 # `emits` are the run-state VARIABLES a verb writes, so a downstream node can be offered them instead of
 # asking the author to type a name from memory. Static keys are listed here; a verb whose keys depend on
@@ -746,22 +698,6 @@ def wait_resume_at(wait_expression, context, base):
 # names are declared here so a Wait offers a CHOICE rather than a free-text box: a typo in an event name
 # used to mean a run that parks for ever with nothing able to wake it.
 VERBS = {
-	"Require Fields": {
-		"lane": "guard", "handler": _action_require_fields,
-		"label": "Require Fields",
-		"description": "Refuses the save unless every named field has a value.",
-		"params": [
-			{"name": "require_fields", "label": "Fields", "type": "Small Text"},
-		],
-	},
-	"Require Location": {
-		"lane": "guard", "handler": _action_require_location,
-		"label": "Require Location",
-		"description": "Refuses the save unless the record carries a location inside the geofence.",
-		"params": [
-			{"name": "geofence_meters", "label": "Geofence Meters", "type": "Int"},
-		],
-	},
 	"Assign to User": {
 		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD,
 		"label": "Assign to User",
@@ -971,7 +907,8 @@ def handler_of(verb):
 
 
 def verbs_in_lane(lane):
-	"""Every verb in a lane, in declaration order. The ONE way to ask 'what can guard' / 'what can act'."""
+	"""Every verb in a lane, in declaration order. The ONE way to ask 'what can act'. `guard` is empty by
+	construction now (Phase 11) — no verb may block a save — and asking for it must answer nothing."""
 	return [verb for verb, declared in VERBS.items() if declared["lane"] == lane]
 
 

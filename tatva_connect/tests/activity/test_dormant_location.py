@@ -86,12 +86,14 @@ class TestDormantLocationWritesNothing(unittest.TestCase):
 		with patch("tatva_connect.location.api.is_location_tracked", return_value=None):
 			name = save_activity(self.lead.name, self.task_type, {}, task=None)
 		row = frappe.db.get_value("CRM Task", name,
-		                          ["custom_task_type", "status", "custom_activity_payload",
+		                          ["custom_task_type", "status",
 		                           "reference_doctype", "reference_docname"], as_dict=True)
 		self.assertEqual(row.custom_task_type, self.task_type)
 		self.assertEqual(row.reference_docname, self.lead.name, "the task must still bind to its lead")
-		self.assertIsNotNone(row.custom_activity_payload, "compute still ran")
-		self.assertIn(row.status, ("Todo", "Done"))
+		# Phase 7 dropped the JSON payload whose mere presence used to prove the compute ran. The status it
+		# DERIVES from the type is the surviving proof: a raw insert would have left the doctype default.
+		logged = frappe.db.get_value("CRM Task Type", self.task_type, "is_logged_complete")
+		self.assertEqual(row.status, "Done" if int(logged or 0) else "Todo", "compute still ran")
 
 	def test_a_TRACKED_grain_still_writes_its_audit(self):
 		"""The other direction. Switch the feature ON and the trail comes back, shell and all — the

@@ -1,8 +1,8 @@
 """The activity engine's server brain.
 
 An "activity" is a CRM Task of an activity type (a CRM Task Type whose composite key carries
-a grain), logged complete on save. One writer (`save_activity`) splits the submitted form
-into first-class columns + a JSON payload. One projection (`lead_timeline`) feeds BOTH
+a grain), logged complete on save. One writer (`save_activity`) routes every submitted answer
+through `field_target` — the retained common columns, or a section child row. One projection (`lead_timeline`) feeds BOTH
 the SPA Activity timeline and the Desk Lead timeline. Availability is grain-scoped through
 the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or grain.
 Ships dormant: a CRM Task Type with an all-blank grain never surfaces as an activity.
@@ -18,16 +18,6 @@ from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datet
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
-
-# The 9 promoted CRM Task columns an activity field may route to (the schema field's `target`).
-# Anything else in the schema goes to the JSON payload (display-only). See
-# docs/plans/2026-06-21-activity-engine-unified-design.md §4.
-PROMOTED_COLUMNS = (
-	"custom_outcome", "custom_reference", "custom_asm",
-	"custom_scheduled_at", "custom_followup_at",
-	"custom_key_date_1", "custom_key_date_2", "custom_key_date_3", "custom_key_date_4",
-)
-
 
 # The common CRM Task columns the plan RETAINS, so a field naming one keeps the home it already has
 # (§8 rule 2). Nothing else is enumerated: a slot is simply a target neither a section nor this claims.
@@ -50,16 +40,8 @@ RULE_OPERATORS = (*RULE_VALUE_OPERATORS, "is set", "is not set")
 LEAD_SOURCE = "Lead"
 
 
-def field_column(f):
-	"""The promoted CRM Task column a schema field's answer lived in BEFORE Phase 5, or None when it lived
-	in the JSON payload. No writer routes by it any more — `field_target` is the one write seam. It survives
-	as the HISTORY reader's rule (`_legacy_task_values`, which the backfill reads by) and dies in Phase 7."""
-	target = f.get("target") or ""
-	return target if target in PROMOTED_COLUMNS else None
-
-
 def field_target(f):
-	"""THE home a declared activity field lands in — `(section_key, address)`, section None meaning the task row itself. Since Phase 5 it is the only write seam: every writer asks it and no writer asks field_column."""
+	"""THE home a declared activity field lands in — `(section_key, address)`, section None meaning the task row itself. Since Phase 5 it is the ONLY write seam, and since Phase 7 the only read seam too: there is no second home left to ask about."""
 	target = f.get("target") or ""
 	section = f.get("section") or ""
 	if section and target and frappe.get_meta(
@@ -155,12 +137,11 @@ def set_schema_field(task, task_type, fieldname, value):
 	"""Write ONE declared activity-schema field onto an existing CRM Task, routed by the SAME rule
 	compute_activity uses (field_target): a field the task row keeps lands on its retained common column,
 	every other answer lands in the section row that addresses it. Raises if the field is not declared on
-	the type — so no out-of-declaration key can be poked into the payload (the second-writer bug this
-	replaces). Returns True iff it changed.
+	the type — so no out-of-declaration key can be poked into a home nothing declared (the second-writer
+	bug this replaces). Returns True iff it changed.
 
-	Phase 5: the slot leg is gone. A slot column is never written again — it keeps the history it already
-	holds until Phase 7 drops it. The JSON payload key stays because it is still what `activity_is_unlogged`
-	reads; it dies with the slots."""
+	Phase 7: the slot columns and the JSON payload are gone, so a field the task row does not keep has
+	exactly ONE home and `_put_section_value` is the whole of the write."""
 	f = next((x for x in frappe.get_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
 	if not f:
 		frappe.throw(_("{0} is not a declared field of activity type {1}.").format(fieldname, task_type))
@@ -171,12 +152,7 @@ def set_schema_field(task, task_type, fieldname, value):
 			return changed
 		task.set(column, value)
 		return True
-	payload = frappe.parse_json(task.custom_activity_payload) if (task.custom_activity_payload or "").strip() else {}
-	if payload.get(fieldname) == value:
-		return changed
-	payload[fieldname] = value
-	task.custom_activity_payload = frappe.as_json(payload)
-	return True
+	return changed
 
 
 def _lead_axes(lead):
@@ -263,12 +239,12 @@ def activity_is_unlogged(doc):
 		return False
 	if not _type_has_schema(doc.custom_task_type):
 		return False
-	# save_activity always writes a payload string (even "{}") + the promoted cols; a raw
-	# set_value(status=Done) leaves the payload untouched (None/blank). So a present payload OR
-	# any promoted value means the form was submitted -> logged.
-	if (doc.custom_activity_payload or "").strip():
+	# Phase 7 dropped the JSON payload this used to read, so "was the form submitted?" is asked of the
+	# storage the writer actually fills: a retained common column, or a row in one of the declared sections.
+	# A raw set_value(status=Done) fills neither, which is the whole of what this backstop is for.
+	if any(doc.get(c) for c in COMMON_COLUMNS):
 		return False
-	return not any(doc.get(f) for f in PROMOTED_COLUMNS)
+	return not any(doc.get(s.child_table_field) for s in _sections() if s.child_table_field)
 
 
 @frappe.whitelist()
@@ -590,11 +566,11 @@ def _required_here(f, shown, live):
 def compute_activity(lead, task_type, values, task=None):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
 	grain + required, routes every answer by `field_target`, and runs the location guard (set/check the
-	clinic anchor, resolve the address). Returns a dict of CRM Task fieldname -> value (status, payload,
+	clinic anchor, resolve the address). Returns a dict of CRM Task fieldname -> value (status,
 	the retained common cols, location cols, and the section child rows keyed by their Table field, which
-	Document.update applies natively). Since Phase 5 no slot column is written: a field the task row does
-	not keep answers in its section row, and the payload key it also carries dies with the slots in Phase
-	7 — `activity_is_unlogged` still reads it. Raises on out-of-scope / missing /
+	Document.update applies natively). Since Phase 7 there is nowhere else to write: a field the task row
+	does not keep answers in its section row, and the slot columns and JSON payload are gone. Raises on
+	out-of-scope / missing /
 	out of range. Used by BOTH save paths: save_activity (complete/update existing) and the native
 	new-task create (the form script stamps these onto the doc before insert). No second writer.
 
@@ -612,7 +588,7 @@ def compute_activity(lead, task_type, values, task=None):
 	schema = compiled_fields(tt)
 	shown = _shown_fieldnames(schema, values)
 	live = _inert(schema, values, shown)
-	promoted, payload, staged = {}, {}, {}
+	promoted, staged = {}, {}
 	for f in schema:
 		val = values.get(f.fieldname)
 		if f.fieldname not in shown:
@@ -630,8 +606,6 @@ def compute_activity(lead, task_type, values, task=None):
 		section_key, column = field_target(f)
 		if section_key is None:
 			promoted[column] = val
-		else:
-			payload[f.fieldname] = val
 		_stage_section_value(staged, f, val)
 
 	# The lead-sourced answers, written to the LEAD in this same transaction (D31) — before the task fields are
@@ -642,7 +616,6 @@ def compute_activity(lead, task_type, values, task=None):
 	_validate_asm(promoted.get("custom_asm"))
 
 	fields = {
-		"custom_activity_payload": frappe.as_json(payload),
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
 		**promoted,
 		**staged,
@@ -821,8 +794,8 @@ def lead_task_board(lead):
 		fields=[
 			"name", "title", "custom_task_type", "status", "priority", "due_date",
 			"assigned_to", "owner", "creation", "modified", "modified_by",
-			"custom_completed_on", "description", "custom_activity_payload",
-			*PROMOTED_COLUMNS,
+			"custom_completed_on", "description",
+			*COMMON_COLUMNS,
 			"custom_location_latitude", "custom_location_longitude",
 			"custom_location_address", "custom_location_captured_at",
 		],
@@ -916,8 +889,8 @@ def task_detail(task):
 	r = frappe.db.get_value(
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date", "start_date",
-		 "assigned_to", "owner", "creation", "description", "custom_activity_payload",
-		 *PROMOTED_COLUMNS,
+		 "assigned_to", "owner", "creation", "description",
+		 *COMMON_COLUMNS,
 		 "custom_location_latitude", "custom_location_longitude",
 		 "custom_location_address", "custom_location_captured_at",
 		 "reference_doctype", "reference_docname"],
@@ -1059,27 +1032,6 @@ def _task_values(r, cfg, rows=None):
 	return vals
 
 
-def _legacy_task_values(r, cfg):
-	"""The OLD homes — the JSON payload merged with the promoted columns, routed by `field_column`.
-
-	The backfill's reader, and only the backfill's: a migration reads where a value IS today, which is the
-	whole of what it has to move. Dies with the slots in Phase 7."""
-	vals = {}
-	if (r.custom_activity_payload or "").strip():
-		try:
-			vals.update(frappe.parse_json(r.custom_activity_payload) or {})
-		except Exception:
-			frappe.log_error(f"activity: bad payload on task {r.name}")
-	if cfg:
-		for f in cfg["fields"]:
-			tgt = field_column(f)
-			if tgt and r.get(tgt) not in (None, ""):
-				vals[f["fieldname"]] = str(r.get(tgt))
-	if r.description:
-		vals.setdefault("notes", r.description)
-	return vals
-
-
 def _task_location(r):
 	"""Captured-location state for a task card — None if no fix was recorded."""
 	if not (r.custom_location_latitude and r.custom_location_longitude):
@@ -1147,8 +1099,8 @@ def lead_timeline(lead):
 		"CRM Task",
 		filters={"reference_docname": lead, "custom_task_type": ["in", list(activity_types)]},
 		fields=["name", "creation", "modified", "status", "custom_task_type", "description",
-				"custom_activity_payload", "custom_automated",
-				"assigned_to", "owner", *PROMOTED_COLUMNS,
+				"custom_automated",
+				"assigned_to", "owner", *COMMON_COLUMNS,
 				"custom_location_latitude", "custom_location_longitude",
 				"custom_location_address", "custom_location_captured_at"],
 		order_by="creation desc",

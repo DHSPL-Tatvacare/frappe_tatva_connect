@@ -49,18 +49,6 @@ def _subject_options():
 	return sorted(SUBJECTS)
 
 
-def _guard_verbs():
-	"""The verbs that may be declared as Requirements — read from the automation engine's ONE lane table.
-
-	A requirement runs SYNCHRONOUSLY inside validate and blocks the save by raising, so only a verb the
-	lane table marks `guard` belongs here. Reading the table rather than listing the verbs means a guard
-	added there is offerable the same day, and an effect verb can never be declared as a requirement.
-	"""
-	from tatva_connect.automation import actions
-
-	return sorted(actions.verbs_in_lane("guard"))
-
-
 def _field(name, label, fieldtype, **kwargs):
 	"""One config field a node type declares. Shape matches the builder's verb params, so the inspector
 	renders a node's config and an action's params with ONE renderer, not two.
@@ -84,7 +72,6 @@ NODE_TYPES = {
 			_field("group", "Group", "Grain", link="CRM Group"),
 			_field("program", "Program", "Grain", link="CRM Program"),
 			_field("predicate", "Only when", "Predicate"),
-			_field("requirements", "Requirements", "Requirements", verbs=_guard_verbs()),
 		],
 	},
 	"Branch": {
@@ -609,27 +596,6 @@ def _option_problems(value, field, config, context):
 	]
 
 
-def _requirement_problems(value, field, config=None, context=None):
-	"""Every rule a Requirements value must satisfy. Empty is fine — a workflow may demand nothing."""
-	if not value:
-		return []
-	if not isinstance(value, list):
-		return [_("{0} must be a list of requirements.").format(field["label"])]
-	problems = []
-	allowed = field.get("verbs") or []
-	for entry in value:
-		if not isinstance(entry, dict) or not entry.get("verb"):
-			problems.append(_("Every requirement needs a verb."))
-			continue
-		if entry["verb"] not in allowed:
-			problems.append(
-				_("{0} cannot be a requirement — a requirement must block the save. Choose one of: {1}")
-				.format(entry["verb"], ", ".join(allowed))
-			)
-	return problems
-
-
-
 # `scalar` — does the stored value fit on a line as itself? A list or a tree does not, and a card that
 # prints one shows `[object Object]`. `summary` is how such a value is NAMED instead: `{"count": noun}`
 # renders "3 required", `{"phrase": text}` a fixed sentence where a count means nothing. Every non-scalar
@@ -657,7 +623,6 @@ def _requirement_problems(value, field, config=None, context=None):
 #   Predicate          the tree is well formed and its operators exist.
 #   Mapping            every captured name is a legal variable name.
 #   Value Map          no check — its rows are validated by the `value_rows` read kind.
-#   Requirements       every requirement names a verb the guard lane actually declares.
 #   Button List        no check — a button is an id and a label; a duplicate id is caught where it
 #                      becomes an edge, by `outputs_for`.
 #   Target/Node/Outcome  no check — all three name something ELSEWHERE in the graph, so they are answered
@@ -676,7 +641,6 @@ FIELD_TYPES = {
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
-	"Requirements": {"control": "requirements", "check": _requirement_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "required"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
 	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},

@@ -1,17 +1,17 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Phase 2 of docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md: every write lands in BOTH
-homes.
+"""Phase 2 of docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md: every write lands in the
+home `field_target` names.
 
-An activity answer lives today in one of two places — a promoted CRM Task column, or a key in the JSON
-payload. Neither survives the plan: the slots have no meaning (`custom_key_date_1` is "Visit Date" on one
-type and "Sample Collected" on another) and the payload cannot be filtered or sorted at all. The new home
-is a section child row, named by `field_target` and by nothing else.
+An activity answer used to live in one of two places — a promoted CRM Task column, or a key in the JSON
+payload. Neither survived the plan: the slots had no meaning (`custom_key_date_1` was "Visit Date" on one
+type and "Sample Collected" on another) and the payload could not be filtered or sorted at all. The new
+home is a section child row, named by `field_target` and by nothing else.
 
-Between the two homes there must be a phase where BOTH are true, or a backfill has nothing to reconcile
-against and a flipped read has nothing to read. That phase is this one, and this module is its proof: for
-every shape a declared field can take, the value the rep submitted is asserted in its old home AND in the
-new one, equal. Nothing here reads the new rows in production yet — that is Phase 4.
+Between the two homes there was a phase where BOTH were true, so a backfill had something to reconcile
+against and a flipped read had something to read. Phase 5 then dropped the slot leg and Phase 7 dropped the
+columns themselves, so what this module now proves is the surviving half: for every shape a declared field
+can take, the value the rep submitted is asserted at the ONE address the router names.
 
 The four shapes are the §8 routing table, and they are asserted through the entry point a rep actually
 uses (`save_activity`), never by calling the router and believing it:
@@ -19,11 +19,11 @@ uses (`save_activity`), never by calling the router and believing it:
   1. a field naming a column of its section's target doctype  -> that section's child row
   2. a field naming a retained common CRM Task column         -> the task row, which already IS the new home
   3. a field naming a dying slot                              -> a key-value answer row of its own fieldname
-  3. a field naming no target at all (the JSON payload)       -> the same, by the same rule
+  3. a field naming no target at all                          -> the same, by the same rule
 
-Phase 5 has since retired the slot leg: a dying slot's old home is no longer written, so this module now
-asserts that shape in its new home only, and `tests/activity/test_no_slot_writes.py` owns the property
-that the column stays untouched. The payload — the other old home — is still written and still asserted.
+Phase 7 has since retired both old homes outright: the five dying slot columns and the JSON payload are
+gone from `tabCRM Task`, and `tests/migration/test_retire_task_slot_columns.py` owns that drop. There is no
+second address left for this module to check, which is the point.
 
 The last two are ONE rule, and that is the point: the router enumerates no field and no slot, so a slot
 is simply anything rules 1 and 2 did not claim. The fixture therefore declares its own targets rather
@@ -39,6 +39,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import get_datetime
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.activity import backfill
 from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ Dual Write Probe"
@@ -100,7 +101,7 @@ class TestActivityDualWrite(FrappeTestCase):
 			# Rule 3 — a dying slot. Promoted today, claimed by no section and no common column tomorrow.
 			{"label": "ZZ Sample Collected", "fieldname": "zz_sample_collected",
 			 "fieldtype": "Datetime", "target": DYING_SLOT},
-			# Rule 3 — no target at all: today's JSON payload, tomorrow the same answer row, same rule.
+			# Rule 3 — no target at all: the JSON payload once, the same answer row now, by the same rule.
 			{"label": "ZZ Remark", "fieldname": "zz_remark", "fieldtype": "Small Text"},
 			# Rule 2 — a retained common column: the task row already IS its new home.
 			{"label": "ZZ Outcome", "fieldname": "zz_outcome", "fieldtype": "Data", "target": RETAINED_COMMON},
@@ -130,10 +131,10 @@ class TestActivityDualWrite(FrappeTestCase):
 		"""A fixture missing a shape would prove the router for the shapes it happens to carry and no more."""
 		self.assertIsNotNone(self.column_section, "no section declares real named columns — rule 1 is untestable")
 		self.assertTrue(self.key_value, "no section is declared key-value — rule 3 has no home")
-		self.assertIn(DYING_SLOT, activity_api.PROMOTED_COLUMNS,
-					  f"`{DYING_SLOT}` is not promoted today — it is no longer a dying slot")
+		self.assertIn(DYING_SLOT, backfill.PROMOTED_COLUMNS,
+					  f"`{DYING_SLOT}` was never a promoted column — it is no longer a dying slot")
 		self.assertNotIn(DYING_SLOT, activity_api.COMMON_COLUMNS,
-						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually drops")
+						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually dropped")
 		self.assertIn(RETAINED_COMMON, activity_api.COMMON_COLUMNS,
 					  f"`{RETAINED_COMMON}` is not a retained common column — rule 2 is untestable")
 
@@ -154,28 +155,24 @@ class TestActivityDualWrite(FrappeTestCase):
 		"""Through the entry point the rep uses. Each shape is checked at BOTH addresses, and equal."""
 		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED))
 		answers = self._answers(task)
-		payload = frappe.parse_json(task.custom_activity_payload)
 
-		# Rule 3, dying slot: its answer row and the typed column beside it — Phase 5 retired the slot leg.
+		# Rule 3, dying slot: its answer row and the typed column beside it — the slot column is gone.
 		self.assertEqual(answers["zz_sample_collected"].get(self.key_value.value_field),
 						 SUBMITTED["zz_sample_collected"], "the slot's value never reached its answer row")
 		self.assertEqual(get_datetime(answers["zz_sample_collected"].value_datetime),
 						 get_datetime(SUBMITTED["zz_sample_collected"]),
 						 "a declared Datetime did not land in the column a date can be compared in")
 
-		# Rule 3, payload field: the payload key still carries it, and an answer row of the same name does too.
-		self.assertEqual(payload.get("zz_remark"), SUBMITTED["zz_remark"], "the old home stopped being written")
-		self.assertEqual(answers["zz_remark"].get(self.key_value.value_field), payload.get("zz_remark"),
-						 "the payload key and its answer row disagree — they are the same answer, 1:1")
+		# Rule 3, former payload field: an answer row of its own name is now the whole of where it lives.
+		self.assertEqual(answers["zz_remark"].get(self.key_value.value_field), SUBMITTED["zz_remark"],
+						 "a field that named no target did not reach its answer row")
 
 		# Rule 2: the common column IS the new home, so no answer row shadows it.
 		self.assertEqual(task.get(RETAINED_COMMON), SUBMITTED["zz_outcome"])
 		self.assertNotIn("zz_outcome", answers,
 						 "a retained common column was ALSO copied into an answer row — two homes, one field")
 
-		# Rule 1: the section's own column carries it, alongside the payload key that carries it today.
-		self.assertEqual(payload.get("zz_column_answer"), SUBMITTED["zz_column_answer"],
-						 "the old home stopped being written")
+		# Rule 1: the section's own column, by its real name, read off the declaration.
 		self.assertEqual(self._column_row(task).get(self.column), SUBMITTED["zz_column_answer"],
 						 "a field naming a real column of its section did not land in it")
 
@@ -204,9 +201,8 @@ class TestActivityDualWrite(FrappeTestCase):
 
 		task = frappe.get_doc("CRM Task", name)
 		answers = self._answers(task)
-		self.assertEqual(frappe.parse_json(task.custom_activity_payload).get("zz_remark"), "ZZ set by automation")
 		self.assertEqual(answers["zz_remark"].get(self.key_value.value_field), "ZZ set by automation",
-						 "the single-field writer wrote the old home only")
+						 "the single-field writer did not reach the answer row")
 		self.assertEqual(
 			len([r for r in task.get(self.key_value.child_table_field)
 				 if r.get(self.key_value.row_key_field) == "zz_remark"]),

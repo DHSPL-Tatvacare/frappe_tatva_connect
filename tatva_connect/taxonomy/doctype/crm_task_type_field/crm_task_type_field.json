@@ -31,7 +31,7 @@
   },
   {
    "columns": 2,
-   "description": "Stable key used in the JSON payload and required-validation.",
+   "description": "Stable key this field is stored and addressed by, and the name a rule targets.",
    "fieldname": "fieldname",
    "fieldtype": "Autocomplete",
    "in_list_view": 1,
@@ -96,7 +96,7 @@
   },
   {
    "columns": 2,
-   "description": "Optional: the column on the section's Target DocType this field writes to. Blank = stored in the JSON payload (display-only).",
+   "description": "Optional: the column on the section's Target DocType this field writes to. Blank = stored as an answer row addressed by its fieldname.",
    "fieldname": "target",
    "fieldtype": "Data",
    "in_list_view": 1,

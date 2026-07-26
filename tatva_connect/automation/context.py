@@ -123,7 +123,9 @@ def field_types_for(doctype):
 	activity-schema fields by LOGICAL name."""
 	from tatva_connect.workflow_engine import refs
 
-	return {f["key"]: f["type"] for f in refs.readable_for(doctype)}
+	# `readable_for` hands back the NAMESPACED `ref` (`crm_lead.mobile_no`) — the same vocabulary
+	# `context_for` keys by. Asking for the bare `key` it stopped emitting raised on every predicate.
+	return {f["ref"]: f["type"] for f in refs.readable_for(doctype)}
 
 
 def watchable_fields_for(doctype):

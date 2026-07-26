@@ -38,11 +38,16 @@ def build_payload(workflow):
 	Self-contained by construction: every node inlines its own edges and actions, so a frozen version
 	needs nothing else to execute and editing a workflow can never reach a Run already in flight.
 	"""
+	# The grain lives on the header under its dispatch names (`trigger_vertical`, ...). Which column carries
+	# which axis is declared ONCE, by the controller's TRIGGER_INDEX; read it rather than restate it.
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import TRIGGER_INDEX
+
+	column_for = {axis: column for column, axis in TRIGGER_INDEX.items()}
 	return {
 		"workflow_name": workflow.workflow_name,
-		"vertical": workflow.vertical or "",
-		"group": workflow.group or "",
-		"program": workflow.program or "",
+		"vertical": workflow.get(column_for["vertical"]) or "",
+		"group": workflow.get(column_for["group"]) or "",
+		"program": workflow.get(column_for["program"]) or "",
 		"entry_node": workflow.entry_node or "",
 		"nodes": [_freeze_node(n) for n in _nodes_of(workflow.name)],
 	}

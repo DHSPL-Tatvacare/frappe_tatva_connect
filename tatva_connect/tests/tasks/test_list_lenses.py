@@ -18,8 +18,10 @@ The lenses are resolved through `frappe.override_whitelisted_method`, exactly as
 resolves them, so this also proves the `hooks.py` wiring and not merely that the module exists.
 
 RED before Phase 6: with no override registered the map resolves to the native function, and
-`test_no_slot_or_operational_field_reaches_a_task_lens` fails on the first slot it finds —
-`custom_key_date_1` is a Datetime, so every one of the three native lenses offers it.
+`test_no_slot_or_operational_field_reaches_a_task_lens` fails on the first forbidden name it finds. It
+found `custom_key_date_1` then; Phase 7 has since dropped all six SLOTS from the table, so the RED now
+comes off the OPERATIONAL columns, which are still real. SLOTS stays declared here so a column that ever
+comes back cannot come back into a rep's menu unnoticed.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \
@@ -109,14 +111,18 @@ class TestTaskListLenses(FrappeTestCase):
 		leaked = self.declared & (set(SLOTS) | set(OPERATIONAL))
 		self.assertEqual(leaked, set(), f"the declaration itself names fields §6 excludes: {sorted(leaked)}")
 
-	def test_the_native_lenses_really_do_offer_the_slots(self):
-		"""Proves the fixture is real. If upstream ever stopped offering the slots, the narrowing test
-		below would pass for a reason that is no achievement of ours, and we would never know."""
+	def test_the_native_lenses_really_do_offer_something_the_declaration_excludes(self):
+		"""Proves the fixture is real. If the native lenses offered nothing §6 excludes, the narrowing test
+		below would pass for a reason that is no achievement of ours, and we would never know.
+
+		Phase 7 DROPPED the six SLOTS from the table, so the native pickers cannot offer them any more and
+		this premise now rests on the OPERATIONAL columns — real columns of CRM Task that plan §6 keeps out
+		of every rep-facing menu. Widening it here rather than dropping it keeps the premise falsifiable."""
 		for cmd in NATIVE_LENSES:
 			offered = _names(_native(cmd)(TASK))
 			self.assertTrue(
-				offered & set(SLOTS),
-				f"{cmd} no longer offers any slot — this test's premise is gone, re-read plan §6",
+				offered & (set(SLOTS) | set(OPERATIONAL)),
+				f"{cmd} no longer offers anything §6 excludes — this test's premise is gone, re-read plan §6",
 			)
 
 	def test_no_slot_or_operational_field_reaches_a_task_lens(self):

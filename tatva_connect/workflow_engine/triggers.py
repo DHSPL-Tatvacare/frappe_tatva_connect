@@ -89,60 +89,10 @@ def on_task_done(doc, method=None):
 	)
 
 
-def run_guards(doc, method=None):
-	"""Wildcard `validate` — the SYNCHRONOUS guard lane. Before the save commits, every ACTIVE workflow
-	matching this record's (doctype, event) + grain + predicate enforces the REQUIREMENTS declared on its
-	Trigger; a handler raising propagates straight out of validate and BLOCKS the save, never swallowed.
-
-	Requirements are declared on the Trigger, alongside the predicate, because both qualify the subject —
-	so what a workflow demands before it acts is legible in one place instead of hidden among the actions
-	of any node in the graph. Guard handlers themselves are the automation engine's, reused not copied.
-	Dormant-by-default and non-re-entrant, so a write the engine made never re-enters its own guard lane."""
-	if not _engine_may_run():
-		return
-	ctx = _trigger_context(doc, "Created" if doc.is_new() else "Updated")
-	if ctx is None:
-		return
-	from tatva_connect.automation import actions
-
-	for version_name in ctx.versions:
-		version = versions.load(version_name)
-		if not _predicate_holds(version, ctx):
-			continue  # the predicate did not hold — this workflow does not judge this save
-		for requirement in _requirements(version):
-			verb = requirement.get("verb")
-			if actions.lane_of(verb) != "guard":
-				continue  # only guard verbs may be requirements; the node validator enforces it at author time
-			handler = actions.handler_of(verb)
-			params = frappe._dict(requirement.get("params") or {})
-			params.action_type = verb
-			handler(params, ctx.subject, ctx.context)  # a raise here IS the block (reaches validate unswallowed)
-
-
-def covering_location_guard(doc):
-	"""True iff an ACTIVE Flow with a Require Location guard already covers THIS save — its guard lane
-	ran (or will run) synchronously in the same validate. The location backstop (tasks.enforce_location)
-	reads this to STAND DOWN instead of double-guarding: the Flow-era replacement for the old
-	"does a Require Location rule cover this?" check the rule engine used. Non-re-entrant + dormant like
-	the guard lane itself."""
-	if not _engine_may_run():
-		return False
-	ctx = _trigger_context(doc, "Created" if doc.is_new() else "Updated")
-	if ctx is None:
-		return False
-	for version_name in ctx.versions:
-		version = versions.load(version_name)
-		if not _predicate_holds(version, ctx):
-			continue
-		if any(r.get("verb") == "Require Location" for r in _requirements(version)):
-			return True
-	return False
-
-
 def _maybe_start(doc, event):
 	"""The after-save lane: run every ACTIVE workflow whose Trigger (subject, event) + grain + predicate match
 	this write. A wait-free Flow runs inline and persists nothing (EPHEMERAL, D4); a Flow that parks starts
-	a durable Instance (CONTINUOUS). Guard-lane actions already ran (or blocked the save) in `run_guards`."""
+	a durable Instance (CONTINUOUS). A workflow never runs before the save and never blocks it (Phase 11)."""
 	if not _engine_may_run():
 		return
 	ctx = _trigger_context(doc, event)
@@ -217,17 +167,6 @@ def _trigger_config(version):
 	if trigger is None:
 		return None  # no trigger, nothing to qualify against
 	return registry.config_of(trigger)
-
-
-def _requirements(version):
-	"""The Requirements declared on this workflow's Trigger — the guard-lane verbs a save must satisfy.
-
-	A requirement says "this lead needs a phone number", "this task needs a location", and it is declared
-	on the Trigger because it qualifies the SUBJECT exactly as the predicate does. The lane used to scan
-	every node of every matching workflow for guard verbs among its actions, which let a guard hide
-	anywhere in a graph — an author could not tell by looking what a workflow demanded before it acted.
-	"""
-	return (_trigger_config(version) or {}).get("requirements") or []
 
 
 def _predicate_holds(version, ctx):

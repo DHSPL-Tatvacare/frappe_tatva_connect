@@ -3,9 +3,8 @@
 """The four `CRM Task` list lenses — filter, group-by, sort, columns — resolved through ONE declaration.
 
 The native pickers walk raw `frappe.get_meta("CRM Task").fields`, so a rep is offered every column the
-doctype carries: the shared slots (`custom_key_date_1` reads "Key Date 1" and means a different answer
-on every task type) and the operational plumbing (the workflow token, the LSQ ids, the notified-for
-stamps, the GPS capture, the ASM). Neither is a question a rep asks of a list.
+doctype carries — including the operational plumbing (the workflow token, the LSQ ids, the notified-for
+stamps, the GPS capture, the ASM), none of which is a question a rep asks of a list.
 
 There is no suppression list here, and there must never be one. `CRM Task.default_list_data()` is the
 ONE declaration of the rep-facing set (plan §6); each lens is the native answer INTERSECTED with it.

@@ -18,6 +18,10 @@ than at a name written here:
 D17 is asserted on the Datetime answer: `value` is ALWAYS populated and `value_datetime` carries the same
 moment, because the section declares `value` as its read column while a range filter needs a real date.
 
+Phase 7 removes the old homes outright, so once it has landed on a site there is no pre-state left to
+construct and this module SKIPS itself, saying so. That is not the drop going unproven — the drop is
+`tests/migration/test_retire_task_slot_columns.py`, which owns both halves of the guard around it.
+
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.migration.test_backfill_sections
@@ -26,6 +30,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import get_datetime
 
+from tatva_connect.activity import backfill
 from tatva_connect.patches import backfill_task_section_rows
 from tatva_connect.tests.activity import task_type_fixture
 
@@ -104,6 +109,12 @@ class TestBackfillSections(FrappeTestCase):
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
 		frappe.set_user("Administrator")
+		if not all(frappe.get_meta("CRM Task").has_field(c) for c in backfill.retired_homes()):
+			self.skipTest(
+				"Phase 7 has dropped the old homes on this site, so the pre-state this module constructs "
+				"cannot exist: there is no slot column and no payload to put an answer in. The drop itself "
+				"is proven by tests/migration/test_retire_task_slot_columns.py."
+			)
 		self.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": "Backfill Probe",
 			"mobile_no": f"+9198126{int(frappe.generate_hash(length=8), 16) % 100000:05d}",

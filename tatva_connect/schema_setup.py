@@ -39,6 +39,7 @@ from tatva_connect.patches import (
 	retire_lead_stage_legacy_fields,
 	retire_location_captures_fields,
 	retire_nearme_map_provider,
+	retire_task_slot_columns,
 )
 
 _STEPS = (
@@ -75,6 +76,8 @@ _STEPS = (
 	add_task_document_kind_index,
 	# (parent, fieldname) on CRM Task Answer — the key-value section is one row per DECLARED field per task, so it is the widest child table here and every read addresses one task's row for one fieldname; composite, so not JSON-declarable.
 	add_task_answer_fieldname_index,
+	# Phase 7: drop the five dead CRM Task slot columns + the JSON payload once every answer they held is homed in a section row. NOT here for the fresh-install reason an index has — the fixture no longer declares them, so a new site never grows them. It is here because the patch REFUSES while a site is un-backfilled, and an applied patch is dead: this pass re-asserts the end state every migrate, so the run after the after_migrate backfill is the one that drops.
+	retire_task_slot_columns,
 )
 
 

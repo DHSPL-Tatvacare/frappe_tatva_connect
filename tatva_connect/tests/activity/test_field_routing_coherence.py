@@ -2,7 +2,7 @@
 # See license.txt
 """The reader and the writer must route an activity field by the SAME rule.
 
-`activity/api.py` declares that rule once — `field_column(f)`: the field's `target` is a promoted CRM
+`activity/api.py` declares that rule once — `field_target(f)`: the field's `target` is a retained CRM
 Task column if it is one of `PROMOTED_COLUMNS`, and otherwise the field lives in the JSON payload under
 its schema fieldname. `compute_activity` (write), `set_schema_field` (write) and `smartview/api.py`
 (project) all ask it.
@@ -27,6 +27,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.activity import backfill
 from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ Routing Coherence Probe"
@@ -77,13 +78,13 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 
 	def test_the_probe_targets_are_real_non_promoted_task_columns(self):
-		"""The premise. A target naming no real column could never collide, and one inside
-		PROMOTED_COLUMNS is no divergence at all — either way the fixture would prove nothing."""
+		"""The premise. A target naming no real column could never collide, and one that WAS a promoted
+		column is no divergence at all — either way the fixture would prove nothing."""
 		for target in DIVERGENT_TARGETS:
 			self.assertTrue(frappe.db.has_column("CRM Task", target),
 							f"`{target}` is not a real CRM Task column — the probe cannot collide")
-			self.assertNotIn(target, activity_api.PROMOTED_COLUMNS,
-							 f"`{target}` is promoted now — pick a target the writer still sends to payload")
+			self.assertNotIn(target, backfill.PROMOTED_COLUMNS,
+							 f"`{target}` was a promoted column — pick a target the router sends to a section")
 
 	def test_every_saved_answer_reads_back_as_the_answer(self):
 		"""The property, on the paths the rep actually uses: `save_activity` writes, `task_detail` reads.

@@ -8,11 +8,11 @@ form say?". It used to answer that itself: the JSON payload, merged with `doc.ge
 schema field carrying a target. That is a private copy of a rule `activity/api.py:_task_values` already
 owns, and the constitution forbids exactly that copy.
 
-The copy also carried a DEFECT the one reader does not have. Its loop is `val = doc.get(f.target)` and
-`if val is not None`, so a RETIRED slot column still holding what it held before Phase 5 OVERRIDES the
-answer the rep actually gave. Phase 5 stopped writing those columns but deliberately left their history
-in place (Phase 7 drops them), so on any pre-Phase-5 task that is re-saved the location guard judged the
-visit on the old value. That is the third test below and it is RED on the current code.
+The copy also carried a DEFECT the one reader does not have. Its loop was `val = doc.get(f.target)` and
+`if val is not None`, so a RETIRED slot column still holding what it held before Phase 5 OVERRODE the
+answer the rep actually gave, and the location guard judged the visit on history. Phase 7 has since
+DROPPED those columns, so the fossil no longer exists to be read: the stale-column test that was this
+module's red proof has been deleted rather than left iterating a column that is not there.
 
 What is asserted:
 
@@ -20,15 +20,12 @@ What is asserted:
     a real column on a section's own child doctype (rule 1), and a key-value answer row (rule 3) —
     `reconstruct_values` returns exactly what `_task_values` reports, keyed by schema fieldname, which is
     the key criteria and `location_when` match on;
-  * the stale-column case, which is the defect: an OLD sentinel stamped into the retired slot column and
-    a NEW answer in the section row — the NEW one must win;
   * the location guard still receives the value it needs, driven through `tasks/tasks.py`'s own path
     (its import, its reconstruction, the argument it hands `location_required`) and not through the
     helper in isolation.
 
-Nothing here names a column, a section or a slot as a literal: every one is read off the brain
-(`PROMOTED_COLUMNS`, `COMMON_COLUMNS`, the `CRM Task Section` rows), so a column that changes sides moves
-this test with it.
+Nothing here names a column or a section as a literal: every one is read off the brain
+(`COMMON_COLUMNS`, the `CRM Task Section` rows), so a column that changes sides moves this test with it.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -48,8 +45,7 @@ TYPE_NAME = "ZZ Reconstruct One Brain Probe"
 
 FRESH_COMMON = "ZZ fresh common answer"
 FRESH_SECTION = "ZZ fresh section answer"
-FRESH_SLOT = "ZZ fresh slot answer"
-STALE_SLOT = "ZZ STALE slot value nobody submitted"
+FRESH_SLOT = "ZZ fresh answer with no column of its own"
 NOTES = "ZZ reconstruct notes"
 
 
@@ -80,9 +76,6 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 		frappe.set_user("Administrator")
 		# The three routes, each resolved off the brain rather than named.
 		cls.common_column = _data_column("CRM Task", list(activity_api.COMMON_COLUMNS))
-		cls.slot_column = _data_column("CRM Task", [
-			c for c in activity_api.PROMOTED_COLUMNS if c not in activity_api.COMMON_COLUMNS
-		])
 		cls.section = _column_section()
 		cls.section_column = _data_column(cls.section.target_doctype)
 
@@ -92,9 +85,8 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 			 "target": cls.common_column},
 			{"label": "ZZ RV Section", "fieldname": cls.f_section, "fieldtype": "Data",
 			 "section": cls.section.name, "target": cls.section_column},
-			# A retired slot: the declaration shape a pre-Phase-5 type still carries, and the stale probe.
-			{"label": "ZZ RV Slot", "fieldname": cls.f_slot, "fieldtype": "Data",
-			 "target": cls.slot_column},
+			# Rule 3: a field naming no column at all, which is where a retired slot's answers landed.
+			{"label": "ZZ RV Slot", "fieldname": cls.f_slot, "fieldtype": "Data"},
 		])
 		cls.declared = {
 			cls.f_common: FRESH_COMMON,
@@ -133,9 +125,7 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 						 (self.section.name, self.section_column),
 						 "the rule-1 probe no longer lands on its section's own column")
 		self.assertEqual(activity_api.field_target(schema[self.f_slot]), (kv, self.f_slot),
-						 "the retired slot no longer falls to the key-value default")
-		self.assertNotIn(self.slot_column, activity_api.COMMON_COLUMNS,
-						 "the slot probe names a RETAINED column — there is no stale column to test")
+						 "a field naming no column no longer falls to the key-value default")
 
 	# ---- the property: one reader -------------------------------------------------------------------
 
@@ -156,23 +146,7 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 			self.assertEqual(values.get(fieldname), submitted,
 							 f"`{fieldname}` did not come back as the rep answered it")
 
-	# ---- the defect: a retired column must never outrank the answer ----------------------------------
-
-	def test_a_stale_slot_column_does_not_override_the_fresh_answer(self):
-		"""RED on the current code. Phase 5 left every retired slot carrying its history, so a task saved
-		before it still holds an OLD value in the column its field names. The old loop read that column
-		FIRST and kept it because it was not None — so the guard judged the visit on history. The section
-		row is the answer; the column is a fossil."""
-		name = activity_api.save_activity(self.lead.name, self.task_type, self.submitted)
-		frappe.db.set_value("CRM Task", name, self.slot_column, STALE_SLOT, update_modified=False)
-		doc = frappe.get_doc("CRM Task", name)
-
-		self.assertEqual(doc.get(self.slot_column), STALE_SLOT,
-						 "the stale column was not stamped — the probe cannot collide")
-		self.assertEqual(reconstruct_values(doc).get(self.f_slot), FRESH_SLOT,
-						 "a retired slot column's history overrode the answer the rep gave")
-
-	# ---- ...and the guard that reads it still gets what it needs -------------------------------------
+	# ---- ...and the guard that reads it gets what it needs -------------------------------------------
 
 	def test_the_location_guard_receives_the_fresh_answers(self):
 		"""Driven through `tasks.enforce_location` itself — its import, its reconstruction, the dict it
@@ -180,7 +154,6 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 		is spied, not stubbed away: it returns None (no location needed) so nothing throws, and the values
 		it was asked about are the assertion."""
 		name = activity_api.save_activity(self.lead.name, self.task_type, self.submitted)
-		frappe.db.set_value("CRM Task", name, self.slot_column, STALE_SLOT, update_modified=False)
 		doc = frappe.get_doc("CRM Task", name)
 		doc.status = tasks_module.DONE_STATUS
 
@@ -190,8 +163,9 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 			seen.update(values or {})
 			return None  # no location required, so the backstop returns without touching the doc
 
+		# Phase 11 deleted the workflow stand-down: the backstop now always runs, so there is nothing to
+		# patch off. What this test is about is unchanged — WHICH values the guard is handed.
 		with patch("tatva_connect.tasks.tasks.automation.is_enabled", return_value=True), \
-			 patch("tatva_connect.tasks.tasks._location_guard_covers", return_value=False), \
 			 patch("tatva_connect.location.api.location_required", side_effect=spy):
 			tasks_module.enforce_location(doc)
 
@@ -200,4 +174,4 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 		self.assertEqual(seen.get(self.f_section), FRESH_SECTION,
 						 "the guard no longer sees an answer that lives on its section's column")
 		self.assertEqual(seen.get(self.f_slot), FRESH_SLOT,
-						 "the guard was handed a retired column's history instead of the rep's answer")
+						 "the guard no longer sees an answer that lives in a key-value row")

@@ -26,6 +26,7 @@ import pathlib
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.activity import api as activity_api
 from tatva_connect.activity.api import compute_activity
 from tatva_connect.automation import actions
 from tatva_connect.tasks.tasks import create_followup_task
@@ -36,7 +37,7 @@ from tatva_connect.tasks.tasks import create_followup_task
 VERTICAL, GROUP = "ZZ Activity Line", "ZZ Activity Group"
 FOREIGN = ("ZZ Foreign Line", "ZZ Foreign Group", "ZZ Foreign Program")
 TYPE_NAME, FOREIGN_TYPE_NAME = "ZZ Fixture Followup", "ZZ Fixture Foreign"
-SCHEMA_FIELD = "zz_fixture_note"  # a payload field: it names no promoted column, so 3.6 is deterministic
+SCHEMA_FIELD = "zz_fixture_note"  # targets nothing, so it answers in its section row and 3.6 stays deterministic
 
 # .../tatva_connect  (the app package root)
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,15 +53,17 @@ _NAMED_EXCEPTIONS = {
 	"api.partner_activity:_backdate":
 		"writes `creation` only — a framework column on an already-brained task, never an activity field",
 	"automation.actions:_pin_review_file":
-		"seeds the review task's `document` payload key from the File that raised it — the value is the "
+		"seeds the review task's `document` answer from the File that raised it — the value is the "
 		"trigger's own file_url, not caller input, and the shell it lands on was already grain-gated",
 	"notifications.events:_notify_due":
 		"stamps the notified-at marker column so a rep is told once — never an activity field",
 	"activity.backfill:_backfill_one":
 		"history reconstruction — there is no submitted form for compute_activity to resolve; every value "
 		"is read by field_column and homed by field_target, the brain's own router (Phase 3)",
-	"activity.backfill:reconcile":
-		"read-mostly audit twin of _backfill_one; writes only what the router says is missing",
+	"activity.backfill:audit":
+		"read-ONLY twin of _backfill_one: it loads the task to ask whether the new home already carries "
+		"the answer and discards the doc unsaved — the one predicate reconcile reports from and the "
+		"Phase 7 drop patch refuses on",
 }
 
 # A grainless CRM Task Type is dormant by `_grain_matches` and can never be raised, so a bare name is
@@ -338,23 +341,24 @@ class TestTheBrainOwnsThePayload(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 
 	def test_a_values_key_absent_from_the_schema_is_dropped(self):
-		"""3.5 — the loop iterates tt.schema, so an undeclared key is never read, let alone stored."""
+		"""3.5 — the loop iterates tt.schema, so an undeclared key is never read, let alone stored. Since
+		Phase 7 removed the JSON payload there is no blob to inspect: the whole computed dict is the answer,
+		and it carries neither the key nor its value in any home, staged child rows included."""
 		fields = compute_activity(self.lead.name, self.task_type, {"totally_invented_key": "smuggled"})
-		payload = frappe.parse_json(fields["custom_activity_payload"]) or {}
-		self.assertNotIn("totally_invented_key", payload)
+		self.assertNotIn("totally_invented_key", frappe.as_json(fields))
 		self.assertNotIn("smuggled", frappe.as_json(fields))
 
-	def test_a_payload_naming_a_promoted_column_never_reaches_it(self):
+	def test_a_raw_column_name_in_values_never_reaches_that_column(self):
 		"""3.6 — a caller writing `custom_outcome` directly is naming a column, not a schema field.
 		Only a schema field whose `target` IS that column may route there. The minted type declares one
-		payload field and targets nothing, so every promoted column below is genuinely undeclared —
+		field that targets nothing, so every retained common column below is genuinely undeclared —
 		this used to hedge ("pick another") against whatever the seeded type happened to declare."""
-		hijack = "HIJACKED-BY-PAYLOAD"
-		promoted = ("custom_outcome", "custom_reference", "custom_asm")
+		hijack = "HIJACKED-BY-A-RAW-COLUMN-NAME"
+		promoted = activity_api.COMMON_COLUMNS
 		fields = compute_activity(self.lead.name, self.task_type, {c: hijack for c in promoted})
 		for column in promoted:
 			self.assertNotEqual(fields.get(column), hijack,
-								f"a raw payload key wrote straight to the promoted column {column}")
+								f"a raw column name in values wrote straight to the column {column}")
 
 
 class TestEveryTaskTypeIsKeyedByItsGrain(FrappeTestCase):

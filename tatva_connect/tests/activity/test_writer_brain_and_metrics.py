@@ -2,7 +2,7 @@
 # See license.txt
 """Two activity-brain audit gaps, closed and locked.
 
-GAP 4 (second writer): _pin_review_file poked a HARDCODED 'document' key into custom_activity_payload,
+GAP 4 (second writer): _pin_review_file poked a HARDCODED 'document' key into the JSON payload,
 never validating it was a declared field nor routing it by field_column. Fixed: it writes through
 activity.api.set_schema_field, which validates the field is declared and routes it the SAME way
 compute_activity does.
@@ -33,8 +33,8 @@ class TestActivityWriterBrain(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		# Mint our OWN type carrying a 'document' Attach (payload field: no promoted target), so the lock
-		# proves the writer regardless of what any operator seed happens to declare.
+		# Mint our OWN type carrying a 'document' Attach (no target, so it answers in a section row), so the
+		# lock proves the writer regardless of what any operator seed happens to declare.
 		cls.doc_type = task_type_fixture.mint_type(
 			"ZZ Writer Probe", [{"fieldname": "document", "label": "Document", "fieldtype": "Attach"}]
 		)
@@ -44,11 +44,15 @@ class TestActivityWriterBrain(FrappeTestCase):
 		task_type_fixture.teardown()
 		super().tearDownClass()
 
-	def test_document_routes_into_payload_via_brain(self):
+	def test_document_routes_into_its_section_row_via_brain(self):
+		"""Read back through the ONE reader (`_task_values`), so the assertion is about the address
+		`field_target` names and not about a home this test happens to know. Phase 7 dropped the JSON
+		payload this used to inspect; the answer is a section row now."""
 		task = frappe.new_doc("CRM Task")
 		changed = activity_api.set_schema_field(task, self.doc_type, "document", "/files/scan.pdf")
 		self.assertTrue(changed)
-		self.assertEqual(frappe.parse_json(task.custom_activity_payload)["document"], "/files/scan.pdf")
+		values = activity_api._task_values(task, activity_api._type_config(self.doc_type))
+		self.assertEqual(values["document"], "/files/scan.pdf")
 
 	def test_idempotent_write_returns_false(self):
 		task = frappe.new_doc("CRM Task")

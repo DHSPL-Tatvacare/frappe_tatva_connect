@@ -1,4 +1,4 @@
-"""CRM Task automations: seed + enforce checklists, idempotent follow-up helper."""
+"""CRM Task automations: seed + enforce checklists, the bulk-complete gate, idempotent follow-up helper."""
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
@@ -100,25 +100,16 @@ def enforce_checklist(doc, method=None):
 		)
 
 
-def _location_guard_covers(doc):
-	"""True when an ENABLED Require Location FLOW at this lead's grain already runs its guard,
-	synchronously, for THIS exact save — delegated to the ONE Flow guard-coverage brain
-	(`workflow_engine.triggers.covering_location_guard`), which reuses the same matcher / criteria
-	evaluator / context builder the Flow guard lane itself uses (A.8, no parallel matcher). Lets the
-	backstop below stand down only when an authored Flow genuinely covers this save, never on a guess."""
-	from tatva_connect.workflow_engine import triggers
-
-	return triggers.covering_location_guard(doc)
-
-
 def enforce_location(doc, method=None):
-	"""Fail-closed BACKSTOP for the location guard (VAPT, A.1/S.3) — stands down when an authored
-	'Require Location' rule already covers this exact save (its guard action already ran synchronously
-	ahead of this same validate and would have blocked it), so the two never double-throw. Otherwise
-	unchanged: guarantees coordinates on every save the rule-authored engine doesn't (yet) cover — API /
-	import / scripted saves, or before any Require Location rule exists. The gate lives once in
-	location.api.location_required, fed by the reconstructed submitted values (one brain — same
-	reconstruction the automation engine uses)."""
+	"""Fail-closed BACKSTOP for the location guard (VAPT, A.1/S.3): guarantees coordinates on every save
+	the rep's own form path (`activity.api.compute_activity` → `location.api.set_or_check_anchor`) does not
+	cover — API / import / scripted saves. The gate lives once in `location.api.location_required`, fed by
+	the reconstructed submitted values (one brain — same reconstruction the automation engine uses).
+
+	It used to stand down when an authored 'Require Location' workflow covered the same save. That verb is
+	gone (Phase 11) — a workflow decides whether IT runs, never whether a rep may save — and with it the
+	only reason this backstop ever consulted the workflow engine. Location is declared once on the task
+	type (`visit_mode` / `location_when`) and enforced here and in `compute_activity`, nowhere else."""
 	from tatva_connect.activity.automation import reconstruct_values
 	from tatva_connect.location.api import location_required
 
@@ -130,8 +121,6 @@ def enforce_location(doc, method=None):
 		return
 	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
 		return
-	if _location_guard_covers(doc):
-		return  # a Require Location rule already guarded this save in the sync guard lane
 	values = reconstruct_values(doc)
 	if location_required(doc.custom_task_type, doc.reference_docname, values) is None:
 		return
@@ -146,7 +135,7 @@ def enforce_location(doc, method=None):
 			  "Tasks list or open the task."),
 			_("A {0} activity records where the visit happened, and coordinates are captured by the "
 			  "field app on the device — they cannot be sent over the API. Leave `status` as it is and "
-			  "let the assigned rep complete the visit, or ask the operator to lift Require Location for "
+			  "let the assigned rep complete the visit, or ask the operator to clear `Location When` on "
 			  "this activity type.").format(labels.label(doc.custom_task_type, labels.TASK_TYPE)),
 			["status"],
 			title=_("Location required"),
@@ -176,6 +165,66 @@ def enforce_activity_logged(doc, method=None):
 			["values"],
 			title=_("Activity not logged"),
 		)
+
+
+@frappe.whitelist()
+def submit_cancel_or_update_docs(doctype, docnames, action="submit", data=None, task_id=None):
+	"""Frappe's own bulk-update entry, gated by ONE refusal: a `CRM Task Type` carrying
+	`disable_bulk_complete` cannot be completed from the list's bulk action, and the refusal names it.
+	Everything else — every other doctype, every other field, every other action — reaches the unchanged
+	native function, which is why this is a wrapper and not a fork (the `access.native_guards` shape,
+	wired through `override_whitelisted_methods`).
+
+	IT HAS TO BE THE ENTRY POINT, and not a `validate` hook, for two independent reasons. Core's
+	`_bulk_action` wraps every per-document save in `except Exception: log_error(); failed.append(name)`,
+	so a throw inside `validate` is swallowed: the rep gets a success toast, the message never reaches a
+	screen, and only an Error Log records it. And in principle a `validate` cannot express this rule at all
+	— it cannot tell the bulk lane from the rep's own form, and the flag is about the lane, not the value.
+
+	Frappe resolves an override only for a call arriving through the HTTP handler, which is where the
+	list's bulk action arrives from. A Python caller reaching the native function directly is unaffected
+	and is meant to be: `disable_bulk_complete` is a rule about the list's bulk action, not about `Done`.
+	"""
+	from frappe.desk.doctype.bulk_update.bulk_update import submit_cancel_or_update_docs as _native
+
+	_refuse_disabled_bulk_complete(doctype, docnames, action, data)
+	return _native(doctype, docnames, action, data, task_id)
+
+
+def _refuse_disabled_bulk_complete(doctype, docnames, action, data):
+	"""Refuse the whole bulk call when any selected task's type forbids bulk completion.
+
+	The whole call, not the offending rows: a partial bulk that silently skipped some of the selection is
+	how a rep comes to believe an activity was logged when no form was ever filled. `frappe.get_all` (not
+	`get_list`) reads the types, because a task the caller cannot see must still be counted — a guard that
+	under-refuses is not a guard. The types are named by their clean labels, never the composite `::` PK.
+	"""
+	if doctype != "CRM Task" or action != "update":
+		return
+	values = frappe.parse_json(data) if isinstance(data, str) else data
+	if not isinstance(values, dict) or values.get("status") != DONE_STATUS:
+		return
+	names = frappe.parse_json(docnames) if isinstance(docnames, str) else docnames
+	if not names:
+		return
+	types = {
+		t for t in frappe.get_all("CRM Task", filters={"name": ("in", list(names))}, pluck="custom_task_type") if t
+	}
+	if not types:
+		return
+	blocked = frappe.get_all(
+		"CRM Task Type",
+		filters={"name": ("in", sorted(types)), "disable_bulk_complete": 1},
+		pluck="name",
+	)
+	if not blocked:
+		return
+	frappe.throw(
+		_("{0} is completed one activity at a time — open each task and log its form. Take it out of the "
+		  "selection to bulk-update the rest.").format(
+			", ".join(sorted(labels.label(t, labels.TASK_TYPE) or t for t in blocked))),
+		title=_("Bulk complete not allowed"),
+	)
 
 
 @frappe.whitelist()

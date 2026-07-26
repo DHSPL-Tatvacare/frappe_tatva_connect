@@ -35,6 +35,7 @@ from frappe.query_builder import DocType
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.activity import backfill
 from tatva_connect.smartview import api as smartview
 from tatva_connect.tests.activity import task_type_fixture
 
@@ -153,10 +154,10 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 	def test_the_probe_carries_a_field_of_every_routed_shape(self):
 		"""A fixture missing a shape would prove queryability for the shapes it happens to carry, no more."""
 		self.assertIsNotNone(self.column_section, "no section declares 3 named columns — rule 1 is untestable")
-		self.assertIn(DYING_SLOT, activity_api.PROMOTED_COLUMNS,
-					  f"`{DYING_SLOT}` is not promoted today — it is no longer a dying slot")
+		self.assertIn(DYING_SLOT, backfill.PROMOTED_COLUMNS,
+					  f"`{DYING_SLOT}` was never a promoted column — it is no longer a dying slot")
 		self.assertNotIn(DYING_SLOT, activity_api.COMMON_COLUMNS,
-						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually drops")
+						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually dropped")
 		self.assertIn(RETAINED_COMMON, activity_api.COMMON_COLUMNS,
 					  f"`{RETAINED_COMMON}` is not a retained common column — rule 2 is untestable")
 		self.assertLess(LATE, EARLY, "the two moments no longer disagree lexically — D17 is untestable")

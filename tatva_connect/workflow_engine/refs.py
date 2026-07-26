@@ -18,9 +18,10 @@ and a predicate that matched at the Trigger could not match at a Branch below th
 
 WHY THE FIELD, NOT THE SLOT
 ---------------------------
-`CRM Task` stores activity values in nine generic columns whose MEANING is declared per task type. So
-`crm_task.custom_key_date_1` means nothing to an author and means something different for every type. The
-contract names the LOGICAL field, and both halves of that name are answered by the ONE declaration
+An activity value is homed by its DECLARATION, not by a fixed column — a retained common column on the
+task row, or the section row that addresses it. A physical address therefore means nothing to an author and
+resolves differently per task type. The contract names the LOGICAL field, and both halves of that name are
+answered by the ONE declaration
 (`CRM Task Type Field`) rather than re-derived here:
 
   * what an author may NAME — `automation.describe.fields_for_doctype`, which unions the doctype meta
