@@ -152,13 +152,18 @@ class TestResultRanking(FrappeTestCase):
 
 	# --- 2. the RED proof: the pipeline is what produces it ---------------------------------------------
 
-	def test_without_the_pipelines_doctype_tier_the_order_collapses(self):
-		"""The framework's own pipeline, restored: bm25 + title boost put a note or a task above the lead, which
-		is exactly why `api.py` had to re-sort. If this ever passes, the tier stopped being load-bearing."""
-		with patch.object(CRMLeadSearch, "get_scoring_pipeline", SQLiteSearch.get_scoring_pipeline):
+	def test_without_the_doctype_tier_the_order_collapses(self):
+		"""Neutralise the TIER and the order collapses: bm25 + title boost put a note above the lead, which is
+		exactly why `api.py` used to re-sort. If this ever passes, the tier stopped being load-bearing.
+
+		The tier itself is what gets flattened, not the pipeline. Patching the framework's own
+		`get_scoring_pipeline` back in no longer proves anything: `_doctype_tier` carries
+		`@SQLiteSearch.scoring_function`, so the BASE discovers it too and the order stays correct — which is
+		the point of using the framework's discovery rather than hand-copying its list."""
+		with patch.object(CRMLeadSearch, "_doctype_tier", lambda self, row, query, query_words: 1.0):
 			collapsed = self._engine_order()
-		self.assertNotEqual(collapsed, EXPECTED_ORDER, "the framework's own ranking already produced the owner's order")
-		self.assertEqual(sorted(collapsed), sorted(EXPECTED_ORDER), "the same four hits must be present, only reordered")
+		self.assertNotEqual(collapsed, EXPECTED_ORDER, "bm25 alone already produced the owner's order")
+		self.assertEqual(sorted(collapsed), sorted(EXPECTED_ORDER), "the same hits must be present, only reordered")
 
 	def test_a_whole_doctype_is_never_overtaken_by_a_stronger_text_match(self):
 		"""The tier is a magnitude, not a tie-break: the note matches the token in BOTH its text fields and the
@@ -170,26 +175,21 @@ class TestResultRanking(FrappeTestCase):
 
 	# --- 3. recency: a decision, not a silent conditional -----------------------------------------------
 
-	def test_the_recency_boost_is_absent_and_stays_absent_even_if_modified_appears(self):
-		"""`modified` is deliberately not declared. The framework would switch the boost on from the schema
-		alone; our pipeline is written out, so the decision cannot be flipped by an unrelated schema edit."""
-		engine = CRMLeadSearch()
-		self.assertNotIn("modified", engine.schema["metadata_fields"])
-		names = [f.__name__ for f in engine.get_scoring_pipeline()]
-		self.assertEqual(names, ["_get_base_score", "_get_title_boost", "_doctype_tier"])
+	def test_recency_is_off_because_the_declaration_says_so(self):
+		"""`modified` is deliberately not declared, and THAT is the whole mechanism keeping recency off.
 
-		# What declaring it really costs, for the record: the framework's own `_validate_config` demands the
-		# field be selected for EVERY indexed doctype too, so both declarations move together.
-		with_modified = {**CRMLeadSearch.INDEX_SCHEMA, "metadata_fields": [*CRMLeadSearch.INDEX_SCHEMA["metadata_fields"], "modified"]}
-		doctypes = {
-			doctype: {**config, "fields": [*config["fields"], "modified"]}
-			for doctype, config in CRMLeadSearch.INDEXABLE_DOCTYPES.items()
-		}
-		with patch.object(CRMLeadSearch, "INDEX_SCHEMA", with_modified), \
-			patch.object(CRMLeadSearch, "INDEXABLE_DOCTYPES", doctypes):
-			engine = CRMLeadSearch()
-			self.assertIn("modified", engine.schema["metadata_fields"])
-			self.assertEqual([f.__name__ for f in engine.get_scoring_pipeline()], names, "recency switched itself on")
+		The framework gates its own recency boost on `"modified" in schema["metadata_fields"]`
+		(sqlite_search.py:969), so the declaration is the switch. This asserts the switch, not an immunity:
+		the pipeline is the framework's own discovery now, so declaring `modified` WOULD turn recency on — by
+		design, since hand-copying the base list to prevent that is what silently dropped every future
+		scoring function. The lock that matters is therefore on the declaration itself."""
+		engine = CRMLeadSearch()
+		self.assertNotIn("modified", engine.schema["metadata_fields"], "declaring `modified` turns recency on")
+		names = [f.__name__ for f in engine.get_scoring_pipeline()]
+		self.assertNotIn("_get_recency_boost", names, "recency must be absent while `modified` is undeclared")
+		self.assertIn("_doctype_tier", names, "our tier must be discovered by the framework's own pipeline")
+		# The tier is discovered, not hand-listed: the base builds the list and finds the decorated function.
+		self.assertEqual(names, [f.__name__ for f in SQLiteSearch.get_scoring_pipeline(engine)])
 
 	# --- 4. an honest count -----------------------------------------------------------------------------
 

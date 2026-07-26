@@ -15,12 +15,10 @@ master behind a column comes off the CRM Lead field itself, and the spelling mir
 `search.api` calls this behind its own dormant toggle. There is no stopword list: every term is a declared closed-set value, and the spike
 measured that a filler list is exactly what destroys a real multi-word term.
 """
-import re
-
 import frappe
 from frappe.utils.caching import redis_cache
 
-from tatva_connect.search.index import CRMLeadSearch
+from tatva_connect.search.index import CRMLeadSearch, leaf, normalise, tokens
 
 # A master bigger than this is an OPEN set by definition — it belongs in the full-text lane, not a dictionary.
 MASTER_MAX = 5000
@@ -43,20 +41,6 @@ _SOURCES = (
 	("assignee", "lead_owner", "title"),
 )
 
-_PUNCT = re.compile(r"[^\w\s]")
-_SPACE = re.compile(r"\s+")
-
-
-def normalise(text):
-	# Punctuation becomes a SPACE, hyphens included — a stored "Goodflip-Care" must meet a typed "goodflip care".
-	return _SPACE.sub(" ", _PUNCT.sub(" ", (text or "").lower())).strip()
-
-
-def _typed(text):
-	# normalise's twin without the lowercasing: identical token boundaries, the user's own spelling kept, so a
-	# leftover word is shown back as it was typed instead of flattened to lower case.
-	return _SPACE.sub(" ", _PUNCT.sub(" ", text or "")).strip().split()
-
 
 def terms():
 	"""Every term the index can filter on -> the meanings it carries, as ((column, value), ...) in a stable order."""
@@ -78,28 +62,25 @@ def labels():
 def match(query):
 	"""Split a query into the (column, value) filters the index can apply and the words only full text can."""
 	vocab = _vocabulary()
-	words = normalise(query).split()
-	# The user's own spelling, token for token, so leftover reads back as typed; falls back to the normalised
-	# word if the two tokenisations ever disagree, because a wrong SPELLING is better than a wrong WORD.
-	typed = _typed(query)
-	if len(typed) != len(words):
-		typed = words
+	# index.tokens is the ONE tokeniser: one pair per typed word, normalised for matching and as typed for showing
+	# back. Being one pair per word is what removes the old length-mismatch fallback — they cannot fall out of step.
+	pairs = tokens(query)
+	words = [word for word, _typed in pairs]
 	out = frappe._dict(matched=[], ambiguous=[], leftover=[])
 	i = 0
 	while i < len(words):
 		hit = _longest(vocab, words, i)
 		if not hit:
-			out.leftover.append(typed[i])
+			out.leftover.append(pairs[i][1])
 			i += 1
 			continue
-		phrase, meanings = hit
-		span = phrase.count(" ") + 1
+		span, meanings = hit
 		if len(meanings) == 1:
 			out.matched.append(meanings[0])
 		else:
 			# A term that means two things is REPORTED, never resolved; its words still reach the full-text lane.
-			out.ambiguous.append((phrase, meanings))
-			out.leftover.extend(typed[i : i + span])
+			out.ambiguous.append((" ".join(words[i : i + span]), meanings))
+			out.leftover.extend(typed for _word, typed in pairs[i : i + span])
 		i += span
 	return out
 
@@ -133,14 +114,15 @@ def _values(master, spelling):
 	if not column:
 		return []
 	rows = frappe.get_all(master, fields=[f"`{column}` as value"], order_by="name asc", limit_page_length=0)
-	# `leaf` is index.py's own split — a composite PK (`{program}::{stage}`) is indexed as its tail, never whole.
-	return [str(r.value).split("::")[-1] if spelling == "leaf" else str(r.value) for r in rows if r.value]
+	# `index.leaf` itself — a composite PK (`{program}::{stage}`) is indexed as its tail, never whole.
+	return [leaf(str(r.value)) if spelling == "leaf" else str(r.value) for r in rows if r.value]
 
 
 def _longest(vocab, words, i):
 	# Longest phrase first: "goodflip care" is a vertical in its own right and must beat the bare "goodflip".
+	# It returns how many TYPED words the phrase ate, which is not its word count — "Goodflip-Care" is one word.
 	for n in range(min(vocab.span, len(words) - i), 0, -1):
 		phrase = " ".join(words[i : i + n])
 		if phrase in vocab.terms:
-			return phrase, vocab.terms[phrase]
+			return n, vocab.terms[phrase]
 	return None

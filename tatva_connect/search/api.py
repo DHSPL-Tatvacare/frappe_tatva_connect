@@ -3,14 +3,17 @@
 
 """The one whitelisted endpoint the spotlight modal calls; the frontend renders its shape and decides nothing."""
 import frappe
-from frappe.search.sqlite_search import MAX_SEARCH_RESULTS
+from frappe.search.sqlite_search import MAX_SEARCH_RESULTS, MIN_WORD_LENGTH
 from frappe.utils import cint
 
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.search import vocabulary
 from tatva_connect.search.index import TAB, CRMLeadSearch, matched_identifier
 
-_MIN = 3
+# The floor is the framework's own word length (sqlite_search.py:58): a shorter term gets no prefix wildcard
+# (`_prefix_query`, sqlite_search.py:1445), so it would silently be whole-token-only — "works at four letters,
+# not three". `index._IDENT_MIN` is the same constant for the same reason.
+_MIN = MIN_WORD_LENGTH
 
 # The default page the spotlight asks for; a caller may ask for less, never for more than the index returns.
 _LIMIT = 20

@@ -21,6 +21,7 @@ import os
 import shutil
 
 import frappe
+from frappe.search.sqlite_search import MIN_WORD_LENGTH
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.search.api import search
@@ -94,12 +95,15 @@ class TestSearchStatus(FrappeTestCase):
 		self.assertEqual(payload["status"], "too_short")
 
 	def test_the_floor_is_the_endpoint_s_alone(self):
-		# One clock: a query at the boundary is answered, one below it is refused, and both decisions are the
-		# server's. If a second minimum ever grows on the client this test is what makes the drift visible.
+		# One clock: a query AT the boundary is answered, every length below it is refused, and both decisions are
+		# the server's. The boundary is derived, never restated — it is the framework's own MIN_WORD_LENGTH,
+		# because below that `_prepare_fts_query` appends no `*` and the query would be whole-token-only, which
+		# reads to a user as "search works at four letters but not three". Asserting a literal 4 here would put
+		# the number in a second place and defeat the point.
 		self._ready_index()
-		self.assertEqual(search("k").get("status"), "too_short")
-		self.assertEqual(search("ka").get("status"), "too_short")
-		self.assertEqual(search("kav").get("status"), "ready")
+		for short in range(1, MIN_WORD_LENGTH):
+			self.assertEqual(search("k" * short).get("status"), "too_short", f"{short} chars must be refused")
+		self.assertEqual(search("k" * MIN_WORD_LENGTH).get("status"), "ready", "the boundary itself is answered")
 
 	def test_dormant_beats_too_short(self):
 		# A dormant feature is dormant whatever was typed — the operator toggle is never surfaced as a hint.

@@ -14,32 +14,14 @@ from crm.permissions.org_hierarchy import (
 	hierarchy_enabled,
 )
 from frappe import _
-from frappe.search.sqlite_search import SQLiteSearch
-from frappe.utils import strip_html_tags
-from frappe.utils.caching import redis_cache
+from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch
+from frappe.utils.caching import redis_cache, request_cache
 
-_NON_DIGIT = re.compile(r"\D")
-
-
-def _phone_tokens(num):
-	# A phone is indexed digits-only and as its last 10 digits, so it matches with or without the country code.
-	if not num:
-		return []
-	digits = _NON_DIGIT.sub("", str(num))
-	forms = {digits}
-	if len(digits) > 10:
-		forms.add(digits[-10:])
-	return [f for f in forms if f]
-
-
-def _leaf(value):
-	# A stage PK is composite (`{program}::…::{stage}`); the LEAF is the only part a human types or reads.
-	return (value or "").split("::")[-1]
-
-from tatva_connect.access import request_cache
 from tatva_connect.access.visibility import _ref_parent
 from tatva_connect.api.partner_file import _file_lead
 from tatva_connect.automation.settings import is_enabled
+from tatva_connect.phone import match_digits
+from tatva_connect.taxonomy.picklist import _LEAD_AXES
 
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.
 TOGGLE = "Search::Index::indexing"
@@ -54,7 +36,7 @@ _PLACEHOLDER = [{"title": "name"}, {"content": "creation"}]
 # The row of `search_meta` that records which declaration the live index file was actually built from.
 _FINGERPRINT_KEY = "schema_fingerprint"
 
-# One permission read per user per minute — a search costs this on EVERY keystroke past the 3-char floor.
+# One permission read per user per minute — a search costs this on EVERY keystroke past the endpoint's floor.
 _PERMISSION_TTL = 60
 
 # One tier of the doctype preference, wide enough to dominate every other factor in the scoring pipeline.
@@ -72,8 +54,9 @@ _IDENTIFIERS = (
 	("prospect_id", "custom_lsq_prospect_id", "text"),
 )
 
-# The lead's grain axes, in the order the row shows them; fieldnames are the picklist brain's own lead axes.
-_AXES = (("vertical", "custom_vertical"), ("lead_group", "custom_group"), ("program", "custom_current_program"))
+# The lead's grain axes, in the order the row shows them; the FIELDNAMES are the picklist brain's own lead axes,
+# imported not restated (taxonomy/picklist.py:37) — `strict` is what makes a drift in either list a crash, not a bug.
+_AXES = tuple(zip(("vertical", "lead_group", "program"), _LEAD_AXES, strict=True))
 
 # Every CRM Lead field prepare_document consumes, derived from the two declarations above so it cannot drift.
 # This is ONE list doing TWO jobs, which is the whole point: the framework SELECTs it for the batch build AND
@@ -90,8 +73,9 @@ _LEAD_FIELDS = (
 	*(fieldname for _c, fieldname in _AXES),
 )
 
-# Below this a probe prefix-matches half the site, and the endpoint refuses a query shorter than it anyway.
-_IDENT_MIN = 3
+# The framework's own word floor (sqlite_search.py:58), which is also `api._MIN`: below it a term gets no prefix
+# wildcard, so a shorter probe is not something the text lane would have searched either.
+_IDENT_MIN = MIN_WORD_LENGTH
 
 # The `principals` column is a delimited SET, so a token is bracketed: `|a@x.com|` can never match `|ba@x.com|`.
 _D = "|"
@@ -99,6 +83,37 @@ _D = "|"
 # `DocShare.everyone` grants every logged-in user (frappe/share.py get_shared), so it is a principal in its own
 # right. Not an email, so it cannot collide with one — and a collision would only WIDEN the pre-filter anyway.
 _EVERYONE = "everyone"
+
+# Anything that is not a word character or space is a token boundary — one rule, used by every lane below.
+_PUNCT = re.compile(r"[^\w\s]")
+
+
+def tokens(text):
+	"""THE query tokeniser — ONE per typed word, so the two lanes can never cut a query differently.
+
+	Each pair is `(normalised, as_typed)`: the normalised form is lower-cased with punctuation as a space (a
+	stored "Goodflip-Care" must meet a typed "goodflip care"), the second is the user's own spelling, kept so a
+	word can be shown back as it was written. One pair per WORD is what makes the two forms un-desyncable —
+	the vocabulary lane used to align two separate tokenisations and carried a fallback for when they disagreed.
+	"""
+	pairs = [(" ".join(_PUNCT.sub(" ", word).lower().split()), word) for word in (text or "").split()]
+	return [pair for pair in pairs if pair[0]]
+
+
+def normalise(text):
+	# The same words `tokens` yields, as one string — how a stored value and a typed query meet on one rule.
+	return " ".join(word for word, _typed in tokens(text))
+
+
+def leaf(value):
+	# A stage PK is composite (`{program}::…::{stage}`); the LEAF is the only part a human types or reads.
+	return (value or "").split("::")[-1]
+
+
+def _phone_keys(num):
+	# Indexed as its full digits AND as the digits brain's ten-digit key, so a stored `+91…` is found whether or
+	# not the country code was typed. Both spellings come from `phone.match_digits` — never a local regex.
+	return [key for key in {match_digits(num), match_digits(num, last=10)} if key]
 
 
 def _token(user):
@@ -144,22 +159,20 @@ def visible_principals():
 	return sorted(_token(u) for u in users)
 
 
+@request_cache
 def identifier_labels():
 	# Each identifier's label, read off the field's OWN meta; a docname is not a meta field, so it borrows the
-	# word Frappe itself puts over that column. One meta read per request, via the app's own memoisation.
-	def build():
-		meta = frappe.get_meta("CRM Lead")
-		field_of = {column: meta.get_field(fieldname) for column, fieldname, _kind in _IDENTIFIERS}
-		return {column: (field.label if field else None) or _("ID") for column, field in field_of.items()}
-
-	return request_cache("tatva_connect:search_identifier_labels", "all", build)
+	# word Frappe itself puts over that column. One meta read per request — frappe's own decorator, no dummy key.
+	meta = frappe.get_meta("CRM Lead")
+	field_of = {column: meta.get_field(fieldname) for column, fieldname, _kind in _IDENTIFIERS}
+	return {column: (field.label if field else None) or _("ID") for column, field in field_of.items()}
 
 
 def matched_identifier(hit, query):
 	"""Which unique ID the caller really typed, if any — an ID is ATOMIC, so this is a plain equality/prefix
 	comparison on a short string and never a text matcher. The WHOLE value is returned, so nothing can render
 	as a broken fragment. Declaration order settles a tie, so exactly one ID is reported and which one is fixed."""
-	probes = [word for word in (query or "").lower().split() if len(word) >= _IDENT_MIN]
+	probes = [word for word, _typed in tokens(query) if len(word) >= _IDENT_MIN]
 	if not probes:
 		return None
 	labels = identifier_labels()
@@ -171,11 +184,14 @@ def matched_identifier(hit, query):
 
 
 def _was_typed(value, probes, kind):
-	# A phone is compared as digits, so a stored `+91…` meets a typed `0…`; a docname only ever matches whole.
-	forms = _phone_tokens(value) if kind == "digits" else [value.lower()]
+	# A phone is compared on the digits brain's OWN ten-digit key, so a stored `+91…` meets a typed `0…` — and a
+	# shorter number is not a key at all (phone.py:43), so a bare `919` marks nothing rather than every +91 lead.
+	# Every other ID goes through the query's own tokeniser, so both sides are cut once and the same way.
 	if kind == "digits":
-		probes = [_NON_DIGIT.sub("", probe) for probe in probes]
-	return any(probe and (form == probe or (kind != "exact" and form.startswith(probe))) for form in forms for probe in probes)
+		key = match_digits(value, last=10)
+		return bool(key) and any(match_digits(probe, last=10) == key for probe in probes)
+	form = normalise(value)
+	return any(form == probe or (kind != "exact" and form.startswith(probe)) for probe in probes)
 
 
 class CRMLeadSearch(SQLiteSearch):
@@ -206,7 +222,12 @@ class CRMLeadSearch(SQLiteSearch):
 
 	def is_search_enabled(self):
 		# OFF -> no index file, so every doc-event hook no-ops on index_exists(); that is the migration bulk guard.
-		return is_enabled(TOGGLE)
+		# Read once per ENGINE, because `_status` and the framework's own `search()` (sqlite_search.py:245) both ask
+		# and one search builds one engine. Scoped to the instance and no wider: `automation.settings.is_enabled` is
+		# deliberately uncached so a flipped switch takes effect at once, and the next search reads it again.
+		if self.__dict__.get("_enabled") is None:
+			self.__dict__["_enabled"] = is_enabled(TOGGLE)
+		return self.__dict__["_enabled"]
 
 	def build_index(self, batch_size=1000, is_continuation=False):
 		# Both native entrypoints — the enqueued build_index and the 3-hourly build_index_if_not_exists — land here.
@@ -249,13 +270,11 @@ class CRMLeadSearch(SQLiteSearch):
 			summary["total_matches"] = summary["returned_matches"] = summary["filtered_matches"]
 		return res
 
-	def get_scoring_pipeline(self):
-		# ONE ranking, written out: bm25, then the framework's title boost, then the declared doctype order.
-		# The recency boost is deliberately NOT here — `modified` is not declared, because every row on a
-		# migrated site carries the import's timestamp, so the boost would be a constant that reorders nothing
-		# while costing a metadata column and a full rebuild. Stated, not left to a silent `if`.
-		return [self._get_base_score, self._get_title_boost, self._doctype_tier]
-
+	# Registered through the framework's own discovery hook (sqlite_search.py:94), so bm25 + the title boost stay
+	# the base's to define and a scoring function frappe adds later is not silently dropped by a hand-copied list.
+	# Recency stays off because `modified` is not a declared metadata field — the base gates it on exactly that
+	# (sqlite_search.py:973), and every row on a migrated site carries the import's timestamp anyway.
+	@SQLiteSearch.scoring_function
 	def _doctype_tier(self, row, query):
 		# The owner's order, expressed where ranking lives instead of re-sorting the framework's output.
 		# _TIER_SPREAD per tier dominates the pipeline's own ceiling (title 5.0 x base 1.0), so the declared
@@ -383,7 +402,7 @@ class CRMLeadSearch(SQLiteSearch):
 			"owner": row.lead_owner,
 			"owner_name": self._user_name(row.lead_owner),
 			"principals": _principals_of(lead, row.lead_owner, row.owner),
-			"status": _leaf(row.custom_stage) or row.status,
+			"status": leaf(row.custom_stage) or row.status,
 			# The docname is the lead itself; every other ID and every axis is the value the declaration names.
 			"ids": {column: (lead if fieldname == "name" else row.get(fieldname)) for column, fieldname, _k in _IDENTIFIERS},
 			"axes": {column: row.get(fieldname) for column, fieldname in _AXES},
@@ -391,18 +410,20 @@ class CRMLeadSearch(SQLiteSearch):
 
 	def _content_of(self, doc):
 		# The DISPLAYED snippet — clean human text only; ids and the owner are search-only (see _keys_of).
+		# Rich text goes through the framework's own pipeline (sqlite_search.py:1569), which puts a space between
+		# blocks; `strip_html_tags` is one regex and indexed `<p>dose</p><p>Patient</p>` as `dosePatient`. A file
+		# name and a phone pair are already plain, and running an HTML parser over them only makes bs4 warn.
 		dt = doc.doctype
 		if dt == "FCRM Note":
-			text = " ".join(p for p in [doc.get("title"), doc.get("content")] if p)
-		elif dt == "CRM Task":
-			text = " ".join(p for p in [doc.get("title"), doc.get("description")] if p)
-		elif dt == "CRM Call Log":
-			text = " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
-		elif dt == "File":
-			text = doc.get("file_name") or ""
-		else:  # CRM Lead — no snippet at all: its row is rendered from metadata, and an ID is never displayed text.
-			text = ""
-		return strip_html_tags(text).strip() if text else ""
+			return self._process_content(" ".join(p for p in [doc.get("title"), doc.get("content")] if p))
+		if dt == "CRM Task":
+			return self._process_content(" ".join(p for p in [doc.get("title"), doc.get("description")] if p))
+		if dt == "CRM Call Log":
+			return " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
+		if dt == "File":
+			return doc.get("file_name") or ""
+		# CRM Lead — no snippet at all: its row is rendered from metadata, and an ID is never displayed text.
+		return ""
 
 	def _keys_of(self, doc, ctx):
 		# Searchable but never shown: every unique ID + its phone digit forms + the owner, so a punched ID or phone
@@ -412,10 +433,10 @@ class CRMLeadSearch(SQLiteSearch):
 			for column, _fieldname, kind in _IDENTIFIERS:
 				parts.append(ctx["ids"].get(column))
 				if kind == "digits":
-					parts += _phone_tokens(ctx["ids"].get(column))
+					parts += _phone_keys(ctx["ids"].get(column))
 			# Email is searched and never displayed either; stage/sub-stage/source are closed sets P5 turns into filters.
 			parts += [doc.get("email")]
-			parts += [_leaf(doc.get("custom_stage")), _leaf(doc.get("custom_substage")), doc.get("source")]
+			parts += [leaf(doc.get("custom_stage")), leaf(doc.get("custom_substage")), doc.get("source")]
 		if doc.doctype == "CRM Task":
 			parts += [doc.get("assigned_to"), self._user_name(doc.get("assigned_to"))]
 		parts += [ctx.get("owner_name"), ctx.get("owner")]
