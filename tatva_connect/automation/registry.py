@@ -884,9 +884,30 @@ AUTOMATIONS = [
 			"Example: a rep types a patient's mobile number into the search box and is taken straight to "
 			"that lead, without opening a single list or filter."
 		),
-		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events, so backs is empty. The activator builds the index once on enable.
+		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. The four below are OURS: the index denormalises each lead's owner/assignee/share set into a permission column, so every mechanism that moves it restamps the lead + its child rows. The activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
-		backs=[],
+		backs=[
+			"tatva_connect.search.index.reindex_on_lead_owner_change",
+			"tatva_connect.search.index.reindex_on_assignment",
+			"tatva_connect.search.index.reindex_on_assignment_change",
+			"tatva_connect.search.index.reindex_on_share",
+		],
+	),
+	Auto(
+		key="Search::Query::vocabulary",
+		fires_on="Provider call",
+		trigger_detail="search/api · search gate · typed words split into filters + text",
+		purpose=(
+			"Words the system already knows — a stage, a vertical, a group, a person — are read out of a "
+			"typed search and applied as filters, and only what is left over is searched as text, so "
+			"'onco kavita' narrows to the Onco patients called Kavita instead of asking the index for both "
+			"words at once. Nothing recognised, and the search behaves exactly as it does with this off. "
+			"Off, which is how it ships, every typed word goes to the full-text index and the search box "
+			"reports no interpretation.\n"
+			"Example: a rep types a vertical and a patient's first name together, and the result list is "
+			"narrowed to that vertical before the name is matched."
+		),
+		requires="Search::Index::indexing",
 	),
 ]
 
