@@ -66,7 +66,10 @@ def ensure_grains() -> list:
 	table came to hold `Goodflip::India::Inside-Sales` beside `GoodFlip::Insurers::`."""
 	inserted = []
 	for raw in GRAINS:
-		grain = tuple(taxonomy_grain.canon(axis, value) for axis, value in zip(taxonomy_grain.AXES, raw))
+		grain = tuple(
+			taxonomy_grain.canon(axis, value)
+			for axis, value in zip(taxonomy_grain.AXES, raw, strict=True)
+		)
 		name = grain_name(*grain)
 		if frappe.db.exists("CRM Grain", name):
 			continue

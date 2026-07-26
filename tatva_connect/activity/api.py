@@ -534,7 +534,7 @@ def _shown_fieldnames(fields, values):
 	flip a field back on and a bounded loop settles that deterministically instead of spinning."""
 	declared = {f.fieldname for f in fields}
 	shown = set(declared)
-	for _ in range(len(fields) + 1):
+	for _pass in range(len(fields) + 1):
 		live = _inert(fields, values, shown)
 		settled = {f.fieldname for f in fields if _shown_here(f, live)}
 		if settled == shown:

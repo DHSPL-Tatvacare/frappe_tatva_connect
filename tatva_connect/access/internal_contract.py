@@ -22,7 +22,10 @@ def _grain_tuple(vertical, group, program):
 	tuples built from the database — and MariaDB calls 'GoodFlip' and 'Goodflip' one value while Python
 	calls them two. Uncanonicalised, a contract that exists reads as missing, gets created, and dies on
 	its own composite primary key."""
-	return tuple(grain.canon(axis, value) for axis, value in zip(grain.AXES, (vertical, group, program)))
+	return tuple(
+		grain.canon(axis, value)
+		for axis, value in zip(grain.AXES, (vertical, group, program), strict=True)
+	)
 
 
 def _contract_grains():
@@ -134,13 +137,13 @@ def ensure_internal_contracts():
 	replaces.)"""
 	existing = _existing_internal()
 	catalog = set(frappe.get_all("CRM Lead API Field", pluck="field_key"))
-	for grain in sorted(_contract_grains()):
-		if grain not in existing and not _masters_exist(grain):
+	for grain_key in sorted(_contract_grains()):
+		if grain_key not in existing and not _masters_exist(grain_key):
 			continue  # fresh site: master data not seeded yet — a later migrate seeds this grain's contract
-		vertical, group, program = grain
-		keys = fields_for_grain(grain, catalog)
-		if grain in existing:
-			doc = frappe.get_doc("CRM Lead API Mapping", existing[grain])
+		vertical, group, program = grain_key
+		keys = fields_for_grain(grain_key, catalog)
+		if grain_key in existing:
+			doc = frappe.get_doc("CRM Lead API Mapping", existing[grain_key])
 		else:
 			doc = frappe.new_doc("CRM Lead API Mapping")
 			doc.contract_name = _CONTRACT_NAME
