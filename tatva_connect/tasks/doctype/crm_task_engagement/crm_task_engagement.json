@@ -1,0 +1,71 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-25 00:00:00.000000",
+ "description": "The Engagement section's real named columns. Select-like answers are stored as Data on purpose: `fieldtype` and `options` live on CRM Task Type Field, so one column carries a different option set per activity type.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "mode",
+  "activity_status",
+  "next_step",
+  "reschedule_at",
+  "reasons",
+  "dropped_reason"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "mode",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Mode"
+  },
+  {
+   "columns": 2,
+   "fieldname": "activity_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Activity Status"
+  },
+  {
+   "columns": 2,
+   "fieldname": "next_step",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Next Step"
+  },
+  {
+   "columns": 2,
+   "fieldname": "reschedule_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Reschedule At"
+  },
+  {
+   "fieldname": "reasons",
+   "fieldtype": "Small Text",
+   "label": "Reasons"
+  },
+  {
+   "fieldname": "dropped_reason",
+   "fieldtype": "Small Text",
+   "label": "Dropped Reason"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tasks",
+ "name": "CRM Task Engagement",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

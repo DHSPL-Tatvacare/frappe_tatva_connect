@@ -17,6 +17,7 @@
   "visit_mode",
   "location_when",
   "is_logged_complete",
+  "disable_bulk_complete",
   "schema_section",
   "schema"
  ],
@@ -81,6 +82,13 @@
    "fieldname": "is_logged_complete",
    "fieldtype": "Check",
    "label": "Logged Complete"
+  },
+  {
+   "default": "0",
+   "description": "On: a task of this type cannot be completed from the list's bulk action — its form must be filled one at a time.",
+   "fieldname": "disable_bulk_complete",
+   "fieldtype": "Check",
+   "label": "Disable Bulk Complete"
   },
   {
    "fieldname": "schema_section",

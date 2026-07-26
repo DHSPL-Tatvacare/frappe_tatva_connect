@@ -29,10 +29,10 @@ contract names the LOGICAL field, and both halves of that name are answered by t
   * what a name RESOLVES to at runtime — `automation.context.activity_values`, which delegates to
     `activity.api._task_values`, keyed by the SAME logical fieldname.
 
-Both sides therefore key on the schema fieldname and cannot drift apart. Note that `_task_values` maps a
-value back by reading the schema row's `target` directly, NOT through `activity.api.field_column` — a
-pre-existing difference (field_column additionally requires the target to be in `PROMOTED_COLUMNS`) that
-this module neither introduces nor relies on. It is raised in `docs/pending/`.
+Both sides therefore key on the schema fieldname and cannot drift apart. `_task_values` reads a value back
+at the address `activity.api.field_target` names — the same seam every writer wrote by — since Phase 4 of
+`docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md`, locked by
+`tests/activity/test_field_routing_coherence.py`.
 
 RESOLUTION ORDER, AND WHY IT ENDS IN A RAISE
 --------------------------------------------

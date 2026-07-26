@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import frappe
 from frappe import _
-from frappe.utils import flt, format_datetime, formatdate
+from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -28,31 +28,136 @@ PROMOTED_COLUMNS = (
 )
 
 
+# The common CRM Task columns the plan RETAINS, so a field naming one keeps the home it already has
+# (§8 rule 2). Nothing else is enumerated: a slot is simply a target neither a section nor this claims.
+# The CRM Task columns a declared field may keep living on — RETAINED on the row, not merely rep-facing: custom_asm is operational but is still validated (_validate_asm) and must never fall to a section row.
+COMMON_COLUMNS = ("custom_outcome", "custom_followup_at", "custom_scheduled_at", "custom_asm")
+
+
 def field_column(f):
-	"""The promoted CRM Task column a schema field routes to, or None when it lives in the JSON payload.
-	THE routing rule, named once: compute_activity WRITES by it and Smart Views READS by it, so a column
-	the writer fills can never be a column the reader looks past."""
+	"""The promoted CRM Task column a schema field's answer lived in BEFORE Phase 5, or None when it lived
+	in the JSON payload. No writer routes by it any more — `field_target` is the one write seam. It survives
+	as the HISTORY reader's rule (`_legacy_task_values`, which the backfill reads by) and dies in Phase 7."""
 	target = f.get("target") or ""
 	return target if target in PROMOTED_COLUMNS else None
 
 
+def field_target(f):
+	"""THE home a declared activity field lands in — `(section_key, address)`, section None meaning the task row itself. Since Phase 5 it is the only write seam: every writer asks it and no writer asks field_column."""
+	target = f.get("target") or ""
+	section = f.get("section") or ""
+	if section and target and frappe.get_meta(
+		frappe.get_cached_value("CRM Task Section", section, "target_doctype")
+	).get_field(target):
+		return section, target
+	if target in COMMON_COLUMNS:
+		return None, target
+	return _key_value_section(), f.get("fieldname")
+
+
+def _key_value_section():
+	"""The section a field carrying no shape of its own answers in — the one the operator declared
+	key-value, so the default home is read off the declaration and never named in code."""
+	return frappe.get_all(
+		"CRM Task Section", filters={"is_key_value": 1}, order_by="display_order", limit=1, pluck="name"
+	)[0]
+
+
+# The column a declared fieldtype's answer can be COMPARED in beside the one it is read from, and the
+# cast that fills it (D17). ONE map: the writer fills the column and Smart Views filter and sort on it,
+# so the same answer can never be a date on the write side and a string on the read side.
+_TYPED_COLUMNS = {
+	"Date": ("value_datetime", get_datetime),
+	"Datetime": ("value_datetime", get_datetime),
+	"Int": ("value_number", flt),
+	"Float": ("value_number", flt),
+	"Currency": ("value_number", flt),
+	"Check": ("value_number", flt),
+}
+
+
+def typed_column(fieldtype):
+	"""The column an answer of this declared fieldtype compares in, or None when the column it is read from is the only one it has."""
+	spec = _TYPED_COLUMNS.get(fieldtype or "")
+	return spec[0] if spec else None
+
+
+def _row_values(section, address, fieldtype, value):
+	"""The columns ONE section row carries for one field: a key-value row is addressed by the field's own
+	fieldname and answers in the column the section DECLARES as its value field — always, because that is
+	the column every consumer reads through — with the declared fieldtype's typed mirror of the same answer
+	beside it, so a date compares as a date and a number as a number. A column section names its column
+	outright. The section is the only thing that decides which shape applies."""
+	if not section.is_key_value:
+		return {address: value}
+	row = {section.row_key_field: address, section.value_field: cstr(value)}
+	spec = _TYPED_COLUMNS.get(fieldtype or "")
+	if spec:
+		column, cast = spec
+		row[column] = None if value in (None, "") else cast(value)
+	return row
+
+
+def _put_section_value(doc, f, value):
+	"""Dual-write leg for a live CRM Task: put ONE field's value in the new home field_target names,
+	upserting the row it addresses so a re-write never grows a second one. Returns True iff a row changed.
+	Rule 2 writes nothing — the retained common column the caller already set IS the new home."""
+	section_key, address = field_target(f)
+	if section_key is None:
+		return False
+	section = frappe.get_cached_doc("CRM Task Section", section_key)
+	values = _row_values(section, address, f.fieldtype, value)
+	rows = doc.get(section.child_table_field) or []
+	row = (next((r for r in rows if r.get(section.row_key_field) == address), None)
+		   if section.is_key_value else (rows[0] if rows else None))
+	if row is None:
+		doc.append(section.child_table_field, values)
+		return True
+	if all(row.get(k) == v for k, v in values.items()):
+		return False
+	row.update(values)
+	return True
+
+
+def _stage_section_value(staged, f, value):
+	"""Dual-write leg for a task that is only a dict so far: stage ONE field's value into
+	{child_table_field: [rows]} — the shape Document.update applies to a Table field natively, so the same
+	answer reaches the same row whether the task is being created or completed."""
+	section_key, address = field_target(f)
+	if section_key is None:
+		return
+	section = frappe.get_cached_doc("CRM Task Section", section_key)
+	rows = staged.setdefault(section.child_table_field, [])
+	values = _row_values(section, address, f.fieldtype, value)
+	if section.is_key_value or not rows:
+		rows.append(values)
+	else:
+		rows[0].update(values)
+
+
 def set_schema_field(task, task_type, fieldname, value):
 	"""Write ONE declared activity-schema field onto an existing CRM Task, routed by the SAME rule
-	compute_activity uses (field_column): a promoted field lands on its column, a payload field into
-	custom_activity_payload. Raises if the field is not declared on the type — so no out-of-declaration
-	key can be poked into the payload (the second-writer bug this replaces). Returns True iff it changed."""
+	compute_activity uses (field_target): a field the task row keeps lands on its retained common column,
+	every other answer lands in the section row that addresses it. Raises if the field is not declared on
+	the type — so no out-of-declaration key can be poked into the payload (the second-writer bug this
+	replaces). Returns True iff it changed.
+
+	Phase 5: the slot leg is gone. A slot column is never written again — it keeps the history it already
+	holds until Phase 7 drops it. The JSON payload key stays because it is still what `activity_is_unlogged`
+	reads; it dies with the slots."""
 	f = next((x for x in frappe.get_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
 	if not f:
 		frappe.throw(_("{0} is not a declared field of activity type {1}.").format(fieldname, task_type))
-	column = field_column(f)
-	if column:
+	changed = _put_section_value(task, f, value)
+	section_key, column = field_target(f)
+	if section_key is None:
 		if task.get(column) == value:
-			return False
+			return changed
 		task.set(column, value)
 		return True
 	payload = frappe.parse_json(task.custom_activity_payload) if (task.custom_activity_payload or "").strip() else {}
 	if payload.get(fieldname) == value:
-		return False
+		return changed
 	payload[fieldname] = value
 	task.custom_activity_payload = frappe.as_json(payload)
 	return True
@@ -214,8 +319,39 @@ def _field_descriptor(f):
 		"options": f.options or "",
 		"reqd": int(f.reqd or 0),
 		"target": f.target or "",
+		"section": (f.get("section") or ""),
 		"depends_on": (f.get("depends_on") or ""),
 	}
+
+
+def _field_groups(descriptors):
+	"""The form's LAYOUT, straight off the declaration (Phase 8): one group per section the type's fields
+	name, plus the group of fields naming none. A group carries its section's own title, tab, display order
+	and condition, and holds the SAME descriptor objects the flat list holds — one decision about what a
+	type's fields are, projected two ways, never a second list.
+
+	Order: the blank tab first (the section declaration calls it the first tab), then each tab by the
+	earliest section that names it; inside a tab the unsectioned group leads, then sections by display
+	order. Field order inside a group is the child table's own. A type no admin has sectioned yields
+	exactly ONE unsectioned group, which is the flat form that renders today."""
+	sections = {s.name: s for s in _sections()}
+	groups = {}
+	for d in descriptors:
+		s = sections.get(d["section"])
+		key = s.name if s else ""
+		groups.setdefault(key, {
+			"section": key,
+			"title": (s.title or "") if s else "",
+			"tab": (s.tab or "") if s else "",
+			"display_order": cint(s.display_order) if s else 0,
+			"depends_on": (s.depends_on or "") if s else "",
+			"fields": [],
+		})["fields"].append(d)
+	ordered = sorted(groups.values(), key=lambda g: (g["display_order"], g["section"]))
+	first = {}
+	for g in ordered:
+		first.setdefault(g["tab"], g["display_order"])
+	return sorted(ordered, key=lambda g: (g["tab"] != "", first[g["tab"]], g["section"] != "", g["display_order"]))
 
 
 @frappe.whitelist()
@@ -256,12 +392,34 @@ def _field_visible(depends_on, values):
 	return bool((values or {}).get(cond))
 
 
+def _section_condition(f):
+	"""The condition the SECTION this field sits in is shown under, blank when it names none — read off the
+	section declaration, the one place a section's presentation is stated."""
+	section = f.get("section") or ""
+	if not section:
+		return ""
+	return frappe.get_cached_value("CRM Task Section", section, "depends_on") or ""
+
+
+def _required_here(f, values):
+	"""True when the submitted form must carry this field: declared required AND actually shown — its own
+	condition passes and the section holding it is not hidden. A hidden SECTION's required field must not
+	block a save any more than a hidden FIELD's does (§8), and it is judged here on the server by the SAME
+	evaluator the client mirrors — `_field_visible`, asked twice, never a second rule."""
+	return (bool(f.reqd)
+			and _field_visible(_section_condition(f), values)
+			and _field_visible(f.get("depends_on"), values))
+
+
 def compute_activity(lead, task_type, values, task=None):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
-	grain + required, splits first-class columns vs the JSON payload, and runs the location guard
-	(set/check the clinic anchor, resolve the address). Returns a flat dict of CRM Task fieldname ->
-	value (status, payload, first-class cols, location cols). Raises on out-of-scope / missing / out
-	of range. Used by BOTH save paths: save_activity (complete/update existing) and the native
+	grain + required, routes every answer by `field_target`, and runs the location guard (set/check the
+	clinic anchor, resolve the address). Returns a dict of CRM Task fieldname -> value (status, payload,
+	the retained common cols, location cols, and the section child rows keyed by their Table field, which
+	Document.update applies natively). Since Phase 5 no slot column is written: a field the task row does
+	not keep answers in its section row, and the payload key it also carries dies with the slots in Phase
+	7 — `activity_is_unlogged` still reads it. Raises on out-of-scope / missing /
+	out of range. Used by BOTH save paths: save_activity (complete/update existing) and the native
 	new-task create (the form script stamps these onto the doc before insert). No second writer.
 
 	`task` is the CRM Task name being completed (or the freshly-inserted shell for a new punch) — it
@@ -273,16 +431,20 @@ def compute_activity(lead, task_type, values, task=None):
 		frappe.throw(_("This activity is not available for this lead."), title=_("Out of scope"))
 
 	tt = frappe.get_doc("CRM Task Type", task_type)
-	promoted, payload = {}, {}
+	promoted, payload, staged = {}, {}, {}
 	for f in tt.schema:
 		val = values.get(f.fieldname)
-		# Only enforce required on fields the depends_on actually shows — a hidden field is never
-		# submitted, so requiring it would brick the save (one rule, same as the client).
-		if f.reqd and _field_visible(f.get("depends_on"), values) and (val is None or val == ""):
+		# Only enforce required on a field the form actually shows — hidden by its own condition or by its
+		# section's, it is never submitted, so requiring it would brick the save (one rule, same as the client).
+		if _required_here(f, values) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
-		# Route by the schema field's target: one of the 9 promoted columns, else the JSON payload.
-		column = field_column(f)
-		(promoted if column else payload)[column or f.fieldname] = val
+		# Route by the ONE seam: a retained common column stays on the task row, every other answer is its section row's.
+		section_key, column = field_target(f)
+		if section_key is None:
+			promoted[column] = val
+		else:
+			payload[f.fieldname] = val
+		_stage_section_value(staged, f, val)
 
 	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
 	_validate_asm(promoted.get("custom_asm"))
@@ -291,6 +453,7 @@ def compute_activity(lead, task_type, values, task=None):
 		"custom_activity_payload": frappe.as_json(payload),
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
 		**promoted,
+		**staged,
 	}
 	notes = values.get("notes")
 	if notes and frappe.get_meta("CRM Task").has_field("description"):
@@ -430,6 +593,9 @@ def lead_task_board(lead):
 		)
 	) if task_names else Counter()
 
+	# The saved answers for the whole board in one query per section — the same batching the counts above use.
+	answers_by_task = section_rows(task_names)
+
 	types = {}
 	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
 		cfg = _type_config(tn)
@@ -455,7 +621,8 @@ def lead_task_board(lead):
 			"task_type_label": type_names.get(r.custom_task_type, "") or r.custom_task_type or "",
 			"status": r.status,
 			"priority": r.priority,
-			"due": formatdate(r.due_date, "d MMM yyyy") if r.due_date else None,
+			"due": format_datetime(r.due_date, "d MMM yyyy · h:mm a") if r.due_date else None,
+			"due_iso": str(r.due_date) if r.due_date else None,
 			"rep": who,
 			"rep_name": (who_doc and who_doc.full_name) or who,
 			"rep_image": who_doc.user_image if who_doc else None,
@@ -463,7 +630,7 @@ def lead_task_board(lead):
 			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
 			"completed_on": format_datetime(completed_raw, "d MMM yyyy") if (done and completed_raw) else None,
 			"completed_by": (completer and frappe.db.get_value("User", completer, "full_name")) or completer,
-			"values": _task_values(r, types.get(r.custom_task_type)),
+			"values": _task_values(r, types.get(r.custom_task_type), answers_by_task.get(cstr(r.name), {})),
 			"location": _task_location(r),
 			"attachments": attach_counts.get(r.name, 0),
 		})
@@ -473,14 +640,19 @@ def lead_task_board(lead):
 
 
 def _type_config(task_type):
-	"""Render config for a task type: the ordered field schema, whether completing it logs Done, and
-	whether it can capture location (visit_mode In-Person, or a conditional location_when). None for a
-	type with no config row (a plain task)."""
+	"""Render config for a task type: the ordered field schema, the same fields laid out in their declared
+	sections and tabs, whether completing it logs Done, and whether it can capture location (visit_mode
+	In-Person, or a conditional location_when). None for a type with no config row (a plain task).
+
+	`fields` is what every READER of a task's answers walks; `groups` is what the FORM renders. They are the
+	one descriptor list, projected twice — see `_field_groups`."""
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
 	doc = frappe.get_doc("CRM Task Type", task_type)
+	fields = [_field_descriptor(f) for f in doc.schema]
 	return {
-		"fields": [_field_descriptor(f) for f in doc.schema],
+		"fields": fields,
+		"groups": _field_groups(fields),
 		"is_logged_complete": int(doc.is_logged_complete or 0),
 		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
 	}
@@ -545,9 +717,97 @@ def type_config(task_type):
 	return cfg
 
 
-def _task_values(r, cfg):
-	"""Saved values keyed by SCHEMA fieldname: the JSON payload (non-first-class fields) merged with the
-	first-class columns mapped back to their schema fieldname. So the renderer just reads values[fieldname]."""
+def _sections():
+	"""Every declared activity section — the ONE row naming a section's child table, its row key and the
+	column an answer is read from, AND what the form calls it, which tab it sits in and when it is shown."""
+	return frappe.get_all(
+		"CRM Task Section",
+		fields=["name", "title", "tab", "display_order", "depends_on", "target_doctype",
+				"child_table_field", "is_key_value", "is_multi_row", "row_key_field", "value_field"],
+		order_by="display_order",
+	)
+
+
+def section_rows(task_names):
+	"""Every section child row these tasks carry: {task: {child table: [rows]}}. ONE query per section and
+	never one per task, so a board or a page of activities costs the same as a single one.
+
+	Keyed by the task name as TEXT: CRM Task is autoincrement-named so its own PK reads back as an int,
+	while a child row's `parent` is a varchar — keyed by either as it came, every lookup missed."""
+	out = {}
+	if not task_names:
+		return out
+	for s in _sections():
+		for row in frappe.get_all(
+			s.target_doctype,
+			filters={"parent": ["in", [cstr(n) for n in task_names]], "parenttype": "CRM Task"},
+			fields=["*"], order_by="idx asc",
+		):
+			out.setdefault(cstr(row.parent), {}).setdefault(s.child_table_field, []).append(row)
+	return out
+
+
+def _rows_of(r):
+	"""The section rows of ONE task: a live CRM Task Document already carries them; a flat row read by get_all does not, so they are fetched."""
+	held = {s.child_table_field: r.get(s.child_table_field) for s in _sections()}
+	if all(v is not None for v in held.values()):
+		return held
+	return section_rows([r.name]).get(cstr(r.name), {})
+
+
+def _latest(rows, row_key_field):
+	"""The ONE row a section shows: newest by its row key, then creation, then name — the same order the
+	Smart View join ranks by, so the form and the worklist can never show different rows."""
+	if not rows:
+		return None
+	return sorted(
+		rows,
+		key=lambda x: (cstr(x.get(row_key_field)) if row_key_field else "", cstr(x.get("creation")), cstr(x.get("name"))),
+		reverse=True,
+	)[0]
+
+
+def _section_answer(f, task_row, rows, sections):
+	"""ONE declared field's saved value, read at the address `field_target` names and nowhere else: a
+	retained common column is the task's own, everything else is the section row that addresses it."""
+	section_key, address = field_target(f)
+	if section_key is None:
+		return task_row.get(address)
+	section = sections.get(section_key)
+	if not section:
+		return None
+	held = rows.get(section.child_table_field) or []
+	if section.is_key_value:
+		row = next((x for x in held if x.get(section.row_key_field) == address), None)
+		return row.get(section.value_field) if row else None
+	row = _latest(held, section.row_key_field)
+	return row.get(address) if row else None
+
+
+def _task_values(r, cfg, rows=None):
+	"""Saved values keyed by SCHEMA fieldname, so the renderer just reads values[fieldname].
+
+	Phase 4: every answer is read at the address `field_target` names — the SAME seam every writer wrote
+	by — so the reader can never look at a place the writer never filled. `rows` is the task's section
+	rows when the caller already holds them for a whole page; a lone read fetches its own."""
+	vals = {}
+	if cfg:
+		sections = {s.name: s for s in _sections()}
+		rows = _rows_of(r) if rows is None else rows
+		for f in cfg["fields"]:
+			value = _section_answer(f, r, rows, sections)
+			if value not in (None, ""):
+				vals[f["fieldname"]] = value if isinstance(value, str) else cstr(value)
+	if r.description:
+		vals.setdefault("notes", r.description)
+	return vals
+
+
+def _legacy_task_values(r, cfg):
+	"""The OLD homes — the JSON payload merged with the promoted columns, routed by `field_column`.
+
+	The backfill's reader, and only the backfill's: a migration reads where a value IS today, which is the
+	whole of what it has to move. Dies with the slots in Phase 7."""
 	vals = {}
 	if (r.custom_activity_payload or "").strip():
 		try:
@@ -556,7 +816,7 @@ def _task_values(r, cfg):
 			frappe.log_error(f"activity: bad payload on task {r.name}")
 	if cfg:
 		for f in cfg["fields"]:
-			tgt = f.get("target")
+			tgt = field_column(f)
 			if tgt and r.get(tgt) not in (None, ""):
 				vals[f["fieldname"]] = str(r.get(tgt))
 	if r.description:
@@ -640,6 +900,7 @@ def lead_timeline(lead):
 	cfgs = {tn: _type_config(tn) for tn in {t.custom_task_type for t in tasks if t.custom_task_type}}
 	type_names = labels.labels([t.custom_task_type for t in tasks], TASK_TYPE)
 	files_by_key = _lead_files(lead)
+	answers_by_task = section_rows([t.name for t in tasks])  # one query per section for the whole timeline
 	out = []
 	for t in tasks:
 		who = t.assigned_to or t.owner
@@ -662,6 +923,6 @@ def lead_timeline(lead):
 			"location": ({"address": loc["address"],
 						  "map_url": "https://www.google.com/maps?q={},{}".format(loc["lat"], loc["lng"])}
 						 if loc else None),
-			"documents": _activity_documents(_task_values(t, cfg), cfg, files_by_key),
+			"documents": _activity_documents(_task_values(t, cfg, answers_by_task.get(cstr(t.name), {})), cfg, files_by_key),
 		})
 	return out

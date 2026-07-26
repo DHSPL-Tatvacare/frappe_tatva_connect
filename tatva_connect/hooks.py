@@ -54,6 +54,10 @@ override_whitelisted_methods = {
 	# Attach the standard _link_titles map so list/Kanban cells show a Link's clean title (its
 	# doctype title_field) instead of the composite :: PK. Generic; delegates to native get_data.
 	"crm.api.doc.get_data": "tatva_connect.api.list_link_titles.get_data",
+	# The CRM Task list lenses resolve through CRM Task.default_list_data() so no slot or operational column reaches a rep picker; every other doctype delegates to native untouched.
+	"crm.api.doc.get_filterable_fields": "tatva_connect.api.task_lenses.get_filterable_fields",
+	"crm.api.doc.get_group_by_fields": "tatva_connect.api.task_lenses.get_group_by_fields",
+	"crm.api.doc.sort_options": "tatva_connect.api.task_lenses.sort_options",
 	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
@@ -132,8 +136,12 @@ doc_events = {
 			# mirror the latest lab row's headline metrics up to the core Lead fields
 			"tatva_connect.lead.leads.sync_headline_metrics",
 		],
-		# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
-		"on_update": "tatva_connect.notifications.events.on_lead_stage_changed",
+		"on_update": [
+			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
+			"tatva_connect.notifications.events.on_lead_stage_changed",
+			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
+			"tatva_connect.search.index.reindex_on_lead_owner_change",
+		],
 	},
 	"CRM Task": {
 		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
@@ -234,7 +242,17 @@ doc_events = {
 		"after_insert": [
 			"tatva_connect.tasks.tasks.on_lead_assignment",
 			"tatva_connect.notifications.events.on_lead_assigned",
+			# assignment is the second leg of the lead visibility predicate the spotlight index denormalises
+			"tatva_connect.search.index.reindex_on_assignment",
 		],
+		"on_update": "tatva_connect.search.index.reindex_on_assignment_change",
+		"on_trash": "tatva_connect.search.index.reindex_on_assignment",
+	},
+	# crm shares a lead with its assigned agent, and a share is a row-level grant the spotlight index must carry.
+	"DocShare": {
+		"after_insert": "tatva_connect.search.index.reindex_on_share",
+		"on_update": "tatva_connect.search.index.reindex_on_share",
+		"on_trash": "tatva_connect.search.index.reindex_on_share",
 	},
 	# Azure Blob offload: push bytes after the row + local file exist, delete the blob on File delete; gated by the CRM Azure Storage Settings kill-switch.
 	"File": {
@@ -285,6 +303,8 @@ after_migrate = [
 	"tatva_connect.partner_api.section_seed.ensure_rows",
 	# The three catalog rows the Facebook fold stamps by field_key; a key with no row has no declared home.
 	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
+	# The three activity sections an activity field's answer is routed by; after fixtures, because each names a Table field on CRM Task that lands there.
+	"tatva_connect.taxonomy.task_section_seed.ensure_rows",
 	# The token-expiry alert as a native Notification, seeded DISABLED — no job is written; Frappe owns the Days Before scheduler.
 	"tatva_connect.lead_sync.notification_seed.ensure_notification",
 	# Per-grain INTERNAL visibility contracts (is_internal=1) moved OUT of after_migrate to the seed tail (db-seeds/2026-07-24-internal-contracts.bench-console.py): they derive from the taxonomy MASTERS + the lead-field CATALOG, both MANUAL seeds that land AFTER migrate, so on a fresh Day-0 site after_migrate ran with no masters and (via the _masters_exist guard) built NOTHING silently — every rep saw zero grain fields. Built at the tail of apply-seeds now, where masters + catalog exist. ensure_internal_contracts stays additive + idempotent.
@@ -316,6 +336,8 @@ after_migrate = [
 	# patches completed WITHOUT running them, so a fresh site would keep it for ever. Idempotent; the
 	# space is left alone if anyone has written a real page under it.
 	"tatva_connect.wiki_reconcile.reconcile",
+	# Phase 3 of the task-sections plan: every answer a task ALREADY carries gets the home field_target names. Here and not only in its patch because the answers land in fixture Table fields routed by the section seed above — both AFTER post-model-sync patches, so on the upgrade that carries the whole chain in one migrate the patch runs before its own prerequisites and is logged applied. Idempotent; writes only what is missing.
+	"tatva_connect.activity.backfill.ensure_section_rows",
 ]
 
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).

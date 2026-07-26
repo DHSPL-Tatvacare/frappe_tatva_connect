@@ -26,6 +26,8 @@ from tatva_connect.patches import (
 	add_integration_request_index,
 	add_lead_dedup_unique_index,
 	add_observability_indexes,
+	add_task_answer_fieldname_index,
+	add_task_document_kind_index,
 	backfill_webhook_token_digests,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
@@ -69,6 +71,10 @@ _STEPS = (
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.
 	reindex_screening_answers_by_hash,
+	# (parent, document_kind) on CRM Task Document — the Documents section is multi-row keyed by document_kind and every read picks one task's latest row of a kind; composite, so not JSON-declarable, and frappe's own (parent) index is left alone.
+	add_task_document_kind_index,
+	# (parent, fieldname) on CRM Task Answer — the key-value section is one row per DECLARED field per task, so it is the widest child table here and every read addresses one task's row for one fieldname; composite, so not JSON-declarable.
+	add_task_answer_fieldname_index,
 )
 
 

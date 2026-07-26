@@ -105,7 +105,7 @@ _PAYLOAD_FIELDS = [
 ]
 
 
-def _render(row, cfg):
+def _render(row, cfg, answers=None):
 	"""One activity row -> the partner shape. The single projection both the single read and the list
 	use, so a get and a page cannot render differently. `values` is re-keyed by the brain.
 
@@ -118,7 +118,7 @@ def _render(row, cfg):
 		"task_type": row.custom_task_type or "",
 		"status": row.status,
 		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
-		"values": activity_brain._task_values(row, cfg),
+		"values": activity_brain._task_values(row, cfg, answers),
 	}
 
 
@@ -386,5 +386,7 @@ def activity_list(**_kwargs):
 		tt: activity_brain._type_config(tt)
 		for tt in {r.custom_task_type for r in rows if r.custom_task_type}
 	}
-	activities = [_render(r, cfgs.get(r.custom_task_type)) for r in rows]
+	# The saved answers for the page in one query per section, not one read per row.
+	answers = activity_brain.section_rows([r.name for r in rows])
+	activities = [_render(r, cfgs.get(r.custom_task_type), answers.get(str(r.name), {})) for r in rows]
 	_list_ok("activities", activities, total, offset, limit)

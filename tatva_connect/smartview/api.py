@@ -4,9 +4,9 @@ A Smart View is a saved tabbed list over leads (one row per patient) or activiti
 row per CRM Task of an activity type). Its rows come from ONE `frappe.qb` query that:
 
   1. drives off CRM Lead (lead view) or CRM Task WHERE custom_task_type = activity_type,
-  2. LEFT JOINs only the CRM Lead child tables actually referenced by columns/predicate
-     (single-row on parent=name, or ordered by the section's row_key_field); CRM Task activity views
-     read the 9 promoted columns directly + display-only JSON_EXTRACT(custom_activity_payload),
+  2. LEFT JOINs only the child tables actually referenced by columns/predicate (single-row on
+     parent=name, or ordered by the section's row_key_field) — leads and activities alike, each
+     field resolved to its physical home by its own brain,
   3. ANDs the permission query conditions — ALWAYS, fail-closed, on list AND count,
   4. translates the saved predicate JSON tree into nested qb WHERE (catalog fields only),
   5. applies ad-hoc filters/search/sort (catalog-bounded) and paginates,
@@ -141,31 +141,56 @@ def _lead_catalog():
 	return entitlement.request_cache("tatva_connect:smartview_catalog", "all", build)
 
 
+def _task_sections():
+	"""The activity sections, keyed by section_key — the ONE row that owns a section's table, its row key
+	and the column an answer is read from. The task twin of `_sections`, and cached the same way."""
+	def build():
+		return {
+			r.name: r
+			for r in frappe.get_all(
+				"CRM Task Section",
+				fields=["name", "title", "target_doctype", "child_table_field", "is_multi_row",
+						"row_key_field", "is_key_value", "value_field"],
+			)
+		}
+
+	return entitlement.request_cache("tatva_connect:smartview_task_sections", "all", build)
+
+
 def _activity_catalog(activity_type):
 	"""The activity type's fields, ASKED of the brain. Keyed `activity:<fieldname>` — the schema field's
 	own name, so re-keying the TYPE moves nothing here and the type itself is reached through the view's
 	Link, which cascades.
 
-	A field naming one of the 9 promoted CRM Task columns IS that column: project, filter and sort it.
-	A field naming none lives in the JSON payload, reachable only through JSON_EXTRACT — display-only,
-	so it may never reach a WHERE or an ORDER BY (see _joins). The brain owns the routing; this owns
-	only what Smart Views can physically do with each side of it."""
+	Where a field physically lives is `field_target`'s answer and never a second reading of it: a retained
+	common CRM Task column is the driving row, anything else is the section row that addresses it. Every
+	declared field is therefore a real column somewhere, so every one of them is filterable and sortable —
+	the JSON payload, which could only ever be projected, is gone.
+
+	D17: a key-value answer is READ from the column its section declares and COMPARED in the typed column
+	the brain names for its declared fieldtype, so a date range is a date range and not a string range."""
 	if not activity_type:
 		return {}
+	sections = _task_sections()
 	rows = {}
 	for f in activity_brain.get_schema(activity_type):
-		column = activity_brain.field_column(f)
+		section_key, address = activity_brain.field_target(f)
+		section = sections.get(section_key)
 		key = f"activity:{f['fieldname']}"
+		value_field = (section.value_field or "") if section else ""
 		rows[key] = frappe._dict(
 			field_key=key,
 			label=f["label"] or f["fieldname"],
-			fieldname=column or f["fieldname"],
-			sql_source="task" if column else "payload",
-			row_key_field="",
-			target_doctype=TASK_DOCTYPE if column else None,
-			filterable=1 if column else 0,
-			sortable=1 if column else 0,
-			surface="worklist" if column else "detail",
+			fieldname=address,
+			# The shape classifier is a fact about a section's columns, not about which resource declared it.
+			sql_source=crm_lead_section.sql_source(section) if section else "task",
+			row_key_field=(section.row_key_field or "") if section else "",
+			value_field=value_field,
+			compare_field=(activity_brain.typed_column(f["fieldtype"]) or value_field),
+			target_doctype=section.target_doctype if section else TASK_DOCTYPE,
+			filterable=1,
+			sortable=1,
+			surface="worklist",
 			fieldtype=f["fieldtype"],
 			options=f["options"],
 		)
@@ -465,12 +490,18 @@ def _predicate_keys(node, acc):
 
 
 def _joins(needed_keys, cat, driving_table, driving_name):
-	"""LEFT JOIN every CRM Lead child table referenced by `needed_keys`, once per (doctype, order_field).
-	Returns (query-mutator, {field_key: pypika Field}). No order_field -> join on parent=name +
-	parenttype ordered by creation; a row_key_field -> a subquery picking the newest row per parent. The driving
-	table's own (parent/task) fields resolve straight off driving_table; payload fields resolve to
-	a JSON_EXTRACT off the task's custom_activity_payload (no join, display-only)."""
+	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, order_field).
+	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
+	No order_field -> join on parent=name + parenttype ordered by creation; a row_key_field -> a subquery
+	picking the newest row per parent. The driving table's own (parent/task) fields resolve straight off
+	driving_table; payload fields resolve to a JSON_EXTRACT off the task's custom_activity_payload (no
+	join, display-only).
+
+	The two term maps differ for exactly one shape (D17): a key-value answer is PROJECTED from the column
+	its section declares and COMPARED in the typed column the catalog names, so a Datetime answer filters
+	and sorts as a date. Everywhere else the compared term is the projected one."""
 	field_terms = {}
+	compare_terms = {}  # only where a row is compared somewhere other than where it is read (D17)
 	join_specs = {}  # alias -> (aliased child table, order_field, child doctype)
 	answer_specs = {}  # alias -> the catalog row whose field this join answers
 	for key in needed_keys:
@@ -482,7 +513,9 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			# because a field_key is not a SQL identifier.
 			alias = f"_tc_ans_{len(answer_specs)}"
 			answer_specs[alias] = (key, r)
-			field_terms[key] = DocType(r.target_doctype).as_(alias)[r.value_field]
+			aliased = DocType(r.target_doctype).as_(alias)
+			field_terms[key] = aliased[r.value_field]
+			compare_terms[key] = aliased[r.get("compare_field") or r.value_field]
 			continue
 		if r.sql_source in ("parent", "task"):
 			field_terms[key] = driving_table[r.fieldname]
@@ -559,7 +592,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			)
 		return query
 
-	return apply, field_terms
+	return apply, field_terms, {**field_terms, **compare_terms}
 
 
 def _never_matches():
@@ -576,14 +609,14 @@ def _criterion(field_term, op, value):
 	return builder(field_term, value)
 
 
-def _predicate_where(node, cat, field_terms):
+def _predicate_where(node, cat, terms):
 	"""Translate a predicate node -> a qb criterion (or None). A group has `op`
 	(and/or) + `conditions`; a leaf has `field`/`operator`/`value`. Only catalog
-	fields with `filterable` reach a clause."""
+	fields with `filterable` reach a clause. `terms` are the COMPARED terms (D17)."""
 	if not isinstance(node, dict):
 		return None
 	if "conditions" in node:
-		parts = [c for c in (_predicate_where(x, cat, field_terms) for x in node["conditions"]) if c is not None]
+		parts = [c for c in (_predicate_where(x, cat, terms) for x in node["conditions"]) if c is not None]
 		if not parts:
 			return None
 		joiner = (node.get("op") or "and").lower()
@@ -593,17 +626,18 @@ def _predicate_where(node, cat, field_terms):
 		return crit
 	key = node.get("field")
 	r = cat.get(key)
-	if not r or not r.filterable or key not in field_terms:
+	if not r or not r.filterable or key not in terms:
 		# A SAVED predicate is the view's definition, so a condition that cannot be resolved narrows to
 		# nothing rather than disappearing. Dropped, it widened the view instead: a filter on a question
 		# no lead currently answers returned every lead, and one naming a field outside the caller's
 		# grain returned more rows than the view was written to show. Ad-hoc filters stay tolerant.
 		return _never_matches()
-	return _criterion(field_terms[key], node.get("operator") or "=", node.get("value"))
+	return _criterion(terms[key], node.get("operator") or "=", node.get("value"))
 
 
-def _apply_filters(crit, filters, cat, field_terms):
-	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded.
+def _apply_filters(crit, filters, cat, terms):
+	"""Ad-hoc filters: [[field_key, op, value], ...], catalog + filterable bounded, compared on the
+	COMPARED term (D17) so a date range is a date range.
 
 	Honoured or refused, never ignored. Skipping one silently hands back a list that looks filtered and
 	is not, which is worse than an error: the user reads it as the answer to a question it never asked.
@@ -614,15 +648,16 @@ def _apply_filters(crit, filters, cat, field_terms):
 			continue
 		key, op, value = f
 		r = cat.get(key)
-		if not r or not r.filterable or key not in field_terms:
+		if not r or not r.filterable or key not in terms:
 			frappe.throw(_("{0} cannot be filtered on here.").format(key))
-		c = _criterion(field_terms[key], op, value)
+		c = _criterion(terms[key], op, value)
 		crit = c if crit is None else (crit & c)
 	return crit
 
 
 def _apply_search(crit, search, cat, field_terms):
-	"""Free-text search across the projected filterable text fields (OR of LIKEs)."""
+	"""Free-text search across the projected filterable text fields (OR of LIKEs) — on the READ term, which
+	is the text a user sees and therefore the text they are searching."""
 	search = (search or "").strip()
 	if not search:
 		return crit
@@ -705,11 +740,11 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		if isinstance(f, (list, tuple)) and len(f) == 3:
 			needed.add(f[0])
 
-	apply_joins, field_terms = _joins(needed, cat, driving_table, driving_name)
+	apply_joins, field_terms, compare_terms = _joins(needed, cat, driving_table, driving_name)
 
 	# WHERE: predicate tree + ad-hoc filters + search, ALL catalog-bounded.
-	crit = _predicate_where(predicate, cat, field_terms)
-	crit = _apply_filters(crit, filters, cat, field_terms)
+	crit = _predicate_where(predicate, cat, compare_terms)
+	crit = _apply_filters(crit, filters, cat, compare_terms)
 	crit = _apply_search(crit, search, cat, field_terms)
 	# Activity view: pin the task type (indexed). Lead view: no extra base filter.
 	if base_object == "Activity" and activity_type:
@@ -735,9 +770,9 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	if isinstance(sort, str):
 		sort = frappe.parse_json(sort)
 	sort_key = sort[0] if (isinstance(sort, (list, tuple)) and sort) else None
-	if sort_key and cat.get(sort_key) and cat[sort_key].sortable and sort_key in field_terms:
+	if sort_key and cat.get(sort_key) and cat[sort_key].sortable and sort_key in compare_terms:
 		direction = frappe.qb.desc if (len(sort) > 1 and str(sort[1]).lower() == "desc") else frappe.qb.asc
-		rows_q = rows_q.orderby(field_terms[sort_key], order=direction)
+		rows_q = rows_q.orderby(compare_terms[sort_key], order=direction)
 	else:
 		rows_q = rows_q.orderby(driving_table.modified, order=frappe.qb.desc)
 

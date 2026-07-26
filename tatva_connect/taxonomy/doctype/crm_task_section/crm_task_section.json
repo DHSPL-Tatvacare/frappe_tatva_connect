@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:section_key",
+ "creation": "2026-07-25 00:00:00.000000",
+ "description": "The sections an activity type's fields are grouped into. ONE row states everything a section is: which CRM Task Table field holds its rows, whose columns they are, whether a task may carry many of them, and which column addresses one. Every reader — the activity form, Smart Views, automation, the partner API — asks this table; the answer is never restated on a CRM Task Type Field row. Mirrors CRM Lead Section.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_key",
+  "title",
+  "tab",
+  "display_order",
+  "depends_on",
+  "column_break_target",
+  "target_doctype",
+  "child_table_field",
+  "row_section",
+  "is_multi_row",
+  "row_key_field",
+  "is_key_value",
+  "value_field",
+  "label_field",
+  "question_field"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_key",
+   "fieldtype": "Data",
+   "label": "Section Key",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "The key a CRM Task Type Field names to say where its answer lands. Every field naming this section is routed by the row below."
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The heading these fields are shown under, on the activity form and in a partner's error messages."
+  },
+  {
+   "fieldname": "tab",
+   "fieldtype": "Data",
+   "label": "Tab",
+   "description": "The form tab these sections are grouped into. Blank = the first tab."
+  },
+  {
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "label": "Display Order",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Ascending within the tab: a lower number sits higher on the form."
+  },
+  {
+   "fieldname": "depends_on",
+   "fieldtype": "Data",
+   "label": "Depends On",
+   "length": 1000,
+   "description": "Optional JS condition showing this section only when relevant (native frappe-ui depends_on). A hidden section's fields are never required."
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_doctype",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "label": "Target DocType",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The doctype whose columns these fields are. Every field naming this section is resolved against it, so a field that is not one of its columns is refused."
+  },
+  {
+   "fieldname": "child_table_field",
+   "fieldtype": "Data",
+   "label": "Child Table Field",
+   "description": "The Table field on CRM Task holding these rows, e.g. custom_engagement. Left blank the section IS the task row itself, and the target must then be CRM Task."
+  },
+  {
+   "fieldname": "row_section",
+   "fieldtype": "Section Break",
+   "label": "Rows"
+  },
+  {
+   "fieldname": "is_multi_row",
+   "fieldtype": "Check",
+   "label": "Is Multi Row",
+   "in_list_view": 1,
+   "description": "A task may carry many of these rows — a document per kind. Ticked, a write upserts the row named by the Row Key Field and leaves every other row untouched; unticked, the one row is merged onto."
+  },
+  {
+   "fieldname": "row_key_field",
+   "fieldtype": "Data",
+   "label": "Row Key Field",
+   "description": "The column identifying one row, e.g. document_kind. Required when multi-row: it is the address a write is applied at, and the key every consumer picks the latest row by. On a key-value section it is the column carrying the declared field a row answers."
+  },
+  {
+   "fieldname": "is_key_value",
+   "fieldtype": "Check",
+   "label": "Is Key Value",
+   "in_list_view": 1,
+   "description": "One row per declared field, where a CRM Task Type Field's Fieldname addresses a ROW rather than naming a column. Ticked, the Row Key Field carries that fieldname and the Value Field carries the answer, so a new activity field is a declaration row and never a schema change. Mutually exclusive with Multi Row."
+  },
+  {
+   "fieldname": "value_field",
+   "fieldtype": "Data",
+   "label": "Value Field",
+   "description": "The column holding a key-value row's answer, e.g. value. Required when key-value; every consumer reads the answer through it."
+  },
+  {
+   "fieldname": "label_field",
+   "fieldtype": "Data",
+   "label": "Label Field",
+   "depends_on": "is_key_value",
+   "description": "The column holding what a key-value row is CALLED, where the row is the only thing that knows. An activity field is declared on CRM Task Type Field, which already carries its label, so a task section leaves this blank rather than storing a second copy."
+  },
+  {
+   "fieldname": "question_field",
+   "fieldtype": "Data",
+   "label": "Question Field",
+   "depends_on": "is_key_value",
+   "description": "The column holding the raw key a key-value row's identity was derived from, e.g. fieldname. Required when key-value: it is what a row says it was addressed by."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM Task Section",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "display_order",
+ "sort_order": "ASC",
+ "states": []
+}

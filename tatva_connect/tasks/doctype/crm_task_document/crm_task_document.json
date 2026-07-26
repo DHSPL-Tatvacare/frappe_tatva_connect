@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-25 00:00:00.000000",
+ "description": "The Documents section's real named columns — multi-row, one row per document_kind. The bytes are owned by the parent CRM Task (M1); privacy is decided only by storage.file_events.may_be_public().",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "document_kind",
+  "file",
+  "shared_on",
+  "reason_for_no_document"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "fieldname": "document_kind",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Document Kind"
+  },
+  {
+   "columns": 3,
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "File"
+  },
+  {
+   "columns": 2,
+   "fieldname": "shared_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Shared On"
+  },
+  {
+   "fieldname": "reason_for_no_document",
+   "fieldtype": "Small Text",
+   "label": "Reason for No Document"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tasks",
+ "name": "CRM Task Document",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -12,6 +12,9 @@
   "options",
   "reqd",
   "depends_on",
+  "mandatory_depends_on",
+  "source",
+  "section",
   "target",
   "can_read",
   "can_watch",
@@ -67,8 +70,33 @@
    "length": 1000
   },
   {
+   "description": "Compiled from the type's rules — do not type here. The condition under which this field is required (native frappe-ui mandatory_depends_on); a hidden field is never required.",
+   "fieldname": "mandatory_depends_on",
+   "fieldtype": "Data",
+   "label": "Mandatory Depends On",
+   "length": 1000,
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "default": "Activity",
+   "description": "Where this field's value lives. Activity: on the task, in the section named below. Lead: on the lead, through the lead's own catalog and entitlement — never copied onto the task.",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Activity\nLead"
+  },
+  {
    "columns": 2,
-   "description": "Optional: which of the 9 promoted CRM Task columns this field writes to (custom_outcome, custom_reference, custom_asm, custom_scheduled_at, custom_followup_at, custom_key_date_1..4). Blank = stored in the JSON payload (display-only).",
+   "description": "The section this field's answer lands in. Its CRM Task Section row names the doctype whose column the Target below is.",
+   "fieldname": "section",
+   "fieldtype": "Link",
+   "label": "Section",
+   "options": "CRM Task Section"
+  },
+  {
+   "columns": 2,
+   "description": "Optional: the column on the section's Target DocType this field writes to. Blank = stored in the JSON payload (display-only).",
    "fieldname": "target",
    "fieldtype": "Data",
    "in_list_view": 1,

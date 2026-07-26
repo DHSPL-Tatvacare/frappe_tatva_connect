@@ -388,7 +388,7 @@ def _pin_review_file(task_name, file_name):
 	go through the unified get_doc/save path (never db.set_value — that skips validate/mirroring) and
 	are idempotent. The `document` value is written through the activity write brain
 	(activity_api.set_schema_field), which validates it is a declared CRM Task Type Field and routes it by
-	field_column — never a hardcoded payload key that could silently drift from a promoted column."""
+	field_target — never a hardcoded payload key that could silently drift from the field's real home."""
 	from tatva_connect.activity import api as activity_api
 
 	file_doc = frappe.get_doc("File", file_name)

@@ -1,0 +1,97 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-25 00:00:00.000000",
+ "description": "The Order section's real named columns. Select-like answers are stored as Data on purpose: `fieldtype` and `options` live on CRM Task Type Field, so one column carries a different option set per activity type.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "order_id",
+  "order_created_on",
+  "chemo_therapy_date",
+  "chemo_cycle_number",
+  "cycle_entered_in",
+  "number_of_units",
+  "ship_by_date",
+  "shipping_address",
+  "patient_order_address",
+  "patient_indication"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order ID"
+  },
+  {
+   "columns": 2,
+   "fieldname": "order_created_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Order Created On"
+  },
+  {
+   "columns": 2,
+   "fieldname": "chemo_therapy_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Chemo Therapy Date"
+  },
+  {
+   "columns": 2,
+   "fieldname": "chemo_cycle_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Chemo Cycle Number"
+  },
+  {
+   "fieldname": "cycle_entered_in",
+   "fieldtype": "Data",
+   "label": "Cycle Entered In"
+  },
+  {
+   "columns": 2,
+   "fieldname": "number_of_units",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Number of Units"
+  },
+  {
+   "fieldname": "ship_by_date",
+   "fieldtype": "Datetime",
+   "label": "Ship By Date"
+  },
+  {
+   "fieldname": "shipping_address",
+   "fieldtype": "Small Text",
+   "label": "Shipping Address"
+  },
+  {
+   "fieldname": "patient_order_address",
+   "fieldtype": "Small Text",
+   "label": "Patient Order Address"
+  },
+  {
+   "fieldname": "patient_indication",
+   "fieldtype": "Data",
+   "label": "Patient Indication"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tasks",
+ "name": "CRM Task Order",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
