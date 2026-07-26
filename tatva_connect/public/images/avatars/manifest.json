@@ -1,0 +1,85 @@
+{
+  "series": [
+    {
+      "name": "Upstream",
+      "slug": "upstream",
+      "avatars": [
+        "/assets/tatva_connect/images/avatars/upstream-01.svg",
+        "/assets/tatva_connect/images/avatars/upstream-02.svg",
+        "/assets/tatva_connect/images/avatars/upstream-03.svg",
+        "/assets/tatva_connect/images/avatars/upstream-04.svg",
+        "/assets/tatva_connect/images/avatars/upstream-05.svg",
+        "/assets/tatva_connect/images/avatars/upstream-06.svg",
+        "/assets/tatva_connect/images/avatars/upstream-07.svg",
+        "/assets/tatva_connect/images/avatars/upstream-08.svg",
+        "/assets/tatva_connect/images/avatars/upstream-09.svg",
+        "/assets/tatva_connect/images/avatars/upstream-10.svg",
+        "/assets/tatva_connect/images/avatars/upstream-11.svg",
+        "/assets/tatva_connect/images/avatars/upstream-12.svg",
+        "/assets/tatva_connect/images/avatars/upstream-13.svg",
+        "/assets/tatva_connect/images/avatars/upstream-14.svg",
+        "/assets/tatva_connect/images/avatars/upstream-15.svg",
+        "/assets/tatva_connect/images/avatars/upstream-16.svg",
+        "/assets/tatva_connect/images/avatars/upstream-17.svg",
+        "/assets/tatva_connect/images/avatars/upstream-18.svg"
+      ]
+    },
+    {
+      "name": "Teamwork",
+      "slug": "teamwork",
+      "avatars": [
+        "/assets/tatva_connect/images/avatars/teamwork-01.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-02.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-03.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-04.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-05.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-06.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-07.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-08.svg",
+        "/assets/tatva_connect/images/avatars/teamwork-09.svg"
+      ]
+    },
+    {
+      "name": "Funny Bunny",
+      "slug": "funny-bunny",
+      "avatars": [
+        "/assets/tatva_connect/images/avatars/funny-bunny-01.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-02.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-03.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-04.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-05.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-06.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-07.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-08.svg",
+        "/assets/tatva_connect/images/avatars/funny-bunny-09.svg"
+      ]
+    },
+    {
+      "name": "No Comments",
+      "slug": "no-comments",
+      "avatars": [
+        "/assets/tatva_connect/images/avatars/no-comments-01.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-02.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-03.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-04.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-05.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-06.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-07.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-08.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-09.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-10.svg",
+        "/assets/tatva_connect/images/avatars/no-comments-11.svg"
+      ]
+    },
+    {
+      "name": "No Gravity",
+      "slug": "no-gravity",
+      "avatars": [
+        "/assets/tatva_connect/images/avatars/no-gravity-01.svg",
+        "/assets/tatva_connect/images/avatars/no-gravity-02.svg",
+        "/assets/tatva_connect/images/avatars/no-gravity-03.svg",
+        "/assets/tatva_connect/images/avatars/no-gravity-04.svg"
+      ]
+    }
+  ]
+}
