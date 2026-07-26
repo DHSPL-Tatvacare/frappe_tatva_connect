@@ -3,6 +3,7 @@
  "allow_rename": 1,
  "autoname": "format:{vertical}::{group}::{program}::{type_name}",
  "creation": "2026-06-03 00:00:00.000000",
+ "description": "A task type is declared once on this page and consumed everywhere — the rep's form, the task list, Smart Views, automation and the workflow engine all read this single declaration. Configuration is completed top-down: grain, enforcement, fields, then rules.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -19,7 +20,9 @@
   "is_logged_complete",
   "disable_bulk_complete",
   "schema_section",
-  "schema"
+  "schema",
+  "rules_section",
+  "rules"
  ],
  "fields": [
   {
@@ -30,9 +33,10 @@
    "reqd": 1
   },
   {
+   "description": "The type name is displayed to reps wherever the activity appears. The grain (vertical · group · program) is chosen first; every downstream picker, permission and workflow offer is scoped by it, and a lead outside the grain is refused this activity at save.",
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
-   "label": "Grain (composite key)"
+   "label": "Identity & Grain"
   },
   {
    "description": "Grain axis. Blank = wildcard (available across that axis). The composite key is vertical::group::program::type_name, so the SAME type_name can carry a different schema per grain.",
@@ -59,9 +63,10 @@
    "label": "Description"
   },
   {
+   "description": "Everything that may block a bad save is declared here and nowhere else. Visit Mode marks the activity location-eligible when In-Person. Location Required When names the condition under which coordinates are demanded at save. Completes on save closes the task the moment its form is submitted. Disable bulk complete forces every completion through the form, one by one.",
    "fieldname": "activity_section",
    "fieldtype": "Section Break",
-   "label": "Activity Engine"
+   "label": "Enforcement"
   },
   {
    "description": "In-Person makes the type location-eligible (Phase B). Blank = not an in-person visit.",
@@ -91,9 +96,10 @@
    "label": "Disable Bulk Complete"
   },
   {
+   "description": "One row is added per question the form asks; row order is form order and rows are reordered by their drag handle. Label is shown to the rep; Fieldname is the stable key every consumer addresses. Fieldtype and Options drive the control and its choices. Source declares whose data is captured — Activity lands on the task's own storage, Lead is read from and written back to the patient record under its own permissions. Section files the answer into a declared storage section and groups it visually; a blank section falls to the answers store. Reqd marks a field always mandatory; conditional mandatory is declared under Rules.",
    "fieldname": "schema_section",
    "fieldtype": "Section Break",
-   "label": "Activity Form Schema"
+   "label": "Fields"
   },
   {
    "description": "Per-type form fields, rendered in order. Empty = the type is a plain task (no activity form).",
@@ -101,6 +107,18 @@
    "fieldtype": "Table",
    "label": "Schema",
    "options": "CRM Task Type Field"
+  },
+  {
+   "description": "One row declares one reaction of the form. Rule label is a free name used only for reading the grid. The When columns name a field, an operator and a value; a blank When declares the form's opening state. Action is one of Show, Hide or Make Mandatory, applied to every field listed in Targets. Add target appends a picked field to Targets and clears itself. A hidden field is never required and its value is never accepted, so chained rules resolve without ordering.",
+   "fieldname": "rules_section",
+   "fieldtype": "Section Break",
+   "label": "Rules"
+  },
+  {
+   "fieldname": "rules",
+   "fieldtype": "Table",
+   "label": "Rules",
+   "options": "CRM Task Type Rule"
   }
  ],
  "grid_page_length": 50,

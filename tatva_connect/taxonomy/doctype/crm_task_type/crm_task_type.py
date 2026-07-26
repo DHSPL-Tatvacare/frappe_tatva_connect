@@ -1,7 +1,10 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
+import frappe
+from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cstr
 
 from tatva_connect.taxonomy.normalize import normalize_field
 
@@ -10,3 +13,57 @@ class CRMTaskType(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "type_name")
+		self._validate_rules()
+
+	def _validate_rules(self):
+		"""Every rule row names fields THIS type declares, and a value the named field offers (§17.1).
+
+		A rule is the form's behaviour, so a row naming a field that does not exist is a reaction that can
+		never fire pointed at a target that can never be reached — silent on screen and impossible to find by
+		reading a grid of nineteen rows. It is refused here with its ROW NUMBER, which is the only address an
+		admin has for a child row.
+
+		The declaration is the enforcement: the offered values are the field's own `options`, and the operator
+		vocabulary is the compile's (`activity.api.RULE_VALUE_OPERATORS`) rather than restated here."""
+		from tatva_connect.activity.api import RULE_VALUE_OPERATORS
+
+		declared = {(f.fieldname or "").strip(): f for f in self.schema if (f.fieldname or "").strip()}
+		for row in self.rules:
+			field = (row.condition_field or "").strip()
+			if field and field not in declared:
+				frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
+							 title=_("Unknown field"))
+			value = cstr(row.condition_value or "").strip()
+			if field and value and (row.operator or "").strip() in RULE_VALUE_OPERATORS:
+				options = [o.strip() for o in (declared[field].options or "").split("\n") if o.strip()]
+				if options and value not in options:
+					frappe.throw(
+						_("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
+						title=_("Unknown value"))
+			for target in [t.strip() for t in (row.targets or "").split(",") if t.strip()]:
+				if target not in declared:
+					frappe.throw(
+						_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
+						title=_("Unknown target"))
+
+
+@frappe.whitelist()
+def list_lead_fields(vertical=None, group=None, program=None):
+	"""The lead fields a schema row may source at this grain, as [{fieldname, label, fieldtype}] (D31).
+
+	The catalogue is the ONE mapping seam (`lead/mapping.py:mappable_fields`) and each row is kept only if
+	the write gate itself (`automation/fields.py:is_settable`, parent-section context — the exact call
+	`write_lead_fields` makes) would accept it, so the picker can never offer a field the save refuses.
+	The axes come from the CALLER (the open, possibly unsaved Desk form), the same shape as
+	`intake/api.py:list_target_fields`. Gated read-only on the doctype this form edits."""
+	from tatva_connect.automation import fields as automation_fields
+	from tatva_connect.lead import mapping
+
+	frappe.has_permission("CRM Task Type", "read", throw=True)
+
+	axes = ((vertical or "").strip(), (group or "").strip(), (program or "").strip())
+	if not any(axes):
+		return []  # no grain chosen yet — the client shows "pick the grain first"
+	return [{"fieldname": f["fieldname"], "label": f["label"], "fieldtype": f["fieldtype"]}
+			for f in mapping.mappable_fields(grain=axes)
+			if automation_fields.is_settable("CRM Lead", f["fieldname"], axes)]

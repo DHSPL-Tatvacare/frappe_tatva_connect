@@ -56,6 +56,11 @@ _NAMED_EXCEPTIONS = {
 		"trigger's own file_url, not caller input, and the shell it lands on was already grain-gated",
 	"notifications.events:_notify_due":
 		"stamps the notified-at marker column so a rep is told once — never an activity field",
+	"activity.backfill:_backfill_one":
+		"history reconstruction — there is no submitted form for compute_activity to resolve; every value "
+		"is read by field_column and homed by field_target, the brain's own router (Phase 3)",
+	"activity.backfill:reconcile":
+		"read-mostly audit twin of _backfill_one; writes only what the router says is missing",
 }
 
 # A grainless CRM Task Type is dormant by `_grain_matches` and can never be raised, so a bare name is

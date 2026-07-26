@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-26 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_label",
+  "condition_field",
+  "operator",
+  "condition_value",
+  "action",
+  "targets",
+  "add_target"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "description": "Rule label is a free name used only for reading the grid.",
+   "fieldname": "rule_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Rule Label"
+  },
+  {
+   "columns": 2,
+   "description": "The When columns name a field, an operator and a value; a blank When declares the form's opening state.",
+   "fieldname": "condition_field",
+   "fieldtype": "Autocomplete",
+   "in_list_view": 1,
+   "label": "When Field"
+  },
+  {
+   "columns": 1,
+   "default": "is",
+   "description": "The When columns name a field, an operator and a value; a blank When declares the form's opening state.",
+   "fieldname": "operator",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Operator",
+   "options": "is\nis not\nis set\nis not set"
+  },
+  {
+   "columns": 1,
+   "description": "The When columns name a field, an operator and a value; a blank When declares the form's opening state.",
+   "fieldname": "condition_value",
+   "fieldtype": "Autocomplete",
+   "in_list_view": 1,
+   "label": "Value"
+  },
+  {
+   "columns": 2,
+   "description": "Action is one of Show, Hide or Make Mandatory, applied to every field listed in Targets.",
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Show\nHide\nMake Mandatory",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Action is one of Show, Hide or Make Mandatory, applied to every field listed in Targets.",
+   "fieldname": "targets",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Targets",
+   "reqd": 1
+  },
+  {
+   "description": "Add target appends a picked field to Targets and clears itself.",
+   "fieldname": "add_target",
+   "fieldtype": "Autocomplete",
+   "label": "Add Target"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM Task Type Rule",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

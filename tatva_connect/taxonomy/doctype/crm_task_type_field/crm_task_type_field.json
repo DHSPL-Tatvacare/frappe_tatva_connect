@@ -33,7 +33,7 @@
    "columns": 2,
    "description": "Stable key used in the JSON payload and required-validation.",
    "fieldname": "fieldname",
-   "fieldtype": "Data",
+   "fieldtype": "Autocomplete",
    "in_list_view": 1,
    "label": "Fieldname",
    "reqd": 1

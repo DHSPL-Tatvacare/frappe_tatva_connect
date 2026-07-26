@@ -111,6 +111,22 @@ class TestNoTaskSectionSecondaryPath(FrappeTestCase):
                     hits.append(f"{rel}:{node.lineno}: {node.value!r}")
         self.assertEqual(hits, [], f"task section storage named as a literal: {hits}")
 
+    def test_no_module_reads_a_rules_label(self):
+        """Phase 9's one new literal class. A rule row carries `rule_label` so an admin can navigate a grid of
+        nineteen rows by the eight names LSQ gave them (D23) — it is DESCRIPTIVE, and nothing in code may ever
+        name one or read the column, because the moment behaviour hangs off a label the admin's free text has
+        become a key. The compile addresses rules by their When columns, their action and their targets, and by
+        nothing else. Not banned by NAME here (a `rule_label` string is not a literal a rival brain needs):
+        banned by ACCESS — no live module may read the column at all."""
+        hits = []
+        for rel, tree in _task_source_files():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr == "rule_label":
+                    hits.append(f"{rel}:{node.lineno}: doc.rule_label")
+                if isinstance(node, ast.Constant) and node.value == "rule_label":
+                    hits.append(f"{rel}:{node.lineno}: 'rule_label'")
+        self.assertEqual(hits, [], f"a rule's descriptive label is read by code: {hits}")
+
     def test_no_task_section_key_is_compared_against_or_collected(self):
         """A key tested by name, or listed beside its siblings, is a routing decision taken outside the
         declaration — which is the whole of what the section rows exist to hold."""

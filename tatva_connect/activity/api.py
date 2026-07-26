@@ -7,6 +7,7 @@ the SPA Activity timeline and the Desk Lead timeline. Availability is grain-scop
 the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or grain.
 Ships dormant: a CRM Task Type with an all-blank grain never surfaces as an activity.
 """
+import json
 from collections import Counter
 from urllib.parse import parse_qs, urlparse
 
@@ -32,6 +33,21 @@ PROMOTED_COLUMNS = (
 # (§8 rule 2). Nothing else is enumerated: a slot is simply a target neither a section nor this claims.
 # The CRM Task columns a declared field may keep living on — RETAINED on the row, not merely rep-facing: custom_asm is operational but is still validated (_validate_asm) and must never fall to a section row.
 COMMON_COLUMNS = ("custom_outcome", "custom_followup_at", "custom_scheduled_at", "custom_asm")
+
+
+# The rule grammar, named here the way a fieldtype is named: these ARE the language (D27/D28), declared as
+# the Select options of CRM Task Type Rule and read back by the compile below. The doctype JSON is the one
+# home; tests/activity/test_rule_compilation.py fails if the two ever disagree.
+RULE_SHOW, RULE_HIDE, RULE_MANDATORY = "Show", "Hide", "Make Mandatory"
+RULE_ACTIONS = (RULE_SHOW, RULE_HIDE, RULE_MANDATORY)
+# The operators that compare against a value, so the value is validated against the field's options; the
+# other two ask only whether an answer exists (D27).
+RULE_VALUE_OPERATORS = ("is", "is not")
+RULE_OPERATORS = (*RULE_VALUE_OPERATORS, "is set", "is not set")
+
+# A declared field's `source`: whose record the answer belongs to. Lead answers live on the LEAD through the
+# lead's own brain and are never copied onto the task (D11/D31).
+LEAD_SOURCE = "Lead"
 
 
 def field_column(f):
@@ -311,8 +327,12 @@ def list_types_for_lead(lead):
 
 
 def _field_descriptor(f):
-	"""One shape for an activity field descriptor from a CRM Task Type schema row — the client form."""
-	return {
+	"""One shape for an activity field descriptor from a CRM Task Type schema row — the client form.
+
+	A `_dict` rather than a plain dict so the SAME object serves the renderer (`d["fieldname"]`) and the
+	writers, which read a schema row's attributes (`f.fieldtype`). One descriptor list, two access styles,
+	so the compile below can hand `compute_activity` exactly what `_type_config` hands the form."""
+	return frappe._dict({
 		"label": f.label,
 		"fieldname": f.fieldname,
 		"fieldtype": f.fieldtype,
@@ -320,8 +340,119 @@ def _field_descriptor(f):
 		"reqd": int(f.reqd or 0),
 		"target": f.target or "",
 		"section": (f.get("section") or ""),
+		"source": (f.get("source") or ""),
 		"depends_on": (f.get("depends_on") or ""),
-	}
+		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
+	})
+
+
+def _rule_atom(row):
+	"""ONE rule row's When columns as an expression, in the syntax BOTH shipped evaluators read alike.
+
+	A blank When is "always" (D25/§17.2), so it is the constant 1. Every operator (D27) compiles to a
+	COMPARISON because a comparison is the largest syntax the two evaluators share: the server's is Python
+	`safe_eval` (`_field_visible`) and the client's is a JS `new Function` (`utils/expressions.js`), so
+	`and`/`or`/`not` parse only in one and `&&`/`||`/`!` only in the other. `_rule_or` / `_rule_not` below
+	therefore combine with arithmetic, which reads identically in both. A value is JSON-quoted, which is
+	also a literal both languages accept."""
+	field = (row.condition_field or "").strip()
+	if not field:
+		return "1"
+	ref = "doc." + field
+	value = json.dumps(cstr(row.condition_value or ""))
+	operator = (row.operator or RULE_OPERATORS[0]).strip()
+	if operator == "is not":
+		return f"{ref}!={value}"
+	if operator == "is set":
+		return f'{ref}!=""'
+	if operator == "is not set":
+		return f'{ref}==""'
+	return f"{ref}=={value}"
+
+
+def _rule_or(atoms):
+	"""OR over rule atoms. `+` because it is truthy-summing in Python and in JS alike — see `_rule_atom`."""
+	return "+".join(f"({a})" for a in atoms)
+
+
+def _rule_not(expr):
+	"""NOT of a rule expression, as a comparison — the one negation both evaluators agree on. The outer
+	parentheses are load-bearing: `*` binds tighter than `==` in Python AND JS, so without them a spliced
+	`(a)*(b)==0` parses as `((a)*(b))==0` and every conditional Hide stops overriding its Show."""
+	return f"(({expr})==0)"
+
+
+def _rules_by_target(tt):
+	"""The type's rule rows keyed by the field they act on: {fieldname: {action: [(atom, is_conditional)]}}.
+
+	One walk of the child table; a rule naming five targets is five entries of the same atom, which is the
+	whole of what "flat rows" (D9) means. `is_conditional` distinguishes a row with a When from a blank one,
+	because a blank-When row is the form's OPENING state (D25) and not a veto on every later reveal."""
+	out = {}
+	for row in tt.get("rules") or []:
+		atom = _rule_atom(row)
+		conditional = bool((row.condition_field or "").strip())
+		for target in _rule_targets(row):
+			out.setdefault(target, {}).setdefault(row.action or "", []).append((atom, conditional))
+	return out
+
+
+def _rule_targets(row):
+	"""The fieldnames one rule row acts on — comma-separated text (D26), because a child table cannot hold
+	a multiselect (`model/__init__.py:99`); the Desk script paints the picker that appends to it."""
+	return [t.strip() for t in (row.targets or "").split(",") if t.strip()]
+
+
+def _compiled_visibility(entry, own):
+	"""ONE field's compiled `depends_on` (§17.3): visible = OR(its Show rows) AND NOT OR(its CONDITIONAL
+	Hide rows).
+
+	A field no rule names keeps the condition its own row declares — a type with no rules is byte-identical
+	to what shipped. A field with no Show row is visible by default, unless a blank-When Hide row names it:
+	that row is the opening state, so the field starts closed and only a Show row reveals it (D25 — "a field
+	named in an onload Hide with Show rules elsewhere compiles to OR(those conditions)"). A blank-When Hide
+	is therefore the baseline and never appears inside the negation, which is what stops it cancelling every
+	reveal declared against it."""
+	shows = entry.get(RULE_SHOW) or []
+	hides = entry.get(RULE_HIDE) or []
+	if not shows and not hides:
+		return own
+	conditional_hides = [atom for atom, conditional in hides if conditional]
+	if shows:
+		base = _rule_or([atom for atom, _ in shows])
+	else:
+		base = "0" if len(conditional_hides) < len(hides) else "1"
+	expr = base if not conditional_hides else f"({base})*{_rule_not(_rule_or(conditional_hides))}"
+	return "eval:" + expr
+
+
+def _compiled_mandatory(entry, own):
+	"""ONE field's compiled `mandatory_depends_on` (§17.3): OR of the conditions its Make Mandatory rows
+	name. A field no such row names keeps its own declared condition. Static `reqd` is NOT folded in here —
+	it stays its own flag, and `_required_here` asks for either."""
+	rows = entry.get(RULE_MANDATORY) or []
+	if not rows:
+		return own
+	return "eval:" + _rule_or([atom for atom, _ in rows])
+
+
+def compiled_fields(tt):
+	"""Every declared field of a task type, with the type's RULES compiled into its `depends_on` and
+	`mandatory_depends_on` (§17.3).
+
+	THE one projection of "what does this form ask, and when": `_type_config` renders it, `get_schema`
+	publishes it and `compute_activity` enforces it, so what the rep is shown and what the save demands can
+	never be two answers. Nothing is written back to the declaration — the rules ARE the storage and this is
+	their compiled reading."""
+	by_target = _rules_by_target(tt)
+	out = []
+	for f in tt.schema:
+		d = _field_descriptor(f)
+		entry = by_target.get(f.fieldname) or {}
+		d.depends_on = _compiled_visibility(entry, d.depends_on)
+		d.mandatory_depends_on = _compiled_mandatory(entry, d.mandatory_depends_on)
+		out.append(d)
+	return out
 
 
 def _field_groups(descriptors):
@@ -356,11 +487,10 @@ def _field_groups(descriptors):
 
 @frappe.whitelist()
 def get_schema(task_type):
-	"""The activity type's per-field schema, in order — for the client form."""
+	"""The activity type's per-field schema, in order, with its rules compiled in — for the client form."""
 	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
 		frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
-	doc = frappe.get_doc("CRM Task Type", task_type)
-	return [_field_descriptor(f) for f in doc.schema]
+	return compiled_fields(frappe.get_doc("CRM Task Type", task_type))
 
 
 def _validate_asm(asm):
@@ -401,14 +531,60 @@ def _section_condition(f):
 	return frappe.get_cached_value("CRM Task Section", section, "depends_on") or ""
 
 
-def _required_here(f, values):
-	"""True when the submitted form must carry this field: declared required AND actually shown — its own
-	condition passes and the section holding it is not hidden. A hidden SECTION's required field must not
-	block a save any more than a hidden FIELD's does (§8), and it is judged here on the server by the SAME
-	evaluator the client mirrors — `_field_visible`, asked twice, never a second rule."""
-	return (bool(f.reqd)
-			and _field_visible(_section_condition(f), values)
-			and _field_visible(f.get("depends_on"), values))
+def _shown_here(f, values):
+	"""True when the form shows this field for these answers: its own condition passes and the section
+	holding it is not hidden. Asked of `_field_visible` twice, never of a second rule."""
+	return _field_visible(_section_condition(f), values) and _field_visible(f.get("depends_on"), values)
+
+
+def _evaluable(fields, values):
+	"""The answers a condition is evaluated against: every DECLARED field present, blank until answered.
+
+	`is not set` compiles to `doc.<f>==""` (`_rule_atom`), and an absent key reads as None on the server and
+	as undefined on the client — neither of which equals "". Seeding the blanks is what makes the two
+	evaluators agree on an unanswered field; the client seeds the same bag before it paints."""
+	bag = {f.fieldname: "" for f in fields}
+	bag.update({k: ("" if v is None else v) for k, v in (values or {}).items()})
+	return bag
+
+
+def _shown_fieldnames(fields, values):
+	"""The declared fields the form actually shows for these answers, settled to the fixpoint (D29).
+
+	A hidden field's value is INERT (D22): a condition naming it reads it blank, so hiding a parent collapses
+	whatever hung off it and no imperative rule order has to be invented. The pass repeats until the shown
+	set stops moving, bounded by the field count — the plan's own bound, because a Hide row can in principle
+	flip a field back on and a bounded loop settles that deterministically instead of spinning."""
+	declared = {f.fieldname for f in fields}
+	shown = set(declared)
+	for _ in range(len(fields) + 1):
+		live = _inert(fields, values, shown)
+		settled = {f.fieldname for f in fields if _shown_here(f, live)}
+		if settled == shown:
+			break
+		shown = settled
+	return shown
+
+
+def _inert(fields, values, shown):
+	"""The evaluable answers with every HIDDEN declared field read back as blank — D22, expressed once."""
+	live = _evaluable(fields, values)
+	for f in fields:
+		if f.fieldname not in shown:
+			live[f.fieldname] = ""
+	return live
+
+
+def _required_here(f, shown, live):
+	"""True when the submitted form must carry this field: it is actually SHOWN, and it is mandatory —
+	declared `reqd`, or made so by a Make Mandatory rule whose condition passes (§17.3).
+
+	A hidden field is never required, whether its own condition, its section's or a rule hid it: the rep was
+	never shown it, so requiring it would brick the save. Judged on the server by the SAME evaluator the
+	client mirrors — `_field_visible` — never a second rule."""
+	if f.fieldname not in shown:
+		return False
+	return bool(f.reqd) or (bool(f.mandatory_depends_on) and _field_visible(f.mandatory_depends_on, live))
 
 
 def compute_activity(lead, task_type, values, task=None):
@@ -431,13 +607,25 @@ def compute_activity(lead, task_type, values, task=None):
 		frappe.throw(_("This activity is not available for this lead."), title=_("Out of scope"))
 
 	tt = frappe.get_doc("CRM Task Type", task_type)
+	# The rules compiled in — the SAME projection the form rendered from, so the save cannot demand or accept
+	# anything the rep was not shown (§17.3).
+	schema = compiled_fields(tt)
+	shown = _shown_fieldnames(schema, values)
+	live = _inert(schema, values, shown)
 	promoted, payload, staged = {}, {}, {}
-	for f in tt.schema:
+	for f in schema:
 		val = values.get(f.fieldname)
-		# Only enforce required on a field the form actually shows — hidden by its own condition or by its
-		# section's, it is never submitted, so requiring it would brick the save (one rule, same as the client).
-		if _required_here(f, values) and (val is None or val == ""):
+		if f.fieldname not in shown:
+			# D22: a hidden field's value is inert. A form that never showed it cannot have collected it, so a
+			# value arriving for it is refused rather than quietly stored under a question nobody was asked.
+			if val not in (None, ""):
+				frappe.throw(_("{0} was not shown on this form and its value cannot be saved.").format(f.label),
+							 title=_("Hidden field"))
+			continue
+		if _required_here(f, shown, live) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
+		if (f.source or "") == LEAD_SOURCE:
+			continue  # D11: a lead-sourced answer lives on the LEAD; the task never carries a copy of it
 		# Route by the ONE seam: a retained common column stays on the task row, every other answer is its section row's.
 		section_key, column = field_target(f)
 		if section_key is None:
@@ -445,6 +633,10 @@ def compute_activity(lead, task_type, values, task=None):
 		else:
 			payload[f.fieldname] = val
 		_stage_section_value(staged, f, val)
+
+	# The lead-sourced answers, written to the LEAD in this same transaction (D31) — before the task fields are
+	# assembled, so a refused lead write refuses the whole save rather than leaving half of one behind.
+	write_lead_fields(lead, schema, values, shown)
 
 	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
 	_validate_asm(promoted.get("custom_asm"))
@@ -498,6 +690,62 @@ def compute_activity(lead, task_type, values, task=None):
 		anchor_lat=guard.get("anchor_lat"), anchor_lng=guard.get("anchor_lng"), task=task,
 	)
 	return fields
+
+
+def write_lead_fields(lead, fields, values, shown):
+	"""Every SHOWN `source=Lead` answer, written onto the LEAD — the automation set path reused, never a
+	third writer (D31).
+
+	Three gates, all on the SERVER because the modal is paint and cannot be trusted to have applied any of
+	them: the caller must hold `write` on this lead; the field must be `can_set` at THIS lead's grain, asked of
+	`automation.fields.is_settable` — the same allowlist the Set Field action is gated by, whose section
+	routing means a field belonging to a lead CHILD section is refused here just as it is there; and the write
+	itself is one load-set-save, so the lead's field permissions, `validate` and every `doc_event` re-fire
+	exactly as they do for a Set Field action. A type declaring no lead field does nothing at all.
+
+	The task keeps no copy (D11). A refusal or a failed lead save throws, which rolls the activity back with
+	it — one transaction, per D31."""
+	from tatva_connect.automation import fields as automation_fields
+
+	# A blank is "not sent", never "erase this" — the rule the partner API already carries, and the reason a
+	# form that merely showed a lead field cannot blank the patient record by being saved without it.
+	changes = {f.fieldname: values.get(f.fieldname) for f in fields
+			   if (f.source or "") == LEAD_SOURCE and f.fieldname in shown
+			   and values.get(f.fieldname) not in (None, "")}
+	if not changes:
+		return
+	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
+		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+	axes = _lead_axes(lead)
+	doc = frappe.get_doc("CRM Lead", lead)
+	for fieldname, value in changes.items():
+		if not automation_fields.is_settable(automation_fields.LEAD_DT, fieldname, axes):
+			frappe.throw(_("{0} cannot be written on this lead.").format(fieldname), title=_("Not permitted"))
+		doc.set(fieldname, value)
+	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+
+
+def lead_field_values(lead, task_type):
+	"""The lead's CURRENT answers to this type's `source=Lead` fields — what the form opens prefilled with.
+
+	NOT whitelisted: it rides the `type_config` answer the form already fetches, so loading a form stays ONE
+	call however many lead fields it declares. Read through the lead detail brain (`lead.detail.lead_detail`),
+	so a field this viewer is not entitled to see is not in the answer at all and nothing here re-decides who
+	may read what. Empty for a type that declares no lead field, which is every type until an admin declares
+	one."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	wanted = {f.fieldname for f in compiled_fields(frappe.get_doc("CRM Task Type", task_type))
+			  if (f.source or "") == LEAD_SOURCE}
+	if not wanted:
+		return {}
+	from tatva_connect.lead.detail import lead_detail
+
+	out = {}
+	for section in lead_detail(lead)["sections"]:
+		for f in section["fields"]:
+			if f["fieldname"] in wanted and f["value"] not in (None, ""):
+				out[f["fieldname"]] = f["value"] if isinstance(f["value"], str) else cstr(f["value"])
+	return out
 
 
 @frappe.whitelist()
@@ -649,7 +897,7 @@ def _type_config(task_type):
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
 	doc = frappe.get_doc("CRM Task Type", task_type)
-	fields = [_field_descriptor(f) for f in doc.schema]
+	fields = compiled_fields(doc)
 	return {
 		"fields": fields,
 		"groups": _field_groups(fields),
@@ -706,14 +954,20 @@ def task_detail(task):
 
 
 @frappe.whitelist()
-def type_config(task_type):
+def type_config(task_type, lead=None):
 	"""Render config (fields + is_logged_complete + captures_location) for ONE task type — the
 	create-mode modal's source when the chosen type has no existing task seeding it into
-	lead_task_board. Same brain (_type_config) the board uses, so card/modal/create stay consistent."""
+	lead_task_board. Same brain (_type_config) the board uses, so card/modal/create stay consistent.
+
+	`lead` is optional and is what the form names when it is being logged against a lead: the answer then
+	also carries that lead's current values for the type's `source=Lead` fields (D31 prefill). It rides HERE
+	rather than on a call of its own so opening a form is ONE round trip whatever the type declares — and the
+	client's resource cache keys on the pair, because these values are the LEAD's and not the type's."""
 	frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
 	cfg = _type_config(task_type)
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
+	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
 	return cfg
 
 
@@ -795,6 +1049,8 @@ def _task_values(r, cfg, rows=None):
 		sections = {s.name: s for s in _sections()}
 		rows = _rows_of(r) if rows is None else rows
 		for f in cfg["fields"]:
+			if (f.get("source") or "") == LEAD_SOURCE:
+				continue  # D11: it was never written here, so there is nothing here to read — the lead holds it
 			value = _section_answer(f, r, rows, sections)
 			if value not in (None, ""):
 				vals[f["fieldname"]] = value if isinstance(value, str) else cstr(value)

@@ -23,6 +23,7 @@ SCRIPTS = [
 	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
 	("CRM Push Settings Helpers", "CRM Push Settings", "Form", "notifications/client_scripts/push_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),
+	("CRM Task Type Rules Helpers", "CRM Task Type", "Form", "taxonomy/client_scripts/crm_task_type.js"),
 	("CRM Intake Form Builder", "CRM Intake Form", "Form", "intake/client_scripts/crm_intake_form.js"),
 	("Facebook Lead Form Mapping", "Facebook Lead Form", "Form", "lead_sync/client_scripts/facebook_lead_form.js"),
 	("Lead Sync Source Token Helpers", "Lead Sync Source", "Form", "lead_sync/client_scripts/lead_sync_source.js"),
