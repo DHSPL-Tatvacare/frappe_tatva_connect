@@ -3,6 +3,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import frappe
 from frappe.integrations.utils import make_get_request, make_post_request
+from frappe.utils import cint
 
 from tatva_connect.utils import mask_secrets
 
@@ -43,13 +44,62 @@ def _call(request, what: str, url: str, payload: dict, token: str) -> dict:
 	# would otherwise be explained using the PREVIOUS call's response, naming the wrong status and body.
 	frappe.flags.integration_request = None
 	try:
-		return request(strip_token_from_url(url), headers=bearer(token), **payload)
+		response = request(strip_token_from_url(url), headers=bearer(token), **payload)
 	except Exception as exc:
 		frappe.throw(
 			_redact(_reason(what, frappe.flags.integration_request, exc), token),
 			title=frappe._("Facebook API Error"),
 		)
 		raise  # unreachable: frappe.throw raises
+	check_usage(frappe.flags.integration_request)
+	return response
+
+
+# Meta reports THIS app's utilisation on EVERY response, per bucket, plus the seconds it will stay shut
+# when it has closed. We read that number rather than model the formulas behind it: the buckets differ
+# per endpoint (leadgen on a Page token, app-level on a user token), their maths is volume-dependent, and
+# Meta changes both without notice. A limiter of our own would be a second, wrong copy of a budget its
+# owner already publishes on every response.
+_USAGE_HEADERS = ("x-business-use-case-usage", "x-app-usage")
+
+
+def usage_records(response) -> list:
+	"""Every usage record on a response, flattened. `x-app-usage` is ONE object; the business header is {object_id: [record, ...]}, a list per Page — both shapes are real and a parser for one reads the other as nothing."""
+	records = []
+	for header in _USAGE_HEADERS:
+		raw = (getattr(response, "headers", None) or {}).get(header)
+		if not raw:
+			continue
+		try:
+			body = frappe.parse_json(raw)
+		except Exception:
+			continue  # an unreadable usage header is not worth failing a good response over
+		if not isinstance(body, dict):
+			continue
+		if body and all(isinstance(v, list) for v in body.values()):
+			records += [r for group in body.values() for r in group if isinstance(r, dict)]
+		else:
+			records.append(body)
+	return records
+
+
+def check_usage(response) -> None:
+	"""Stop when Meta says stop. Refusing loses nothing: every Graph read happens before any lead is folded, so a crawl that stops here has processed nothing and moved no watermark, and the caller's own rollback-log-commit puts the refusal in the Error Log.
+
+	Utilisation below the block is NOT logged from here — a row written in the transport layer sits in whatever transaction the caller is in (log_failure and the nightly refresh both roll back first), so it could vanish without trace. Meta's App Dashboard reports the same percentages durably."""
+	records = usage_records(response)
+	if not records:
+		return
+	blocked = max((cint(r.get("estimated_time_to_regain_access")) for r in records), default=0)
+	if not blocked:
+		return
+	frappe.throw(
+		frappe._(
+			"Facebook has rate-limited this app and will not answer for another {0} seconds. Nothing was "
+			"fetched and nothing was lost; the crawl picks up from the same place on its next run."
+		).format(blocked),
+		title=frappe._("Facebook API Rate Limited"),
+	)
 
 
 def bearer(token: str) -> dict:

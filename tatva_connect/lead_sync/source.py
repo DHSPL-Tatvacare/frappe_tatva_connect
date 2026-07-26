@@ -250,6 +250,14 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			params = {}
 		return leads
 
+	def fetch_one_lead(self, lead_id):
+		"""ONE lead as Meta holds it — what a retry replays, so the failure log never has to keep the patient.
+		The SAME fields the crawl asks for, so the fold cannot tell a retry from a first pass."""
+		return graph_get(
+			f"lead re-fetch for {lead_id}", self.get_api_url(f"/{lead_id}"),
+			{"fields": "id,created_time,field_data"}, self.access_token,
+		)
+
 
 class TatvaLeadSyncSource(LeadSyncSource):
 	def validate(self):

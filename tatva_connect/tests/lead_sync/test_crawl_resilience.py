@@ -240,3 +240,35 @@ class TestCrawlResilience(FrappeTestCase):
 		self._crawl([])
 		stamped = frappe.db.get_value("Lead Sync Source", self.SOURCE, "last_synced_at")
 		self.assertEqual(frappe.utils.get_datetime(stamped), frappe.utils.get_datetime("2026-07-19 08:00:00"))
+
+	# -- a failed lead stays recoverable, WITH its grain -----------------------
+
+	def test_a_retry_refetches_the_lead_and_stamps_the_contract_grain(self):
+		"""Upstream replayed the stored blob through a bare `FacebookSyncSource`: against an id-only reference that raises KeyError, and had it not, the lead would have landed with no vertical and no group. The grain assertions are the point; `Synced` merely proves the button finished."""
+		self._crawl([_poison("fb-r1")])
+		logs = frappe.get_all("Failed Lead Sync Log", filters={"source": self.SOURCE}, pluck="name")
+		self.assertEqual(len(logs), 1, "the poison lead must leave exactly one failure log to retry")
+		self.assertFalse(self._lead_of("fb-r1"), "the poison lead must not have landed on the crawl")
+
+		# Meta still holds the lead; only the fetch is stubbed, so the fold and its routing are entirely real.
+		payload = _graph_lead("fb-r1", PHONE_GOOD, "2026-07-20T10:00:00+0530")
+		with patch.object(TatvaFacebookSyncSource, "fetch_one_lead", return_value=payload):
+			frappe.get_doc("Failed Lead Sync Log", logs[0]).retry_sync()
+
+		name = self._lead_of("fb-r1")
+		self.assertTrue(name, "a retried lead must land")
+		lead = frappe.get_doc("CRM Lead", name)
+		self.assertEqual(lead.custom_vertical, partner_fixture.VERTICAL,
+		                 "a retried lead must carry the CONTRACT's vertical, exactly as a crawled one does")
+		self.assertEqual(lead.custom_group, partner_fixture.GROUP,
+		                 "a retried lead must carry the CONTRACT's group, exactly as a crawled one does")
+		self.assertEqual(frappe.db.get_value("Failed Lead Sync Log", logs[0], "type"), "Synced")
+
+	def test_a_retry_of_an_already_synced_row_is_refused(self):
+		"""Re-pressing the button on a landed lead surfaced a UniqueValidationError, which reads as a fault when the honest answer is that this lead already came in."""
+		self._crawl([_poison("fb-r2")])
+		log = frappe.get_all("Failed Lead Sync Log", filters={"source": self.SOURCE}, pluck="name")[0]
+		frappe.db.set_value("Failed Lead Sync Log", log, "type", "Synced")
+		frappe.db.commit()
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc("Failed Lead Sync Log", log).retry_sync()

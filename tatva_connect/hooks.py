@@ -34,6 +34,8 @@ override_doctype_class = {
 	"Lead Sync Source": "tatva_connect.lead_sync.source.TatvaLeadSyncSource",
 	# A question maps to a catalog field_key, checked against the form's contract; upstream compares bare fieldnames and throws on every edit.
 	"Facebook Lead Form": "tatva_connect.lead_sync.form.TatvaFacebookLeadForm",
+	# A retry re-fetches the lead from Meta and folds it through the contract; upstream replays a payload we no longer keep, through a class that reads no grain.
+	"Failed Lead Sync Log": "tatva_connect.lead_sync.failure_log.TatvaFailedLeadSyncLog",
 	# Webhook ingress: derive the indexed token digest and refuse a config that would reject every
 	# call. Auth is infrastructure, never a toggleable automation, so it is bound here rather than
 	# in doc_events. CRM Telephony Account gets the same two calls from its own controller.
