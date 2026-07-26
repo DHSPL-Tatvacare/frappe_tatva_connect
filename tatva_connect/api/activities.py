@@ -149,7 +149,31 @@ def get_activities(name: str):
 	)
 	activities.sort(key=lambda x: str(x["creation"]), reverse=True)
 	_annotate_attachments(notes, "FCRM Note")
+	_annotate_automation(tasks, "CRM Task")
+	_annotate_task_due(tasks)
 	return activities, calls, notes, tasks, attachments
+
+
+def _annotate_task_due(rows):
+	"""Fold a display `due` (date + time) onto each rail task row (in place) — the native task carries a raw
+	`due_date` datetime but no formatted field, so the rail card's flavor had no date to show."""
+	from frappe.utils import format_datetime
+
+	for r in rows:
+		r["due"] = format_datetime(r["due_date"], "d MMM yyyy · h:mm a") if r.get("due_date") else None
+
+
+def _annotate_automation(rows, doctype):
+	"""Fold `row["automation"] = {label, run}` onto each row the engine stamped (in place) — drives the
+	"Workflow: {label}" attribution + deep-link on the unified cards/rail. Read-only, via the ONE resolver
+	(automation.origin); an unstamped row is left as-is (its human owner, exactly as today). No-op for a
+	doctype the resolver does not know a stamp for."""
+	from tatva_connect.automation.origin import automation_origin
+
+	for r in rows:
+		origin = automation_origin(doctype, r.get("name"))
+		if origin:
+			r["automation"] = origin
 
 
 def _annotate_attachments(rows, doctype):
