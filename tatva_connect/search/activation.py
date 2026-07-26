@@ -11,12 +11,12 @@ _CLASS = "tatva_connect.search.index.CRMLeadSearch"
 
 
 def apply(enabled):
-	# On enable, build once if missing; already-built is a no-op and the 3-hourly cron resumes a cut-short build.
+	# On enable, build once if missing; force because sqlite_search.build_index runs its body only `if is_continuation or force`, and the index is absent here so nothing live can be dropped.
 	if not enabled:
 		return
 	if CRMLeadSearch().index_exists():
 		return
-	enqueue_build()
+	enqueue_build(force=True)
 
 
 def reconcile_index_schema():

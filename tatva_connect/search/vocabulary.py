@@ -12,9 +12,15 @@ Every value offered is the value `prepare_document` really writes, derived from 
 master behind a column comes off the CRM Lead field itself, and the spelling mirrors `index.py:_read_lead_context`
 (the indexed `status` is a stage's `::` LEAF, never the composite PK — a PK would match nothing, silently).
 
+An operator adds NICKNAMES for these same values as `CRM Search Alias` rows — `declined` -> Not Interested — so a
+word this team uses is understood without a deploy. An alias offers no value of its own: it points at a master row
+that is already in the walk below and is spelled by that one pass, which is why a value renamed later is followed.
+
 `search.api` calls this behind its own dormant toggle. There is no stopword list: every term is a declared closed-set value, and the spike
 measured that a filler list is exactly what destroys a real multi-word term.
 """
+import difflib
+
 import frappe
 from frappe.utils.caching import redis_cache
 
@@ -27,8 +33,8 @@ MASTER_MAX = 5000
 # are not entitled to still gets zero rows; a per-user vocabulary would be a second entitlement brain.
 _TTL = 600
 
-# A single character matches every query and narrows nothing.
-_MIN_TERM_LEN = 2
+# A single character matches every query and narrows nothing. Public: an alias term is held to the same floor.
+MIN_TERM_LEN = 2
 
 # Mirrors index.py:_read_lead_context — the CRM Lead field behind each CLOSED metadata column and how the index
 # spells its value: `name` = the master's PK, `leaf` = the PK's tail after `::`, `title` = the master's title field.
@@ -85,25 +91,66 @@ def match(query):
 	return out
 
 
+def resolve(text):
+	"""Every master row the index spells exactly as this text — what an alias is permitted to point at.
+
+	Reads the live masters rather than the cached vocabulary, because a value created minutes ago must be
+	aliasable at once; it costs one small read per closed set, on a save, and never on a search."""
+	wanted = normalise(text)
+	return [
+		{"doctype": master, "name": pk, "value": value}
+		for _column, master, pk, value in _spellings()
+		if normalise(value) == wanted
+	]
+
+
+def suggest(text, limit=3):
+	"""The declared values closest to what was typed — offered when nothing matched, so a typo names itself."""
+	return difflib.get_close_matches(text or "", [value for _c, _m, _pk, value in _spellings()], n=limit, cutoff=0.6)
+
+
+def reload():
+	"""Drop the cached vocabulary, so an operator's alias is live on save rather than at the end of the TTL."""
+	_vocabulary.clear_cache()
+
+
 @redis_cache(ttl=_TTL)
 def _vocabulary():
 	# `span` is the longest declared phrase, so no term the masters declare is ever unreachable by the matcher.
-	found = {}
-	meta = frappe.get_meta("CRM Lead")
-	declared = set(CRMLeadSearch.INDEX_SCHEMA["metadata_fields"])
-	for column, fieldname, spelling in _SOURCES:
-		if column not in declared:
-			continue
-		field = meta.get_field(fieldname)
-		# The master is read off the Link itself, never named here; an absent field simply contributes nothing.
-		if not field or field.fieldtype != "Link" or not frappe.db.table_exists(field.options):
-			continue
-		for value in _values(field.options, spelling):
-			term = normalise(value)
-			if len(term) >= _MIN_TERM_LEN:
-				found.setdefault(term, set()).add((column, value))
+	found, spelled = {}, {}
+	for column, master, pk, value in _spellings():
+		spelled[(master, pk)] = (column, value)
+		_offer(found, normalise(value), column, value)
+	# An alias is a nickname for a row the walk above already spelled, so it carries no spelling rule of its own and
+	# a pointer whose row is gone (deleted, or a master grown past MASTER_MAX) simply offers nothing.
+	for row in frappe.get_all("CRM Search Alias", fields=["term", "target_doctype", "target_name"]):
+		reading = spelled.get((row.target_doctype, row.target_name))
+		if reading:
+			_offer(found, normalise(row.term), *reading)
 	ordered = {term: tuple(sorted(meanings)) for term, meanings in sorted(found.items())}
 	return frappe._dict(terms=ordered, span=max((t.count(" ") for t in ordered), default=0) + 1)
+
+
+def _offer(found, term, column, value):
+	# One term -> the meanings it carries; below the floor it would match every query and narrow nothing.
+	if len(term) >= MIN_TERM_LEN:
+		found.setdefault(term, set()).add((column, value))
+
+
+def _spellings():
+	"""THE walk of the closed sets — `(column, master, pk, value)`, read by the vocabulary, `resolve` and `suggest`.
+
+	The master behind a column is read off the CRM Lead Link field itself and never named here, and the value is
+	spelled exactly as `prepare_document` writes it; an absent or non-Link field simply contributes nothing."""
+	meta = frappe.get_meta("CRM Lead")
+	declared = set(CRMLeadSearch.INDEX_SCHEMA["metadata_fields"])
+	out = []
+	for column, fieldname, spelling in _SOURCES:
+		field = meta.get_field(fieldname) if column in declared else None
+		if not field or field.fieldtype != "Link" or not frappe.db.table_exists(field.options):
+			continue
+		out += [(column, field.options, pk, value) for pk, value in _values(field.options, spelling)]
+	return out
 
 
 def _values(master, spelling):
@@ -113,9 +160,9 @@ def _values(master, spelling):
 	column = frappe.get_meta(master).title_field if spelling == "title" else "name"
 	if not column:
 		return []
-	rows = frappe.get_all(master, fields=[f"`{column}` as value"], order_by="name asc", limit_page_length=0)
+	rows = frappe.get_all(master, fields=["name", f"`{column}` as value"], order_by="name asc", limit_page_length=0)
 	# `index.leaf` itself — a composite PK (`{program}::{stage}`) is indexed as its tail, never whole.
-	return [leaf(str(r.value)) if spelling == "leaf" else str(r.value) for r in rows if r.value]
+	return [(r.name, leaf(str(r.value)) if spelling == "leaf" else str(r.value)) for r in rows if r.value]
 
 
 def _longest(vocab, words, i):
