@@ -244,15 +244,19 @@ class TestSmartViewsReadsTheBrain(FrappeTestCase):
 		doc.save(ignore_permissions=True)
 		self.assertEqual(_keys(_activity_catalog(self.task_type)) - before, {"activity:zz_late"})
 
-	def test_a_promoted_field_projects_its_column_and_a_payload_field_is_display_only(self):
-		"""The ONE routing rule (`target` names one of the 9 promoted columns, else the JSON payload) —
-		the brain writes by it, so the composer must read by it or project a column that never fills."""
+	def test_every_field_is_addressed_where_field_target_says_and_all_of_them_are_queryable(self):
+		"""The ONE routing rule, now `field_target`: a retained common CRM Task column stays the task row,
+		everything else is the section row that addresses it. Phase 4 of the task-sections plan — the
+		composer must read by that seam or project a column that never fills. There is no display-only
+		side left: every declared field is a real column somewhere, so every one of them is queryable."""
 		by_key = {r["field_key"]: r for r in _activity_catalog(self.task_type)}
 		self.assertEqual(by_key["activity:zz_outcome"]["fieldname"], "custom_outcome")
-		self.assertTrue(by_key["activity:zz_outcome"]["filterable"])
-		self.assertEqual(by_key["activity:zz_note"]["fieldname"], "zz_note")
-		self.assertFalse(by_key["activity:zz_note"]["filterable"],
-						 "a JSON_EXTRACT payload field reached a WHERE clause")
+		self.assertEqual(by_key["activity:zz_outcome"]["sql_source"], "task")
+		self.assertEqual(by_key["activity:zz_note"]["fieldname"], "zz_note",
+						 "a field with no shape of its own is addressed by its own fieldname")
+		for key, row in by_key.items():
+			self.assertTrue(row["filterable"], f"{key} still cannot be filtered")
+			self.assertTrue(row["sortable"], f"{key} still cannot be sorted")
 
 	def test_the_fieldtype_is_the_schemas_own(self):
 		"""The picker's operator menu and value widget read it; the copy could only ever guess 'Data'."""

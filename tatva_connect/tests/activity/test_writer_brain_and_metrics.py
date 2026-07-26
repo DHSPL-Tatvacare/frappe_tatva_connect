@@ -25,7 +25,10 @@ from tatva_connect.tests.activity import task_type_fixture
 
 
 class TestActivityWriterBrain(FrappeTestCase):
-	"""GAP 4 — a single activity-schema field is written through the brain, not a hardcoded payload key."""
+	"""GAP 4 — a single activity-schema field is written through the brain, not a hardcoded payload key.
+
+	The task is a real (uninserted) CRM Task rather than a stand-in dict: since Phase 2 the brain also
+	writes the field's section child row, and only a document can hold one."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -42,17 +45,18 @@ class TestActivityWriterBrain(FrappeTestCase):
 		super().tearDownClass()
 
 	def test_document_routes_into_payload_via_brain(self):
-		task = frappe._dict(custom_activity_payload="")
+		task = frappe.new_doc("CRM Task")
 		changed = activity_api.set_schema_field(task, self.doc_type, "document", "/files/scan.pdf")
 		self.assertTrue(changed)
 		self.assertEqual(frappe.parse_json(task.custom_activity_payload)["document"], "/files/scan.pdf")
 
 	def test_idempotent_write_returns_false(self):
-		task = frappe._dict(custom_activity_payload=frappe.as_json({"document": "/files/scan.pdf"}))
+		task = frappe.new_doc("CRM Task")
+		activity_api.set_schema_field(task, self.doc_type, "document", "/files/scan.pdf")
 		self.assertFalse(activity_api.set_schema_field(task, self.doc_type, "document", "/files/scan.pdf"))
 
 	def test_undeclared_field_is_rejected(self):
-		task = frappe._dict(custom_activity_payload="")
+		task = frappe.new_doc("CRM Task")
 		with self.assertRaises(frappe.ValidationError):
 			activity_api.set_schema_field(task, self.doc_type, "zz_not_declared", "x")
 
