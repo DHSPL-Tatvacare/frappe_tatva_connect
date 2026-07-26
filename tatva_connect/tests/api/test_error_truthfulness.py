@@ -156,6 +156,42 @@ class TestErrorTruthfulness(unittest.TestCase):
 		self.assertIsNone(frappe.local.response_headers.get("Retry-After"),
 		                  "the header must not reinstate what the body refused to claim")
 
+	def test_every_mapped_exception_classifies_as_its_own_entry(self):
+		"""_ERROR_MAP was walked by isinstance() in INSERTION order, so the broad ValidationError entry
+		(third) answered for every frappe exception deriving from it — a rate limit came back 400 "your
+		body was invalid", and each later registration was dead on arrival. The lookup is by MRO now, so
+		this asserts the property rather than a list, and covers whatever the map grows next."""
+		for exc_type, (code, http) in _base._ERROR_MAP.items():
+			with self.subTest(exc=exc_type.__name__):
+				got_code, got_http, _m, _f, _d = _base._classify(exc_type("probe"), "probe")
+				self.assertEqual(
+					(got_code, got_http), (code, http),
+					f"{exc_type.__name__} must classify as its OWN entry, never an ancestor's",
+				)
+
+	def test_the_failure_path_degrades_on_an_undeclared_code_instead_of_detonating(self):
+		"""`checked_code` raised in developer_mode — from inside `_fail`, which `@_api` calls in its own
+		`except`. The raise escaped the wrapper, so the partner got a bare traceback instead of the
+		envelope AND `_idempotency_release` (the line after `_fail`) never ran: the claim sat `pending`
+		and every retry answered 409 until it went stale. `_classify` is the seam, because by
+		construction no real exception can produce a code the closed vocabulary does not carry."""
+		released = []
+		with patch.dict(frappe.conf, {"developer_mode": 1}), \
+			patch.object(frappe, "log_error"), \
+			patch.object(_base, "_idem_key", return_value="K"), \
+			patch.object(_base, "_idempotency_begin", return_value=("run", "CLAIM")), \
+			patch.object(_base, "_idempotency_release", side_effect=released.append), \
+			patch.object(_base, "_classify", return_value=("not_a_declared_code", 500, "boom", None, None)):
+
+			def boom(**_kwargs):
+				frappe.throw("anything")
+
+			resp = self._drive(boom)
+
+		self.assertEqual(resp["error"]["code"], "server_error", "an undeclared code degrades, it does not escape")
+		self.assertEqual(resp["http_status_code"], 500, "the caller still gets the envelope, not a traceback")
+		self.assertEqual(released, ["CLAIM"], "a failed write must ALWAYS release its idempotency claim")
+
 	# -- 2.2: what was decided -----------------------------------------------
 
 	def test_a_blocked_upload_names_its_verdict_in_the_error_envelope(self):

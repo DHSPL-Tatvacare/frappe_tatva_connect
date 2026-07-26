@@ -509,11 +509,13 @@ def _read_required_list(data, key):
 
 
 def _page(data):
-	"""(limit, offset) for a list request, clamped to the configured page ceiling. The ONE
-	pagination brain every list endpoint calls — no module-local clamping."""
+	"""(limit, offset) for a list request, clamped at BOTH ends. The ONE pagination brain every list
+	endpoint calls — no module-local clamping. `cint("-1")` is a truthy -1, so an unclamped negative
+	reached the query as `LIMIT -1` and the driver error, unmapped, answered a caller's typo with a
+	500. An unusable number is treated as an absent one, which is what `limit=0` has always meant."""
 	cfg = _cfg()
-	limit = min(cint(data.get("limit")) or cfg["list_default_page"], cfg["list_max_page"])
-	offset = cint(data.get("offset") or data.get("limit_start"))
+	limit = min(max(cint(data.get("limit")), 0) or cfg["list_default_page"], cfg["list_max_page"])
+	offset = max(cint(data.get("offset") or data.get("limit_start")), 0)
 	return limit, offset
 
 
@@ -539,13 +541,16 @@ def checked_code(code):
 	partner cannot look up cannot reach either the caller or the request log.
 
 	The vocabulary is closed: a code the caller cannot look up is worse than no code. Emitting an
-	undeclared one is a bug in US, so it is loud in dev and degrades to the generic code in prod rather
-	than shipping a string no partner can branch on."""
+	undeclared one is a bug in US, so it is logged and degrades to the generic code rather than
+	shipping a string no partner can branch on.
+
+	It NEVER raises. Both callers run inside the failure path — `_fail` from `@_api`'s own `except` —
+	so a raise here escaped the wrapper: no envelope, and the `_idempotency_release` on the next line
+	never ran, stranding the claim at `pending` until it went stale. The set is enforced where that is
+	free, by `tests/api/test_openapi_matches_reality.py`; at runtime the only safe move is to degrade."""
 	if code in ERROR_CODES:
 		return code
 	frappe.log_error(title=f"Partner API: undeclared error code {code!r}")
-	if frappe.conf.developer_mode:
-		raise ValueError(f"{code!r} is not in _base.ERROR_CODES — declare it and publish it")
 	return "server_error"
 
 
@@ -576,6 +581,7 @@ def request_error():
 # exception type maps to a stable code + HTTP status; the message is the throw()'s
 # own text (we author those — safe), and anything unexpected is logged server-side
 # and returned generically so internals never leak.
+# A LOOKUP keyed by exception class, resolved through the raised exception's own MRO — never a first-match isinstance() scan, under which the broad ValidationError entry answered for every frappe descendant registered after it and each such registration was silently dead.
 _ERROR_MAP = {
 	frappe.PermissionError: ("forbidden", 403),
 	frappe.DoesNotExistError: ("not_found", 404),
@@ -598,6 +604,11 @@ if hasattr(frappe, "DuplicateEntryError"):
 	_ERROR_MAP[frappe.DuplicateEntryError] = ("duplicate", 409)
 if hasattr(frappe, "RateLimitExceededError"):
 	_ERROR_MAP[frappe.RateLimitExceededError] = ("rate_limited", 429)
+# The SITE is unavailable, not the request wrong: both declare 503 and both derive from ValidationError, so they answered 400 "your body was invalid" while the site was read-only or its queue was full. Registerable only because the lookup is by MRO.
+if hasattr(frappe, "InReadOnlyMode"):
+	_ERROR_MAP[frappe.InReadOnlyMode] = ("server_busy", 503)
+if hasattr(frappe, "QueueOverloaded"):
+	_ERROR_MAP[frappe.QueueOverloaded] = ("server_busy", 503)
 
 # THE error vocabulary — every code the API may put in `error.code`, declared once.
 #
@@ -640,8 +651,10 @@ def _classify(e, fn_name):
 			"This record still has records linked to it, so it cannot be deleted. Delete the records "
 			"that hang off it first, then delete this one."
 		), None, None
-	for exc_type, (code, http) in _ERROR_MAP.items():
-		if isinstance(e, exc_type):
+	# The MRO is already ordered most-derived-first, so walking it asks the questions in the TYPE's order rather than the map's — the scan it replaces asked them in the map's.
+	for exc_type in type(e).__mro__:
+		if exc_type in _ERROR_MAP:
+			code, http = _ERROR_MAP[exc_type]
 			# A mapped exception that carries no text still owes the caller a sentence: a real code paired with a blank body is a dead end.
 			return (code, http, (str(e) or _(
 				"The request was refused and no reason was recorded. Retry the call; if it repeats, "

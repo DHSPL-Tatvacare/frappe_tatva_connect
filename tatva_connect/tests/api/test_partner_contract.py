@@ -300,6 +300,38 @@ class TestPartnerContract(unittest.TestCase):
 		_list_ok("calls", [{"name": "e"}], total=5, offset=4, limit=2)
 		self.assertFalse(frappe.local.response["data"]["has_more"], "the last page reports has_more false")
 
+	def test_the_page_brain_clamps_both_ends_not_just_the_ceiling(self):
+		"""`cint("-1")` is a truthy -1, so a negative survived both the `or default` and the ceiling and
+		reached the query as `LIMIT -1`; the driver error is unmapped, so a typo answered 500."""
+		cfg = _base._cfg()
+		default, ceiling = cfg["list_default_page"], cfg["list_max_page"]
+		cases = (
+			({"limit": -1}, (default, 0)),
+			({"offset": -5}, (default, 0)),
+			({"limit": -1, "offset": -5}, (default, 0)),
+			({"limit": 0}, (default, 0)),                       # unchanged: 0 has always meant "default"
+			({"limit": 5, "offset": 10}, (5, 10)),              # unchanged: a usable page is untouched
+			({"limit": ceiling * 10}, (ceiling, 0)),            # unchanged: the ceiling still caps
+		)
+		for args, expected in cases:
+			with self.subTest(args=args):
+				self.assertEqual(_base._page(frappe._dict(args)), expected)
+
+	def test_a_negative_page_answers_a_page_not_a_server_error(self):
+		"""The same input through a REAL list endpoint and the REAL @_api wrapper — before the floor this
+		wrote status `error`, http 500 and an Error Log row for an input we should have clamped."""
+		lead, _ = self._lead("+919812300110")
+		self._call(lead.name)
+
+		frappe.local.response = frappe._dict()
+		frappe.form_dict = frappe._dict({"lead": lead.name, "limit": -1, "offset": -1})
+		partner_call.call_list()
+
+		resp = frappe.local.response
+		self.assertEqual(resp["status"], "success", "a caller's bad page number is not OUR server error")
+		self.assertEqual(resp["data"]["offset"], 0, "the offset floor is 0, never a negative")
+		self.assertGreaterEqual(resp["data"]["limit"], 1, "the limit floor is a real page, never a negative")
+
 	def test_a_write_returns_the_full_record(self):
 		"""A create, an update and a get hand back the SAME shape — they can never diverge."""
 		lead, _ = self._lead("+919812300089", external_id="SHAPE")
