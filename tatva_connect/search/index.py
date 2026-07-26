@@ -75,6 +75,21 @@ _IDENTIFIERS = (
 # The lead's grain axes, in the order the row shows them; fieldnames are the picklist brain's own lead axes.
 _AXES = (("vertical", "custom_vertical"), ("lead_group", "custom_group"), ("program", "custom_current_program"))
 
+# Every CRM Lead field prepare_document consumes, derived from the two declarations above so it cannot drift.
+# This is ONE list doing TWO jobs, which is the whole point: the framework SELECTs it for the batch build AND
+# re-reads it on every save to decide whether to reindex (`any(doc.has_value_changed(f) for f in fields)`,
+# sqlite_search.py:1846). A field read out-of-band is invisible to that check — which is why correcting a
+# patient's phone or name used to leave the old value searchable until someone forced a full rebuild.
+_LEAD_FIELDS = (
+	"lead_name",
+	"lead_owner",
+	"owner",
+	"custom_stage",
+	"status",
+	*(fieldname for _c, fieldname, _k in _IDENTIFIERS if fieldname != "name"),
+	*(fieldname for _c, fieldname in _AXES),
+)
+
 # Below this a probe prefix-matches half the site, and the endpoint refuses a query shorter than it anyway.
 _IDENT_MIN = 3
 
@@ -178,8 +193,8 @@ class CRMLeadSearch(SQLiteSearch):
 
 	# DECLARATION ORDER IS DISPLAY ORDER — `_doctype_tier` reads it, so the leads -> notes -> attachments preference is written once.
 	INDEXABLE_DOCTYPES: ClassVar[dict] = {
-		# The IDs and grain axes come off the lead CONTEXT (every child row carries them too), so a lead selects only what `_keys_of` reads off its own row.
-		"CRM Lead": {"fields": [*_PLACEHOLDER, "email", "custom_stage", "custom_substage", "source"]},
+		# `_LEAD_FIELDS` is every field the context read consumes, so a change to any of them reindexes the lead.
+		"CRM Lead": {"fields": [*_PLACEHOLDER, "email", "custom_substage", "source", *_LEAD_FIELDS]},
 		"FCRM Note": {"fields": [*_PLACEHOLDER, "title", "content", "reference_doctype", "reference_docname"]},
 		# `file_url` is declared so the framework's own metadata mapping stores it — a hit opens the bytes with no per-result read.
 		"File": {"fields": [*_PLACEHOLDER, "file_name", "file_url", "attached_to_doctype", "attached_to_name"]},
@@ -267,18 +282,54 @@ class CRMLeadSearch(SQLiteSearch):
 		return super()._process_search_results(self._visible_rows(raw_results), query)
 
 	def _visible_rows(self, rows):
-		# One get_list over the candidate leads. A row with no lead is dropped: nothing is indexed unowned.
-		by_lead = {}
+		"""The candidates the caller may actually read — asked of frappe's permission engine, TWICE over.
+
+		`get_search_filters` returns ONE dict applied to every row whatever its doctype, so the framework's
+		own seam cannot ask a note about note permissions. Both gates below are `get_list`, which IS that
+		engine (DocPerm, permission_query_conditions, has_permission hooks, User Permissions, shares):
+
+		  · by LEAD — a sub-entity is visible only if the lead it hangs off is on the caller's line.
+		  · by the row's OWN doctype — a lead grant is not a note grant. Without this a caller who reaches
+		    a lead by share or assignment, but holds no FCRM Note read, was served clinical note text.
+
+		One bounded question per doctype present in the page (<= 3), never an enumeration. Runs BEFORE the
+		framework truncates to MAX_SEARCH_RESULTS, so scoping costs no recall inside the candidate set. It is
+		also what makes the index safe to be stale: a deleted or detached row cannot survive `get_list`.
+		"""
+		def lead_of(row):
+			return row["lead"] if "lead" in row.keys() else None
+
+		candidates = {}
 		for row in rows:
-			lead = row["lead"] if "lead" in row.keys() else None
-			if lead:
-				by_lead.setdefault(lead, []).append(row)
-		if not by_lead:
+			if lead_of(row):
+				candidates.setdefault(row["doctype"], set()).add(row["name"])
+		if not candidates:
 			return []
-		allowed = set(
-			frappe.get_list("CRM Lead", filters={"name": ["in", list(by_lead)]}, pluck="name", limit_page_length=0)
+
+		leads = {lead_of(row) for row in rows if lead_of(row)}
+		allowed_leads = set(
+			frappe.get_list("CRM Lead", filters={"name": ["in", list(leads)]}, pluck="name", limit_page_length=0)
 		)
-		return [row for row in rows if (row["lead"] if "lead" in row.keys() else None) in allowed]
+		allowed = {
+			(doctype, name)
+			for doctype, names in candidates.items()
+			for name in self._readable(doctype, names)
+		}
+		return [
+			row
+			for row in rows
+			if lead_of(row) in allowed_leads and (row["doctype"], row["name"]) in allowed
+		]
+
+	def _readable(self, doctype, names):
+		# The caller's own read scope for ONE doctype. A doctype they hold no read on raises rather than
+		# returning empty, and a caller who may read nothing is the same answer either way: no rows.
+		try:
+			return set(
+				frappe.get_list(doctype, filters={"name": ["in", list(names)]}, pluck="name", limit_page_length=0)
+			)
+		except frappe.PermissionError:
+			return set()
 
 	def prepare_document(self, doc):
 		# Every row's title is the parent patient's name; content is composed; metadata carries the lead + grain.
@@ -323,13 +374,8 @@ class CRMLeadSearch(SQLiteSearch):
 		return ctx
 
 	def _read_lead_context(self, lead):
-		# Fieldnames per the two declarations above (_IDENTIFIERS / _AXES, whose axes are the grain brain's own
-		# _LEAD_AXES); the status pill is the patient-journey stage, else the status.
-		ids = [fieldname for _c, fieldname, _k in _IDENTIFIERS if fieldname != "name"]
-		axes = [fieldname for _c, fieldname in _AXES]
-		row = frappe.db.get_value(
-			"CRM Lead", lead, ["lead_name", "lead_owner", "owner", "custom_stage", "status", *ids, *axes], as_dict=True
-		)
+		# The SAME list the doctype declares, so the fields that trigger a reindex are exactly the fields read.
+		row = frappe.db.get_value("CRM Lead", lead, list(_LEAD_FIELDS), as_dict=True)
 		if not row:
 			return None
 		return {
@@ -389,10 +435,19 @@ def build_index():
 
 
 def reindex_lead(lead):
-	# The `principals` column is denormalised, so anything that moves a lead's owner, assignment or share has to
-	# restamp it — on the lead AND on every child row that carries its context. The index itself names those
-	# children (`lead` column), so no reverse resolver is re-derived here. Dormant/absent index -> no-op, the
-	# same predicate every native doc-event indexing hook uses. Never raises into the caller's save.
+	"""Restamp the lead's row and every child row that carries a copy of its context.
+
+	Two things frappe's own incremental indexer cannot do, which is exactly why this exists and no more:
+
+	  · `principals` is derived from OTHER documents — a ToDo or a DocShare. Sharing a lead never touches the
+	    lead, so `update_doc_index` is never called for it; only the ToDo/DocShare event fires, and it has to
+	    restamp the lead itself.
+	  · the children denormalise the lead's title, grain and principals, and there is no parent -> child
+	    cascade for an index. The `lead` column names them, so no reverse resolver is re-derived here.
+
+	A save of the lead DOCUMENT needs none of this — every field the context reads is declared, so the
+	framework reindexes that row on its own. Runs in a background job; see `_enqueue_reindex`.
+	"""
 	engine = CRMLeadSearch()
 	if not (engine.is_search_enabled() and engine.index_exists()):
 		return
@@ -409,16 +464,34 @@ def reindex_lead(lead):
 			frappe.log_error(title="Search Reindex Error", message=f"{doctype}:{name} (lead {lead})")
 
 
-def reindex_on_lead_owner_change(doc, method=None):
-	# CRM Lead.on_update — the owner leg of the visibility predicate.
-	if doc.has_value_changed("lead_owner"):
-		reindex_lead(doc.name)
+def _enqueue_reindex(lead):
+	# ONE job per lead, off the request path, with the three guards that stop a runaway: `deduplicate` + a
+	# per-lead `job_id` collapse the several triggers one assignment fires (ToDo insert AND update, DocShare
+	# insert AND update, the lead's own save) into a single run; `enqueue_after_commit` means a rolled-back
+	# save never reindexes; and a bulk import or a migrate enqueues nothing at all.
+	if not lead or frappe.flags.in_import or frappe.flags.in_migrate or frappe.flags.in_install:
+		return
+	frappe.enqueue(
+		"tatva_connect.search.index.reindex_lead",
+		queue="short",
+		lead=lead,
+		enqueue_after_commit=True,
+		deduplicate=True,
+		job_id=f"search-reindex-{lead}",
+	)
+
+
+def reindex_on_lead_context_change(doc, method=None):
+	# CRM Lead.on_update — the children carry the lead's title, grain and principals, so any declared field
+	# moving restamps them. The lead's own row needs nothing here; the framework already reindexed it.
+	if any(doc.has_value_changed(fieldname) for fieldname in _LEAD_FIELDS):
+		_enqueue_reindex(doc.name)
 
 
 def reindex_on_assignment(doc, method=None):
 	# ToDo after_insert / on_trash — the assignment leg; a cancelled ToDo grants nothing, hence on_update below.
 	if doc.reference_type == "CRM Lead" and doc.reference_name:
-		reindex_lead(doc.reference_name)
+		_enqueue_reindex(doc.reference_name)
 
 
 def reindex_on_assignment_change(doc, method=None):
@@ -430,4 +503,4 @@ def reindex_on_assignment_change(doc, method=None):
 def reindex_on_share(doc, method=None):
 	# DocShare after_insert / on_update / on_trash — crm shares a lead with its assigned agent (crm_lead.py:189).
 	if doc.share_doctype == "CRM Lead" and doc.share_name:
-		reindex_lead(doc.share_name)
+		_enqueue_reindex(doc.share_name)

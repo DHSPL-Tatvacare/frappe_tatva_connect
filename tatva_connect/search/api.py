@@ -4,6 +4,7 @@
 """The one whitelisted endpoint the spotlight modal calls; the frontend renders its shape and decides nothing."""
 import frappe
 from frappe.search.sqlite_search import MAX_SEARCH_RESULTS
+from frappe.utils import cint
 
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.search import vocabulary
@@ -11,12 +12,15 @@ from tatva_connect.search.index import TAB, CRMLeadSearch, matched_identifier
 
 _MIN = 3
 
+# The default page the spotlight asks for; a caller may ask for less, never for more than the index returns.
+_LIMIT = 20
+
 # The dormant toggle for the query split — off, the vocabulary is never consulted and the response is today's.
 SPLIT_TOGGLE = "Search::Query::vocabulary"
 
 
 @frappe.whitelist()
-def search(query, type=None, limit=20):
+def search(query, type=None, limit=_LIMIT):
 	# Empty for a short/blank query or while dormant; `type` is an optional doctype facet.
 	query = (query or "").strip()
 	engine = CRMLeadSearch()
@@ -37,7 +41,9 @@ def search(query, type=None, limit=20):
 	total = res.get("summary", {}).get("total_matches", len(results))
 	# The framework truncates to MAX_SEARCH_RESULTS, so a plateaued count is a floor and the UI must say so.
 	out = {
-		"results": results[: int(limit)],
+		# `limit` arrives off the wire: cint never raises where int('abc') would 500, and the clamp keeps a
+		# negative or absurd value from silently truncating or asking for more than the index will ever return.
+		"results": results[: max(1, min(cint(limit) or _LIMIT, MAX_SEARCH_RESULTS))],
 		"total": total,
 		"status": status,
 		"total_capped": total >= MAX_SEARCH_RESULTS,

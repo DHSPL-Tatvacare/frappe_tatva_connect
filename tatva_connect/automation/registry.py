@@ -887,7 +887,7 @@ AUTOMATIONS = [
 		# A gate read by is_search_enabled; per-save indexing rides frappe's own sqlite_search doc_events. The four below are OURS: the index denormalises each lead's owner/assignee/share set into a permission column, so every mechanism that moves it restamps the lead + its child rows. The activator builds the index once on enable.
 		activator="tatva_connect.search.activation.apply",
 		backs=[
-			"tatva_connect.search.index.reindex_on_lead_owner_change",
+			"tatva_connect.search.index.reindex_on_lead_context_change",
 			"tatva_connect.search.index.reindex_on_assignment",
 			"tatva_connect.search.index.reindex_on_assignment_change",
 			"tatva_connect.search.index.reindex_on_share",

@@ -140,7 +140,7 @@ doc_events = {
 			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
 			"tatva_connect.notifications.events.on_lead_stage_changed",
 			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
-			"tatva_connect.search.index.reindex_on_lead_owner_change",
+			"tatva_connect.search.index.reindex_on_lead_context_change",
 		],
 	},
 	"CRM Task": {
@@ -314,6 +314,8 @@ after_migrate = [
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
 	"tatva_connect.automation.seed.reconcile_activations",
+	# Same idea for the FTS index: it is a FILE, not a table, so no patch can reshape it and CREATE VIRTUAL TABLE IF NOT EXISTS silently keeps the old columns — an index whose stamped schema is stale is dropped and rebuilt here, every migrate, for ever.
+	"tatva_connect.search.activation.reconcile_index_schema",
 	# Stop the third-party jobs this site can never use (docs/investigations/scheduled-jobs-audit.md); after the toggles settle, and disjoint from them by test_scheduler_denylist.
 	"tatva_connect.scheduler_denylist.apply",
 	"tatva_connect.automation.drift.assert_registered",

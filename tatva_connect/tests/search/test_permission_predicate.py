@@ -142,6 +142,19 @@ class TestPermissionPredicate(FrappeTestCase):
 
 	def setUp(self):
 		self.addCleanup(frappe.set_user, "Administrator")
+		# The child-row restamp is a background job in production: deduplicated per lead and enqueued AFTER
+		# commit, so a rolled-back test never reaches it (`enqueue_after_commit` registers and returns before
+		# `now` is consulted — background_jobs.py:205). Run the job body inline instead, so these tests still
+		# assert the OUTCOME rather than that something was enqueued, and the queueing arguments stay untested
+		# here on purpose — they are a delivery concern, not a visibility one.
+		def run_now(method, **kwargs):
+			for queue_arg in ("enqueue_after_commit", "deduplicate", "job_id", "queue", "timeout"):
+				kwargs.pop(queue_arg, None)
+			return frappe.call(method, **kwargs)
+
+		inline = patch("frappe.enqueue", run_now)
+		inline.start()
+		self.addCleanup(inline.stop)
 		# Saving a CRM Lead commits (notifications, enqueues), so a mutating test can outlive the rollback.
 		# Every test therefore starts from the declared fixture state, restated here, and is order-independent.
 		self._restate_fixture()
