@@ -27,12 +27,16 @@ def execute():
 		return
 
 	# sqli-ok: table and column names are code constants; no user input reaches this statement.
-	# NULL only. An EMPTY string is a value MariaDB constrains like any other, so excluding it here checked for duplicates the index does not care about and missed the ones it does: two blank-phone leads on the same grain then raised 1062, the except below swallowed it, and the index silently never landed.
+	# Match the UNIQUE index's OWN semantics exactly, or the pre-check lies. An EMPTY string is a value
+	# MariaDB constrains, so it stays in. But a NULL is NOT constrained (MariaDB permits repeated tuples
+	# that contain a NULL), so only an all-non-NULL tuple can ever raise 1062 — flag those alone. Grouping
+	# NULL-bearing tuples as "duplicates" would report a collision the index does not care about and skip
+	# creating a perfectly creatable index, every migrate.
 	dupes = frappe.db.sql(
 		f"""
 		SELECT mobile_no, custom_vertical, custom_group, COUNT(*) AS n
 		FROM `{table}`
-		WHERE mobile_no IS NOT NULL
+		WHERE mobile_no IS NOT NULL AND custom_vertical IS NOT NULL AND custom_group IS NOT NULL
 		GROUP BY mobile_no, custom_vertical, custom_group
 		HAVING COUNT(*) > 1
 		LIMIT 10

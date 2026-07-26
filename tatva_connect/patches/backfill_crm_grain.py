@@ -16,19 +16,21 @@ A fresh site gets these from the seed (db-seeds/2026-07-22-crm-grain.sql); this 
 """
 import frappe
 
+from tatva_connect.taxonomy import grain as taxonomy_grain
+
 # The curated registry. (vertical, group, program) — "" program means the combination has no programme axis.
 GRAINS = [
-	("Goodflip", "India", "Inside-Sales"),
-	("Goodflip", "Insurers", ""),
-	("Goodflip", "Insurers", "Niva-Bupa"),
+	("GoodFlip", "India", "Inside-Sales"),
+	("GoodFlip", "Insurers", ""),
+	("GoodFlip", "Insurers", "Niva-Bupa"),
 	("Goodflip-Care", "Anaya", ""),
 	("Goodflip-Care", "Anaya", "Nivolumab"),
 	("Goodflip-Care", "Anaya", "Sigrima"),
 	("Goodflip-Care", "Anaya", "Tukavo"),
 	("Goodflip-Care", "Anaya", "Ujvira"),
 	("Goodflip-Care", "Zydus", "Liver-Forever"),
-	("Tatvapractice", "India", "Field-Sales"),
-	("Tatvapractice", "India", "Inside-Sales"),
+	("TatvaPractice", "India", "Field-Sales"),
+	("TatvaPractice", "India", "Inside-Sales"),
 ]
 
 # REJECTED, and why — kept here so a future backfill does not silently re-adopt it from the lead table.
@@ -56,9 +58,15 @@ def _masters_exist(grain) -> bool:
 
 
 def ensure_grains() -> list:
-	"""Insert the curated tuples that are missing. Returns the names inserted (empty on a replay)."""
+	"""Insert the curated tuples that are missing. Returns the names inserted (empty on a replay).
+
+	Each tuple is spelled the way its MASTER spells it, not the way this list happens to. The Link
+	validates case-insensitively, so a literal of 'Goodflip' against a master of 'GoodFlip' inserts
+	happily — and mints a composite key in a spelling nothing else in the app uses. That is how this
+	table came to hold `Goodflip::India::Inside-Sales` beside `GoodFlip::Insurers::`."""
 	inserted = []
-	for grain in GRAINS:
+	for raw in GRAINS:
+		grain = tuple(taxonomy_grain.canon(axis, value) for axis, value in zip(taxonomy_grain.AXES, raw))
 		name = grain_name(*grain)
 		if frappe.db.exists("CRM Grain", name):
 			continue

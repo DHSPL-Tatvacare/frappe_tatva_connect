@@ -1,34 +1,30 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Fold each grain master's older spelling into the dashed one, and re-mint every key that carried it.
+"""Rename each grain master's older spelling to the finalised dashed one, everywhere it is stored.
 
-The masters evolved — `Niva Bupa` became `Niva-Bupa`, `InsideSales` became `Inside-Sales` — and each
-change landed as a NEW row beside the old one instead of replacing it. So the CRM ended up holding two
-of everything for those grains: two lead stage sets, two picklist sets, two task type sets, and leads
-and user permissions split across both. Dashed is the finalised shape; these are the same values, so
-they become one.
+The masters evolved — `GoodFlip Care` became `Goodflip-Care`, `InsideSales` became `Inside-Sales`,
+`Niva Bupa` became `Niva-Bupa` — but the old spelling stayed on the master row and on everything that
+named it: leads, user permissions, picklist values, task types, lead stages. Dashed is the finalised
+shape. This brings every stored value onto it.
 
-Two halves, and the second is the one a plain rename misses:
+`frappe.rename_doc` does the heavy lifting: renaming the master repoints every **Link** field to it.
+Three things it cannot reach, and this handles each:
 
-  * The MASTER rows fold with `rename_doc(merge=True)`, which repoints every Link field for us — EXCEPT
-    `User Permission.for_value`, which is a Dynamic Link. `rename_doc` collects `fieldtype = "Link"`
-    only (`model/rename_doc.py:get_link_fields`), so those rows would keep naming a master that no
-    longer exists and every rep scoped by one would silently lose their access. They are repointed here.
+  * `User Permission.for_value` is a **Dynamic** Link — `get_link_fields` collects `fieldtype='Link'`
+    only — so a repped-by-grain permission would keep naming a master that no longer exists.
+  * `CRM Picklist Value` stores its vertical/group/program as **Data**, not Link, so rename_doc is
+    blind to them.
+  * Composite **names**. A doctype named `format:{vertical}::{group}::{program}::...` has its Link
+    columns repointed but its NAME left reading the old spelling — and here the name IS the identity.
 
-  * The COMPOSITE KEYS. Nine doctypes mint their primary key from the grain
-    (`format:{vertical}::{group}::{program}::...`). Renaming the master fixes their Link COLUMN and
-    leaves their NAME reading the old spelling — and in this app the composite key IS the identity.
-    Each such row is re-minted from its doctype's own `autoname`, so nothing here restates a naming
-    rule that the doctype already declares.
-
-Idempotent: a spelling already folded has no row left to fold, and a key already re-minted already
-equals what its format renders. A fresh install has neither duplicate, so this no-ops there.
+Each step matches on the old spelling, not on the master still existing, so a run interrupted midway
+simply completes on the next migrate. A fresh install never had the old spelling, so this no-ops.
 """
 import re
 
 import frappe
 
-# (master doctype, the spelling that goes, the spelling that stays). Dashed stays — operator decision.
+# (master doctype, old spelling, finalised dashed spelling).
 _PAIRS = (
 	("CRM Vertical", "Pill Up", "Pill-Up"),
 	("CRM Vertical", "GoodFlip Care", "Goodflip-Care"),
@@ -42,97 +38,76 @@ _PAIRS = (
 _MASTERS = ("CRM Vertical", "CRM Group", "CRM Program")
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
-# The axis names this app spells a grain with. `psp_group` (routing/telephony) and `crm_group` (the API
-# mapping) are the same axis under a local name. Needed because not every one of these is a Link: CRM
-# Picklist Value keeps all three as DATA, so `rename_doc` — which updates Link fields only — cannot see
-# them, and 110 rows kept a folded spelling in both their column and their key.
+# The fieldnames this app spells a grain axis with. `psp_group` / `crm_group` are the group axis under a
+# local name. Used to find the DATA columns rename_doc cannot see (CRM Picklist Value keeps all three).
 _AXIS_FIELDNAMES = ("vertical", "group", "psp_group", "crm_group", "program")
 
 
 def execute():
-	for master, loser, winner in _PAIRS:
-		_fold_master(master, loser, winner)
-		_rewrite_text_axes(loser, winner)
-	_remint_composite_keys()
+	for master, old, new in _PAIRS:
+		if frappe.db.exists(master, old):
+			# merge= when the dashed master ALREADY exists (a site that carries BOTH spellings — the very
+			# "two of everything" state this patch remediates), else a plain rename. Assume nothing about
+			# prior state: a bare rename onto an existing name would abort the migrate on DuplicateEntryError.
+			frappe.rename_doc(master, old, new, merge=frappe.db.exists(master, new), force=True)
+		_repoint_user_permissions(master, old, new)          # Dynamic Link — rename_doc misses it
+		_rewrite_data_axes(old, new)                         # axes stored as Data (CRM Picklist Value)
+	_remint_composite_names()                                # names that embed the grain
 	frappe.db.commit()
 
 
-def _fold_master(master, loser, winner):
-	"""One spelling folds into the other. `exists` is the DB's own comparison, so it answers about the
-	row that is really there rather than about the characters we happen to have typed."""
-	if not frappe.db.exists(master, loser):
-		return
-	if not frappe.db.exists(master, winner):
-		# The dashed row was never seeded on this site: the old row simply takes the new name.
-		frappe.rename_doc(master, loser, winner, force=True)
-	else:
-		_repoint_user_permissions(master, loser, winner)
-		frappe.rename_doc(master, loser, winner, merge=True, force=True)
-	print(f"  merge_duplicate_grain_masters: {master} {loser!r} -> {winner!r}")
-	frappe.db.commit()
+def _repoint_user_permissions(master, old, new):
+	"""`for_value` is a Dynamic Link. access-04 later reconciles perms to the roster, but this keeps the
+	link valid in the meantime rather than leaving it pointing at a master that was just renamed away."""
+	frappe.db.sql(
+		"UPDATE `tabUser Permission` SET for_value = %s WHERE allow = %s AND for_value = %s",
+		(new, master, old),
+	)
 
 
-def _repoint_user_permissions(master, loser, winner):
-	"""`for_value` is a Dynamic Link, so `rename_doc` never touches it. A row left naming the folded
-	master scopes its user to nothing. Rows that would collide with an existing one are dropped rather
-	than repointed — the surviving row already grants exactly the same thing."""
-	for perm in frappe.get_all(
-		"User Permission", filters={"allow": master, "for_value": loser}, fields=["name", "user", "applicable_for", "apply_to_all_doctypes"]
-	):
-		twin = frappe.db.exists("User Permission", {
-			"user": perm.user, "allow": master, "for_value": winner,
-			"applicable_for": perm.applicable_for or "", "apply_to_all_doctypes": perm.apply_to_all_doctypes,
-		})
-		if twin:
-			frappe.delete_doc("User Permission", perm.name, ignore_permissions=True, force=True)  # authz-ok: tier-a — patch, the surviving twin grants the same scope
-		else:
-			frappe.db.set_value("User Permission", perm.name, "for_value", winner, update_modified=False)
-
-
-def _rewrite_text_axes(loser, winner):
-	"""Fold the spelling in grain axes stored as TEXT. A Link column is repointed by `rename_doc`; a Data
-	column holding the same value is invisible to it. BINARY so only the exact old spelling is rewritten."""
-	for doctype, fieldname in _text_axis_columns():
+def _rewrite_data_axes(old, new):
+	"""Fold the spelling in grain axes stored as Data. BINARY so only the exact old spelling is rewritten
+	(the old values are unique across axes, so a plain value match is unambiguous)."""
+	for doctype, fieldname in _data_axis_columns():
 		frappe.db.sql(
-			f"UPDATE `tab{doctype}` SET `{fieldname}` = %s WHERE BINARY `{fieldname}` = %s", (winner, loser)
+			f"UPDATE `tab{doctype}` SET `{fieldname}` = %s WHERE BINARY `{fieldname}` = %s", (new, old)
 		)
 
 
-def _text_axis_columns():
-	"""(doctype, fieldname) for every Data column that spells a grain axis."""
+def _data_axis_columns():
+	"""(doctype, fieldname) for every Data column that holds a grain axis."""
 	rows = frappe.db.sql(
 		"""SELECT parent AS dt, fieldname FROM `tabDocField` WHERE fieldtype = 'Data' AND fieldname IN %(axes)s
 		   UNION ALL
 		   SELECT dt, fieldname FROM `tabCustom Field` WHERE fieldtype = 'Data' AND fieldname IN %(axes)s""",
-		{"axes": _AXIS_FIELDNAMES},
-		as_dict=True,
+		{"axes": _AXIS_FIELDNAMES}, as_dict=True,
 	)
 	return [(r.dt, r.fieldname) for r in rows
 	        if frappe.db.table_exists(r.dt) and frappe.db.has_column(r.dt, r.fieldname)]
 
 
-def _remint_composite_keys():
-	"""Re-mint any key whose rendered format no longer matches its own name.
-
-	Driven by the doctype's `autoname`, never by a list kept here: the doctype declares how it is named
-	and this reads that declaration. A row whose target name already exists is MERGED into it — after
-	the fold both spellings describe one thing, which is the whole point.
-	"""
+def _remint_composite_names():
+	"""Re-mint any composite name still carrying an old spelling, from the doctype's own `format:` autoname
+	(read from the doctype, never a list kept here) applied to its now-corrected axis fields."""
+	olds = [old for _m, old, _n in _PAIRS]
 	for doctype, template in _composite_doctypes():
+		keys = _PLACEHOLDER.findall(template)
 		for name in frappe.get_all(doctype, pluck="name"):
-			doc = frappe.db.get_value(doctype, name, _PLACEHOLDER.findall(template), as_dict=True) or {}
-			want = template.format(**{k: (doc.get(k) or "") for k in _PLACEHOLDER.findall(template)})
-			if want == name or not want.strip(":"):
+			if not any(old in name for old in olds):
 				continue
-			# BINARY: a name differing from `want` only by case is this same row, not a twin to merge into.
-			twin = frappe.db.sql(f"SELECT 1 FROM `tab{doctype}` WHERE BINARY name = %s", (want,))
-			frappe.rename_doc(doctype, name, want, merge=bool(twin), force=True)
-			print(f"  merge_duplicate_grain_masters: {doctype} {name!r} -> {want!r}{' (merged)' if twin else ''}")
+			doc = frappe.db.get_value(doctype, name, keys, as_dict=True) or {}
+			want = template.format(**{k: (doc.get(k) or "") for k in keys})
+			if want != name:
+				# merge= when a dashed-spelled twin of this row already exists (both spellings were
+				# bulk-seeded per grain), else a plain remint. Same assume-nothing reason as the master fold.
+				twin = frappe.db.sql(f"SELECT 1 FROM `tab{doctype}` WHERE BINARY name = %s", (want,))
+				frappe.rename_doc(doctype, name, want, merge=bool(twin), force=True)
+				print(f"  merge_duplicate_grain_masters: {doctype} {name!r} -> {want!r}{' (merged)' if twin else ''}")
 		frappe.db.commit()
 
 
 def _composite_doctypes():
-	"""(doctype, format template) for every doctype whose NAME is minted from a grain master Link."""
+	"""(doctype, format template) for every doctype whose NAME is minted from a grain axis."""
 	out = []
 	for doctype, autoname in frappe.db.sql(
 		"SELECT name, autoname FROM `tabDocType` WHERE autoname LIKE 'format:%%'"
@@ -145,7 +120,7 @@ def _composite_doctypes():
 			df = meta.get_field(placeholder)
 			if not df:
 				continue
-			# A grain axis, however it is stored: a Link to one of the masters, or the same value as Data.
+			# A grain axis, whether it is stored as a Link to a master or (CRM Picklist Value) as Data.
 			if (df.fieldtype == "Link" and df.options in _MASTERS) or placeholder in _AXIS_FIELDNAMES:
 				out.append((doctype, template))
 				break
