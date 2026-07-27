@@ -3,16 +3,14 @@
  "allow_rename": 1,
  "autoname": "field:section_key",
  "creation": "2026-07-25 00:00:00.000000",
- "description": "The sections an activity type's fields are grouped into. ONE row states everything a section is: which CRM Task Table field holds its rows, whose columns they are, whether a task may carry many of them, and which column addresses one. Every reader — the activity form, Smart Views, automation, the partner API — asks this table; the answer is never restated on a CRM Task Type Field row. Mirrors CRM Lead Section.",
+ "description": "Where an activity type's answers are STORED. ONE row states everything a section is: which CRM Task Table field holds its rows, whose columns they are, whether a task may carry many of them, and which column addresses one. Every reader — Smart Views, automation, the partner API — asks this table; the answer is never restated on a CRM Task Type Field row. How the FORM looks is a different question, declared on the task type as Tab Break / Section Break / Column Break rows. Mirrors CRM Lead Section.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "section_key",
   "title",
-  "tab",
   "display_order",
-  "depends_on",
   "column_break_target",
   "target_doctype",
   "child_table_field",
@@ -40,13 +38,7 @@
    "label": "Title",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The heading these fields are shown under, on the activity form and in a partner's error messages."
-  },
-  {
-   "fieldname": "tab",
-   "fieldtype": "Data",
-   "label": "Tab",
-   "description": "The form tab these sections are grouped into. Blank = the first tab."
+   "description": "What these answers are called where there is no heading to lean on — a Smart View picker or grid column. This is STORAGE, not form layout: the form's tabs, headings and columns are declared as Tab Break / Section Break / Column Break rows on the task type itself."
   },
   {
    "fieldname": "display_order",
@@ -54,14 +46,7 @@
    "label": "Display Order",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "Ascending within the tab: a lower number sits higher on the form."
-  },
-  {
-   "fieldname": "depends_on",
-   "fieldtype": "Data",
-   "label": "Depends On",
-   "length": 1000,
-   "description": "Optional JS condition showing this section only when relevant (native frappe-ui depends_on). A hidden section's fields are never required."
+   "description": "Ascending: the order sections are resolved in, and which one answers as the key-value default."
   },
   {
    "fieldname": "column_break_target",

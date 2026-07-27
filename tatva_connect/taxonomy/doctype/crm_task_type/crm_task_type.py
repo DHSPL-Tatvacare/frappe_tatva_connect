@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import _
+from frappe.model import NO_VALUE_FIELDS
 from frappe.model.document import Document
 from frappe.utils import cstr
 
@@ -13,7 +14,17 @@ class CRMTaskType(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "type_name")
+		self._validate_schema()
 		self._validate_rules()
+
+	def _validate_schema(self):
+		"""A row that asks the rep something must say what it asks. A LAYOUT row (`NO_VALUE_FIELDS` — Frappe's
+		own list, the same one that keeps a Section Break out of a table's columns) stores nothing, so a Column
+		Break carrying no heading is correct rather than incomplete."""
+		for row in self.schema:
+			if (row.fieldtype or "") not in NO_VALUE_FIELDS and not (row.label or "").strip():
+				frappe.throw(_("Schema row {0}: a {1} field needs a label — it is what the rep is asked.").format(
+					row.idx, row.fieldtype), title=_("Missing label"))
 
 	def _validate_rules(self):
 		"""Every rule row names fields THIS type declares, and a value the named field offers (§17.1).
@@ -33,6 +44,12 @@ class CRMTaskType(Document):
 			if field and field not in declared:
 				frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
 							 title=_("Unknown field"))
+			# A layout row holds no answer, so a condition reading one can never be true — a rule that looks
+			# right in the grid and does nothing on screen. A layout row is a legitimate rule TARGET, though:
+			# that is how a whole section is shown or hidden.
+			if field and (declared[field].fieldtype or "") in NO_VALUE_FIELDS:
+				frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
+							 title=_("Not a question"))
 			value = cstr(row.condition_value or "").strip()
 			if field and value and (row.operator or "").strip() in RULE_VALUE_OPERATORS:
 				options = [o.strip() for o in (declared[field].options or "").split("\n") if o.strip()]

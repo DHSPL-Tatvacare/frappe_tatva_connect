@@ -13,7 +13,8 @@ from urllib.parse import parse_qs, urlparse
 
 import frappe
 from frappe import _
-from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
+from frappe.model import NO_VALUE_FIELDS
+from frappe.utils import cstr, flt, format_datetime, formatdate, get_datetime
 
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -340,6 +341,7 @@ def _field_descriptor(f):
 		"read_only": 0,  # fill-once closes a lead field for THIS lead; stamped by _mark_lead_read_only
 		"depends_on": (f.get("depends_on") or ""),
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
+		"container_depends_on": [],  # the conditions of the tab/section/column holding it; stamped by _layout
 	})
 
 
@@ -433,14 +435,12 @@ def _compiled_mandatory(entry, own):
 	return "eval:" + _rule_or([atom for atom, _ in rows])
 
 
-def compiled_fields(tt):
-	"""Every declared field of a task type, with the type's RULES compiled into its `depends_on` and
-	`mandatory_depends_on` (§17.3).
+def _compiled_rows(tt):
+	"""Every declared ROW of a task type — layout markers included, in declaration order — with the type's
+	RULES compiled into each one's `depends_on` and `mandatory_depends_on` (§17.3).
 
-	THE one projection of "what does this form ask, and when": `_type_config` renders it, `get_schema`
-	publishes it and `compute_activity` enforces it, so what the rep is shown and what the save demands can
-	never be two answers. Nothing is written back to the declaration — the rules ARE the storage and this is
-	their compiled reading."""
+	A marker is compiled like any other row on purpose: that is what lets a rule Show or Hide a whole
+	section, which is how the source forms behave, without a second kind of rule."""
 	by_target = _rules_by_target(tt)
 	out = []
 	for f in tt.schema:
@@ -452,34 +452,88 @@ def compiled_fields(tt):
 	return out
 
 
-def _field_groups(descriptors):
-	"""The form's LAYOUT, straight off the declaration (Phase 8): one group per section the type's fields
-	name, plus the group of fields naming none. A group carries its section's own title, tab, display order
-	and condition, and holds the SAME descriptor objects the flat list holds — one decision about what a
-	type's fields are, projected two ways, never a second list.
+def _layout(rows):
+	"""The form's LAYOUT: the declared rows walked ONCE into tabs -> sections -> columns -> fields, exactly
+	the way `frappe/public/js/frappe/form/layout.js` walks a DocType's docfields.
 
-	Order: the blank tab first (the section declaration calls it the first tab), then each tab by the
-	earliest section that names it; inside a tab the unsectioned group leads, then sections by display
-	order. Field order inside a group is the child table's own. A type no admin has sectioned yields
-	exactly ONE unsectioned group, which is the flat form that renders today."""
-	sections = {s.name: s for s in _sections()}
-	groups = {}
-	for d in descriptors:
-		s = sections.get(d["section"])
-		key = s.name if s else ""
-		groups.setdefault(key, {
-			"section": key,
-			"title": (s.title or "") if s else "",
-			"tab": (s.tab or "") if s else "",
-			"display_order": cint(s.display_order) if s else 0,
-			"depends_on": (s.depends_on or "") if s else "",
-			"fields": [],
-		})["fields"].append(d)
-	ordered = sorted(groups.values(), key=lambda g: (g["display_order"], g["section"]))
-	first = {}
-	for g in ordered:
-		first.setdefault(g["tab"], g["display_order"])
-	return sorted(ordered, key=lambda g: (g["tab"] != "", first[g["tab"]], g["section"] != "", g["display_order"]))
+	The point of copying Frappe here is the property that walk has and a filter-and-flow grid does not: a
+	field belongs to whichever column was open when it was DECLARED, so its column can never change with what
+	happens to be visible. A revealed neighbour pushes it down its own column and never sideways.
+	A type declaring no markers yields one tab, one section, one column — the flat form, unchanged.
+
+	A container carries only what it is CALLED. It carries no condition: the conditions of the containers
+	holding a field are stamped on that field instead, as `container_depends_on`, and a container is on
+	screen exactly when it still holds a field that is — which is what Frappe decides in `refresh_sections`
+	rather than re-testing the section's own condition. Stating a condition on both would be one fact in two
+	places, and the two could disagree.
+
+	A column holds fieldNAMES, not descriptors: the descriptors are the flat `fields` list this is returned
+	beside, and sending them twice would put a second copy of every declaration on the wire for a client that
+	addresses them by name anyway."""
+	tabs, index, gate = [], 0, {}
+
+	def opened(kind, d):
+		nonlocal index
+		index += 1
+		gate[kind] = (d.depends_on or "") if d else ""
+		return {"key": (d.fieldname if d else "") or f"{kind}-{index}",
+				"label": (d.label or "") if d else ""}
+
+	def start_tab(d=None):
+		tabs.append({**opened("tab", d), "sections": []})
+		start_section()
+
+	def start_section(d=None):
+		tabs[-1]["sections"].append({**opened("section", d), "columns": []})
+		start_column()
+
+	def start_column(d=None):
+		tabs[-1]["sections"][-1]["columns"].append({**opened("column", d), "fields": []})
+
+	start_tab()
+	for d in rows:
+		if d.fieldtype == "Tab Break":
+			start_tab(d)
+		elif d.fieldtype == "Section Break":
+			start_section(d)
+		elif d.fieldtype == "Column Break":
+			start_column(d)
+		elif d.fieldtype in NO_VALUE_FIELDS:
+			continue  # a marker this form has no layout meaning for stores nothing and renders nothing
+		else:
+			d.container_depends_on = [c for c in (gate["tab"], gate["section"], gate["column"]) if c]
+			tabs[-1]["sections"][-1]["columns"][-1]["fields"].append(d.fieldname)
+	return _prune(tabs)
+
+
+def _prune(tabs):
+	"""Drop every container holding no field. A declaration opening with a Section Break, or carrying two
+	markers back to back, otherwise leaves a container with nothing in it — structure that draws nothing and
+	that the client would have to know to ignore."""
+	for tab in tabs:
+		for section in tab["sections"]:
+			section["columns"] = [c for c in section["columns"] if c["fields"]]
+		tab["sections"] = [s for s in tab["sections"] if s["columns"]]
+	return [t for t in tabs if t["sections"]]
+
+
+def compiled_layout(tt):
+	"""The one reading of a task type's declaration, projected twice: `fields` is the flat list every READER
+	of an answer walks, `tabs` is the tree the FORM renders and it NAMES those same fields rather than
+	restating them — so what the rep is shown and what the save enforces can never be two answers.
+
+	Layout markers are filtered out of `fields` by `NO_VALUE_FIELDS` — Frappe's own list, the same one that
+	keeps a Section Break out of a table's columns — so nothing that stores or reads an answer ever meets
+	one."""
+	rows = _compiled_rows(tt)
+	tabs = _layout(rows)
+	return [d for d in rows if d.fieldtype not in NO_VALUE_FIELDS], tabs
+
+
+def compiled_fields(tt):
+	"""Every declared FIELD of a task type with its rules compiled in — `get_schema` publishes this and
+	`compute_activity` enforces it. Layout is the other half of the same walk; see `compiled_layout`."""
+	return compiled_layout(tt)[0]
 
 
 @frappe.whitelist()
@@ -519,19 +573,12 @@ def _field_visible(depends_on, values):
 	return bool((values or {}).get(cond))
 
 
-def _section_condition(f):
-	"""The condition the SECTION this field sits in is shown under, blank when it names none — read off the
-	section declaration, the one place a section's presentation is stated."""
-	section = f.get("section") or ""
-	if not section:
-		return ""
-	return frappe.get_cached_value("CRM Task Section", section, "depends_on") or ""
-
-
 def _shown_here(f, values):
-	"""True when the form shows this field for these answers: its own condition passes and the section
-	holding it is not hidden. Asked of `_field_visible` twice, never of a second rule."""
-	return _field_visible(_section_condition(f), values) and _field_visible(f.get("depends_on"), values)
+	"""True when the form shows this field for these answers: its own condition passes AND every container
+	holding it — tab, section, column — is open. The container conditions were stamped on the descriptor by
+	the one layout walk, so this asks `_field_visible` and never a second rule, and never a lookup."""
+	return all(_field_visible(c, values) for c in f.container_depends_on) \
+		and _field_visible(f.depends_on, values)
 
 
 def _evaluable(fields, values):
@@ -915,19 +962,19 @@ def lead_task_board(lead):
 
 
 def _type_config(task_type):
-	"""Render config for a task type: the ordered field schema, the same fields laid out in their declared
-	sections and tabs, whether completing it logs Done, and whether it can capture location (visit_mode
-	In-Person, or a conditional location_when). None for a type with no config row (a plain task).
+	"""Render config for a task type: the ordered field schema, the same fields laid out in the tabs,
+	sections and columns the declaration draws, whether completing it logs Done, and whether it can capture
+	location (visit_mode In-Person, or a conditional location_when). None for a type with no config row.
 
-	`fields` is what every READER of a task's answers walks; `groups` is what the FORM renders. They are the
-	one descriptor list, projected twice — see `_field_groups`."""
+	`fields` is what every READER of a task's answers walks; `tabs` is what the FORM renders. They are the
+	one descriptor list, projected twice — see `compiled_layout`."""
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
 	doc = frappe.get_doc("CRM Task Type", task_type)
-	fields = compiled_fields(doc)
+	fields, tabs = compiled_layout(doc)
 	return {
 		"fields": fields,
-		"groups": _field_groups(fields),
+		"tabs": tabs,
 		"is_logged_complete": int(doc.is_logged_complete or 0),
 		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
 	}
@@ -1001,10 +1048,10 @@ def type_config(task_type, lead=None):
 
 def _sections():
 	"""Every declared activity section — the ONE row naming a section's child table, its row key and the
-	column an answer is read from, AND what the form calls it, which tab it sits in and when it is shown."""
+	column an answer is read from. Storage only; the form's layout is declared on the task type."""
 	return frappe.get_all(
 		"CRM Task Section",
-		fields=["name", "title", "tab", "display_order", "depends_on", "target_doctype",
+		fields=["name", "title", "display_order", "target_doctype",
 				"child_table_field", "is_key_value", "is_multi_row", "row_key_field", "value_field"],
 		order_by="display_order",
 	)

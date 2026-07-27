@@ -23,11 +23,11 @@
  "fields": [
   {
    "columns": 2,
+   "description": "What the rep is asked. A Column Break needs none; a Section Break or Tab Break uses it as the heading.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Label",
-   "reqd": 1
+   "label": "Label"
   },
   {
    "columns": 2,
@@ -40,11 +40,12 @@
   },
   {
    "columns": 1,
+   "description": "The last three are LAYOUT, not questions: they store nothing and open a new tab, heading or column that the rows below them fall into — exactly as they do on a Frappe DocType.",
    "fieldname": "fieldtype",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Field Type",
-   "options": "Data\nSmall Text\nSelect\nDatetime\nCheck\nLink\nAttach\nAttach Image",
+   "options": "Data\nSmall Text\nSelect\nDatetime\nCheck\nLink\nAttach\nAttach Image\nTab Break\nSection Break\nColumn Break",
    "reqd": 1
   },
   {

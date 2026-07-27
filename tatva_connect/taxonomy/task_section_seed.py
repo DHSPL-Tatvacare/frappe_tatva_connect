@@ -5,18 +5,17 @@ from frappe.utils import cstr
 # The structure is ours, so it is declared here. The field rows that name a section stay operator data,
 # and so do the titles and the order — D13: the names are the operator's to change.
 _ROWS = [
-	{"section_key": "engagement", "title": "Engagement", "tab": "", "display_order": 10, "depends_on": "", "child_table_field": "custom_engagement", "target_doctype": "CRM Task Engagement", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
-	{"section_key": "order", "title": "Order", "tab": "", "display_order": 20, "depends_on": "", "child_table_field": "custom_order", "target_doctype": "CRM Task Order", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
+	{"section_key": "engagement", "title": "Engagement", "display_order": 10, "child_table_field": "custom_engagement", "target_doctype": "CRM Task Engagement", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
+	{"section_key": "order", "title": "Order", "display_order": 20, "child_table_field": "custom_order", "target_doctype": "CRM Task Order", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
 	# Multi-row: an upload group is one row per kind of document, so a second kind never overwrites the first.
-	{"section_key": "documents", "title": "Documents", "tab": "", "display_order": 30, "depends_on": "", "child_table_field": "custom_documents", "target_doctype": "CRM Task Document", "is_multi_row": 1, "row_key_field": "document_kind", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
+	{"section_key": "documents", "title": "Documents", "display_order": 30, "child_table_field": "custom_documents", "target_doctype": "CRM Task Document", "is_multi_row": 1, "row_key_field": "document_kind", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
 	# Key-value: the DEFAULT home. A field carrying no shape shared across types is a row of its own fieldname, so a new field is a declaration and never a schema change.
-	{"section_key": "answers", "title": "Answers", "tab": "", "display_order": 40, "depends_on": "", "child_table_field": "custom_answers", "target_doctype": "CRM Task Answer", "is_multi_row": 0, "row_key_field": "fieldname", "is_key_value": 1, "value_field": "value", "label_field": "", "question_field": "fieldname"},
+	{"section_key": "answers", "title": "Answers", "display_order": 40, "child_table_field": "custom_answers", "target_doctype": "CRM Task Answer", "is_multi_row": 0, "row_key_field": "fieldname", "is_key_value": 1, "value_field": "value", "label_field": "", "question_field": "fieldname"},
 ]
 
 
 # Where a section's rows live and how one is addressed. Code reads these, so they are asserted on every
-# migrate rather than left at whatever an older seed inserted. Title, tab, order and depends_on are
-# presentation and stay the operator's.
+# migrate rather than left at whatever an older seed inserted. Title and order are the operator's.
 _STRUCTURAL = ("target_doctype", "child_table_field", "is_multi_row", "row_key_field", "is_key_value",
                "value_field", "label_field", "question_field")
 
