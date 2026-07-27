@@ -23,7 +23,11 @@ A `200` with the schema confirms access. A key is requested from TatvaCare Ops.
 
 ## Phone format
 
-Phone numbers use E.164: `+<country code><digits>`, no spaces or hyphens, for example `+919999000123`. A bare 10-digit Indian number is normalised to `+91…` automatically, though sending the full E.164 form is the safe default.
+Phone numbers use E.164: `+<country code><digits>`, no spaces or hyphens, for example `+919999000123`. Separators are removed and a bare 10-digit Indian number is completed to `+91…`, so `98765 43210` and `098765-43210` both store as `+919876543210`.
+
+A number outside India **must** carry its own country code. Without a leading `+`, a number is read against India: `+966501234567` is stored as Saudi, while a bare `501234567` is refused and a bare `4155552671` is stored as Indian.
+
+A number that is not a real number in any country is refused with `validation_error`. The full E.164 form is the safe default on every call.
 
 ## Idempotency and retry safety
 

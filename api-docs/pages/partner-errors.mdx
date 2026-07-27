@@ -38,6 +38,7 @@ flowchart TD
 | `error.code` | HTTP | Meaning | Handling |
 |---|---|---|---|
 | `validation_error` | 400 | A field failed validation. **A document the malware scan REFUSES is reported here too** — but a document the scanner could not reach is `server_busy` (503), not this. | `error.message` and `error.fields` identify it. Commonly a required field is missing, or a value is not a valid option. A document refused by the scan carries `error.detail.verdict` (`Type Not Allowed`, `Type Mismatch` or `Infected`); it is not stored, and a clean copy is sent instead. See [Files](/files). |
+| `validation_error` | 400 | A phone number is not a real number. | The number is checked against the country's numbering plan, not merely its length. E.164 is sent — `+<country code><digits>` — and a number outside India carries its own country code. See [Phone format](/conventions#phone-format). |
 | `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |

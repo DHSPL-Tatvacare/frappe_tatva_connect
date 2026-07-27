@@ -119,7 +119,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "Required. The dedup anchor, together with the product line and group. E.164 format: `+<country code><digits>`, no spaces or hyphens.",
+            "description": "Required. The dedup anchor, together with the product line and group. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that is not real is refused.",
             "example": "+919999000123"
           },
           "phone": {
@@ -806,7 +806,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "Lead phone (auto-normalized). Send this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that is not real is refused.",
             "example": "9000000001"
           },
           "task_type": {
@@ -892,7 +892,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "Lead phone (auto-normalized). Send this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that is not real is refused.",
             "example": "9000000001"
           },
           "activity": {
@@ -1004,7 +1004,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "Optional lead phone (auto-normalized) to attach to (line-scoped)."
+            "description": "The phone of the lead to attach to, scoped to the caller's line. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that is not real is refused."
           },
           "from_number": {
             "type": "string",
@@ -1220,7 +1220,7 @@
           },
           "mobile_no": {
             "type": "string",
-            "description": "Attach by the lead's mobile number instead of its `name`, scoped to the caller's line."
+            "description": "Attach by the lead's phone instead of its `name`, scoped to the caller's line. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that is not real is refused."
           },
           "external_id": {
             "type": "string",
@@ -7109,7 +7109,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "10-digit Indian number (auto-normalized to `+91…`) or an already-`+`-prefixed number. Use this OR `name`.",
+            "description": "The lead's phone. Sent instead of `name`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           }
         ],
@@ -7265,7 +7265,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Exact phone (auto-normalized to `+91…`).",
+            "description": "An exact phone to filter on. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           },
           {
@@ -7712,7 +7712,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Up to 25 phone numbers (auto-normalized). Use this OR `names`."
+                    "description": "Up to 25 phone numbers. Sent instead of `names`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`. A number that matches no lead is reported as not found, never as an error."
                   }
                 },
                 "description": "Send exactly one of `names` / `mobile_nos`."
@@ -8142,7 +8142,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           }
         ],
@@ -8316,7 +8316,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           },
           {
@@ -9013,7 +9013,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           },
           {
@@ -9511,7 +9511,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           },
           {
@@ -11252,7 +11252,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Lead phone (auto-normalized). Use this OR `lead`.",
+            "description": "The lead's phone. Sent instead of `lead`. E.164: `+<country code><digits>`, no spaces or hyphens. A bare 10-digit Indian number is completed to `+91…`; a number outside India carries its own country code. A number that matches no lead is reported as not found, never as an error.",
             "example": "9000000001"
           },
           {
