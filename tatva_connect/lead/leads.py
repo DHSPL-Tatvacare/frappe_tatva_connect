@@ -156,15 +156,22 @@ def _grain_options(grains):
 
 
 def normalize_lead_phones(doc, method=None):
-	"""Canonicalise phone fields to +E.164 on every write (validate), so dedup and
-	WhatsApp-inbound lookup are reliable no matter how a writer formatted the number.
-	Runs BEFORE dedup_guard (hooks.py orders them)."""
+	"""Bring every phone field to its stored +E.164 form on every write (validate), and REFUSE a number
+	that is not real — so dedup, WhatsApp inbound and telephony match no matter how a writer typed it.
+
+	The one gate for all seven write surfaces: partner API, bulk, intake, Facebook sync, the migration
+	load, the Create Lead modal and Desk all reach the table through `CRM Lead.validate`. Runs BEFORE
+	dedup_guard (hooks.py orders them), so dedup compares numbers that are already canonical AND valid.
+
+	The field's LABEL is handed down, because the rep is looking at "Mobile No.", not at `mobile_no`."""
 	if not automation.is_enabled("Lead::CRM Lead::dedup"):
 		return
+	meta = frappe.get_meta(doc.doctype)
 	for f in PHONE_FIELDS:
 		val = doc.get(f)
 		if val:
-			doc.set(f, to_e164(val))
+			label = (meta.get_field(f) or frappe._dict()).label or f
+			doc.set(f, to_e164(val, fieldname=label))
 
 
 def dedup_guard(doc, method=None):

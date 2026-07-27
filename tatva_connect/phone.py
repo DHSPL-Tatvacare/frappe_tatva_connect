@@ -3,7 +3,8 @@
 """A phone number has THREE jobs in this app, and they must never be confused.
 
   MATCH  `phone.match_digits` (here)        digits, to compare two spellings of one number
-  STORE  `whatsapp.phone.to_e164`           the canonical `+91…` a row is saved as
+  STORE  `whatsapp.phone.to_e164`           the canonical `+91…` a row is saved as — and the ONE gate that
+                                            refuses a number that is not real anywhere (libphonenumber)
   SEND   `Declaration.conform_number`       what THIS provider will accept on the wire
 
 They live apart on purpose. STORE produces `+919059067237`; WATI REJECTS that, because its sends put the

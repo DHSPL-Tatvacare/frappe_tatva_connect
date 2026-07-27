@@ -358,10 +358,20 @@ def _cfg():
 # -- caller resolution -------------------------------------------------------
 
 def _norm_phone(raw):
-	"""E.164 normaliser — one brain: delegates to whatsapp.phone.to_e164, keeping the falsy
-	passthrough (None/'' unchanged) and the str() coercion (a JSON-number mobile_no still
-	normalises) of the original duplicated isdigit/+91 algorithm."""
-	return to_e164(str(raw)) if raw else raw
+	"""The E.164 form of a number a partner is SEARCHING BY — one brain, `whatsapp.phone.to_e164`, keeping
+	the falsy passthrough (None/'' unchanged) and the str() coercion (a JSON-number mobile_no still shapes).
+
+	A lookup swallows the refusal a WRITE would raise. Asking for a lead by a malformed number has an
+	answer — no such lead — and answering it with a 500 would tell a partner their integration is broken
+	when it is their query that is. The unshapeable value is passed through, so the filter is built from a
+	string no stored (canonical) number can equal and the search comes back empty."""
+	if not raw:
+		return raw
+	try:
+		return to_e164(str(raw))
+	except frappe.ValidationError:
+		frappe.clear_last_message()
+		return str(raw)
 
 
 def _resolve_caller():

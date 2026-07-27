@@ -111,8 +111,12 @@ def _submitted_phone(intake_form):
 	data = frappe.form_dict.get("data")
 	if isinstance(data, str):
 		data = frappe.parse_json(data) or {}
-	# cstr first: an unquoted JSON number arrives as an int and the canonicaliser is a regex.
-	return to_e164(frappe.cstr((data or {}).get(field) or "")) or None
+	# cstr: an unquoted JSON number arrives as an int. A malformed one has no key — the SAVE refuses it, not this.
+	try:
+		return to_e164(frappe.cstr((data or {}).get(field) or "")) or None
+	except frappe.ValidationError:
+		frappe.clear_last_message()
+		return None
 
 
 def _phone_question(intake_form):
