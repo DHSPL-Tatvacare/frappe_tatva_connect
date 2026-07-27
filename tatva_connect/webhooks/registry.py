@@ -54,6 +54,16 @@ CHANNELS = {
 			}
 		],
 	},
+	"voice": {
+		"channel": "voice",
+		"account_doctype": "CRM Bolna Account",
+		"provider_field": "provider",
+		"adapters": {"bolna": "tatva_connect.voice.adapters.bolna"},
+		"active_filter": {"enabled": 1},
+		# Webhook ingress (a `token_field`/`targets` here and the spine methods on the adapter) is W7.4
+		# pass 2. Until it lands there is no account doctype, so no route can resolve a live account; this
+		# entry exists only so `outcomes_for_channel("voice")` can read the adapter's declared outcomes.
+	},
 	"telephony": {
 		"channel": "telephony",
 		"account_doctype": "CRM Telephony Account",

@@ -42,6 +42,7 @@ _ENDPOINT = "Emits Conformance Endpoint"
 # it may not declare `emits` (see test_an_undriven_verb_may_not_declare_emits), so the declaration it
 # does not have cannot be false. Every entry needs a written reason.
 UNDRIVEN = {
+	"AI Voice Call": "W7.4 pass 1 — declares no emits; the live single-call driver lands with the CRM Bolna Account doctype + webhook in pass 2",
 	"Create Task": "needs a CRM Task Type master on the lead's grain — operator data, not test data",
 	"Update Field": "needs an enabled CRM Automation Field allowlist row, which is operator config",
 	"Append Child Row": "needs an enabled child-table allowlist row, which is operator config",

@@ -640,6 +640,22 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 	return result
 
 
+def _action_place_voice_call(action, lead, context, axes, trigger_doc):
+	"""AI VOICE CALL (effect, W7.4) — the SAME dormant sends gate as Send WhatsApp. The node always places
+	a SINGLE call (our engine is one-run-per-lead); the cohort/batch path is W7.2. `sends.send_voice`
+	records the fire behind `Task::Automation::sends` (OFF by default) and, in pass 2, will resolve against
+	the Bolna adapter. This handler only reads the action's config; no adapter logic lives here."""
+	from tatva_connect.automation import sends
+
+	output, result = sends.send_voice(
+		resolve_target(action, lead, trigger_doc)[1],
+		action.contact_number, action.connection, action.agent_id, context,
+		from_override=action.get("from_override"),
+	)
+	context[refs.OUTPUT] = output
+	return result
+
+
 def wait_resume_at(wait_expression, context, base):
 	"""The ONE Wait-delay resolver (A.8). `wait_expression` is a Python expression (safe_eval via the
 	ONE resolver, expr.resolve_expression) that must evaluate to a non-empty dict of
@@ -850,6 +866,25 @@ VERBS = {
 			{"name": "template_values", "label": "Template Values", "type": "Value Map",
 			 "slots_from": "email_template",
 			 "slots_method": "tatva_connect.automation.sends.email_template_slots"},
+		],
+	},
+	"AI Voice Call": {
+		"lane": "effect", "handler": _action_place_voice_call, "target": TARGET_LEAD,
+		"label": "AI Voice Call",
+		"description": "Places an outbound AI voice call and routes on whether it was handed to the provider.",
+		# Synchronous: did we place it. `placed` = accepted for dialling, never "answered". The LATER outcomes
+		# (answered · completed · no_answer) come from the channel declaration via `outcomes_channel`, EXCLUDING
+		# these synchronous outputs — the same race-closing exclusion Send WhatsApp uses. Nothing typed twice.
+		"outputs": [sends.PLACED, sends.FAILED],
+		"outcomes_channel": "voice",
+		"params": [
+			# Picked, never typed: a ref to a phone, conformed by the adapter's declared E164_PLUS format.
+			{"name": "contact_number", "label": "Recipient", "type": "Variable", "reqd": True},
+			# W7.4 pass 1: Data placeholders. Pass 2 makes `connection` a Link to the `CRM Bolna Account`
+			# doctype and `agent_id` a cached picker fetched from Bolna — the inspector work, with the doctype.
+			{"name": "connection", "label": "Voice account", "type": "Data", "reqd": True},
+			{"name": "agent_id", "label": "Agent", "type": "Data", "reqd": True},
+			{"name": "from_override", "label": "From number (optional)", "type": "Data"},
 		],
 	},
 }

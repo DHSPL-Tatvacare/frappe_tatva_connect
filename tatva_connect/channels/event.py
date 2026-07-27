@@ -19,8 +19,10 @@ one was edited in flight — a status quietly rewritten between the screen and t
 cannot have.
 """
 
-# The canonical outcome vocabulary. An adapter declares the subset it can TRUTHFULLY emit.
-OUTCOMES = ("sent", "delivered", "read", "replied", "clicked", "failed")
+# The canonical outcome vocabulary. An adapter declares the subset it can TRUTHFULLY emit. The first six
+# are messaging outcomes; the last three are what a VOICE provider can report about a call it placed —
+# added when the voice channel arrived, the only new vocabulary that chunk allowed. `failed` is shared.
+OUTCOMES = ("sent", "delivered", "read", "replied", "clicked", "failed", "answered", "no_answer", "completed")
 
 # What the event IS, which decides which persistence path it takes.
 #   status        — the provider reporting on a message already on the wire.

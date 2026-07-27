@@ -81,6 +81,10 @@ _RECORD_SAVEPOINT = "automation_whatsapp_record"
 SENT = "sent"
 FAILED = "failed"
 
+# Voice's synchronous "handed to the provider for dialling" output — never "answered", which is a later
+# channel-reported outcome. Named beside SENT so the messaging and voice send verbs read one vocabulary.
+PLACED = "placed"
+
 DORMANT_MARKER = "suppressed: sends dormant"
 
 
@@ -461,3 +465,33 @@ def _slot_values(template_name, slots, values, ctx):
 			continue
 		filled[name] = str(resolved)
 	return filled, blank
+
+
+def send_voice(subject_lead, contact_number, connection, agent_id, context=None, from_override=None):
+	"""Place an outbound AI voice call to `subject_lead`, or route on why it did not happen. The structural
+	twin of `send_whatsapp`: the recipient is a DECLARED reference, the number is conformed by the channel's
+	declared format, and the send is behind the SAME dormant `Task::Automation::sends` gate (one send switch
+	for all outbound automation, not a second brain).
+
+	THREE guards make this pass CANNOT-DIAL: the switch ships OFF (dormant returns a marker, no adapter);
+	the live `POST /call` is W7.4 pass 2, so an armed send is a fail-safe no-op that places nothing; and a
+	number without a country code is REFUSED before either — never dialled.
+	"""
+	number = (context or {}).get(contact_number) if contact_number else None
+	if not number:
+		return FAILED, f"failed: {contact_number or 'no recipient'} resolved to no number for lead {subject_lead}"
+
+	# Turkey-disaster prevention, voice form. `conform_number` is the ONE brain (the provider's declared
+	# `number_format`), used here directly off the voice declaration — pass 2 resolves it from the account's
+	# provider, but the format is a channel fact and needs no account, so the refusal is active even dormant.
+	from tatva_connect.voice.adapters import bolna
+
+	if not bolna.DECLARATION.conform_number(number):
+		return FAILED, f"failed: {number} has no country code, so it cannot be dialled safely"
+
+	if not sends_enabled():
+		return PLACED, DORMANT_MARKER
+
+	# The live single-call path (POST /call, deferred past commit like `_deliver_whatsapp`) is W7.4 pass 2.
+	# Until it lands an armed voice send places nothing — a fail-safe no-op, never a call to a real person.
+	return FAILED, "failed: voice sending is not enabled yet (W7.4 pass 2)"

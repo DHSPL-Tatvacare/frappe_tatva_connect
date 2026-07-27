@@ -41,6 +41,7 @@ _VALID_EXAMPLE = {
 	"Create Note": {},
 	"Send WhatsApp": {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "x"},
 	"Send Email": {"email_recipient": "sv.email", "email_template": "x"},
+	"AI Voice Call": {"contact_number": "crm_lead.mobile_no", "connection": "x", "agent_id": "a"},
 	"Assign to User": {"assign_mode": "Assign", "assignee_mode": "User", "assign_to_user": "x"},
 }
 
