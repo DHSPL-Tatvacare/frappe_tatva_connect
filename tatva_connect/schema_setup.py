@@ -25,6 +25,7 @@ from tatva_connect.patches import (
 	add_crm_task_metrics_index,
 	add_integration_request_index,
 	add_lead_dedup_unique_index,
+	add_lead_timeline_indexes,
 	add_observability_indexes,
 	add_task_answer_fieldname_index,
 	add_task_document_kind_index,
@@ -68,6 +69,8 @@ _STEPS = (
 	retire_lead_import_coordinates,
 	# Composite (clinic lat, clinic lng) — Near Me's bounding-box prefilter scanned the table without it.
 	add_clinic_anchor_index,
+	# (reference_docname, creation) on FCRM Note and CRM Call Log — the lead's Notes and Calls tabs filter on docname ALONE, so the note table full-scanned and the call log full-index-scanned (its own index leads with reference_doctype). Composite, so not JSON-declarable.
+	add_lead_timeline_indexes,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.
