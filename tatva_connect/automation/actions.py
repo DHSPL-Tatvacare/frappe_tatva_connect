@@ -460,8 +460,9 @@ def _action_call_api(action, lead, context, axes, trigger_doc):
 	endpoint = action.webhook_endpoint
 	if not endpoint:
 		raise ValueError("Call API node missing an endpoint")
-	if not frappe.db.exists("Webhook", endpoint):
-		raise ValueError(f"Endpoint {endpoint!r} does not exist")
+	# The "endpoint exists" check MOVED to the publish gate (`graph._endpoint_problems`): a deleted Webhook
+	# is author error the author now learns at publish, not from the first run. A published graph reaches
+	# here only with a real endpoint, so `_call_endpoint`'s own `get_doc` is the whole resolution.
 
 	source = action.webhook_payload_source or "Lead"
 	if source == "Trigger Doc" and trigger_doc is not None:

@@ -51,6 +51,9 @@ def problems(nodes, entry_node=None):
 	found += _loop_problems(nodes)
 	found += _reference_problems(nodes, context)
 	found += _wait_problems(nodes)
+	found += _template_mapping_problems(nodes, context)
+	found += _template_account_problems(nodes, context)
+	found += _endpoint_problems(nodes, context)
 	return found
 
 
@@ -163,6 +166,83 @@ def _wait_problems(nodes):
 			found.append(_at(node_id, _("{0} never reports {1}. It reports: {2}")
 			                 .format(source, outcome, ", ".join(emits) or _("nothing")), "event_name",
 			                 code="wait.outcome-unknown", fix=_("Pick an outcome this node can actually report.")))
+	return found
+
+
+def _template_mapping_problems(nodes, context):
+	"""Every placeholder a picked template declares has a mapping row. This RAISED mid-run in
+	`sends._template_parameters`, days after the author left; now refused at publish. The placeholder names
+	come from the SAME adapter the send-time builder reads, and the missing set from the SAME
+	`sends.missing_value_rows` — one rule, two callers, never a re-implementation.
+	"""
+	from tatva_connect.automation import sends
+
+	slots_by_verb = {
+		"Send WhatsApp": ("whatsapp_template", sends.whatsapp_template_slots),
+		"Send Email": ("email_template", sends.email_template_slots),
+	}
+	found = []
+	for node in nodes:
+		spec = slots_by_verb.get(node["node_type"])
+		if not spec:
+			continue
+		template_field, slots_of = spec
+		config = _config_of(node)
+		template = config.get(template_field)
+		if not template:
+			continue  # a blank template is the `reqd` rule's business (W2.2), not this move's
+		for name in sends.missing_value_rows(slots_of(template), config.get("template_values")):
+			found.append(_at(
+				node["node_id"],
+				_("{0} has no value declared for {1} — every placeholder needs a row.").format(template, name),
+				"template_values", code="template.slot-unmapped",
+				fix=_("Map {0}, or the message would go out with a blank in it.").format(name),
+			))
+	return found
+
+
+def _template_account_problems(nodes, context):
+	"""A picked WhatsApp template must belong to the account the workflow's grain routes to. This RAISED in
+	`sends.send_whatsapp`; now refused at publish — but ONLY when the grain pins one account. A blank or
+	ambiguous grain resolves per-lead at runtime, so this ABSTAINS and the runtime backstop remains. Both
+	sides call the ONE `sends.template_account_mismatch`."""
+	from tatva_connect.automation import sends
+	from tatva_connect.whatsapp import routing
+
+	grain = context["grain"]
+	account = routing.resolve_account_for_grain(grain["vertical"], grain["group"], grain["program"])
+	if not account:
+		return []  # the grain pins no single account — a per-lead runtime question, not author error
+	found = []
+	for node in nodes:
+		if node["node_type"] != "Send WhatsApp":
+			continue
+		template = _config_of(node).get("whatsapp_template")
+		if not template or not frappe.db.exists("WhatsApp Templates", template):
+			continue  # a blank or dangling template link is a different rule's business
+		mismatch = sends.template_account_mismatch(template, account)
+		if mismatch:
+			found.append(_at(
+				node["node_id"], mismatch, "whatsapp_template", code="template.account-mismatch",
+				fix=_("Pick a template that belongs to {0}, the account this workflow's grain routes to.").format(account),
+			))
+	return found
+
+
+def _endpoint_problems(nodes, context):
+	"""A Call API node's curated Webhook must still exist. This RAISED in `_action_call_api` on the first
+	run that reached it; now refused at publish. A blank endpoint is the `reqd` rule's business, so this
+	abstains on it and speaks only to an endpoint that was picked and has since been deleted."""
+	found = []
+	for node in nodes:
+		if node["node_type"] != "Call API":
+			continue
+		endpoint = _config_of(node).get("webhook_endpoint")
+		if endpoint and not frappe.db.exists("Webhook", endpoint):
+			found.append(_at(
+				node["node_id"], _("The endpoint {0} does not exist.").format(endpoint),
+				"webhook_endpoint", code="endpoint.missing", fix=_("Pick a curated Webhook that exists."),
+			))
 	return found
 
 

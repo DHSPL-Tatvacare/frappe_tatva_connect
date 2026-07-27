@@ -88,6 +88,32 @@ def sends_enabled() -> bool:
 	return automation.is_enabled(SENDS_SWITCH)
 
 
+def missing_value_rows(names, values) -> list:
+	"""Placeholder/slot names with NO declared mapping row — the ONE detector, shared by the publish gate
+	(`graph._template_mapping_problems`) and both send-time builders below. A name with no row is author
+	error: no patient's data can produce it and it is wrong for every record equally. Publish now refuses
+	it; the builders keep it as a backstop because deleting the guard would `KeyError` on the fill and risk
+	assembling a message with a slot silently dropped — the exact hole this whole change exists to close."""
+	from tatva_connect.workflow_engine import contract
+
+	declared = contract.value_rows_map(values)
+	return [n for n in names if n not in declared]
+
+
+def whatsapp_template_slots(template) -> list:
+	"""The placeholder names a WhatsApp template really declares, from the provider's own truth (the
+	adapter) for the account the template belongs to. The non-whitelisted core the whitelisted
+	`template_slots` wraps AND the publish gate reads — so author-time refusal and send-time fill see the
+	SAME names, never two lists that can drift."""
+	account_name = frappe.db.get_value("WhatsApp Templates", template, "whatsapp_account")
+	if not account_name:
+		return []
+	from tatva_connect.channels import resolve
+
+	account = frappe.get_doc("WhatsApp Account", account_name)
+	return resolve.adapter_for(account).template_variables(account, frappe.get_doc("WhatsApp Templates", template))
+
+
 def template_account_mismatch(template_name, account_name) -> str | None:
 	"""Shared predicate (A.8): does the picked WhatsApp Template belong to the account it is about to
 	send through? Returns None when they match, or a ready error message naming both accounts when
@@ -208,7 +234,7 @@ def _template_parameters(adapter, account, template, values, ctx):
 	names = adapter.template_variables(account, template)
 	declared = contract.value_rows_map(values)
 
-	missing = [n for n in names if n not in declared]
+	missing = missing_value_rows(names, values)
 	if missing:
 		raise ValueError(
 			"Send WhatsApp: template {} has no value declared for {} - every placeholder needs a row".format(
@@ -238,14 +264,7 @@ def template_slots(template):
 	"""
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	account_name = frappe.db.get_value("WhatsApp Templates", template, "whatsapp_account")
-	if not account_name:
-		return []
-
-	from tatva_connect.channels import resolve
-
-	account = frappe.get_doc("WhatsApp Account", account_name)
-	return resolve.adapter_for(account).template_variables(account, frappe.get_doc("WhatsApp Templates", template))
+	return whatsapp_template_slots(template)
 
 
 def _deliver_whatsapp(account_name, to_number, template, parameters, lead, correlation=None):
@@ -425,7 +444,7 @@ def _slot_values(template_name, slots, values, ctx):
 	from tatva_connect.workflow_engine import contract
 
 	declared = contract.value_rows_map(values)
-	missing = [name for name in slots if name not in declared]
+	missing = missing_value_rows(slots, values)
 	if missing:
 		raise ValueError(
 			"Send Email: template {} has no value declared for {} - every slot needs a row".format(
