@@ -65,7 +65,7 @@ def context_for(doc, changed):
 	who builds `Status is New` means one thing by it. The engine judges it in two entirely different places:
 	a TRIGGER predicate here, at dispatch, against the doc that fired; a BRANCH predicate at execution,
 	against the run's state. Namespace one and not the other and the same control means two different
-	things — the Trigger/Branch divergence this codebase has already found once. Both build a `Values`, so
+	things — the Trigger/Route divergence this codebase has already found once. Both build a `Values`, so
 	there is one grammar and one resolver.
 
 	What lands, all under `frappe.scrub(doc.doctype)`:

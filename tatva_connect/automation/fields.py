@@ -6,7 +6,7 @@ folded out of the retired `CRM Automation Field` into the resource brains (one b
                       DECLARED fields) — two sources read as ONE, so a Task lookup sees both.
 
 Three capabilities are three Check flags on each catalog row:
-  • can_read  — a rule criterion / Branch condition may test this field (grain-independent).
+  • can_read  — a rule criterion / Route condition may test this field (grain-independent).
   • can_watch — a change to this field may fire a rule (Updated). Implies can_read: the dispatcher captures
     a watched field's before/after pair, so a `changed to` rule fires ONLY on the transition — once.
   • can_set   — this field may be written by a Set Field / child-row action (grain-scoped via the contract).

@@ -35,7 +35,7 @@ def _graph():
 			"webhook_endpoint": "x",
 			"capture": [{"path": "body.data.id", "variable": "patient_id"}],
 		}, {"succeeded": "b1", "failed": "note"}),
-		_node("b1", "Branch", {}, {"true": "end", "false": "end"}),
+		_node("b1", "Route", {"routes": [{"id": "r1", "label": "r1", "condition": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"}}]}, {"r1": "end", "otherwise": "end"}),
 		_node("note", "Create Note", {"comment_mode": "Literal", "comment_text": "hi"}, {"next": "end"}),
 		_node("end", "Terminal"),
 	]

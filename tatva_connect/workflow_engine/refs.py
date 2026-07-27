@@ -14,7 +14,7 @@ A reference is `<source>.<field>` and nothing else parses it. Four sources, one 
 Collision is impossible by construction. It used to be impossible only by luck: values lived in one flat
 bag, `upstream.available_at` de-duplicated by bare key with node values first, and a Call API's `status`
 therefore ATE the lead's `status` — one label, one entry, the author never told which one they had picked,
-and a predicate that matched at the Trigger could not match at a Branch below the call.
+and a predicate that matched at the Trigger could not match at a Route below the call.
 
 WHY THE FIELD, NOT THE SLOT
 ---------------------------
@@ -183,8 +183,8 @@ class Values:
 	"""Run state and trigger context, as ONE object — a real mapping over namespaced references.
 
 	THE SAME TYPE IN BOTH PLACES, DELIBERATELY. A Trigger predicate is judged at dispatch against the
-	triggering document; a Branch predicate is judged at execution against the run. Two builders, two
-	shapes and one predicate control is how the Trigger and the Branch came to mean different things by
+	triggering document; a Route predicate is judged at execution against the run. Two builders, two
+	shapes and one predicate control is how the Trigger and the Route came to mean different things by
 	the same condition. Both now build a `Values`, so there is one vocabulary and one resolver.
 
 	Two layers, asked in this order:

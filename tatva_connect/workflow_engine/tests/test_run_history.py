@@ -81,7 +81,7 @@ class TestRunHistory(FrappeTestCase):
 	def _step(self, run, node_id, outcome, detail="", duration_ms=0):
 		return frappe.get_doc({
 			"doctype": fixtures.STEP_LOG_DT, "workflow_run": run, "subject_name": self.lead.name,
-			"node_id": node_id, "node_type": "Branch", "outcome": outcome,
+			"node_id": node_id, "node_type": "Route", "outcome": outcome,
 			"detail": detail, "duration_ms": duration_ms,
 		}).insert(ignore_permissions=True).name
 

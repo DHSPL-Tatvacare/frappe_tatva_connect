@@ -36,9 +36,9 @@ class TestEngineWalk(FrappeTestCase):
 				"target_doctype": "CRM Lead", "fieldname": "status",
 				"value_mode": "Literal", "value": "New",
 			}),
-			fx.node("b1", "Branch",
-			        config={"condition": {"type": "rule", "field": "seed.taken", "operator": "is", "value": 0}},
-			        edges={"true": "w1", "false": "end"}),
+			fx.node("b1", "Route",
+			        config={"routes": [{"id": "r1", "label": "taken", "condition": {"type": "rule", "field": "seed.taken", "operator": "is", "value": 0}}]},
+			        edges={"r1": "w1", "otherwise": "end"}),
 			# No `source_node`: this waits on a signal delivered from OUTSIDE the graph, which is what the
 			# resume test sends (`correlation=None`). It used to name `s1`, an Update Field — a node that
 			# reports no outcome at all and therefore mints no correlation token, so nothing in the graph
@@ -88,7 +88,7 @@ class TestEngineWalk(FrappeTestCase):
 	# --- the four things W0/W1 changed ---------------------------------------------------------------
 
 	def test_a_run_walks_the_graph_and_parks_at_the_wait(self):
-		"""Trigger passes through, the Step runs, the Branch routes by its named edge, and the Wait parks.
+		"""Trigger passes through, the Step runs, the Route routes by its named edge, and the Wait parks.
 
 		One test covers all four rewrites because they are links in one chain — if routing by edge name
 		were broken the run would stop at the Trigger, and if config reading were broken the Wait would
@@ -109,12 +109,12 @@ class TestEngineWalk(FrappeTestCase):
 			"the run must pass through the Trigger, the Step and the Branch, then park",
 		)
 
-	def test_the_branch_took_its_true_edge_by_name(self):
-		"""The routing detail is the OUTPUT name now, not a column name — that is the contract the
-		canvas and the validator share with the interpreter."""
+	def test_the_route_took_its_first_row_by_name(self):
+		"""The routing detail is the OUTPUT name now — the matched row's id — not a column name; that is
+		the contract the canvas and the validator share with the interpreter."""
 		run = self._run()
 		details = {entry.node_id: entry.detail for entry in fx.logs(run.name)}
-		self.assertEqual(details["b1"], "true")
+		self.assertEqual(details["b1"], "r1")
 
 	def test_the_verb_node_ran_its_own_verb(self):
 		"""A node IS a verb: its type names what it does and its config is that verb's parameters. The
@@ -148,6 +148,6 @@ class TestEngineWalk(FrappeTestCase):
 		so an edit to the workflow cannot reach a run already under way."""
 		payload = versions.build_payload(self.workflow)
 		by_id = {n["node_id"]: n for n in payload["nodes"]}
-		self.assertEqual(by_id["b1"]["edges"], [{"output": "false", "to": "end"}, {"output": "true", "to": "w1"}])
+		self.assertEqual(by_id["b1"]["edges"], [{"output": "otherwise", "to": "end"}, {"output": "r1", "to": "w1"}])
 		self.assertEqual(by_id["s1"]["node_type"], "Update Field")
 		self.assertEqual(by_id["end"]["edges"], [], "a Terminal declares no outputs")

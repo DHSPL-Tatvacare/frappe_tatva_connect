@@ -28,7 +28,7 @@ _INTERPRETER = Path(frappe.get_app_path("tatva_connect")) / "workflow_engine" / 
 # A minimal valid config per type; a type added without one fails test_every_type_has_a_valid_example.
 _VALID_EXAMPLE = {
 	"Trigger": {"subject_doctype": "CRM Lead", "event": "Created"},
-	"Branch": {"condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}},
+	"Route": {"routes": [{"id": "r1", "label": "r1", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},
 	"Set Variables": {"assign": "{'x': 1}"},
 	"Wait": {"mode": registry.FOR_DURATION, "expression": "{'minutes': 5}"},
 	"Terminal": {},
@@ -65,27 +65,32 @@ class TestRegistryConformance(unittest.TestCase):
 				)
 
 	def test_a_conditional_declaration_resolves_for_every_value_it_keys_on(self):
-		"""`outputs_by` names a config field and maps its values. Every value in that map must resolve,
-		and the field must be one the type actually declares — otherwise the map keys on nothing."""
+		"""`outputs_by` resolves outputs either from a mode-map keyed on a config field (Wait), or from a
+		fixed base with rows read from a config field (Route). Either way the field it reads must be one the
+		type declares, and every mapped value must resolve to exactly its declared list."""
 		for node_type, declared in registry.NODE_TYPES.items():
 			rule = declared.get("outputs_by")
 			if not rule:
 				continue
 			with self.subTest(node_type=node_type):
 				fields = {f["name"] for f in declared["config"]}
-				self.assertIn(rule["field"], fields, f"{node_type} keys its outputs on an undeclared field")
-				for value, expected in rule["map"].items():
+				keyed_on = rule["field"] if "field" in rule else rule["rows_from"]["declares"]
+				self.assertIn(keyed_on, fields, f"{node_type} keys its outputs on an undeclared field")
+				for value, expected in rule.get("map", {}).items():
 					self.assertEqual(
 						registry.outputs_for(node_type, {rule["field"]: value}), list(expected), value
 					)
 
-	def test_an_unset_conditional_field_yields_no_outputs(self):
-		"""Fail closed: a Wait with no mode chosen must offer no edges rather than guess one."""
+	def test_an_unset_conditional_field_yields_only_its_fixed_part(self):
+		"""Fail closed: a Wait with no mode chosen offers no edges rather than guess one; a Route with no
+		rows yet offers only its reserved base (`otherwise`), never a placeholder leg."""
 		for node_type, declared in registry.NODE_TYPES.items():
-			if "outputs_by" not in declared:
+			rule = declared.get("outputs_by")
+			if not rule:
 				continue
 			with self.subTest(node_type=node_type):
-				self.assertEqual(registry.outputs_for(node_type, {}), [])
+				fixed = list(rule.get("base", [])) if "base" in rule else []
+				self.assertEqual(registry.outputs_for(node_type, {}), fixed)
 
 	def test_every_config_field_is_fully_described(self):
 		"""The inspector renders straight from these. A field missing its type renders as nothing."""

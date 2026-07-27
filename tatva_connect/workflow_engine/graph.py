@@ -4,7 +4,7 @@
 
 `registry.validate_node` judges ONE node in isolation: does it carry the settings its type declares, and
 are its edges named outputs it actually has. That is necessary and not sufficient. A graph made entirely
-of individually-valid nodes can still be nonsense: no Trigger, a Branch with only its `true` leg wired,
+of individually-valid nodes can still be nonsense: no Trigger, a Route with one of its legs left unwired,
 an edge pointing at a node someone deleted, a loop with no Wait in it, a Terminal nothing reaches.
 
 Every one of those used to publish and activate cleanly, then die on a live lead as `_Permanent` — the
@@ -259,10 +259,10 @@ def upstream_ancestors(nodes, node_id):
 def _node_problems(nodes, context):
 	"""Each node, judged for COMPLETENESS — the half `validate_node` defers while authoring.
 
-	A node save checks shape only, so an author can put a Branch on the canvas and configure it later.
+	A node save checks shape only, so an author can put a Route on the canvas and configure it later.
 	Publish is where "later" runs out: this is the same validator, in the same one place, asked the
 	stricter question. Without it, moving the check out of save would have deleted it rather than moved
-	it, and a workflow with an unconfigured Branch would activate and then die on a real lead.
+	it, and a workflow with an unconfigured Route would activate and then die on a real lead.
 	"""
 	found = []
 	for node in nodes:
@@ -323,8 +323,8 @@ def _trigger_problems(nodes, entry_node, context):
 def _edge_problems(nodes, context):
 	"""Every edge lands on a node that exists, and every declared output is wired.
 
-	An unwired output is the quiet one: a Branch with only `true` connected runs fine until the day a
-	subject takes the false path, and then dies with "node None is not in the frozen graph".
+	An unwired output is the quiet one: a Route with a leg left unconnected runs fine until the day a
+	subject takes that path, and then dies with "node None is not in the frozen graph".
 	"""
 	known = _by_id(nodes)
 	found = []

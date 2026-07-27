@@ -29,7 +29,7 @@ def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None,
 	inbox row name. Dormant-by-default: with the engine switch off, nothing is delivered (nothing runs).
 
 	PERMISSION-GATED, because this is a whitelisted write into a running workflow. The payload it carries
-	is merged into run state by the Wait's `accepts` map, where it feeds Branch predicates and every
+	is merged into run state by the Wait's `accepts` map, where it feeds Route predicates and every
 	effect verb — so an ungated caller could advance another team's journey on a lead they cannot see and
 	choose the values that drive its sends. The gate is write on the SUBJECT: if you may not write the
 	record, you may not move a workflow that is watching it."""

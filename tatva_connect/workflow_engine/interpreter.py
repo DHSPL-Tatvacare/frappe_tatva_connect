@@ -5,7 +5,7 @@
 auto-rolls-back to the last durable Parked/Done state; nothing is ever left `Running` with no owner.
 
 Reuse, not reinvention: a verb node runs THE handler its type names, through the EXISTING
-`automation.actions.VERBS` declaration, inside a savepoint; a Branch evaluates through the ONE
+`automation.actions.VERBS` declaration, inside a savepoint; a Route evaluates through the ONE
 predicate evaluator `automation.rules.predicate_match` (the same one the Trigger uses) and an Assign
 through `automation.expr`; a For-Duration Wait's wake time comes from the ONE arithmetic
 `automation.actions.wait_resume_at` (`frappe.utils.add_to_date`). No second executor, no second evaluator.
@@ -107,7 +107,7 @@ def _refreshed_state(instance):
 
 	`refs.Values`, not a ChainMap. A ChainMap merged two FLAT dicts, so a node's `status` and the lead's
 	`status` were one name with the node's winning — the lead's own status was unreadable below a Call API,
-	and the identical predicate that matched at the Trigger could not match at the Branch. Namespacing
+	and the identical predicate that matched at the Trigger could not match at the Route. Namespacing
 	makes that collision impossible by construction rather than by ordering, and the subject stays a
 	loader, so it is still read as it is NOW and still never copied into what persists.
 	"""
@@ -187,7 +187,7 @@ def advance(instance):
 				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
 				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
-			elif node.node_type in ("Branch", "Set Variables"):
+			elif node.node_type in ("Route", "Set Variables"):
 				nxt, detail = _next_control(node, state)  # the ONE control-flow step, shared with run_inline
 				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
 			elif node.node_type == registry.TRIGGER:
@@ -245,17 +245,19 @@ def _edge(node, output):
 
 
 def _next_control(node, state):
-	"""Branch/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one interpreter, not
+	"""Route/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one interpreter, not
 	two copies). Returns `(next_node_id, detail)` — `advance` logs the detail, `run_inline` ignores it.
 
-	A Branch routes on the SAME predicate structure the Trigger uses, through the same evaluator: one
-	control for the author, one meaning at runtime. It used to evaluate a raw Python expression, which
-	made a Branch the only place in the product where authoring required knowing Python, and put the
-	condition beyond the reach of the validator that checks every other field."""
+	A Route routes on the SAME predicate structure the Trigger uses, through the same evaluator: one
+	control for the author, one meaning at runtime. Rows are tried top to bottom and the FIRST whose
+	condition matches takes its edge — order is logic. A lead matching none takes `otherwise`, which is
+	reserved and always wired, so it can never fall out of the graph."""
 	config = _config(node)
-	if node.node_type == "Branch":
-		output = "true" if rules.predicate_match(config.get("condition"), state) else "false"
-		return _edge(node, output), output
+	if node.node_type == "Route":
+		for row in config.get("routes") or []:
+			if rules.predicate_match(row.get("condition"), state):
+				return _edge(node, row["id"]), row["id"]
+		return _edge(node, "otherwise"), "otherwise"
 	result = expr.resolve_expression(config.get("assign"), state)
 	if not isinstance(result, dict):
 		raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
@@ -275,12 +277,12 @@ def has_wait(version):
 
 def run_inline(version_name, lead_name, trigger_doc, seed_state):
 	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Instance - the
-	rule-shaped Flow. The SAME node executor as `advance` (`_run_verb`, the Branch/Assign logic, `expr`) -
+	rule-shaped Flow. The SAME node executor as `advance` (`_run_verb`, the Route/Assign logic, `expr`) -
 	one interpreter, two shapes - minus the durable machinery a rule never needs (no Instance row, no
 	active_key, no park, no signal inbox). A Wait node is a config error here: a graph that parks must run
 	as a continuous Instance, and the front-door only routes a wait-free graph to this path.
 
-	`seed_state` is the trigger context (the record's fields), so a Branch reads the trigger's values and an
+	`seed_state` is the trigger context (the record's fields), so a Route reads the trigger's values and an
 	effect verb sees them exactly as the durable path sees signal-merged state. The whole walk runs inside
 	ONE savepoint: a failure rolls back only the flow's own writes (the triggering save survives), and the
 	caller logs it - an ephemeral effect can DO but never DENY. Deferred thunks fire after the savepoint
@@ -318,7 +320,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 				step_deferred, _marker = _run_verb(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
 				cursor = _edge(node, _verb_output(node, state))
-			elif node.node_type in ("Branch", "Set Variables"):
+			elif node.node_type in ("Route", "Set Variables"):
 				cursor, _ = _next_control(node, state)  # the ONE control-flow step, shared with advance
 			elif node.node_type == registry.TRIGGER:
 				cursor = _edge(node, "next")  # a pass-through here too — see `advance`

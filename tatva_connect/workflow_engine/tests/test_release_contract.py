@@ -49,16 +49,16 @@ class TestGraphRules(FrappeTestCase):
 		found = graph.problems(_graph(fx.node("end", "Terminal")))
 		self.assertTrue(any("no Trigger" in p["message"] for p in found), found)
 
-	def test_a_branch_with_one_leg_wired_is_refused(self):
-		"""The quiet one. It runs correctly until a subject takes the other path, then dies."""
+	def test_a_route_with_an_unwired_leg_is_refused(self):
+		"""The quiet one. It runs correctly until a subject takes the unwired path, then dies."""
 		found = graph.problems(_graph(
 			fx.trigger(to="b1"),
-			fx.node("b1", "Branch",
-			        config={"condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}},
-			        edges={"true": "end"}),
+			fx.node("b1", "Route",
+			        config={"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},
+			        edges={"r1": "end"}),  # `otherwise` left unwired
 			fx.node("end", "Terminal"),
 		), entry_node="start")
-		self.assertTrue(any("false" in p["message"] for p in found), found)
+		self.assertTrue(any("otherwise" in p["message"] for p in found), found)
 
 	def test_an_edge_to_a_deleted_node_is_refused(self):
 		found = graph.problems(_graph(
@@ -97,9 +97,9 @@ class TestGraphRules(FrappeTestCase):
 			fx.trigger(to="w1"),
 			fx.node("w1", "Wait", config={"mode": "For Duration", "expression": "{'minutes': 5}"},
 			        edges={"next": "b1"}),
-			fx.node("b1", "Branch",
-			        config={"condition": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"}},
-			        edges={"true": "w1", "false": "end"}),
+			fx.node("b1", "Route",
+			        config={"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"}}]},
+			        edges={"r1": "w1", "otherwise": "end"}),
 			fx.node("end", "Terminal"),
 		), entry_node="start")
 		self.assertEqual(found, [], f"a Wait-guarded loop must be allowed: {found}")
@@ -182,26 +182,26 @@ class TestValidationModes(FrappeTestCase):
 	"""Shape is checked at every save; completeness only at publish.
 
 	The rule exists because authoring is incremental. Enforcing `reqd` at save refused a draft holding an
-	unconfigured Branch — and since a Branch's condition control has no field catalog to offer yet, that
-	made Branch a node type which could never be saved at all.
+	unconfigured Route — and since a Route's condition control has no field catalog to offer yet, that
+	made Route a node type which could never be saved at all.
 
 	The pair matters more than either half: moving the check must not DELETE it. So each case below
 	asserts both that the draft is accepted and that publish still catches the same fault.
 	"""
 
 	def test_a_draft_may_hold_an_unconfigured_node(self):
-		problems = registry.validate_node("Branch", {}, [], mode=registry.DRAFT)
+		problems = registry.validate_node("Route", {}, [], mode=registry.DRAFT)
 		self.assertEqual(problems, [], "a required setting left empty is normal while authoring")
 
 	def test_publish_demands_the_same_setting(self):
-		problems = registry.validate_node("Branch", {}, [], mode=registry.PUBLISH)
-		self.assertTrue(any("Condition" in p["message"] for p in problems), problems)
+		problems = registry.validate_node("Route", {}, [], mode=registry.PUBLISH)
+		self.assertTrue(any("Routes" in p["message"] for p in problems), problems)
 
 	def test_draft_still_refuses_what_is_wrong_at_any_time(self):
 		"""Deferring completeness is not the same as accepting nonsense. A setting the type never
 		declared, or a value outside its options, is wrong whatever the author does next."""
 		self.assertTrue(
-			registry.validate_node("Branch", {"not_a_setting": 1}, [], mode=registry.DRAFT),
+			registry.validate_node("Route", {"not_a_setting": 1}, [], mode=registry.DRAFT),
 			"an undeclared setting must be refused even in a draft",
 		)
 		self.assertTrue(
@@ -215,13 +215,13 @@ class TestValidationModes(FrappeTestCase):
 
 	def test_publish_reports_node_completeness_through_the_graph_contract(self):
 		"""The completeness check moved OUT of save must reappear at publish, or it was deleted rather
-		than moved — and an unconfigured Branch would activate and die on a live lead."""
+		than moved — and an unconfigured Route would activate and die on a live lead."""
 		found = graph.problems(_graph(
 			fx.trigger(to="b1"),
-			fx.node("b1", "Branch", edges={"true": "end", "false": "end"}),
+			fx.node("b1", "Route", edges={"otherwise": "end"}),
 			fx.node("end", "Terminal"),
 		), entry_node="start")
-		self.assertTrue(any("Condition" in p["message"] for p in found), found)
+		self.assertTrue(any("Routes" in p["message"] for p in found), found)
 
 
 class TestProblemShape(FrappeTestCase):
@@ -235,19 +235,19 @@ class TestProblemShape(FrappeTestCase):
 	def test_a_node_fault_carries_the_node_and_the_field(self):
 		found = graph.problems(_graph(
 			fx.trigger(to="b1"),
-			fx.node("b1", "Branch", edges={"true": "end", "false": "end"}),
+			fx.node("b1", "Route", edges={"otherwise": "end"}),
 			fx.node("end", "Terminal"),
 		), entry_node="start")
 		fault = next((p for p in found if p["node_id"] == "b1"), None)
 		self.assertIsNotNone(fault, f"the fault must name the node it belongs to: {found}")
-		self.assertEqual(fault["field"], "condition", "and the field on it, so the control can be marked")
+		self.assertEqual(fault["field"], "routes", "and the field on it, so the control can be marked")
 
 	def test_an_unwired_output_names_its_node(self):
 		found = graph.problems(_graph(
 			fx.trigger(to="b1"),
-			fx.node("b1", "Branch",
-			        config={"condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}},
-			        edges={"true": "end"}),
+			fx.node("b1", "Route",
+			        config={"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},
+			        edges={"r1": "end"}),
 			fx.node("end", "Terminal"),
 		), entry_node="start")
 		self.assertTrue(any(p["node_id"] == "b1" for p in found), found)
@@ -262,7 +262,7 @@ class TestProblemShape(FrappeTestCase):
 		"""A consumer may read any key on any problem without checking whether it exists."""
 		found = graph.problems(_graph(
 			fx.trigger(to="ghost"),
-			fx.node("b1", "Branch", edges={}),
+			fx.node("b1", "Route", edges={}),
 			fx.node("end", "Terminal"),
 		), entry_node="start")
 		self.assertTrue(found)

@@ -108,7 +108,7 @@ class TestACheckNeverSkipsAnother(unittest.TestCase):
 		fake = dict(registry.FIELD_TYPES["Predicate"])
 		fake["reads"] = "expression"
 		with patch.dict(registry.FIELD_TYPES, {"Predicate": fake}):
-			found = _messages("Branch", {"condition": "for x in y: pass"})
+			found = _messages("Trigger", {"subject_doctype": "CRM Lead", "event": "Created", "predicate": "for x in y: pass"})
 		self.assertIn("expression", found.lower(), "the read-kind check was skipped by the row check")
 
 
@@ -124,7 +124,7 @@ class TestANewTypeValidatesWithNoNewCode(unittest.TestCase):
 		row = {"control": "data", "check": check, "primitive": True, "reads": None,
 		       "scalar": True, "summary": None}
 		field = {"name": "zz_probe", "label": "Probe", "type": "ZZ Probe"}
-		declared = dict(registry.NODE_TYPES["Branch"])
+		declared = dict(registry.NODE_TYPES["Terminal"])
 		declared["config"] = [*declared["config"], field]
 		return row, declared
 
@@ -136,30 +136,30 @@ class TestANewTypeValidatesWithNoNewCode(unittest.TestCase):
 	def test_a_type_declared_today_refuses_a_bad_value_today(self):
 		row, declared = self._declare(self._refuse_shouting)
 		with patch.dict(registry.FIELD_TYPES, {"ZZ Probe": row}), \
-		     patch.dict(registry.NODE_TYPES, {"Branch": declared}):
-			found = _messages("Branch", {"zz_probe": "LOUD"})
+		     patch.dict(registry.NODE_TYPES, {"Terminal": declared}):
+			found = _messages("Terminal", {"zz_probe": "LOUD"})
 		self.assertIn("must not shout", found)
 
 	def test_the_same_type_accepts_a_good_value(self):
 		row, declared = self._declare(self._refuse_shouting)
 		with patch.dict(registry.FIELD_TYPES, {"ZZ Probe": row}), \
-		     patch.dict(registry.NODE_TYPES, {"Branch": declared}):
-			found = _messages("Branch", {"zz_probe": "quiet"})
+		     patch.dict(registry.NODE_TYPES, {"Terminal": declared}):
+			found = _messages("Terminal", {"zz_probe": "quiet"})
 		self.assertNotIn("must not shout", found)
 
 	def test_the_problem_is_anchored_on_the_field_so_the_canvas_can_mark_it(self):
 		"""Author error is DATA. A message with no field name can only be toasted."""
 		row, declared = self._declare(self._refuse_shouting)
 		with patch.dict(registry.FIELD_TYPES, {"ZZ Probe": row}), \
-		     patch.dict(registry.NODE_TYPES, {"Branch": declared}):
-			found = [p for p in _problems("Branch", {"zz_probe": "LOUD"}) if "shout" in p["message"]]
+		     patch.dict(registry.NODE_TYPES, {"Terminal": declared}):
+			found = [p for p in _problems("Terminal", {"zz_probe": "LOUD"}) if "shout" in p["message"]]
 		self.assertEqual(found[0]["field"], "zz_probe")
 
 	def test_a_type_needing_no_check_is_still_a_legal_row(self):
 		row, declared = self._declare(None)
 		with patch.dict(registry.FIELD_TYPES, {"ZZ Probe": row}), \
-		     patch.dict(registry.NODE_TYPES, {"Branch": declared}):
-			self.assertNotIn("zz_probe", _messages("Branch", {"zz_probe": "anything"}))
+		     patch.dict(registry.NODE_TYPES, {"Terminal": declared}):
+			self.assertNotIn("zz_probe", _messages("Terminal", {"zz_probe": "anything"}))
 
 
 class TestNoTypeSwitchReturnsToTheValidator(unittest.TestCase):

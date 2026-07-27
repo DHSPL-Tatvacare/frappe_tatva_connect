@@ -53,7 +53,7 @@ class TestReadsDeclaration(FrappeTestCase):
 			{"type": "rule", "field": "status", "operator": "is", "value": "New"},
 			{"type": "rule", "field": "ok", "operator": "is", "value": 1},
 		]}
-		found = {r["ref"] for r in contract.reads_of("Branch", {"condition": tree})}
+		found = {r["ref"] for r in contract.reads_of("Route", {"routes": [{"id": "r1", "condition": tree}]})}
 		self.assertEqual(found, {"status", "ok"})
 
 	def test_an_expression_names_the_context_keys_it_reads(self):
@@ -141,9 +141,9 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 		"""The lead's own fields need no upstream producer — they are on the document."""
 		nodes = _graph(
 			_trigger(to="n1"),
-			_node("n1", "Branch", {"condition": {
+			_node("n1", "Route", {"routes": [{"id": "r1", "label": "New", "condition": {
 				"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New",
-			}}, {"true": "end", "false": "end"}),
+			}}]}, {"r1": "end", "otherwise": "end"}),
 			_node("end", "Terminal"),
 		)
 		self.assertNotIn("crm_lead.status", _messages(nodes))
@@ -233,8 +233,8 @@ class TestPublishRefusesAnUnwakeableWait(FrappeTestCase):
 		"""The quiet one: a node on another leg mints no token for this run, so nothing can ever wake it."""
 		nodes = _graph(
 			_trigger(to="b1"),
-			_node("b1", "Branch", {"condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}},
-			      {"true": "w1", "false": "task"}),
+			_node("b1", "Route", {"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},
+			      {"r1": "w1", "otherwise": "task"}),
 			_node("task", "Create Task", {"task_type": "x"}, {"next": "end"}),
 			_node("w1", "Wait", {"mode": "Until Event", "source_node": "task", "event_name": "task.completed"},
 			      {"event": "end"}),

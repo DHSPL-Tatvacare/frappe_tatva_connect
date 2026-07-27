@@ -2,7 +2,7 @@
 # See license.txt
 """What is available AT a node — values and emitting nodes alike — by walking the graph backwards from it.
 
-An author configuring a Branch has to name a field. Until now the only way to do that was to type it,
+An author configuring a Route has to name a field. Until now the only way to do that was to type it,
 from memory, with nothing checking the spelling: a typo produced a condition that looked right, never
 matched, and reported nothing. The engine already learned this lesson once, for event names — a Wait's
 event is picked from a declared list precisely because "a typo there parked a run for ever with nothing
@@ -58,7 +58,7 @@ def available_at(nodes, node_id):
 	# `<source>.<field>`, so a Call API's `api.status` and the lead's `crm_lead.status` are two entries and
 	# two labels. This list used to be de-duplicated by BARE name with the node's value first, which meant a
 	# node emitting `status` silently ATE the lead's own — the author was offered one `Status`, the wrong
-	# one, and the predicate they had built at the Trigger could not match at a Branch below the call.
+	# one, and the predicate they had built at the Trigger could not match at a Route below the call.
 	for field in _subject_fields(by_id):
 		if field["ref"] not in seen:
 			seen.add(field["ref"])

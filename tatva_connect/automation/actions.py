@@ -450,7 +450,7 @@ def _action_call_api(action, lead, context, axes, trigger_doc):
 
 	The response becomes an ordinary context: `status`, `ok`, and the parsed `body`. `capture` maps paths
 	out of it into named run variables, so every downstream node reads them like any other value; and
-	`success_when` — the same predicate control the Trigger and Branch use — decides which of the node's
+	`success_when` — the same predicate control the Trigger and Route use — decides which of the node's
 	two outputs the run takes. No `success_when` means the HTTP status decides.
 
 	Runs INLINE rather than deferred: an output the run must route on cannot arrive after the run has
@@ -534,7 +534,7 @@ def _write_response_state(capture, response, context):
 	"""THE one writer of run state for a Call API — the declared response shape, then the author's rows.
 
 	`emits` promises `status`, `ok` and `error` are always written, and `upstream` offers them to every
-	node downstream; nothing ever wrote them, so a Branch on `ok` published green and then raised on the
+	node downstream; nothing ever wrote them, so a Route on `ok` published green and then raised on the
 	first live record. They are written here rather than in the handler so a Call API has exactly ONE
 	place that puts anything into state — two writers is how the declaration and the runtime drifted
 	apart in the first place.
@@ -557,7 +557,7 @@ def _response_state(response):
 
 	One shaping, two consumers: what a downstream node reads and what `success_when` is judged against
 	are the same values, so an author's predicate on `ok` cannot mean one thing at the node and another
-	on the Branch after it. `ok` is a Check (1/0, never True/False) because the evaluator resolves
+	on the Route after it. `ok` is a Check (1/0, never True/False) because the evaluator resolves
 	operators by declared type, and `error` is Data — empty, not null, when there was nothing to say.
 	"""
 	return {

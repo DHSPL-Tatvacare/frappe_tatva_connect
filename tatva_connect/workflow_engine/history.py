@@ -145,7 +145,7 @@ def node_counts(workflow, workflow_version=None):
 
 	A run only comes to rest in two situations, because the interpreter walks a whole segment in one pass:
 	it PARKS (only a Wait parks a run) or it DIES. Everywhere else it is present for milliseconds, so a
-	count on a Branch would read 0 for ever and be noise dressed as information. Running and Done are
+	count on a Route would read 0 for ever and be noise dressed as information. Running and Done are
 	counted nowhere: one is passing through, the other is not anywhere.
 
 	The two numbers are never added. They mean different things and they are read in different colours —

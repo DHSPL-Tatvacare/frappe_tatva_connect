@@ -51,9 +51,9 @@ def _graph():
 	return [
 		_node("trigger-1", "Trigger", {"subject_doctype": _SUBJECT, "event": "Created"}, {"next": "api-1"}),
 		_node("api-1", "Call API", {"webhook_endpoint": "x"}, {"succeeded": "b1", "failed": "b1"}),
-		_node("b1", "Branch",
-		      {"condition": {"type": "rule", "field": "api-1.status", "operator": "is", "value": 200}},
-		      {"true": "end-1", "false": "end-1"}),
+		_node("b1", "Route",
+		      {"routes": [{"id": "r1", "label": "ok", "condition": {"type": "rule", "field": "api-1.status", "operator": "is", "value": 200}}]},
+		      {"r1": "end-1", "otherwise": "end-1"}),
 		_node("end-1", "Terminal"),
 	]
 
@@ -69,9 +69,9 @@ class TestTheWrittenAndTheReadCarryOneWord(FrappeTestCase):
 			self.assertNotIn("key", value, "the old spelling survives in what a node offers")
 
 	def test_what_a_node_reads_is_keyed_ref(self):
-		found = contract.reads_of("Branch", {"condition": {
+		found = contract.reads_of("Route", {"routes": [{"id": "r1", "condition": {
 			"type": "rule", "field": "api-1.status", "operator": "is", "value": 200,
-		}})
+		}}]})
 		self.assertTrue(found)
 		for read in found:
 			self.assertIn("ref", read, f"a read reference is not keyed `ref`: {sorted(read)}")
@@ -80,9 +80,9 @@ class TestTheWrittenAndTheReadCarryOneWord(FrappeTestCase):
 	def test_the_same_string_carries_the_same_word_in_both_directions(self):
 		"""THE HEADLINE. Written and read are the same concept, so they must be the same word."""
 		written = {v["ref"] for v in upstream.available_at(_graph(), "b1")}
-		read = {r["ref"] for r in contract.reads_of("Branch", {"condition": {
+		read = {r["ref"] for r in contract.reads_of("Route", {"routes": [{"id": "r1", "condition": {
 			"type": "rule", "field": "api-1.status", "operator": "is", "value": 200,
-		}})}
+		}}]})}
 		self.assertTrue(read & written, "a reference a node reads is not among what upstream offers")
 
 

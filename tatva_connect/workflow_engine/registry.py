@@ -9,7 +9,7 @@ frontend switch statement, or a new branch in the interpreter.
 
 WHY A REGISTRY AND NOT COLUMNS
 ------------------------------
-The old model gave every node type its own columns — a Branch's `condition`, a Wait's `wait_mode` /
+The old model gave every node type its own columns — a Route's `condition`, a Wait's `wait_mode` /
 `signal_name` / `accepts_json`, and five fixed edge columns — so every OTHER node type carried them
 empty, the frontend hardcoded which fields to show for which type, and the canvas hardcoded which
 handles to draw. Three copies of one fact, and adding a type meant editing all three.
@@ -18,8 +18,8 @@ Now: a node holds `config_json`, and this file says what belongs in it.
 
 OUTPUTS ARE PART OF THE CONTRACT
 --------------------------------
-A node type declares the names of the edges that may leave it. `Branch` declares `true` and `false`;
-`Terminal` declares none. A Wait's outputs depend on its mode — waiting only on an event has no timeout
+A node type declares the names of the edges that may leave it. `Route` derives one edge per row plus a
+reserved `otherwise`; `Terminal` declares none. A Wait's outputs depend on its mode — waiting only on an event has no timeout
 edge — so it declares them CONDITIONALLY, and both the validator and the canvas read that one rule
 rather than each re-deriving it.
 """
@@ -74,11 +74,16 @@ NODE_TYPES = {
 			_field("predicate", "Only when", "Predicate"),
 		],
 	},
-	"Branch": {
-		"label": "Branch",
-		"description": "Routes on a predicate. Every branch is explicit — there is no implicit fallthrough.",
-		"outputs": ["true", "false"],
-		"config": [_field("condition", "Condition", "Predicate", reqd=True)],
+	"Route": {
+		"label": "Route",
+		"description": "Routes on the first matching condition, tried top to bottom. A lead that matches no row takes Otherwise, so it can never fall out of the graph.",
+		# Outputs are this node's OWN rows (one edge each) followed by a reserved `otherwise`. The rows lead
+		# and the fixed base follows — the same `rows_from` seam Wait uses, reading own config, no mode-map.
+		"outputs_by": {
+			"base": ["otherwise"],
+			"rows_from": {"declares": "routes", "key": "id"},
+		},
+		"config": [_field("routes", "Routes", "Route Rows", reqd=True)],
 	},
 	"Set Variables": {
 		"label": "Set Variables",
@@ -150,53 +155,64 @@ def outcomes_for(node_type):
 
 
 def _rows_from(declared, config, graph_config):
-	"""Outputs that ARE the rows of another node's declaration, or None when this rule does not do that.
+	"""The declared rows a node turns into one edge each, or None when this rule does not do that.
 
-	The second resolution mode of `outputs_by`, deliberately inside it rather than beside it: a node type
-	still has exactly ONE answer to "what can leave here" and one reader (B7). The first mode maps a config
-	value to a fixed list; this one turns a sibling node's declared rows into one edge each.
+	ONE mode of `outputs_by`, deliberately inside it rather than beside it: a node type still has exactly
+	ONE answer to "what can leave here" and one reader (B7). The rows live in one of two places, and the
+	spec says which by whether it names a `node_field`:
 
-	IT APPLIES ONLY WHEN THE FIELD IT READS APPLIES. `source_node` already declares its own gate, and this
-	used to ignore it: a Wait switched to a pure timer kept drawing one edge per button of the node it no
-	longer waits on, with no `next` handle to wire the timer path to and nothing saying why. The value is
-	only IGNORED, never cleared — an author flipping the mode twice must not lose their wiring.
+	  * A SIBLING's config (Wait): `node_field` names the field holding another node's id, and that node's
+	    `declares` rows become the edges. IT APPLIES ONLY WHEN THE FIELD IT READS APPLIES — a Wait switched
+	    to a pure timer stops drawing one edge per button of the node it no longer waits on. The value is
+	    only IGNORED, never cleared, so flipping the mode twice does not lose the wiring.
+	  * This node's OWN config (Route): no `node_field`, so the rows are `config[declares]` directly. No
+	    sibling to reach, so `graph_config` is not needed.
 
-	`graph_config` is `{node_id: config}` for the graph being judged. It is optional because most callers
-	ask about a node in isolation; without it the rule simply does not apply and the map mode answers.
+	`graph_config` is `{node_id: config}` for the graph being judged; the sibling case needs it, the own
+	case does not.
 	"""
 	spec = declared["outputs_by"].get("rows_from")
-	if not spec or not graph_config:
+	if not spec:
 		return None
-	reads = next((f for f in declared["config"] if f["name"] == spec["node_field"]), None)
-	if reads and not _applies(reads, config or {}):
-		return None
-	source = (config or {}).get(spec["node_field"])
-	rows = ((graph_config or {}).get(source) or {}).get(spec["declares"]) or []
+	node_field = spec.get("node_field")
+	if node_field:
+		if not graph_config:
+			return None
+		reads = next((f for f in declared["config"] if f["name"] == node_field), None)
+		if reads and not _applies(reads, config or {}):
+			return None
+		source = ((graph_config or {}).get((config or {}).get(node_field)) or {})
+	else:
+		source = config or {}
+	rows = source.get(spec["declares"]) or []
 	return [row.get(spec["key"]) for row in rows if isinstance(row, dict) and row.get(spec["key"])]
 
 
 def outputs_for(node_type, config=None, graph_config=None):
-	"""The edge names that may leave this node, given its config.
+	"""The edge names that may leave this node, given its config. ONE resolver, ONE answer.
 
-	The single answer to "what can leave here", used by the validator to reject an edge nobody declared
-	and by the canvas to draw handles. A conditional declaration resolves against the config field it
-	names; an unset or unknown value yields no outputs rather than guessing one.
+	Used by the validator to reject an edge nobody declared and by the canvas to draw handles. The fixed
+	part of the answer is a mode-map lookup where a node's outputs vary by a field (Wait), or a constant
+	`base` where they do not (Route) — never a fake mode invented to force a fixed shape into the map.
+	Declared rows then take their place: they REPLACE a named leg where the fixed part reserves one (Wait's
+	buttons stand in for its `event` leg), or they lead and the fixed part follows where there is no leg to
+	replace (Route's rows, then `otherwise`). An unset or unknown value yields no rows rather than guessing.
 	"""
 	declared = declaration(node_type)
 	if "outputs" in declared:
 		return list(declared["outputs"])
 	rule = declared["outputs_by"]
-	mapped = list(rule["map"].get((config or {}).get(rule["field"]), []))
+	fixed = list(rule["map"].get((config or {}).get(rule["field"]), [])) if "field" in rule else list(rule["base"])
 	rows = _rows_from(declared, config, graph_config)
 	if not rows:
-		return mapped
-	# The rows stand in for ONE declared leg and land where it stood: every other leg this mode declares
-	# survives, and position is the contract the canvas draws its handles from.
-	leg = rule["rows_from"]["replaces"]
-	if leg not in mapped:
-		return mapped
-	at = mapped.index(leg)
-	return [*mapped[:at], *rows, *mapped[at + 1:]]
+		return fixed
+	replaces = rule["rows_from"].get("replaces")
+	if replaces is None:
+		return [*rows, *fixed]
+	if replaces not in fixed:
+		return fixed
+	at = fixed.index(replaces)
+	return [*fixed[:at], *rows, *fixed[at + 1:]]
 
 
 def config_fields(node_type):
@@ -231,7 +247,7 @@ def problem(message, field=None, code=None, severity=BLOCKS, fix=None):
 
 # When a rule is enforced. A node is authored over many saves, so SHAPE is checked every time and
 # COMPLETENESS only when the author says the graph is finished. Enforcing completeness at save makes the
-# canvas unusable: dragging a Branch on and saving before configuring it is ordinary work, not an error,
+# canvas unusable: dragging a Route on and saving before configuring it is ordinary work, not an error,
 # and a node type that cannot yet be configured becomes permanently unsaveable.
 DRAFT, PUBLISH = "draft", "publish"
 
@@ -272,11 +288,23 @@ def _json_problem(value):
 	return None
 
 
+def _predicate_rows_keys(rows):
+	"""Every field a LIST of predicate rows references — `_predicate_fields` mapped over each row's
+	condition and unioned. Route declares this so the publish gate refuses a row whose condition reads a
+	value nothing upstream produces, the same reference the single-predicate `predicate` kind checks."""
+	keys = set()
+	for row in rows or []:
+		if isinstance(row, dict):
+			keys |= _contract()._predicate_fields(row.get("condition"))
+	return keys
+
+
 # WHICH NAMES a field of this kind references, and the check that kind carries. A field declares `reads`
 # only when its TYPE does not already imply one — see FIELD_TYPES.
 READ_KINDS = {
 	"variable": {"keys": lambda v: {v} if isinstance(v, str) and v else set(), "check": None},
 	"predicate": {"keys": lambda v: _contract()._predicate_fields(v), "check": None},
+	"predicate_rows": {"keys": _predicate_rows_keys, "check": None},
 	"expression": {"keys": lambda v: _contract()._expression_keys(v), "check": _expression_problem},
 	"ctx_json": {"keys": lambda v: _contract()._ctx_json_keys(v), "check": _json_problem},
 	"value_rows": {"keys": lambda v: _contract().value_row_keys(v), "check": None},
@@ -639,6 +667,7 @@ FIELD_TYPES = {
 	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": None},
 	"Field": {"control": "field-picker", "check": _settable_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
+	"Route Rows": {"control": "route-rows", "check": None, "primitive": False, "reads": "predicate_rows", "scalar": False, "summary": {"count": "routes"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
@@ -807,8 +836,20 @@ def _wire(field, outputs_rule=None):
 		"control": row["control"],
 		"primitive": row["primitive"],
 		"summary": row["summary"],
-		"shapes_outputs": bool(outputs_rule) and field["name"] == outputs_rule.get("field"),
+		"shapes_outputs": _shapes_outputs(field, outputs_rule),
 	}
+
+
+def _shapes_outputs(field, outputs_rule):
+	"""A field shapes this node's OWN handles if the outputs rule keys on it: the mode-map `field` (Wait's
+	`mode`), or the OWN-config rows a `rows_from` reads (Route's `routes`). A sibling-sourced `rows_from`
+	(a Wait reading another node's buttons) shapes handles from the OTHER node, not a field of this one."""
+	if not outputs_rule:
+		return False
+	if field["name"] == outputs_rule.get("field"):
+		return True
+	rows_from = outputs_rule.get("rows_from") or {}
+	return not rows_from.get("node_field") and field["name"] == rows_from.get("declares")
 
 
 def _value_modes(field):

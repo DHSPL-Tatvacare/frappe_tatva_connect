@@ -48,7 +48,7 @@ def _graph():
 	return [
 		_node("start", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": _CAPTURING_NODE}),
 		_node(_CAPTURING_NODE, "Call API", {"webhook_endpoint": "x"}, {"succeeded": "b1", "failed": "b1"}),
-		_node("b1", "Branch", {}, {"true": "end", "false": "end"}),
+		_node("b1", "Route", {"routes": [{"id": "r1", "label": "r1", "condition": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"}}]}, {"r1": "end", "otherwise": "end"}),
 		_node("end", "Terminal"),
 	]
 

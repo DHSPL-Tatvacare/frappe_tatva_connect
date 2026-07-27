@@ -241,7 +241,7 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 	"""Create the durable Instance for a CONTINUOUS Flow and run its first segment in ONE transaction,
 	committing at the first suspend (advance). The Instance's subject is the resolved parent LEAD (D7) — so
 	effects act on the lead and the review-signal detector (which looks up Parked instances by CRM Lead) can
-	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Branch
+	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Route
 	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
 	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
 	race — a second entry for the same (workflow, lead) raises IntegrityError on insert, caught + treated as
