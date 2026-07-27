@@ -44,9 +44,7 @@ class CRMTaskType(Document):
 			if field and field not in declared:
 				frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
 							 title=_("Unknown field"))
-			# A layout row holds no answer, so a condition reading one can never be true — a rule that looks
-			# right in the grid and does nothing on screen. A layout row is a legitimate rule TARGET, though:
-			# that is how a whole section is shown or hidden.
+			# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
 			if field and (declared[field].fieldtype or "") in NO_VALUE_FIELDS:
 				frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
 							 title=_("Not a question"))
