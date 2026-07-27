@@ -91,6 +91,9 @@ override_whitelisted_methods = {
 	"lms.lms.utils.get_quiz_with_questions": "tatva_connect.access.native_guards.get_quiz_with_questions",
 	# A CRM Task Type carrying disable_bulk_complete refuses the list's bulk complete AT THE ENTRY POINT — core's _bulk_action swallows a per-doc validate throw into `failed` and the rep still sees success.
 	"frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs": "tatva_connect.tasks.tasks.submit_cancel_or_update_docs",
+	# Grain is an entitlement, not a free pick: the Create Lead form hides its three axis fields server-side (GrainSelect stamps them) and hides a section left with nothing visible.
+	"crm.fcrm.doctype.crm_fields_layout.crm_fields_layout.get_fields_layout": "tatva_connect.lead.quick_entry.get_fields_layout",
+	"crm.fcrm.doctype.crm_fields_layout.crm_fields_layout.save_fields_layout": "tatva_connect.lead.quick_entry.save_fields_layout",
 }
 
 # Smart Views — the grain surface; read-only whitelisted endpoints AND the same permission_query_conditions into every list+count (fail-closed), reading the live CRM Lead API Field catalog.
