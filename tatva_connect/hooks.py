@@ -149,6 +149,12 @@ doc_events = {
 			"tatva_connect.notifications.events.on_lead_stage_changed",
 			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
 			"tatva_connect.search.index.reindex_on_lead_context_change",
+			# a lead that changed grain is a different population: its journeys end rather than carry on frozen against a grain it no longer has
+			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
+		],
+		# The lead is going, so every journey about it ends with it. Runs BEFORE the wildcard on_trash (doctype hooks compose first, document.py:1598), so a Deleted-entry workflow starting on this delete survives it.
+		"on_trash": [
+			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
 		],
 	},
 	"CRM Task": {
@@ -240,7 +246,11 @@ doc_events = {
 		# tell the rep an inbound call went unanswered (only the save that moves the status notifies)
 		"on_update": "tatva_connect.notifications.events.on_call_missed",
 		"after_insert": "tatva_connect.activity.timeline.index_event",
-		"on_trash": "tatva_connect.activity.timeline.drop_event",
+		# The media row is a POINTER to this call's artifacts, so it dies with the call; the File and its blob are reclaimed by the call's own attachment cleanup (M1), never from here.
+		"on_trash": [
+			"tatva_connect.activity.timeline.drop_event",
+			"tatva_connect.storage.call_media.drop_for_call",
+		],
 	},
 	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
@@ -355,6 +365,8 @@ after_migrate = [
 	"tatva_connect.storage.drift.assert_no_disk_reads",
 	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
 	"tatva_connect.access.lockdown.assert_locked",
+	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
+	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",
@@ -371,6 +383,9 @@ after_migrate = [
 	# Phase 3 of the task-sections plan: every answer a task ALREADY carries gets the home field_target names. Here and not only in its patch because the answers land in fixture Table fields routed by the section seed above — both AFTER post-model-sync patches, so on the upgrade that carries the whole chain in one migrate the patch runs before its own prerequisites and is logged applied. Idempotent; writes only what is missing.
 	"tatva_connect.activity.backfill.ensure_section_rows",
 ]
+
+# The SAME chain on the install path: `after_sync` fires at installer.py:343, after sync_fixtures (:339) — where after_migrate sits on the upgrade path. `after_install` (:332) was rejected: it runs BEFORE fixtures, and section_seed/reconcile_fieldtypes would skip on fields that do not exist yet. One list, two doors.
+after_sync = after_migrate
 
 # Schema-as-code: the custom_provider Select on WhatsApp Account ships as a fixture (the CRM WhatsApp Settings doctype ships as its own doctype JSON).
 fixtures = [
@@ -609,8 +624,7 @@ app_include_js = "tatva_connect.bundle.js"
 # ------------
 
 # before_install = "tatva_connect.install.before_install"
-# Fresh-install master-data seeding is handled on after_migrate (tatva_connect.seeds),
-# which runs after fixtures so the Linked masters exist. See seeds.py.
+# Fresh-install seeding runs on `after_sync`, declared beside `after_migrate` above — NOT on `after_install`, which fires BEFORE sync_fixtures and would run the chain against fields that do not exist yet. This comment said the opposite for months: `install-app` never fires `after_migrate` (migrate.py:202 is its only caller), so a fresh site ran NONE of it.
 # after_install = "tatva_connect.install.after_install"
 
 # Uninstallation
@@ -713,7 +727,8 @@ app_include_js = "tatva_connect.bundle.js"
 # -----------------------------------------------------------
 
 # CRM Call Media holds a call's artifact state and points at the File holding its audio. That pointer must never be able to REFUSE a delete: the blob's life is the call's life (M1), so deleting a call has to reach `File.on_trash` and reclaim the bytes, and a Link check would leave patient audio in the container for ever. Frappe's own hook for exactly this, and the same reason Communication and ToDo are on core's list.
-ignore_links_on_delete = ["CRM Call Media"]
+# A derived execution record must not PIN the record it is about: the run/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
+ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Run", "CRM Workflow Event"]
 
 # Request Events
 # ----------------

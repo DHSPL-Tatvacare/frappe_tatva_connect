@@ -231,9 +231,13 @@ def _block_exception(verdict, signature, file_name):
 def _phone(channel):
 	"""The submitting patient's phone, for an intake upload only — read through the ONE parser that also
 	keys the per-phone rate limit, never a second copy. No other channel carries a submit payload."""
-	from tatva_connect.intake.guards import _submitted_phone
+	from tatva_connect.intake.guards import _intake_form_for_submit, _submitted_phone
 
-	return _submitted_phone() if channel == _INTAKE else None
+	if channel != _INTAKE:
+		return None
+	# WHICH question carries the phone is declared per form, so the parser needs the form — calling it bare raised TypeError on every screened intake upload.
+	intake_form = _intake_form_for_submit()
+	return _submitted_phone(intake_form) if intake_form else None
 
 
 def _allowed(file_type):

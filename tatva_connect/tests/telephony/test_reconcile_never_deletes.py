@@ -15,16 +15,18 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.telephony import reconcile, writer
+from tatva_connect.tests.telephony.fixtures import config
 
-ACCOUNT = "_TestTelephonyAcct"
+ACCOUNT = config.ACCOUNT
 LEAD_PHONE = "9000012345"
 MANUAL_ID = "_test-manual-call-entry"
 PROVIDER_ID = "_test-provider-call-entry"
+DID = "9000007179"
 
 KEY = writer.CALL_KEY_FIELD
 
 
-def _record(call_id, client_number=LEAD_PHONE, did="9000007179"):
+def _record(call_id, client_number=LEAD_PHONE, did=DID):
 	"""One Acefone Call Detail Record, in the shape the live API returns."""
 	return {
 		"call_id": call_id,
@@ -44,6 +46,26 @@ def _record(call_id, client_number=LEAD_PHONE, did="9000007179"):
 
 
 class TestReconcileNeverDeletes(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		"""Telephony ships INERT, so a reconcile against an unconfigured bench captures NOTHING.
+
+		Without this, `_reconcile_one` declined every record — the DID was mapped to no grain — and
+		`test_a_call_is_found_by_its_key_column_not_by_the_row_name` died on its own setup line saying
+		"the provider's call was not written". It had been red on develop for weeks, and because it died
+		BEFORE reaching its assertion, the rule it is named for was not merely untested but unguarded.
+		Declared through `fixtures.config` so this suite and `test_resolve_gates` configure telephony the
+		same way, and the site's own capture rules are handed back exactly as they were found.
+		"""
+		super().setUpClass()
+		config.ensure_account()
+		cls.saved_rules = config.current_rules()
+		cls.addClassCleanup(config.set_rules, cls.saved_rules)
+		cls.addClassCleanup(config.clear_dids)
+		config.set_rules([config.rule("Outbound", "Dialer"), config.rule("Inbound", "Dialer")])
+		config.clear_dids()
+		config.map_did(DID)
+
 	def setUp(self):
 		frappe.db.delete("CRM Call Log", {"id": ["in", (MANUAL_ID, PROVIDER_ID)]})
 		frappe.db.delete("CRM Call Log", {KEY: ["in", (MANUAL_ID, PROVIDER_ID)]})

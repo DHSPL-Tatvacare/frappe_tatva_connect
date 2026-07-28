@@ -31,6 +31,8 @@ already uses applies here: look first, and if duplicates exist say so loudly and
 creating the index or quietly deleting rows inside a patch.
 """
 import frappe
+from frappe.query_builder import Order
+from frappe.query_builder.functions import Count
 
 # `table_exists`, `add_index` and `add_unique` take the DOCTYPE (they prefix `tab` themselves);
 # `has_index` takes the real table name. Mixing the two silently no-ops — the guard just returns early.
@@ -65,10 +67,21 @@ def execute():
 
 
 def _has_duplicates(fields):
-	"""True if any (source_doctype, source_name) is held by more than one pointer. Grouped in SQL by
-	frappe's own query builder — the biggest group is all we need, so no HAVING and no second pass."""
-	worst = frappe.get_all(
-		DOCTYPE, fields=[*fields, "count(name) as held"],
-		group_by=", ".join(fields), order_by="held desc", limit=1,
-	)
+	"""True if any (source_doctype, source_name) is held by more than one pointer. The biggest group is
+	all we need, so no HAVING and no second pass.
+
+	Built with `frappe.qb`, not a `count(name) as held` string in `get_all`: frappe now refuses a SQL
+	function passed as a select string (`query.py:2133`), so the string form threw on every site — and
+	because `apply_schema` is the FIRST step of the install chain, that throw aborted every seed behind
+	it and a fresh site came up with no sections, no switches and no lockdown.
+	"""
+	table = frappe.qb.DocType(DOCTYPE)
+	columns = [table[fieldname] for fieldname in fields]
+	worst = (
+		frappe.qb.from_(table)
+		.select(*columns, Count("*").as_("held"))
+		.groupby(*columns)
+		.orderby("held", order=Order.desc)
+		.limit(1)
+	).run(as_dict=True)
 	return bool(worst) and worst[0].held > 1

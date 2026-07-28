@@ -15,6 +15,7 @@
   "current_node",
   "state_json",
   "status",
+  "stop_reason",
   "resume_at",
   "awaiting_signal",
   "awaiting_correlation",
@@ -81,12 +82,20 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Running\nParked\nDone\nFailed",
+   "options": "Running\nParked\nDone\nFailed\nStopped",
    "default": "Running",
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Records whether the execution is Running, Parked, Done, or Failed."
+   "description": "Records whether the execution is Running, Parked, Done, Failed, or Stopped. Stopped is terminal and deliberate - the subject left, so the journey was ended rather than allowed to fail."
+  },
+  {
+   "fieldname": "stop_reason",
+   "fieldtype": "Data",
+   "label": "Stop Reason",
+   "read_only": 1,
+   "depends_on": "eval:doc.status == 'Stopped'",
+   "description": "Records why a Stopped journey was ended, so a terminal row explains itself without a reader inferring it from timestamps."
   },
   {
    "fieldname": "resume_at",

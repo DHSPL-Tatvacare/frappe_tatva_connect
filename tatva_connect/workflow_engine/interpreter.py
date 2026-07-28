@@ -35,6 +35,10 @@ SIGNAL_DT = "CRM Workflow Event"
 PENDING, CONSUMED, EXPIRED = "Pending", "Consumed", "Expired"
 TERMINAL_SIGNAL_STATES = (CONSUMED, EXPIRED)
 
+# A journey is LIVE until it reaches a terminal status; STOPPED is the deliberate one (the subject left).
+STOPPED = "Stopped"
+LIVE_STATES = ("Running", "Parked")
+
 MAX_HOPS = 100
 MAX_RETRIES = 5
 _EVENT_MODES = frozenset({"Until Event", "Event-or-Timeout"})
@@ -552,6 +556,42 @@ def _axes(subject_doctype, subject_name):
 
 		return rules.lead_axes(subject_name)
 	return (None, None, None)
+
+
+def stop_for_subject(subject_doctype, subject_name, reason):
+	"""End every LIVE journey this subject has, across all workflows. Returns how many were stopped.
+
+	ONE behaviour with two triggers (a lead deleted, a lead's grain changed), so it is written once here
+	and called twice from `triggers.py` — a second stop path is the defect this is shaped to avoid.
+
+	It is the engine's OWN terminal transition, not a new one: the same `_persist` write that `Done` and
+	`Failed` use, clearing the columns that make a row re-drivable. `active_key` goes NULL so the unique
+	index frees the subject for a future start; `resume_at`/`awaiting_signal`/`awaiting_correlation` go
+	NULL so neither the timer sweep nor a delivered signal can ever wake it again. Nothing is deleted —
+	a stopped journey is still readable, and `stop_reason` is what it says when read.
+
+	Each row is claimed `for_update` and re-checked inside the lock, exactly as `wakeups.drive_instance`
+	does: a sweep may be driving this very instance, and the loser of that race must take nothing rather
+	than stop a journey that has already moved on. NO raw SQL — the claim is `get_value(for_update=True)`.
+	"""
+	stopped = 0
+	for name in frappe.get_all(
+		INSTANCE_DT,
+		filters={"subject_doctype": subject_doctype, "subject_name": subject_name, "status": ["in", LIVE_STATES]},
+		pluck="name",
+	):
+		if not frappe.db.get_value(INSTANCE_DT, {"name": name, "status": ["in", LIVE_STATES]}, "name", for_update=True):
+			continue  # already terminal, or another driver holds it — re-checked INSIDE the lock
+		_persist(frappe.get_doc(INSTANCE_DT, name), {
+			"status": STOPPED,
+			"stop_reason": reason,
+			"active_key": None,
+			"resume_at": None,
+			"awaiting_signal": None,
+			"awaiting_correlation": None,
+		})
+		stopped += 1
+	return stopped
 
 
 def _persist(instance, values):

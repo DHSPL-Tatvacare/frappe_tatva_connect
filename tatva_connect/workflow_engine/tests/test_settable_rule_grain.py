@@ -128,3 +128,40 @@ class TestSettableRuleGrain(FrappeTestCase):
 		for descriptor in schema["set_targets"]:
 			with self.subTest(field=descriptor["key"]):
 				self.assertIn(descriptor.get("doctype"), actions.reachable_targets("CRM Task"))
+
+	# --- the picker's last two lies ----------------------------------------------------------------------
+
+	def test_a_field_is_offered_once_however_many_contracts_tick_it(self):
+		"""`custom_substage` went out TWICE on the wire (4 rows, one duplicate). A rule grain's blank axis
+		means ANY, so a field ticked by two contracts at different grains matches twice — and the picker
+		listed the row, not the field. Killed at source; the frontend dedupe is now a belt, not the fix."""
+		offered = describe._settable_fields("CRM Lead", fx.GRAIN["vertical"], "", "")
+		keys = [d["key"] for d in offered]
+
+		self.assertEqual(
+			sorted(keys), sorted(set(keys)),
+			f"the picker offers a field twice: {sorted(k for k in set(keys) if keys.count(k) > 1)}",
+		)
+
+	def test_the_duplicate_is_gone_from_the_rule_forms_picker_too(self):
+		"""`builder_schema` feeds the automation RULE form's Set-field picker through the SAME function,
+		so the duplicate was visible on a second surface. One source, one fix, both surfaces."""
+		schema = describe.builder_schema(on_doctype="CRM Lead", vertical=fx.GRAIN["vertical"])
+		keys = [d["key"] for d in schema["set_targets"]]
+
+		self.assertEqual(sorted(keys), sorted(set(keys)), "the rule form still offers a field twice")
+
+	def test_a_tab_break_is_offered_by_no_picker(self):
+		"""A Tab Break is layout, not data. It was missing from `_STRUCTURAL_FIELDTYPES`, so a form's tab
+		was offered as a field a rule could test — and there is nothing to read off it."""
+		self.assertIn("Tab Break", describe._STRUCTURAL_FIELDTYPES)
+
+		doctype = frappe.db.get_value("DocField", {"fieldtype": "Tab Break", "parenttype": "DocType"}, "parent")
+		self.assertTrue(doctype, "no doctype on this bench declares a Tab Break — the lock proves nothing")
+
+		tabs = {df.fieldname for df in frappe.get_meta(doctype).fields if df.fieldtype == "Tab Break"}
+		offered = {d["key"] for d in describe.fields_for_doctype(doctype)}
+
+		self.assertEqual(
+			tabs & offered, set(), f"{doctype} offers layout elements as fields: {sorted(tabs & offered)}"
+		)

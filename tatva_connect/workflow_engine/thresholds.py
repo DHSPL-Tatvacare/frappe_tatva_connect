@@ -35,9 +35,31 @@ DRAIN_RATE = 60
 DRAIN_BURST = 60
 DRAIN_WINDOW = 60
 
+# ── THE CLEANUP POSTURE ──────────────────────────────────────────────────────────────────────────
+# Everything ends. What cannot complete is CLOSED WITH A REASON, never deleted on the spot: closing is
+# the safety act (a closed row can never cause an action), deleting is only housekeeping. So every
+# accumulating kind declares TWO ages here and nowhere else — DEAD_AFTER (short: how long the thing
+# could legitimately still matter) and RETENTION (long: the audit trail outlives the behaviour).
+# The test that it is right: a row past its dead-age can still be READ, and nothing it does can reach a
+# patient. A literal re-stated at a call site is a second brain and `test_declared_thresholds` fails it.
+
 # W4.4 — age at which a Pending inbox row is declared dead. Must outlast the longest arrival-to-park gap,
 # because early delivery is a guarantee this engine makes. The age the code always treated as dead.
 SIGNAL_DEAD_AFTER_DAYS = 30
 
 # How long a terminal row is kept before deletion — long enough to answer "why did this never wake".
 SIGNAL_RETENTION_DAYS = 7
+
+# A journey stopped/done/failed is terminal and inert; the row is kept because "what happened to this
+# patient" is asked long after. No dead-age: a journey has no waiting state that a reaper must close.
+RUN_RETENTION_DAYS = 90
+
+# A media row whose call is DELETED dies with the call, not with an age — the call is its only reason to
+# exist. This is the age for the other shape: a row nothing ever resolved, whose producer never spoke
+# again. `Awaiting` past it is `Abandoned` (terminal, inert, still readable), which is what the retry
+# ladder already means by spending its last attempt — the age is the backstop for a row the ladder never
+# reached at all, because its next attempt was never stamped.
+MEDIA_DEAD_AFTER_DAYS = 7
+
+# Terminal media rows outlive the recording debate they record, and no longer.
+MEDIA_RETENTION_DAYS = 90

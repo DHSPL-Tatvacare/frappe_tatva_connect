@@ -19,6 +19,7 @@ from tatva_connect.automation import rules
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 from tatva_connect.taxonomy import grain
+from tatva_connect.taxonomy.picklist import _LEAD_AXES
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, registry, versions
 
 INSTANCE_DT = interpreter.INSTANCE_DT
@@ -44,9 +45,7 @@ def _engine_may_run() -> bool:
 	return automation.is_enabled(ENGINE_SWITCH)
 
 
-# PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here is a fault on every save of
-# every doctype on the site. A start that is lost is re-startable through the SAME `start_run` entry — the
-# cohort drain walks the Trigger's own criteria, and `active_key` makes a re-start unable to double-run.
+# PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_run` the cohort drain uses, and `active_key` stops a double-run.
 @fail_safe
 def on_created(doc, method=None):
 	_maybe_start(doc, "Created")
@@ -60,6 +59,38 @@ def on_updated(doc, method=None):
 @fail_safe
 def on_trash(doc, method=None):
 	_maybe_start(doc, "Deleted")
+
+
+# The two triggers of ONE behaviour — `interpreter.stop_for_subject`. Deliberately NOT @fail_safe: a lost stop leaves a journey parked on a lead that is gone, which is the exact defect this closes, and nothing rebuilds it.
+def on_lead_deleted(doc, method=None):
+	"""CRM Lead.on_trash — the lead is going, so every journey about it ends with it.
+
+	Runs BEFORE the wildcard `on_trash` above (frappe composes `doc_events[doctype] + doc_events["*"]`,
+	`document.py:1598`), so a Deleted-entry workflow starting on this same delete is not stopped by it.
+	"""
+	if _engine_may_run():
+		interpreter.stop_for_subject(doc.doctype, doc.name, f"Lead deleted ({doc.name})")
+
+
+def on_lead_grain_changed(doc, method=None):
+	"""CRM Lead.on_update — a lead that changed grain is a different patient population.
+
+	Stopped and gone, never re-routed: the lead is picked up by the new grain's workflows the same way
+	enrolment already works, and a journey frozen against the grain it no longer has must not carry on.
+	The axes are read from the ONE declaration (`picklist._LEAD_AXES`), never restated here.
+
+	The guard is `get_doc_before_save()`, NOT `is_new()`/`has_value_changed()`: `has_value_changed` returns
+	True for EVERY field when there is no before-image (`document.py:684`), and `is_new()` is already False
+	by the time `on_update` runs inside an insert — so that pair reads a lead's CREATION as a grain change
+	and stopped the journey the same save had just started. Caught by `test_entry_isolation`, not by
+	reasoning about it.
+	"""
+	before = doc.get_doc_before_save()
+	if not before or not _engine_may_run():
+		return
+	moved = [axis for axis in _LEAD_AXES if before.get(axis) != doc.get(axis)]
+	if moved:
+		interpreter.stop_for_subject(doc.doctype, doc.name, f"Lead grain changed ({', '.join(moved)})")
 
 
 # A Frappe lifecycle event AS a signal source: completing a task the engine raised wakes the run that

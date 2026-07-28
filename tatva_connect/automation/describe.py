@@ -55,7 +55,8 @@ def _descriptor(key, label, fieldtype, raw_options):
 	}
 
 
-_STRUCTURAL_FIELDTYPES = ("Column Break", "Section Break", "HTML", "Button", "Fold")
+# Layout, not data. `Tab Break` was missing, so a form's tab was offered as a field a rule could test.
+_STRUCTURAL_FIELDTYPES = ("Column Break", "Section Break", "Tab Break", "HTML", "Button", "Fold")
 
 
 def _meta_fields(doctype):
@@ -175,17 +176,28 @@ def _settable_fields(doctype, vertical, group, program):
 	Typed off the doctype's own meta, falling back for CRM Task to the activity schema — a task's real
 	business fields are `CRM Task Type Field` rows and never meta fields, so dropping them would answer
 	empty on exactly the subject the doctype fix was for. Same union `fields_for_doctype` already reads.
+
+	A FIELD IS LISTED ONCE, not once per contract row that ticks it. A rule grain's blank axis means ANY,
+	so a field ticked by two contracts at different grains matches twice and the picker offered it twice —
+	`custom_substage` on the wire, 4 rows with one duplicate. Deduped HERE, at the source: the consumer's
+	own dedupe stays as a belt (a picker showing one field twice is a defect whatever caused it) but is no
+	longer the only thing preventing it. First row wins; they describe the same field.
 	"""
 	meta = frappe.get_meta(doctype)
 	schema = activity_schema_fields() if doctype == fields.TASK_DT else {}
-	out = []
+	out, seen = [], set()
 	for r in fields.settable_rows_in_rule_grain(doctype, (vertical, group, program)):
+		if r.fieldname in seen:
+			continue
 		df = meta.get_field(r.fieldname)
 		if df:
 			out.append({**_descriptor(r.fieldname, df.label, df.fieldtype, df.options), "doctype": doctype})
 		elif r.fieldname in schema:
 			s = schema[r.fieldname]
 			out.append({**_descriptor(s.fieldname, s.label, s.fieldtype, s.options), "doctype": doctype})
+		else:
+			continue  # neither a meta field nor a schema field — nothing was appended, so nothing is seen
+		seen.add(r.fieldname)
 	return out
 
 

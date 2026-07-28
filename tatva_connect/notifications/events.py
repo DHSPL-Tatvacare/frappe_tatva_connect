@@ -11,8 +11,10 @@ Each handler does the minimum: figure out WHO + WHAT, then call `dispatch.notify
 gate, the opt-in filter, the bell row, presence routing and FCM transport all live behind
 `dispatch.notify` — none of that leaks back here (one brain, invariant A.8).
 
-Firing once is the doc event's own job: `after_insert` runs once per row, and `has_value_changed`
-is true only on the save that changed the field. The sweep has no such guarantee — it re-reads the
+Firing once is the doc event's own job: `after_insert` runs once per row, and a "it moved" handler asks
+`get_doc_before_save()` — NOT `has_value_changed`, which returns True for every field when there is no
+previous version (`document.py:684`), so a lead ARRIVING at a stage read as a lead that moved to it. The
+sweep has no such guarantee — it re-reads the
 same task every 5 minutes — so it stamps the due date it TOLD a rep about, and skips a task already
 stamped for that date. A rescheduled task carries a new due date, so it is told again. The sweep only
 ever selects tasks whose rep has opted in, so a task nobody can be told about is never selected, never
@@ -148,7 +150,8 @@ def on_call_missed(doc, method=None):
 	a later save of the same row (a recording URL landing, say) changes nothing and tells no one."""
 	if doc.get("type") != "Incoming" or doc.get("status") != "No Answer":
 		return
-	if not doc.has_value_changed("status"):
+	before = doc.get_doc_before_save()
+	if not before or before.get("status") == doc.get("status"):
 		return
 	lead = doc.get("reference_docname") if doc.get("reference_doctype") == "CRM Lead" else None
 	if not lead:
@@ -171,9 +174,12 @@ def on_call_missed(doc, method=None):
 
 @fail_safe
 def on_lead_stage_changed(doc, method=None):
-	"""The stage moved. `has_value_changed` is true only on the save that moved it, and a rep who moved
-	their own lead is skipped by crm's writer (a rep is never told about their own action)."""
-	if doc.is_new() or not doc.has_value_changed("custom_substage"):
+	"""The stage MOVED — a lead that arrives already at a stage has not moved to it.
+
+	A rep who moved their own lead is skipped by crm's writer (a rep is never told about their own action).
+	"""
+	before = doc.get_doc_before_save()
+	if not before or before.get("custom_substage") == doc.get("custom_substage"):
 		return
 	# The stored value is the composite key; this text lands on a rep's lock screen, so name the stage.
 	stage = labels.label(doc.get("custom_substage"), labels.LEAD_STAGE)

@@ -22,6 +22,10 @@ To see what a brand-new prod VM gets:
     bench --site probe.localhost set-config allow_tests true
     bench --site probe.localhost run-tests --app tatva_connect --module tatva_connect.tests.install.test_fresh_site_invariants
     bench drop-site probe.localhost --db-root-password <pw>
+
+Run it once more with the `migrate` line DELETED — that is `TestInstallAloneIsCorrect` below. Different
+question: not "is a deployed site correct" but "is the INSTALL correct, or is it rescued by the migrate
+that happens to follow". It was the second for months, and nothing said so.
 """
 import json
 import unittest
@@ -102,6 +106,60 @@ class TestFreshSiteInvariants(FrappeTestCase):
 		operator simply cannot paste it until the cap is raised."""
 		self.assertEqual(frappe.get_meta("CRM Telephony Account").get_field("api_token").length, 1000)
 		self.assertTrue(frappe.db.exists("Custom Field", "WhatsApp Account-custom_section_credentials"))
+
+
+class TestInstallAloneIsCorrect(FrappeTestCase):
+	"""`install-app` alone must leave a correct site — no migrate, no rescue.
+
+	`after_migrate` fires at ONE place, `migrate.py:202`. `install_app` fires `after_install`
+	(`installer.py:332`), `sync_fixtures` (`:339`) and `after_sync` (`:343`), and never `after_migrate` —
+	so until `after_sync` was wired, a fresh site got no index, no seed row and no lockdown, and was
+	correct only because a migrate always happened to follow.
+
+	Every assertion below reads the DECLARATION and asks whether the site matches it, so a new index, a
+	new switch or a new section is covered the day it is declared and never needs listing here.
+	"""
+
+	def test_the_schema_steps_indexes_are_on_a_freshly_installed_site(self):
+		"""`install-app` BASELINES patches.txt without running it, so `schema_setup` is these indexes' only
+		road onto a new site. Both were measured absent on a fresh install before `after_sync` was wired."""
+		from tatva_connect.patches import add_call_log_reference_index, add_integration_request_index
+
+		self.assertTrue(
+			frappe.db.has_index("tabCRM Call Log", add_call_log_reference_index.INDEX),
+			f"{add_call_log_reference_index.INDEX} is missing — schema_setup never ran on this site",
+		)
+		self.assertTrue(
+			frappe.db.has_index(
+				f"tab{add_integration_request_index.DOCTYPE}", add_integration_request_index.INDEX
+			),
+			f"{add_integration_request_index.INDEX} is missing — schema_setup never ran on this site",
+		)
+
+	def test_every_declared_automation_has_its_switch_row(self):
+		"""`automation.seed.sync_catalog`. A key with no row is a gate on a switch that does not exist."""
+		from tatva_connect.automation.registry import AUTOMATIONS
+
+		rows = set(frappe.get_all("CRM Tatva Automation", pluck="name"))
+		missing = sorted(auto.key for auto in AUTOMATIONS if auto.key not in rows)
+		self.assertEqual(missing, [], f"{len(missing)} declared automations have no catalog row")
+
+	def test_every_declared_lead_section_has_its_row(self):
+		"""`partner_api.section_seed.ensure_rows` — and the sharpest probe of the two, because its
+		skip-until-ready guard reads a fixture Table field. Run this chain BEFORE `sync_fixtures` and it
+		seeds nothing at all, silently, which is exactly what `after_install` would have done."""
+		from tatva_connect.partner_api.section_seed import _ROWS
+
+		rows = set(frappe.get_all("CRM Lead Section", pluck="name"))
+		missing = sorted(row["section_key"] for row in _ROWS if row["section_key"] not in rows)
+		self.assertEqual(missing, [], f"{len(missing)} declared lead sections were never seeded")
+
+	def test_the_locked_doctypes_are_locked_on_a_freshly_installed_site(self):
+		"""`access.lockdown.apply`. Unapplied, the stock-open matrix stands and All/Guest keeps its grants."""
+		from tatva_connect.access.lockdown import LOCKED_MATRIX, effective_all_guest_grants
+
+		bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]
+		self.assertEqual(bad, [], f"{len(bad)} All/Guest grants survive on locked doctypes")
 
 
 if __name__ == "__main__":

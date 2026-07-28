@@ -745,7 +745,9 @@ _RL_SHA = None
 def _bucket_pair(mapping, cost, gname, grate, gburst, tname, trate, tburst, window):
 	"""Charge `cost` against the (global, per-token) bucket pair — allowed only if BOTH can pay, and
 	debited only when both do. The ONE brain both the rate (calls) and volume (rows) dimensions run
-	through. Returns None (exempt: no mapping) or (retry_after | None, per_token_remaining | None).
+	through. Returns None (exempt: no mapping, or the limiter failed open) or a THREE-tuple
+	`(retry_after | None, per_token_remaining | None, by_shared)` — `retry_after` is None when allowed,
+	`by_shared` says the GLOBAL bucket is what refused rather than this partner's own.
 	Fail-open: ANY Redis/Lua error is logged and the request is ALLOWED. The per-token key is the
 	session user — each partner is one User (mapping name == partner_user)."""
 	if not mapping:

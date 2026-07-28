@@ -175,6 +175,114 @@ class TestNotificationEventsGating(FrappeTestCase):
 			self.assertIn(event.automation_key, keys, event.key)
 
 
+class TestArrivingIsNotMoving(FrappeTestCase):
+	"""A record that is CREATED at a value has not MOVED to it.
+
+	`has_value_changed` returns True for EVERY field when there is no previous version
+	(`document.py:684`), and `is_new()` is already False by the time the after-save handler runs inside an
+	insert. So both guards read a CREATE as a change: a lead imported already at a stage told its owner
+	"moved to X", and a call backfilled already as No Answer told them "missed call". Neither had moved.
+
+	This matters most on the day the switches are armed: an import or a reconcile backfill would announce
+	its whole batch at once, which is the burst `_overdue_floor` exists to stop on the sweep side.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		assert_masters_exist()
+		super().setUpClass()
+		cls.user = _make_user()
+
+	def setUp(self):
+		self._orig_is_enabled = dispatch.automation.is_enabled
+		frappe.db.delete("CRM Notification Subscription", {"parenttype": "CRM Notification Preference"})
+
+	def tearDown(self):
+		dispatch.automation.is_enabled = self._orig_is_enabled
+
+	def _armed(self):
+		_gates(**{
+			"Notify::Lead::stage-changed": True,
+			"Notify::Telephony::missed": True,
+			"Lead::CRM Lead::dedup": False,
+		})
+		_optin(self.user, "Lead::Stage::changed", "Telephony::Call::missed")
+
+	def test_a_lead_arriving_at_a_stage_tells_nobody_it_moved(self):
+		"""The import case: LSQ, the partner API and the intake fold all create leads already at a stage."""
+		self._armed()
+		with _Spy() as spy:
+			events.on_lead_stage_changed(_lead_at_stage(self.user))
+
+		self.assertEqual((spy.bells, spy.toasts, spy.pushes), ([], [], []), "a lead's arrival was announced")
+
+	def test_a_lead_that_really_moves_still_tells_its_owner(self):
+		"""The other direction: a guard that silenced everything would also pass the test above."""
+		self._armed()
+		lead = _lead_at_stage(self.user)
+		moved = frappe.get_doc("CRM Lead", lead.name)
+		moved.custom_substage = _other_substage(moved.custom_substage)
+		if moved.custom_substage is None:
+			self.skipTest("only one substage on this bench — a real move cannot be driven")
+
+		with _Spy() as spy:
+			moved.save(ignore_permissions=True)  # authz-ok: tier-a — test drives the rep's own save path
+
+		self.assertTrue(spy.bells or spy.toasts or spy.pushes, "a real stage move told nobody")
+
+	def test_a_call_backfilled_as_no_answer_tells_nobody_it_was_missed(self):
+		"""The reconcile case: a historical unanswered call is WRITTEN as No Answer, never moved to it."""
+		self._armed()
+		lead = _lead_at_stage(self.user)
+		call = frappe.get_doc({
+			"doctype": "CRM Call Log", "id": f"notif-{frappe.generate_hash(length=8)}",
+			"type": "Incoming", "status": "No Answer", "telephony_medium": "Manual",
+			"from": "+919876500777", "to": "+918035303509", "duration": 0,
+			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+
+		with _Spy() as spy:
+			events.on_call_missed(call)
+
+		self.assertEqual((spy.bells, spy.toasts, spy.pushes), ([], [], []), "a backfilled call was announced")
+
+	def test_a_call_that_really_goes_unanswered_still_tells_its_rep(self):
+		self._armed()
+		lead = _lead_at_stage(self.user)
+		call = frappe.get_doc({
+			"doctype": "CRM Call Log", "id": f"notif-{frappe.generate_hash(length=8)}",
+			"type": "Incoming", "status": "Ringing", "telephony_medium": "Manual",
+			"from": "+919876500777", "to": "+918035303509", "duration": 0,
+			"reference_doctype": "CRM Lead", "reference_docname": lead.name,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+
+		call.status = "No Answer"
+		with _Spy() as spy:
+			call.save(ignore_permissions=True)  # authz-ok: tier-a — test drives the real status move
+
+		self.assertTrue(spy.bells or spy.toasts or spy.pushes, "a real missed call told nobody")
+
+
+def _lead_at_stage(user):
+	"""A lead CREATED already carrying a stage — the shape every import produces."""
+	substage = frappe.db.get_value("CRM Lead Stage", {}, "name")
+	lead = frappe.get_doc({
+		"doctype": "CRM Lead", "first_name": "ArrivesAtStage", "lead_name": "Arrives At Stage",
+		"status": "New", "custom_vertical": _GRAIN["vertical"], "custom_group": _GRAIN["group"],
+		"custom_current_program": _GRAIN["program"], "custom_substage": substage,
+		"lead_owner": user,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+	frappe.db.set_value("CRM Lead", lead.name, "_assign", frappe.as_json([user]), update_modified=False)
+	return lead
+
+
+def _other_substage(current):
+	for name in frappe.get_all("CRM Lead Stage", pluck="name"):
+		if name != current:
+			return name
+	return None
+
+
 class TestTaskDueSweepFiresOnce(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):

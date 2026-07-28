@@ -108,7 +108,11 @@ AUTOMATIONS = [
 			"Example: a patient's call is recorded during a network blip, and the audio is on the call an "
 			"hour later without anyone asking for it."
 		),
-		backs=["tatva_connect.storage.call_media.sweep"],
+		backs=[
+			"tatva_connect.storage.call_media.sweep",
+			# The other half of the same layer's housekeeping: a deleted call takes its media pointer with it, so nothing accumulates.
+			"tatva_connect.storage.call_media.drop_for_call",
+		],
 	),
 	Auto(
 		key="Transcription::Channel::inbound",
@@ -677,6 +681,9 @@ AUTOMATIONS = [
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			"tatva_connect.workflow_engine.triggers.on_trash",
 			"tatva_connect.workflow_engine.triggers.on_task_done",
+			# The same engine ENDING a journey: the subject left (deleted, or moved grain), so its journeys end with it.
+			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
+			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
 		],
 	),
 	Auto(

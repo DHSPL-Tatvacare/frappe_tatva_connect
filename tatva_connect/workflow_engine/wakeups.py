@@ -30,6 +30,46 @@ SIGNAL_DT = interpreter.SIGNAL_DT
 # schedulers fighting. Registered in common_site_config `workers`, exactly as `partner_bulk` is.
 WAKE_QUEUE = "workflow"
 
+# THE DEPLOY CONTRACT FOR THIS LANE, in the repo rather than in one machine's compose file.
+# Until now it existed ONLY in `.localdev/compose.yml`, which is git-excluded — so the engine ran here
+# and nowhere else, and a deploy that missed it would write timer alarms into a queue nothing services.
+# That failure is SILENT: every run parks correctly, every alarm is set, and none of them ever fires.
+# `assert_lane_registered` below is what makes it loud, and these are the three things it is about:
+#
+#   1. bench set-config -gp workers "{'workflow': {'background_workers': 1, 'timeout': 1500}}"
+#   2. bench worker --queue workflow                                     (a process, one per lane)
+#   3. bench --site <site> execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler
+#
+# (3) is our RQ scheduler for this lane. Frappe hard-disables RQ's scheduler on both worker paths so its
+# own is the only one running — correct, and it means a lane Frappe does not manage is an empty lane.
+# It is NOT load-bearing: kill it and parked runs still wake off the */15 sweep, late.
+LANE_WORKER_COMMAND = f"bench worker --queue {WAKE_QUEUE}"
+LANE_SCHEDULER_COMMAND = "bench --site <site> execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler"
+
+
+def assert_lane_registered():
+	"""after_migrate: refuse a site that has ARMED the engine without registering its lane.
+
+	Gated on the engine switch on purpose. The engine ships dormant, so a fresh install and every bench
+	that never turned it on are correct with no lane at all — and a `throw` there would fail
+	`install-app` itself, since `workers` cannot be set before the app that needs it exists. The moment
+	an operator arms the engine, the lane stops being optional and the next migrate says so.
+	"""
+	if not automation.is_enabled(ENGINE_SWITCH):
+		return
+	lane = (frappe.conf.get("workers") or {}).get(WAKE_QUEUE)
+	if not lane:
+		frappe.throw(
+			f"The workflow engine is armed but the `{WAKE_QUEUE}` lane is not registered in "
+			f"common_site_config `workers`. Timer alarms would be written and silently never execute. "
+			f"Register it, then run `{LANE_WORKER_COMMAND}` and `{LANE_SCHEDULER_COMMAND}`."
+		)
+	if (lane.get("timeout") or 0) < thresholds.WAKE_JOB_TIMEOUT:
+		frappe.throw(
+			f"The `{WAKE_QUEUE}` lane's timeout is {lane.get('timeout')}s, below the declared "
+			f"{thresholds.WAKE_JOB_TIMEOUT}s a wake job may run. A long segment would be killed mid-flight."
+		)
+
 
 def schedule_wake(name, resume_at):
 	"""Set the alarm for a parked run. The diary row is already written; this only makes it PUNCTUAL.

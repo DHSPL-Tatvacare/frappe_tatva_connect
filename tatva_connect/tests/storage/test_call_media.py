@@ -31,10 +31,16 @@ from tatva_connect.channels import contract
 from tatva_connect.storage import call_media
 from tatva_connect.storage.blob_store import blob_key_from_url
 from tatva_connect.tests.storage.test_file_layer_registry import FileLayerCase
+from tatva_connect.workflow_engine import thresholds
 
 _OFFLOAD = "Storage::Azure::offload"
 _PRODUCER = "acme-voice"
 _PRODUCER_URL = "https://api.acme.invalid/recordings/call/abcdef"
+
+# "Not due" is a FUTURE attempt time, the way `test_a_row_that_is_not_due_yet_is_left_alone` says it.
+def _NOT_DUE():
+	return add_to_date(now_datetime(), hours=2)
+
 
 # A real mp3 frame header plus filler, so what comes back can be compared byte for byte.
 _AUDIO = b"\xff\xfb\x90\x64" + b"tatva-call-recording-probe" * 8
@@ -137,6 +143,21 @@ class TestTheBytesBecomeOursAndAreOwnedByTheCall(CallMediaCase):
 
 		frappe.delete_doc("CRM Call Log", self.call, force=True, ignore_permissions=True)
 		self.assertFalse(self.store.exists(key), "deleting the call left its recording in the container")
+
+	def test_deleting_the_call_leaves_no_media_row_no_file_and_no_blob(self):
+		"""Nothing accumulates for ever. `ignore_links_on_delete` lets the call go so the blob can be
+		reclaimed — but for months NOTHING deleted the media row, so every deleted call left an orphan
+		pointing at a call that no longer exists. All three must go, in one delete."""
+		self.deliver()
+		key = blob_key_from_url(self.file_row().file_url)
+		file_name = self.file_row().name
+		self.assertTrue(frappe.db.exists(call_media.MEDIA_DT, self.call), "no media row to test with")
+
+		frappe.delete_doc("CRM Call Log", self.call, force=True, ignore_permissions=True)
+
+		self.assertFalse(frappe.db.exists(call_media.MEDIA_DT, self.call), "the media row outlived its call")
+		self.assertFalse(frappe.db.exists("File", file_name), "the recording's File row outlived its call")
+		self.assertFalse(self.store.exists(key), "the blob outlived its call")
 
 	def test_a_row_that_outlived_its_file_is_not_still_stored(self):
 		"""`ignore_links_on_delete` lets a call be deleted without its media row blocking the cascade, so
@@ -376,6 +397,67 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 		self.deliver()
 		self.assertEqual(self._sweep(), 0)
 		self.fetch.assert_not_called()
+
+	# ---- the cleanup posture: everything ends, closing comes first ----------------------------
+	def _never_resolved(self):
+		"""A row parked `Awaiting` by a `pending` ref — no url, no next attempt, exactly as
+		`test_a_pending_row_is_never_swept` builds it. This is the shape the retry ladder never reaches."""
+		call_media.store_recording(self.call, contract.RecordingRef(pending=True, provider=_PRODUCER))
+
+	def _age_to(self, field, days):
+		frappe.db.set_value(
+			call_media.MEDIA_DT, self.call, field, add_to_date(now_datetime(), days=-days), update_modified=False
+		)
+		frappe.db.commit()
+
+	def test_a_row_nothing_ever_resolved_is_closed_not_left_waiting(self):
+		"""Closing is the SAFETY act: `_due_rows` asks for `Awaiting`, so an Abandoned row is inert and
+		can never buy another fetch — while still being readable, which deleting it would not be."""
+		self._arm()
+		self._never_resolved()
+		self._age_to("creation", thresholds.MEDIA_DEAD_AFTER_DAYS + 1)
+
+		self._sweep()
+
+		self.assertEqual(self.media().recording_state, call_media.ABANDONED, "a row nothing resolved is still Awaiting")
+		self.assertTrue(frappe.db.exists(call_media.MEDIA_DT, self.call), "closing must not delete the row")
+
+	def test_a_row_inside_the_dead_age_is_left_alone(self):
+		"""The age is a backstop, not a hurry. A young unresolved row is still legitimately waiting."""
+		self._arm()
+		self._never_resolved()
+
+		self._sweep()
+
+		self.assertEqual(self.media().recording_state, call_media.AWAITING, "a young row was closed early")
+
+	def test_a_terminal_row_past_its_retention_is_deleted(self):
+		"""Deleting is housekeeping and comes SECOND — long after the row could still answer a question."""
+		self._arm()
+		self._due(recording_state=call_media.ABSENT, recording_next_attempt_at=_NOT_DUE())
+		self._age_to("modified", thresholds.MEDIA_RETENTION_DAYS + 1)
+
+		self._sweep()
+
+		self.assertFalse(frappe.db.exists(call_media.MEDIA_DT, self.call), "a row past retention was kept")
+
+	def test_a_terminal_row_inside_its_retention_is_kept(self):
+		"""The audit trail outlives the behaviour — that is what the long age is for."""
+		self._arm()
+		self._due(recording_state=call_media.ABSENT, recording_next_attempt_at=_NOT_DUE())
+
+		self._sweep()
+
+		self.assertTrue(frappe.db.exists(call_media.MEDIA_DT, self.call), "a row inside retention was deleted")
+
+	def test_the_reaper_is_dormant_with_the_sweep(self):
+		"""One switch for one sweep. A reaper that ran while the switch was off would be a second lane."""
+		self._due(recording_state=call_media.ABSENT, recording_next_attempt_at=_NOT_DUE())
+		self._age_to("modified", thresholds.MEDIA_RETENTION_DAYS + 1)
+
+		self._sweep()  # switch OFF — setUp leaves it dormant and this test never arms it
+
+		self.assertTrue(frappe.db.exists(call_media.MEDIA_DT, self.call), "a dormant sweep still reaped")
 
 
 class TestTheTranscriptDoor(CallMediaCase):

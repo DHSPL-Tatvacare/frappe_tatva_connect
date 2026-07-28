@@ -11,13 +11,14 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.telephony.adapters import acefone
+from tatva_connect.tests.telephony.fixtures import config
 
 CORPUS = os.path.join(os.path.dirname(__file__), "fixtures", "acefone_cdr_corpus.jsonl")
 
-ACCOUNT = "_TestTelephonyAcct"
+ACCOUNT = config.ACCOUNT
 BUSY_DID = "9000007179"      # 37 Dialer calls, 8 of them answered
 IVR_DID = "9000000210"       # 18 IVR calls, none ever answered
-GRAIN = {"vertical": "_TestTelVertical", "psp_group": None, "program": None}
+GRAIN = config.GRAIN
 
 # The agent the anonymised corpus carries on its answered CDRs. The auto-match is proven by making
 # this a CRM user; the map is proven by an address that deliberately is not one.
@@ -178,63 +179,14 @@ class TestTelephonyGates(FrappeTestCase):
 		self.assertEqual(self._run_corpus(), 0)
 
 
-def _rule(direction, channel, action="Capture"):
-	return {
-		"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001",
-		"direction": direction,
-		"channel": channel,
-		"action": action,
-		"enabled": 1,
-	}
-
-
-def _current_rules():
-	"""The site's capture rules as plain dicts, so they can be put back exactly as they were."""
-	settings = frappe.get_single("CRM Telephony Settings")
-	return [
-		{"provider": r.provider, "direction": r.direction, "channel": r.channel,
-		 "action": r.action, "enabled": r.enabled}
-		for r in (settings.capture_rules or [])
-	]
-
-
-def _set_rules(rules):
-	settings = frappe.get_single("CRM Telephony Settings")
-	settings.set("capture_rules", [])
-	for rule in rules:
-		settings.append("capture_rules", rule)
-	settings.save(ignore_permissions=True)
-	frappe.db.commit()
-	frappe.clear_cache(doctype="CRM Telephony Settings")
-
-
-def _rule_doc():
-	"""The routing rule for the suite's grain, created once. The DID map is a child table on it."""
-	name = frappe.db.get_value("CRM Telephony Routing", {"vertical": GRAIN["vertical"]}, "name")
-	if name:
-		return frappe.get_doc("CRM Telephony Routing", name)
-	doc = frappe.new_doc("CRM Telephony Routing")
-	doc.update({"telephony_account": ACCOUNT, **GRAIN})
-	doc.insert(ignore_permissions=True)
-	return doc
-
-
-def _map_did(digits, enabled=1):
-	"""Map a number onto the suite's grain. A DID is a row on the rule that owns it, so mapping one
-	cannot leave it without a route."""
-	rule = _rule_doc()
-	rule.append("dids", {"did_number": f"+91{digits}", "enabled": enabled})
-	rule.save(ignore_permissions=True)
-	frappe.db.commit()
-
-
-def _clear_dids():
-	"""Drop the suite's routing rule, and its numbers with it."""
-	for name in frappe.get_all(
-		"CRM Telephony Routing", filters={"telephony_account": ACCOUNT}, pluck="name"
-	):
-		frappe.delete_doc("CRM Telephony Routing", name, force=True, ignore_permissions=True)
-	frappe.db.commit()
+# The operator configuration is declared ONCE, in `fixtures.config`, so a second suite cannot be written
+# against a call that is silently declined — which is exactly how test_reconcile_never_deletes went red.
+_rule = config.rule
+_current_rules = config.current_rules
+_set_rules = config.set_rules
+_rule_doc = config.routing_rule
+_map_did = config.map_did
+_clear_dids = config.clear_dids
 
 
 def _map_agent(agent_email, user):
@@ -271,28 +223,5 @@ def _clear_calls():
 
 
 def _ensure_fixtures():
-	"""The minimum an operator would configure: a grain, an account, and the rep who answers."""
-	if not frappe.db.exists("CRM Vertical", GRAIN["vertical"]):
-		frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": GRAIN["vertical"]}).insert(
-			ignore_permissions=True
-		)
-	if not frappe.db.exists("CRM Telephony Account", ACCOUNT):
-		frappe.get_doc(
-			{
-				"doctype": "CRM Telephony Account",
-				"account_name": ACCOUNT,
-				"provider": "Acefone", "api_token": "resolve-gates-test-token", "caller_id": "919000100001",
-				"enabled": 1,
-			}
-		).insert(ignore_permissions=True)
-	for email in (REP,):
-		if not frappe.db.exists("User", email):
-			frappe.get_doc(
-				{
-					"doctype": "User",
-					"email": email,
-					"first_name": "Telephony Rep",
-					"send_welcome_email": 0,
-				}
-			).insert(ignore_permissions=True)
-	frappe.db.commit()
+	"""The minimum an operator would configure — declared once in `fixtures.config`."""
+	config.ensure_account(rep_emails=(REP,))

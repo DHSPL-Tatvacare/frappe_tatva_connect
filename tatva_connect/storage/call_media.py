@@ -39,6 +39,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation import settings
 from tatva_connect.storage import blob_store, file_manager
+from tatva_connect.workflow_engine import thresholds
 
 MEDIA_DT = "CRM Call Media"
 CALL_DT = "CRM Call Log"
@@ -57,6 +58,9 @@ AWAITING = "Awaiting"
 STORED = "Stored"
 ABSENT = "Absent"
 ABANDONED = "Abandoned"
+
+# Nothing more will happen to a row in one of these — the reaper counts its retention from here.
+TERMINAL_RECORDING_STATES = (STORED, ABSENT, ABANDONED)
 
 # The sweep's own switch — dormant by default, like every automation in this app.
 SWEEP_SWITCH = "Storage::Recording::catchup"
@@ -331,6 +335,7 @@ def sweep():
 		return 0
 	from tatva_connect.channels import contract
 
+	_reap()  # nothing accumulates for ever: close what can never resolve, drop what is past keeping
 	retried = 0
 	for row in _due_rows():
 		ref = contract.RecordingRef(url=row.recording_ref_url, provider=row.recording_source)
@@ -338,6 +343,42 @@ def sweep():
 			retried += 1
 		frappe.db.commit()  # per row, so a worker killed mid-sweep never re-fetches what it already stored
 	return retried
+
+
+def drop_for_call(doc, method=None):
+	"""`CRM Call Log.on_trash` — the media row dies with the call it is about.
+
+	It is a POINTER to a call's artifacts, not a record in its own right: with the call gone it names
+	nothing, can never be reached by any screen, and would sit in the table for ever. `ignore_links_on_delete`
+	already lets the call be deleted so `File.on_trash` can reclaim the blob (M1) — this is the other half
+	of that decision, and without it every deleted call left an orphan.
+
+	The File and its bytes are NOT touched here. The File is owned by the call (M1), so frappe's own
+	attachment cleanup takes it on the same delete and `File.on_trash` drops the blob on the last
+	reference. Deleting it from here would be a second owner for the same bytes.
+	"""
+	frappe.db.delete(MEDIA_DT, {"call": doc.name})
+
+
+def _reap():
+	"""Close what can never resolve, then delete what is past keeping. The SAME sweep, not a second one.
+
+	Two ages, both DECLARED in `workflow_engine.thresholds` and neither restated here. An `Awaiting` row
+	older than the dead-age is `Abandoned` — terminal, inert (`_due_rows` asks for `Awaiting` and nothing
+	else), and still readable, which is the whole point of closing rather than deleting. A terminal row
+	past the retention age is then dropped, because by then nobody is asking why the audio never arrived.
+	"""
+	now = now_datetime()
+	frappe.db.set_value(  # authz-ok: tier-a — scheduled sweep, no user context
+		MEDIA_DT,
+		{"recording_state": AWAITING, "creation": ["<", add_to_date(now, days=-thresholds.MEDIA_DEAD_AFTER_DAYS)]},
+		{"recording_state": ABANDONED, "recording_error": "No producer ever resolved this recording"},
+	)
+	frappe.db.delete(MEDIA_DT, {
+		"recording_state": ["in", TERMINAL_RECORDING_STATES],
+		"modified": ["<", add_to_date(now, days=-thresholds.MEDIA_RETENTION_DAYS)],
+	})
+	frappe.db.commit()
 
 
 def _due_rows():
