@@ -311,6 +311,7 @@ scheduler_events = {
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			"tatva_connect.voice.reconcile.sweep",
 			"tatva_connect.workflow_engine.drain.sweep",
+			"tatva_connect.storage.call_media.sweep",
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
@@ -710,7 +711,8 @@ app_include_js = "tatva_connect.bundle.js"
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# CRM Call Media holds a call's artifact state and points at the File holding its audio. That pointer must never be able to REFUSE a delete: the blob's life is the call's life (M1), so deleting a call has to reach `File.on_trash` and reclaim the bytes, and a Link check would leave patient audio in the container for ever. Frappe's own hook for exactly this, and the same reason Communication and ToDo are on core's list.
+ignore_links_on_delete = ["CRM Call Media"]
 
 # Request Events
 # ----------------

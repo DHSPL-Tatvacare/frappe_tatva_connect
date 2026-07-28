@@ -18,6 +18,7 @@ Plus one method per READ capability it declares, and none if it declares none:
   normalize_history(item, account, number)        -> ChannelEvent | None       [backfill]
   recover_message(account, conversation, msg_id)  -> item | None               [recover_message]
   fetch_media_by_message_id(account, msg_id)      -> (bytes, filename) | None  [recover_media]
+  recording_ref(payload)                          -> RecordingRef              [recording]
 
 `normalize` and `normalize_history` are TWO PRODUCERS OF ONE ENVELOPE — the webhook shape and the
 provider's history shape both come out as a `ChannelEvent`, and nothing downstream can tell which was
@@ -38,9 +39,11 @@ from dataclasses import dataclass
 
 from tatva_connect.channels.event import OUTCOMES
 
-# What a provider can DO, as opposed to what it can REPORT (that is `outcomes`). The first six are send-side. The last two are READ-side, and they are what makes an orphan status recoverable: `recover_message` = "I can hand back the ONE message a status names", `recover_media` = "and that message's file, by its id". A provider that declares neither is not broken — its orphan statuses are logged and dropped, which is what happened to every provider before either existed.
+# What a provider can DO, as opposed to what it can REPORT (that is `outcomes`). The first six are send-side. The next two are READ-side, and they are what makes an orphan status recoverable: `recover_message` = "I can hand back the ONE message a status names", `recover_media` = "and that message's file, by its id". A provider that declares neither is not broken — its orphan statuses are logged and dropped, which is what happened to every provider before either existed.
+# `recording` is the media-side member of the same vocabulary: "a call I carried can produce audio, and I can say where it is". It buys ONE adapter function, `recording_ref(payload) -> RecordingRef`, and nothing else — the owning, the naming, the retrying and the privacy all live once in `storage.call_media`, which never learns a vendor's name.
 CAPABILITIES = (
 	"templates", "media", "session", "buttons", "lists", "backfill", "recover_message", "recover_media",
+	"recording",
 )
 
 # How a provider spells a phone number ON THE WIRE. `+919059067237`, `919059067237` and `9059067237` are the same subscriber and no two providers agree on which to accept — WATI puts the number in a URL query (`?whatsappNumber=`), where a `+` decodes as a space; a voice provider wants the `+`. The format is therefore a fact about the PROVIDER and it is declared, never resolved centrally.
@@ -102,6 +105,61 @@ class SendResult(tuple):
 		return (
 			f"SendResult(accepted={self.accepted!r}, correlation_id={self.correlation_id!r}, "
 			f"error={self.error!r}, unknown={self.unknown!r}, wamid={self.wamid!r})"
+		)
+
+
+class RecordingRef(tuple):
+	"""WHERE a call's audio is — the whole of what a `recording` adapter ever says about it.
+
+	THREE ANSWERS, and the difference between them is the reason this is not just a URL string:
+
+	  here it is    `RecordingRef(url=..., provider=...)` — fetch it and it is ours
+	  not ready yet `RecordingRef(pending=True)` — the call is real, the audio is not published yet
+	  there is none `RecordingRef()` — this call produced no audio and never will
+
+	Collapsing "not ready" into "none" is what makes a recording silently never arrive; collapsing it into
+	"here it is" makes the fetcher hammer a 404. They are separately routable states on the media row.
+
+	`provider` is DATA. It rides in from the adapter so `call_media` can stamp a producer onto the file
+	name without ever learning a vendor exists — the shared service formats a string it was handed.
+
+	`headers` is whatever authentication the fetch needs (a bearer token, a signed header). Most providers
+	publish an unauthenticated URL and send none; a provider that needs one declares it here rather than
+	teaching the shared fetcher about its auth.
+	"""
+
+	__slots__ = ()
+
+	def __new__(cls, url=None, provider=None, headers=None, pending=False):
+		return tuple.__new__(cls, (url or None, provider or None, dict(headers or {}), bool(pending)))
+
+	@property
+	def url(self):
+		return self[0]
+
+	@property
+	def provider(self):
+		return self[1]
+
+	@property
+	def headers(self):
+		return self[2]
+
+	@property
+	def pending(self):
+		"""The provider will have audio for this call, but not yet. The media row waits rather than closing."""
+		return self[3]
+
+	@property
+	def absent(self):
+		"""Settled: there is no audio for this call. Not the same as `pending`, and never guessed from a
+		missing URL alone — an adapter says this by answering `RecordingRef()` on a terminal payload."""
+		return not self[0] and not self[3]
+
+	def __repr__(self):
+		return (
+			f"RecordingRef(url={self.url!r}, provider={self.provider!r}, "
+			f"headers={sorted(self.headers)!r}, pending={self.pending!r})"
 		)
 
 

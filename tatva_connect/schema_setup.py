@@ -20,7 +20,9 @@ from frappe import _
 
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
+	add_ai_voice_telephony_medium,
 	add_call_log_reference_index,
+	add_call_media_recording_index,
 	add_clinic_anchor_index,
 	add_crm_task_metrics_index,
 	add_integration_request_index,
@@ -49,6 +51,8 @@ from tatva_connect.patches import (
 _STEPS = (
 	recreate_whatsapp_message_id_index_composite,
 	add_acefone_telephony_medium,
+	# "AI Voice" on CRM Call Log.telephony_medium — an AI call lands in the same MIXED table as Acefone's and a rep's, and the medium is what tells them apart. A Property Setter because stock options drift between crm versions; install-app baselines its patch without running it.
+	add_ai_voice_telephony_medium,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,
@@ -80,6 +84,8 @@ _STEPS = (
 	build_lead_timeline_index,
 	# (trigger_mode, trigger_next_run_at) on CRM Workflow — the cohort drain's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_workflow_due_index,
+	# (recording_state, recording_next_attempt_at) on CRM Call Media — the media sweep's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_call_media_recording_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.

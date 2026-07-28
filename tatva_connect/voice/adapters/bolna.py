@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 import frappe
 import requests
+from frappe.utils import now_datetime
 
 from tatva_connect.channels import contract
 
@@ -37,8 +38,8 @@ DECLARATION = contract.declare(
 	# the node's synchronous "handed to the provider" output, never a reported outcome. `failed` is
 	# declared (a call can fail) and excluded from the waitable set as a synchronous output by `outcomes_of`.
 	outcomes={"answered", "no_answer", "completed", "failed"},
-	# Voice has none of the messaging send-side capabilities (templates/media/buttons/…); it places calls.
-	capabilities=set(),
+	# Voice has none of the messaging send-side capabilities (templates/media/buttons/…); it places calls. `recording` is the one it does have, and it buys exactly `recording_ref` below — the owning, naming, retrying and privacy all live in `storage.call_media`.
+	capabilities={"recording"},
 	number_format=contract.E164_PLUS,
 )
 
@@ -72,6 +73,19 @@ _NO_REACH_TOKENS = ("no-answer", "rnr", "busy")
 
 # Bag key the canonical voice outcome lands on — the single source the runtime write and the downstream picker both read.
 OUTCOME_BAG_FIELD = "voice_outcome"
+
+# What an AI call is called in `CRM Call Log.telephony_medium` — a MIXED table, so the medium is what
+# distinguishes automation's rows from a provider's and a rep's. Appended to the Select by a code
+# Property Setter, never by editing the fork's JSON.
+CALL_MEDIUM = "AI Voice"
+
+# What a canonical outcome MEANS to a call log, beside the classifier that already owns outcome meaning.
+# One map: a second dialect at each call site is how "no answer" starts meaning two things.
+CALL_STATUS = {
+	"answered": "Completed",
+	"no_answer": "No Answer",
+	"failed": "Failed",
+}
 
 
 def classify_outcome(status, status_reason):
@@ -161,7 +175,10 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	execution_id = str(raw.get("execution_id") or "")
 	if not execution_id:
 		raise BolnaServiceError("Bolna /call response missing execution_id — cannot correlate inbound webhooks")
-	return {"correlation_id": execution_id, "contact": to_number, "mode": "single", "raw": raw}
+	# `from_phone` rides back so the call-log write knows which number was dialled from without re-reading
+	# the account — it was already resolved here.
+	return {"correlation_id": execution_id, "contact": to_number, "mode": "single",
+	        "from_phone": from_phone, "raw": raw}
 
 
 # ── inbound webhook — the spine's duck-typed surface ────────────────────────────────────────────────
@@ -297,6 +314,10 @@ def handle(payload, event, account):
 		)
 		return
 
+	# The call's row on the lead is closed by the SAME callback that wakes the run — one delivery, both
+	# effects, so the timeline can never disagree with the journey about how the call ended.
+	update_call_log(payload)
+
 	outcome, capture = normalize_webhook(payload)
 	signal_payload = {"outcome": outcome, "execution_id": execution_id_of(payload), **capture}
 
@@ -306,6 +327,134 @@ def handle(payload, event, account):
 		signals.deliver_signal(
 			subject_doctype, subject_name, name, correlation=correlation, payload=signal_payload,
 		)
+
+
+# A line that names its speaker: "assistant: Hi there". ONLY this module may know that prefix exists —
+# the parsing lives beside `classify_outcome` because both are "what does this provider's output mean",
+# and everything else in the app sees the canonical shape.
+_SPEAKER_LINE = re.compile(r"^\s*(?P<speaker>[A-Za-z][\w .-]{0,40}?)\s*:\s*(?P<text>\S.*)$")
+
+def parse_transcript(transcript):
+	"""Bolna's flat transcript string -> the canonical `{text, segments}`. None when there is nothing.
+
+	ONE SHAPE WITH OPTIONAL PARTS. Bolna gives speaker and no timings, so its segments carry `speaker` and
+	NO `start`/`end` — absent, never zero, because a padded zero would draw a timestamp that is a lie. A
+	provider that returns bare prose lands as ONE segment with no speaker at all, which is the bottom rung
+	of the reader's ladder and needs no new code to arrive on.
+
+	`text` is ALWAYS the readable whole, so nobody has to understand segments to read the call.
+	"""
+	text = (transcript or "").strip()
+	if not text:
+		return None
+	segments = []
+	for line in text.splitlines():
+		line = line.strip()
+		if not line:
+			continue
+		match = _SPEAKER_LINE.match(line)
+		if match:
+			segments.append({"speaker": match.group("speaker").strip(), "text": match.group("text").strip()})
+		elif segments and "speaker" in segments[-1]:
+			# A wrapped continuation of the line above — it belongs to whoever was speaking.
+			segments[-1]["text"] = f"{segments[-1]['text']} {line}".strip()
+		else:
+			segments.append({"text": line})
+	return {"text": text, "segments": segments}
+
+
+def transcript_of(payload):
+	"""This callback's transcript in the CANONICAL shape, or None. The parser's output plus provenance.
+
+	Knowing that "assistant:" names a speaker is this module's job and nobody else's; knowing where a
+	transcript is stored is `storage.call_media`'s. This function is the seam between the two, and it is
+	the whole of what the adapter contributes to the text half.
+
+	`raw` keeps the provider's own transcript payload untouched — including its public recording URL, for
+	audit. When a parser turns out wrong, and one will, this re-derives instead of re-transcribing.
+	"""
+	parsed = parse_transcript(payload.get("transcript"))
+	summary = payload.get("summary")
+	if not parsed and not summary:
+		return None
+	return {
+		"source": DECLARATION.provider,
+		"summary": summary,
+		"text": (parsed or {}).get("text"),
+		"segments": (parsed or {}).get("segments") or [],
+		"raw": frappe.as_json({
+			**{k: payload.get(k) for k in ("transcript", "summary", "extracted_data")},
+			"recording_url": _extract_capture(payload).get("recording_url"),
+		}),
+	}
+
+
+def recording_ref(payload):
+	"""WHERE THIS CALL'S AUDIO IS — the `recording` capability's one function, and the whole of it.
+
+	Three answers and no fourth. A terminal callback carrying a URL is "here it is"; a callback that is
+	not terminal yet is "not ready" — the provider publishes the recording as part of the post-call
+	processing that `completed` marks the end of; a terminal callback with no URL is settled: this call
+	produced no audio.
+
+	The URL is PUBLIC — `GET /recordings/call/<id>` answers 200 audio/mpeg with no authentication — which
+	is exactly why the bytes are pulled into our own storage and this ref is never handed to a player.
+	No headers, because none are needed. Nothing here fetches, owns, names or retries anything.
+	"""
+	url = _extract_capture(payload).get("recording_url")
+	if url:
+		return contract.RecordingRef(url=url, provider=DECLARATION.provider)
+	if not is_terminal(payload.get("status")):
+		return contract.RecordingRef(pending=True)
+	return contract.RecordingRef()
+
+
+def update_call_log(payload):
+	"""WRITE TWO: finish the call log row this execution opened. A no-op for anything else.
+
+	Found by `id`, which IS the row's name (`CRM Call Log` autonames from a UNIQUE `id`), so this is a
+	primary-key seek — no correlation column, no new index, no scan.
+
+	A REPEATED DELIVERY IS A CHEAP NO-OP. One live Acefone CDR arrived ELEVEN times byte for byte; a
+	read-modify-write on every copy would churn the row and everything indexed off it. The status is read
+	first and the write is skipped when it would change nothing.
+
+	`call-disconnected` never reaches here as terminal — `is_terminal` says only `completed` ends a call,
+	settled on vendor docs plus four live calls.
+	"""
+	execution_id = execution_id_of(payload)
+	if not execution_id or not is_terminal(payload.get("status")):
+		return
+	current = frappe.db.get_value("CRM Call Log", execution_id, ["status", "recording_url"], as_dict=True)
+	if not current:
+		return  # a call this CRM never placed — the webhook does not invent rows
+
+	from tatva_connect.storage import call_media
+
+	# Both artifacts go through the shared doors on THIS callback. Before the early-out below, because a
+	# redelivery that finds the call row already closed may still be the first to carry a transcript.
+	call_media.store_transcript(execution_id, transcript_of(payload))
+
+	outcome, capture = normalize_webhook(payload)
+	status = CALL_STATUS.get(outcome, "Failed")
+	values = {"status": status, "end_time": now_datetime()}
+	if capture.get("duration_sec") is not None:
+		values["duration"] = _as_seconds(capture["duration_sec"])
+	# The bytes become OURS, and the row points at our file — never at the provider's public URL.
+	ours = call_media.store_recording(execution_id, recording_ref(payload))
+	if ours:
+		values["recording_url"] = ours
+	if current.status == status and current.recording_url == values.get("recording_url", current.recording_url):
+		return  # already closed by an earlier copy of this same delivery
+	frappe.db.set_value("CRM Call Log", execution_id, values, update_modified=False)
+
+
+def _as_seconds(value):
+	"""A Duration field is whole seconds; the provider reports a float."""
+	try:
+		return int(float(value))
+	except (TypeError, ValueError):
+		return None
 
 
 def run_subject(correlation):

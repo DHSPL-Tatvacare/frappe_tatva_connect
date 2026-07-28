@@ -595,6 +595,47 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 		variables=variables,
 	)
 	_log_voice_placement(correlation, account_name, result.get("correlation_id"), lead)
+	# The call goes onto the LEAD, in the table every other call lands in, in THIS job — one background
+	# job places and logs, so the row and the call can never disagree about whether it happened.
+	_write_voice_call_log(result, account_name, lead)
+
+
+def _write_voice_call_log(result, account_name, lead):
+	"""WRITE ONE: the call's row on the lead, the moment the provider accepts it.
+
+	Through `bridge._new_call_log`, the ONE writer of an outbound call row — a rep's click-to-call and
+	automation's call are the same kind of thing and there is not a second builder for the second kind.
+	The execution_id becomes the row's `id`, which is UNIQUE and is what the doctype autonames from, so
+	the terminal callback finds it by primary key.
+
+	Best-effort: a call really was placed, and losing its row must not fail the job and re-dial a patient.
+	"""
+	from tatva_connect.telephony import bridge
+	from tatva_connect.voice.adapters import bolna
+
+	execution_id = result.get("correlation_id")
+	if not execution_id:
+		return
+	try:
+		bridge._new_call_log(
+			to_number=result.get("contact"),
+			# Already resolved by `place_call`; passed back rather than re-derived, so nothing on this
+			# path re-reads the account to find out which number it dialled from.
+			agent_number=result.get("from_phone"),
+			account_name=account_name,
+			ref_doctype="CRM Lead",
+			ref_name=lead,
+			medium=bolna.CALL_MEDIUM,
+			call_id=execution_id,
+			# Automation has no session user, and recording a background job's identity as the person who
+			# called the patient would be a lie on the lead's timeline.
+			caller=None,
+			# `custom_telephony_account` links a CRM Telephony Account; an AI call has none.
+			account_field=None,
+		)
+	except Exception:
+		frappe.log_error(title="voice: call log write failed",
+		                 message=f"lead={lead} execution_id={execution_id}\n{frappe.get_traceback()}")
 
 
 def _log_voice_placement(correlation, account_name, execution_id, lead):

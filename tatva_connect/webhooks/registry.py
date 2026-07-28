@@ -74,6 +74,24 @@ CHANNELS = {
 			}
 		],
 	},
+	"transcription": {
+		"channel": "transcription",
+		"account_doctype": "CRM Transcription Account",
+		"provider_field": "provider",
+		"adapters": {"tatva": "tatva_connect.storage.adapters.transcription"},
+		"active_filter": {"enabled": 1},
+		"ingress_prefix": "",
+		"token_field": "webhook_token",
+		# One URL, no vendor segment: a transcription service posts one shape to one address, and the token
+		# both authenticates it and names the account. Same shape as WhatsApp and voice, same reason.
+		"targets": lambda host, doc, token: [
+			{
+				"url": f"{host}/webhooks/transcription/{token}",
+				"register_as": "Transcription service · Callback URL — one URL carries every transcript",
+				"note": "required",
+			}
+		],
+	},
 	"telephony": {
 		"channel": "telephony",
 		"account_doctype": "CRM Telephony Account",

@@ -1,0 +1,167 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:call",
+ "creation": "2026-07-28 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "call",
+  "section_transcript",
+  "transcript_source",
+  "summary",
+  "text",
+  "segments",
+  "raw",
+  "section_recording",
+  "recording_state",
+  "recording_file",
+  "recording_source",
+  "column_recording_retry",
+  "recording_ref_url",
+  "recording_attempts",
+  "recording_next_attempt_at",
+  "recording_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "call",
+   "fieldtype": "Link",
+   "label": "Call",
+   "options": "CRM Call Log",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "The call these artifacts belong to. It is also this row's NAME, so a lookup by call is a primary-key seek and one call can never grow two media rows."
+  },
+  {
+   "fieldname": "section_transcript",
+   "fieldtype": "Section Break",
+   "label": "Transcript"
+  },
+  {
+   "fieldname": "transcript_source",
+   "fieldtype": "Data",
+   "label": "Transcript Source",
+   "in_list_view": 1,
+   "length": 60,
+   "description": "Who produced the text — the voice provider that ran the call, or a transcription service run over the recording afterwards."
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "label": "Summary",
+   "description": "The producer's own one-line account of the call, when it gives one. Absent is normal."
+  },
+  {
+   "fieldname": "text",
+   "fieldtype": "Long Text",
+   "label": "Transcript",
+   "description": "The plain readable transcript. ALWAYS present whatever arrived — a reader never has to understand segments to read the call."
+  },
+  {
+   "fieldname": "segments",
+   "fieldtype": "JSON",
+   "label": "Segments",
+   "description": "[{speaker?, start?, end?, text}] — ONE shape with optional parts. Plain text is segments with no speaker and no times; one producer gives speaker without times, another times without speaker, a third both. A new producer fills in fewer boxes, never a new shape."
+  },
+  {
+   "fieldname": "raw",
+   "fieldtype": "Long Text",
+   "label": "Raw Payload",
+   "description": "The producer's transcript payload, untouched. Kept deliberately: when a parser turns out wrong — and one will — this is what lets us re-derive instead of re-transcribing thousands of calls."
+  },
+  {
+   "fieldname": "section_recording",
+   "fieldtype": "Section Break",
+   "label": "Recording"
+  },
+  {
+   "fieldname": "recording_state",
+   "fieldtype": "Select",
+   "label": "Recording State",
+   "options": "\nAwaiting\nStored\nAbsent\nAbandoned",
+   "in_list_view": 1,
+   "description": "Blank: nothing has been said about audio for this call yet. Awaiting: audio is expected and we do not hold it. Stored: the bytes are ours. Absent: the producer says this call has none. Abandoned: every retry was spent. The sweep's whole question is the Awaiting rows whose next attempt is due."
+  },
+  {
+   "fieldname": "recording_file",
+   "fieldtype": "Link",
+   "label": "Recording File",
+   "options": "File",
+   "read_only": 1,
+   "description": "OUR copy of the audio, owned by the call. A pointer, never the bytes — the File row is the one authority on name, privacy and where it really lives."
+  },
+  {
+   "fieldname": "recording_source",
+   "fieldtype": "Data",
+   "label": "Recording Source",
+   "length": 60,
+   "read_only": 1,
+   "description": "Who produced the audio. Stamped onto the stored file's name so the producer is readable at a glance in the container and on the Files tab."
+  },
+  {
+   "fieldname": "column_recording_retry",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "recording_ref_url",
+   "fieldtype": "Small Text",
+   "label": "Producer's URL",
+   "read_only": 1,
+   "description": "Where the producer published the audio — kept ONLY so a failed fetch can be retried, and never served. Playback is stored-or-nothing: if the bytes are not ours the screen says so rather than pointing a patient's audio at somebody else's host."
+  },
+  {
+   "fieldname": "recording_attempts",
+   "fieldtype": "Int",
+   "label": "Fetch Attempts",
+   "read_only": 1,
+   "description": "How many times the bytes have been asked for. What turns an Awaiting row into an Abandoned one instead of retrying for ever."
+  },
+  {
+   "fieldname": "recording_next_attempt_at",
+   "fieldtype": "Datetime",
+   "label": "Next Attempt At",
+   "read_only": 1,
+   "description": "When the sweep may try again. Backoff, so a producer having a bad hour is not hammered once a minute."
+  },
+  {
+   "fieldname": "recording_error",
+   "fieldtype": "Small Text",
+   "label": "Last Fetch Error",
+   "read_only": 1,
+   "description": "Why the last attempt failed, in the producer's own words. An operator reading an Abandoned row has the reason on the row rather than in a log search."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-28 00:00:00",
+ "module": "Storage",
+ "name": "CRM Call Media",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

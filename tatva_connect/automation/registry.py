@@ -96,6 +96,35 @@ AUTOMATIONS = [
 		requires="Voice::Channel::calls",
 	),
 	Auto(
+		key="Storage::Recording::catchup",
+		fires_on="Schedule",
+		trigger_detail="every 15m · retries call recordings whose download failed, with backoff",
+		purpose=(
+			"A call recording the CRM could not collect first time is fetched again: the producer publishes "
+			"the audio, and a timeout or a bad minute at their end otherwise leaves that call with a "
+			"transcript and no sound for ever. Each call is retried a few times over a day and then left "
+			"alone with the reason on its record. Off, a recording that failed to download stays missing "
+			"and the call simply shows no audio.\n"
+			"Example: a patient's call is recorded during a network blip, and the audio is on the call an "
+			"hour later without anyone asking for it."
+		),
+		backs=["tatva_connect.storage.call_media.sweep"],
+	),
+	Auto(
+		key="Transcription::Channel::inbound",
+		fires_on="Provider call",
+		trigger_detail="webhooks/spine kill-switch · transcription ingress",
+		purpose=(
+			"A transcription service is allowed to post the text of a recorded call back into the CRM, "
+			"against the call it belongs to and in the same shape every other transcript takes. Off, a "
+			"posted transcript is recorded against the delivery log rather than stored, so nothing is lost "
+			"while it is switched off and it can be replayed once it is on.\n"
+			"Example: a call recorded today is transcribed overnight and the text is on the call in the "
+			"morning."
+		),
+		backs=[],
+	),
+	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",

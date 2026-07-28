@@ -1,0 +1,190 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:account_name",
+ "creation": "2026-07-28 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "account_name",
+  "provider",
+  "enabled",
+  "webhook_section_ingress",
+  "webhook_token",
+  "webhook_token_previous",
+  "webhook_token_hash",
+  "webhook_token_previous_hash",
+  "webhook_column_ingress",
+  "webhook_auth_mode",
+  "webhook_hmac_secret",
+  "webhook_hmac_header",
+  "webhook_hmac_algo",
+  "webhook_hmac_encoding",
+  "webhook_hmac_prefix",
+  "webhook_section_ip",
+  "webhook_enforce_ip",
+  "webhook_ip_allowlist"
+ ],
+ "fields": [
+  {
+   "fieldname": "account_name",
+   "fieldtype": "Data",
+   "label": "Account Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "What this transcription service is called here. It is also the row's name."
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "label": "Provider",
+   "options": "tatva",
+   "default": "tatva",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Which service speaks for this account. The row is the ONLY thing that names it — the webhook URL carries no vendor, so moving to another service is configuration rather than a deploy."
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "in_list_view": 1,
+   "description": "A disabled account's token does not authenticate, so the service cannot post against it. Off until an operator turns it on."
+  },
+  {
+   "fieldname": "webhook_section_ingress",
+   "fieldtype": "Section Break",
+   "label": "Inbound Webhook (the provider calls the CRM)"
+  },
+  {
+   "fieldname": "webhook_token",
+   "fieldtype": "Password",
+   "label": "Webhook Token",
+   "no_copy": 1,
+   "description": "Generate one, save, then hand the URL from 'Copy Webhook URLs' to the transcription service. It proves the caller is that service and tells the CRM which account the transcript arrived on. Blank means inbound is off — the service has nowhere to post."
+  },
+  {
+   "fieldname": "webhook_token_previous",
+   "fieldtype": "Password",
+   "label": "Previous Webhook Token",
+   "description": "Set during a rotation; both tokens authenticate until this one is cleared, so no call outcome is rejected mid-rotation."
+  },
+  {
+   "fieldname": "webhook_token_hash",
+   "fieldtype": "Data",
+   "label": "Token Digest",
+   "hidden": 1,
+   "length": 64,
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1,
+   "description": "Derived, never entered. A Password field cannot be indexed, so this digest is what makes authentication one read rather than a scan and decrypt of every account."
+  },
+  {
+   "fieldname": "webhook_token_previous_hash",
+   "fieldtype": "Data",
+   "label": "Previous Token Digest",
+   "hidden": 1,
+   "length": 64,
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "webhook_column_ingress",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Token",
+   "fieldname": "webhook_auth_mode",
+   "fieldtype": "Select",
+   "label": "Authentication",
+   "options": "Token\nToken + HMAC",
+   "description": "The token is always enforced. HMAC is added when the service signs its payloads, which a service we run ourselves should."
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_secret",
+   "fieldtype": "Password",
+   "label": "HMAC Signing Secret",
+   "length": 1000,
+   "description": "The shared secret the provider signs its payloads with."
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_header",
+   "fieldtype": "Data",
+   "label": "Signature Header",
+   "description": "The header carrying the provider's signature, e.g. X-Signature."
+  },
+  {
+   "default": "sha256",
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_algo",
+   "fieldtype": "Select",
+   "label": "Signature Algorithm",
+   "options": "sha256\nsha512\nsha1",
+   "description": "The hash the provider signs with."
+  },
+  {
+   "default": "Hex",
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_encoding",
+   "fieldtype": "Select",
+   "label": "Signature Encoding",
+   "options": "Hex\nBase64",
+   "description": "How the provider encodes the signature it sends."
+  },
+  {
+   "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
+   "fieldname": "webhook_hmac_prefix",
+   "fieldtype": "Data",
+   "label": "Signature Prefix",
+   "description": "Stripped before comparison, e.g. 'sha256='. Left blank when the provider sends a bare signature."
+  },
+  {
+   "fieldname": "webhook_section_ip",
+   "fieldtype": "Section Break",
+   "label": "Caller IP Allowlist (optional)"
+  },
+  {
+   "default": "0",
+   "fieldname": "webhook_enforce_ip",
+   "fieldtype": "Check",
+   "label": "Enforce IP Allowlist",
+   "description": "Rejects any posted transcript that does not come from an address listed below. A service on fixed addresses should have this on. It cannot be turned on while the list is empty."
+  },
+  {
+   "depends_on": "eval:doc.webhook_enforce_ip",
+   "fieldname": "webhook_ip_allowlist",
+   "fieldtype": "Small Text",
+   "label": "Allowed Addresses",
+   "description": "One IP address or CIDR range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Anything after a # is ignored. Read only when Enforce IP Allowlist is ticked."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-28 00:00:00",
+ "module": "Storage",
+ "name": "CRM Transcription Account",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

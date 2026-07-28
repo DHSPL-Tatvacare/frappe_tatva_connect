@@ -46,7 +46,10 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 	adapter.assert_enabled()
 	agent_number = _agent_number(account)
 	call_log = _new_call_log(
-		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account)
+		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account),
+		# A rep pressed the phone icon, so the call is theirs. Passed rather than defaulted: the same
+		# writer now serves automation, which has no session user and must not record one.
+		caller=frappe.session.user,
 	)
 
 	resp = adapter.click_to_call(
@@ -90,20 +93,33 @@ def _agent_number(account):
 	return number
 
 
-def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium):
+def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium,
+                  call_id=None, caller=None, account_field="custom_telephony_account"):
+	"""THE ONE WRITER for an outbound call row, whoever placed it — a rep's click-to-call or automation.
+
+	`call_id` — the provider's own id when it is known at placement. Acefone returns none on a
+	click-to-call, so a placeholder is minted and sent for it to echo back, and its `custom_provider_call_id`
+	is how the hangup CDR finds the row again. A caller that ALREADY has the provider's id (an AI voice
+	call answers with its execution_id) passes it here instead: `CRM Call Log.id` is UNIQUE and the doctype
+	autonames from it, so the id becomes the row's name and a later lookup is a primary-key seek. Such a row
+	deliberately claims NO `custom_provider_call_id` — this is a MIXED table and a voice row must never
+	answer telephony's own key lookup.
+
+	`caller` — the User this call belongs to. Automation has no session user, so it passes None rather than
+	letting a background job's identity be recorded as the person who called the patient.
+	"""
 	doc = frappe.new_doc("CRM Call Log")
-	# The provider returns no call id on a click-to-call, so a placeholder is minted and sent for it to
-	# echo back. The hangup CDR replaces it with the real id.
-	placeholder = frappe.generate_hash(length=12)
-	doc.id = placeholder
-	setattr(doc, writer.CALL_KEY_FIELD, placeholder)
+	doc.id = call_id or frappe.generate_hash(length=12)
+	if not call_id:
+		setattr(doc, writer.CALL_KEY_FIELD, doc.id)
 	doc.type = "Outgoing"
 	doc.status = "Initiated"
 	doc.telephony_medium = medium
-	doc.custom_telephony_account = account_name
-	setattr(doc, "from", str(agent_number))
+	if account_name and account_field:
+		setattr(doc, account_field, account_name)
+	setattr(doc, "from", str(agent_number or ""))
 	doc.to = str(to_number)
-	doc.caller = frappe.session.user
+	doc.caller = caller
 	if ref_name:
 		doc.reference_doctype = ref_doctype
 		doc.reference_docname = ref_name
