@@ -17,6 +17,22 @@ import unittest
 _FORBIDDEN = {"sql_ddl", "rename_column", "rename_field"}
 _DOOR = "_schema.py"
 
+# The name check above cannot see a hand-written `frappe.db.sql("ALTER TABLE …")`; this closes that gap.
+_DDL_SQL = ("alter table", "create index", "create unique", "add unique", "add index", "drop index")
+
+# Named, not a loophole: frappe ships no helper that DROPS an index, and this patch drops one to rebuild it.
+_RAW_DDL_ALLOWED = {"recreate_whatsapp_message_id_index_composite.py"}
+
+
+def _sql_text(node):
+	"""The literal part of a raw-SQL call's query argument, lowercased. An f-string contributes its
+	constant pieces, which is enough: the DDL verb always precedes the interpolated table name."""
+	parts = []
+	for arg in (*node.args[:1], *(kw.value for kw in node.keywords if kw.arg == "query")):
+		pieces = arg.values if isinstance(arg, ast.JoinedStr) else [arg]
+		parts += [p.value for p in pieces if isinstance(p, ast.Constant) and isinstance(p.value, str)]
+	return " ".join(parts).lower()
+
 
 def _patches_dir():
 	d = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +63,11 @@ def _offenders():
 			through_the_door = isinstance(fn.value, ast.Name) and fn.value.id == "_schema"
 			if fn.attr in _FORBIDDEN and not through_the_door:
 				found.append(f"{name}:{node.lineno} calls {fn.attr}()")
+			if fn.attr == "sql" and name not in _RAW_DDL_ALLOWED:
+				text = _sql_text(node)
+				verb = next((v for v in _DDL_SQL if v in text), None)
+				if verb:
+					found.append(f"{name}:{node.lineno} runs `{verb}` as raw SQL")
 	return found
 
 

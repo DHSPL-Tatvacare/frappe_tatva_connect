@@ -174,9 +174,8 @@ def get_activities(name: str):
 # card renders exactly as it does today — only the page is new.
 # ---------------------------------------------------------------------------------------------------
 
-# Sort is an allowlist, never interpolated. "When it happened" and "when it last changed" is the whole
-# vocabulary these tabs offer, and both columns are indexed on every table below.
-_ORDER_FIELDS = ("creation", "modified")
+# Sort is an allowlist, never interpolated, and lists only what an index serves — the paging indexes are (link, creation), so `modified` would filesort the whole filtered set and nothing asks for it.
+_ORDER_FIELDS = ("creation",)
 _ORDER_DIRECTIONS = ("asc", "desc")
 _DEFAULT_ORDER = "creation desc"
 
