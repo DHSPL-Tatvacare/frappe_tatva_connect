@@ -10,31 +10,32 @@
    "child": 0,
    "collapsible": 1,
    "icon": "layout-dashboard",
+   "idx": 1,
    "indent": 0,
    "keep_closed": 0,
    "label": "Overview",
    "link_to": "Communications",
    "link_type": "Workspace",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 1
+   "type": "Link"
   },
   {
    "child": 0,
    "collapsible": 1,
    "icon": "message-circle",
+   "idx": 2,
    "indent": 1,
    "keep_closed": 0,
    "label": "WhatsApp",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Section Break",
-   "idx": 2
+   "type": "Section Break"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "building-2",
+   "idx": 3,
    "indent": 0,
    "keep_closed": 0,
    "label": "WhatsApp Accounts",
@@ -42,191 +43,228 @@
    "link_type": "DocType",
    "route_options": "{\"custom_provider\": \"WATI\"}",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 3
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "git-branch",
+   "idx": 4,
    "indent": 0,
    "keep_closed": 0,
    "label": "WhatsApp Routing",
    "link_to": "CRM WhatsApp Routing",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 4
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "settings",
+   "idx": 5,
    "indent": 0,
    "keep_closed": 0,
    "label": "WhatsApp Settings",
    "link_to": "CRM WhatsApp Settings",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 5
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "message-square-text",
+   "idx": 6,
    "indent": 0,
    "keep_closed": 0,
    "label": "WhatsApp Messages",
    "link_to": "WhatsApp Message",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 6
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file-text",
+   "idx": 7,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "WhatsApp Templates",
+   "link_to": "WhatsApp Templates",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
   },
   {
    "child": 0,
    "collapsible": 1,
    "icon": "phone",
+   "idx": 8,
    "indent": 1,
    "keep_closed": 0,
    "label": "Telephony",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Section Break",
-   "idx": 7
+   "type": "Section Break"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "building-2",
+   "idx": 9,
    "indent": 0,
    "keep_closed": 0,
    "label": "Telephony Accounts",
    "link_to": "CRM Telephony Account",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 8
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "hash",
+   "idx": 10,
    "indent": 0,
    "keep_closed": 0,
    "label": "Telephony Routing",
    "link_to": "CRM Telephony Routing",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 9
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "user-check",
+   "idx": 11,
    "indent": 0,
    "keep_closed": 0,
    "label": "User Mapping",
    "link_to": "CRM Telephony Agent Map",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 10
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "settings",
+   "idx": 12,
    "indent": 0,
    "keep_closed": 0,
    "label": "Telephony Settings",
    "link_to": "CRM Telephony Settings",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 11
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "phone-call",
+   "idx": 13,
    "indent": 0,
    "keep_closed": 0,
    "label": "Call Log",
    "link_to": "CRM Call Log",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 12
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "bot",
+   "idx": 14,
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "AI Voice",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "building-2",
+   "idx": 15,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "AI Voice Accounts",
+   "link_to": "CRM AI Voice Account",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
   },
   {
    "child": 0,
    "collapsible": 1,
    "icon": "bell",
+   "idx": 16,
    "indent": 1,
    "keep_closed": 0,
    "label": "Push Notifications",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Section Break",
-   "idx": 14
+   "type": "Section Break"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "send",
+   "idx": 17,
    "indent": 0,
    "keep_closed": 0,
    "label": "Firebase Messaging",
    "link_to": "CRM Push Settings",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 15
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "smartphone",
+   "idx": 18,
    "indent": 0,
    "keep_closed": 0,
    "label": "Push Devices",
    "link_to": "CRM Push Subscription",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 16
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "sliders-horizontal",
+   "idx": 19,
    "indent": 0,
    "keep_closed": 0,
    "label": "Notification Preferences",
    "link_to": "CRM Notification Preference",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 17
+   "type": "Link"
   },
   {
    "child": 1,
    "collapsible": 1,
    "icon": "settings",
+   "idx": 20,
    "indent": 0,
    "keep_closed": 0,
    "label": "Notification Settings",
    "link_to": "CRM Notification Settings",
    "link_type": "DocType",
    "show_arrow": 0,
-   "type": "Link",
-   "idx": 18
+   "type": "Link"
   }
  ],
- "modified": "2026-07-12 12:00:00.000000",
+ "modified": "2026-07-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
