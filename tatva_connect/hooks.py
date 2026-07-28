@@ -306,9 +306,10 @@ scheduler_events = {
 		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
 		# Daily: purge finished async bulk jobs + results + payload past the retention window.
 		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
-		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5).
+		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on Voice::Reconciler::catchup).
 		"*/15 * * * *": [
 			"tatva_connect.workflow_engine.wakeups.sweep",
+			"tatva_connect.voice.reconcile.sweep",
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],

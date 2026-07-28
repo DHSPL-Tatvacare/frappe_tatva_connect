@@ -671,6 +671,10 @@ FIELD_TYPES = {
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
+	# A vocabulary only the PROVIDER knows — fetched server-side from the account a sibling field names, so
+	# no credential reaches the browser. No `check`: what a provider offers is a runtime fact, and refusing
+	# an agent id at publish would mean calling the provider from the publish gate.
+	"Remote Select": {"control": "remote-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},

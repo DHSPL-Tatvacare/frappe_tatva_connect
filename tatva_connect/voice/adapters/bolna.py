@@ -6,10 +6,14 @@ classification core (`classify_outcome`/`is_terminal`/the canonical outcome + ev
 logic, and the BATCH placement code faithfully — but CALLER-LESS, because its only caller is the W7.2
 cohort drain, which does not exist yet.
 
-DELIBERATELY ABSENT until pass 2: the SINGLE `place_call` (the node-facing HTTP call site), the
-`CRM Bolna Account` doctype, the webhook ingress, the reconciler, the agent-list fetch. So nothing here
-can dial a real person: the send switch ships OFF, no account rows exist, and the declaration resolves its
-account lazily.
+PASS 2 ADDS THE HALF THAT DIALS AND THE HALF THAT WAKES: the single `place_call`, the webhook spine
+surface, the read-only agent listings, and `fetch_execution` for the dormant reconciler. Nothing dials
+unless an operator turns the send switch on AND enables an account — both ship off.
+
+CORRELATION IS THE PROVIDER'S OWN ECHO. `place_call` puts OUR opaque engine token (`run::node`, no PII)
+into `user_data`; Bolna echoes it on the terminal callback; `handle` reads it back and wakes exactly that
+parked run. No lookup row, so no window in which the callback beats the row that would have matched it —
+the defect WATI's message-row correlation has to live with because WATI echoes nothing.
 
 THE NUMBER FORMAT IS DECLARED, NOT CODED. `number_format=E164_PLUS`: Bolna sits on Twilio/Plivo and needs
 `+<country><national>`. There is NO formatter in this adapter — `Declaration.conform_number` is the ONE
@@ -17,8 +21,10 @@ brain, exactly as WhatsApp, and it REFUSES an uncountried number (the voice form
 """
 import csv as _csv
 import io as _io
+import re
 from datetime import datetime, timedelta, timezone
 
+import frappe
 import requests
 
 from tatva_connect.channels import contract
@@ -26,7 +32,7 @@ from tatva_connect.channels import contract
 DECLARATION = contract.declare(
 	channel="voice",
 	provider="bolna",
-	account_doctype="CRM Bolna Account",
+	account_doctype="CRM AI Voice Account",
 	# What Bolna can TRUTHFULLY report about a call, as bare outcome names. `placed` is NOT here — it is
 	# the node's synchronous "handed to the provider" output, never a reported outcome. `failed` is
 	# declared (a call can fail) and excluded from the waitable set as a synchronous output by `outcomes_of`.
@@ -44,15 +50,25 @@ class BolnaServiceError(RuntimeError):
 # ── classification core — PORTED VERBATIM IN LOGIC (constraint 2). A wrong outcome map routes a real
 # call's result down the wrong branch, so the status tokens, the no-reach set and the safe default are
 # copied exactly and locked by a table test. ────────────────────────────────────────────────────────
+#
+# `call-disconnected` IS NOT TERMINAL, and treating it as one was a live defect. Bolna's own status
+# reference is explicit: "Only `completed` is the final status for every conversation" — `call-disconnected`
+# only means the audio ended, and `completed` follows 2-3 minutes later once recording and extraction are
+# done. Four live calls confirmed it, four for four, across every ending (inactivity timeout, voicemail,
+# real conversation). Left in this set it fired FIRST and classified as `no_answer`, so a run parked on
+# `voice.completed` woke early carrying "nobody picked up" for a call the patient had answered and talked
+# through. Screened out, the run waits the extra two minutes and gets the truth.
+#
+# The rest are the statuses where NO conversation happens, so no post-call processing follows and no
+# `completed` ever arrives. They must stay terminal or those runs park for ever.
 _TERMINAL_STATUSES = frozenset({
-	"completed", "answered", "success",
-	"failed", "canceled", "cancelled",
-	"no-answer", "rnr", "busy",
-	"error", "stopped", "balance-low",
-	"call-disconnected",
+	"completed",                                  # the one true final status
+	"busy", "no-answer", "balance-low",           # unanswered — the call never connected
+	"canceled", "cancelled", "failed", "stopped", "error",  # unsuccessful; both spellings of canceled
 })
-# "Didn't reach the person" — retry-worthy, routed like RNR; includes call-disconnected (connected then dropped).
-_NO_REACH_TOKENS = ("no-answer", "rnr", "busy", "call-disconnected")
+# "Didn't reach the person" — retry-worthy, routed like RNR. `rnr` is not in Bolna's enum; it is kept
+# because it can appear inside `status_reason`, which this also matches against.
+_NO_REACH_TOKENS = ("no-answer", "rnr", "busy")
 
 # Bag key the canonical voice outcome lands on — the single source the runtime write and the downstream picker both read.
 OUTCOME_BAG_FIELD = "voice_outcome"
@@ -64,7 +80,7 @@ def classify_outcome(status, status_reason):
 	if (
 		s in ("completed", "answered", "success")
 		and "no-answer" not in r and "rnr" not in r and "busy" not in r
-	):
+	):  # `answered`/`success` are not in Bolna's enum; kept as tolerant aliases, `completed` is the real one
 		return "bolna_answered"
 	if any(tok in s or tok in r for tok in _NO_REACH_TOKENS):
 		return "bolna_rnr"
@@ -108,6 +124,315 @@ def _resolve_from_phone(override, connection_default):
 	if cleaned_default:
 		return cleaned_default
 	return None
+
+
+# The `user_data` key carrying OUR opaque engine correlation token (`run::node`, no PII). Bolna echoes
+# `user_data` on its terminal webhook, so this is the ONE key `place_call` writes and the webhook reads —
+# correlation rides the provider's echo, not a lookup row (WATI, which cannot echo, stores a row instead).
+USER_DATA_CORRELATION_KEY = "recipient_id"
+
+
+def place_call(connection, to_number, agent_id, from_override, correlation, variables=None):
+	"""Place ONE outbound call now: POST /call → execution_id. The node-facing caller (our engine is
+	one-run-per-lead); the cohort/batch path is `place_call_batch`, W7.2.
+
+	`to_number` is ALREADY conformed to +E.164 by the send path's declared `number_format` — this adapter
+	adds NO formatter of its own (the pass-1 one-brain rule). `correlation` is the engine token, placed in
+	`user_data` so the terminal webhook wakes THIS parked run and no other.
+	"""
+	api_key = connection.get("api_key") or ""
+	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	if not api_key:
+		raise BolnaServiceError("Bolna connection missing api_key")
+	from_phone = _resolve_from_phone(from_override, connection.get("from_phone"))
+	body = {
+		"agent_id": agent_id,
+		"recipient_phone_number": to_number,
+		"user_data": {**(variables or {}), USER_DATA_CORRELATION_KEY: correlation or ""},
+	}
+	if from_phone:
+		body["from_phone_number"] = from_phone
+	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+	resp = requests.post(f"{base_url}/call", json=body, headers=headers, timeout=30.0)
+	if 400 <= resp.status_code < 500:
+		raise BolnaServiceError(f"Bolna {resp.status_code}: {_safe_error(resp)}")
+	resp.raise_for_status()
+	raw = resp.json() if resp.content else {}
+	execution_id = str(raw.get("execution_id") or "")
+	if not execution_id:
+		raise BolnaServiceError("Bolna /call response missing execution_id — cannot correlate inbound webhooks")
+	return {"correlation_id": execution_id, "contact": to_number, "mode": "single", "raw": raw}
+
+
+# ── inbound webhook — the spine's duck-typed surface ────────────────────────────────────────────────
+# Bolna posts ONE terminal callback per execution and ECHOES `user_data`, which is where `place_call`
+# put the engine token. So the wake needs no lookup row and has no commit-race window: WATI cannot echo
+# and therefore stores the token on a message row, and this is the same correlation with the row removed.
+# Everything below goes through `webhooks.spine` — it authenticates, kill-switches, raw-logs and ACKs
+# before any line of this file runs.
+
+
+def _as_dict(value):
+	return value if isinstance(value, dict) else {}
+
+
+def engine_token(payload):
+	"""OUR opaque `run::node` token, read back off Bolna's echo. `place_call` writes it into `user_data`;
+	the batch path (W7.2) carries the same key under `context_details.recipient_data`, so both are read."""
+	user_data = _as_dict(payload.get("user_data"))
+	recipient_data = _as_dict(_as_dict(payload.get("context_details")).get("recipient_data"))
+	token = user_data.get(USER_DATA_CORRELATION_KEY) or recipient_data.get(USER_DATA_CORRELATION_KEY)
+	return str(token or "").strip()
+
+
+def execution_id_of(payload):
+	"""Bolna's own id for this execution — AUDIT ONLY, never the correlation key. The webhook and
+	`GET /executions/{id}` key it under `id`; only the `/call` response calls it `execution_id`."""
+	return str(payload.get("id") or payload.get("execution_id") or payload.get("batch_id") or "")
+
+
+# A transcript is a whole conversation; it rides a signal payload into run state, so it is bounded here.
+_TRANSCRIPT_LIMIT = 10000
+
+
+def _extract_capture(event):
+	"""What the call captured. Ported from the evals `_extract_capture`: Bolna splits some fields between
+	the top level and a `telephony_data` nest, so each is looked for in both."""
+	telephony = _as_dict(event.get("telephony_data"))
+
+	def pick(key, *fallbacks):
+		value = event.get(key)
+		if value is not None:
+			return value
+		for fallback in fallbacks:
+			value = event.get(fallback)
+			if value is not None:
+				return value
+			value = telephony.get(fallback)
+			if value is not None:
+				return value
+		return telephony.get(key)
+
+	transcript = pick("transcript")
+	return {
+		"transcript": str(transcript)[:_TRANSCRIPT_LIMIT] if transcript else None,
+		"recording_url": pick("recording_url", "recordingUrl"),
+		"duration_sec": pick("duration", "duration_seconds"),
+		"extracted_data": pick("extracted_data"),
+		"error_message": pick("error_message", "error"),
+		"hangup_reason": pick("hangup_reason", "status_reason"),
+		# Bolna's own one-line account of the call. Live-verified present on every terminal callback, and
+		# the single most useful thing for a human reading a journey after the fact.
+		"summary": pick("summary"),
+		"total_cost": pick("total_cost", "cost"),
+		# HOW LONG IT RANG — the only usable signal for "a person picked up" vs "the carrier rolled over to
+		# voicemail". Live: 5s on a human answer, 23s on a voicemail rollover. A heuristic, and named as one.
+		"ring_duration_sec": pick("ring_duration"),
+		# The provider's own answering-machine flag. Documented, but it came back null on a call that was
+		# demonstrably voicemail, so it is carried through as-is and never treated as authoritative.
+		"answered_by_voice_mail": event.get("answered_by_voice_mail"),
+	}
+
+
+def normalize_webhook(payload):
+	"""One Bolna callback -> (canonical outcome, capture). The classification is the pass-1 core, asked
+	once — there is no second classifier here and none in the reconciler."""
+	action_type = classify_outcome(payload.get("status"), payload.get("status_reason"))
+	return _canonical_outcome(action_type), _extract_capture(payload)
+
+
+def waitable_signals(canonical_outcome):
+	"""The event names this outcome may wake a Wait on — the resume set, narrowed to what the node
+	DECLARES it can emit. `voice.failed` is a synchronous output of the node, so it is excluded there and
+	a failed call therefore wakes only the coarse `voice.completed`. One source, asked, never restated."""
+	from tatva_connect.workflow_engine import registry
+
+	offered = set(registry.outcomes_for("AI Voice Call"))
+	return sorted(name for name in voice_resume_event_names(canonical_outcome) if name in offered)
+
+
+def screen(payload, event, account):
+	"""(wanted, reason). Two questions, and a no to either is recorded rather than dropped: the spine
+	persists a declined delivery with this reason, so an operator can read it and replay it."""
+	status = payload.get("status")
+	if not is_terminal(status):
+		return False, f"call status {status or '(none)'} is not terminal — the call is still in flight"
+	if not engine_token(payload):
+		return False, "no workflow correlation token on this call — it was not placed by a workflow"
+	return True, None
+
+
+def already_processed(payload, event, account):
+	"""True once every signal this callback would deliver is already in the inbox. A provider re-sending
+	a terminal callback must not wake the run twice; the spine collapses byte-identical copies, this
+	catches a copy that differs in some field the wake does not read."""
+	correlation = engine_token(payload)
+	if not correlation:
+		return False
+	outcome, _capture = normalize_webhook(payload)
+	names = waitable_signals(outcome)
+	if not names:
+		return False
+	return all(
+		frappe.db.exists("CRM Workflow Event", {"correlation": correlation, "event_name": name})
+		for name in names
+	)
+
+
+def handle(payload, event, account):
+	"""Wake the run that placed THIS call — never another run on the same lead.
+
+	The engine token identifies the run AND the node, so the subject is read off the run rather than
+	guessed from the number Bolna dialled: two journeys on one lead park on two different tokens, and
+	correlating on the lead is exactly the defect that would merge them.
+	"""
+	correlation = engine_token(payload)
+	subject_doctype, subject_name = run_subject(correlation)
+	if not subject_name:
+		# A terminal call whose run cannot be found. Never silent: a run may be parked waiting for exactly
+		# this, and the operator's only other clue would be a journey that simply stopped.
+		frappe.log_error(
+			title="voice: terminal call matches no workflow run",
+			message=f"correlation={correlation} execution_id={execution_id_of(payload)} status={payload.get('status')}",
+		)
+		return
+
+	outcome, capture = normalize_webhook(payload)
+	signal_payload = {"outcome": outcome, "execution_id": execution_id_of(payload), **capture}
+
+	from tatva_connect.workflow_engine import signals
+
+	for name in waitable_signals(outcome):
+		signals.deliver_signal(
+			subject_doctype, subject_name, name, correlation=correlation, payload=signal_payload,
+		)
+
+
+def run_subject(correlation):
+	"""(subject_doctype, subject_name) for the run half of a `run::node` token, or (None, None)."""
+	run = (correlation or "").split("::", 1)[0].strip()
+	if not run:
+		return None, None
+	row = frappe.db.get_value(
+		"CRM Workflow Run", run, ["subject_doctype", "subject_name"], as_dict=True,
+	)
+	return (row.subject_doctype, row.subject_name) if row else (None, None)
+
+
+def account_for_payload(payload, event):
+	"""Re-derive the receiving account on REPLAY, which carries no token.
+
+	Bolna's callback names no account of its own, and nothing about the wake needs one — the engine token
+	identifies the run without help. So this answers the only question that is truthfully answerable: when
+	exactly one voice account is live, the delivery is that account's. With none or several it declines,
+	and the spine says the delivery cannot be replayed rather than attributing it to a guess.
+	"""
+	names = frappe.get_all("CRM AI Voice Account", filters={"enabled": 1}, pluck="name", limit=2)
+	return names[0] if len(names) == 1 else None
+
+
+# ── read-only provider listings — the inspector's agent picker ──────────────────────────────────────
+# Called SERVER-side (voice/api.py) so the api key never reaches a browser. Read-only: nothing here can
+# place a call.
+
+
+def _get(connection, path):
+	api_key = connection.get("api_key") or ""
+	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	if not api_key:
+		raise BolnaServiceError("Bolna connection missing api_key")
+	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+	resp = requests.get(f"{base_url}{path}", headers=headers, timeout=30.0)
+	if 400 <= resp.status_code < 500:
+		raise BolnaServiceError(f"Bolna {resp.status_code}: {_safe_error(resp)}")
+	resp.raise_for_status()
+	return resp.json() if resp.content else None
+
+
+def list_agents(connection):
+	"""Every agent on the account, as [{id, name, status, type}]. `GET /v2/agent/all`."""
+	payload = _get(connection, "/v2/agent/all")
+	if isinstance(payload, dict) and "agents" in payload:
+		payload = payload["agents"]
+	if not isinstance(payload, list):
+		raise BolnaServiceError(f"Bolna /v2/agent/all returned unexpected shape: {type(payload).__name__}")
+	return [
+		{
+			"id": str(raw.get("id") or raw.get("agent_id") or ""),
+			"name": str(raw.get("agent_name") or raw.get("name") or ""),
+			"status": str(raw.get("agent_status") or raw.get("status") or ""),
+			"type": str(raw.get("agent_type") or raw.get("type") or ""),
+		}
+		for raw in payload
+		if isinstance(raw, dict)
+	]
+
+
+# A `{token}` in a Bolna prompt or welcome message. Bolna has no declared-variable field — an agent's
+# variables ARE its placeholders, substituted at call time from `user_data`. Live-proven: `{customer_name}`
+# spoke as "Hi Pareekshith" and `{customer_plan_name}` as "Your Diabetes Program plan is now active".
+_TOKEN_RE = re.compile(r"\{(\w+)\}")
+
+
+def agent_variables(connection, agent_id):
+	"""The placeholder names THIS agent will substitute — the slots an author has to fill.
+
+	Read from the agent itself, never typed: an unfilled placeholder is not a blank, it is the literal
+	text "Hi {customer_name}" spoken down the phone to a patient.
+	"""
+	agent = get_agent(connection, agent_id)
+	surface = f"{agent.get('prompt') or ''}\n{agent.get('welcome_message') or ''}"
+	return sorted(set(_TOKEN_RE.findall(surface)))
+
+
+def get_agent(connection, agent_id):
+	"""One agent, normalised to {id, name, prompt, welcome_message}. `GET /v2/agent/{id}`.
+
+	The VENDOR's shape is unpacked here and nowhere else — an author reading the prompt before choosing an
+	agent must not require the inspector to know that Bolna nests system prompts under `agent_prompts`.
+	Ported from the evals `extract_variables`: every task's system prompt, then the top-level one.
+	"""
+	if not agent_id:
+		raise BolnaServiceError("get_agent requires an agent_id")
+	raw = _get(connection, f"/v2/agent/{agent_id}") or {}
+	prompts = []
+	for task in _as_dict(raw.get("agent_prompts")).values():
+		system_prompt = _as_dict(task).get("system_prompt")
+		if isinstance(system_prompt, str) and system_prompt:
+			prompts.append(system_prompt)
+	top_level = raw.get("system_prompt")
+	if isinstance(top_level, str) and top_level:
+		prompts.append(top_level)
+	welcome = raw.get("agent_welcome_message")
+	return {
+		"id": str(raw.get("id") or raw.get("agent_id") or agent_id),
+		"name": str(raw.get("agent_name") or raw.get("name") or ""),
+		"prompt": "\n\n".join(prompts),
+		"welcome_message": welcome if isinstance(welcome, str) else "",
+	}
+
+
+def list_phone_numbers(connection):
+	"""The caller-id numbers this account really owns, as [{id, name}]. `GET /phone-numbers/all`.
+
+	Picked, never typed — a from-number the provider does not own is rejected at dial time, which is a
+	failed journey discovered on a live lead rather than a greyed-out option at author time.
+	"""
+	payload = _get(connection, "/phone-numbers/all")
+	if not isinstance(payload, list):
+		raise BolnaServiceError(f"Bolna /phone-numbers/all returned unexpected shape: {type(payload).__name__}")
+	return [
+		{"id": str(raw.get("phone_number")), "name": str(raw.get("telephony_provider") or "")}
+		for raw in payload
+		if isinstance(raw, dict) and raw.get("phone_number")
+	]
+
+
+def fetch_execution(connection, execution_id):
+	"""One execution's current state — what the reconciler polls when a webhook never arrived."""
+	if not execution_id:
+		raise BolnaServiceError("fetch_execution requires an execution_id")
+	return _get(connection, f"/executions/{execution_id}") or {}
 
 
 def _build_batch_csv(requests_, recipient_ids):

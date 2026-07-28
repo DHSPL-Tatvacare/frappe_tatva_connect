@@ -467,31 +467,158 @@ def _slot_values(template_name, slots, values, ctx):
 	return filled, blank
 
 
-def send_voice(subject_lead, contact_number, connection, agent_id, context=None, from_override=None):
-	"""Place an outbound AI voice call to `subject_lead`, or route on why it did not happen. The structural
-	twin of `send_whatsapp`: the recipient is a DECLARED reference, the number is conformed by the channel's
-	declared format, and the send is behind the SAME dormant `Task::Automation::sends` gate (one send switch
-	for all outbound automation, not a second brain).
+def _agent_variables(account, agent_id, values, ctx):
+	"""Fill the agent's placeholders from the author's DECLARED rows. Returns `(variables, blank)`.
 
-	THREE guards make this pass CANNOT-DIAL: the switch ships OFF (dormant returns a marker, no adapter);
-	the live `POST /call` is W7.4 pass 2, so an armed send is a fail-safe no-op that places nothing; and a
-	number without a country code is REFUSED before either — never dialled.
+	The exact contract `_template_parameters` holds for WhatsApp, for the exact same reason. A slot with NO
+	declared row RAISES — author error, wrong for every lead equally. A row that resolves BLANK is returned
+	in `blank` and routes to `failed`, because that is a DATA state (this patient has no program recorded)
+	and the one thing this exists to prevent is a placeholder reaching a patient. Live proof it matters:
+	Bolna substitutes `{customer_name}` literally, so an unfilled slot is the agent saying the words
+	"Hi customer name" down the phone.
+
+	A provider we cannot reach returns no slot names, so nothing is refused on our inability to ask.
+	"""
+	from tatva_connect.voice import api as voice_api
+	from tatva_connect.workflow_engine import contract
+
+	try:
+		names = voice_api.agent_variables_for(account, agent_id)
+	except Exception:
+		frappe.log_error(title="voice: could not read agent placeholders", message=frappe.get_traceback())
+		return {}, []
+	if not names:
+		return {}, []
+
+	missing = missing_value_rows(names, values)
+	if missing:
+		raise ValueError(
+			"AI Voice Call: agent {} has no value declared for {} - every placeholder needs a row".format(
+				agent_id, ", ".join(missing)
+			)
+		)
+
+	declared = contract.value_rows_map(values)
+	variables, blank = {}, []
+	for name in names:
+		mode, value = declared[name]
+		resolved = ctx.get(value) if mode == contract.FROM_CONTEXT else value
+		if resolved is None or str(resolved) == "":
+			blank.append(name)
+			continue
+		variables[name] = str(resolved)
+	return variables, blank
+
+
+def send_voice(subject_lead, contact_number, connection, agent_id, context=None, from_override=None,
+               values=None, correlation=None):
+	"""Place an outbound AI voice call to `subject_lead`, or route on why it did not happen. The structural
+	twin of `send_whatsapp`: the recipient is a DECLARED reference conformed by the channel's declared
+	format, the send is behind the SAME dormant `Task::Automation::sends` gate, and the provider call is
+	DEFERRED past commit via a thunk (`_deliver_voice`) so a rolled-back segment dials nothing.
+
+	`correlation` is the engine token for THIS node — carried to the provider in `user_data` so the terminal
+	webhook wakes this run and no other.
+
+	GUARDS, IN ORDER, and the order is the point: no number → failed; no country code → REFUSED, never
+	dialled, before any switch is read; sends gate OFF → suppressed `placed`, no adapter touched; VOICE
+	CHANNEL OFF → failed, no call (the same second gate `send_whatsapp` has always had); account not
+	enabled → failed, no call. Only past all five is anything handed to the provider.
 	"""
 	number = (context or {}).get(contact_number) if contact_number else None
 	if not number:
 		return FAILED, f"failed: {contact_number or 'no recipient'} resolved to no number for lead {subject_lead}"
 
 	# Turkey-disaster prevention, voice form. `conform_number` is the ONE brain (the provider's declared
-	# `number_format`), used here directly off the voice declaration — pass 2 resolves it from the account's
-	# provider, but the format is a channel fact and needs no account, so the refusal is active even dormant.
+	# `number_format`); a number with no country code cannot be known correct and is refused before any gate.
 	from tatva_connect.voice.adapters import bolna
 
-	if not bolna.DECLARATION.conform_number(number):
+	dialable = bolna.DECLARATION.conform_number(number)
+	if not dialable:
 		return FAILED, f"failed: {number} has no country code, so it cannot be dialled safely"
 
 	if not sends_enabled():
 		return PLACED, DORMANT_MARKER
 
-	# The live single-call path (POST /call, deferred past commit like `_deliver_whatsapp`) is W7.4 pass 2.
-	# Until it lands an armed voice send places nothing — a fail-safe no-op, never a call to a real person.
-	return FAILED, "failed: voice sending is not enabled yet (W7.4 pass 2)"
+	# The CHANNEL's own master switch, on top of the sends gate — exactly what `send_whatsapp` does above.
+	# Without it the switch governed the inbound webhook only, so an operator who turned voice off stopped
+	# hearing about calls and went on placing them. `failed`, not a dormant marker: the sends gate is armed,
+	# so this is a deliberate operator decision about THIS channel and the author's `failed` edge is the
+	# honest place for it.
+	from tatva_connect.voice import channel
+
+	if not channel.is_enabled():
+		return FAILED, "failed: the voice channel is switched off"
+
+	if not frappe.db.get_value("CRM AI Voice Account", connection, "enabled"):
+		return FAILED, f"failed: voice account {connection or '(none)'} is not enabled"
+
+	# The agent's placeholders, resolved BEFORE the call is deferred: a slot this lead cannot fill is a
+	# routing answer, not a background-job failure, so it takes `failed` here rather than dialling and
+	# speaking the placeholder aloud.
+	variables, blank = _agent_variables(connection, agent_id, values, context or {})
+	if blank:
+		return FAILED, f"failed: {', '.join(blank)} resolved blank for lead {subject_lead}, so the agent would speak a gap"
+
+	# Deferred exactly like `_deliver_whatsapp`: the provider call fires only after the segment commits, on
+	# the `workflow` lane, so a rolled-back segment enqueues nothing and dials nothing.
+	return PLACED, lambda: frappe.enqueue(
+		"tatva_connect.automation.sends._deliver_voice",
+		queue="workflow",
+		enqueue_after_commit=True,
+		account_name=connection,
+		to_number=dialable,
+		agent_id=agent_id,
+		from_override=from_override,
+		lead=subject_lead,
+		correlation=correlation,
+		variables=variables,
+	)
+
+
+def _deliver_voice(account_name, to_number, agent_id, from_override, lead, correlation=None, variables=None):
+	"""The deferred single call `send_voice` enqueues (R1). Runs in the background job after the segment
+	commits — a rolled-back segment never reaches it, so no dial. Places ONE call and records the
+	execution_id for AUDIT: the wake correlation rides the `user_data` echo, so there is no lookup row to
+	write and no commit-race — the terminal webhook reads the engine token straight back out.
+
+	A RAISE HERE IS THE CORRECT BEHAVIOUR, not a bug to smooth over. The run already took the `placed`
+	edge and cannot be walked back; the failure belongs on the RQ failed registry where it is visible and
+	replayable, exactly as `_deliver_whatsapp` argues. What frees a run parked behind a call that never
+	happened is the Wait's own timeout leg, or the catch-up reconciler — never a rewritten output here.
+	"""
+	from tatva_connect.voice import api as voice_api
+	from tatva_connect.voice.adapters import bolna
+
+	result = bolna.place_call(
+		voice_api.connection_for(account_name), to_number, agent_id, from_override, correlation,
+		variables=variables,
+	)
+	_log_voice_placement(correlation, account_name, result.get("correlation_id"), lead)
+
+
+def _log_voice_placement(correlation, account_name, execution_id, lead):
+	"""One audit row on the run's own step log: which provider execution this node's call became.
+
+	It is also what the catch-up reconciler reads back — the run is parked on the engine token, and this is
+	the only place the provider's id for that token is durably recorded. Best-effort: a call that really
+	was placed must not be reported as failed because its audit row could not be written.
+	"""
+	run, _, node_id = (correlation or "").partition("::")
+	if not (run and node_id and frappe.db.exists("CRM Workflow Run", run)):
+		frappe.logger("workflow_voice").info(
+			f"voice call placed outside a run: lead={lead} execution_id={execution_id}"
+		)
+		return
+	try:
+		frappe.get_doc({
+			"doctype": "CRM Workflow Step Log",
+			"workflow_run": run,
+			"subject_name": lead,
+			"node_id": node_id,
+			"node_type": "AI Voice Call",
+			"outcome": PLACED,
+			"detail": f"execution_id={execution_id} account={account_name}",
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
+	except Exception:
+		frappe.log_error(title="voice: placement audit row failed", message=frappe.get_traceback())

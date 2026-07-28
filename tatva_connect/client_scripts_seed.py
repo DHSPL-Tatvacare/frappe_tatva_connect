@@ -20,6 +20,7 @@ SCRIPTS = [
 	("WhatsApp Account Webhook Helpers", "WhatsApp Account", "Form", "whatsapp/client_scripts/whatsapp_account.js"),
 	("WhatsApp Notification Helpers", "WhatsApp Notification", "Form", "whatsapp/client_scripts/whatsapp_notification.js"),
 	("CRM Telephony Account Webhook Helpers", "CRM Telephony Account", "Form", "telephony/client_scripts/telephony_account.js"),
+	("CRM AI Voice Account Webhook Helpers", "CRM AI Voice Account", "Form", "voice/client_scripts/ai_voice_account.js"),
 	("CRM Maps Settings Helpers", "CRM Maps Settings", "Form", "location/client_scripts/crm_maps_settings.js"),
 	("CRM Push Settings Helpers", "CRM Push Settings", "Form", "notifications/client_scripts/push_settings.js"),
 	("CRM Lead Activity Timeline", "CRM Lead", "Form", "activity/client_scripts/crm_lead_timeline.js"),

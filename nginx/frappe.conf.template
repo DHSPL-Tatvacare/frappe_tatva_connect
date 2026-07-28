@@ -73,6 +73,15 @@ server {
 		rewrite ^ /api/method/tatva_connect.whatsapp.webhook.webhook?token=$whatsapp_token last;
 	}
 
+	# --- AI Voice inbound webhook — the same channel-uniform, per-account pattern (TatvaCare) ---
+	# Public URL registered on the provider's agent:  /webhooks/voice/<token>
+	# One URL, no vendor segment and no event segment: the provider posts every execution callback to
+	# the single address configured on its agent, and <token> = that CRM AI Voice Account's webhook
+	# token — auth + identity in one (tatva_connect.webhooks.ingress.verify), exactly as WhatsApp above.
+	location ~ ^/webhooks/voice/(?<voice_token>[^/]+)/?$ {
+		rewrite ^ /api/method/tatva_connect.voice.webhook.webhook?token=$voice_token last;
+	}
+
 	# --- Telephony/Acefone inbound webhook — same pretty, per-account pattern (TatvaCare) ---
 	# Public URLs registered on each tenant's Acefone dashboard (one per trigger):
 	#   /webhooks/telephony/acefone/<token>/<event>,  <event> ∈ the four known triggers.

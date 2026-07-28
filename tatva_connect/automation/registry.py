@@ -48,6 +48,39 @@ class Auto:
 
 AUTOMATIONS = [
 	Auto(
+		key="Voice::Channel::calls",
+		fires_on="Provider call",
+		trigger_detail="automation/sends.send_voice gate · webhooks/spine kill-switch · voice ingress",
+		purpose=(
+			"AI voice is opened up on the lead: the outbound calls an automation places through the voice "
+			"account named on the node, and the outcome of each call coming back from the provider. Off, "
+			"BOTH directions are inert — a routed lead takes the call node's failed edge and nothing is "
+			"dialled, and an outcome that arrives is recorded against the delivery log rather than acted "
+			"on, so nothing is lost while it is switched off.\n"
+			"Example: an enrolled patient is called by the welcome agent, and whether they answered "
+			"routes the journey's next step."
+		),
+		# Both directions are gated by this ONE row, read through voice/channel.py: outbound in
+		# `sends.send_voice`, inbound as the spine's `enabled` callback. Not a doc_event on either side,
+		# so `backs` is empty — the same shape the WhatsApp channel row has.
+		backs=[],
+	),
+	Auto(
+		key="Voice::Reconciler::catchup",
+		fires_on="Schedule",
+		trigger_detail="every 15m · polls the provider for calls whose outcome never arrived",
+		purpose=(
+			"A call whose outcome webhook never arrived is chased up: the provider is asked directly what "
+			"became of it, and a journey waiting on that call is moved on. The webhook is the fast path "
+			"and it is not a guarantee — a dropped callback otherwise leaves the patient's journey stopped "
+			"with nothing to show for it. Off, only the webhook can move such a run.\n"
+			"Example: a call that completed during a deploy, whose callback was lost, still advances the "
+			"journey at the next sweep."
+		),
+		backs=["tatva_connect.voice.reconcile.sweep"],
+		requires="Voice::Channel::calls",
+	),
+	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",

@@ -651,6 +651,10 @@ def _action_place_voice_call(action, lead, context, axes, trigger_doc):
 		resolve_target(action, lead, trigger_doc)[1],
 		action.contact_number, action.connection, action.agent_id, context,
 		from_override=action.get("from_override"),
+		# The author's declared row per agent placeholder — resolved in `sends`, never read from state here.
+		values=action.get("agent_values"),
+		# The token `_run_verb` minted for THIS node, carried to the provider so a terminal webhook wakes this run.
+		correlation=context.get(refs.TOKEN),
 	)
 	context[refs.OUTPUT] = output
 	return result
@@ -877,14 +881,46 @@ VERBS = {
 		# these synchronous outputs — the same race-closing exclusion Send WhatsApp uses. Nothing typed twice.
 		"outputs": [sends.PLACED, sends.FAILED],
 		"outcomes_channel": "voice",
+		# THE ORDER IS THE AUTHORING SEQUENCE, and it is declared, not incidental. The account gates the
+		# agent and the agent gates its values, so the chain is answered top to bottom: account, agent,
+		# what the agent says, who it calls, which number it calls from. Declaring the recipient first —
+		# which is what WhatsApp does, because nothing there is gated — meant an author met two controls
+		# reading "choose an account first" BEFORE meeting the account, and three controls looked broken.
 		"params": [
-			# Picked, never typed: a ref to a phone, conformed by the adapter's declared E164_PLUS format.
+			# 1. The account. Everything below is scoped by it, so it is asked first.
+			{"name": "connection", "label": "Voice account", "type": "Link",
+			 "link": "CRM AI Voice Account", "reqd": True, "placeholder": "Select an account"},
+			# 2. The agents on THAT account, fetched server-side (the api key never reaches the browser) and
+			# cached. `options_from` names the sibling holding the account, so the picker empties and
+			# refetches when the author changes it rather than offering another account's agents.
+			{"name": "agent_id", "label": "Agent", "type": "Remote Select", "reqd": True,
+			 "options_from": "connection",
+			 "options_method": "tatva_connect.voice.api.list_agents",
+			 "detail_method": "tatva_connect.voice.api.get_agent",
+			 "detail_label": "what this agent says",
+			 "placeholder": "Select an agent",
+			 "gate_text": "Pick a voice account first — the agents belong to it.",
+			 "empty_text": "This account has no agents yet. Create one on the provider, then Refresh."},
+			# 3. The agent's OWN placeholders, declared row by row — the voice twin of `template_values`, and
+			# for the identical reason: an undeclared slot is not a blank on a screen, it is "Hi
+			# customer_name" spoken to a patient. `slots_args` hands the control the sibling account,
+			# because an agent id means nothing without the account it lives on.
+			{"name": "agent_values", "label": "What the agent says", "type": "Value Map",
+			 "slots_from": "agent_id",
+			 "slots_args": {"account": "connection"},
+			 "slots_method": "tatva_connect.voice.api.agent_slots"},
+			# 4. Who it calls. Picked, never typed: a ref to a phone, conformed by the declared E164_PLUS.
 			{"name": "contact_number", "label": "Recipient", "type": "Variable", "reqd": True},
-			# W7.4 pass 1: Data placeholders. Pass 2 makes `connection` a Link to the `CRM Bolna Account`
-			# doctype and `agent_id` a cached picker fetched from Bolna — the inspector work, with the doctype.
-			{"name": "connection", "label": "Voice account", "type": "Data", "reqd": True},
-			{"name": "agent_id", "label": "Agent", "type": "Data", "reqd": True},
-			{"name": "from_override", "label": "From number (optional)", "type": "Data"},
+			# 5. Which number it calls FROM. Picked from the numbers the account really owns — a typed
+			# from-number the provider does not own is rejected at dial time, which is a failed journey
+			# found on a live lead instead of at author time. Blank is a real answer, and the placeholder
+			# says what blank DOES rather than restating the label.
+			{"name": "from_override", "label": "From number", "type": "Remote Select",
+			 "options_from": "connection",
+			 "options_method": "tatva_connect.voice.api.list_phone_numbers",
+			 "placeholder": "The account's own number",
+			 "gate_text": "Pick a voice account first — the numbers belong to it.",
+			 "empty_text": "This account owns no numbers. The agent's own default is used."},
 		],
 	},
 }

@@ -4,7 +4,7 @@
 
 This chunk ports the evals Bolna adapter's DECLARATION and its classification logic into OUR channel
 narrative, declares the AI Voice Call node, and wires a send path that is dormant by default and — by
-three independent guards (the send switch is OFF, no `CRM Bolna Account` doctype exists, and the
+three independent guards (the send switch is OFF, no `CRM AI Voice Account` doctype exists, and the
 declaration resolves its account lazily) — CANNOT place a call. The live `POST /call`, the account
 doctype, the webhook and the inspector are pass 2.
 
@@ -105,7 +105,7 @@ class TestClassificationIsPortedVerbatim(unittest.TestCase):
 		("no-answer", "", "bolna_rnr", "no_answer", "voice.no_answer"),
 		("rnr", "", "bolna_rnr", "no_answer", "voice.no_answer"),
 		("busy", "", "bolna_rnr", "no_answer", "voice.no_answer"),
-		("call-disconnected", "", "bolna_rnr", "no_answer", "voice.no_answer"),
+		("balance-low", "", "bolna_failed", "failed", "voice.failed"),
 		("failed", "", "bolna_failed", "failed", "voice.failed"),
 		("error", "", "bolna_failed", "failed", "voice.failed"),
 		("stopped", "", "bolna_failed", "failed", "voice.failed"),
@@ -120,11 +120,26 @@ class TestClassificationIsPortedVerbatim(unittest.TestCase):
 				self.assertEqual(bolna._canonical_outcome(action_type), canonical)
 				self.assertEqual(bolna.voice_event_name(canonical), event)
 
-	def test_is_terminal_matches_the_ported_status_set(self):
-		for terminal in ("completed", "answered", "no-answer", "busy", "failed", "error", "call-disconnected"):
+	def test_is_terminal_matches_the_vendor_documented_status_set(self):
+		"""Bolna's own status reference: "Only `completed` is the final status for every conversation."
+
+		The rest below are the statuses where NO conversation happens, so no post-call processing follows
+		and no `completed` ever arrives — they must stay terminal or those runs park for ever.
+		"""
+		for terminal in ("completed", "no-answer", "busy", "balance-low", "canceled", "failed", "stopped", "error"):
 			self.assertTrue(bolna.is_terminal(terminal), terminal)
-		for non_terminal in ("ringing", "in-progress", "queued", "", None):
+		for non_terminal in ("scheduled", "queued", "rescheduled", "initiated", "ringing", "in-progress", "", None):
 			self.assertFalse(bolna.is_terminal(non_terminal), non_terminal)
+
+	def test_call_disconnected_is_not_terminal(self):
+		"""LIVE DEFECT, four calls, four for four. `call-disconnected` means the audio ended; `completed`
+		follows 2-3 minutes later once recording and extraction finish. Treated as terminal it fired FIRST
+		and classified `no_answer`, so a run parked on `voice.completed` woke early carrying "nobody picked
+		up" for a call the patient had answered and talked through. Screened out, the run gets the truth."""
+		self.assertFalse(bolna.is_terminal("call-disconnected"))
+		wanted, reason = bolna.screen({"status": "call-disconnected", "user_data": {"recipient_id": "r::n"}}, None, "acct")
+		self.assertFalse(wanted)
+		self.assertIn("not terminal", reason)
 
 	def test_a_completed_call_resumes_the_coarse_done_event_and_its_specific_outcome(self):
 		self.assertEqual(

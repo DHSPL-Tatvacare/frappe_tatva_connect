@@ -56,13 +56,23 @@ CHANNELS = {
 	},
 	"voice": {
 		"channel": "voice",
-		"account_doctype": "CRM Bolna Account",
+		"account_doctype": "CRM AI Voice Account",
 		"provider_field": "provider",
 		"adapters": {"bolna": "tatva_connect.voice.adapters.bolna"},
 		"active_filter": {"enabled": 1},
-		# Webhook ingress (a `token_field`/`targets` here and the spine methods on the adapter) is W7.4
-		# pass 2. Until it lands there is no account doctype, so no route can resolve a live account; this
-		# entry exists only so `outcomes_for_channel("voice")` can read the adapter's declared outcomes.
+		"ingress_prefix": "",
+		"token_field": "webhook_token",
+		# One URL, no vendor segment and no event segment: Bolna posts every execution callback to the
+		# single address configured on the agent, and the token both authenticates it and names the
+		# account. Same shape as WhatsApp, and for the same reason — a tenant that changes voice vendor
+		# keeps the URL it already registered.
+		"targets": lambda host, doc, token: [
+			{
+				"url": f"{host}/webhooks/voice/{token}",
+				"register_as": "Bolna dashboard · Agent → Webhook URL — one URL carries every execution event",
+				"note": "required",
+			}
+		],
 	},
 	"telephony": {
 		"channel": "telephony",
