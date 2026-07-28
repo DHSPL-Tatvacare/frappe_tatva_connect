@@ -18,6 +18,7 @@ from frappe.utils import cint
 
 from tatva_connect.activity import timeline
 from tatva_connect.activity.api import _blob_key, lead_timeline
+from tatva_connect.activity.lead_events import history
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.labels import LEAD_STAGE
@@ -197,6 +198,21 @@ _TABS = {
 		["name", "title", "description", "assigned_to", "due_date", "priority", "status",
 		 "modified", "creation"],
 	),
+	# Comments and emails are ordinary tables too. They read the whole-lead payload only because nothing
+	# had asked them to page — and that payload drags every call, task and note with it, which is the
+	# whole cost. Which ROWS count as a comment / an email is `timeline.PREDICATES`, not restated here.
+	"comment": (
+		"Comment",
+		"reference_name",
+		["name", "content", "owner", "creation", "modified", "comment_type"],
+	),
+	"email": (
+		"Communication",
+		"reference_name",
+		["name", "subject", "content", "sender", "sender_full_name", "recipients", "cc", "bcc",
+		 "communication_type", "communication_medium", "communication_date", "read_by_recipient",
+		 "delivery_status", "creation", "modified"],
+	),
 }
 
 
@@ -207,6 +223,10 @@ _SEARCH_FIELDS = {
 	"call": ["status", "type", "from", "to"],
 	"note": ["title", "content"],
 	"task": ["title", "description", "status", "priority"],
+	# The client searched comments over author + body; only the body is a column, and the author is
+	# already a Filter on this tab, so the server searches what it can actually index.
+	"comment": ["content"],
+	"email": ["subject", "content", "sender", "sender_full_name"],
 }
 
 # What the Filter button may narrow on, per tab — the catalog the frontend publishes (ACTIVITY_FILTERS),
@@ -216,6 +236,7 @@ _FILTERABLE = {
 	"note": ("owner",),
 	"task": ("status", "priority", "assigned_to"),
 	"attachment": ("file_type", "is_private"),
+	"comment": ("owner",),
 }
 
 # A page is a page. Without a ceiling `page_length` is a request for the whole table.
@@ -258,7 +279,55 @@ def _decorate(kind, rows):
 	elif kind == "task":
 		_annotate_automation(rows, "CRM Task")
 		_annotate_task_due(rows)
+	elif kind == "comment":
+		_attach_files(rows, "Comment")
+		for r in rows:
+			r["activity_type"] = "comment"
+	elif kind == "email":
+		return _as_email_activities(rows)
 	return rows
+
+
+def _as_email_activities(rows):
+	"""A Communication row -> the feed entry the Emails tab renders, field for field what
+	get_lead_activities built. The nested `data` is not decoration: EmailArea reads `activity.data.*`."""
+	_attach_files(rows, "Communication")
+	return [{
+		"name": r["name"],
+		"activity_type": "communication",
+		"communication_type": r["communication_type"],
+		"communication_date": r["communication_date"] or r["creation"],
+		"creation": r["creation"],
+		"data": {
+			"subject": r["subject"],
+			"content": r["content"],
+			"sender_full_name": r["sender_full_name"],
+			"sender": r["sender"],
+			"recipients": r["recipients"],
+			"cc": r["cc"],
+			"bcc": r["bcc"],
+			"attachments": r["attachments"],
+			"read_by_recipient": r["read_by_recipient"],
+			"delivery_status": r["delivery_status"],
+		},
+	} for r in rows]
+
+
+def _attach_files(rows, doctype):
+	"""Fold the attached File ROWS onto each row (in place) — the list, not a count, because a comment and
+	an email render their attachments inline. ONE query for the whole page, never one per row."""
+	names = [r["name"] for r in rows]
+	if not names:
+		return
+	by_parent = {}
+	for f in frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]},
+		fields=[*_FILE_FIELDS, "attached_to_name"],
+	):
+		by_parent.setdefault(f["attached_to_name"], []).append(f)
+	for r in rows:
+		r["attachments"] = by_parent.get(r["name"], [])
 
 
 def _attachment_page(lead, order_by, page_length, picked=None, search=None, doctype="CRM Lead"):
@@ -324,32 +393,42 @@ def _hydrate(pointers):
 		# stores varchar. Keying on the raw value silently dropped every task from the rail.
 		loaded[doctype] = {str(r["name"]): r for r in rows}
 
-	# A comment and an email render through the rail's EVENT adapter, which reads `activity_type` — the
-	# merge supplier's rows carry it because they come from get_activities. Stamp it here so both
-	# suppliers hand the client the same row, and the rail needs no idea which one answered.
-	as_event = {"comment": "comment", "email": "communication"}
-
+	# `activity_type` is stamped by _decorate, the same call the tabs make — a comment and an email carry
+	# it because the rail renders them through the very components those tabs use.
 	out = []
 	for p in pointers:
 		row = loaded.get(p["source_doctype"], {}).get(str(p["source_name"]))
 		if row:
-			extra = {"activity_type": as_event[p["kind"]]} if p["kind"] in as_event else {}
-			out.append({**row, **extra, "kind": p["kind"]})
+			out.append({**row, "kind": p["kind"]})
 	return out
 
 
 def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
-	"""The rail as ONE indexed seek. Newest -> oldest across every type, because every type shares one
-	`event_on` column. Load More asks for a bigger page of the same query."""
+	"""The rail as ONE indexed seek over the RECORDS, merged with the record's own history.
+
+	Two legs, because a rail line is one of two things. A call, note, task, file, comment or email IS a
+	record — it owns a row, so the index points at it and the seek costs the same on a lead with fifty
+	events and one with fifty thousand. "Changed Patient Age" is NOT a record — it is derived from a
+	`Version` at read time, so no pointer can exist for it and one bounded query fetches it instead
+	(frappe shows ten edits and no more, and this inherits that window rather than choosing its own).
+
+	The history leg is fully materialised — eleven rows at most — so merging it in and slicing gives the
+	true top of the union, not an approximation, and the footer count stays exact.
+	"""
 	where = {"reference_doctype": doctype, "reference_name": lead}
-	_field, direction = _order(order_by).split(" ")
+	field, direction = _order(order_by).split(" ")
 	pointers = frappe.get_all(
 		"CRM Timeline Event", filters=where,
 		fields=["kind", "source_doctype", "source_name", "event_on"],
 		# The index is ordered by when the thing HAPPENED; `modified` has no meaning for a pointer.
 		order_by=f"event_on {direction}", limit=page_length,
 	)
-	return _hydrate(pointers), frappe.db.count("CRM Timeline Event", where)
+	events = [{**r, "kind": "event"} for r in history(doctype, lead)
+			  if r.get("activity_type") in RAIL_EVENT_TYPES]
+	rows = _hydrate(pointers) + events
+	# Same key the merge supplier sorts by, so both paths order identically.
+	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")
+	return rows[:page_length], frappe.db.count("CRM Timeline Event", where) + len(events)
 
 
 def _rail_from_merge(lead, page_length, order_by):
@@ -419,7 +498,9 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 	# `filters={"reference_docname": "<someone else's lead>"}` returns that lead's rows to anyone who can
 	# read this one. Only the fields a tab publishes are accepted at all.
 	allowed = {f: v for f, v in picked.items() if f in _FILTERABLE.get(kind, ())}
-	where = {**allowed, link_field: lead}
+	# The lead scope AND the row predicate are written last: which rows are a comment or an email at all
+	# is declared once, in timeline.PREDICATES, and read here rather than restated.
+	where = {**allowed, link_field: lead, **timeline.PREDICATES.get(doctype, {})}
 	matching = _search_or_filters(kind, search)
 	# `limit` internally, `page_length` on the wire: the param name matches get_data so the frontend is
 	# unchanged, while get_all takes the name frappe has not deprecated.

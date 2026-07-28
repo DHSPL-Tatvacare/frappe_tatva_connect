@@ -79,13 +79,25 @@ def _file_lead(doc):
 	return surface.get("reference_doctype"), surface.get(link_field)
 
 
-# What a source row must ALSO be to earn a rail line. Applied by the hook, the rebuild and the reconcile
-# through the one function below, so all three agree with what the rail actually renders.
-_PREDICATES = {"Comment": {"comment_type": "Comment"}}
+# What a source row must ALSO be to earn a rail line. Applied by the hook, the rebuild, the reconcile AND
+# the paged Comments/Emails tabs (api/activities.py reads this map), so every surface agrees on which rows
+# exist at all. Frappe writes Assigned/Shared/Attachment/Like/Deleted as Comment rows too, and only
+# `Comment` is what a rep wrote; a Communication is an email only for the two types docinfo lists.
+PREDICATES = {
+	"Comment": {"comment_type": "Comment"},
+	"Communication": {"communication_type": ("in", ("Communication", "Automated Message"))},
+}
 
 
 def _matches(doctype, row) -> bool:
-	return all(row.get(f) == v for f, v in _PREDICATES.get(doctype, {}).items())
+	for field, wanted in PREDICATES.get(doctype, {}).items():
+		value = row.get(field)
+		if isinstance(wanted, tuple) and wanted[0] == "in":
+			if value not in wanted[1]:
+				return False
+		elif value != wanted:
+			return False
+	return True
 
 
 def event_row(doc) -> dict | None:
@@ -187,7 +199,7 @@ def _source_names(doctype: str, reference_name: str) -> list:
 	return frappe.get_all(
 		doctype,
 		filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS],
-				 **_PREDICATES.get(doctype, {})},
+				 **PREDICATES.get(doctype, {})},
 		pluck="name",
 	)
 

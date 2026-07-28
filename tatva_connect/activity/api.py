@@ -899,15 +899,14 @@ def lead_task_board(lead, page_length=0, page_length_count=20):
 	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
 	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config.
 
-	PAGING. ONE stream, newest first, exactly the order this board already used. The Overdue / Due Today /
-	Upcoming / History headings are LABELS printed over that stream, not four lists — `grouped` in
-	<TatvaTasks> buckets whatever rows arrived — so paging is the ordinary kind: ask for more rows and the
-	headings re-label themselves.
+	PAGING. ONE stream, newest first, split in the client by the DAY each task was raised. Due state is
+	NOT a section — it is the badge the card wears and a Filter — so a page of older tasks simply carries
+	its own dates down and nothing re-sorts. Load More grows `page_length` and refetches 0..N.
 
-	Ordered by `modified`, NOT by due date, because on this data due date is not populated: 322 of 322
+	Ordered by `creation`, NOT by due date, because on this data due date is not populated: 322 of 322
 	tasks on the fattest lead have none, and 3055 of 3065 site-wide. Sorting by a column that is empty
-	would order by the tiebreaker while looking like it ordered by relevance. `modified` is on every row
-	and is the order the board already shipped.
+	would order by the tiebreaker while looking like it ordered by relevance. `creation` is on every row,
+	is indexed, and is the date the day headings are cut on — so the page and the headings agree.
 
 	Load More grows `page_length` and refetches, the Leads list contract (ViewControls.vue:1058).
 	"""
@@ -919,7 +918,7 @@ def lead_task_board(lead, page_length=0, page_length_count=20):
 	where = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 
 	rows = frappe.get_all(
-		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="modified desc",
+		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="creation desc",
 		limit=page_length or None,
 	)
 	total = frappe.db.count("CRM Task", where)
@@ -946,10 +945,20 @@ def lead_task_board(lead, page_length=0, page_length_count=20):
 			types[tn] = cfg
 	type_names = labels.labels([r.custom_task_type for r in rows], TASK_TYPE)
 
+	# Every person named on this page — assignee, owner, and whoever closed a Done task — in ONE query.
+	# Read per row this was 30 queries a task and it dominated the page: 619 for twenty rows.
+	people = {r.assigned_to or r.owner for r in rows} | {r.modified_by for r in rows if r.status == "Done"}
+	people.discard(None)
+	users = {
+		u.name: u for u in frappe.get_all(
+			"User", filters={"name": ["in", list(people)]}, fields=["name", "full_name", "user_image"]
+		)
+	} if people else {}
+
 	tasks = []
 	for r in rows:
 		who = r.assigned_to or r.owner
-		who_doc = frappe.db.get_value("User", who, ["full_name", "user_image"], as_dict=True) if who else None
+		who_doc = users.get(who)
 		done = r.status == "Done"
 		# Completed when = the explicit Completed-On if set, else the modified time of a Done task.
 		# Completed by = modified_by (the last actor on a Done task) — the available attribution.
@@ -972,7 +981,7 @@ def lead_task_board(lead, page_length=0, page_length_count=20):
 			"creation": str(r.creation),
 			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
 			"completed_on": format_datetime(completed_raw, "d MMM yyyy") if (done and completed_raw) else None,
-			"completed_by": (completer and frappe.db.get_value("User", completer, "full_name")) or completer,
+			"completed_by": (completer and (users.get(completer) or {}).get("full_name")) or completer,
 			"values": _task_values(r, types.get(r.custom_task_type), answers_by_task.get(cstr(r.name), {})),
 			"location": _task_location(r),
 			"attachments": attach_counts.get(r.name, 0),
