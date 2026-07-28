@@ -268,6 +268,56 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 		self.assertEqual(self._join_count(["activity:zz_q_remark"]), 1)
 		self.assertEqual(self._join_count(["activity:zz_q_remark", "activity:zz_q_sample_collected"]), 2)
 
+	# ---- the count does not pay for projection -----------------------------------------------------
+
+	def test_the_count_is_the_length_of_the_unpaginated_list(self):
+		"""The property everything below rests on. If these two ever disagree, a rep reads "20 of 103" over
+		a screen that cannot contain 103 — and no amount of join-trimming would be worth that."""
+		for filters in ([], [["activity:zz_q_remark", "=", ALPHA]], [["activity:zz_q_outcome", "=", "ZZ Reached"]]):
+			data = smartview.get_data(self.view, filters=frappe.as_json(filters), page_size=200)
+			self.assertEqual(data["total"], len(data["rows"]), f"total disagreed with the rows for {filters}")
+
+	def test_a_projected_column_cannot_change_the_count(self):
+		"""WHY the count is allowed to skip projection joins. Every join this composer builds is a
+		ROW_NUMBER()=1 sub-select, so it yields exactly one row per parent and cannot change how many
+		parents match. Asserted on the number itself, not on the argument: the same view counted with one
+		column and with every column must answer identically, filter or no filter."""
+		narrow = ["activity:zz_q_outcome"]
+		wide = sorted(self._catalog())
+		for filters in ([], [["activity:zz_q_remark", "=", BETA]]):
+			one = smartview.get_data(self.view, filters=frappe.as_json(filters),
+			                         columns=frappe.as_json(narrow), page_size=200)
+			all_of_them = smartview.get_data(self.view, filters=frappe.as_json(filters),
+			                                 columns=frappe.as_json(wide), page_size=200)
+			self.assertEqual(one["total"], all_of_them["total"],
+			                 f"projecting more columns changed the count for {filters}")
+			self.assertEqual(one["total"], len(all_of_them["rows"]))
+
+	def test_the_count_still_narrows_when_a_search_term_is_present(self):
+		"""THE EXCEPTION, and the one that makes the optimisation honest. Free-text search ORs a LIKE
+		across every PROJECTED field, so with a term present those joins really are in the WHERE and the
+		count must keep them. Trimming them here would count rows the page does not show."""
+		wide = frappe.as_json(sorted(self._catalog()))
+		hit = smartview.get_data(self.view, search=ALPHA, columns=wide, page_size=200)
+		self.assertEqual(hit["total"], len(hit["rows"]), "the searched count does not match the searched page")
+		self.assertEqual([r["name"] for r in hit["rows"]], [self.alpha],
+		                 "search did not narrow to the row that carries the term")
+
+		miss = smartview.get_data(self.view, search="ZZ nothing matches this", columns=wide, page_size=200)
+		self.assertEqual(miss["total"], 0)
+		self.assertEqual(miss["rows"], [])
+
+	def test_the_count_query_drops_the_joins_only_a_column_needed(self):
+		"""The saving itself, read off the SQL the composer emits. A wide worklist used to pay one full
+		scan of the answer table per DISPLAYED column, twice per page load (rows + count); it now pays for
+		the FILTERED ones only. Measured before this change: type=ALL, key=None, rows=20,988, per column."""
+		projected_only = {"activity:zz_q_remark", "activity:zz_q_sample_collected"}
+		filtered = {"activity:zz_q_outcome"}  # a retained common column — no join of its own
+		self.assertEqual(self._join_count(sorted(projected_only | filtered)), 2,
+		                 "the row query should still join both projected answers")
+		self.assertEqual(self._join_count(sorted(filtered)), 0,
+		                 "counting a view filtered only on the driving row should need no join at all")
+
 	# ---- helpers -----------------------------------------------------------------------------------
 
 	def _rows(self, filters=None, sort=None):

@@ -30,6 +30,7 @@ from tatva_connect.patches import (
 	add_lead_timeline_indexes,
 	add_observability_indexes,
 	add_task_answer_fieldname_index,
+	add_task_answer_question_index,
 	add_task_document_kind_index,
 	add_timeline_paging_indexes,
 	add_workflow_due_index,
@@ -86,6 +87,8 @@ _STEPS = (
 	add_workflow_due_index,
 	# (recording_state, recording_next_attempt_at) on CRM Call Media — the media sweep's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_call_media_recording_index,
+	# (question, parent) on the activity key-value table — the Smart View reads ONE question across every task, which the form's (parent, question) index cannot seek. Reads the section declaration; no-ops until it is seeded.
+	add_task_answer_question_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.

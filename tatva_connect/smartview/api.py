@@ -730,27 +730,49 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		if isinstance(f, (list, tuple)) and len(f) == 3:
 			needed.add(f[0])
 
-	apply_joins, field_terms, compare_terms = _joins(needed, cat, driving_table, driving_name)
+	def scoped(keys):
+		"""(apply_joins, field_terms, compare_terms, criterion) for ONE join set. The WHERE is rebuilt from that set's own
+		terms because a term is a Field bound to an aliased table — a criterion built over one join set
+		cannot be re-used over another, and an answer alias is positional. Same three functions, same
+		catalog, asked once per set: no second query builder and no second filter rule."""
+		apply_joins, field_terms, compare_terms = _joins(keys, cat, driving_table, driving_name)
+		# WHERE: predicate tree + ad-hoc filters + search, ALL catalog-bounded.
+		crit = _predicate_where(predicate, cat, compare_terms)
+		crit = _apply_filters(crit, filters, cat, compare_terms)
+		crit = _apply_search(crit, search, cat, field_terms)
+		# Activity view: pin the task type (indexed). Lead view: no extra base filter.
+		if base_object == "Activity" and activity_type:
+			tc = driving_table.custom_task_type == activity_type
+			crit = tc if crit is None else (crit & tc)
+		pqc = visibility.readable_criterion(driving_name, driving_table)
+		if pqc is not None:
+			crit = pqc if crit is None else (crit & pqc)
+		return apply_joins, field_terms, compare_terms, crit
 
-	# WHERE: predicate tree + ad-hoc filters + search, ALL catalog-bounded.
-	crit = _predicate_where(predicate, cat, compare_terms)
-	crit = _apply_filters(crit, filters, cat, compare_terms)
-	crit = _apply_search(crit, search, cat, field_terms)
-	# Activity view: pin the task type (indexed). Lead view: no extra base filter.
-	if base_object == "Activity" and activity_type:
-		tc = driving_table.custom_task_type == activity_type
-		crit = tc if crit is None else (crit & tc)
-	pqc = visibility.readable_criterion(driving_name, driving_table)
-	if pqc is not None:
-		crit = pqc if crit is None else (crit & pqc)
+	# THE COUNT DOES NOT PAY FOR PROJECTION. Every join this composer builds is a `ROW_NUMBER() … = 1`
+	# sub-select, so it yields exactly ONE row per parent and cannot change how many parents match — a
+	# join that exists only because a COLUMN projects it is pure cost in the count. Dropping those turned
+	# a wide activity worklist from one full scan of the answer table per displayed column into one per
+	# FILTERED column, on every page load. `test_the_count_does_not_pay_for_projection` locks the number.
+	#
+	# Search is the exception, and it is a real one: `_apply_search` ORs a LIKE across every projected
+	# field, so when a term is present those joins genuinely sit in the WHERE and the count needs them all.
+	filtered_keys = set()
+	_predicate_keys(predicate, filtered_keys)
+	for f in filters or []:
+		if isinstance(f, (list, tuple)) and len(f) == 3:
+			filtered_keys.add(f[0])
+	count_keys = needed if (search or "").strip() else filtered_keys
 
 	# ---- count (PQC-scoped) -------------------------------------------------
-	count_q = apply_joins(frappe.qb.from_(driving_table).select(Count("*").as_("total")))
-	if crit is not None:
-		count_q = count_q.where(crit)
+	count_joins, _cf, _cc, count_crit = scoped(count_keys)
+	count_q = count_joins(frappe.qb.from_(driving_table).select(Count("*").as_("total")))
+	if count_crit is not None:
+		count_q = count_q.where(count_crit)
 	total = cint(count_q.run(as_dict=True)[0].get("total"))
 
 	# ---- rows ---------------------------------------------------------------
+	apply_joins, field_terms, compare_terms, crit = scoped(needed)
 	select_terms = [driving_table.name.as_("name")] + [field_terms[k].as_(k) for k in col_keys if k in field_terms]
 	rows_q = apply_joins(frappe.qb.from_(driving_table).select(*select_terms))
 	if crit is not None:
