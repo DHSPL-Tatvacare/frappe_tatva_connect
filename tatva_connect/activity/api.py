@@ -893,7 +893,7 @@ _BOARD_FIELDS = [
 
 
 @frappe.whitelist()
-def lead_task_board(lead, page_length=20, page_length_count=20):
+def lead_task_board(lead, page_length=0, page_length_count=20):
 	"""ONE render-ready payload for the native Tasks board (<TatvaTasks> in the CRM fork): the lead's
 	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
 	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
@@ -912,12 +912,15 @@ def lead_task_board(lead, page_length=20, page_length_count=20):
 	Load More grows `page_length` and refetches, the Leads list contract (ViewControls.vue:1058).
 	"""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)  # also raises if the lead is missing
-	page_length = cint(page_length) or 20
+	# 0 = every task, and that is the DEFAULT: this board's consumer renders buckets, not a page, and a
+	# silent limit would drop a rep's overdue work off the bottom with nothing to click.
+	page_length = cint(page_length)
 	page_length_count = cint(page_length_count) or 20
 	where = {"reference_doctype": "CRM Lead", "reference_docname": lead}
 
 	rows = frappe.get_all(
-		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="modified desc", limit=page_length
+		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="modified desc",
+		limit=page_length or None,
 	)
 	total = frappe.db.count("CRM Task", where)
 

@@ -38,13 +38,15 @@ SOURCES = {
 	"FCRM Note": ("note", "reference_docname", "reference_doctype"),
 	"CRM Task": ("task", "reference_docname", "reference_doctype"),
 	"File": ("file", "attached_to_name", "attached_to_doctype"),
+	# comment_type is filtered in _matches: frappe writes Assigned/Shared/Attachment/Like/Deleted as
+	# Comment rows too, and only `Comment` is what a rep wrote.
 	"Comment": ("comment", "reference_name", "reference_doctype"),
 	"Communication": ("email", "reference_name", "reference_doctype"),
 }
 
-# The rail belongs to a lead. A deal gets the same treatment the day it needs one — the row already
-# carries reference_doctype, so nothing here changes but this tuple.
-RAIL_PARENTS = ("CRM Lead",)
+# Whose rail this is. A deal carries the same link fields as a lead (reference_doctype + the same name
+# column) and get_attachments already aggregates for both, so it costs one entry, not a second code path.
+RAIL_PARENTS = ("CRM Lead", "CRM Deal")
 
 # A FILE is the one type whose parent is usually NOT the lead. Frappe gives a File exactly one parent, and
 # each surface parents its own: a comment's file belongs to the Comment, a note's to the FCRM Note, an
@@ -77,6 +79,15 @@ def _file_lead(doc):
 	return surface.get("reference_doctype"), surface.get(link_field)
 
 
+# What a source row must ALSO be to earn a rail line. Applied by the hook, the rebuild and the reconcile
+# through the one function below, so all three agree with what the rail actually renders.
+_PREDICATES = {"Comment": {"comment_type": "Comment"}}
+
+
+def _matches(doctype, row) -> bool:
+	return all(row.get(f) == v for f, v in _PREDICATES.get(doctype, {}).items())
+
+
 def event_row(doc) -> dict | None:
 	"""A source document to its rail event, or None when it does not belong on a rail.
 
@@ -90,7 +101,7 @@ def event_row(doc) -> dict | None:
 		parent, name = _file_lead(doc)
 	else:
 		parent, name = doc.get(parent_field), doc.get(link_field)
-	if parent not in RAIL_PARENTS or not name:
+	if parent not in RAIL_PARENTS or not name or not _matches(doc.doctype, doc):
 		return None
 	return {
 		"doctype": "CRM Timeline Event",
@@ -105,10 +116,10 @@ def event_row(doc) -> dict | None:
 
 def index_event(doc, method=None):
 	"""doc_event: after_insert on every SOURCES doctype. A no-op for anything not on a lead's rail."""
-	if not is_enabled(TOGGLE):
-		return
+	# event_row first: it is a dict lookup and returns None for anything not on a rail, which is almost
+	# every insert. is_enabled is an uncached DB read, and Comment alone fired it 7 times per save.
 	row = event_row(doc)
-	if not row:
+	if not row or not is_enabled(TOGGLE):
 		return
 	_write(row)
 
@@ -123,7 +134,10 @@ def drop_event(doc, method=None):
 		return
 	# Frappe already enforced the source doc's delete permission to reach on_trash; this drops the
 	# derived pointer only, never a business record.
-	frappe.db.delete("CRM Timeline Event", {"source_doctype": doc.doctype, "source_name": doc.name})
+	try:
+		frappe.db.delete("CRM Timeline Event", {"source_doctype": doc.doctype, "source_name": doc.name})
+	except Exception:
+		frappe.log_error(title="Timeline pointer drop failed", message=frappe.get_traceback())
 
 
 def _write(row: dict):
@@ -146,7 +160,9 @@ def _write(row: dict):
 
 def rebuild(reference_name: str) -> int:
 	"""Regenerate one lead's index from source. The repair path, and what makes this table disposable."""
-	frappe.db.delete("CRM Timeline Event", {"reference_name": reference_name})
+	# Both columns, so the composite index serves it — on reference_name alone this was a table scan.
+	for parent in RAIL_PARENTS:
+		frappe.db.delete("CRM Timeline Event", {"reference_doctype": parent, "reference_name": reference_name})
 	written = 0
 	for doctype in SOURCES:
 		for name in _source_names(doctype, reference_name):
@@ -170,7 +186,8 @@ def _source_names(doctype: str, reference_name: str) -> list:
 	_kind, link_field, parent_field = SOURCES[doctype]
 	return frappe.get_all(
 		doctype,
-		filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS]},
+		filters={link_field: reference_name, parent_field: ["in", RAIL_PARENTS],
+				 **_PREDICATES.get(doctype, {})},
 		pluck="name",
 	)
 
