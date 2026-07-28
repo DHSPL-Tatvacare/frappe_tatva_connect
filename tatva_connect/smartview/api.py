@@ -27,11 +27,15 @@ from frappe.utils import cint, cstr
 from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
+from frappe.core.doctype.access_log.access_log import make_access_log
+
+from tatva_connect import tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.taxonomy import labels
 
+SMART_VIEW_DT = "CRM Smart View"
 LEAD_DOCTYPE = "CRM Lead"
 TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
@@ -117,6 +121,17 @@ def _sections():
 	return entitlement.request_cache("tatva_connect:smartview_sections", "all", build)
 
 
+def _column_exists(doctype, fieldname):
+	"""Does this doctype really have this column? Asked of meta, never assumed — a catalog row that names
+	a column nobody created is a 500 waiting for the first person to filter on it."""
+	if not (doctype and fieldname):
+		return False
+	try:
+		return bool(frappe.get_meta(doctype).get_field(fieldname))
+	except Exception:
+		return False
+
+
 def _lead_catalog():
 	"""Every lead catalog row, keyed by field_key, each carrying its section's DERIVED facts: where the
 	column physically lives (parent/child) and how one row of it is picked. A stored copy of either is
@@ -137,6 +152,12 @@ def _lead_catalog():
 			if not section:
 				continue  # a row whose section does not resolve names no table to be read from
 			r.sql_source = crm_lead_section.sql_source(section)
+			# AND THE COLUMN HAS TO BE REAL. A row naming a column its section's doctype does not have
+			# is not a missing value — it is SQL error 1054 the moment anyone filters or sorts on it, and
+			# `acq:custom_whatsapp_inbound_count` did exactly that. A key-value row is exempt: its
+			# fieldname addresses a ROW, and the column it reads is the section's own value column.
+			if r.sql_source != "answer" and not _column_exists(section.target_doctype, r.fieldname):
+				continue
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
 			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
@@ -378,23 +399,69 @@ def _smart_view_tab(d):
 
 @frappe.whitelist()
 def get_smart_views():
-	"""The caller's tabs: every standard (grain-shared) view + the caller's own, ordered.
-	P1 keeps curation simple — all is_standard=1 views (grain-filtering is P3). Read-only;
-	returns [] (never throws) when nothing is seeded, so the surface degrades gracefully."""
+	"""The caller's tabs: the standard views of grains they are entitled to, plus their own, plus any
+	shared with them. Ordered. Read-only; returns [] (never throws) when nothing is seeded, so the
+	surface degrades gracefully.
+
+	A STANDARD VIEW IS SCOPED TO ITS GRAIN. It used to be shown to every user on the site, which the
+	doctype never claimed — `is_standard` reads "shown to every user IN THE GRAIN" and the axes were
+	stored and then ignored. With eighty task types across several business lines that is not clutter, it
+	is one line's curated worklists appearing in another line's sidebar. The match is
+	`entitlement._contract_covers`, the SAME rule the field catalog and every other matcher already use:
+	a blank axis on the VIEW is a wildcard (a view declared for a whole vertical reaches every group
+	inside it), never the empty string, and a System Manager sees the lot.
+
+	Personal and shared views are NOT grain-filtered: the first is the caller's own, and the second was
+	handed to them deliberately by someone who could. The rows inside any of them are still the viewer's
+	own — the composer ANDs their permission conditions on every run — so this decides what is OFFERED,
+	never what is readable."""
 	user = frappe.session.user
+	# A view reaches a caller three ways, and the third is frappe's own: it is PUBLIC (`is_standard`),
+	# it is THEIRS, or it was SHARED with them through native DocShare. `get_shared` is the framework's
+	# reader for the last one, so nothing here re-implements what a share means.
+	shared = frappe.share.get_shared(SMART_VIEW_DT, user) or []
 	rows = frappe.get_all(
 		"CRM Smart View",
-		or_filters={"is_standard": 1, "owner_user": user},
+		or_filters={"is_standard": 1, "owner_user": user, "name": ["in", shared or [""]]},
 		fields=[
 			"name", "label", "base_object", "activity_type",
 			"color", "icon", "view_order", "pinned", "is_standard", "owner_user",
+			# The axes the offer is scoped by — read here so the decision needs no second query per view.
+			"vertical", "group", "program",
 			# Presentation only, and it rides HERE because the list applies it on its FIRST paint —
 			# fetching it separately would mean the grid renders at default widths and then jumps.
 			"column_widths",
 		],
 		order_by="view_order asc, label asc",
 	)
-	return [_smart_view_tab(frappe._dict(r)) for r in rows]
+	grains = entitlement.entitled_grains(user)
+	return [
+		_smart_view_tab(frappe._dict(r)) for r in rows
+		if _view_offered(frappe._dict(r), user, shared, grains)
+	]
+
+
+def _view_offered(v, user, shared, grains):
+	"""Whether this view belongs on the caller's tab row. Three ways in, and only the first is scoped."""
+	if (v.owner_user or None) == user or v.name in shared:
+		return True  # theirs, or handed to them on purpose
+	if not v.is_standard:
+		return False
+	return _grain_admits(v, grains)
+
+
+def _grain_admits(v, grains):
+	"""Is this view's grain covered by any grain the caller holds? ALL_GRAINS (System Manager) → yes.
+
+	Asked of `entitlement._contract_covers`, never re-derived: a view declared for a vertical with the
+	group left blank is a WILDCARD over that vertical, exactly as a contract is, and comparing the tuples
+	directly would hide it from everybody. That exact defect once hid 129 fields from 1,894 leads."""
+	if grains == entitlement.ALL_GRAINS:
+		return True
+	view_grain = (v.vertical or "", v.group or "", v.program or "")
+	if view_grain == ("", "", ""):
+		return True  # declared for no grain in particular: a site-wide view, offered to everyone
+	return any(entitlement._contract_covers(view_grain, g) for g in (grains or []))
 
 
 @frappe.whitelist()
@@ -403,7 +470,7 @@ def get_view(name):
 	predicate + column keys. Readable when it's a standard view, the caller's own, or by an
 	operator; otherwise refused (fail-closed). Read-only."""
 	d = frappe.get_doc("CRM Smart View", name)
-	if not (d.is_standard or _is_operator() or (d.owner_user and d.owner_user == frappe.session.user)):
+	if not _can_read_view(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	try:
 		predicate = frappe.parse_json(d.predicate) if d.predicate else None
@@ -1053,6 +1120,157 @@ def set_column_widths(view, widths):
 	frappe.db.set_value("CRM Smart View", view, "column_widths", frappe.as_json(clean),
 	                    update_modified=False)
 	return {"saved": True, "column_widths": clean}
+
+
+def _can_read_view(d):
+	"""Whether the caller may OPEN this view: it is public, it is theirs, they operate, or it was SHARED
+	with them. The share half is frappe's own `check_share_permission`, never a DocShare query of ours."""
+	if d.get("is_standard") or _is_operator():
+		return True
+	if (d.get("owner_user") or None) == frappe.session.user:
+		return True
+	# `get_shared`, not `check_share_permission`: the latter asks whether the CALLER may share the
+	# doctype and throws when they may not, which is a different question and refused every ordinary
+	# rep. This one simply reads the DocShare rows the framework wrote.
+	return d.name in (frappe.share.get_shared(SMART_VIEW_DT, frappe.session.user) or [])
+
+
+# ---------------------------------------------------------------------------
+# Sharing — frappe's OWN DocShare. A view is a saved QUESTION, never a saved answer: sharing one grants
+# no data. Every run still ANDs the VIEWER's permission conditions, so two people opening one shared view
+# see different rows. That is what makes this safe to hand out.
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def share_view(view, user, write=0):
+	"""Share a view with one user, through `frappe.share.add`.
+
+	Gated by the SAME rule as every other write here: you may share a view you may edit. `frappe.share`
+	does the rest — the DocShare row, the de-duplication, the notification — so no part of what a share
+	IS is restated here."""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	if not _can_write_view(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	if not frappe.db.exists("User", user):
+		frappe.throw(_("{0} is not a user.").format(user))
+	frappe.share.add(SMART_VIEW_DT, view, user, read=1, write=cint(write), notify=1)
+	return shared_with(view)
+
+
+@frappe.whitelist()
+def unshare_view(view, user):
+	"""Take a share back. Same gate, same framework call."""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	if not _can_write_view(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	frappe.share.remove(SMART_VIEW_DT, view, user)
+	return shared_with(view)
+
+
+@frappe.whitelist()
+def shared_with(view):
+	"""Who this view is shared with. Readable by anyone who may open the view."""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	if not _can_read_view(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	return frappe.get_all(  # authz-ok: tier-b — gated by _can_read_view on the view these shares belong to
+		"DocShare",
+		filters={"share_doctype": SMART_VIEW_DT, "share_name": view},
+		fields=["user", "read", "write"],
+	)
+
+
+@frappe.whitelist()
+def set_public(view, value):
+	"""Make a view public to everyone, or take it back to its owner — crm's own `public()` rule, applied
+	to this doctype: operator-only, and going public clears the owner because a public view belongs to
+	nobody. Kept as its own endpoint for the same reason crm keeps one: it is not authoring a view."""
+	if not _is_operator():
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	public = bool(cint(value))
+	frappe.db.set_value(SMART_VIEW_DT, view, {
+		"is_standard": 1 if public else 0,
+		"owner_user": None if public else frappe.session.user,
+	})
+	return {"is_standard": public}
+
+
+# ---------------------------------------------------------------------------
+# Export — the SCREEN, as a file. Never a second query.
+# ---------------------------------------------------------------------------
+EXPORT_MAX_ROWS = 5000
+
+
+@frappe.whitelist()
+def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=None):
+	"""Download this view exactly as it is on screen.
+
+	IT RE-RUNS `get_data`. Not a second query, not a raw dump — so the rows are the caller's own
+	(permission conditions), the columns are the caller's own (grain + role), and an export can never
+	show what the list would not. A separate query here is how an export starts leaking the day a rule
+	changes on one path and not the other.
+
+	THREE GATES, all frappe's own:
+	  * the view must be readable — the same check that opens it;
+	  * the caller must hold the native EXPORT permission on the driving doctype, which is an ordinary
+	    role permission an operator ticks, not a concept invented here;
+	  * every download is written to frappe's `Access Log`, because an export is the one read that leaves
+	    the building.
+	"""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	if not _can_read_view(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	driving_name, _tbl = _driving(d.base_object)
+	if not frappe.has_permission(driving_name, "export"):
+		frappe.throw(
+			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
+		)
+	fmt = (fmt or "csv").lower()
+	if fmt not in tabular.FORMATS:
+		frappe.throw(_("Unsupported export format {0}.").format(fmt))
+
+	# PAGED, because `get_data` caps a page at PAGE_MAX — asking it for 5,000 rows silently returned 200
+	# and the download looked complete. An export that quietly drops 667 of 867 rows is worse than one
+	# that refuses, so it walks the pages the same way a reader would and stops at a stated ceiling.
+	cols, rows = [], []
+	page = 1
+	while len(rows) < EXPORT_MAX_ROWS:
+		data = get_data(view, filters=filters, sort=sort, search=search, columns=columns,
+		                page=page, page_size=PAGE_MAX)
+		cols = cols or data["columns"]
+		batch = data["rows"]
+		if not batch:
+			break
+		rows.extend([_export_cell(r.get(c["key"])) for c in cols] for r in batch)
+		if len(batch) < PAGE_MAX:
+			break
+		page += 1
+	truncated = len(rows) >= EXPORT_MAX_ROWS
+	rows = rows[:EXPORT_MAX_ROWS]
+	header = [c["label"] for c in cols]
+	if truncated:
+		# Never silent: the operator's audit row says the file is a ceiling, not the whole answer.
+		frappe.msgprint(_("Only the first {0} rows were exported.").format(EXPORT_MAX_ROWS),
+		                indicator="orange", alert=True)
+
+	make_access_log(doctype=driving_name, file_type=fmt.upper(), report_name=d.label,
+	                filters=frappe.as_json({"smart_view": view, "filters": filters, "search": search,
+	                                        "rows": len(rows), "truncated": truncated}),
+	                columns=frappe.as_json([c["key"] for c in cols]))
+	tabular.respond(header, rows, fmt, frappe.scrub(d.label or "smart-view"))
+
+
+def _export_cell(value):
+	"""A cell as text. `None` becomes empty rather than the string "None", which is what a reader would
+	otherwise see in a spreadsheet column."""
+	return "" if value is None else value
+
+
+@frappe.whitelist()
+def can_export(base_object):
+	"""Whether to offer the download at all — the same native permission the export itself enforces, asked
+	up front so the button is absent rather than present-and-refusing."""
+	driving_name, _tbl = _driving(base_object)
+	return bool(frappe.has_permission(driving_name, "export"))
 
 
 @frappe.whitelist()
