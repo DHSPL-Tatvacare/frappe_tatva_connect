@@ -49,7 +49,7 @@ def _call():
 
 def _post(call, text="The patient confirmed the appointment.", **over):
 	payload = {"call": call, "text": text, "source": "whisper-v3",
-	           "segments": [{"speaker": "agent", "text": text}], "summary": "Confirmed."}
+	           "segments": [{"role": "agent", "text": text}], "summary": "Confirmed."}
 	payload.update(over)
 	return payload
 

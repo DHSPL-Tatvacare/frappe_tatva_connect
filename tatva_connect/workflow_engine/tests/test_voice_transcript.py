@@ -63,10 +63,22 @@ class TestTheAdapterOwnsWhatAssistantMeans(FrappeTestCase):
 	"""Pure parsing — no DB. Bolna's flat string with inline speaker prefixes becomes the canonical shape,
 	and ONLY this function knows the prefixes exist."""
 
-	def test_a_flat_string_becomes_speaker_segments(self):
+	def test_a_flat_string_becomes_role_segments(self):
+		"""The provider's own words stop HERE. What lands is which side of the call spoke, so no screen
+		has to know that this vendor says "assistant" and the next one says "bot"."""
 		parsed = bolna.parse_transcript(_BOLNA_TRANSCRIPT)
-		self.assertEqual([s["speaker"] for s in parsed["segments"]], ["assistant", "user", "assistant"])
+		self.assertEqual(
+			[s["role"] for s in parsed["segments"]],
+			[call_media.ROLE_AGENT, call_media.ROLE_CONTACT, call_media.ROLE_AGENT],
+		)
 		self.assertEqual(parsed["segments"][1]["text"], "yes")
+
+	def test_the_providers_own_word_is_not_stored(self):
+		"""A label in a database row is a wording decision baked into data — and it would be wrong the
+		moment a screen wants the lead's own name there instead of a generic noun."""
+		for segment in bolna.parse_transcript(_BOLNA_TRANSCRIPT)["segments"]:
+			self.assertNotIn("speaker", segment)
+			self.assertIn(segment["role"], call_media.ROLES)
 
 	def test_the_segments_carry_no_times_because_bolna_gives_none(self):
 		"""Sparse, not padded. An absent time is absent, never a zero that would draw a wrong timestamp."""
@@ -74,16 +86,23 @@ class TestTheAdapterOwnsWhatAssistantMeans(FrappeTestCase):
 			self.assertNotIn("start", segment)
 			self.assertNotIn("end", segment)
 
-	def test_plain_text_is_one_segment_with_no_speaker(self):
+	def test_plain_text_is_one_segment_with_no_role(self):
 		"""The bottom rung: a transcription service returning prose lands here with no new shape."""
 		parsed = bolna.parse_transcript("The patient confirmed the appointment.")
 		self.assertEqual(len(parsed["segments"]), 1)
-		self.assertNotIn("speaker", parsed["segments"][0])
+		self.assertNotIn("role", parsed["segments"][0])
 		self.assertEqual(parsed["text"], "The patient confirmed the appointment.")
 
 	def test_the_plain_text_is_always_present(self):
 		"""A reader must never need to understand segments to read the call."""
 		self.assertIn("Hi Pareekshith", bolna.parse_transcript(_BOLNA_TRANSCRIPT)["text"])
+
+	def test_an_unknown_prefix_is_left_unattributed_rather_than_guessed(self):
+		"""A role this provider has never sent is not invented. The line is kept whole and renders on the
+		plain-text rung — a wrong attribution on a clinical call is worse than none."""
+		parsed = bolna.parse_transcript("Dr Mehta: the reports look fine.")
+		self.assertNotIn("role", parsed["segments"][0])
+		self.assertIn("reports look fine", parsed["segments"][0]["text"])
 
 	def test_nothing_in_gives_nothing_out(self):
 		self.assertIsNone(bolna.parse_transcript(""))

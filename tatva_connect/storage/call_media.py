@@ -43,6 +43,15 @@ from tatva_connect.storage import blob_store, file_manager
 MEDIA_DT = "CRM Call Media"
 CALL_DT = "CRM Call Log"
 
+# WHO IS SPEAKING, as a ROLE and never as a label. A producer's own vocabulary — "assistant", "user",
+# "bot", "caller" — stops at its adapter, which is the one place allowed to know it; what is STORED is
+# which SIDE of the call spoke. A label would be a decision about wording baked into a database row, and
+# it would be wrong the moment a screen wants the lead's own name there instead of a generic noun. The
+# role also survives the day a human agent takes one of these calls, with nothing renamed.
+ROLE_AGENT = "agent"
+ROLE_CONTACT = "contact"
+ROLES = (ROLE_AGENT, ROLE_CONTACT)
+
 # The recording lifecycle. Blank means no producer has spoken about audio for this call at all.
 AWAITING = "Awaiting"
 STORED = "Stored"
@@ -133,7 +142,13 @@ def store_recording(call, ref):
 		MEDIA_DT, call, ["recording_file", "recording_state", "recording_next_attempt_at"], as_dict=True
 	)
 	if row and row.recording_state == STORED and row.recording_file:
-		return frappe.db.get_value("File", row.recording_file, "file_url")
+		# The File is asked for, not assumed. `ignore_links_on_delete` lets a call be deleted without its
+		# media row blocking the cascade, so a row can outlive the File it points at — and a state of
+		# "Stored" with nothing behind it would be a lie the sweep could never correct. Gone means not
+		# stored, and the next delivery fetches it again.
+		stored = frappe.db.get_value("File", row.recording_file, "file_url")
+		if stored:
+			return stored
 	if row and row.recording_state == ABANDONED:
 		return None  # the budget is spent; a redelivery does not buy another attempt
 	if row and row.recording_next_attempt_at and row.recording_next_attempt_at > now_datetime():
@@ -209,7 +224,8 @@ def store_transcript(call, transcript):
 	"""THE ONE WAY TEXT IS EVER STORED. Returns the media row's name, or None when nothing was transcribed.
 
 	`transcript` is the canonical shape, whoever produced it:
-	    {source, text, segments, summary, raw}
+	    {source, text, summary, raw, segments: [{role?, start?, end?, text}]}
+	`role` is `ROLE_AGENT` or `ROLE_CONTACT` — a side of the call, folded by the producer's own adapter.
 	Sparseness is the point — a producer that returns bare prose fills in fewer boxes and lands with no new
 	code, which is the rung a future transcription service arrives on.
 
@@ -267,6 +283,9 @@ def media_for(call):
 		stored = frappe.db.get_value("File", row.recording_file, ["file_url", "file_name"], as_dict=True)
 		if stored:
 			recording.update(url=stored.file_url, file_name=stored.file_name)
+		else:
+			# The row outlived its File. Say so plainly rather than claiming audio a screen cannot play.
+			recording["state"] = None
 
 	transcript = None
 	if row.text or row.summary:

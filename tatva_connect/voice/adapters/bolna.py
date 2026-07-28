@@ -29,6 +29,7 @@ import requests
 from frappe.utils import now_datetime
 
 from tatva_connect.channels import contract
+from tatva_connect.storage import call_media
 
 DECLARATION = contract.declare(
 	channel="voice",
@@ -334,13 +335,33 @@ def handle(payload, event, account):
 # and everything else in the app sees the canonical shape.
 _SPEAKER_LINE = re.compile(r"^\s*(?P<speaker>[A-Za-z][\w .-]{0,40}?)\s*:\s*(?P<text>\S.*)$")
 
+# This provider's speaker vocabulary, folded onto the canonical ROLE. Knowing that "assistant" means the
+# machine side is exactly this module's job — it already knows the prefix is there at all — and it is the
+# LAST place that knowledge is allowed to live. Downstream stores a side of the call, never a word, so a
+# screen is free to draw "Agent" for one and the lead's own name for the other. A prefix this provider
+# has never sent leaves the segment with no role rather than inventing one.
+_SPEAKER_ROLES = {
+	"assistant": call_media.ROLE_AGENT,
+	"agent": call_media.ROLE_AGENT,
+	"bot": call_media.ROLE_AGENT,
+	"ai": call_media.ROLE_AGENT,
+	"user": call_media.ROLE_CONTACT,
+	"human": call_media.ROLE_CONTACT,
+	"customer": call_media.ROLE_CONTACT,
+	"caller": call_media.ROLE_CONTACT,
+}
+
 def parse_transcript(transcript):
 	"""Bolna's flat transcript string -> the canonical `{text, segments}`. None when there is nothing.
 
-	ONE SHAPE WITH OPTIONAL PARTS. Bolna gives speaker and no timings, so its segments carry `speaker` and
+	ONE SHAPE WITH OPTIONAL PARTS. Bolna gives a speaker and no timings, so its segments carry a `role` and
 	NO `start`/`end` — absent, never zero, because a padded zero would draw a timestamp that is a lie. A
-	provider that returns bare prose lands as ONE segment with no speaker at all, which is the bottom rung
-	of the reader's ladder and needs no new code to arrive on.
+	provider that returns bare prose lands as ONE segment with no role at all, which is the bottom rung of
+	the reader's ladder and needs no new code to arrive on.
+
+	The prefix is folded to a ROLE here and the word itself is thrown away: "assistant" is this provider's
+	term for the machine side, and a rep should never be shown it. What a screen calls each role is the
+	screen's business — this only says which side spoke.
 
 	`text` is ALWAYS the readable whole, so nobody has to understand segments to read the call.
 	"""
@@ -353,12 +374,15 @@ def parse_transcript(transcript):
 		if not line:
 			continue
 		match = _SPEAKER_LINE.match(line)
-		if match:
-			segments.append({"speaker": match.group("speaker").strip(), "text": match.group("text").strip()})
-		elif segments and "speaker" in segments[-1]:
+		role = _SPEAKER_ROLES.get(match.group("speaker").strip().casefold()) if match else None
+		if role:
+			segments.append({"role": role, "text": match.group("text").strip()})
+		elif segments and "role" in segments[-1]:
 			# A wrapped continuation of the line above — it belongs to whoever was speaking.
 			segments[-1]["text"] = f"{segments[-1]['text']} {line}".strip()
 		else:
+			# A prefix this provider has never sent, or none at all: kept whole and left unattributed
+			# rather than guessed at, which is the plain-text rung.
 			segments.append({"text": line})
 	return {"text": text, "segments": segments}
 

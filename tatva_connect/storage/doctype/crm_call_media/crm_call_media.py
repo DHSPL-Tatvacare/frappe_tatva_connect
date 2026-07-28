@@ -12,10 +12,13 @@ also an upstream doctype, so anything added to it arrives as a fixture — and f
 post-model-sync patches, which is the ordering trap that has cost this app real deploys. Our own row has
 neither problem.
 
-ONE SHAPE WITH OPTIONAL PARTS. `segments` is `[{speaker?, start?, end?, text}]` and sparseness is the
-whole trick — plain text is segments with no speaker and no times, one producer gives speaker without
-times, another times without speaker, a third both. A new producer fills in fewer boxes; it never
-adds a shape, and the reader renders the richest view its data supports.
+ONE SHAPE WITH OPTIONAL PARTS. `segments` is `[{role?, start?, end?, text}]` and sparseness is the whole
+trick — plain text is segments with no role and no times, one producer gives role without times, another
+times without role, a third both. A new producer fills in fewer boxes; it never adds a shape, and the
+reader renders the richest view its data supports.
+
+`role` is which SIDE of the call spoke — `agent` or `contact` — and never a producer's own word for it.
+A vendor's vocabulary stops at its adapter; a display label is a screen's decision and is not stored.
 
 `call` is also the NAME (`autoname: field:call`), so a lookup is a primary-key seek and one call can
 never grow two media rows. The one query that is NOT a seek — the sweep's "which calls are still waiting

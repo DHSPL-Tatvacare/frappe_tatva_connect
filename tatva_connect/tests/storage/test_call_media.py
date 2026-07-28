@@ -138,6 +138,16 @@ class TestTheBytesBecomeOursAndAreOwnedByTheCall(CallMediaCase):
 		frappe.delete_doc("CRM Call Log", self.call, force=True, ignore_permissions=True)
 		self.assertFalse(self.store.exists(key), "deleting the call left its recording in the container")
 
+	def test_a_row_that_outlived_its_file_is_not_still_stored(self):
+		"""`ignore_links_on_delete` lets a call be deleted without its media row blocking the cascade, so
+		a row CAN outlive the File it points at. "Stored" with nothing behind it is a lie no sweep could
+		correct, and a screen would draw a player over a 404."""
+		self.deliver()
+		frappe.delete_doc("File", self.file_row().name, force=True, ignore_permissions=True)
+
+		self.assertIsNone(call_media.media_for(self.call)["recording"]["state"])
+		self.assertTrue(self.deliver().called, "a lost file must be fetched again, not reported as held")
+
 	def test_a_call_we_do_not_hold_stores_nothing(self):
 		self.deliver(call="a-call-this-crm-never-placed")
 		self.assertIsNone(self.url)
@@ -373,7 +383,7 @@ class TestTheTranscriptDoor(CallMediaCase):
 
 	def _transcript(self, **over):
 		return {"source": "whisper-v3", "text": "Patient confirmed.", "summary": "A short call.",
-		        "segments": [{"speaker": "assistant", "text": "Patient confirmed."}],
+		        "segments": [{"role": call_media.ROLE_AGENT, "text": "Patient confirmed."}],
 		        "raw": '{"x": 1}', **over}
 
 	def test_it_lands_in_the_canonical_shape(self):

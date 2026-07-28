@@ -63,7 +63,7 @@
    "fieldname": "segments",
    "fieldtype": "JSON",
    "label": "Segments",
-   "description": "[{speaker?, start?, end?, text}] — ONE shape with optional parts. Plain text is segments with no speaker and no times; one producer gives speaker without times, another times without speaker, a third both. A new producer fills in fewer boxes, never a new shape."
+   "description": "[{role?, start?, end?, text}] — ONE shape with optional parts. `role` is which SIDE of the call spoke (agent or contact), never a producer's own word for it and never a display label: what a screen calls each role is the screen's business. Plain text is segments with no role and no times; one producer gives role without times, another times without role, a third both. A new producer fills in fewer boxes, never a new shape."
   },
   {
    "fieldname": "raw",
