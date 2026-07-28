@@ -22,6 +22,7 @@
   "definition_section",
   "predicate",
   "columns",
+  "column_widths",
   "presentation_section",
   "description",
   "color",
@@ -29,25 +30,132 @@
   "view_order"
  ],
  "fields": [
-  {"fieldname": "label", "fieldtype": "Data", "label": "Label", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
-  {"fieldname": "owner_user", "fieldtype": "Link", "options": "User", "label": "Owner User", "in_list_view": 1, "in_standard_filter": 1, "description": "The user this view belongs to. Blank for a standard (grain-shared) view."},
-  {"fieldname": "is_standard", "fieldtype": "Check", "label": "Is Standard", "in_list_view": 1, "description": "A grain-standard view shown to every user in the grain (curated, ops-seeded)."},
-  {"fieldname": "is_shared", "fieldtype": "Check", "label": "Is Shared", "description": "Shared with other users in the grain (vs private to the owner)."},
-  {"fieldname": "pinned", "fieldtype": "Check", "label": "Pinned"},
-  {"fieldname": "scope_section", "fieldtype": "Section Break", "label": "Scope"},
-  {"fieldname": "base_object", "fieldtype": "Select", "options": "Lead\nActivity", "label": "Base Object", "reqd": 1, "in_list_view": 1, "description": "Lead = one row per patient (CRM Lead). Activity = one row per activity (CRM Task of activity_type)."},
-  {"fieldname": "activity_type", "fieldtype": "Link", "options": "CRM Task Type", "label": "Activity Type", "depends_on": "eval:doc.base_object=='Activity'", "mandatory_depends_on": "eval:doc.base_object=='Activity'", "description": "The CRM Task Type driving an Activity view (required when base object is Activity)."},
-  {"fieldname": "vertical", "fieldtype": "Link", "options": "CRM Vertical", "label": "Vertical"},
-  {"fieldname": "group", "fieldtype": "Link", "options": "CRM Group", "label": "Group"},
-  {"fieldname": "program", "fieldtype": "Link", "options": "CRM Program", "label": "Program"},
-  {"fieldname": "definition_section", "fieldtype": "Section Break", "label": "Definition"},
-  {"fieldname": "predicate", "fieldtype": "Code", "options": "JSON", "label": "Predicate (JSON)", "description": "The condition tree (AND/OR groups of catalog-field conditions). Catalog fields only."},
-  {"fieldname": "columns", "fieldtype": "Code", "options": "JSON", "label": "Columns (JSON)", "description": "Ordered catalog field_keys to project (the chosen column set)."},
-  {"fieldname": "presentation_section", "fieldtype": "Section Break", "label": "Presentation"},
-  {"fieldname": "description", "fieldtype": "Small Text", "label": "Description"},
-  {"fieldname": "color", "fieldtype": "Data", "label": "Color"},
-  {"fieldname": "icon", "fieldtype": "Data", "label": "Icon"},
-  {"fieldname": "view_order", "fieldtype": "Int", "label": "Order"}
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Owner User",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The user this view belongs to. Blank for a standard (grain-shared) view."
+  },
+  {
+   "fieldname": "is_standard",
+   "fieldtype": "Check",
+   "label": "Is Standard",
+   "in_list_view": 1,
+   "description": "A grain-standard view shown to every user in the grain (curated, ops-seeded)."
+  },
+  {
+   "fieldname": "is_shared",
+   "fieldtype": "Check",
+   "label": "Is Shared",
+   "description": "Shared with other users in the grain (vs private to the owner)."
+  },
+  {
+   "fieldname": "pinned",
+   "fieldtype": "Check",
+   "label": "Pinned"
+  },
+  {
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Scope"
+  },
+  {
+   "fieldname": "base_object",
+   "fieldtype": "Select",
+   "options": "Lead\nActivity",
+   "label": "Base Object",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Lead = one row per patient (CRM Lead). Activity = one row per activity (CRM Task of activity_type)."
+  },
+  {
+   "fieldname": "activity_type",
+   "fieldtype": "Link",
+   "options": "CRM Task Type",
+   "label": "Activity Type",
+   "depends_on": "eval:doc.base_object=='Activity'",
+   "mandatory_depends_on": "eval:doc.base_object=='Activity'",
+   "description": "The CRM Task Type driving an Activity view (required when base object is Activity)."
+  },
+  {
+   "fieldname": "vertical",
+   "fieldtype": "Link",
+   "options": "CRM Vertical",
+   "label": "Vertical"
+  },
+  {
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "options": "CRM Group",
+   "label": "Group"
+  },
+  {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "options": "CRM Program",
+   "label": "Program"
+  },
+  {
+   "fieldname": "definition_section",
+   "fieldtype": "Section Break",
+   "label": "Definition"
+  },
+  {
+   "fieldname": "predicate",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "Predicate (JSON)",
+   "description": "The condition tree (AND/OR groups of catalog-field conditions). Catalog fields only."
+  },
+  {
+   "fieldname": "columns",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "Columns (JSON)",
+   "description": "Ordered catalog field_keys to project (the chosen column set)."
+  },
+  {
+   "fieldname": "column_widths",
+   "fieldtype": "JSON",
+   "label": "Column Widths",
+   "description": "{field_key: css width} — what a rep dragged the grid to, remembered per view. Presentation only: it never reaches the query, and a key with no entry falls back to the width its fieldtype implies. Kept BESIDE `columns` rather than inside it so the column set stays a plain validated list of field keys."
+  },
+  {
+   "fieldname": "presentation_section",
+   "fieldtype": "Section Break",
+   "label": "Presentation"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "label": "Color"
+  },
+  {
+   "fieldname": "icon",
+   "fieldtype": "Data",
+   "label": "Icon"
+  },
+  {
+   "fieldname": "view_order",
+   "fieldtype": "Int",
+   "label": "Order"
+  }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
@@ -57,7 +165,18 @@
  "name": "CRM Smart View",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",

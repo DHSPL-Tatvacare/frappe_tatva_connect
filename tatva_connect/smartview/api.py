@@ -17,6 +17,8 @@ resolves it from `CRM Lead API Field` + `CRM Lead Section`; an activity view ask
 for the type's schema. No raw string SQL is built here — the only raw fragment is the framework's own
 PQC string, wrapped in a PseudoColumn.
 """
+import re
+
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
@@ -35,6 +37,10 @@ TASK_DOCTYPE = "CRM Task"
 PAGE_MAX = 200
 PAGE_DEFAULT = 50
 _NO_JOIN_SOURCES = ("parent", "task")  # sql_source values answered off the driving row, no join
+
+# A stored column width, and the only shape one may take: digits, an optional decimal, then a css unit.
+# It is written straight into a style attribute by the grid, so it is validated on the way IN.
+_WIDTH = re.compile(r"^\d+(\.\d+)?(rem|px|em|ch|%)$")
 
 # Operators a predicate/filter condition may use -> a qb criterion builder.
 _OPS = {
@@ -363,6 +369,8 @@ def _smart_view_tab(d):
 		"icon": d.icon,
 		"order": cint(d.view_order),
 		"pinned": bool(d.pinned),
+		# Presentation only — the grid applies it on its first paint so a remembered width never jumps.
+		"column_widths": frappe.parse_json(d.column_widths) if d.get("column_widths") else {},
 		"is_standard": bool(d.get("is_standard")),
 		"can_write": _can_write_view(d),
 	}
@@ -380,6 +388,9 @@ def get_smart_views():
 		fields=[
 			"name", "label", "base_object", "activity_type",
 			"color", "icon", "view_order", "pinned", "is_standard", "owner_user",
+			# Presentation only, and it rides HERE because the list applies it on its FIRST paint —
+			# fetching it separately would mean the grid renders at default widths and then jumps.
+			"column_widths",
 		],
 		order_by="view_order asc, label asc",
 	)
@@ -418,6 +429,7 @@ def get_view(name):
 		"icon": d.icon,
 		"predicate": predicate,
 		"columns": columns,
+		"column_widths": frappe.parse_json(d.column_widths) if d.column_widths else {},
 		"is_standard": bool(d.is_standard),
 		"can_write": _can_write_view(d),
 	}
@@ -762,7 +774,38 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	for f in filters or []:
 		if isinstance(f, (list, tuple)) and len(f) == 3:
 			filtered_keys.add(f[0])
+
+	# sort: [field_key, "asc"|"desc"], sortable + catalog bounded; default modified desc. Resolved HERE,
+	# before the join sets are chosen, because a field the query ORDERS BY has to be in the query.
+	if isinstance(sort, str):
+		sort = frappe.parse_json(sort)
+	sort_key = sort[0] if (isinstance(sort, (list, tuple)) and sort) else None
+	if sort_key and cat.get(sort_key) and cat[sort_key].sortable:
+		filtered_keys.add(sort_key)
+	else:
+		sort_key = None
+
 	count_keys = needed if (search or "").strip() else filtered_keys
+
+	# THE PAGE IS FETCHED, THEN FILLED IN. A key-value field is stored as a ROW, not a column, so the
+	# query needs one join PER FIELD to spread six of them across one line — and each of those joins
+	# ranks the whole table for the whole type, whether the page shows fifty rows or fifty thousand.
+	# That is the cost that grows with the data.
+	#
+	# So a key-value field the view only DISPLAYS leaves the query entirely and is fetched afterwards for
+	# the page's own rows (`_hydrate`). A field that is FILTERED, SORTED or SEARCHED on stays in the query
+	# — you cannot page a list before you have narrowed it. Displayed-only is the common case and the
+	# expensive one: six joins become one small read keyed on fifty parents.
+	#
+	# Only key-value fields move. A section of real columns is ONE join however many of its fields are
+	# shown (D3), which is already cheap, and a multi-row section needs its "latest row" ranking to stay
+	# in the query — moving those would buy nothing and would fork a rule that lives in one place.
+	must_query = filtered_keys | (needed if (search or "").strip() else set())
+	hydrate_keys = {
+		k for k in col_keys
+		if k not in must_query and cat.get(k) and cat[k].sql_source == "answer"
+	}
+	query_keys = needed - hydrate_keys
 
 	# ---- count (PQC-scoped) -------------------------------------------------
 	count_joins, _cf, _cc, count_crit = scoped(count_keys)
@@ -772,17 +815,13 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	total = cint(count_q.run(as_dict=True)[0].get("total"))
 
 	# ---- rows ---------------------------------------------------------------
-	apply_joins, field_terms, compare_terms, crit = scoped(needed)
+	apply_joins, field_terms, compare_terms, crit = scoped(query_keys)
 	select_terms = [driving_table.name.as_("name")] + [field_terms[k].as_(k) for k in col_keys if k in field_terms]
 	rows_q = apply_joins(frappe.qb.from_(driving_table).select(*select_terms))
 	if crit is not None:
 		rows_q = rows_q.where(crit)
 
-	# sort: [field_key, "asc"|"desc"], sortable + catalog bounded; default modified desc.
-	if isinstance(sort, str):
-		sort = frappe.parse_json(sort)
-	sort_key = sort[0] if (isinstance(sort, (list, tuple)) and sort) else None
-	if sort_key and cat.get(sort_key) and cat[sort_key].sortable and sort_key in compare_terms:
+	if sort_key and sort_key in compare_terms:
 		direction = frappe.qb.desc if (len(sort) > 1 and str(sort[1]).lower() == "desc") else frappe.qb.asc
 		rows_q = rows_q.orderby(compare_terms[sort_key], order=direction)
 	else:
@@ -793,11 +832,63 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows_q = rows_q.limit(size).offset((page - 1) * size)
 	rows = rows_q.run(as_dict=True)
 
+	_hydrate(rows, hydrate_keys, cat, driving_name)
+
 	columns = [
 		{"key": k, "label": _flat_label(cat[k]), "fieldtype": _col_type(cat[k])[0]}
-		for k in col_keys if k in field_terms
+		for k in col_keys if k in field_terms or k in hydrate_keys
 	]
 	return {"columns": columns, "rows": rows, "total": total}
+
+
+def _hydrate(rows, keys, cat, driving_name):
+	"""Fill the page's key-value columns in ONE read per table, keyed on the page's own rows.
+
+	This is the second half of "fetch the page, then fill it in" — the same shape an ORM's eager load
+	takes (Rails `preload`, Django `prefetch_related`): one query for the page, one for its values,
+	stitched in memory. It reads `parent IN (this page)`, so its cost is the PAGE's size and never the
+	table's — fifty rows cost the same read whether the table holds twenty thousand answers or forty
+	million. That is the whole reason this exists.
+
+	`frappe.get_all`, not a hand-built query: the (parent, fieldname) index it seeks already exists for
+	the form's own read, and the framework's own reader keeps this on the same permission and escaping
+	path as every other read in the app.
+
+	Every requested key is set on every row — a value that is absent lands as None rather than a missing
+	key, so a card that binds the column renders blank instead of breaking.
+	"""
+	if not rows or not keys:
+		return
+	# Keyed as TEXT on both sides: a driving row's `name` can come back as an int (CRM Task names are
+	# numeric) while a child's `parent` is always a varchar, and an int key never matches a string one —
+	# the columns silently stayed blank until this was normalised.
+	names = [cstr(r["name"]) for r in rows]
+	by_name = {cstr(r["name"]): r for r in rows}
+	for key in keys:
+		for r in rows:
+			r.setdefault(key, None)
+
+	# One read per (table, address column, value column) — in practice one, since a resource declares a
+	# single key-value section. Grouped so a second one would cost a second read and not a second rule.
+	buckets = {}
+	for key in keys:
+		row = cat[key]
+		buckets.setdefault((row.target_doctype, row.row_key_field, row.value_field), {})[row.fieldname] = key
+
+	for (doctype, address, value_field), fields in buckets.items():
+		if not (doctype and address and value_field):
+			continue
+		for answer in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
+			doctype,
+			filters={"parent": ["in", names], "parenttype": driving_name,
+			         address: ["in", list(fields)]},
+			fields=["parent", address, value_field],
+			limit_page_length=0,
+		):
+			target = by_name.get(cstr(answer.get("parent")))
+			key = fields.get(answer.get(address))
+			if target is not None and key:
+				target[key] = answer.get(value_field)
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +1020,39 @@ def upsert_view(view):
 		doc.view_order = cint(view.get("view_order"))
 	doc.save(ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
 	return _smart_view_tab(doc)
+
+
+@frappe.whitelist()
+def set_column_widths(view, widths):
+	"""Remember what a rep dragged the grid to. Presentation only — it touches no query.
+
+	Its own endpoint rather than a field on `upsert_view`, because dragging a column is not authoring a
+	view: it must not re-validate a predicate, must not re-check a column set, and must not fail because
+	the saved definition has drifted. It writes ONE field.
+
+	Gated by the SAME rule the rest of the write path uses (`_can_write_view`) — a standard view is
+	operator-only, a personal view is its owner's — and a caller who may not write simply keeps the width
+	for their session rather than being shown an error for dragging a column.
+
+	`db.set_value`, not `save()`: this is a presentation preference, so it must not bump `modified` (which
+	would make every drag look like an edit in the audit trail) and must not fire the doctype's validate.
+	"""
+	d = frappe.get_doc("CRM Smart View", view)
+	if not _can_write_view(d):
+		return {"saved": False}
+	widths = frappe.parse_json(widths) if isinstance(widths, str) else (widths or {})
+	if not isinstance(widths, dict):
+		frappe.throw(_("Column widths must be an object of {field_key: width}."))
+	# Bounded and sanitised: only keys this view actually projects, and only a plain CSS length. A width
+	# is echoed back into a style attribute, so nothing else is allowed to survive the round trip.
+	saved = frappe.parse_json(d.columns) if d.columns else []
+	clean = {
+		k: v for k, v in widths.items()
+		if k in saved and isinstance(v, str) and _WIDTH.match(v.strip())
+	}
+	frappe.db.set_value("CRM Smart View", view, "column_widths", frappe.as_json(clean),
+	                    update_modified=False)
+	return {"saved": True, "column_widths": clean}
 
 
 @frappe.whitelist()

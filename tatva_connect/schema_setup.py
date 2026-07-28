@@ -163,11 +163,14 @@ def _ensure_new_modules():
 				frappe.client_cache.delete_value("installed_app_modules")
 				frappe.setup_module_map()
 
-			dt_dir = os.path.join(app_path, frappe.scrub(module), "doctype")
-			if not os.path.isdir(dt_dir):
-				# A module declared in modules.txt whose folder is not in the RUNNING IMAGE lands nothing, and the first consumer dies far from the cause. Silence is what made this cost eight deploys.
-				frappe.log_error(title="apply_schema: module folder absent from this image", message=f"Module '{module}' is in modules.txt but {dt_dir} does not exist here.")
+			module_dir = os.path.join(app_path, frappe.scrub(module))
+			dt_dir = os.path.join(module_dir, "doctype")
+			if not os.path.isdir(module_dir):
+				# The module's own folder is not in the RUNNING IMAGE — a packaging failure whose first consumer dies far from the cause. Silence is what made this cost eight deploys.
+				frappe.log_error(title="apply_schema: module folder absent from this image", message=f"Module '{module}' is in modules.txt but {module_dir} does not exist here.")
 				continue
+			if not os.path.isdir(dt_dir):
+				continue  # a CODE-ONLY module — `Access` owns rules, not doctypes; there is nothing to land and no alarm to raise
 
 			# Two passes: listdir order is arbitrary, so a parent can be reached before the child table
 			# doctype it declares. The first pass lands whatever it can, the second retries the rest.
