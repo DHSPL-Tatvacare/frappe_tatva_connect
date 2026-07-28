@@ -21,6 +21,7 @@ from tatva_connect.access.visibility import _ref_parent
 from tatva_connect.api.partner_file import _file_lead
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.phone import match_digits
+from tatva_connect.propagate import fail_safe
 from tatva_connect.taxonomy.picklist import _LEAD_AXES
 
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.
@@ -525,6 +526,9 @@ def _enqueue_reindex(lead):
 	)
 
 
+# PROPAGATE (@fail_safe): the index is derived, and `build_index()` rebuilds it from the records at will —
+# so a locked index file loses a reindex, never the save that provoked it.
+@fail_safe
 def reindex_on_lead_context_change(doc, method=None):
 	# CRM Lead.on_update — the children carry the lead's title, grain and principals, so any declared field
 	# moving restamps them. The lead's own row needs nothing here; the framework already reindexed it.
@@ -532,18 +536,21 @@ def reindex_on_lead_context_change(doc, method=None):
 		_enqueue_reindex(doc.name)
 
 
+@fail_safe
 def reindex_on_assignment(doc, method=None):
 	# ToDo after_insert / on_trash — the assignment leg; a cancelled ToDo grants nothing, hence on_update below.
 	if doc.reference_type == "CRM Lead" and doc.reference_name:
 		_enqueue_reindex(doc.reference_name)
 
 
+@fail_safe
 def reindex_on_assignment_change(doc, method=None):
 	# ToDo on_update — only a reallocation or a status move can change who the lead is visible to.
 	if doc.has_value_changed("allocated_to") or doc.has_value_changed("status"):
 		reindex_on_assignment(doc, method)
 
 
+@fail_safe
 def reindex_on_share(doc, method=None):
 	# DocShare after_insert / on_update / on_trash — crm shares a lead with its assigned agent (crm_lead.py:189).
 	if doc.share_doctype == "CRM Lead" and doc.share_name:

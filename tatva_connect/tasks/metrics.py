@@ -22,6 +22,7 @@ How it stays correct & safe:
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.propagate import fail_safe
 
 _GATE = "Activity::Metrics::rollup"
 _METRICS_DT = "CRM Lead Activity Metrics"
@@ -118,6 +119,9 @@ def _get_or_create_row(lead):
 	return child.name
 
 
+# PROPAGATE (@fail_safe): the count is an ABSOLUTE recompute and `backfill()` restates every lead — a lost
+# roll-up self-heals on the next task save of that lead, so it can never be worth a refused task save.
+@fail_safe
 def refresh_for_lead(doc, method=None):
 	"""CRM Task on_update/on_submit/on_cancel/on_trash — recompute the ONE count this task's
 	type feeds onto its lead's metrics row. Gated OFF by default; absolute recompute; the

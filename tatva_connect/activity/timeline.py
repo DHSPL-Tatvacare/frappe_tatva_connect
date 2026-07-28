@@ -27,6 +27,7 @@ import frappe
 from crm.api.activities import _ATTACHMENT_SOURCES, get_attachments
 
 from tatva_connect.automation.settings import is_enabled
+from tatva_connect.propagate import fail_safe
 
 TOGGLE = "Activity::Timeline::indexing"
 
@@ -126,6 +127,9 @@ def event_row(doc) -> dict | None:
 	}
 
 
+# PROPAGATE (@fail_safe): the rail is a pointer index, and `rebuild()` regenerates it from source — so a
+# lost pointer costs a rail line until the next rebuild, never the note/call/task the rep was writing.
+@fail_safe
 def index_event(doc, method=None):
 	"""doc_event: after_insert on every SOURCES doctype. A no-op for anything not on a lead's rail."""
 	# event_row first: it is a dict lookup and returns None for anything not on a rail, which is almost
@@ -136,20 +140,22 @@ def index_event(doc, method=None):
 	_write(row)
 
 
+@fail_safe
 def drop_event(doc, method=None):
 	"""doc_event: on_trash. The pointer dies with the row it points at — a rail must not cite a ghost.
 
 	NOT gated on the toggle: rows written while it was on must still die when their source does, or
 	flipping the switch off and on again would leave the index citing deleted records.
+
+	The failed delete used to be caught HERE and logged, which is the shape `propagate.fail_safe` exists
+	to replace: a delete that failed inside the database left the transaction poisoned, so swallowing it
+	moved the crash onto the caller's own delete. `@fail_safe` undoes it at a savepoint and logs the same.
 	"""
 	if doc.doctype not in SOURCES:
 		return
 	# Frappe already enforced the source doc's delete permission to reach on_trash; this drops the
 	# derived pointer only, never a business record.
-	try:
-		frappe.db.delete("CRM Timeline Event", {"source_doctype": doc.doctype, "source_name": doc.name})
-	except Exception:
-		frappe.log_error(title="Timeline pointer drop failed", message=frappe.get_traceback())
+	frappe.db.delete("CRM Timeline Event", {"source_doctype": doc.doctype, "source_name": doc.name})
 
 
 def _write(row: dict):

@@ -12,10 +12,15 @@ to a terminal verdict on this save, and no-ops when the File already shows it.
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.propagate import fail_safe
 
 _VERDICTS = ("Approved", "Rejected")
 
 
+# PROPAGATE (@fail_safe): the File badge is a MIRROR — the verdict itself lives on the task's
+# `custom_outcome`, so the badge is re-derivable from (CRM Task.custom_outcome, File.custom_review_task)
+# at any time; a File that vanished mid-save must not cost the rep the verdict they just logged.
+@fail_safe
 def mirror_review_outcome(doc, method=None):
 	"""CRM Task.on_update — copy a Document Review task's Approved/Rejected verdict onto its File."""
 	if not automation.is_enabled("Task::Review::mirror"):

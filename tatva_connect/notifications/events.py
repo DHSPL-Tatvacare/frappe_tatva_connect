@@ -23,6 +23,7 @@ from crm.api.doc import get_assigned_users
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.notifications import dispatch, prefs
+from tatva_connect.propagate import fail_safe
 from tatva_connect.tasks.tasks import CLOSED_STATUSES
 from tatva_connect.taxonomy import labels
 
@@ -93,7 +94,9 @@ def _text(html: str) -> str:
 	return f'<div class="mb-2 leading-5 text-ink-gray-5">{html}</div>'
 
 
-# Doc events — each fires exactly once, by construction.
+# Doc events — each fires exactly once, by construction. PROPAGATE: an alert is not the work, so a
+# transport that refuses must never take the rep's save with it (@fail_safe, tatva_connect/propagate.py).
+@fail_safe
 def on_task_created(doc, method=None):
 	if not doc.get("assigned_to"):
 		return
@@ -120,6 +123,7 @@ def on_lead_assigned(doc, method=None):
 	)
 
 
+@fail_safe
 def on_whatsapp_received(doc, method=None):
 	"""A patient replied. crm writes the tray row itself (crm.api.whatsapp), so this adds only the live channel."""
 	if frappe.flags.get("in_workflow"):
@@ -138,6 +142,7 @@ def on_whatsapp_received(doc, method=None):
 	)
 
 
+@fail_safe
 def on_call_missed(doc, method=None):
 	"""An inbound call nobody answered. Only the save that MOVES the status to No Answer notifies —
 	a later save of the same row (a recording URL landing, say) changes nothing and tells no one."""
@@ -164,6 +169,7 @@ def on_call_missed(doc, method=None):
 	)
 
 
+@fail_safe
 def on_lead_stage_changed(doc, method=None):
 	"""The stage moved. `has_value_changed` is true only on the save that moved it, and a rep who moved
 	their own lead is skipped by crm's writer (a rep is never told about their own action)."""

@@ -21,6 +21,7 @@ from urllib.parse import quote
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.propagate import fail_safe
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 
@@ -159,6 +160,9 @@ def after_insert(doc, method=None):
 			)
 
 
+# PROPAGATE (@fail_safe): the bond is idempotent and rides EVERY save of the record, so a failed bond is
+# re-attempted on the next one; the bytes are already in Azure and the File row already exists either way.
+@fail_safe
 def link_attach_fields(doc, method=None):
 	"""M1: bond an offloaded file to the record whose Attach field names it — core's linker (file/utils.py:325)
 	skips remote URLs by design, so the bond is ours. Same lookups and idempotency as core's, one guard changed."""

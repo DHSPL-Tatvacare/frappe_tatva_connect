@@ -16,6 +16,7 @@ import frappe
 
 from tatva_connect import automation
 from tatva_connect.automation import rules
+from tatva_connect.propagate import fail_safe
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 from tatva_connect.taxonomy import grain
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, registry, versions
@@ -43,14 +44,20 @@ def _engine_may_run() -> bool:
 	return automation.is_enabled(ENGINE_SWITCH)
 
 
+# PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here is a fault on every save of
+# every doctype on the site. A start that is lost is re-startable through the SAME `start_run` entry — the
+# cohort drain walks the Trigger's own criteria, and `active_key` makes a re-start unable to double-run.
+@fail_safe
 def on_created(doc, method=None):
 	_maybe_start(doc, "Created")
 
 
+@fail_safe
 def on_updated(doc, method=None):
 	_maybe_start(doc, "Updated")
 
 
+@fail_safe
 def on_trash(doc, method=None):
 	_maybe_start(doc, "Deleted")
 
@@ -64,6 +71,9 @@ _TASK_OUTCOMES = {"Done": "task.completed", "Completed": "task.completed", "Clos
                   "Cancelled": "task.cancelled"}
 
 
+# PROPAGATE (@fail_safe): a lost emission leaves the run Parked exactly where it was, and this fires on
+# EVERY update of a terminal-status task — so the next save of that task re-emits the same correlated signal.
+@fail_safe
 def on_task_done(doc, method=None):
 	"""Wildcard `doc_events["*"]["on_update"]`: a CRM Task reaching a terminal status emits its outcome.
 
