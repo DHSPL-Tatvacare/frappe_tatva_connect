@@ -62,6 +62,14 @@ def node_context(nodes, node_id):
 	return {
 		"subject": subject,
 		"grain": grain,
+		# W3.1 — the subject fields the author declared this workflow works with, ANSWERED AND NOT APPLIED.
+		# `variables` and `settable` below are byte-identical whether or not a set is declared, and that is
+		# the whole guarantee: the backend says what was DECLARED, the canvas applies it as a presentation
+		# filter. Filtering here would drop an out-of-set saved reference off the wire, and the picker's
+		# stale-value prepend — the thing that stops a narrowing silently breaking an existing workflow —
+		# would have nothing left to prepend. It stays a config key for the same reason it stays unfiltered:
+		# the moment the DISPATCHER selects on it, it needs an indexed column and a back-fill.
+		"working_set": trigger.get("working_set") or [],
 		"variables": upstream.available_at(nodes, node_id),
 		"emitters": upstream.emitters_at(nodes, node_id),
 		"settable": schema.get("set_targets") or [],

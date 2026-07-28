@@ -92,6 +92,12 @@ NODE_TYPES = {
 			_field("vertical", "Vertical", "Grain", link="CRM Vertical"),
 			_field("group", "Group", "Grain", link="CRM Group"),
 			_field("program", "Program", "Grain", link="CRM Program"),
+			# Declared in EVERY mode, like the subject it narrows — the authoring experience is singular and
+			# nothing here may gate on `mode`. Sits after the subject that scopes it and BEFORE the predicate
+			# that consumes it, so the chain reads top to bottom exactly as AI Voice Call's params do.
+			# Blank means ANY, the same semantic a blank grain axis already carries.
+			_field("working_set", "Fields used", "Field Set",
+			       placeholder="Every field on the subject"),
 			_field("predicate", "Only when", "Predicate"),
 		],
 	},
@@ -697,6 +703,12 @@ FIELD_TYPES = {
 	# no credential reaches the browser. No `check`: what a provider offers is a runtime fact, and refusing
 	# an agent id at publish would mean calling the provider from the publish gate.
 	"Remote Select": {"control": "remote-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	# W3.1 — which of the subject's fields this workflow works with. A DISPLAY narrowing and nothing more:
+	# `check` and `reads` are both None DELIBERATELY. A read kind would hand these names to
+	# `contract.reads_of`, and a field the schema later lost would turn a tidier picker into a publish
+	# BLOCK — two answers to "what may be read", which is the second brain this whole declaration avoids.
+	# Run state still falls through to the live document and publish still accepts any real field.
+	"Field Set": {"control": "field-set", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "fields"}},
 	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
