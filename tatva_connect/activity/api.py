@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 import frappe
 from frappe import _
 from frappe.model import NO_VALUE_FIELDS
-from frappe.utils import cstr, flt, format_datetime, formatdate, get_datetime
+from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -882,26 +882,44 @@ def save_activity(lead, task_type, values, task=None):
 	return doc.name
 
 
+_BOARD_FIELDS = [
+	"name", "title", "custom_task_type", "status", "priority", "due_date",
+	"assigned_to", "owner", "creation", "modified", "modified_by",
+	"custom_completed_on", "description",
+	*COMMON_COLUMNS,
+	"custom_location_latitude", "custom_location_longitude",
+	"custom_location_address", "custom_location_captured_at",
+]
+
+
 @frappe.whitelist()
-def lead_task_board(lead):
+def lead_task_board(lead, page_length=20, page_length_count=20):
 	"""ONE render-ready payload for the native Tasks board (<TatvaTasks> in the CRM fork): the lead's
 	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
 	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
-	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config."""
+	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config.
+
+	PAGING. ONE stream, newest first, exactly the order this board already used. The Overdue / Due Today /
+	Upcoming / History headings are LABELS printed over that stream, not four lists — `grouped` in
+	<TatvaTasks> buckets whatever rows arrived — so paging is the ordinary kind: ask for more rows and the
+	headings re-label themselves.
+
+	Ordered by `modified`, NOT by due date, because on this data due date is not populated: 322 of 322
+	tasks on the fattest lead have none, and 3055 of 3065 site-wide. Sorting by a column that is empty
+	would order by the tiebreaker while looking like it ordered by relevance. `modified` is on every row
+	and is the order the board already shipped.
+
+	Load More grows `page_length` and refetches, the Leads list contract (ViewControls.vue:1058).
+	"""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)  # also raises if the lead is missing
+	page_length = cint(page_length) or 20
+	page_length_count = cint(page_length_count) or 20
+	where = {"reference_doctype": "CRM Lead", "reference_docname": lead}
+
 	rows = frappe.get_all(
-		"CRM Task",
-		filters={"reference_doctype": "CRM Lead", "reference_docname": lead},
-		fields=[
-			"name", "title", "custom_task_type", "status", "priority", "due_date",
-			"assigned_to", "owner", "creation", "modified", "modified_by",
-			"custom_completed_on", "description",
-			*COMMON_COLUMNS,
-			"custom_location_latitude", "custom_location_longitude",
-			"custom_location_address", "custom_location_captured_at",
-		],
-		order_by="modified desc",
+		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="modified desc", limit=page_length
 	)
+	total = frappe.db.count("CRM Task", where)
 
 	# Attachment counts in ONE query (no per-card N+1): {task_name: count}. Count in Python — this
 	# frappe rejects SQL functions passed as string fields, and the row set here is small.
@@ -958,7 +976,16 @@ def lead_task_board(lead):
 		})
 
 	from tatva_connect.location.api import _read_anchor
-	return {"anchor": _read_anchor(frappe.get_doc("CRM Lead", lead)), "types": types, "tasks": tasks}
+	return {
+		"anchor": _read_anchor(frappe.get_doc("CRM Lead", lead)),
+		"types": types,
+		"tasks": tasks,
+		# The footer's numbers, in the Leads list envelope's names.
+		"page_length": page_length,
+		"page_length_count": page_length_count,
+		"total_count": total,
+		"row_count": len(rows),
+	}
 
 
 def _type_config(task_type):

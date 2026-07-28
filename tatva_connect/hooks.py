@@ -174,10 +174,12 @@ doc_events = {
 		],
 		"on_trash": [
 			"tatva_connect.tasks.metrics.refresh_for_lead",
+			"tatva_connect.activity.timeline.drop_event",
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
 		"after_insert": [
 			"tatva_connect.notifications.events.on_task_created",
+			"tatva_connect.activity.timeline.index_event",
 		],
 	},
 	"WhatsApp Message": {
@@ -236,6 +238,8 @@ doc_events = {
 	"CRM Call Log": {
 		# tell the rep an inbound call went unanswered (only the save that moves the status notifies)
 		"on_update": "tatva_connect.notifications.events.on_call_missed",
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},
 	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
@@ -257,8 +261,30 @@ doc_events = {
 	# Azure Blob offload: push bytes after the row + local file exist, delete the blob on File delete; gated by the CRM Azure Storage Settings kill-switch.
 	"File": {
 		# Privacy + screening are NOT here on purpose: a doc_event runs after the controller, i.e. after core has already written the bytes — both live in FileOverride.before_insert.
-		"after_insert": "tatva_connect.storage.file_events.after_insert",
-		"on_trash": "tatva_connect.storage.file_events.on_trash",
+		"after_insert": [
+			"tatva_connect.storage.file_events.after_insert",
+			"tatva_connect.activity.timeline.index_event",
+		],
+		"on_trash": [
+			"tatva_connect.storage.file_events.on_trash",
+			"tatva_connect.activity.timeline.drop_event",
+		],
+	},
+	# The lead Activity rail's index — one pointer row per thing that happened, so the rail is ONE seek
+	# instead of a read-time merge across six tables that grows a leg with every new type. A pointer, never
+	# a copy: content is hydrated from the source row, so only insert and delete are events. What a rail
+	# event IS lives once, in timeline.event_row; these lines only say which doctypes feed it.
+	"FCRM Note": {
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
+	},
+	"Comment": {
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
+	},
+	"Communication": {
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},
 }
 

@@ -29,7 +29,9 @@ from tatva_connect.patches import (
 	add_observability_indexes,
 	add_task_answer_fieldname_index,
 	add_task_document_kind_index,
+	add_timeline_paging_indexes,
 	backfill_webhook_token_digests,
+	build_lead_timeline_index,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
@@ -71,6 +73,10 @@ _STEPS = (
 	add_clinic_anchor_index,
 	# (reference_docname, creation) on FCRM Note and CRM Call Log — the lead's Notes and Calls tabs filter on docname ALONE, so the note table full-scanned and the call log full-index-scanned (its own index leads with reference_doctype). Composite, so not JSON-declarable.
 	add_lead_timeline_indexes,
+	# (reference_docname, creation) on CRM Task and (attached_to_name, creation) on File — the last two timeline reads that scanned. Both ABANDONED their existing index for a full walk of creation once a page was ordered and limited: CRM Task's leads with reference_docname but carries task_type/status next (cannot serve the sort), File's leads with attached_to_doctype (cannot seek a non-leading column). Composite, so not JSON-declarable.
+	add_timeline_paging_indexes,
+	# (reference_doctype, reference_name, event_on) + UNIQUE (source_doctype, source_name) on CRM Timeline Event, then fill it from source. Composite, so not JSON-declarable, and the unique pair is what makes the fill re-runnable. The rail is one seek on this table instead of a read-time merge across six.
+	build_lead_timeline_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.

@@ -894,6 +894,30 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Activity::Timeline::indexing",
+		fires_on="Doc Event",
+		trigger_detail="activity/timeline · pointer written on save, dropped on delete",
+		purpose=(
+			"The lead's Activity rail is served from an index instead of being assembled on every open: "
+			"as a call, note, task, file, comment or email is saved against a lead, a single line "
+			"recording which record it was and when is added to a list held per lead, and that line is "
+			"removed as the record is deleted. The rail then reads one page of that list, so opening a "
+			"lead with thousands of entries costs the same as opening a new one, and a rail page stays "
+			"fast as a patient's history grows. On enable, the list is built once for every existing "
+			"lead in the background. Off, which is how it ships, the rail is assembled from every source "
+			"at the moment it is opened, exactly as it is today — nothing is written and nothing is "
+			"read. Nothing in the list is a record in its own right: it names rows that already exist "
+			"and is rebuilt from them, so it can be switched off, on, or repaired without any loss.\n"
+			"Example: a rep opens a patient followed for two years and the Activity tab paints at once, "
+			"instead of pausing while every call, task and note ever logged is gathered."
+		),
+		activator="tatva_connect.activity.timeline.activate",
+		backs=[
+			"tatva_connect.activity.timeline.index_event",
+			"tatva_connect.activity.timeline.drop_event",
+		],
+	),
+	Auto(
 		key="Search::Query::vocabulary",
 		fires_on="Provider call",
 		trigger_detail="search/api · search gate · typed words split into filters + text",
