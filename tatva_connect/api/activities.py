@@ -17,7 +17,7 @@ from frappe import _
 from frappe.utils import cint
 
 from tatva_connect.activity import timeline
-from tatva_connect.activity.api import _blob_key, lead_timeline
+from tatva_connect.activity.api import _blob_key, capture_flags, lead_timeline
 from tatva_connect.activity.lead_events import history
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.taxonomy import labels
@@ -191,11 +191,12 @@ _TABS = {
 		"reference_docname",
 		["name", "title", "content", "owner", "modified", "creation"],
 	),
+	# `custom_task_type` is the card's type label AND what decides whether Done opens the capture form.
 	"task": (
 		"CRM Task",
 		"reference_docname",
 		["name", "title", "description", "assigned_to", "due_date", "priority", "status",
-		 "modified", "creation"],
+		 "custom_task_type", "modified", "creation"],
 	),
 	# Comments and emails are ordinary tables too. They read the whole-lead payload only because nothing
 	# had asked them to page — and that payload drags every call, task and note with it, which is the
@@ -233,7 +234,7 @@ _SEARCH_FIELDS = {
 _FILTERABLE = {
 	"call": ("type", "status"),
 	"note": ("owner",),
-	"task": ("status", "priority", "assigned_to"),
+	"task": ("status", "priority", "assigned_to", "custom_task_type"),
 	"attachment": ("file_type", "is_private"),
 	"comment": ("owner",),
 }
@@ -278,6 +279,7 @@ def _decorate(kind, rows):
 	elif kind == "task":
 		_annotate_automation(rows, "CRM Task")
 		_annotate_task_due(rows)
+		_annotate_task_type(rows)
 	elif kind == "comment":
 		_attach_files(rows, "Comment")
 		for r in rows:
@@ -515,6 +517,18 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 							fields=["count(name) as n"], order_by=None)[0]["n"]
 	)
 	return _envelope(_decorate(kind, rows), page_length, page_length_count, total)
+
+
+def _annotate_task_type(rows):
+	"""Fold each task's type label + `needs_capture` onto the row (in place), from the ONE reader that
+	owns what a type means. The full field schema is never fetched here — the modal loads it for the
+	single type it is opening."""
+	flags = capture_flags(r.get("custom_task_type") for r in rows)
+	for row in rows:
+		label, needs = flags.get(row.get("custom_task_type"), (None, False))
+		row["task_type_label"] = label or row.get("custom_task_type")
+		row["needs_capture"] = needs
+	return rows
 
 
 def _annotate_task_due(rows):

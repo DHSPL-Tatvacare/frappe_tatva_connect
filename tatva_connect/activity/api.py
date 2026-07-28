@@ -882,122 +882,6 @@ def save_activity(lead, task_type, values, task=None):
 	return doc.name
 
 
-_BOARD_FIELDS = [
-	"name", "title", "custom_task_type", "status", "priority", "due_date",
-	"assigned_to", "owner", "creation", "modified", "modified_by",
-	"custom_completed_on", "description",
-	*COMMON_COLUMNS,
-	"custom_location_latitude", "custom_location_longitude",
-	"custom_location_address", "custom_location_captured_at",
-]
-
-
-@frappe.whitelist()
-def lead_task_board(lead, page_length=0, page_length_count=20):
-	"""ONE render-ready payload for the native Tasks board (<TatvaTasks> in the CRM fork): the lead's
-	tasks — each enriched with its saved field values + captured-location state — plus the deduped type
-	configs they reference, plus the clinic anchor. The component renders entirely from this: one round
-	trip, no per-card N+1. Plain tasks (no type schema) come through too, with a null config.
-
-	PAGING. ONE stream, newest first, split in the client by the DAY each task was raised. Due state is
-	NOT a section — it is the badge the card wears and a Filter — so a page of older tasks simply carries
-	its own dates down and nothing re-sorts. Load More grows `page_length` and refetches 0..N.
-
-	Ordered by `creation`, NOT by due date, because on this data due date is not populated: 322 of 322
-	tasks on the fattest lead have none, and 3055 of 3065 site-wide. Sorting by a column that is empty
-	would order by the tiebreaker while looking like it ordered by relevance. `creation` is on every row,
-	is indexed, and is the date the day headings are cut on — so the page and the headings agree.
-
-	Load More grows `page_length` and refetches, the Leads list contract (ViewControls.vue:1058).
-	"""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)  # also raises if the lead is missing
-	# 0 = every task, and that is the DEFAULT: this board's consumer renders buckets, not a page, and a
-	# silent limit would drop a rep's overdue work off the bottom with nothing to click.
-	page_length = cint(page_length)
-	page_length_count = cint(page_length_count) or 20
-	where = {"reference_doctype": "CRM Lead", "reference_docname": lead}
-
-	rows = frappe.get_all(
-		"CRM Task", filters=where, fields=_BOARD_FIELDS, order_by="creation desc",
-		limit=page_length or None,
-	)
-	total = frappe.db.count("CRM Task", where)
-
-	# Attachment counts in ONE query (no per-card N+1): {task_name: count}. Count in Python — this
-	# frappe rejects SQL functions passed as string fields, and the row set here is small.
-	task_names = [r.name for r in rows]
-	attach_counts = Counter(
-		f.attached_to_name
-		for f in frappe.get_all(
-			"File",
-			filters={"attached_to_doctype": "CRM Task", "attached_to_name": ["in", task_names]},
-			fields=["attached_to_name"],
-		)
-	) if task_names else Counter()
-
-	# The saved answers for the whole board in one query per section — the same batching the counts above use.
-	answers_by_task = section_rows(task_names)
-
-	types = {}
-	for tn in {r.custom_task_type for r in rows if r.custom_task_type}:
-		cfg = _type_config(tn)
-		if cfg:
-			types[tn] = cfg
-	type_names = labels.labels([r.custom_task_type for r in rows], TASK_TYPE)
-
-	# Every person named on this page — assignee, owner, and whoever closed a Done task — in ONE query.
-	# Read per row this was 30 queries a task and it dominated the page: 619 for twenty rows.
-	people = {r.assigned_to or r.owner for r in rows} | {r.modified_by for r in rows if r.status == "Done"}
-	people.discard(None)
-	users = {
-		u.name: u for u in frappe.get_all(
-			"User", filters={"name": ["in", list(people)]}, fields=["name", "full_name", "user_image"]
-		)
-	} if people else {}
-
-	tasks = []
-	for r in rows:
-		who = r.assigned_to or r.owner
-		who_doc = users.get(who)
-		done = r.status == "Done"
-		# Completed when = the explicit Completed-On if set, else the modified time of a Done task.
-		# Completed by = modified_by (the last actor on a Done task) — the available attribution.
-		completed_raw = r.custom_completed_on or (r.modified if done else None)
-		completer = r.modified_by if done else None
-		tasks.append({
-			"name": r.name,
-			"title": r.title,
-			# task_type = the composite PK (the key: config lookup / save / schema). task_type_label =
-			# the clean type_name (display / filter / search). NEVER conflate the two.
-			"task_type": r.custom_task_type or "",
-			"task_type_label": type_names.get(r.custom_task_type, "") or r.custom_task_type or "",
-			"status": r.status,
-			"priority": r.priority,
-			"due": format_datetime(r.due_date, "d MMM yyyy · h:mm a") if r.due_date else None,
-			"due_iso": str(r.due_date) if r.due_date else None,
-			"rep": who,
-			"rep_name": (who_doc and who_doc.full_name) or who,
-			"rep_image": who_doc.user_image if who_doc else None,
-			"creation": str(r.creation),
-			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
-			"completed_on": format_datetime(completed_raw, "d MMM yyyy") if (done and completed_raw) else None,
-			"completed_by": (completer and (users.get(completer) or {}).get("full_name")) or completer,
-			"values": _task_values(r, types.get(r.custom_task_type), answers_by_task.get(cstr(r.name), {})),
-			"location": _task_location(r),
-			"attachments": attach_counts.get(r.name, 0),
-		})
-
-	from tatva_connect.location.api import _read_anchor
-	return {
-		"anchor": _read_anchor(frappe.get_doc("CRM Lead", lead)),
-		"types": types,
-		"tasks": tasks,
-		# The footer's numbers, in the Leads list envelope's names.
-		"page_length": page_length,
-		"page_length_count": page_length_count,
-		"total_count": total,
-		"row_count": len(rows),
-	}
 
 
 def _type_config(task_type):
@@ -1022,7 +906,7 @@ def _type_config(task_type):
 @frappe.whitelist()
 def task_detail(task):
 	"""Render-ready detail for ONE task by name — the global Tasks list / sidebar opens TatvaTaskModal
-	from this (same shape as a lead_task_board task + its type config). `config` is null for a plain
+	from this (a task row + its type config). `config` is null for a plain
 	(non-activity) task, so the client falls back to the native doctype modal. One brain reused
 	(_type_config / _task_values / _task_location)."""
 	frappe.has_permission("CRM Task", "read", doc=task, throw=True)
@@ -1066,11 +950,44 @@ def task_detail(task):
 	}
 
 
+def capture_flags(task_types):
+	"""`{task_type: (label, needs_capture)}` for a PAGE of tasks — two queries, never one per row.
+
+	`needs_capture` answers the only question a card asks its type: does finishing this open the capture
+	form, or is it a plain status flip. Same three conditions `_type_config` reports, read from the same
+	columns — but counting the schema rows instead of compiling the layout, because a card needs to know
+	THAT there are fields, and only the modal needs to know what they are."""
+	wanted = sorted({t for t in task_types if t})
+	if not wanted:
+		return {}
+	rows = frappe.get_all(
+		"CRM Task Type", filters={"name": ["in", wanted]},
+		fields=["name", "type_name", "visit_mode", "location_when", "is_logged_complete"],
+	)
+	with_fields = {
+		r.parent for r in frappe.get_all(
+			"CRM Task Type Field", filters={"parent": ["in", wanted]}, fields=["parent"],
+		)
+	}
+	return {
+		r.name: (
+			r.type_name or r.name,
+			bool(
+				r.name in with_fields
+				or (r.visit_mode or "") == "In-Person"
+				or (r.location_when or "").strip()
+				or r.is_logged_complete
+			),
+		)
+		for r in rows
+	}
+
+
 @frappe.whitelist()
 def type_config(task_type, lead=None):
 	"""Render config (fields + is_logged_complete + captures_location) for ONE task type — the
 	create-mode modal's source when the chosen type has no existing task seeding it into
-	lead_task_board. Same brain (_type_config) the board uses, so card/modal/create stay consistent.
+	an existing task. Same brain (_type_config) every surface uses, so card/modal/create stay consistent.
 
 	`lead` is optional and is what the form names when it is being logged against a lead: the answer then
 	also carries that lead's current values for the type's `source=Lead` fields (D31 prefill). It rides HERE

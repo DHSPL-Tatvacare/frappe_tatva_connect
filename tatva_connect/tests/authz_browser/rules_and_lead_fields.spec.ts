@@ -296,8 +296,15 @@ test.describe(`the activity form obeys its declared rules — ${persona.persona}
     ).toBe(after);
 
     // ---- 5. and the TASK carries no copy of it (D11) -------------------------------------------
-    const board = await api(page, "tatva_connect.activity.api.lead_task_board", { lead });
-    const logged = (board.tasks || []).find(
+    // The board reads the shared paged endpoint, which carries the row and not its answers — so the
+    // answers are asked for per task, from the one reader the modal already uses.
+    const board = await api(page, "tatva_connect.api.activities.lead_activity", { lead, kind: "task" });
+    const details = await Promise.all(
+      (board.data || []).map((t: { name: string }) =>
+        api(page, "tatva_connect.activity.api.task_detail", { task: t.name }),
+      ),
+    );
+    const logged = details.find(
       (t: { values: Record<string, string> }) => t.values?.[ORDER_ID] === "zz-ord-1",
     );
     expect(logged, "the activity this spec just logged is not on the board").toBeTruthy();

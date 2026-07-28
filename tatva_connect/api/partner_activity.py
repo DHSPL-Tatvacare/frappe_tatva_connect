@@ -381,7 +381,7 @@ def activity_list(**_kwargs):
 		limit_page_length=limit, limit_start=offset, order_by="creation desc",
 	)
 	# One config per DISTINCT type, not per row: _type_config costs a db.exists plus a get_doc pulling
-	# two child tables. Same batching as the SPA's lead_task_board.
+	# two child tables. Same batching the SPA's task page uses.
 	cfgs = {
 		tt: activity_brain._type_config(tt)
 		for tt in {r.custom_task_type for r in rows if r.custom_task_type}

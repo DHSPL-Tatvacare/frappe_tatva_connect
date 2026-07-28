@@ -205,9 +205,10 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 		self._assert_clean(open_activity_tasks(self.lead.name), "the open-activity mapping")
 
 	def test_the_tasks_board(self):
-		from tatva_connect.activity.api import lead_task_board
+		"""The board reads the SAME paged endpoint every other tab reads — there is no second path left."""
+		from tatva_connect.api.activities import lead_activity
 
-		self._assert_clean(lead_task_board(self.lead.name), "the Tasks board")
+		self._assert_clean(lead_activity(self.lead.name, "task"), "the Tasks board")
 
 	def test_the_activity_type_picker(self):
 		from tatva_connect.activity.api import list_types_for_lead
