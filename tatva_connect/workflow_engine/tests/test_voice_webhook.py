@@ -31,7 +31,7 @@ def _account(name=_ACCOUNT, enabled=1, token=_TOKEN):
 	if frappe.db.exists("CRM AI Voice Account", name):
 		frappe.delete_doc("CRM AI Voice Account", name, force=True, ignore_permissions=True)
 	return frappe.get_doc({
-		"doctype": "CRM AI Voice Account", "account_name": name, "api_key": "sk-test-never-real",
+		"doctype": "CRM AI Voice Account", "account_name": name, "api_key": "sk-test-never-real",  # pragma: allowlist secret
 		"enabled": enabled, "webhook_token": token,
 	}).insert(ignore_permissions=True)
 
@@ -214,7 +214,7 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		self.assertEqual(row.awaiting_correlation, token)
 
 	def test_the_callback_delivers_the_correlated_outcome(self):
-		run_name, token = self._park()
+		_run_name, token = self._park()
 		bolna.handle(_callback(token), None, _ACCOUNT)
 		frappe.db.commit()
 
@@ -281,7 +281,7 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 	def test_a_redelivered_callback_is_recognised_and_not_replayed(self):
 		"""Providers re-send. The spine collapses byte-identical copies; this catches a copy that differs
 		in a field the wake does not read, and must not wake the run a second time."""
-		run_name, token = self._park()
+		_run_name, token = self._park()
 		self.assertFalse(bolna.already_processed(_callback(token), None, _ACCOUNT))
 		bolna.handle(_callback(token), None, _ACCOUNT)
 		frappe.db.commit()

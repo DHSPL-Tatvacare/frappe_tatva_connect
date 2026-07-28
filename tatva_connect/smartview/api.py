@@ -21,13 +21,12 @@ import re
 
 import frappe
 from frappe import _
+from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Count
 from frappe.utils import cint, cstr
 from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
-
-from frappe.core.doctype.access_log.access_log import make_access_log
 
 from tatva_connect import tabular
 from tatva_connect.access import entitlement, visibility

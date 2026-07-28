@@ -126,8 +126,9 @@ def history(doctype: str, name: str) -> list:
 	one line with a "and N more" the card already knows how to draw."""
 	from crm.api.activities import handle_multiple_versions
 
-	rows = [creation_event(doctype, name)] + field_changes(
-		doctype, recent_versions(doctype, name), doctype == "CRM Lead"
-	)
+	rows = [
+		creation_event(doctype, name),
+		*field_changes(doctype, recent_versions(doctype, name), doctype == "CRM Lead"),
+	]
 	rows.sort(key=lambda r: str(r["creation"]), reverse=True)
 	return handle_multiple_versions(rows)

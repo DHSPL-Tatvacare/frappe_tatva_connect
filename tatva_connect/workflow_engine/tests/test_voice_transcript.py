@@ -162,7 +162,7 @@ class TestTheCallbackDrivesTheSharedDoors(FrappeTestCase):
 			frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
 		frappe.get_doc({
 			"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
-			"api_key": "sk-never-real", "from_phone": "+918035303509", "enabled": 1,
+			"api_key": "sk-never-real", "from_phone": "+918035303509", "enabled": 1,  # pragma: allowlist secret
 		}).insert(ignore_permissions=True)
 		cls.lead = fx.make_lead()
 		frappe.db.commit()

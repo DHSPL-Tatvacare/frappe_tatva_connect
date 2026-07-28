@@ -37,7 +37,7 @@ class TestTheVoiceChannelSwitchStopsOutbound(FrappeTestCase):
 			frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
 		frappe.get_doc({
 			"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
-			"api_key": "sk-test-never-real", "enabled": 1,
+			"api_key": "sk-test-never-real", "enabled": 1,  # pragma: allowlist secret
 		}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
@@ -78,7 +78,7 @@ class TestTheVoiceChannelSwitchStopsOutbound(FrappeTestCase):
 		"""The other half: the switch must not be a wall. With both gates open the send behaves exactly as
 		before — deferred past commit, never dialled inside the segment."""
 		with patch("tatva_connect.voice.channel.is_enabled", return_value=True):
-			output, result, post, enqueue = self._send()
+			output, _result, post, enqueue = self._send()
 		self.assertEqual(output, sends.PLACED)
 		post.assert_not_called()  # deferred, not dialled in-segment
 		enqueue.assert_called_once()

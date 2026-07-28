@@ -69,7 +69,7 @@ class TestTheLiveCallIsDeferredAndCarriesTheEngineToken(FrappeTestCase):
 			frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
 		cls.account = frappe.get_doc({
 			"doctype": "CRM AI Voice Account", "account_name": _ACCOUNT,
-			"api_key": "sk-test-never-real", "base_url": "https://api.bolna.ai", "enabled": 1,
+			"api_key": "sk-test-never-real", "base_url": "https://api.bolna.ai", "enabled": 1,  # pragma: allowlist secret
 		}).insert(ignore_permissions=True).name
 
 	@classmethod
