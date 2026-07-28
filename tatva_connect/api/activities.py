@@ -200,6 +200,23 @@ _TABS = {
 }
 
 
+# What a free-text search looks at, per tab. The tabs searched these same fields on the client before the
+# page moved to the server; the list is kept here so one page and one count agree on what "matches" means.
+# A dict of filters is ANDed by frappe, so a search across several fields is `or_filters`, not `filters`.
+_SEARCH_FIELDS = {
+	"call": ["status", "type", "from", "to"],
+	"note": ["title", "content"],
+	"task": ["title", "description", "status", "priority"],
+}
+
+
+def _search_or_filters(kind, search):
+	term = (search or "").strip()
+	if not term:
+		return None
+	return [[field, "like", f"%{term}%"] for field in _SEARCH_FIELDS.get(kind, [])] or None
+
+
 def _order(order_by: str) -> str:
 	"""An allowlisted `<field> <direction>`, or the default. Never the caller's string."""
 	field, _sep, direction = (order_by or "").strip().partition(" ")
@@ -232,7 +249,7 @@ def _decorate(kind, rows):
 	return rows
 
 
-def _attachment_page(lead, order_by, page_length):
+def _attachment_page(lead, order_by, page_length, picked=None, search=None):
 	"""Attachments are a read-side UNION across every surface a document can arrive through
 	(get_attachments), which is a deliberate feature — a rep should not have to remember whether a file
 	was added on the note, the task or the lead. That union is not SQL-pageable, so it is sliced here.
@@ -243,6 +260,13 @@ def _attachment_page(lead, order_by, page_length):
 	timeline index, which already models exactly this shape.
 	"""
 	rows = get_attachments("CRM Lead", lead)
+	# Narrowed in Python for the same reason the page is sliced here: the set is a union, not a table.
+	for field_name, wanted in (picked or {}).items():
+		rows = [r for r in rows if str(r.get(field_name) or "") == str(wanted)]
+	term = (search or "").strip().lower()
+	if term:
+		rows = [r for r in rows
+				if term in f"{r.get('file_name') or ''} {r.get('file_type') or ''}".lower()]
 	field, direction = _order(order_by).split(" ")
 	rows.sort(key=lambda r: str(r.get(field) or ""), reverse=direction == "desc")
 	return rows[:page_length], len(rows)
@@ -285,11 +309,17 @@ def _hydrate(pointers):
 			rows = _decorate(kind, rows)
 		loaded[doctype] = {r["name"]: r for r in rows}
 
+	# A comment and an email render through the rail's EVENT adapter, which reads `activity_type` — the
+	# merge supplier's rows carry it because they come from get_activities. Stamp it here so both
+	# suppliers hand the client the same row, and the rail needs no idea which one answered.
+	as_event = {"comment": "comment", "email": "communication"}
+
 	out = []
 	for p in pointers:
 		row = loaded.get(p["source_doctype"], {}).get(p["source_name"])
 		if row:
-			out.append({**row, "kind": p["kind"]})
+			extra = {"activity_type": as_event[p["kind"]]} if p["kind"] in as_event else {}
+			out.append({**row, **extra, "kind": p["kind"]})
 	return out
 
 
@@ -331,17 +361,22 @@ def _rail_from_merge(lead, page_length, order_by):
 
 @frappe.whitelist()
 def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
-				  order_by=_DEFAULT_ORDER, filters=None):
+				  order_by=_DEFAULT_ORDER, filters=None, search=None):
 	"""One page of one lead's activity tab, in the Leads list envelope.
 
 	Visibility is decided by the LEAD, exactly as the native timeline decides it
 	(crm/api/activities.py:176) — a sub-row is visible iff the lead it hangs off is.
+
+	`search` and `filters` are applied HERE, not on the client. They used to run over the whole loaded
+	list; once the server pages, a client-side filter would only ever see the twenty rows in hand and
+	quietly report "no matches" for a record sitting on page three.
 	"""
 	if not frappe.has_permission("CRM Lead", "read", lead):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	page_length = cint(page_length) or 20
 	page_length_count = cint(page_length_count) or 20
+	picked = frappe.parse_json(filters) if filters else {}
 
 	if kind == _RAIL:
 		# The index is an operator toggle and ships dormant, so the rail has two suppliers and ONE
@@ -354,19 +389,21 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 		return _envelope(rows, page_length, page_length_count, total)
 
 	if kind == "attachment":
-		rows, total = _attachment_page(lead, order_by, page_length)
+		rows, total = _attachment_page(lead, order_by, page_length, picked, search)
 		return _envelope(rows, page_length, page_length_count, total)
 
 	if kind not in _TABS:
 		frappe.throw(_("Unknown activity kind {0}").format(kind))
 
 	doctype, link_field, fields = _TABS[kind]
-	where = {link_field: lead, **(frappe.parse_json(filters) if filters else {})}
+	where = {link_field: lead, **picked}
+	matching = _search_or_filters(kind, search)
 	# `limit` internally, `page_length` on the wire: the param name matches get_data so the frontend is
 	# unchanged, while get_all takes the name frappe has not deprecated.
-	rows = frappe.get_all(doctype, filters=where, fields=fields,
+	rows = frappe.get_all(doctype, filters=where, or_filters=matching, fields=fields,
 						  order_by=_order(order_by), limit=page_length)
-	total = frappe.db.count(doctype, where)
+	# The count carries the SAME narrowing as the page, so "20 of 103" never contradicts what is on screen.
+	total = len(frappe.get_all(doctype, filters=where, or_filters=matching, pluck="name"))
 	return _envelope(_decorate(kind, rows), page_length, page_length_count, total)
 
 
