@@ -9,21 +9,13 @@ Queue, Run Log) removed and progressive third-person guidance in the content. Th
 its Run Log links. The standard import skips a desk doc whose DB copy looks newer than its file, so a site
 whose desk was ever touched would keep the old rule layout and never show the new one — force all four
 (same reason as reimport_communications_desk)."""
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	for parts in (
+	_desk.reimport_all([
 		("tatva_connect", "workspace", "automations", "automations.json"),
 		("workspace_sidebar", "automations.json"),
 		("observability", "workspace", "observability", "observability.json"),
 		("workspace_sidebar", "observability.json"),
-	):
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {'/'.join(parts)} failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	])

@@ -13,19 +13,11 @@ Force is required even with the timestamp bumped, because `import_file.py` skips
 DB row looks newer than the file, so on any site whose desk was ever touched the fix would migrate
 silently green and change nothing.
 """
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	for parts in (
+	_desk.reimport_all([
 		("tatva_connect", "workspace", "automations", "automations.json"),
 		("workspace_sidebar", "automations.json"),
-	):
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {parts[-1]} failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	])

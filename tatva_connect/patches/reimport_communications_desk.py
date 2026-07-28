@@ -6,19 +6,11 @@
 DB copy looks newer than its file, so such a site kept a shortcut and a sidebar item pointing at the
 dead doctype — and the desk answers "DocType CRM Telephony DID not found". Re-import both, force.
 """
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	for parts in (
+	_desk.reimport_all([
 		("tatva_connect", "workspace", "communications", "communications.json"),
 		("workspace_sidebar", "communications.json"),
-	):
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {parts[0]} failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	])

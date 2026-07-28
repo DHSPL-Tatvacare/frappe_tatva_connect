@@ -19,7 +19,8 @@ a site whose desk was ever touched would keep the old groups and never see the n
 and same shape as `reimport_infrastructure_desk`.
 """
 import frappe
-from frappe.modules.import_file import import_file_by_path
+
+from tatva_connect.patches import _desk
 
 _RETIRED = (("Desktop Icon", "Partner API"), ("Workspace Sidebar", "Partner API"),
             ("Workspace", "Partner API"))
@@ -63,9 +64,8 @@ def execute():
 
 def _reimport(parts):
 	"""Import one standard desk file, force. True only if it really landed."""
-	path = frappe.get_app_path("tatva_connect", *parts)
 	try:
-		return bool(import_file_by_path(path, force=True))
+		return bool(_desk.reimport(*parts))
 	except Exception:
 		frappe.log_error(title=f"reimport {parts[-1]} failed", message=frappe.get_traceback())
 		return False

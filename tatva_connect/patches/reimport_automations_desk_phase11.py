@@ -8,15 +8,8 @@ than no text. The standard import SKIPS a workspace whose DB copy looks newer th
 (`import_file.py:141`), which is true on every site whose desk was ever opened, so the bumped `modified`
 alone would migrate silently green and change nothing.
 """
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	path = frappe.get_app_path("tatva_connect", "tatva_connect", "workspace", "automations", "automations.json")
-	try:
-		import_file_by_path(path, force=True)
-	except Exception:
-		frappe.log_error(title="reimport automations workspace failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	_desk.reimport_all([("tatva_connect", "workspace", "automations", "automations.json")])

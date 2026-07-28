@@ -8,19 +8,11 @@ standard import skips a desk doc whose DB copy looks newer than its file, so a s
 desk was ever touched would keep the old layout and never show them &mdash; force both (same reason as
 reimport_communications_desk).
 """
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	for parts in (
+	_desk.reimport_all([
 		("tatva_connect", "workspace", "automations", "automations.json"),
 		("workspace_sidebar", "automations.json"),
-	):
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {parts[0]} failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	])

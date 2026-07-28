@@ -15,19 +15,11 @@ site whose desk was ever touched keeps the old flat tile row and never sees any 
 `reimport_infrastructure_desk` has already run on those sites and an applied patch is dead (rule 3), so
 this ships as its own line and re-asserts the same declared end state.
 """
-import frappe
-from frappe.modules.import_file import import_file_by_path
+from tatva_connect.patches import _desk
 
 
 def execute():
-	for parts in (
+	_desk.reimport_all([
 		("tatva_connect", "workspace", "infrastructure", "infrastructure.json"),
 		("workspace_sidebar", "infrastructure.json"),
-	):
-		path = frappe.get_app_path("tatva_connect", *parts)
-		try:
-			import_file_by_path(path, force=True)
-		except Exception:
-			frappe.log_error(title=f"reimport {parts[-1]} failed", message=frappe.get_traceback())
-
-	frappe.clear_cache()
+	])
