@@ -310,6 +310,7 @@ scheduler_events = {
 		"*/15 * * * *": [
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			"tatva_connect.voice.reconcile.sweep",
+			"tatva_connect.workflow_engine.drain.sweep",
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
 		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],

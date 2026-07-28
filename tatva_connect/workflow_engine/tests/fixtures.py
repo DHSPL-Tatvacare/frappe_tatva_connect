@@ -54,11 +54,18 @@ def trigger(node_id="start", to="n1", subject_doctype="CRM Lead", event="Created
 	return node(node_id, "Trigger", config=config, edges={"next": to})
 
 
-def make_lead():
+def make_lead(**overrides):
+	"""A grain-stamped probe lead. `overrides` set fields AT INSERT, never after.
+
+	A suite that needs its leads distinguishable (a cohort selecting only its own) must pass the value in
+	here rather than `db.set_value` it afterwards: a criteria predicate reads through `frappe.get_doc`,
+	which can answer from the document cache that a bare column write never invalidated.
+	"""
 	return frappe.get_doc({
 		"doctype": "CRM Lead", "first_name": "WF", "lead_name": "WF Probe", "status": "New",
 		"custom_vertical": GRAIN["vertical"], "custom_group": GRAIN["group"],
 		"custom_current_program": GRAIN["program"],
+		**overrides,
 	}).insert(ignore_permissions=True)
 
 

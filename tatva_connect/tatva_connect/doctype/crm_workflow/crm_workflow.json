@@ -13,6 +13,9 @@
   "trigger_event",
   "trigger_mode",
   "trigger_next_run_at",
+  "cohort_state",
+  "cohort_cursor",
+  "cohort_abort",
   "canvas_json",
   "trigger_vertical",
   "trigger_group",
@@ -80,6 +83,31 @@
    "search_index": 1,
    "no_copy": 1,
    "description": "Derived. When this workflow's cohort is next due. Blank on a record-event workflow, which is woken by a save and is never due."
+  },
+  {
+   "fieldname": "cohort_state",
+   "fieldtype": "Data",
+   "label": "Cohort State",
+   "read_only": 1,
+   "no_copy": 1,
+   "length": 20,
+   "description": "Draining while a cohort walk holds this workflow. The atomic claim that stops two sweeps draining one cohort twice."
+  },
+  {
+   "fieldname": "cohort_cursor",
+   "fieldtype": "Data",
+   "label": "Cohort Cursor",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The last lead this cohort started, so a killed worker resumes after it instead of from the top. Keyset, never OFFSET."
+  },
+  {
+   "fieldname": "cohort_abort",
+   "fieldtype": "Check",
+   "label": "Abort Cohort",
+   "default": "0",
+   "no_copy": 1,
+   "description": "Stops the current cohort at the next chunk boundary. Runs already started are left alone — cancelling one lead's journey is a different action."
   },
   {
    "fieldname": "canvas_json",

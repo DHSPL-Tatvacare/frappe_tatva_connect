@@ -48,6 +48,21 @@ class Auto:
 
 AUTOMATIONS = [
 	Auto(
+		key="Workflow::Cohort::drain",
+		fires_on="Schedule",
+		trigger_detail="every 15m · starts a drain for each workflow whose cohort is due",
+		purpose=(
+			"A workflow can take a COHORT on a schedule instead of waiting for a save: every lead matching "
+			"its criteria and grain is given its own ordinary run down the same graph, walked by one job in "
+			"committed chunks so a cohort of thousands is one piece of work rather than thousands. Off, a "
+			"workflow set to repeat simply never comes due and no run is born from a clock.\n"
+			"Example: on the first of the month every enrolled patient on a program is started down the "
+			"renewal journey."
+		),
+		backs=["tatva_connect.workflow_engine.drain.sweep"],
+		requires="Workflow::Engine::run",
+	),
+	Auto(
 		key="Voice::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="automation/sends.send_voice gate · webhooks/spine kill-switch · voice ingress",

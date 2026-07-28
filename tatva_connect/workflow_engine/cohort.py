@@ -100,40 +100,62 @@ def preview(config, cap=PREVIEW_CAP):
 	return {"count": count, "capped": capped, "subject": subject}
 
 
-def _count_matching(subject, config, cap):
-	"""Walk the grain-narrowed leads, apply the declared criteria, stop at the cap.
+def matching_leads(subject, config, after=None, limit=_PAGE):
+	"""`(matched, scanned_to)` — up to `limit` leads this Trigger's criteria SELECT, and how far we read.
 
-	Keyset by `name`, not LIMIT/OFFSET — the same discipline the drain will need, and for the same reason:
-	OFFSET re-reads every skipped row and shifts rows between pages, so a lead can be counted twice or not
-	at all while the list is being written to underneath.
+	THE ONE SELECTOR: the preview counts through it and the drain walks through it, so the number an
+	author is shown and the people who are actually started cannot come from two answers.
+
+	TWO NUMBERS, AND CONFLATING THEM TRUNCATES A COHORT. `limit` is how many MATCHES the caller wants;
+	`scanned_to` is how far down the grain this got to find them. An earlier cut applied `limit` to the
+	grain query and filtered afterwards, so a chunk that happened to open on non-matching leads came back
+	empty and the drain concluded the cohort was finished — a 2,000-lead cohort could start nobody and
+	report done. The grain narrows in SQL because it is columns on the lead; the criteria are judged by
+	the SAME `rules.predicate_match` the record-event lane runs, never a SQL translation of the predicate.
+
+	`after` is the cursor — a lead name, exclusive. Keyset, never OFFSET.
 	"""
 	from tatva_connect.automation import context as ctx_build
 	from tatva_connect.automation import rules
 
 	predicate = config.get("predicate")
 	field_types = ctx_build.field_types_for(subject)
-	filters = _grain_filters(config)
-	count, cursor = 0, None
-	while count < cap:
-		page = frappe.get_all(  # authz-ok: tier-b — gated above on CRM Workflow read; an author previewing their own cohort
-			subject,
-			filters={**filters, **({"name": [">", cursor]} if cursor else {})},
-			fields=["name"],
-			order_by="name asc",
-			limit=_PAGE,
+	base = _grain_filters(config)
+	matched, cursor = [], after
+	while len(matched) < limit:
+		filters = dict(base)
+		if cursor:
+			filters["name"] = [">", cursor]
+		rows = frappe.get_all(  # authz-ok: tier-a — workflow engine; the cohort is the Trigger's declared criteria
+			subject, filters=filters, fields=["name"], order_by="name asc", limit=_PAGE,
 		)
-		if not page:
-			return count, False
-		cursor = page[-1].name
-		for row in page:
+		if not rows:
+			return matched, cursor
+		cursor = rows[-1].name
+		for row in rows:
 			if predicate:
 				doc = frappe.get_doc(subject, row.name)
 				if not rules.predicate_match(predicate, ctx_build.context_for(doc, {}), field_types):
 					continue
-			count += 1
-			if count >= cap:
-				# There may be more; saying so is the honest answer, and a wrong precise number is worse.
-				return count, True
+			matched.append(row.name)
+			if len(matched) == limit:
+				# Stop ON the match, so the frontier never runs past a lead nobody has looked at yet.
+				return matched, row.name
+	return matched, cursor
+
+
+def _count_matching(subject, config, cap):
+	"""Walk the cohort through the ONE selector, stop at the cap.
+
+	Counted, never estimated — and counted by the same function the drain walks, so the preview cannot
+	promise a number the drain then disagrees with.
+	"""
+	count, cursor = 0, None
+	while count < cap:
+		page, cursor = matching_leads(subject, config, after=cursor, limit=min(_PAGE, cap - count))
+		if not page:
+			return count, False
+		count += len(page)
 	return count, True
 
 
