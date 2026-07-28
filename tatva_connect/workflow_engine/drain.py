@@ -31,25 +31,13 @@ import frappe
 from frappe.utils import now_datetime
 
 from tatva_connect.automation import settings as automation
-from tatva_connect.workflow_engine import ENGINE_SWITCH, cohort
+from tatva_connect.workflow_engine import ENGINE_SWITCH, cohort, thresholds
 
 SWITCH_COHORT = "Workflow::Cohort::drain"
 
 _WORKFLOW_DT = "CRM Workflow"
 
-# Leads per committed chunk. Small enough that a killed worker loses little, large enough that the commit
-# is not the cost. `partner_bulk_worker` reads its own from config; a cohort's is not operator business.
-CHUNK = 100
-
-# How many drains one sweep will start. A cohort is a business rhythm, so more than a handful being due at
-# the same minute is a misconfiguration rather than a load to absorb.
-MAX_DUE_PER_SWEEP = 20
-
-# Runs started per minute, globally and per workflow. The provider is the binding constraint, not us — the
-# live trial hit WATI's rate limit with a handful of messages.
-_RATE = 60
-_BURST = 60
-_WINDOW = 60
+# W4.3 — every number this drain paces itself by is DECLARED in `thresholds`, never re-stated here.
 
 IDLE, DRAINING = "", "Draining"
 
@@ -100,7 +88,7 @@ def _due_workflows():
 		},
 		pluck="name",
 		order_by="trigger_next_run_at asc",
-		limit=MAX_DUE_PER_SWEEP,
+		limit=thresholds.MAX_DUE_PER_SWEEP,
 	)
 
 
@@ -152,7 +140,7 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 	if respect_switch and not _armed():
 		_release(workflow_name)
 		return 0
-	chunk = chunk or CHUNK
+	chunk = chunk or thresholds.DRAIN_CHUNK
 	config = _trigger_config(workflow_name)
 	subject = config.get("subject_doctype") or "CRM Lead"
 	version = _version_of(workflow_name)
@@ -243,8 +231,8 @@ def _take_token(workflow_name):
 
 	verdict = _bucket_pair(
 		True, 1,
-		"cohort", _RATE, _BURST,
-		f"cohort:{workflow_name}", _RATE, _BURST, _WINDOW,
+		"cohort", thresholds.DRAIN_RATE, thresholds.DRAIN_BURST,
+		f"cohort:{workflow_name}", thresholds.DRAIN_RATE, thresholds.DRAIN_BURST, thresholds.DRAIN_WINDOW,
 	)
 	if not verdict:
 		return True  # exempt or unreadable — the limiter's own fail-open

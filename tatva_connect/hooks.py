@@ -1,4 +1,5 @@
 from tatva_connect.whatsapp import roles as whatsapp_roles
+from tatva_connect.workflow_engine import thresholds as workflow_thresholds
 
 app_name = "tatva_connect"
 app_title = "Tatva Connect"
@@ -306,8 +307,8 @@ scheduler_events = {
 		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
 		# Daily: purge finished async bulk jobs + results + payload past the retention window.
 		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
-		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on Voice::Reconciler::catchup).
-		"*/15 * * * *": [
+		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on Voice::Reconciler::catchup). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
+		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			"tatva_connect.voice.reconcile.sweep",
 			"tatva_connect.workflow_engine.drain.sweep",

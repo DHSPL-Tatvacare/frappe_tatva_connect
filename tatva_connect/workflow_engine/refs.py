@@ -151,11 +151,16 @@ def readable_for(doctype):
 
 	The four keys every document answers to and no doctype declares are appended, because a predicate on
 	`creation` or `owner` is legitimate and the meta does not carry them.
+
+	`options` — a Select's real choices, a Link's target doctype — is CARRIED, not re-derived. It was
+	dropped here, so a predicate on a Select field offered a free-text box and an author typed a value
+	that could never match. It is describe's answer and it crosses the seam beside the `type` it belongs
+	to; the IDENTITY still changes (bare `key` in, namespaced `ref` out) and nothing else does.
 	"""
 	if not doctype:
 		return []
 	found = [
-		{"ref": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"]}
+		{"ref": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"], "options": f.get("options")}
 		for f in _describe().fields_for_doctype(doctype)
 	]
 	return found + [

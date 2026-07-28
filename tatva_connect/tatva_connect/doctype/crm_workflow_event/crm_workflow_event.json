@@ -62,12 +62,12 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Pending\nConsumed",
+   "options": "Pending\nConsumed\nExpired",
    "default": "Pending",
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Records whether the signal is still Pending or has been Consumed by a Wait."
+   "description": "Every event is born Pending and ends in exactly one terminal state: Consumed when a Wait took it, Expired when the reaper aged it out. Only a Pending event can wake a run."
   },
   {
    "fieldname": "consumed_by",

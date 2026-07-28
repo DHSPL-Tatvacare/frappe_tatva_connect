@@ -31,6 +31,10 @@ INSTANCE_DT = "CRM Workflow Run"
 STEP_LOG_DT = "CRM Workflow Step Log"
 SIGNAL_DT = "CRM Workflow Event"
 
+# W4.4 — born PENDING, terminal at CONSUMED (a park took it) or EXPIRED (the reaper aged it out).
+PENDING, CONSUMED, EXPIRED = "Pending", "Consumed", "Expired"
+TERMINAL_SIGNAL_STATES = (CONSUMED, EXPIRED)
+
 MAX_HOPS = 100
 MAX_RETRIES = 5
 _EVENT_MODES = frozenset({"Until Event", "Event-or-Timeout"})
@@ -375,7 +379,7 @@ def _consume_signal(instance, signal_name, correlation):
 	row = frappe.db.get_value(SIGNAL_DT, filters, ["name", "payload_json"], as_dict=True, order_by="creation asc", for_update=True)
 	if not row:
 		return None
-	frappe.db.set_value(SIGNAL_DT, row.name, {"status": "Consumed", "consumed_by": instance.name}, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
+	frappe.db.set_value(SIGNAL_DT, row.name, {"status": CONSUMED, "consumed_by": instance.name}, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
 	return frappe.parse_json(row.payload_json or "{}")
 
 
@@ -389,12 +393,16 @@ def pending_signal_filters(subject_doctype, subject_name, signal_name, correlati
 
 	A null correlation matches rows with a null/empty correlation (`None` inside an `in` list becomes
 	`IS NULL`).
+
+	W4.4: `status == PENDING` is ALSO the age rule. An inbox row the reaper has aged out is EXPIRED, and
+	expiry is what takes it out of this filter — so a stale event cannot wake a journey, and no waking
+	surface has to remember to check a date. One state machine, one reader.
 	"""
 	return {
 		"subject_doctype": subject_doctype,
 		"subject_name": subject_name,
 		"event_name": signal_name,
-		"status": "Pending",
+		"status": PENDING,
 		"correlation": correlation if correlation else ["in", ["", None]],
 	}
 

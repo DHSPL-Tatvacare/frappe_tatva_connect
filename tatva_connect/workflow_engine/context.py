@@ -109,7 +109,9 @@ def test_call(endpoint, request_body=None, lead=None):
 
 	doc = frappe.get_doc("CRM Lead", subject)
 	doc.check_permission("read")  # the author sees this record's data in the tree, so they must be able to
-	body = actions.build_request_body(request_body, context_for(doc, changed=None)) if request_body else None
+	# `{}`, never None: `context_for` walks `changed.items()` unguarded, so `None` raised AttributeError and
+	# every Test call press 500'd. There is no change set at author time — nothing is mid-save.
+	body = actions.build_request_body(request_body, context_for(doc, changed={})) if request_body else None
 	response = actions._call_endpoint(endpoint, doc, body)
 	return {"armed": True, "lead": subject, "sent": body, **response}
 

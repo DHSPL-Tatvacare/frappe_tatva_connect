@@ -368,6 +368,109 @@ def _record_sent_message(account_name, to_number, template, parameters, message_
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — background job, no user context; the send was already gated by routing + adapter.assert_enabled
 
 
+def _preview_context(lead=None):
+	"""The lead an author's preview is built from, and the run-shaped context over it. Returns `(doc, ctx)`.
+
+	The SAME choice `context.test_call` makes for Call API: pick the most recently touched lead unless the
+	author named one, and say which. A response — or a message — is shaped by the record behind it, and an
+	author reading one built from a lead they did not choose maps values that do not exist for the next.
+	"""
+	from tatva_connect.automation.context import context_for
+
+	subject = lead or frappe.db.get_value("CRM Lead", {}, "name", order_by="modified desc")
+	if not subject:
+		return None, None
+	doc = frappe.get_doc("CRM Lead", subject)
+	doc.check_permission("read")  # this record's data is what the author is about to read
+	# `{}`, never None: nothing is mid-save at author time, so there is no change set — and `context_for`
+	# walks `changed.items()` unguarded, which is what makes `None` an AttributeError rather than a default.
+	return doc, context_for(doc, changed={})
+
+
+def _preview_gate(lead, values):
+	"""Every preview's front door: may this user author, is there a lead, and what did the wire send.
+
+	`values` arrives as JSON text from the browser and as a list from a test — parsed once, here, so
+	neither preview has to know which caller it has.
+	"""
+	if not frappe.has_permission("CRM Workflow", "write"):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+	rows = frappe.parse_json(values) if isinstance(values, str) else values
+	doc, ctx = _preview_context(lead)
+	if not doc:
+		return None, None, None, {"error": frappe._("There is no lead to build a preview from yet.")}
+	return doc, ctx, rows or [], None
+
+
+@frappe.whitelist()
+def whatsapp_template_preview(template, values=None, lead=None):
+	"""What this node would really send, for one real lead. The author's answer to "is it filled in?".
+
+	THE SAME PATH A RUN TAKES — `_template_parameters`, unchanged, against the account this lead's grain
+	really routes to. A preview that filled the slots its own way would be confidently wrong, which is
+	worse than no preview; and `blank` here is the SAME verdict that routes the live send to `failed`, so
+	an author sees the hole before a patient does rather than after.
+
+	The BODY is returned as the provider stores it, never substituted here: WhatsApp assembles the final
+	message provider-side from the template plus the parameters, so rendering it locally would be our
+	reproduction of someone else's renderer. The control shows the body and the values it would carry.
+	"""
+	doc, ctx, rows, refusal = _preview_gate(lead, values)
+	if refusal:
+		return refusal
+
+	from tatva_connect.channels import resolve
+	from tatva_connect.whatsapp import routing
+
+	account_name = routing.resolve_account_for_lead(doc)
+	if not account_name:
+		return {"lead": doc.name, "error": frappe._("No WhatsApp account is routed for this lead's grain.")}
+	account = frappe.get_doc("WhatsApp Account", account_name)
+	row = frappe.get_doc("WhatsApp Templates", template)
+	mismatch = template_account_mismatch(template, account_name)
+	if mismatch:
+		return {"lead": doc.name, "error": mismatch}
+
+	body = {"lead": doc.name, "body": row.get("template") or ""}
+	# A slot with no row RAISES in the filler, and mid-mapping that is the author's ordinary state — so it
+	# is REPORTED here rather than 500ing the panel they are still filling in.
+	try:
+		parameters, blank = _template_parameters(resolve.adapter_for(account), account, row, rows, ctx)
+	except ValueError as unmapped:
+		return {**body, "error": str(unmapped)}
+	return {**body, "values": parameters, "blank": blank}
+
+
+@frappe.whitelist()
+def email_template_preview(template, values=None, lead=None):
+	"""The subject and body this node would really send, rendered. The EMAIL TWIN, not a branch.
+
+	Exact where WhatsApp cannot be: `frappe.render_template` over the `Email Template`'s own subject and
+	body is literally what `send_email` calls, so this is the message, not a reproduction of it. Filled
+	through `_slot_values` — the same function, so the preview and the send cannot disagree about a slot.
+	"""
+	doc, ctx, rows, refusal = _preview_gate(lead, values)
+	if refusal:
+		return refusal
+
+	row = frappe.db.get_value("Email Template", template, ["subject", "use_html", "response_html", "response"], as_dict=True)
+	if not row:
+		return {"lead": doc.name, "error": frappe._("That template no longer exists.")}
+	# Same reason as WhatsApp: an unmapped slot is author state, not a server error.
+	try:
+		filled, blank = _slot_values(template, email_template_slots(template), rows, ctx)
+	except ValueError as unmapped:
+		return {"lead": doc.name, "error": str(unmapped)}
+	body = row.response_html if row.use_html else row.response
+	# Rendered only for what resolved: a blank slot is REPORTED, never quietly rendered as an empty string.
+	return {
+		"lead": doc.name,
+		"subject": frappe.render_template(row.subject or "", filled) if not blank else (row.subject or ""),
+		"body": frappe.render_template(body or "", filled) if not blank else (body or ""),
+		"blank": blank,
+	}
+
+
 def email_template_slots(template):
 	"""The named slots an `Email Template` really has — the EMAIL TWIN of `template_slots`, not a branch.
 

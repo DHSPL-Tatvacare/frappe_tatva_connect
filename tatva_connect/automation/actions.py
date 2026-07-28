@@ -851,9 +851,14 @@ VERBS = {
 			# The template's placeholders, DECLARED. `reads=value_rows` is what makes them visible to
 			# `contract.reads_of` and therefore refusable by the publish gate; `slots_from` names the
 			# sibling holding the template whose real placeholder names the control offers.
+			# `preview` is Call API's own declaration, reused verbatim: the method that fetches a REAL answer, and its sibling args.
 			{"name": "template_values", "label": "Template Values", "type": "Value Map",
 			 "slots_from": "whatsapp_template",
-			 "slots_method": "tatva_connect.automation.sends.template_slots"},
+			 "slots_method": "tatva_connect.automation.sends.template_slots",
+			 "preview": {
+				 "method": "tatva_connect.automation.sends.whatsapp_template_preview",
+				 "args": {"template": "whatsapp_template", "values": "template_values"},
+			 }},
 		],
 	},
 	"Send Email": {
@@ -867,9 +872,14 @@ VERBS = {
 			# Frappe's own template store. There is no compose box: every message goes through the org's template chain.
 			{"name": "email_template", "label": "Template", "type": "Link", "link": "Email Template", "reqd": True},
 			# The same Value Map WhatsApp uses; only the slot SOURCE differs, because an Email Template names its variables.
+			# The email twin: two readers, because rendering a WhatsApp body is the provider's job and rendering an email's is ours.
 			{"name": "template_values", "label": "Template Values", "type": "Value Map",
 			 "slots_from": "email_template",
-			 "slots_method": "tatva_connect.automation.sends.email_template_slots"},
+			 "slots_method": "tatva_connect.automation.sends.email_template_slots",
+			 "preview": {
+				 "method": "tatva_connect.automation.sends.email_template_preview",
+				 "args": {"template": "email_template", "values": "template_values"},
+			 }},
 		],
 	},
 	"AI Voice Call": {

@@ -13,7 +13,7 @@ order:
     Instance whose `awaiting_signal` already has a matching Pending inbox row but was never woken (a lost
     enqueue). Overlaps timer_sweep on (a) by design - a re-drive of an already-advanced row is a claimed
     no-op (F6) - so the reconciler is a COMPLETE standalone backstop.
-  * `_purge_stale_signals` - keep the inbox bounded (old Consumed + orphan Pending rows).
+  * `_purge_stale_signals` - THE reaper (W4.4): expire orphan Pending rows, delete old terminal ones.
 
 Every drive claims the Instance `for_update` and re-checks status BEFORE work (F6), and sets
 `frappe.flags.in_workflow` so the engine's own writes don't re-enter entry/signal detection.
@@ -21,16 +21,14 @@ Every drive claims the Instance `for_update` and re-checks status BEFORE work (F
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.workflow_engine import ENGINE_SWITCH, SWEEP_SWITCH, interpreter
+from tatva_connect.workflow_engine import ENGINE_SWITCH, SWEEP_SWITCH, interpreter, thresholds
 
 INSTANCE_DT = interpreter.INSTANCE_DT
 SIGNAL_DT = interpreter.SIGNAL_DT
-_PAGE_LIMIT = 200  # a sane cap per sweep — a huge backlog drains over several sweeps, not one giant job
 
 # The lane Frappe's own scheduler does not manage, so our RQ scheduler can service it without two
 # schedulers fighting. Registered in common_site_config `workers`, exactly as `partner_bulk` is.
 WAKE_QUEUE = "workflow"
-_WAKE_TIMEOUT = 1500
 
 
 def schedule_wake(name, resume_at):
@@ -67,7 +65,7 @@ def schedule_wake(name, resume_at):
 			_as_utc(due),
 			"frappe.utils.background_jobs.execute_job",
 			kwargs=queue_args,
-			job_timeout=_WAKE_TIMEOUT,
+			job_timeout=thresholds.WAKE_JOB_TIMEOUT,
 			job_id=job_id,
 		)
 
@@ -144,7 +142,7 @@ def reconciler_sweep():
 		INSTANCE_DT,
 		filters={"status": "Parked", "awaiting_signal": ["is", "set"]},
 		fields=["name", "subject_doctype", "subject_name", "awaiting_signal", "awaiting_correlation"],
-		limit=_PAGE_LIMIT,
+		limit=thresholds.SWEEP_PAGE,
 	):
 		if _has_pending_signal(row):
 			drive_instance(row.name)
@@ -152,12 +150,23 @@ def reconciler_sweep():
 
 
 def _purge_stale_signals():
-	"""Keep the signal inbox bounded (the GC `interpreter._consume_signal` references): drop Consumed rows
-	older than a week and any Pending row older than a month (an unclaimed duplicate/orphan). Its own commit;
-	harmless when it deletes nothing."""
+	"""W4.4 — THE reaper: age the dead out of the inbox, then delete what has been terminal long enough.
+
+	A row nothing ever claimed used to sit `Pending` for a month and then be DELETED. It reached no
+	terminal state, so the inbox could not say what became of it; and all month it could still be claimed
+	by a park — a message going out on a weeks-old signal the moment sends are armed.
+
+	So expiry is a STATE. `Expired` is terminal, and inert because `pending_signal_filters` asks for
+	`PENDING` and nothing else. One reaper, not two: this function already owned this table's age policy.
+	"""
 	now = frappe.utils.now_datetime()
-	frappe.db.delete(SIGNAL_DT, {"status": "Consumed", "modified": ["<", frappe.utils.add_to_date(now, days=-7)]})
-	frappe.db.delete(SIGNAL_DT, {"status": "Pending", "creation": ["<", frappe.utils.add_to_date(now, days=-30)]})
+	dead_before = frappe.utils.add_to_date(now, days=-thresholds.SIGNAL_DEAD_AFTER_DAYS)
+	# Stamps `modified`, which is the timestamp the retention purge below then counts from.
+	frappe.db.set_value(  # authz-ok: tier-a — workflow engine, scheduler context
+		SIGNAL_DT, {"status": interpreter.PENDING, "creation": ["<", dead_before]}, "status", interpreter.EXPIRED
+	)
+	purge_before = frappe.utils.add_to_date(now, days=-thresholds.SIGNAL_RETENTION_DAYS)
+	frappe.db.delete(SIGNAL_DT, {"status": ["in", interpreter.TERMINAL_SIGNAL_STATES], "modified": ["<", purge_before]})
 	frappe.db.commit()
 
 
@@ -182,14 +191,19 @@ def _due_parked():
 		INSTANCE_DT,
 		filters={"status": "Parked", "resume_at": ["<=", frappe.utils.now_datetime()]},
 		order_by="resume_at asc",
-		limit=_PAGE_LIMIT,
+		limit=thresholds.SWEEP_PAGE,
 		pluck="name",
 	)
 
 
 def _has_pending_signal(row):
-	"""True iff a Pending inbox row matches this Instance's awaited (subject, signal, correlation) - the
-	same match `_consume_signal` will make on the drive (null correlation matches null/empty)."""
-	filters = {"subject_doctype": row.subject_doctype, "subject_name": row.subject_name, "event_name": row.awaiting_signal, "status": "Pending"}
-	filters["correlation"] = row.awaiting_correlation if row.awaiting_correlation else ["in", ["", None]]
+	"""True iff a live inbox row matches this Instance's awaited (subject, signal, correlation).
+
+	Asks through `pending_signal_filters`, the ONE description of "a row that would wake this park", so the
+	backstop can never re-drive a run on a row the drive itself would then decline to consume. It carried
+	its own copy of that dict until W4.4, which is what would have let an EXPIRED row wake a run for ever.
+	"""
+	filters = interpreter.pending_signal_filters(
+		row.subject_doctype, row.subject_name, row.awaiting_signal, row.awaiting_correlation
+	)
 	return bool(frappe.db.get_value(SIGNAL_DT, filters, "name"))

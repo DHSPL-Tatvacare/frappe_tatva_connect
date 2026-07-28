@@ -130,8 +130,12 @@ def emitters_at(nodes, node_id):
 	return found
 
 
-def _shaped(name, ftype, label, source, source_label):
+def _shaped(name, ftype, label, source, source_label, options=None):
 	"""One field, in the builder contract's own shape — `{ref, label, type, source, source_label}`.
+
+	`options` rides along ONLY when the field really has choices, so a Select's predicate value becomes a
+	dropdown instead of a free-text box. Absent for everything else, which is why the key is conditional
+	rather than a `None` on every row — a node-emitted variable declares no choices and must not claim to.
 
 	Deliberately NO per-field `operators`: the contract resolves them by TYPE, from `operators_by_type`,
 	which is composed from the evaluator's own operator families. A per-field list here would be a second
@@ -143,10 +147,13 @@ def _shaped(name, ftype, label, source, source_label):
 	deriving the label in the picker would be a second brain guessing that `crm_lead` means the lead, and
 	it would guess wrong for every node source, whose name is the author's own.
 	"""
-	return {
+	shape = {
 		"ref": name, "label": label or name, "type": ftype or "Data",
 		"source": source, "source_label": source_label or source,
 	}
+	if options:
+		shape["options"] = options
+	return shape
 
 
 def _emitted_by(node):
@@ -310,7 +317,7 @@ def _subject_fields(by_id):
 	if not subject or not frappe.db.exists("DocType", subject):
 		return []
 	return [
-		_shaped(f["ref"], f["type"], f["label"], refs.slug(subject), _(subject))
+		_shaped(f["ref"], f["type"], f["label"], refs.slug(subject), _(subject), f.get("options"))
 		for f in refs.readable_for(subject)
 	]
 

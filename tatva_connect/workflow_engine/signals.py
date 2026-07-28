@@ -48,7 +48,7 @@ def deliver_signal(subject_doctype, subject_name, signal_name, correlation=None,
 		"event_name": signal_name,
 		"correlation": correlation,
 		"payload_json": frappe.as_json(payload or {}),
-		"status": "Pending",
+		"status": interpreter.PENDING,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, external signal ingress
 	frappe.enqueue(
 		"tatva_connect.workflow_engine.signals.resume_for_signal",
