@@ -30,6 +30,7 @@ from tatva_connect.patches import (
 	add_task_answer_fieldname_index,
 	add_task_document_kind_index,
 	add_timeline_paging_indexes,
+	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
 	hash_name_transactional_doctypes,
@@ -77,6 +78,8 @@ _STEPS = (
 	add_timeline_paging_indexes,
 	# (reference_doctype, reference_name, event_on) + UNIQUE (source_doctype, source_name) on CRM Timeline Event, then fill it from source. Composite, so not JSON-declarable, and the unique pair is what makes the fill re-runnable. The rail is one seek on this table instead of a read-time merge across six.
 	build_lead_timeline_index,
+	# (trigger_mode, trigger_next_run_at) on CRM Workflow — the cohort drain's one question, equality then range. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_workflow_due_index,
 	# Near Me is one Google map now; its provider Select is gone and its dead Singles value with it.
 	retire_nearme_map_provider,
 	# (parent, question_hash) and (question_hash, value) on CRM Lead Screening Answer — the Data tab read and the Smart View join select on them; a fresh site would otherwise full-scan forever.

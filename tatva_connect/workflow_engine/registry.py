@@ -36,6 +36,17 @@ EVENT_OR_TIMEOUT = "Event-or-Timeout"
 
 TRIGGER = "Trigger"
 
+# How a run is born: a save starts ONE run; a schedule takes a COHORT, each lead its own ordinary run.
+MODE_RECORD = "Record Event"
+MODE_SCHEDULE = "Schedule"
+
+# Frappe's own frequency names and its own crons (`scheduled_job_type.py:113`, a local we cannot import); hourly and finer are out because a cohort is a business rhythm, not a poll.
+SCHEDULES = {
+	"Daily": "0 0 * * *",
+	"Weekly": "0 0 * * 0",
+	"Monthly": "0 0 1 * *",
+}
+
 
 def _subject_options():
 	"""The doctypes a workflow may watch — read from `automation.subjects.SUBJECTS`, the ONE resolver.
@@ -65,9 +76,19 @@ NODE_TYPES = {
 		"description": "What starts this workflow: the subject it watches, the event, the grain it applies to, and the conditions a subject must meet. Exactly one per workflow, and the only node with no inbound edge.",
 		"outputs": ["next"],
 		"singleton": True,
+		# The Trigger gates its OWN fields on its OWN mode — Wait's shipped pattern; what W1-contract.md:212 rejects is a node morphing on ANOTHER node's mode, and no other node type may gate on `mode`.
 		"config": [
+			_field("mode", "Starts on", "Select", options=[MODE_RECORD, MODE_SCHEDULE], reqd=True,
+			       default=MODE_RECORD),
+			# Declared in EVERY mode: "only when" on a save is "who is in the cohort" on a schedule, one predicate.
 			_field("subject_doctype", "Subject", "Select", options=_subject_options(), reqd=True),
-			_field("event", "Event", "Select", options=["Created", "Updated", "Deleted"], reqd=True),
+			_field("event", "Event", "Select", options=["Created", "Updated", "Deleted"], reqd=True,
+			       depends_on_value={"mode": [MODE_RECORD]}),
+			# How often the cohort is taken; `cohort.next_run_at` names the API rejected and why.
+			_field("schedule", "Repeats", "Select", options=list(SCHEDULES), reqd=True,
+			       depends_on_value={"mode": [MODE_SCHEDULE]}),
+			_field("schedule_time", "At", "Data", placeholder="09:00",
+			       depends_on_value={"mode": [MODE_SCHEDULE]}),
 			_field("vertical", "Vertical", "Grain", link="CRM Vertical"),
 			_field("group", "Group", "Grain", link="CRM Group"),
 			_field("program", "Program", "Grain", link="CRM Program"),
@@ -348,7 +369,8 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 	problems = []
 	completeness = mode == PUBLISH
 	declared = declaration(node_type)
-	config = config or {}
+	# Declared defaults are in play before any rule reads the config — see `with_defaults`.
+	config = with_defaults(node_type, config)
 
 	known = {f["name"] for f in declared["config"]}
 	for name in sorted(set(config) - known):
@@ -737,6 +759,35 @@ def graph_outputs(nodes):
 		for node in nodes
 		if node.get("node_id")
 	}
+
+
+def with_defaults(node_type, config):
+	"""The config as the node EFFECTIVELY carries it — a declared default fills a key the author never set.
+
+	Frappe's own semantic: a field with a default HAS that default until someone changes it. Without this
+	the gate reads a missing key as "no value", so a Trigger authored before `mode` existed had its `event`
+	treated as gated off — and a gated-off required field skips every one of its checks, so a bad Event
+	value stopped being caught. A default that only the UI knows about is a default the validator disagrees
+	with.
+	"""
+	declared = declaration(node_type) or {}
+	effective = dict(config or {})
+	for field in declared.get("config") or []:
+		if field.get("default") is not None and effective.get(field["name"]) in (None, ""):
+			effective[field["name"]] = field["default"]
+	return effective
+
+
+def applied_fields(node_type, config):
+	"""The config fields IN PLAY for this node given its own config — the ONE reader of the gate.
+
+	The inspector already asks the same question client-side (`useNodeTypes.appliedFieldsFor`); this is
+	the server's answer to it, so a rule that must know "is this field even asked for" reads the gate
+	rather than re-deciding it. A gated-off field is not missing, it is out of play.
+	"""
+	declared = declaration(node_type) or {}
+	effective = with_defaults(node_type, config)
+	return [f for f in (declared.get("config") or []) if _applies(f, effective)]
 
 
 def _applies(field, config) -> bool:

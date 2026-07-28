@@ -15,7 +15,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from tatva_connect.workflow_engine import registry
+from tatva_connect.workflow_engine import cohort, registry
 from tatva_connect.workflow_engine.registry import TRIGGER as TRIGGER_NODE_TYPE
 
 LIFECYCLE_STATES = ("Draft", "Published", "Active", "Suspended", "Archived")
@@ -38,6 +38,7 @@ _TRANSITIONS = {
 TRIGGER_INDEX = {
 	"trigger_doctype": "subject_doctype",
 	"trigger_event": "event",
+	"trigger_mode": "mode",
 	"trigger_vertical": "vertical",
 	"trigger_group": "group",
 	"trigger_program": "program",
@@ -59,6 +60,13 @@ class CRMWorkflow(Document):
 		config = registry.config_of(trigger) if trigger else {}
 		for column, key in TRIGGER_INDEX.items():
 			self.set(column, (config or {}).get(key) or "")
+		# A Trigger that does not say how it starts is a record-event one — that is what every Trigger was
+		# before schedule mode existed, and the drain matches on `Schedule` alone, so blank is never due.
+		if trigger and not self.trigger_mode:
+			self.trigger_mode = registry.MODE_RECORD
+		# Not a copy but a DERIVATION, which is why it sits beside the map rather than in it: the drain asks
+		# one indexed question — mode plus a clock — and a record-event workflow is never due, so it carries none.
+		self.trigger_next_run_at = cohort.next_run_at(config)
 
 	def trigger_node(self):
 		"""This workflow's Trigger node, or None. There is at most one — `validate_trigger` enforces it."""

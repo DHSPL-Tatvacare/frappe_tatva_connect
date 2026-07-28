@@ -11,6 +11,8 @@
   "entry_node",
   "trigger_doctype",
   "trigger_event",
+  "trigger_mode",
+  "trigger_next_run_at",
   "canvas_json",
   "trigger_vertical",
   "trigger_group",
@@ -41,7 +43,7 @@
    "fieldname": "entry_node",
    "fieldtype": "Data",
    "label": "Entry Node",
-   "description": "The node a Run starts at. The Trigger node declares the subject, the event and the predicate \u2014 the workflow header no longer carries them."
+   "description": "The node a Run starts at. The Trigger node declares the subject, the event and the predicate — the workflow header no longer carries them."
   },
   {
    "fieldname": "trigger_doctype",
@@ -50,7 +52,7 @@
    "read_only": 1,
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query \u2014 a predicate in JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query — a predicate in JSON cannot answer that. One writer: the Workflow controller."
   },
   {
    "fieldname": "trigger_event",
@@ -60,6 +62,24 @@
    "in_standard_filter": 1,
    "search_index": 1,
    "description": "DERIVED from the Trigger node on save, never authored. See trigger_doctype."
+  },
+  {
+   "fieldname": "trigger_mode",
+   "fieldtype": "Data",
+   "label": "Trigger Mode",
+   "read_only": 1,
+   "search_index": 1,
+   "no_copy": 1,
+   "description": "Derived from the Trigger node — how a run is born. Record Event, or Schedule for a cohort."
+  },
+  {
+   "fieldname": "trigger_next_run_at",
+   "fieldtype": "Datetime",
+   "label": "Next Cohort Run",
+   "read_only": 1,
+   "search_index": 1,
+   "no_copy": 1,
+   "description": "Derived. When this workflow's cohort is next due. Blank on a record-event workflow, which is woken by a save and is never due."
   },
   {
    "fieldname": "canvas_json",
@@ -76,7 +96,7 @@
    "label": "Trigger Vertical",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
   },
   {
    "fieldname": "trigger_group",
@@ -85,7 +105,7 @@
    "label": "Trigger Group",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
   },
   {
    "fieldname": "trigger_program",
@@ -94,7 +114,7 @@
    "label": "Trigger Program",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
   }
  ],
  "index_web_pages_for_search": 1,

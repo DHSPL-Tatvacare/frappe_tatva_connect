@@ -317,7 +317,25 @@ def _trigger_problems(nodes, entry_node, context):
 	if entry_node and entry_node != triggers[0]["node_id"]:
 		return [_at(entry_node, _("Runs must begin at the Trigger, not at {0}.").format(entry_node),
 		            code="trigger.entry", fix=_("Make the Trigger the entry node."))]
-	return []
+	return _schedule_problems(triggers[0])
+
+
+def _schedule_problems(trigger):
+	"""A scheduled Trigger names a schedule that can actually be read.
+
+	Unreadable, the workflow publishes green and simply never fires — no error, no run, no clue, and the
+	author finds out when the month's cohort does not go out. `registry.SCHEDULES` is the one vocabulary,
+	so a value outside it is refused here rather than silently answering `None` at `cohort.next_run_at`.
+	"""
+	config = _config_of(trigger)
+	if config.get("mode") != registry.MODE_SCHEDULE:
+		return []
+	if config.get("schedule") in registry.SCHEDULES:
+		return []
+	return [_at(trigger["node_id"],
+	            _("This Trigger runs on a schedule but does not say how often, so it would never fire."),
+	            code="trigger.schedule.missing", field="schedule",
+	            fix=_("Choose how often the cohort repeats."))]
 
 
 def _edge_problems(nodes, context):
