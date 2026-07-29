@@ -25,7 +25,7 @@ What is asserted:
     helper in isolation.
 
 Nothing here names a column or a section as a literal: every one is read off the brain
-(`COMMON_COLUMNS`, the `CRM Task Section` rows), so a column that changes sides moves this test with it.
+(`task_columns()`, the `CRM Task Section` rows), so a column that changes sides moves this test with it.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -75,7 +75,7 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		# The three routes, each resolved off the brain rather than named.
-		cls.common_column = _data_column("CRM Task", list(activity_api.COMMON_COLUMNS))
+		cls.common_column = _data_column("CRM Task", list(activity_api.task_columns()))
 		cls.section = _column_section()
 		cls.section_column = _data_column(cls.section.target_doctype)
 

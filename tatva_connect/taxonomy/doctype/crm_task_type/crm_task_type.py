@@ -15,6 +15,7 @@ class CRMTaskType(Document):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
 		normalize_field(self, "type_name")
 		self._validate_schema()
+		self._validate_lead_sourced_fields()
 		self._validate_rules()
 
 	def _validate_schema(self):
@@ -25,6 +26,34 @@ class CRMTaskType(Document):
 			if (row.fieldtype or "") not in NO_VALUE_FIELDS and not (row.label or "").strip():
 				frappe.throw(_("Schema row {0}: a {1} field needs a label — it is what the rep is asked.").format(
 					row.idx, row.fieldtype), title=_("Missing label"))
+
+	def _validate_lead_sourced_fields(self):
+		"""A `source = Lead` row IS the lead's field, so it must carry the LEAD's fieldname.
+
+		The prefill looks the row's `fieldname` up through the lead detail brain and the snapshot stores it
+		under that same name, so a row calling the lead's `first_name` something else — `patient_name`, say —
+		opens blank and snapshots under a name nothing answers to: two names for one thing.
+
+		Asked of `CRM Lead API Field`, the lead resource's own field brain, and NOT of `CRM Lead`'s meta:
+		only 59 of its 315 rows are columns of CRM Lead itself, the other 256 living on the child profiles
+		(drug, care, plan, lab, acq, metrics). Asking the meta refused four lead fields out of five —
+		the oncologist, the cancer stage, the hospital — which are exactly the context a snapshot exists for.
+		`lead.detail` already reads every section, so the prefill was never the thing that was narrow."""
+		from tatva_connect.activity.api import LEAD_SOURCE
+
+		catalogued = {r.fieldname for r in frappe.get_all("CRM Lead API Field", fields=["fieldname"], limit=0)}
+		lead_meta = frappe.get_meta("CRM Lead")
+		for row in self.schema:
+			fieldname = (row.fieldname or "").strip()
+			if (row.get("source") or "") != LEAD_SOURCE or not fieldname:
+				continue
+			# Either door proves it is the lead's: a catalogued field (which may live on a child profile) or a plain column of CRM Lead itself.
+			if fieldname not in catalogued and not lead_meta.get_field(fieldname):
+				frappe.throw(
+					_("Schema row {0}: `{1}` is sourced from the Lead but is neither a catalogued lead field "
+					  "nor a column of CRM Lead. A lead-sourced row must carry the lead's own fieldname, or it "
+					  "opens blank and snapshots under a name nothing answers to.").format(row.idx, fieldname),
+					title=_("Not a lead field"))
 
 	def _validate_rules(self):
 		"""Every rule row names fields THIS type declares, and a value the named field offers (§17.1).
@@ -66,12 +95,18 @@ class CRMTaskType(Document):
 def list_lead_fields(vertical=None, group=None, program=None):
 	"""The lead fields a schema row may source at this grain, as [{fieldname, label, fieldtype}] (D31).
 
-	The catalogue is the ONE mapping seam (`lead/mapping.py:mappable_fields`) and each row is kept only if
-	the write gate itself (`automation/fields.py:is_settable`, parent-section context — the exact call
-	`write_lead_fields` makes) would accept it, so the picker can never offer a field the save refuses.
+	The catalogue is the ONE lead-field brain — `lead/mapping.py:mappable_fields`, which reads
+	`CRM Lead API Field` and drops any row naming no live column. Nothing is re-decided here.
+
+	It is NOT filtered by `automation/fields.py:is_settable` any more. That gate asked *"may an automation
+	WRITE this field"*, and it was right while the form wrote lead answers back to the lead. §4.2 of the
+	generic-activity-storage plan reversed that: a lead field is now shown read-only and snapshotted onto
+	the activity, so a write allowlist is the wrong question — and the wrong ANSWER, because the very
+	fields a snapshot exists for (the patient's name, the oncologist, the stage) are the ones no contract
+	ticks settable. Reading is still gated where it always was: `activity.api.lead_field_values` goes
+	through the lead detail brain, so a field this viewer may not see never reaches them.
 	The axes come from the CALLER (the open, possibly unsaved Desk form), the same shape as
 	`intake/api.py:list_target_fields`. Gated read-only on the doctype this form edits."""
-	from tatva_connect.automation import fields as automation_fields
 	from tatva_connect.lead import mapping
 
 	frappe.has_permission("CRM Task Type", "read", throw=True)
@@ -80,5 +115,4 @@ def list_lead_fields(vertical=None, group=None, program=None):
 	if not any(axes):
 		return []  # no grain chosen yet — the client shows "pick the grain first"
 	return [{"fieldname": f["fieldname"], "label": f["label"], "fieldtype": f["fieldtype"]}
-			for f in mapping.mappable_fields(grain=axes)
-			if automation_fields.is_settable("CRM Lead", f["fieldname"], axes)]
+			for f in mapping.mappable_fields(grain=axes)]

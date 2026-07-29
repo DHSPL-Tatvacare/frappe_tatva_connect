@@ -21,12 +21,16 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect import schema_setup
-from tatva_connect.patches import add_task_answer_fieldname_index, add_task_document_kind_index
+from tatva_connect.patches import (
+	add_task_answer_fieldname_index,
+	add_task_document_kind_index,
+	add_task_lead_snapshot_index,
+)
 from tatva_connect.taxonomy import task_section_seed
 
 # Each index patch and the fresh-install twin it must appear in; asserted as one list so a new index is
 # covered by having been added here rather than by anyone remembering to write another test.
-_INDEX_PATCHES = (add_task_document_kind_index, add_task_answer_fieldname_index)
+_INDEX_PATCHES = (add_task_document_kind_index, add_task_answer_fieldname_index, add_task_lead_snapshot_index)
 
 TASK_DOCTYPE = "CRM Task"
 
@@ -59,6 +63,27 @@ class TestTaskSectionsAndStorage(FrappeTestCase):
 				frappe.get_meta(row["target_doctype"]).istable,
 				f"{row['target_doctype']} is not a child table — its rows would carry an independent permission set",
 			)
+
+	def test_no_task_section_declares_multi_row(self):
+		"""A shape nothing on this path can build. `field_target` answers a column section with the COLUMN the
+		declaration names, and `_put_section_value` therefore addresses `rows[0]` — a second row has no address,
+		so a writer could never write one and a reader could never pick between two. `documents` carried
+		`is_multi_row = 1, row_key_field = document_kind` for months and the result was measurable: 941 rows,
+		`document_kind` set on ZERO of them, one row per task, every kind living in its own column of that one
+		row. Lead sections are genuinely multi-row (lab, drug, acq) and are not this doctype."""
+		declared = [r["section_key"] for r in task_section_seed._ROWS if r["is_multi_row"]]
+		self.assertEqual(declared, [], f"task sections declaring a shape no writer can build: {declared}")
+		stored = frappe.get_all("CRM Task Section", filters={"is_multi_row": 1}, pluck="name")
+		self.assertEqual(stored, [], f"live task sections still multi-row (run bench migrate): {stored}")
+
+	def test_the_doctype_refuses_a_multi_row_task_section(self):
+		"""The declaration lock above states the end state; this one stops it growing back. A section carrying
+		a row key it cannot use is exactly how `documents` came to promise a shape nothing built."""
+		row = dict(next(r for r in task_section_seed._ROWS if not r["is_key_value"] and r["child_table_field"]))
+		row.update({"doctype": "CRM Task Section", "section_key": "zz_multi_row_probe", "is_multi_row": 1})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			frappe.get_doc(row).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		self.assertIn("one row per task", str(caught.exception))
 
 	def test_a_multi_row_section_addresses_a_real_column(self):
 		"""Multi-row is meaningless without an address: the row key must be a column of the target."""

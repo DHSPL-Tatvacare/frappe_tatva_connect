@@ -82,7 +82,7 @@ class TestTheDropListItself(FrappeTestCase):
 	def test_no_retained_common_column_is_on_the_drop_list(self):
 		"""D18: the four the task row KEEPS are the live seam — `_validate_asm` reads one of them."""
 		self.assertEqual(
-			set(patch._DEAD) & set(activity_api.COMMON_COLUMNS), set(),
+			set(patch._DEAD) & set(activity_api.task_columns()), set(),
 			"the patch would drop a column the writer still writes and the reader still reads",
 		)
 

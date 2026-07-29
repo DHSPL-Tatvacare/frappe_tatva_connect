@@ -156,9 +156,9 @@ class TestActivityFieldsAllQueryable(FrappeTestCase):
 		self.assertIsNotNone(self.column_section, "no section declares 3 named columns — rule 1 is untestable")
 		self.assertIn(DYING_SLOT, backfill.PROMOTED_COLUMNS,
 					  f"`{DYING_SLOT}` was never a promoted column — it is no longer a dying slot")
-		self.assertNotIn(DYING_SLOT, activity_api.COMMON_COLUMNS,
+		self.assertNotIn(DYING_SLOT, activity_api.task_columns(),
 						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually dropped")
-		self.assertIn(RETAINED_COMMON, activity_api.COMMON_COLUMNS,
+		self.assertIn(RETAINED_COMMON, activity_api.task_columns(),
 					  f"`{RETAINED_COMMON}` is not a retained common column — rule 2 is untestable")
 		self.assertLess(LATE, EARLY, "the two moments no longer disagree lexically — D17 is untestable")
 

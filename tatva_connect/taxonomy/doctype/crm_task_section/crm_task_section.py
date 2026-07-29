@@ -27,6 +27,7 @@ _KEY_VALUE_REQUIRED = ("row_key_field", "value_field", "question_field")
 
 class CRMTaskSection(Document):
 	def validate(self):
+		self._a_task_section_is_never_multi_row()
 		self._multi_row_needs_a_row_key()
 		self._key_value_needs_an_address_and_a_value()
 		self._key_value_is_not_multi_row()
@@ -49,6 +50,17 @@ class CRMTaskSection(Document):
 			frappe.throw(
 				frappe._("A section is keyed by a field or dated by a row key, never both: a key-value section already holds exactly one row per field."),
 				title=frappe._("Key Value and Multi Row are exclusive"),
+			)
+
+	def _a_task_section_is_never_multi_row(self):
+		"""Unsatisfiable on the task path, so it is refused rather than left to be declared and never built:
+		an activity field is addressed by the COLUMN `field_target` names, so a second row has no address and
+		no writer could ever reach it. The `documents` section carried this shape for months — 941 rows, and
+		`document_kind` set on none of them. A question asked many times per activity is key-value."""
+		if self.is_multi_row:
+			frappe.throw(
+				frappe._("A task section holds one row per task. An activity field is addressed by a column, never by a row key, so a second row could never be written or read — declare the question in a key-value section instead."),
+				title=frappe._("Multi Row is not a task-section shape"),
 			)
 
 	def _multi_row_needs_a_row_key(self):

@@ -15,7 +15,7 @@ This module is also the HOME OF THE HISTORY. `PROMOTED_COLUMNS`, `field_column` 
 `_legacy_task_values` were the live brain's until Phase 7 dropped the columns they read: they name a
 schema this app no longer has, and §11 says a migration is the one place allowed to know that. Nothing
 outside this module and its patch reads them, and `activity/api.py` keeps only the live seam
-(`COMMON_COLUMNS`, `field_target`).
+(`task_columns()`, `field_target`).
 
 Why this lives here and not only in its patch: the answers land in Table fields that ship in
 `fixtures/custom_field.json`, and the sections that route them are seeded in `after_migrate` — both AFTER
@@ -35,7 +35,7 @@ _CHUNK = 500
 
 # The 9 CRM Task columns an activity field's answer could be PROMOTED into before Phase 5, and the JSON
 # payload that held everything else. HISTORY, not a live rule: `patches/retire_task_slot_columns.py` drops
-# the five the task row does not keep plus the payload, and `activity_api.COMMON_COLUMNS` is what survives.
+# the five the task row does not keep plus the payload, and `activity_api.task_columns()` is what survives.
 PROMOTED_COLUMNS = (
 	"custom_outcome", "custom_reference", "custom_asm",
 	"custom_scheduled_at", "custom_followup_at",
@@ -75,7 +75,7 @@ def _legacy_task_values(r, cfg):
 def retired_homes():
 	"""The old homes Phase 7 removes: the JSON payload, plus every promoted column the task row does NOT
 	keep. Derived from the two lists that already exist, so the drop list is stated once — in the patch."""
-	return (_PAYLOAD_COLUMN, *(c for c in PROMOTED_COLUMNS if c not in activity_api.COMMON_COLUMNS))
+	return (_PAYLOAD_COLUMN, *(c for c in PROMOTED_COLUMNS if c not in activity_api.task_columns()))
 
 
 def _readable_old_homes():

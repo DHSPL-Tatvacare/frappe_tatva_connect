@@ -333,6 +333,8 @@ scheduler_events = {
 
 # Ship the CRM Form Scripts from their .js source files on every migrate — keeps them version-controlled and in sync.
 after_migrate = [
+	# FIRST: field_target routes through these rows, and apply_schema below runs steps that ask it. Seeded ahead of everything so no step ever sees an empty catalog. Its own inputs are CRM Task columns, which sync_fixtures has already landed by now.
+	"tatva_connect.taxonomy.task_field_seed.ensure_rows",
 	# Structural patches (indexes/Select options/custom fields); install-app baselines patches.txt WITHOUT running it, so re-run them here (idempotent). Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
 	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT fix); structural + idempotent, same reason as schema_setup above.

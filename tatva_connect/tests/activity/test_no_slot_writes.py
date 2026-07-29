@@ -14,7 +14,7 @@ What is asserted, and what is deliberately NOT:
     about the schema and not a property of a writer. `tests/migration/test_retire_task_slot_columns.py`
     owns the DROP itself; this is the standing check that it stayed dropped;
   * a field naming no retained column answers in its section row, so nothing was lost with the leg;
-  * every RETAINED common column (§8 rule 2, D18) is still written exactly as before — including
+  * every retained common column (§8 rule 2, D18) is still written exactly as before — including
     `custom_asm`, which no rep picker offers but `_validate_asm` reads out of the very dict this phase
     re-routed. Lose that write and the ASM validation goes blind, silently.
 
@@ -44,7 +44,6 @@ TYPE_NAME = "ZZ No Slot Writes Probe"
 # The old homes Phase 7 retired, and the columns the task row keeps — both read off the app, never
 # restated: a column moved between the two sets moves this test with it.
 RETIRED = backfill.retired_homes()
-RETAINED = activity_api.COMMON_COLUMNS
 
 # A field naming no retained column: the shape that used to be a slot or a payload key and is an answer row
 # now. Declared without a target, because the target it once carried names nothing at all any more.
@@ -56,6 +55,15 @@ SECTION_ANSWER = "ZZ answer with no column of its own"
 ASM_COLUMN = "custom_asm"
 ASM_USER = "Administrator"
 NOT_AN_ASM = "Guest"
+
+
+def _declared_fieldtype(column_fieldtype):
+	"""The declared fieldtype a probe may use for a column — asked of the CRM Task Type Field Select's OWN
+	options, because a retained column's native type is not always one a declaration may take (`description`
+	is a Text Editor, which the declaration does not offer)."""
+	options = frappe.get_meta("CRM Task Type Field").get_field("fieldtype").options or ""
+	allowed = {o.strip() for o in options.split("\n") if o.strip()}
+	return column_fieldtype if column_fieldtype in allowed else "Small Text"
 
 
 def _key_value_section():
@@ -103,17 +111,18 @@ class TestNoSlotWrites(FrappeTestCase):
 		meta = frappe.get_meta("CRM Task")
 		# The declared fieldtype is the COLUMN's own, so the probe writes something each column accepts and
 		# the key-value row's typed mirror (D17) is the one that column's answers really compare in.
-		cls.fieldtypes = {c: meta.get_field(c).fieldtype for c in RETAINED}
+		cls.retained = activity_api.task_columns()
+		cls.fieldtypes = {c: _declared_fieldtype(meta.get_field(c).fieldtype) for c in cls.retained}
 		cls.task_type = task_type_fixture.mint_type(TYPE_NAME, [
 			*({"label": f"ZZ {column}", "fieldname": _fieldname_for(column),
 			   "fieldtype": cls.fieldtypes[column],
 			   "options": meta.get_field(column).options or "", "target": column}
-			  for column in RETAINED),
+			  for column in cls.retained),
 			{"label": "ZZ NS Answer", "fieldname": SECTION_FIELD, "fieldtype": "Data"},
 		])
 		cls.submitted = {
 			**{_fieldname_for(column): _probe_value(column, cls.fieldtypes[column], i + 1)
-			   for i, column in enumerate(RETAINED)},
+			   for i, column in enumerate(cls.retained)},
 			SECTION_FIELD: SECTION_ANSWER,
 		}
 
@@ -137,10 +146,10 @@ class TestNoSlotWrites(FrappeTestCase):
 	def test_the_probe_carries_a_field_of_each_retained_column_and_one_of_neither(self):
 		"""A fixture missing either shape would prove the phase for the shape it happens to carry, no more."""
 		self.assertTrue(RETIRED, "no old home is retired — this phase has nothing to remove")
-		self.assertTrue(RETAINED, "no promoted column is retained — §8 rule 2 is untestable")
-		self.assertEqual(set(RETIRED) & set(RETAINED), set(),
+		self.assertTrue(self.retained, "no promoted column is retained — §8 rule 2 is untestable")
+		self.assertEqual(set(RETIRED) & set(self.retained), set(),
 						 "a column is both retired and retained — the two sets must partition")
-		self.assertIn(ASM_COLUMN, RETAINED, "D18: custom_asm is retained, or _validate_asm goes blind")
+		self.assertIn(ASM_COLUMN, self.retained, "D18: custom_asm is retained, or _validate_asm goes blind")
 		self.assertIn("Sales Manager", frappe.get_roles(ASM_USER),
 					  f"`{ASM_USER}` cannot stand in for an ASM — _validate_asm would refuse the probe")
 		self.assertNotIn("Sales Manager", frappe.get_roles(NOT_AN_ASM),
@@ -149,7 +158,7 @@ class TestNoSlotWrites(FrappeTestCase):
 	def test_the_router_keeps_a_retained_column_on_the_task_row_and_sends_everything_else_off_it(self):
 		"""§8 read off the router itself: a section row is simply where rules 1 and 2 did not claim a field."""
 		schema = {f.fieldname: f for f in frappe.get_doc("CRM Task Type", self.task_type).schema}
-		for column in RETAINED:
+		for column in self.retained:
 			self.assertEqual(activity_api.field_target(schema[_fieldname_for(column)]), (None, column),
 							 f"`{column}` no longer routes to the task row — §8 rule 2 has moved")
 		self.assertEqual(activity_api.field_target(schema[SECTION_FIELD]),
@@ -186,8 +195,8 @@ class TestNoSlotWrites(FrappeTestCase):
 	def test_every_retained_common_column_is_still_written(self):
 		"""D18 regression. These four are the whole of what the task row keeps; losing one is silent."""
 		name = activity_api.save_activity(self.lead.name, self.task_type, self.submitted)
-		row = frappe.db.get_value("CRM Task", name, list(RETAINED), as_dict=True)
-		for column in RETAINED:
+		row = frappe.db.get_value("CRM Task", name, list(self.retained), as_dict=True)
+		for column in self.retained:
 			self.assertEqual(self._comparable(column, row.get(column)),
 							 self._comparable(column, self.submitted[_fieldname_for(column)]),
 							 f"a retained common column stopped being written: `{column}`")

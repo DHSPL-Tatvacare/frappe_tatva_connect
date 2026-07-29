@@ -20,10 +20,18 @@ from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
 
-# The common CRM Task columns the plan RETAINS, so a field naming one keeps the home it already has
-# (§8 rule 2). Nothing else is enumerated: a slot is simply a target neither a section nor this claims.
-# The CRM Task columns a declared field may keep living on — RETAINED on the row, not merely rep-facing: custom_asm is operational but is still validated (_validate_asm) and must never fall to a section row.
-COMMON_COLUMNS = ("custom_outcome", "custom_followup_at", "custom_scheduled_at", "custom_asm")
+_TASK_COLUMNS_CACHE = "tatva_connect:task_settable_columns"
+
+
+def task_columns():
+	"""The CRM Task columns a declared field may live on — read off `CRM Task Field`, the Task resource's own field brain (§8 rule 2), never a list in code. `can_set` is the ONE gate: a write is a write, whether an automation or an activity form makes it. A target this does not name is simply a target no section and no column claims, and falls to the key-value home."""
+	from tatva_connect.access import request_cache
+
+	def build():
+		return tuple(r.fieldname for r in frappe.get_all(
+			"CRM Task Field", filters={"can_set": 1}, fields=["fieldname"], order_by="fieldname"))
+
+	return request_cache(_TASK_COLUMNS_CACHE, "all", build)
 
 
 # The rule grammar, named here the way a fieldtype is named: these ARE the language (D27/D28), declared as
@@ -36,8 +44,7 @@ RULE_ACTIONS = (RULE_SHOW, RULE_HIDE, RULE_MANDATORY)
 RULE_VALUE_OPERATORS = ("is", "is not")
 RULE_OPERATORS = (*RULE_VALUE_OPERATORS, "is set", "is not set")
 
-# A declared field's `source`: whose record the answer belongs to. Lead answers live on the LEAD through the
-# lead's own brain and are never copied onto the task (D11/D31).
+# A declared field's `source`: whose record the value belongs to. A lead-sourced field is the CONTEXT the activity was logged in — shown read-only, snapshotted onto the task as it stood that day, and never written back to the lead.
 LEAD_SOURCE = "Lead"
 
 
@@ -49,8 +56,16 @@ def field_target(f):
 		frappe.get_cached_value("CRM Task Section", section, "target_doctype")
 	).get_field(target):
 		return section, target
-	if target in COMMON_COLUMNS:
+	columns = task_columns()
+	if target and not columns:
+		# Never fall through to key-value here: that would silently put an answer somewhere the reader does not look. Same contract as the key-value throw below.
+		frappe.throw(_("No CRM Task Field is declared settable, so `{0}` cannot be routed. The declaration "
+		               "is seeded by task_field_seed.ensure_rows on after_migrate.").format(f.get("fieldname")))
+	if target in columns:
 		return None, target
+	# A field NAMING a key-value section means it: addressed by its own fieldname, in the section it declared. Without this the declaration is unreachable — the fallback below always answers with the FIRST key-value section, so a second one could never be written to.
+	if section and frappe.get_cached_value("CRM Task Section", section, "is_key_value"):
+		return section, f.get("fieldname")
 	key_value = _key_value_section()
 	if key_value is None:
 		# Never (None, fieldname) — that reads as "the task row itself", and the caller would write the
@@ -76,10 +91,11 @@ def _key_value_section():
 
 
 def sections_ready():
-	"""Has the operator's CRM Task Section declaration landed? THE readiness question, asked by everything
-	that can run before `after_migrate` has seeded it — so a caller can skip-until-ready rather than crash,
-	and so no caller has to know which row proves it."""
-	return _key_value_section() is not None
+	"""Has the operator's declaration landed? THE readiness question, asked by everything that can run before
+	`after_migrate` has seeded it — so a caller can skip-until-ready rather than crash, and so no caller has
+	to know which rows prove it. BOTH declarations the router resolves through are asked: the sections an
+	answer lands in, and the CRM Task columns a declared field may keep."""
+	return _key_value_section() is not None and bool(task_columns())
 
 
 # The column a declared fieldtype's answer can be COMPARED in beside the one it is read from, and the
@@ -263,20 +279,45 @@ def _type_has_schema(task_type):
 	))
 
 
+def _stored_answers(doc, schema):
+	"""A saved task's answers in the {fieldname: value} shape a SUBMITTED form has, read at the ONE address
+	`field_target` names and nowhere else — so the form's own question can be put to what is actually stored.
+
+	This is why the guard never asks `task_columns()`: that answers "which column may be written" and is
+	co-owned by the automation engine. Ticking `description` there once disarmed the backstop outright."""
+	sections = {s.name: s for s in _sections()}
+	rows = _rows_of(doc)
+	return {f.fieldname: _section_answer(f, doc, rows, sections) for f in schema}
+
+
 def activity_is_unlogged(doc):
-	"""True if this is a form-activity task being marked Done with NO details captured. The single
-	definition of 'an activity completed empty' — used by the validate backstop (one brain) so the
-	rule holds on every save path, not just the Form-view controller."""
+	"""True if this is a form-activity task being MARKED Done with its form unfilled. The single definition
+	of 'an activity completed empty' — used by the validate backstop (one brain) so the rule holds on every
+	save path, not just the Form-view controller.
+
+	Asked on the TRANSITION, never on every save of a Done task: the rule in English is *do not MARK it Done
+	empty*, and 3,043 already-Done migrated tasks must not start being refused the next time anything touches
+	one. `has_value_changed` answers True when there is no before-save doc (frappe document.py:684-685), so a
+	task born Done is still judged — and `_save` loads that doc at document.py:565, before the validate hooks
+	at :573."""
 	if (doc.status or "") != "Done":
+		return False
+	if not doc.has_value_changed("status"):
 		return False
 	if not _type_has_schema(doc.custom_task_type):
 		return False
-	# Phase 7 dropped the JSON payload this used to read, so "was the form submitted?" is asked of the
-	# storage the writer actually fills: a retained common column, or a row in one of the declared sections.
-	# A raw set_value(status=Done) fills neither, which is the whole of what this backstop is for.
-	if any(doc.get(c) for c in COMMON_COLUMNS):
-		return False
-	return not any(doc.get(s.child_table_field) for s in _sections() if s.child_table_field)
+	schema = compiled_fields(frappe.get_doc("CRM Task Type", doc.custom_task_type))
+	values = _stored_answers(doc, schema)
+	# The FORM's own question, on the same fixpoint `compute_activity` refuses a submission by: a field the
+	# form shows and demands, carrying nothing, means this activity was not logged. The guard used to answer
+	# a weaker question of its own — any one declared field non-empty — so a task carrying only a description
+	# passed a payload the form itself refuses, measured on 8 of 8 types that home a field at `description`.
+	shown, live = _settled(schema, values)
+	if any(_required_here(f, shown, live) and values.get(f.fieldname) in (None, "") for f in schema):
+		return True
+	# And the floor the backstop was built for, which the question above cannot answer for the 58 of 66 live
+	# types that demand no field at all: nothing was captured anywhere.
+	return all(values.get(f.fieldname) in (None, "") for f in schema)
 
 
 @frappe.whitelist()
@@ -349,7 +390,7 @@ def _field_descriptor(f):
 		"target": f.target or "",
 		"section": (f.get("section") or ""),
 		"source": (f.get("source") or ""),
-		"read_only": 0,  # fill-once closes a lead field for THIS lead; stamped by _mark_lead_read_only
+		"read_only": 0,  # a lead-sourced field is context, never an answer; stamped read-only by _mark_lead_read_only
 		"depends_on": (f.get("depends_on") or ""),
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
 		"container_depends_on": [],  # the conditions of the tab/section/column holding it; stamped by _layout
@@ -630,6 +671,12 @@ def _inert(fields, values, shown):
 	return live
 
 
+def _settled(fields, values):
+	"""The form's own reading of a set of answers: which declared fields it SHOWS, and those answers with every hidden one read back blank (D22). ONE fixpoint, asked by the writer that refuses a submission and by the guard that refuses a completion, so the two can never disagree about what the form asked for."""
+	shown = _shown_fieldnames(fields, values)
+	return shown, _inert(fields, values, shown)
+
+
 def _required_here(f, shown, live):
 	"""True when the submitted form must carry this field: it is actually SHOWN, and it is mandatory —
 	declared `reqd`, or made so by a Make Mandatory rule whose condition passes (§17.3).
@@ -665,11 +712,15 @@ def compute_activity(lead, task_type, values, task=None):
 	# The rules compiled in — the SAME projection the form rendered from, so the save cannot demand or accept
 	# anything the rep was not shown (§17.3).
 	schema = compiled_fields(tt)
-	shown = _shown_fieldnames(schema, values)
-	live = _inert(schema, values, shown)
+	shown, live = _settled(schema, values)
 	promoted, staged = {}, {}
+	# The lead's OWN values, read on the server. A `source = Lead` answer is context, not something the
+	# client may assert: the submitted value is ignored entirely, so "at this punch the address was X"
+	# means what the lead actually held and cannot be forged by a caller.
+	lead_values = lead_field_values(lead, task_type) if any(
+		(f.source or "") == LEAD_SOURCE for f in schema) else {}
 	for f in schema:
-		val = values.get(f.fieldname)
+		val = lead_values.get(f.fieldname) if (f.source or "") == LEAD_SOURCE else values.get(f.fieldname)
 		if f.fieldname not in shown:
 			# D22: a hidden field's value is inert. A form that never showed it cannot have collected it, so a
 			# value arriving for it is refused rather than quietly stored under a question nobody was asked.
@@ -679,17 +730,11 @@ def compute_activity(lead, task_type, values, task=None):
 			continue
 		if _required_here(f, shown, live) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
-		if (f.source or "") == LEAD_SOURCE:
-			continue  # D11: a lead-sourced answer lives on the LEAD; the task never carries a copy of it
-		# Route by the ONE seam: a retained common column stays on the task row, every other answer is its section row's.
+		# Route by the ONE seam: a retained common column stays on the task row, every other value is its section row's. A lead-sourced field is routed like any other — what it means is snapshot, not answer, and the section it declares is where that snapshot lands.
 		section_key, column = field_target(f)
 		if section_key is None:
 			promoted[column] = val
 		_stage_section_value(staged, f, val)
-
-	# The lead-sourced answers, written to the LEAD in this same transaction (D31) — before the task fields are
-	# assembled, so a refused lead write refuses the whole save rather than leaving half of one behind.
-	write_lead_fields(lead, schema, values, shown)
 
 	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
 	_validate_asm(promoted.get("custom_asm"))
@@ -744,70 +789,19 @@ def compute_activity(lead, task_type, values, task=None):
 	return fields
 
 
-def write_lead_fields(lead, fields, values, shown):
-	"""Every SHOWN `source=Lead` answer, written onto the LEAD — the automation set path reused, never a
-	third writer (D31).
+def _mark_lead_read_only(descriptors):
+	"""Stamp `read_only` on every lead-sourced descriptor — always, and with nothing to ask.
 
-	Three gates, all on the SERVER because the modal is paint and cannot be trusted to have applied any of
-	them: the caller must hold `write` on this lead; the field must be `can_set` at THIS lead's grain, asked of
-	`automation.fields.is_settable` — the same allowlist the Set Field action is gated by, whose section
-	routing means a field belonging to a lead CHILD section is refused here just as it is there; and the write
-	itself is one load-set-save, so the lead's field permissions, `validate` and every `doc_event` re-fire
-	exactly as they do for a Set Field action. A type declaring no lead field does nothing at all.
+	A lead field on an activity form is the CONTEXT the activity was logged in, never a question: it is
+	shown so the rep can see the patient's details, and it is snapshotted onto the activity so *"at this
+	order punch the address was X"* stays true afterwards. A lead is corrected on its own page, where the
+	change is visible and attributable, and never sideways through an activity form.
 
-	The task keeps no copy (D11). A refusal or a failed lead save throws, which rolls the activity back with
-	it — one transaction, per D31."""
-	# A blank is "not sent", never "erase this" — the rule the partner API already carries, and the reason a
-	# form that merely showed a lead field cannot blank the patient record by being saved without it.
-	changes = {f.fieldname: values.get(f.fieldname) for f in fields
-			   if (f.source or "") == LEAD_SOURCE and f.fieldname in shown
-			   and values.get(f.fieldname) not in (None, "")}
-	if not changes:
-		return
-	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
-		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
-	axes = _lead_axes(lead)
-	doc = frappe.get_doc("CRM Lead", lead)
-	for fieldname, value in changes.items():
-		# The SAME predicate the form painted read-only with, so the rep is never shown a box this refuses.
-		if not lead_field_is_open(lead, fieldname, axes, doc.get(fieldname)):
-			frappe.throw(_("{0} cannot be written on this lead.").format(fieldname), title=_("Not permitted"))
-		doc.set(fieldname, value)
-	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
-
-
-def lead_field_is_open(lead, fieldname, axes, current):
-	"""THE fill-once rule: may this activity form write `fieldname` onto this lead?
-
-	Two conditions, both about the LEAD and neither about the form. The grain's contract must tick the
-	field settable (`automation.fields.is_settable` — the same gate the Set Field action asks, so an
-	activity can never write what an automation may not). And the lead must not already hold a value:
-	a patient record is filled once from an activity and corrected on the lead's own page, never
-	overwritten sideways by a follow-up call.
-
-	ONE predicate, asked twice: `_lead_field_state` paints the form read-only with it, and
-	`write_lead_fields` refuses with it. The rep therefore cannot be shown a box the save would reject."""
-	from tatva_connect.automation import fields as automation_fields
-
-	if not automation_fields.is_settable(automation_fields.LEAD_DT, fieldname, axes):
-		return False
-	return current in (None, "")
-
-
-def _mark_lead_read_only(descriptors, lead, values):
-	"""Stamp `read_only` on every lead-sourced descriptor the fill-once rule closes for THIS lead.
-
-	`read_only` rather than a map of its own because that is the key the fork's controls already bind
-	their `disabled` to (`SidePanelLayout.vue`) — one descriptor shape, no second vocabulary. Answered
-	off the same values the form is prefilled with, so what is greyed out and what the save refuses
-	cannot be two answers."""
-	if not lead:
-		return
-	axes = _lead_axes(lead)
+	`read_only` rather than a map of its own because that is the key the fork's controls already bind their
+	`disabled` to (`SidePanelLayout.vue`, `TaskModal.vue`) — one descriptor shape, no second vocabulary."""
 	for d in descriptors:
-		if (d.get("source") or "") != LEAD_SOURCE:
-			continue
-		d["read_only"] = 0 if lead_field_is_open(lead, d["fieldname"], axes, values.get(d["fieldname"])) else 1
+		if (d.get("source") or "") == LEAD_SOURCE:
+			d["read_only"] = 1
 
 
 def lead_field_values(lead, task_type):
@@ -841,10 +835,40 @@ def compute_activity_fields(lead, task_type, values):
 	return compute_activity(lead, task_type, values)
 
 
+def _own_columns(task_fields):
+	"""The CRM Task's OWN columns the calling FORM edited beside the answers — title, status, due date and
+	the rest of the standard fields the modal renders.
+
+	Deliberately NOT an allowlist here, and there was never one: this arrives from the surface that draws
+	those controls, exactly as it did when the same dict was the `fieldname` argument of
+	`frappe.client.set_value` (frappe/client.py:189-198 — get_doc, update, save, no field list). A tuple of
+	column names in this module would be a SECOND brain beside `CRM Task Field`, which is the deleted
+	`COMMON_COLUMNS` all over again (D-H); and `CRM Task Field.can_set` cannot answer this question either —
+	it says which columns a DECLARED FIELD may route onto (`field_target` rule 2), and it ticks `status` OFF
+	precisely so no declaration can write it, while the form's status picker must. Two different questions,
+	so a third one is not being invented: what a caller may write is decided by `doc.save`'s own permission
+	and permlevel checks, which is what set_value relied on too.
+
+	Absent for every trusted caller — the partner API sends answers only — so an omitted argument is
+	byte-identical to what shipped."""
+	if isinstance(task_fields, str):
+		task_fields = frappe.parse_json(task_fields)
+	return task_fields or {}
+
+
 @frappe.whitelist()
-def save_activity(lead, task_type, values, task=None):
+def save_activity(lead, task_type, values, task=None, task_fields=None):
 	"""THE one writer for completing/updating an activity (board completion + ad-hoc punch). Returns
 	the task name.
+
+	`task_fields` is the CRM Task's own columns the calling form edited beside the answers, and they are
+	applied in the SAME `doc.update` as the computed ones so an activity is ONE write. It used to be a
+	`frappe.client.set_value` call the client made first, and that fork was three defects: `status: Done`
+	committed before any answer existed, so the `enforce_activity_logged` backstop refused a rep who had
+	just filled the form; and every refusal after it left the task half-updated, because the standard edits
+	were already in. One update, one save, one transaction — a throw now rolls the whole thing back.
+	The computed fields are applied LAST, so the type's declaration still decides `status` and every routed
+	column, exactly as it did when compute ran second.
 
 	A NEW punch on a location-tracked grain inserts the task SHELL first, so the visit audit logged
 	inside compute_activity carries the new task's exact id, and then computes and saves onto it. That
@@ -859,9 +883,12 @@ def save_activity(lead, task_type, values, task=None):
 	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
 		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 
+	own = _own_columns(task_fields)
+
 	if task:
 		fields = compute_activity(lead, task_type, values, task=task)
 		doc = frappe.get_doc("CRM Task", task)
+		doc.update(own)
 		doc.update(fields)
 		doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
 		return doc.name
@@ -877,6 +904,7 @@ def save_activity(lead, task_type, values, task=None):
 		"reference_doctype": "CRM Lead",
 		"reference_docname": lead,
 	})
+	shell.update(own)
 
 	if is_location_tracked(lead) is None:
 		# No audit will be written, so nothing needs the task's id before it exists: compute first,
@@ -925,7 +953,7 @@ def task_detail(task):
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date", "start_date",
 		 "assigned_to", "owner", "creation", "description",
-		 *COMMON_COLUMNS,
+		 *task_columns(),
 		 "custom_location_latitude", "custom_location_longitude",
 		 "custom_location_address", "custom_location_captured_at",
 		 "reference_doctype", "reference_docname"],
@@ -1009,7 +1037,7 @@ def type_config(task_type, lead=None):
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
 	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
-	_mark_lead_read_only(cfg["fields"], lead, cfg["lead_values"])
+	_mark_lead_read_only(cfg["fields"])
 	return cfg
 
 
@@ -1091,8 +1119,7 @@ def _task_values(r, cfg, rows=None):
 		sections = {s.name: s for s in _sections()}
 		rows = _rows_of(r) if rows is None else rows
 		for f in cfg["fields"]:
-			if (f.get("source") or "") == LEAD_SOURCE:
-				continue  # D11: it was never written here, so there is nothing here to read — the lead holds it
+			# A lead-sourced field is read at the SAME address every other one is: its snapshot row holds the lead's value as it stood that day, and re-reading the lead now would answer a different question.
 			value = _section_answer(f, r, rows, sections)
 			if value not in (None, ""):
 				vals[f["fieldname"]] = value if isinstance(value, str) else cstr(value)
@@ -1169,7 +1196,7 @@ def lead_timeline(lead):
 		filters={"reference_docname": lead, "custom_task_type": ["in", list(activity_types)]},
 		fields=["name", "creation", "modified", "status", "custom_task_type", "description",
 				"custom_automated",
-				"assigned_to", "owner", *COMMON_COLUMNS,
+				"assigned_to", "owner", *task_columns(),
 				"custom_location_latitude", "custom_location_longitude",
 				"custom_location_address", "custom_location_captured_at"],
 		order_by="creation desc",

@@ -20,6 +20,11 @@ uses (`save_activity`), never by calling the router and believing it:
   2. a field naming a retained common CRM Task column         -> the task row, which already IS the new home
   3. a field naming a dying slot                              -> a key-value answer row of its own fieldname
   3. a field naming no target at all                          -> the same, by the same rule
+  4. a field NAMING a key-value section                       -> that section, addressed by its own fieldname
+
+Shape 4 is what makes a SECOND key-value section reachable, and the lead snapshot is the first one to
+need it: rule 3's fallback always answers with the first key-value section by display order, so before
+this a declaration naming any other key-value section landed somewhere it did not name.
 
 Phase 7 has since retired both old homes outright: the five dying slot columns and the JSON payload are
 gone from `tabCRM Task`, and `tests/migration/test_retire_task_slot_columns.py` owns that drop. There is no
@@ -41,6 +46,7 @@ from frappe.utils import get_datetime
 from tatva_connect.activity import api as activity_api
 from tatva_connect.activity import backfill
 from tatva_connect.tests.activity import task_type_fixture
+from tatva_connect.tests.automation import field_allowlist
 
 TYPE_NAME = "ZZ Dual Write Probe"
 
@@ -49,25 +55,34 @@ TYPE_NAME = "ZZ Dual Write Probe"
 DYING_SLOT = "custom_key_date_1"
 RETAINED_COMMON = "custom_outcome"
 
+# A plain, writable, native CRM Lead column: the lead-sourced field snapshots it, and "the lead was not written" is only a real assertion about a column that COULD have been written. Asserted as a premise below.
+LEAD_FIELD = "job_title"
+
+# What the LEAD holds, and what a client SENDS for the same field. They differ on purpose: a `source = Lead`
+# value is read on the server and the submitted one is ignored entirely, so the two constants are the only
+# way to tell "the lead's context was snapshotted" from "whatever the caller typed was stored".
+ON_LEAD = "ZZ Oncologist On File"
+FORGED = "ZZ Forged By The Client"
+
 SUBMITTED = {
 	"zz_sample_collected": "2026-07-01 10:30:00",
 	"zz_remark": "ZZ remark text",
 	"zz_outcome": "ZZ Reached",
 	"zz_column_answer": "ZZ Column Answer",
+	LEAD_FIELD: FORGED,
 }
 
 RESUBMITTED = dict(SUBMITTED, zz_remark="ZZ remark text, revised")
 
 
-def _key_value_section():
-	"""The section a field with no column of its own answers in — the one the operator declared key-value."""
-	rows = frappe.get_all(
+def _key_value_sections():
+	"""Every section the operator declared key-value, in the order the untargeted fallback picks from."""
+	return frappe.get_all(
 		"CRM Task Section",
 		filters={"is_key_value": 1},
 		fields=["name", "target_doctype", "child_table_field", "row_key_field", "value_field"],
 		order_by="display_order",
 	)
-	return rows[0]
 
 
 def _column_section():
@@ -95,7 +110,10 @@ class TestActivityDualWrite(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		cls.key_value = _key_value_section()
+		key_value_sections = _key_value_sections()
+		cls.key_value = key_value_sections[0]
+		# The one a declaration must NAME to reach, because the fallback above can only ever answer with the first.
+		cls.named_key_value = key_value_sections[1] if len(key_value_sections) > 1 else None
 		cls.column_section, cls.column = _column_section()
 		cls.task_type = task_type_fixture.mint_type(TYPE_NAME, [
 			# Rule 3 — a dying slot. Promoted today, claimed by no section and no common column tomorrow.
@@ -108,11 +126,25 @@ class TestActivityDualWrite(FrappeTestCase):
 			# Rule 1 — a real column of its section's target doctype.
 			{"label": "ZZ Column Answer", "fieldname": "zz_column_answer", "fieldtype": "Data",
 			 "section": cls.column_section.name, "target": cls.column},
+			# Rule 4 — a lead-sourced field NAMING a key-value section: the lead's context, snapshotted.
+			{"label": "ZZ Lead Context", "fieldname": LEAD_FIELD, "fieldtype": "Data", "source": "Lead",
+			 "section": cls.named_key_value.name if cls.named_key_value else ""},
 		])
+		# A type declaring NO lead field, so "nothing routes there ⇒ no row" is asserted and not assumed.
+		cls.plain_type = task_type_fixture.mint_type("ZZ No Lead Fields Probe", [
+			{"label": "ZZ Plain Note", "fieldname": "zz_plain_note", "fieldtype": "Data"},
+		])
+		# The lead's value is read through the lead detail brain, so the field has to BE on the lead catalog
+		# and visible at this grain — a field this viewer may not see is not in the answer at all, and every
+		# snapshot assertion below would be vacuous. Same seed `test_lead_fields_in_form` uses.
+		field_allowlist.seed_settable("CRM Lead", LEAD_FIELD,
+									  vertical=task_type_fixture.VERTICAL, group=task_type_fixture.GROUP)
+		frappe.db.commit()  # class-level seed, same as mint_type: the per-test rollback must not eat it
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
+		field_allowlist.clear()
 		task_type_fixture.teardown()
 		super().tearDownClass()
 
@@ -123,6 +155,7 @@ class TestActivityDualWrite(FrappeTestCase):
 			"doctype": "CRM Lead", "first_name": "Dual Write Probe",
 			"mobile_no": f"+9198127{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": task_type_fixture.VERTICAL, "custom_group": task_type_fixture.GROUP,
+			LEAD_FIELD: ON_LEAD,
 		}).insert(ignore_permissions=True)
 
 	# ---- the premise ------------------------------------------------------------------------------
@@ -133,10 +166,21 @@ class TestActivityDualWrite(FrappeTestCase):
 		self.assertTrue(self.key_value, "no section is declared key-value — rule 3 has no home")
 		self.assertIn(DYING_SLOT, backfill.PROMOTED_COLUMNS,
 					  f"`{DYING_SLOT}` was never a promoted column — it is no longer a dying slot")
-		self.assertNotIn(DYING_SLOT, activity_api.COMMON_COLUMNS,
+		self.assertNotIn(DYING_SLOT, activity_api.task_columns(),
 						 f"`{DYING_SLOT}` is retained — pick a slot the plan actually dropped")
-		self.assertIn(RETAINED_COMMON, activity_api.COMMON_COLUMNS,
+		self.assertIn(RETAINED_COMMON, activity_api.task_columns(),
 					  f"`{RETAINED_COMMON}` is not a retained common column — rule 2 is untestable")
+		self.assertIsNotNone(self.named_key_value,
+							 "only one section is key-value — rule 4 has nothing to name and is untestable")
+		self.assertNotEqual(self.named_key_value.name, self.key_value.name,
+							"the named section IS the fallback, so naming it would prove nothing")
+		df = frappe.get_meta("CRM Lead").get_field(LEAD_FIELD)
+		self.assertIsNotNone(df, f"CRM Lead no longer has `{LEAD_FIELD}` — pick another plain column")
+		self.assertFalse(df.read_only, f"`{LEAD_FIELD}` became read-only; 'the lead was not written' would be vacuous")
+		# The snapshot is read through the lead detail brain, so a field this viewer is not entitled to see is
+		# not in the answer at all — and every assertion about what got snapshotted would pass on an empty dict.
+		self.assertEqual(activity_api.lead_field_values(self.lead.name, self.task_type).get(LEAD_FIELD), ON_LEAD,
+						 "the lead's value is not visible at this grain — the snapshot assertions are vacuous")
 
 	def test_the_router_answers_each_shape_by_its_own_declaration(self):
 		"""§8, read off the router itself: no field is enumerated, so a slot IS whatever rules 1 and 2 left."""
@@ -148,6 +192,9 @@ class TestActivityDualWrite(FrappeTestCase):
 						 (self.key_value.name, "zz_sample_collected"))
 		self.assertEqual(activity_api.field_target(schema["zz_remark"]),
 						 (self.key_value.name, "zz_remark"))
+		self.assertEqual(activity_api.field_target(schema[LEAD_FIELD]),
+						 (self.named_key_value.name, LEAD_FIELD),
+						 "a field naming a key-value section was routed to the fallback one instead")
 
 	# ---- the property -----------------------------------------------------------------------------
 
@@ -249,7 +296,77 @@ class TestActivityDualWrite(FrappeTestCase):
 			1, "the single-field writer appended a second row for a fieldname that already had one",
 		)
 
+	# ---- the lead's context, snapshotted onto the activity ------------------------------------------
+
+	def test_a_lead_sourced_value_is_snapshotted_onto_the_task(self):
+		"""What the LEAD held when this activity was logged is a fact ABOUT the activity, so the activity
+		stores it. Reading the lead now would answer a different question: "what does it hold today".
+
+		The value asserted is the lead's own, read back off the lead — not the constant the client sent, which
+		is what this used to assert and which was the defect written down: the submitted value was believed."""
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED))
+
+		self.assertEqual(self._snapshot(task)[LEAD_FIELD].get(self.named_key_value.value_field),
+						 frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD),
+						 "the lead's context never reached the activity")
+		self.assertNotIn(LEAD_FIELD, self._answers(task),
+						 "the lead's context landed among the rep's answers — the two are not the same thing")
+
+	def test_a_forged_lead_value_is_ignored_and_the_lead_wins(self):
+		"""THE lock. A `source = Lead` field is context, not an answer, so the payload has no say in it: the
+		server reads the lead and drops what the caller sent. Without this, any HTTP client could assert *"at
+		this order punch the oncologist was X"* about a patient record that never said so — an audited clinical
+		claim, forged, and indistinguishable afterwards from one the lead really carried."""
+		self.assertNotEqual(ON_LEAD, SUBMITTED[LEAD_FIELD], "the payload agrees with the lead — nothing is proved")
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED))
+
+		self.assertEqual(self._snapshot(task)[LEAD_FIELD].get(self.named_key_value.value_field), ON_LEAD,
+						 "a value the CLIENT sent was snapshotted as the lead's context")
+
+	def test_a_lead_sourced_value_is_never_written_to_the_lead(self):
+		"""A lead is corrected on its own page, where the change is visible and attributable, and never
+		sideways through an activity form."""
+		activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
+
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), ON_LEAD,
+						 "an activity wrote to the patient record")
+
+	def test_editing_the_lead_later_changes_no_past_activity(self):
+		"""The whole reason the value is snapshotted: a live read would show today's value against a
+		two-year-old order punch, which is a different and false claim."""
+		name = activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, "ZZ Corrected Much Later")
+
+		self.assertEqual(activity_api.task_detail(name)["task"]["values"].get(LEAD_FIELD),
+						 ON_LEAD, "a past activity moved when the lead was corrected")
+
+	def test_a_type_declaring_no_lead_field_writes_no_snapshot_row(self):
+		"""Not every activity asks for lead context, and one that does not must cost nothing."""
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(
+			self.lead.name, self.plain_type, {"zz_plain_note": "ZZ note"}))
+
+		self.assertEqual(task.get(self.named_key_value.child_table_field) or [], [],
+						 "a type with no lead field was given a snapshot row anyway")
+
+	def test_a_lead_field_is_painted_read_only_whatever_the_lead_holds(self):
+		"""The form SHOWS the context; it never collects it. So there is nothing to ask and no state in
+		which the box opens — which is why the rep can never be refused after typing."""
+		for on_file in (None, "ZZ Already On File"):
+			with self.subTest(on_file=on_file):
+				frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, on_file)
+				cfg = activity_api.type_config(self.task_type, lead=self.lead.name)
+				descriptor = next(f for f in cfg["fields"] if f["fieldname"] == LEAD_FIELD)
+
+				self.assertEqual(descriptor["read_only"], 1, "a lead field opened editable")
+				self.assertEqual(next(f for f in cfg["fields"] if f["fieldname"] == "zz_remark")["read_only"], 0,
+								 "an ordinary activity field was painted read-only beside it")
+
 	# ---- reading the new home, through the declaration and never a literal --------------------------
+
+	def _snapshot(self, task):
+		"""The task's rows in the NAMED key-value section, keyed by the fieldname each one snapshots."""
+		return {r.get(self.named_key_value.row_key_field): r
+				for r in task.get(self.named_key_value.child_table_field)}
 
 	def _answers(self, task):
 		"""The task's key-value rows, keyed by the fieldname each one answers."""

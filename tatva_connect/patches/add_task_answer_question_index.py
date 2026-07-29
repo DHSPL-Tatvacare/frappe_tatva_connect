@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
-"""Index the activity key-value table on (question, parent) — the Smart View's one non-seek read.
+"""Index every activity key-value table on (question, parent) — the Smart View's one non-seek read.
 
 TWO READS, TWO INDEXES. `ix_parent_fieldname` (parent, fieldname) already serves the FORM: *"every answer
 belonging to THIS task"*, which knows the parent. The Smart View asks the mirror question — *"this one
@@ -40,31 +40,29 @@ import frappe
 INDEX_NAME = "ix_answer_question_parent"
 
 
-def key_value_target():
-	"""(doctype, [question_column, 'parent']) for the activity key-value section, or None when the
-	declaration has not been seeded yet. Read from the section row — never named in code."""
-	rows = frappe.get_all(
-		"CRM Task Section",
-		filters={"is_key_value": 1},
-		fields=["target_doctype", "row_key_field"],
-		order_by="display_order",
-		limit=1,
-	)
-	if not rows or not rows[0].target_doctype or not rows[0].row_key_field:
-		return None
-	return rows[0].target_doctype, [rows[0].row_key_field, "parent"]
+def key_value_targets():
+	"""(doctype, [question_column, 'parent']) for EVERY key-value activity section — empty while the
+	declaration has not been seeded yet. Read from the section rows — never named in code, and never the
+	first row alone: the lead snapshot is a second key-value section and a Smart View reads it the same way."""
+	return [
+		(row.target_doctype, [row.row_key_field, "parent"])
+		for row in frappe.get_all(
+			"CRM Task Section",
+			filters={"is_key_value": 1},
+			fields=["target_doctype", "row_key_field"],
+			order_by="display_order",
+		)
+		if row.target_doctype and row.row_key_field
+	]
 
 
 def execute():
-	target = key_value_target()
-	if not target:
-		return  # the declaration is seeded on after_migrate; schema_setup lands this on the same run
-	doctype, columns = target
-	if not frappe.db.table_exists(doctype):
-		return
-	if frappe.db.has_index(f"tab{doctype}", INDEX_NAME):
-		return
-	try:
-		frappe.db.add_index(doctype, columns, INDEX_NAME)
-	except Exception:
-		frappe.log_error(title=f"{doctype} question index failed", message=frappe.get_traceback())
+	for doctype, columns in key_value_targets():
+		if not frappe.db.table_exists(doctype):
+			continue
+		if frappe.db.has_index(f"tab{doctype}", INDEX_NAME):
+			continue
+		try:
+			frappe.db.add_index(doctype, columns, INDEX_NAME)
+		except Exception:
+			frappe.log_error(title=f"{doctype} question index failed", message=frappe.get_traceback())

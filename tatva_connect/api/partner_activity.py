@@ -99,7 +99,7 @@ def _scoped_task(name, mp, is_sysmgr):
 # so a page never re-reads per row.
 _PAYLOAD_FIELDS = [
 	"name", "reference_docname", "custom_task_type", "status", "description",
-	*activity_brain.COMMON_COLUMNS,
+	*activity_brain.task_columns(),
 	"custom_location_latitude", "custom_location_longitude",
 	"custom_location_address", "custom_location_captured_at", EXTERNAL_ID_FIELD,
 ]

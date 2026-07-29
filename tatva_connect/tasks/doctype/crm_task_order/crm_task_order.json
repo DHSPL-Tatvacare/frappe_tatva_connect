@@ -58,8 +58,9 @@
   },
   {
    "columns": 2,
+   "description": "Data, not Float, per D5: a Float column is NOT NULL DEFAULT 0 in MariaDB, so a question nobody answered reads back as 0.0 and a plain 31 renders as 31.0. The declaration on CRM Task Type Field has always said Data; this column simply disagreed.",
    "fieldname": "number_of_units",
-   "fieldtype": "Float",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Number of Units"
   },
@@ -112,7 +113,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-29 06:00:00.000000",
+ "modified": "2026-07-29 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tasks",
  "name": "CRM Task Order",

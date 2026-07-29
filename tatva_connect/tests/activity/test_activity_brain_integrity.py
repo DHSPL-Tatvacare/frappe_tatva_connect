@@ -358,7 +358,7 @@ class TestTheBrainOwnsThePayload(FrappeTestCase):
 		field that targets nothing, so every retained common column below is genuinely undeclared —
 		this used to hedge ("pick another") against whatever the seeded type happened to declare."""
 		hijack = "HIJACKED-BY-A-RAW-COLUMN-NAME"
-		promoted = activity_api.COMMON_COLUMNS
+		promoted = activity_api.task_columns()
 		fields = compute_activity(self.lead.name, self.task_type, {c: hijack for c in promoted})
 		for column in promoted:
 			self.assertNotEqual(fields.get(column), hijack,
