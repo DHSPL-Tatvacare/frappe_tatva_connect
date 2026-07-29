@@ -516,8 +516,9 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 		if not matching
 		# A count, not a pluck: the doctype's default `ORDER BY modified` made the plucked variant
 		# abandon the index entirely on CRM Call Log (type=ALL + filesort).
+		# The dict form is the only one frappe accepts (query.py:2135); the string 500'd every search.
 		else frappe.get_all(doctype, filters=where, or_filters=matching,
-							fields=["count(name) as n"], order_by=None)[0]["n"]
+							fields=[{"COUNT": "name", "as": "n"}], order_by=None)[0]["n"]
 	)
 	return _envelope(_decorate(kind, rows), page_length, page_length_count, total)
 

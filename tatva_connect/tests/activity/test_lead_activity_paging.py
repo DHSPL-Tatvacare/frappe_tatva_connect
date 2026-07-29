@@ -113,6 +113,30 @@ class TestLeadActivityPaging(FrappeTestCase):
 		self.assertEqual(page["row_count"], 0)
 		self.assertEqual(page["total_count"], 0)
 
+	def test_search_narrows_both_the_page_and_the_total(self):
+		"""The search branch takes a DIFFERENT count path to the filter branch — `or_filters` rules out
+		`frappe.db.count` — and that path shipped a `"count(name) as n"` string, which frappe rejects
+		outright (database/query.py:2135). Every search on every paged tab 500'd, and no test typed one."""
+		# The 25 fixtures are all Outgoing, so one Incoming is what makes a search DISCRIMINATE rather
+		# than just return. FrappeTestCase rolls the row back; only setUpClass committed.
+		frappe.get_doc(
+			{
+				"doctype": "CRM Call Log", "id": "zz-paging-incoming", "telephony_medium": "Manual",
+				"type": "Incoming", "status": "Completed", "duration": 11,
+				"from": "+919000000043", "to": "+919000000042",
+				"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
+			}
+		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture, runs as Administrator
+
+		hit = lead_activity(self.lead.name, "call", search="Incoming")
+		self.assertEqual(hit["row_count"], 1)
+		self.assertEqual(hit["total_count"], 1)
+		self.assertEqual(hit["data"][0]["type"], "Incoming")
+		self.assertEqual(lead_activity(self.lead.name, "call", search="Outgoing")["total_count"], 25)
+		miss = lead_activity(self.lead.name, "call", search="nothing-matches-this")
+		self.assertEqual(miss["row_count"], 0)
+		self.assertEqual(miss["total_count"], 0)
+
 	def test_page_rows_are_decorated_like_the_old_payload(self):
 		"""The quiet break: a paged call row without `_duration`/`_caller` renders a blank card, and
 		nothing else would notice. parse_call_log must still run on the page."""
