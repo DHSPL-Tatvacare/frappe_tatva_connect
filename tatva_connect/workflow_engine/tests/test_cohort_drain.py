@@ -278,6 +278,68 @@ class TestNothingIsBornWithTheSwitchOff(_CohortCase):
 		self.assertEqual(self._runs(), [])
 
 
+class TestTheKillSwitchReachesARunningDrain(_CohortCase):
+	"""THE SAFETY PROPERTY THIS CHUNK WAS BUILT AROUND, and it did not hold.
+
+	An operator disabling the engine expects the cohort to stop. Two separate defects meant it did not,
+	and both are asserted below because either one alone is enough to keep a drain running:
+
+	  * `run_cohort`'s `respect_switch` defaulted to FALSE and the sweep's own enqueue never passed it, so
+	    the queued job — the ONLY caller in production — read no switch at all. The docstring claimed the
+	    opposite.
+	  * even asked to respect it, `_armed()` was read ONCE before the loop. The loop re-read `cohort_abort`
+	    and nothing else, while the commit message said "the switch and the abort flag re-read at every
+	    boundary".
+
+	The abort flag is not a substitute. It is per-workflow and nobody reaches for it after hitting a
+	global kill switch — which is the whole point of having one.
+	"""
+
+	def test_the_job_the_sweep_queues_refuses_once_the_switch_goes_off(self):
+		"""Driven through the REAL kwargs the sweep enqueues, not a hand-written call: the defect was
+		precisely that the sweep omitted an argument, so a test that supplied it could never see this."""
+		with patch("frappe.enqueue") as enqueue, patch.object(drain, "_armed", return_value=True):
+			drain.sweep()
+		job = dict(enqueue.call_args.kwargs)
+		for plumbing in ("queue", "job_id", "deduplicate", "now"):
+			job.pop(plumbing, None)
+		# The switch is OFF from here — exactly the window between sweep and job the docstring names.
+		drain.run_cohort(**job)
+		self.assertEqual(self._runs(), [],
+		                 "the queued drain walked the whole cohort after the switch was turned off")
+
+	def test_the_switch_stops_a_drain_that_is_already_walking(self):
+		"""Armed for the first chunk, off from then on. A drain that reads the switch once cannot see this
+		and runs to the end of the cohort."""
+		reads = {"n": 0}
+
+		def armed():
+			reads["n"] += 1
+			return reads["n"] <= 1
+
+		with patch.object(drain, "_armed", side_effect=armed):
+			started = drain.run_cohort(self.workflow_name, chunk=2, respect_switch=True)
+		self.assertGreater(reads["n"], 1, "the switch was read once and never again — no boundary re-reads it")
+		self.assertLess(started, _LEADS, "the kill switch did not reach a drain that was already walking")
+		self.assertEqual(len(self._runs()), started)
+
+	def test_a_drain_the_switch_stopped_hands_its_cohort_back(self):
+		"""Stopping must not strand the claim. A cohort left `Draining` is one `_claim` can never match
+		again, so the kill switch would trade a running drain for a permanently dead one.
+
+		NOT a red-first proof and it is not claimed as one: today's code never breaks mid-loop, so it
+		reaches the end and releases anyway. This guards the FIX — the obvious way to write the re-read is
+		a bare `break`, which leaves the claim held. Related: the same stranding by another route is
+		`docs/pending/2026-07-28-cohort-drain-leaks-its-claim-on-failure.md`.
+		"""
+		with patch.object(drain, "_armed", side_effect=[True, False]):
+			drain.run_cohort(self.workflow_name, chunk=2, respect_switch=True)
+		self.assertEqual(
+			frappe.db.get_value("CRM Workflow", self.workflow_name, "cohort_state"), drain.IDLE,
+			"a stopped drain kept the claim, so this cohort can never be drained again",
+		)
+
+
 class TestPacingRidesTheExistingBucket(_CohortCase):
 	"""The provider is the binding constraint — the live trial hit WATI's rate limit with a handful. The
 	drain charges the SAME atomic Redis bucket the partner API uses; there is no second limiter."""
