@@ -192,6 +192,40 @@ class TestActivityDualWrite(FrappeTestCase):
 		self.assertEqual(len(answers), len(task.get(self.key_value.child_table_field)),
 						 "two rows answer for one fieldname — the later read would pick between them")
 
+	# ---- an unanswered question is not an answer ---------------------------------------------------
+
+	def test_a_blank_answer_earns_no_key_value_row(self):
+		"""A key-value row COSTS a row, so writing one for a question nobody answered is pure weight.
+
+		Measured on the 10-lead Anaya trial before this rule existed: 20,754 answer rows of which 13,442 —
+		65% — held an empty string. A type declaring 17 fields wrote 17 rows however few the rep filled in.
+		"""
+		submitted = {**SUBMITTED, "zz_remark": ""}
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, submitted))
+
+		self.assertNotIn("zz_remark", self._answers(task), "a blank answer was given a row of its own")
+		self.assertIn("zz_sample_collected", self._answers(task),
+					  "the answered fields must be untouched by the blank rule")
+
+	def test_clearing_an_answer_REMOVES_its_row_rather_than_blanking_it(self):
+		"""The other half, and the reason a blank cannot simply be skipped: skipping would leave the row the
+		first save wrote, so a cleared field would keep answering with the value the rep just deleted."""
+		name = activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
+		self.assertIn("zz_remark", self._answers(frappe.get_doc("CRM Task", name)))
+
+		activity_api.save_activity(self.lead.name, self.task_type, {**SUBMITTED, "zz_remark": ""}, task=name)
+
+		self.assertNotIn("zz_remark", self._answers(frappe.get_doc("CRM Task", name)),
+						 "the cleared answer still has a row — it would read back as the old value")
+
+	def test_a_blank_does_not_disturb_a_column_section_row(self):
+		"""The rule is key-value ONLY. A column section's row carries many fields, so one blank among them
+		is a blank column, never a reason to drop the row its siblings live in."""
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(
+			self.lead.name, self.task_type, {**SUBMITTED, "zz_column_answer": ""}))
+
+		self.assertIsNotNone(self._column_row(task), "a blank dropped the whole column-section row")
+
 	def test_the_single_field_writer_dual_writes_onto_the_same_row(self):
 		"""set_schema_field is the automation lane's writer; it must reach the same home, and only once."""
 		name = activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED)
