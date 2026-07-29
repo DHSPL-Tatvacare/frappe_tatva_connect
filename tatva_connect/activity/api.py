@@ -129,14 +129,13 @@ def _put_section_value(doc, f, value):
 	rows = doc.get(section.child_table_field) or []
 	row = (next((r for r in rows if r.get(section.row_key_field) == address), None)
 		   if section.is_key_value else (rows[0] if rows else None))
-	# An unanswered question is not an answer. A key-value row COSTS a row, so a blank one stores nothing and
-	# is pure weight — 65% of the table on the 10-lead Anaya trial. A blank arriving over an existing answer is
-	# the rep CLEARING it, so the row is removed rather than skipped, or the old value would silently survive.
-	if section.is_key_value and value in (None, ""):
+	# A blank earns no row: key-value drops the row (clearing it), a column row keeps its siblings and just blanks its own.
+	if value in (None, ""):
 		if row is None:
 			return False
-		doc.remove(row)
-		return True
+		if section.is_key_value:
+			doc.remove(row)
+			return True
 	if row is None:
 		doc.append(section.child_table_field, values)
 		return True
@@ -154,8 +153,9 @@ def _stage_section_value(staged, f, value):
 	if section_key is None:
 		return
 	section = frappe.get_cached_doc("CRM Task Section", section_key)
-	# Same rule as `_put_section_value`: a blank answer earns no key-value row. Nothing exists yet to clear.
-	if section.is_key_value and value in (None, ""):
+	# Same rule as `_put_section_value`, and simpler here: this task is being CREATED, so there is no earlier
+	# answer to clear — a blank of either shape just earns no row and no column.
+	if value in (None, ""):
 		return
 	rows = staged.setdefault(section.child_table_field, [])
 	values = _row_values(section, address, f.fieldtype, value)

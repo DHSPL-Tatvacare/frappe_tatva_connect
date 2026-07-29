@@ -218,13 +218,19 @@ class TestActivityDualWrite(FrappeTestCase):
 		self.assertNotIn("zz_remark", self._answers(frappe.get_doc("CRM Task", name)),
 						 "the cleared answer still has a row — it would read back as the old value")
 
-	def test_a_blank_does_not_disturb_a_column_section_row(self):
-		"""The rule is key-value ONLY. A column section's row carries many fields, so one blank among them
-		is a blank column, never a reason to drop the row its siblings live in."""
+	def test_a_column_section_row_is_not_born_to_hold_only_blanks(self):
+		"""A column row is shared by its whole family, so it exists only once something in it is answered.
+		Creating one regardless is what filled Engagement with 3,055 rows carrying nothing at all."""
 		task = frappe.get_doc("CRM Task", activity_api.save_activity(
 			self.lead.name, self.task_type, {**SUBMITTED, "zz_column_answer": ""}))
 
-		self.assertIsNotNone(self._column_row(task), "a blank dropped the whole column-section row")
+		self.assertIsNone(self._column_row(task), "a row was created holding only a blank")
+
+	def test_an_answered_column_field_still_gets_its_row(self):
+		"""The other direction, so the rule above cannot pass by never writing a column row at all."""
+		task = frappe.get_doc("CRM Task", activity_api.save_activity(self.lead.name, self.task_type, SUBMITTED))
+
+		self.assertEqual(self._column_row(task).get(self.column), SUBMITTED["zz_column_answer"])
 
 	def test_the_single_field_writer_dual_writes_onto_the_same_row(self):
 		"""set_schema_field is the automation lane's writer; it must reach the same home, and only once."""
@@ -250,10 +256,11 @@ class TestActivityDualWrite(FrappeTestCase):
 		return {r.get(self.key_value.row_key_field): r for r in task.get(self.key_value.child_table_field)}
 
 	def _column_row(self, task):
-		"""The single row of the column section — the shape that is one row per task, not one per field."""
-		rows = task.get(self.column_section.child_table_field)
-		self.assertEqual(len(rows), 1, "a single-row section carries one row per task, always")
-		return rows[0]
+		"""The column section's row, or None when nothing in that family was answered. Never more than one:
+		it is one row per task, not one per field."""
+		rows = task.get(self.column_section.child_table_field) or []
+		self.assertLessEqual(len(rows), 1, "a single-row section grew a second row")
+		return rows[0] if rows else None
 
 	def _row_counts(self, task):
 		"""Rows per section child table, and the value each answer row holds — what a duplicate would move."""
