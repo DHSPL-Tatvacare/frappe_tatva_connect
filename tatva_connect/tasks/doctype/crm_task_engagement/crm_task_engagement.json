@@ -12,7 +12,12 @@
   "next_step",
   "reschedule_at",
   "reasons",
-  "dropped_reason"
+  "dropped_reason",
+  "connected_status",
+  "outcome_status",
+  "update_internal_portal",
+  "update_punit_status",
+  "first_session"
  ],
  "fields": [
   {
@@ -52,13 +57,43 @@
    "fieldname": "dropped_reason",
    "fieldtype": "Small Text",
    "label": "Dropped Reason"
+  },
+  {
+   "fieldname": "connected_status",
+   "fieldtype": "Data",
+   "label": "Connected Status",
+   "columns": 2
+  },
+  {
+   "fieldname": "outcome_status",
+   "fieldtype": "Data",
+   "label": "Outcome Status",
+   "columns": 2
+  },
+  {
+   "fieldname": "update_internal_portal",
+   "fieldtype": "Data",
+   "label": "Update Internal Portal",
+   "columns": 2
+  },
+  {
+   "fieldname": "update_punit_status",
+   "fieldtype": "Data",
+   "label": "Update Punit Status",
+   "columns": 2
+  },
+  {
+   "fieldname": "first_session",
+   "fieldtype": "Data",
+   "label": "First Session",
+   "columns": 2
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-25 00:00:00.000000",
+ "modified": "2026-07-29 06:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tasks",
  "name": "CRM Task Engagement",
