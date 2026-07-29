@@ -195,8 +195,10 @@ _TABS = {
 	"task": (
 		"CRM Task",
 		"reference_docname",
-		["name", "title", "description", "assigned_to", "due_date", "priority", "status",
-		 "custom_task_type", "modified", "creation"],
+		["name", "title", "description", "assigned_to", "owner", "due_date", "priority", "status",
+		 "custom_task_type", "custom_completed_on", "modified", "modified_by", "creation",
+		 "custom_location_latitude", "custom_location_longitude", "custom_location_address",
+		 "custom_location_captured_at"],
 	),
 	# Comments and emails are ordinary tables too. They read the whole-lead payload only because nothing
 	# had asked them to page — and that payload drags every call, task and note with it, which is the
@@ -280,6 +282,7 @@ def _decorate(kind, rows):
 		_annotate_automation(rows, "CRM Task")
 		_annotate_task_due(rows)
 		_annotate_task_type(rows)
+		_annotate_task_rep(rows)
 	elif kind == "comment":
 		_attach_files(rows, "Comment")
 		for r in rows:
@@ -517,6 +520,59 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 							fields=["count(name) as n"], order_by=None)[0]["n"]
 	)
 	return _envelope(_decorate(kind, rows), page_length, page_length_count, total)
+
+
+def _annotate_task_rep(rows):
+	"""Everything the task CARD reads that the row itself does not carry, folded on in place — two
+	queries for the whole page, never one per row.
+
+	Each is the same answer `lead_task_board` gave before this tab served it: the person is
+	`assigned_to or owner`, a completion is stamped only when the task is done, the location is the
+	captured fix or nothing, and the attachment count is one grouped read. Diffing what the card reads
+	against what the page sent is how the missing avatar was found — do that, not this list, when a
+	field goes blank."""
+	from frappe.utils import flt, format_datetime
+
+	done_states = ("Done", "Canceled")
+	who = {r.get("assigned_to") or r.get("owner") for r in rows}
+	who |= {r.get("modified_by") for r in rows if r.get("status") in done_states}
+	who.discard(None)
+	users = {
+		u.name: u for u in frappe.get_all(
+			"User", filters={"name": ["in", sorted(who)]}, fields=["name", "full_name", "user_image"],
+		)
+	} if who else {}
+	names = [r.get("name") for r in rows if r.get("name")]
+	attachments = Counter(
+		f.attached_to_name for f in frappe.get_all(
+			"File", filters={"attached_to_doctype": "CRM Task", "attached_to_name": ["in", names]},
+			fields=["attached_to_name"],
+		)
+	) if names else Counter()
+
+	for row in rows:
+		rep = row.get("assigned_to") or row.get("owner")
+		spec = users.get(rep)
+		row["rep"] = rep
+		row["rep_name"] = (spec.full_name if spec else None) or rep
+		row["rep_image"] = spec.user_image if spec else None
+
+		done = row.get("status") in done_states
+		stamped = row.get("custom_completed_on") or (row.get("modified") if done else None)
+		completer = row.get("modified_by") if done else None
+		row["completed_on"] = format_datetime(stamped, "d MMM yyyy") if (done and stamped) else None
+		row["completed_by"] = (
+			(users.get(completer) or {}).get("full_name") or completer if completer else None
+		)
+
+		lat, lng = row.get("custom_location_latitude"), row.get("custom_location_longitude")
+		row["location"] = {
+			"lat": flt(lat), "lng": flt(lng),
+			"address": row.get("custom_location_address") or "",
+			"captured_at": str(row["custom_location_captured_at"]) if row.get("custom_location_captured_at") else None,
+		} if (lat and lng) else None
+		row["attachments"] = attachments.get(row.get("name"), 0)
+	return rows
 
 
 def _annotate_task_type(rows):
