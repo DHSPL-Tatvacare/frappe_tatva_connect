@@ -926,19 +926,21 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 def _type_config(task_type):
 	"""Render config for a task type: the ordered field schema, the same fields laid out in the tabs,
 	sections and columns the declaration draws, whether completing it logs Done, and whether it can capture
-	location (visit_mode In-Person, or a conditional location_when). None for a type with no config row.
+	location (visit_mode In-Person, or a declared location condition). None for a type with no config row.
 
 	`fields` is what every READER of a task's answers walks; `tabs` is what the FORM renders. They are the
 	one descriptor list, projected twice — see `compiled_layout`."""
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
 	doc = frappe.get_doc("CRM Task Type", task_type)
+	from tatva_connect.location.api import captures_location
+
 	fields, tabs = compiled_layout(doc)
 	return {
 		"fields": fields,
 		"tabs": tabs,
 		"is_logged_complete": int(doc.is_logged_complete or 0),
-		"captures_location": bool((doc.visit_mode or "") == "In-Person" or (doc.location_when or "").strip()),
+		"captures_location": captures_location(doc.visit_mode, doc.location_condition_field),
 	}
 
 
@@ -999,9 +1001,11 @@ def capture_flags(task_types):
 	wanted = sorted({t for t in task_types if t})
 	if not wanted:
 		return {}
+	from tatva_connect.location.api import captures_location
+
 	rows = frappe.get_all(
 		"CRM Task Type", filters={"name": ["in", wanted]},
-		fields=["name", "type_name", "visit_mode", "location_when", "is_logged_complete"],
+		fields=["name", "type_name", "visit_mode", "location_condition_field", "is_logged_complete"],
 	)
 	with_fields = {
 		r.parent for r in frappe.get_all(
@@ -1013,8 +1017,7 @@ def capture_flags(task_types):
 			r.type_name or r.name,
 			bool(
 				r.name in with_fields
-				or (r.visit_mode or "") == "In-Person"
-				or (r.location_when or "").strip()
+				or captures_location(r.visit_mode, r.location_condition_field)
 				or r.is_logged_complete
 			),
 		)

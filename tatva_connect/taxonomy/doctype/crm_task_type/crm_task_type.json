@@ -16,7 +16,9 @@
   "description",
   "activity_section",
   "visit_mode",
-  "location_when",
+  "location_condition_field",
+  "location_operator",
+  "location_condition_value",
   "is_logged_complete",
   "disable_bulk_complete",
   "schema_section",
@@ -63,7 +65,7 @@
    "label": "Description"
   },
   {
-   "description": "Everything that may block a bad save is declared here and nowhere else. Visit Mode marks the activity location-eligible when In-Person. Location Required When names the condition under which coordinates are demanded at save. Completes on save closes the task the moment its form is submitted. Disable bulk complete forces every completion through the form, one by one.",
+   "description": "Everything that may block a bad save is declared here and nowhere else. Visit Mode marks the activity location-eligible when In-Person. The three Location fields declare the condition under which coordinates are demanded at save. Completes on save closes the task the moment its form is submitted. Disable bulk complete forces every completion through the form, one by one.",
    "fieldname": "activity_section",
    "fieldtype": "Section Break",
    "label": "Enforcement"
@@ -76,10 +78,26 @@
    "options": "\nIn-Person\nPhone\nNone"
   },
   {
-   "description": "Optional condition that makes this type location-required conditionally, e.g. meeting_type==Physical Visit. Format <field>==<value> or <field> in v1|v2.",
-   "fieldname": "location_when",
-   "fieldtype": "Data",
-   "label": "Location When"
+   "description": "Location is demanded at save when this field's answer satisfies the condition below. The field is one this type declares under Fields, so the condition is asked of an answer the form actually collects. Left blank, Visit Mode alone decides.",
+   "fieldname": "location_condition_field",
+   "fieldtype": "Select",
+   "label": "Location Required When"
+  },
+  {
+   "default": "is",
+   "description": "How the answer is compared. The same four operators the Rules grid offers, so a condition reads the same wherever it is declared.",
+   "fieldname": "location_operator",
+   "fieldtype": "Select",
+   "label": "Operator",
+   "options": "is\nis not\nis set\nis not set",
+   "depends_on": "location_condition_field"
+  },
+  {
+   "description": "The answer compared against, offered from the chosen field's own options. Ignored by `is set` and `is not set`.",
+   "fieldname": "location_condition_value",
+   "fieldtype": "Select",
+   "label": "Value",
+   "depends_on": "location_condition_field"
   },
   {
    "default": "1",
@@ -96,7 +114,7 @@
    "label": "Disable Bulk Complete"
   },
   {
-   "description": "One row is added per question the form asks; row order is form order and rows are reordered by their drag handle. Label is shown to the rep; Fieldname is the stable key every consumer addresses. Fieldtype and Options drive the control and its choices. Source declares whose data is captured — Activity lands on the task's own storage, Lead is read from and written back to the patient record under its own permissions. Section files the answer into a declared storage section and groups it visually; a blank section falls to the answers store. Reqd marks a field always mandatory; conditional mandatory is declared under Rules.",
+   "description": "One row is added per question the form asks; row order is form order and rows are reordered by their drag handle. Label is shown to the rep; Fieldname is the stable key every consumer addresses. Fieldtype and Options drive the control and its choices. Source declares whose data is captured — Activity is answered by the rep, Lead is read from the patient record and snapshotted read-only onto the activity. Section and Target name where the answer is filed; left blank it is filed in the answers store. Required marks a field mandatory on every save; a conditional one is declared under Rules.",
    "fieldname": "schema_section",
    "fieldtype": "Section Break",
    "label": "Fields"

@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "field:section_key",
  "creation": "2026-07-25 00:00:00.000000",
- "description": "Where an activity type's answers are STORED. ONE row states everything a section is: which CRM Task Table field holds its rows, whose columns they are, whether a task may carry many of them, and which column addresses one. Every reader — Smart Views, automation, the partner API — asks this table; the answer is never restated on a CRM Task Type Field row. How the FORM looks is a different question, declared on the task type as Tab Break / Section Break / Column Break rows. Mirrors CRM Lead Section.",
+ "description": "Where an activity type's answers are STORED. ONE row states everything a section is: which CRM Task Table field holds its rows, whose columns they are, whether a task may carry many of them, and which column addresses one. Every reader \u2014 Smart Views, automation, the partner API \u2014 asks this table; the answer is never restated on a CRM Task Type Field row. How the FORM looks is a different question, declared on the task type as Tab Break / Section Break / Column Break rows. Mirrors CRM Lead Section.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -38,7 +38,7 @@
    "label": "Title",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "What these answers are called where there is no heading to lean on — a Smart View picker or grid column. This is STORAGE, not form layout: the form's tabs, headings and columns are declared as Tab Break / Section Break / Column Break rows on the task type itself."
+   "description": "What these answers are called where there is no heading to lean on \u2014 a Smart View picker or grid column. This is STORAGE, not form layout: the form's tabs, headings and columns are declared as Tab Break / Section Break / Column Break rows on the task type itself."
   },
   {
    "fieldname": "display_order",
@@ -63,7 +63,7 @@
   },
   {
    "fieldname": "child_table_field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Child Table Field",
    "description": "The Table field on CRM Task holding these rows, e.g. custom_engagement. Left blank the section IS the task row itself, and the target must then be CRM Task."
   },
@@ -77,11 +77,11 @@
    "fieldtype": "Check",
    "label": "Is Multi Row",
    "in_list_view": 1,
-   "description": "A task may carry many of these rows — a document per kind. Ticked, a write upserts the row named by the Row Key Field and leaves every other row untouched; unticked, the one row is merged onto."
+   "description": "A task may carry many of these rows \u2014 a document per kind. Ticked, a write upserts the row named by the Row Key Field and leaves every other row untouched; unticked, the one row is merged onto."
   },
   {
    "fieldname": "row_key_field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Row Key Field",
    "description": "The column identifying one row, e.g. document_kind. Required when multi-row: it is the address a write is applied at, and the key every consumer picks the latest row by. On a key-value section it is the column carrying the declared field a row answers."
   },
@@ -94,20 +94,20 @@
   },
   {
    "fieldname": "value_field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Value Field",
    "description": "The column holding a key-value row's answer, e.g. value. Required when key-value; every consumer reads the answer through it."
   },
   {
    "fieldname": "label_field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Label Field",
    "depends_on": "is_key_value",
    "description": "The column holding what a key-value row is CALLED, where the row is the only thing that knows. An activity field is declared on CRM Task Type Field, which already carries its label, so a task section leaves this blank rather than storing a second copy."
   },
   {
    "fieldname": "question_field",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Question Field",
    "depends_on": "is_key_value",
    "description": "The column holding the raw key a key-value row's identity was derived from, e.g. fieldname. Required when key-value: it is what a row says it was addressed by."

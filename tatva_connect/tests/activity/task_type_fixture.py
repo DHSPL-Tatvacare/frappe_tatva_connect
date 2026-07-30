@@ -36,12 +36,17 @@ def key_for(type_name, vertical=VERTICAL, group=GROUP, program=""):
 	return f"{vertical}::{group}::{program}::{type_name}"
 
 
-def mint_type(type_name, schema, vertical=VERTICAL, group=GROUP, program="", rules=()):
+def mint_type(type_name, schema, vertical=VERTICAL, group=GROUP, program="", rules=(), extra=None):
 	"""A CRM Task Type on a minted grain, plus the masters its axes Link to. Committed: the composer
 	reads it live, on the far side of the per-test rollback.
 
 	`rules` is passed through verbatim beside `schema` for the same reason schema is: a type's reactions are
-	operator data, and a fixture that could not declare them could not test the compile."""
+	operator data, and a fixture that could not declare them could not test the compile.
+
+	`extra` is any of the type's OWN columns — `visit_mode`, the three location-condition columns,
+	`is_logged_complete`. Passed through the same way and for the same reason: enforcement is declared on the
+	type, so a fixture that could not declare it could not drive the gate that reads it. Additive; every
+	existing caller is untouched."""
 	_make("CRM Vertical", vertical, {"vertical_name": vertical})
 	_make("CRM Group", group, {"group_name": group})
 	if program:
@@ -50,6 +55,7 @@ def mint_type(type_name, schema, vertical=VERTICAL, group=GROUP, program="", rul
 		"type_name": type_name, "vertical": vertical, "group": group, "program": program,
 		"schema": [dict(f) for f in schema],
 		"rules": [dict(r) for r in rules],
+		**(extra or {}),
 	})
 	frappe.db.commit()
 	return name

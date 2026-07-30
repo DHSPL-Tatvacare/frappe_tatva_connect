@@ -5,11 +5,14 @@ Run:
     bench --site wipetest.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.migration_check.test_reconciliation
 """
+import importlib
 import inspect
+import pkgutil
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+import tatva_connect.migration_check as mc_package
 from tatva_connect.migration_check import batch, compare, jobs, totals
 from tatva_connect.migration_check import constants as C
 
@@ -46,7 +49,16 @@ class TestOneCountingBrain(FrappeTestCase):
 						 "excludes every row and reports a structural zero")
 
 	def test_no_raw_sql_anywhere_in_the_tool(self):
-		for module in (batch, totals, compare):
+		"""EVERY module in the package, discovered rather than listed — a hand-list is a lock that
+		goes stale the day a fourth module grows a query, and it passes vacuously on the ones it
+		never named. The count premise keeps the sweep honest: a refactor that moves the modules
+		out from under the walk fails loudly instead of locking nothing."""
+		modules = [
+			importlib.import_module(f"{mc_package.__name__}.{found.name}")
+			for found in pkgutil.iter_modules(mc_package.__path__)
+		]
+		self.assertGreaterEqual(len(modules), 12, "the sweep no longer sees the whole tool")
+		for module in modules:
 			self.assertNotIn("frappe.db.sql", inspect.getsource(module),
 							 f"{module.__name__} reached for raw SQL — use frappe.qb")
 

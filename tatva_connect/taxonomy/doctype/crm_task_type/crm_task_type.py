@@ -17,6 +17,8 @@ class CRMTaskType(Document):
 		self._validate_schema()
 		self._validate_lead_sourced_fields()
 		self._validate_rules()
+		self._validate_location_condition()
+		self._validate_link_fields_name_a_doctype()
 
 	def _validate_schema(self):
 		"""A row that asks the rep something must say what it asks. A LAYOUT row (`NO_VALUE_FIELDS` — Frappe's
@@ -89,6 +91,102 @@ class CRMTaskType(Document):
 					frappe.throw(
 						_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
 						title=_("Unknown target"))
+
+	def _declared_questions(self):
+		"""The fields of this type that hold an ANSWER a condition can be asked about — every declared row
+		except the layout markers, which store nothing. Asked by both condition validators below so
+		"what may a predicate name" has one definition on this doctype."""
+		return {(f.fieldname or "").strip(): f for f in self.schema
+				if (f.fieldname or "").strip() and (f.fieldtype or "") not in NO_VALUE_FIELDS}
+
+	def _validate_location_condition(self):
+		"""The location gate's condition must name a field THIS type declares, and a value that field offers.
+
+		A predicate over answers the form does not collect is pointless: it can never hold, so the gate can
+		never fire, and the type reads as location-guarded while guarding nothing. The condition is evaluated
+		against this type's own settled answers (`location.api._condition_holds`), so the set a condition may
+		name is exactly the set declared under Fields — the same relationship `_validate_rules` enforces for a
+		rule's When field, checked here with the same two questions so the two cannot drift.
+
+		Its own value list is skipped for `is set` / `is not set`, which ask only whether an answer exists —
+		the same rule the compile applies (`RULE_VALUE_OPERATORS`)."""
+		from tatva_connect.activity.api import RULE_VALUE_OPERATORS
+
+		field = (self.get("location_condition_field") or "").strip()
+		if not field:
+			return  # no condition declared: visit_mode alone decides, and that is a complete declaration
+		declared = self._declared_questions()
+		if field not in declared:
+			frappe.throw(
+				_("Location Required When names `{0}`, which is not a question this task type asks. A location "
+				  "condition can only be asked of a field declared under Fields — otherwise it can never hold "
+				  "and the location is never demanded.").format(field),
+				title=_("Not a declared field"))
+		value = cstr(self.get("location_condition_value") or "").strip()
+		if value and (self.get("location_operator") or "").strip() in RULE_VALUE_OPERATORS:
+			options = [o.strip() for o in (declared[field].options or "").split("\n") if o.strip()]
+			if options and value not in options:
+				frappe.throw(
+					_("Location Required When compares `{0}` against `{1}`, which is not one of the options "
+					  "`{0}` declares.").format(field, value),
+					title=_("Unknown value"))
+
+	def _validate_link_fields_name_a_doctype(self):
+		"""A `Link` row must say WHICH doctype it links to, or the rep is handed a picker over nothing.
+
+		`options` is free text because a `Select` row uses it for its newline-separated choices, so nothing
+		ever checked the `Link` case — and the seeds carry rows like `Select Junior Coach - Diet` and
+		`Select ASM` that declare `Link` with no target at all. Those fields cannot be answered.
+
+		Deliberately a REFUSAL and not a picker: the choice is one of a thousand doctypes, and a dropdown that
+		long teaches nothing. A named refusal at authoring time does."""
+		for row in self.schema:
+			if (row.fieldtype or "") != "Link":
+				continue
+			target = (row.options or "").strip()
+			if not target:
+				frappe.throw(
+					_("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
+					  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname),
+					title=_("Link needs a target"))
+			if not frappe.db.exists("DocType", target):
+				frappe.throw(
+					_("Schema row {0}: `{1}` links to `{2}`, which is not a DocType on this site.").format(
+						row.idx, row.label or row.fieldname, target),
+					title=_("Unknown DocType"))
+
+
+@frappe.whitelist()
+def list_target_columns(section=None):
+	"""The columns a schema row's Target may name, as [{fieldname, label}] — the picker behind a free-text
+	box that nothing checked.
+
+	It asks `field_target`'s OWN inputs and holds no list of its own:
+
+	* a row naming a SECTION may target a column of that section's `target_doctype` — read off the
+	  `CRM Task Section` row, which is the one declaration of whose columns those are (rule 1);
+	* a row naming NO section may target a settable column of `CRM Task` — read through
+	  `activity.api.task_columns()`, the Task resource's own field brain, which is the ONE gate on that
+	  question and is request-cached (rule 2).
+
+	So the list offered is exactly the set the router will honour, and a value picked from it cannot become
+	the silent misroute that put 45 dead targets on the live seed. Blank in either case stays legitimate — an
+	untargeted row is addressed by its own fieldname (rules 3 and 4) and needs no pick.
+
+	Gated on read of the doctype this picker paints; layout markers are excluded by the caller, not here."""
+	from tatva_connect.activity.api import task_columns
+
+	frappe.has_permission("CRM Task Type", "read", throw=True)
+
+	section = (section or "").strip()
+	if not section:
+		return [{"fieldname": c, "label": c} for c in task_columns()]
+	target_doctype = frappe.get_cached_value("CRM Task Section", section, "target_doctype")
+	if not target_doctype:
+		return []  # a section that is not declared owns no columns; the router falls back and says so
+	return [{"fieldname": f.fieldname, "label": f.label or f.fieldname}
+			for f in frappe.get_meta(target_doctype).fields
+			if f.fieldtype not in NO_VALUE_FIELDS]
 
 
 @frappe.whitelist()

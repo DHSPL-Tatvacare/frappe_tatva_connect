@@ -58,13 +58,14 @@
   {
    "columns": 1,
    "default": "0",
+   "description": "Mandatory on every save. A field required only under a condition is declared under Rules instead.",
    "fieldname": "reqd",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Required"
   },
   {
-   "description": "Optional JS condition to show this field only when relevant, e.g. eval:doc.asm_along=='Yes' (native frappe-ui depends_on). Multi-branch eval expressions can be long.",
+   "description": "Optional condition under which this field is shown, e.g. eval:doc.outcome=='Connected'. Any Rule naming this field replaces what is typed here, so a rule-driven field is left blank.",
    "fieldname": "depends_on",
    "fieldtype": "Data",
    "label": "Depends On",
@@ -81,23 +82,25 @@
   {
    "columns": 1,
    "default": "Activity",
-   "description": "Where this field's value lives. Activity: on the task, in the section named below. Lead: on the lead, through the lead's own catalog and entitlement — never copied onto the task.",
+   "description": "Whose record the value belongs to. Activity is answered by the rep and stored on the task. Lead is read from the patient record on the server, shown read-only, and snapshotted onto the activity as it stood that day — the lead is never written back.",
    "fieldname": "source",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Source",
    "options": "Activity\nLead"
   },
   {
-   "columns": 2,
-   "description": "The section this field's answer lands in. Its CRM Task Section row names the doctype whose column the Target below is.",
+   "columns": 1,
+   "description": "The storage shape this answer is filed into, declared once on CRM Task Section. Left blank, the answer is filed in the answers store.",
    "fieldname": "section",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Section",
    "options": "CRM Task Section"
   },
   {
-   "columns": 2,
-   "description": "Optional: the column on the section's Target DocType this field writes to. Blank = stored as an answer row addressed by its fieldname.",
+   "columns": 1,
+   "description": "The column the answer occupies: a column of the Section's Target DocType, or — with no Section — a settable column of CRM Task. Left blank, the answer is stored as a row addressed by its fieldname.",
    "fieldname": "target",
    "fieldtype": "Data",
    "in_list_view": 1,
