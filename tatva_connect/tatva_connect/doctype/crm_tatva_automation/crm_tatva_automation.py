@@ -20,8 +20,10 @@ class CRMTatvaAutomation(Document):
 		# The parent is read from the REGISTRY, never from this row — the registry declares the hierarchy and
 		# the `requires` column is only its projection, so a stale or edited row cannot buy a child its arming.
 		# `is_enabled` walks the whole chain, so this refuses on ANY dormant ancestor, not just the nearest.
+		# Fires on the ARMING itself, never on a refresh that leaves `enabled` alone: the seed re-saves every
+		# row to update labels, and re-litigating a state it is not changing is what would fail a migrate.
 		parent = registry.parent_of(self.automation_key or self.name)
-		if self.enabled and parent and not is_enabled(parent):
+		if self.enabled and self.has_value_changed("enabled") and parent and not is_enabled(parent):
 			frappe.throw(
 				_("{0} cannot be enabled while {1} is off. The automation it leans on is enabled first.").format(
 					self.automation_key, parent

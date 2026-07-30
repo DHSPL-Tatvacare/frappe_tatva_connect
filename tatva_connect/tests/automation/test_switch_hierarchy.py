@@ -355,5 +355,46 @@ class TestSwitchHierarchy(FrappeTestCase):
 		self.assertEqual(unread, [], f"registry keys no production module names: {unread}")
 
 
+	# --- 13: a migrate can never be failed by the arming rule -------------
+
+	def test_13_the_seed_survives_a_row_armed_above_a_dormant_parent(self):
+		"""THE MIGRATE TRAP. `validate` refuses arming above a dormant parent, and the seed re-saves every
+		row to refresh its labels — so a row already in that state would fail `bench migrate` PART-WAY, with
+		the catalog half-written and the rest of after_migrate unrun.
+
+		Only a code change can create the state: declaring a NEW `requires` over a switch an operator had
+		already armed. The desk cannot — arming is refused and a parent takes its children with it.
+
+		Red here means a future thirteenth link turns the next deploy into a broken migrate.
+		"""
+		self.addCleanup(frappe.db.rollback)
+		child, parent = _PAIRS[0]
+		# Written straight to the column, which is the only way this state can exist — it is what a code
+		# change adding a link looks like from the seed's point of view.
+		self._set(parent, 0)
+		self._set(child, 1)
+
+		seed.sync_catalog()
+
+		self.assertEqual(
+			self._stored(child), 0,
+			f"{child} stayed armed above dormant {parent} — the row claims on while `is_enabled` says off",
+		)
+		self.assertFalse(is_enabled(child))
+
+	def test_13b_the_seed_never_arms_anything(self):
+		"""The other direction, and it is the one that must never bend: the seed disarms to match reality
+		and does nothing else. Code arming an automation is the failure the whole dormant-by-default rule
+		exists to prevent."""
+		self.addCleanup(frappe.db.rollback)
+		before = {row.name: int(row.enabled or 0) for row in frappe.get_all(_DOCTYPE, fields=["name", "enabled"])}
+
+		seed.sync_catalog()
+
+		after = {row.name: int(row.enabled or 0) for row in frappe.get_all(_DOCTYPE, fields=["name", "enabled"])}
+		armed = [k for k, v in after.items() if v and not before.get(k, 0)]
+		self.assertEqual(armed, [], f"the seed ARMED {armed} — code must never turn an automation on")
+
+
 if __name__ == "__main__":
 	unittest.main()

@@ -59,6 +59,32 @@ def sync_catalog():
 		if name not in live:
 			frappe.delete_doc("CRM Tatva Automation", name, ignore_permissions=True, force=True)  # authz-ok: tier-a — seed, runs at migrate
 
+	_disarm_orphans()
+
+
+def _disarm_orphans():
+	"""A row left armed above a dormant parent is switched off — the SAME rule the cascade applies.
+
+	Only a code change can create this state: declaring a NEW `requires` over a switch an operator already
+	armed. The desk cannot, because arming is refused and switching a parent off takes its children with it.
+	When it happens the switch is ALREADY off in every sense that matters — `is_enabled` walks the chain and
+	answers False — so this writes nothing new, it stops the row claiming otherwise.
+
+	Code never ARMS an automation here; it only ever disarms one to match what is already enforced.
+	"""
+	for auto in AUTOMATIONS:
+		if not auto.requires:
+			continue
+		if not frappe.db.get_value("CRM Tatva Automation", auto.key, "enabled"):
+			continue
+		if is_enabled(auto.requires):
+			continue
+		frappe.db.set_value("CRM Tatva Automation", auto.key, "enabled", 0, update_modified=False)
+		frappe.log_error(
+			title="automation disarmed: its declared parent is off",
+			message=f"{auto.key} was armed but {auto.requires} is off, so it was switched off to match.",
+		)
+
 
 def reconcile_activations():
 	# Deploy-time authoritative sync: set each toggle-owned infrastructure to match its current
