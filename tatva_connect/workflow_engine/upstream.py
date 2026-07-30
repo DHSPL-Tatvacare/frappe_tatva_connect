@@ -130,8 +130,8 @@ def emitters_at(nodes, node_id):
 	return found
 
 
-def _shaped(name, ftype, label, source, source_label, options=None):
-	"""One field, in the builder contract's own shape — `{ref, label, type, source, source_label}`.
+def _shaped(name, ftype, label, source, source_label, options=None, emitted=False):
+	"""One field, in the builder contract's own shape — `{ref, label, type, source, source_label, emitted}`.
 
 	`options` rides along ONLY when the field really has choices, so a Select's predicate value becomes a
 	dropdown instead of a free-text box. Absent for everything else, which is why the key is conditional
@@ -146,10 +146,18 @@ def _shaped(name, ftype, label, source, source_label, options=None):
 	PERSON is told where the value came from. Both are answered here because only this module knows both —
 	deriving the label in the picker would be a second brain guessing that `crm_lead` means the lead, and
 	it would guess wrong for every node source, whose name is the author's own.
+
+	`emitted` says WHAT that source is: True when a node in the graph produced this value, False when it is
+	a field of the subject. Only this module knows — it is the difference between the two loops in
+	`available_at` — and the canvas needs it for both of its questions ("which node produced this value"
+	and "is this a subject field, so may the working set narrow it away"). It is UNCONDITIONAL, unlike
+	`options`, because absence would have to be read as False and a row that simply forgot to say would be
+	silently narrowed away. The canvas used to answer this by scanning the raw graph prop for the id, which
+	is C17.1's defect exactly: a backend answer recomputed client-side.
 	"""
 	shape = {
 		"ref": name, "label": label or name, "type": ftype or "Data",
-		"source": source, "source_label": source_label or source,
+		"source": source, "source_label": source_label or source, "emitted": bool(emitted),
 	}
 	if options:
 		shape["options"] = options
@@ -169,7 +177,7 @@ def _emitted_by(node):
 	return [
 		_shaped(
 			refs.of_node(node["node_id"], value["name"]), value.get("type"), value.get("about"),
-			node["node_id"], group,
+			node["node_id"], group, emitted=True,
 		)
 		for value in emitted
 	]

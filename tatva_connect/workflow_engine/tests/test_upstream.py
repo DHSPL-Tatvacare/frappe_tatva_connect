@@ -140,10 +140,42 @@ class TestUpstream(FrappeTestCase):
 		"""One shape whatever the source, so the control need not know where a value came from. No
 		per-field `operators`: the contract resolves those by TYPE, and a per-field list here would be a
 		second operator vocabulary — the existing one emits symbols the evaluator rejects outright."""
+		always = {"ref", "label", "type", "source", "source_label", "emitted"}
 		for value in upstream.available_at(_graph(), "b1"):
-			self.assertEqual(set(value), {"ref", "label", "type", "source", "source_label"}, value)
+			# `options` is the ONE conditional key and `_shaped` says why: a Select carries its choices so
+			# the predicate becomes a dropdown, and a node-emitted value declares none and must not claim to.
+			# Spelling the key set as exactly `always` made this red for every Select the subject has.
+			self.assertEqual(set(value) - {"options"}, always, value)
 			self.assertTrue(value["label"], "a value must be nameable to a person")
 			self.assertTrue(value["source_label"], "a value must say, in words, where it came from")
+
+	def test_every_value_says_whether_a_node_produced_it(self):
+		"""C17.1 — the canvas asked this by scanning the raw `graph` prop for the source id, which is a
+		backend answer recomputed client-side. It is answered HERE because only this module knows: it is
+		the difference between the two loops in `available_at`.
+
+		Unconditional, never "present when true": a row that simply omitted the key would read as a subject
+		field and be narrowed away by a working set it was never subject to.
+		"""
+		for value in upstream.available_at(_graph(), "b1"):
+			with self.subTest(ref=value["ref"]):
+				self.assertIsInstance(value["emitted"], bool, "absent or None would be read as False")
+
+	def test_a_node_value_says_it_was_emitted_and_a_subject_field_says_it_was_not(self):
+		"""Both directions over ONE graph. Answering True for everything passes the half above, and it is
+		the half that would silently stop the working set narrowing anything at all."""
+		found = {v["ref"]: v for v in upstream.available_at(_graph(), "b1")}
+		self.assertTrue(found["api.patient_id"]["emitted"], "the Call API node produced this value")
+		self.assertFalse(found["crm_lead.status"]["emitted"], "this is the subject's own field")
+
+	def test_an_emitted_value_names_its_producing_node_in_source(self):
+		"""What makes the flag sufficient: the canvas needs the node id too, and for anything emitted the
+		`source` namespace IS that id — so nothing has to be parsed back out of the ref."""
+		by_id = {n["node_id"] for n in _graph()}
+		for value in upstream.available_at(_graph(), "b1"):
+			if value["emitted"]:
+				with self.subTest(ref=value["ref"]):
+					self.assertIn(value["source"], by_id, "an emitted value must name a node in the graph")
 
 	def test_an_unknown_node_resolves_to_nothing(self):
 		self.assertEqual(upstream.available_at(_graph(), "no-such-node"), [])
