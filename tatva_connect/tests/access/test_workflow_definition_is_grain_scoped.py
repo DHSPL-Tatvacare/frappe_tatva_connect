@@ -34,6 +34,7 @@ consulted only by `get_list`. Who may SEE a workflow and whose leads it ACTS ON 
 Run:
     bench --site dev.localhost run-tests --module tatva_connect.tests.access.test_workflow_definition_is_grain_scoped
 """
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -43,21 +44,30 @@ from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 WORKFLOW_DT = "CRM Workflow"
 SWITCH = "Workflow::CRM Workflow::visibility"
 
-_MINE = GRAINS[2]      # Tatvapractice · India · Field-Sales
-_THEIRS = GRAINS[0]    # Goodflip-Care · Anaya · Nivolumab — no axis in common with _MINE
+_MINE = GRAINS[2]  # Tatvapractice · India · Field-Sales
+_THEIRS = GRAINS[0]  # Goodflip-Care · Anaya · Nivolumab — no axis in common with _MINE
 USER = "wfgrain.probe@example.test"
 
 
 def _rows():
 	"""The four shapes the predicate must tell apart, as the plain dicts it reads."""
 	return {
-		"mine": frappe._dict(name="wf-mine", trigger_vertical=_MINE["vertical"],
-		                     trigger_group=_MINE["group"], trigger_program=_MINE["program"]),
-		"theirs": frappe._dict(name="wf-theirs", trigger_vertical=_THEIRS["vertical"],
-		                       trigger_group=_THEIRS["group"], trigger_program=_THEIRS["program"]),
+		"mine": frappe._dict(
+			name="wf-mine",
+			trigger_vertical=_MINE["vertical"],
+			trigger_group=_MINE["group"],
+			trigger_program=_MINE["program"],
+		),
+		"theirs": frappe._dict(
+			name="wf-theirs",
+			trigger_vertical=_THEIRS["vertical"],
+			trigger_group=_THEIRS["group"],
+			trigger_program=_THEIRS["program"],
+		),
 		# A blank axis is a WILDCARD: this is "every group in my vertical", not "the empty group".
-		"wildcard": frappe._dict(name="wf-wildcard", trigger_vertical=_MINE["vertical"],
-		                         trigger_group="", trigger_program=""),
+		"wildcard": frappe._dict(
+			name="wf-wildcard", trigger_vertical=_MINE["vertical"], trigger_group="", trigger_program=""
+		),
 		# No axis at all — site-wide, shown to everyone, asked of nobody's entitlement.
 		"siteWide": frappe._dict(name="wf-site", trigger_vertical="", trigger_group="", trigger_program=""),
 	}
@@ -133,10 +143,11 @@ class TestTheSwitchIsTheContract(_Case):
 		"""Fail-OPEN on the switch is this seam's contract, not a bug: dormant-by-default means the app
 		behaves exactly as stock crm until an operator arms it."""
 		visibility.automation.is_enabled = lambda key: False
-		self.assertEqual(visibility.scoped_pqc(WORKFLOW_DT, USER), "",
-		                 "off must add no conditions at all")
-		self.assertTrue(visibility.scoped_has_permission(_rows()["theirs"], "read", USER),
-		                "off must not deny a single doc either")
+		self.assertEqual(visibility.scoped_pqc(WORKFLOW_DT, USER), "", "off must add no conditions at all")
+		self.assertTrue(
+			visibility.scoped_has_permission(_rows()["theirs"], "read", USER),
+			"off must not deny a single doc either",
+		)
 
 	def test_on_and_entitled_to_nothing_selects_nothing_not_everything(self):
 		"""The fail-closed half. An empty readable set must become `1=0`; returning "" would silently
@@ -183,6 +194,7 @@ class TestScopingTheListDoesNotChangeWhatTheEngineProcesses(FrappeTestCase):
 				if isinstance(first, ast.Constant) and first.value == WORKFLOW_DT:
 					offenders.append(f"{path.name}:{node.lineno}")
 		self.assertEqual(
-			offenders, [],
+			offenders,
+			[],
 			f"the engine would start obeying a USER's scope in a job that has no user: {offenders}",
 		)

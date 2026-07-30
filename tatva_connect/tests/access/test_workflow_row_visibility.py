@@ -22,6 +22,7 @@ nothing checks is exactly how three of them stayed wrong.
 Run:
     bench --site dev.localhost run-tests --module tatva_connect.tests.access.test_workflow_row_visibility
 """
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -112,8 +113,10 @@ class TestWorkflowRowVisibility(FrappeTestCase):
 		for doctype in WORKFLOW_DOCTYPES:
 			with self.subTest(doctype=doctype):
 				doc = frappe._dict(
-					doctype=doctype, owner="someone-else@example.test",
-					subject_doctype="CRM Lead", subject_name="CRM-LEAD-DOES-NOT-EXIST",
+					doctype=doctype,
+					owner="someone-else@example.test",
+					subject_doctype="CRM Lead",
+					subject_name="CRM-LEAD-DOES-NOT-EXIST",
 					journey="CRM-RUN-DOES-NOT-EXIST",
 				)
 				self.assertFalse(

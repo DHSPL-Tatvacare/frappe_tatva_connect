@@ -17,6 +17,7 @@ A surface with no implementation yet skipTest()s with a reason — never a silen
 MUTATION discipline (base.py): only A4 mutates shared state; it isolates with a named savepoint in
 the subTest and rolls back to it, never a bare rollback (which would unwind the class seed floor).
 """
+
 import re
 
 import frappe
@@ -51,11 +52,17 @@ _A9_SHAPE = {
 # on the NATIVE dotted path so _dispatch resolves the override_whitelisted_methods wrapper.
 _A10_KW = {
 	"crm.integrations.api.get_recording_url": lambda t: {"call_log_name": t},
-	"crm.integrations.api.add_task_to_call_log": lambda t: {"call_sid": t, "task": {"title": "authz", "status": "Todo"}},
+	"crm.integrations.api.add_task_to_call_log": lambda t: {
+		"call_sid": t,
+		"task": {"title": "authz", "status": "Todo"},
+	},
 	"crm.integrations.api.add_note_to_call_log": lambda t: {"call_sid": t, "note": {"content": "authz"}},
 	"crm.api.doc.get_assigned_users": lambda t: {"doctype": "CRM Lead", "name": t},
 	"crm.api.doc.get_linked_docs_of_document": lambda t: {"doctype": "CRM Lead", "docname": t},
-	"crm.api.whatsapp.get_whatsapp_messages": lambda t: {"reference_doctype": "CRM Lead", "reference_name": t},
+	"crm.api.whatsapp.get_whatsapp_messages": lambda t: {
+		"reference_doctype": "CRM Lead",
+		"reference_name": t,
+	},
 }
 
 
@@ -79,15 +86,28 @@ class TestRegistryCases(AuthzTestCase):
 	@classmethod
 	def _ensure_a14_sink(cls):
 		if not frappe.db.exists("DocType", cls.A14_SINK):
-			frappe.get_doc({
-				"doctype": "DocType", "name": cls.A14_SINK, "module": "Intake", "custom": 1,
-				"autoname": "hash",
-				"fields": [{"fieldname": f, "fieldtype": ft, "label": f} for f, ft in [
-					("intake_form", "Data"), ("phone", "Data"), ("patient_name", "Data"),
-					("state_manual", "Data"), ("doctor", "Data"), ("doctor_manual", "Data"),
-					("remarks", "Small Text")]],
-				"permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}],
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "DocType",
+					"name": cls.A14_SINK,
+					"module": "Intake",
+					"custom": 1,
+					"autoname": "hash",
+					"fields": [
+						{"fieldname": f, "fieldtype": ft, "label": f}
+						for f, ft in [
+							("intake_form", "Data"),
+							("phone", "Data"),
+							("patient_name", "Data"),
+							("state_manual", "Data"),
+							("doctor", "Data"),
+							("doctor_manual", "Data"),
+							("remarks", "Small Text"),
+						]
+					],
+					"permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}],
+				}
+			).insert(ignore_permissions=True)
 			frappe.db.commit()  # DDL already committed implicitly; make the DocType row durable too
 
 	@classmethod
@@ -113,23 +133,33 @@ class TestRegistryCases(AuthzTestCase):
 		NOT an authz assertion — the assertion is what the SURFACE returns under the principal."""
 		return frappe.db.get_value(
 			"CRM Lead",
-			{"custom_vertical": g["vertical"], "custom_group": g["group"],
-			 "custom_current_program": g["program"], "lead_name": ["like", generator.TAG + "%"]},
+			{
+				"custom_vertical": g["vertical"],
+				"custom_group": g["group"],
+				"custom_current_program": g["program"],
+				"lead_name": ["like", generator.TAG + "%"],
+			},
 			"name",
 		)
 
 	def _resolve_target(self, c):
 		"""Map a CaseSpec.target token to a concrete seeded CRM Lead name (or None when N/A).
-		  in_grain                    -> a lead in the principal's own grain
-		  out_of_grain                -> a lead in a DIFFERENT vertical+group
-		  same_program_diff_vertical  -> grain_5's lead (shares program 'Inside-Sales' with grain_4)
+		in_grain                    -> a lead in the principal's own grain
+		out_of_grain                -> a lead in a DIFFERENT vertical+group
+		same_program_diff_vertical  -> grain_5's lead (shares program 'Inside-Sales' with grain_4)
 		"""
 		own = self._principal_grain(c.principal)
 		if c.target == "in_grain":
 			return self._lead_in_grain(own) if own else None
 		if c.target == "out_of_grain":
-			other = next((g for g in grains.GRAINS
-			              if not own or (g["vertical"], g["group"]) != (own["vertical"], own["group"])), None)
+			other = next(
+				(
+					g
+					for g in grains.GRAINS
+					if not own or (g["vertical"], g["group"]) != (own["vertical"], own["group"])
+				),
+				None,
+			)
 			return self._lead_in_grain(other) if other else None
 		if c.target == "same_program_diff_vertical":
 			# THE trap: grain_5 (Goodflip/B2C/Inside-Sales) — same program name as grain_4, other axes.
@@ -168,15 +198,15 @@ class TestRegistryCases(AuthzTestCase):
 		visible = native_visible_names(user, c.doctype)  # the native ceiling (runs PQC)
 		if c.expected == "deny":
 			self.assertNotIn(
-				target, visible,
-				f"A-LEAK: {user} ({c.principal}) can see out-of-grain lead {target} — native list must not expose it"
-				,
+				target,
+				visible,
+				f"A-LEAK: {user} ({c.principal}) can see out-of-grain lead {target} — native list must not expose it",
 			)
 		else:
 			self.assertIn(
-				target, visible,
-				f"REGRESSION: {user} ({c.principal}) cannot see its own in-grain lead {target}"
-				,
+				target,
+				visible,
+				f"REGRESSION: {user} ({c.principal}) cannot see its own in-grain lead {target}",
 			)
 
 	# ---- A4: grain-vs-role restriction wins (field; MUTATES → savepoint) -------------------------
@@ -201,24 +231,31 @@ class TestRegistryCases(AuthzTestCase):
 		save_point = "authz_a4_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
 		try:
-			frappe.get_doc({
-				"doctype": "CRM Lead Field Restriction", "role": role, "field": victim_key,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "CRM Lead Field Restriction",
+					"role": role,
+					"field": victim_key,
+				}
+			).insert(ignore_permissions=True)
 			# entitled_grains / restrictions are request-cached — clear so the resolver re-reads.
 			from tatva_connect.access import entitlement
+
 			setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
 			with set_user(user):
 				payload = lead_detail_mod.lead_detail(target)
-			rendered_keys = {f.get("field_key")
-			                 for s in payload.get("sections", []) for f in s.get("fields", [])}
+			rendered_keys = {
+				f.get("field_key") for s in payload.get("sections", []) for f in s.get("fields", [])
+			}
 			self.assertNotIn(
-				victim_key, rendered_keys,
-				f"A4: field {victim_key} restricted for role {role} still renders in lead_detail for {user}"
-				,
+				victim_key,
+				rendered_keys,
+				f"A4: field {victim_key} restricted for role {role} still renders in lead_detail for {user}",
 			)
 		finally:
 			frappe.db.rollback(save_point=save_point)
 			from tatva_connect.access import entitlement
+
 			setattr(frappe.local, entitlement._RESTRICT_CACHE, {})
 
 	@staticmethod
@@ -226,11 +263,11 @@ class TestRegistryCases(AuthzTestCase):
 		"""A non-universal lead-detail catalog field_key the user is currently entitled to — the one
 		we restrict and then prove disappears. None if the catalog yields nothing to restrict."""
 		from tatva_connect.access import entitlement
+
 		with set_user(user):
 			# Every catalog row routes through a section now (is_profile_row retired with SECTION_REGISTRY), so the whole catalog is the candidate set.
 			catalog = lead_detail_mod._catalog_rows()
-			visible = entitlement.resolve_fields(
-				catalog, entitlement.entitled_grains(), frappe.get_roles())
+			visible = entitlement.resolve_fields(catalog, entitlement.entitled_grains(), frappe.get_roles())
 		for key in visible:
 			if not entitlement.is_universal_field(key):
 				return key
@@ -261,7 +298,8 @@ class TestRegistryCases(AuthzTestCase):
 		permitted = native_permitted_fields(user, c.doctype)
 		missing = [fn for fn in GRAIN_FIELDNAMES if fn not in permitted]
 		self.assertEqual(
-			missing, [],
+			missing,
+			[],
 			f"A7: grain user {user} is missing READ access to its own grain field(s) {missing} — read is the "
 			"intended model (Sales User sees their grain)",
 		)
@@ -310,14 +348,12 @@ class TestRegistryCases(AuthzTestCase):
 		if c.expected == "deny":
 			self.assertFalse(
 				allowed,
-				f"A6 ESCALATION: {user} ({c.principal}) may {c.action} out-of-grain {c.doctype}/{target} natively"
-				,
+				f"A6 ESCALATION: {user} ({c.principal}) may {c.action} out-of-grain {c.doctype}/{target} natively",
 			)
 		else:
 			self.assertTrue(
 				allowed,
-				f"A6 REGRESSION: {user} ({c.principal}) cannot {c.action} in-scope {c.doctype}/{target}"
-				,
+				f"A6 REGRESSION: {user} ({c.principal}) cannot {c.action} in-scope {c.doctype}/{target}",
 			)
 
 	# ---- A3: privilege escalation (deny-sweep; oracle = capability) ------------------------------
@@ -338,14 +374,12 @@ class TestRegistryCases(AuthzTestCase):
 		"""Doctype-level DENY sweep — the only sanctioned doc=None oracle use (deny is the strongest
 		verdict, no false negative). Used by A3 (no_role gains nothing) and A11 (cross-app leak)."""
 		if c.expected != "deny":
-			self.skipTest(f"capability deny-sweep runner only judges DENY cases; {c.id} expects allow"
-			              )
+			self.skipTest(f"capability deny-sweep runner only judges DENY cases; {c.id} expects allow")
 		user = self._principal_user(c)
 		allowed = native_doctype_capability(user, c.doctype, c.action)
 		self.assertFalse(
 			allowed,
-			f"{c.attack} BREACH: {user} ({c.principal}) has {c.action} capability on {c.doctype}"
-			,
+			f"{c.attack} BREACH: {user} ({c.principal}) has {c.action} capability on {c.doctype}",
 		)
 
 	# ---- A13: partner-mapping abuse (inner-core gate; drive AS the partner) -----------------------
@@ -368,7 +402,9 @@ class TestRegistryCases(AuthzTestCase):
 		doc.set("custom_external_id", external_id)
 		doc.type = "Incoming"
 		doc.status = "Completed"
-		setattr(doc, "from", "+910000000000")  # from/to are required (reqd); an empty string counts as missing
+		setattr(
+			doc, "from", "+910000000000"
+		)  # from/to are required (reqd); an empty string counts as missing
 		doc.to = "+910000000001"
 		doc.reference_doctype = "CRM Lead"
 		doc.reference_docname = lead_name
@@ -418,27 +454,39 @@ class TestRegistryCases(AuthzTestCase):
 					_u, mp, is_sysmgr = _resolve_caller()
 				planted = self._plant_call_log(out_lead, external_id)  # as Administrator, on grain_3
 				before = frappe.db.get_value(
-					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True)
+					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True
+				)
 
 				# The partner sends the SAME external_id against their OWN lead.
-				frappe.form_dict = frappe._dict({
-					"lead": in_lead, "external_id": external_id, "direction": "Inbound",
-					"from_number": "9990000010", "to_number": "9990000011", "duration": 99,
-				})
+				frappe.form_dict = frappe._dict(
+					{
+						"lead": in_lead,
+						"external_id": external_id,
+						"direction": "Inbound",
+						"from_number": "9990000010",
+						"to_number": "9990000011",
+						"duration": 99,
+					}
+				)
 				with set_user(user):
 					view, action = partner_call._create_one(frappe.form_dict, mp, is_sysmgr)
 
 				self.assertEqual(action, "created", "A13: a colliding external_id must still CREATE")
 				self.assertNotEqual(
-					view["name"], planted,
+					view["name"],
+					planted,
 					"A13 CROSS-TENANT: a colliding external_id addressed the grain_3 Call Log — "
 					"external_id must never resolve a record",
 				)
-				self.assertEqual(view["lead"], in_lead, "A13: the new call must land on the partner's own lead")
-				after = frappe.db.get_value(
-					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True)
 				self.assertEqual(
-					dict(before), dict(after),
+					view["lead"], in_lead, "A13: the new call must land on the partner's own lead"
+				)
+				after = frappe.db.get_value(
+					"CRM Call Log", planted, ["reference_docname", "status", "duration"], as_dict=True
+				)
+				self.assertEqual(
+					dict(before),
+					dict(after),
 					f"A13 CROSS-TENANT: the grain_3 Call Log was mutated by a colliding external_id "
 					f"{external_id} — a label must never touch another tenant's row",
 				)
@@ -455,15 +503,24 @@ class TestRegistryCases(AuthzTestCase):
 		original_form_dict = frappe.form_dict
 		try:
 			if c.id == "A13-partner-callog-out-of-grain-create":
-				frappe.form_dict = frappe._dict({
-					"lead": out_lead, "external_id": "AUTHZ-A13-CL", "direction": "Inbound",
-					"from_number": "9990000010", "to_number": "9990000011",
-				})
+				frappe.form_dict = frappe._dict(
+					{
+						"lead": out_lead,
+						"external_id": "AUTHZ-A13-CL",
+						"direction": "Inbound",
+						"from_number": "9990000010",
+						"to_number": "9990000011",
+					}
+				)
 				core = lambda: partner_call._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			elif c.id == "A13-partner-activity-out-of-grain-create":
-				frappe.form_dict = frappe._dict({
-					"lead": out_lead, "external_id": "AUTHZ-A13-AC", "task_type": "__authz_probe__",
-				})
+				frappe.form_dict = frappe._dict(
+					{
+						"lead": out_lead,
+						"external_id": "AUTHZ-A13-AC",
+						"task_type": "__authz_probe__",
+					}
+				)
 				core = lambda: partner_activity._create_one(frappe.form_dict, mp, is_sysmgr)  # noqa: E731
 			else:
 				self.skipTest(f"A13 runner: unhandled case {c.id}")
@@ -493,15 +550,17 @@ class TestRegistryCases(AuthzTestCase):
 		reads cfg's attributes + .mappings off the object — so an un-inserted contract is a complete
 		substitute and no DDL touches the per-case savepoint. `source` is blank so no CRM Lead Source
 		master is needed (a blank routing axis is not forced)."""
-		doc = frappe.get_doc({
-			"doctype": "CRM Intake Form",
-			"form_name": f"authz-test-a14-{frappe.generate_hash(length=6)}",
-			"enabled": 1,
-			"custom_vertical": g["vertical"],
-			"custom_group": g["group"],
-			"custom_current_program": g["program"],
-			"mappings": mappings,
-		})
+		doc = frappe.get_doc(
+			{
+				"doctype": "CRM Intake Form",
+				"form_name": f"authz-test-a14-{frappe.generate_hash(length=6)}",
+				"enabled": 1,
+				"custom_vertical": g["vertical"],
+				"custom_group": g["group"],
+				"custom_current_program": g["program"],
+				"mappings": mappings,
+			}
+		)
 		doc.name = doc.form_name  # the fold stamps "Intake form: {cfg.name}" as provenance
 		return doc
 
@@ -524,7 +583,7 @@ class TestRegistryCases(AuthzTestCase):
 		from tatva_connect.intake import intake as intake_mod
 		from tatva_connect.taxonomy.normalize import normalize_display
 
-		g = grains.GRAINS[0]      # the FORM's grain (grain_1)
+		g = grains.GRAINS[0]  # the FORM's grain (grain_1)
 		foreign = grains.GRAINS[2]  # grain_3 — the smuggled foreign grain
 		save_point = "authz_a14_{}".format(c.id.replace("-", "_"))
 		frappe.db.savepoint(save_point)
@@ -532,28 +591,64 @@ class TestRegistryCases(AuthzTestCase):
 			if c.id == "A14-guest-routing-forced":
 				# Map free-text submission fields onto the lead's routing axes, then carry FOREIGN
 				# values: the fold's is_sysmgr=False+mp must DROP them and force the form's grain.
-				cfg = self._a14_intake_form(g, [
-					{"source_field": "phone", "fieldtype": "Phone",
-					 "target_table": "lead", "target_field": "mobile_no"},
-					{"source_field": "patient_name", "target_table": "lead", "target_field": "custom_vertical"},
-					{"source_field": "state_manual", "target_table": "lead", "target_field": "custom_group"},
-					{"source_field": "doctor_manual", "target_table": "lead", "target_field": "custom_current_program"},
-				])
-				sub = self._a14_submission(cfg, {
-					"phone": "+91 9990077001", "patient_name": foreign["vertical"],
-					"state_manual": foreign["group"], "doctor_manual": foreign["program"],
-				})
+				cfg = self._a14_intake_form(
+					g,
+					[
+						{
+							"source_field": "phone",
+							"fieldtype": "Phone",
+							"target_table": "lead",
+							"target_field": "mobile_no",
+						},
+						{
+							"source_field": "patient_name",
+							"target_table": "lead",
+							"target_field": "custom_vertical",
+						},
+						{
+							"source_field": "state_manual",
+							"target_table": "lead",
+							"target_field": "custom_group",
+						},
+						{
+							"source_field": "doctor_manual",
+							"target_table": "lead",
+							"target_field": "custom_current_program",
+						},
+					],
+				)
+				sub = self._a14_submission(
+					cfg,
+					{
+						"phone": "+91 9990077001",
+						"patient_name": foreign["vertical"],
+						"state_manual": foreign["group"],
+						"doctor_manual": foreign["program"],
+					},
+				)
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
 				lead = self._a14_lead_for("+91 9990077001")
-				self.assertEqual(lead.custom_vertical, g["vertical"],
-				                 f"A14: Guest smuggled vertical {foreign['vertical']} stuck on the lead")
-				self.assertEqual(lead.custom_group, g["group"],
-				                 f"A14: Guest smuggled group {foreign['group']} stuck on the lead")
-				self.assertEqual(lead.custom_current_program, g["program"],
-				                 f"A14: Guest smuggled program {foreign['program']} stuck on the lead")
-				self.assertNotEqual(lead.custom_vertical, foreign["vertical"],
-				                    "A14 ROUTING ESCALATION: foreign vertical was accepted from a Guest payload")
+				self.assertEqual(
+					lead.custom_vertical,
+					g["vertical"],
+					f"A14: Guest smuggled vertical {foreign['vertical']} stuck on the lead",
+				)
+				self.assertEqual(
+					lead.custom_group,
+					g["group"],
+					f"A14: Guest smuggled group {foreign['group']} stuck on the lead",
+				)
+				self.assertEqual(
+					lead.custom_current_program,
+					g["program"],
+					f"A14: Guest smuggled program {foreign['program']} stuck on the lead",
+				)
+				self.assertNotEqual(
+					lead.custom_vertical,
+					foreign["vertical"],
+					"A14 ROUTING ESCALATION: foreign vertical was accepted from a Guest payload",
+				)
 
 			elif c.id == "A14-guest-no-master-growth":
 				# A manual field with master_doctype=CRM Side Effect Option -> _ensure_master. That
@@ -561,12 +656,24 @@ class TestRegistryCases(AuthzTestCase):
 				# so the ONLY thing that prevents a Guest from growing it is the Guest guard
 				# (intake.py:355). The value is recorded as a note on the resolved lead.
 				master = "CRM Side Effect Option"
-				cfg = self._a14_intake_form(g, [
-					{"source_field": "phone", "fieldtype": "Phone",
-					 "target_table": "lead", "target_field": "mobile_no"},
-					{"source_field": "doctor", "manual_field": "doctor_manual",
-					 "master_doctype": master, "target_table": "note", "target_field": "option_name"},
-				])
+				cfg = self._a14_intake_form(
+					g,
+					[
+						{
+							"source_field": "phone",
+							"fieldtype": "Phone",
+							"target_table": "lead",
+							"target_field": "mobile_no",
+						},
+						{
+							"source_field": "doctor",
+							"manual_field": "doctor_manual",
+							"master_doctype": master,
+							"target_table": "note",
+							"target_field": "option_name",
+						},
+					],
+				)
 				typed = "Authz Guest Side Effect"
 				canonical = normalize_display(typed)
 				sub = self._a14_submission(cfg, {"phone": "+91 9990077002", "doctor_manual": typed})
@@ -575,44 +682,66 @@ class TestRegistryCases(AuthzTestCase):
 					intake_mod._fold_submission_to_lead(sub, cfg)
 				# (1) Guest did NOT grow the growable master, and the typed value is recorded as text.
 				self.assertEqual(
-					frappe.db.count(master), before,
-					f"A14 MASTER GROWTH: a Guest submit grew {master} — the Guest guard (intake.py:355) is gone")
+					frappe.db.count(master),
+					before,
+					f"A14 MASTER GROWTH: a Guest submit grew {master} — the Guest guard (intake.py:355) is gone",
+				)
 				lead = self._a14_lead_for("+91 9990077002")
 				note = frappe.db.get_value(
 					"FCRM Note",
 					{"reference_doctype": "CRM Lead", "reference_docname": lead.name, "title": "option_name"},
-					"content")
-				self.assertEqual(note, canonical,
-				                 f"A14: the typed value was not recorded as canonical text on the lead (note={note})")
+					"content",
+				)
+				self.assertEqual(
+					note,
+					canonical,
+					f"A14: the typed value was not recorded as canonical text on the lead (note={note})",
+				)
 				# (2) DIFFERENTIAL clincher (same savepoint): the SAME _ensure_master call as an AUTHED
 				# user (the default Administrator) DOES grow the master by 1 — so the no-grow above is
 				# Guest-specific, not a universal/pick-only block. Delete line 355 and (1) fails.
 				authed_before = frappe.db.count(master)
 				grown = intake_mod._ensure_master(master, "option_name", "Authz Authed Side Effect")
 				self.assertEqual(
-					frappe.db.count(master), authed_before + 1,
+					frappe.db.count(master),
+					authed_before + 1,
 					f"A14: an authed _ensure_master did NOT grow {master} — the master must be growable "
-					"for the Guest differential to mean anything")
+					"for the Guest differential to mean anything",
+				)
 				self.assertEqual(grown, normalize_display("Authz Authed Side Effect"))
 
 			elif c.id == "A14-guest-note-scope":
 				# A remarks -> note mapping: the fold's FCRM Note must reference ONLY its own lead.
-				cfg = self._a14_intake_form(g, [
-					{"source_field": "phone", "fieldtype": "Phone",
-					 "target_table": "lead", "target_field": "mobile_no"},
-					{"source_field": "remarks", "target_table": "note", "target_field": "Enrolment Remarks"},
-				])
+				cfg = self._a14_intake_form(
+					g,
+					[
+						{
+							"source_field": "phone",
+							"fieldtype": "Phone",
+							"target_table": "lead",
+							"target_field": "mobile_no",
+						},
+						{
+							"source_field": "remarks",
+							"target_table": "note",
+							"target_field": "Enrolment Remarks",
+						},
+					],
+				)
 				sub = self._a14_submission(cfg, {"phone": "+91 9990077003", "remarks": "guest note body"})
 				with set_user("Guest"):
 					intake_mod._fold_submission_to_lead(sub, cfg)
 				lead = self._a14_lead_for("+91 9990077003")
 				refs = frappe.get_all(
-					"FCRM Note", filters={"title": "Enrolment Remarks", "content": "guest note body"},
-					pluck="reference_docname")
+					"FCRM Note",
+					filters={"title": "Enrolment Remarks", "content": "guest note body"},
+					pluck="reference_docname",
+				)
 				self.assertTrue(refs, "A14: the Guest fold did not write its FCRM Note")
 				self.assertTrue(
 					all(r == lead.name for r in refs),
-					f"A14 NOTE SCOPE: a Guest note referenced a lead other than the fold's own {lead.name}: {refs}")
+					f"A14 NOTE SCOPE: a Guest note referenced a lead other than the fold's own {lead.name}: {refs}",
+				)
 			else:
 				self.skipTest(f"A14 runner: unhandled case {c.id}")
 		finally:
@@ -640,21 +769,32 @@ class TestRegistryCases(AuthzTestCase):
 		own = self._principal_grain(c.principal)
 		if own is None:
 			self.skipTest(f"smartview case {c.id} needs a grain principal")
-		out = next((g for g in grains.GRAINS
-		            if (g["vertical"], g["group"]) != (own["vertical"], own["group"])), None)
+		out = next(
+			(g for g in grains.GRAINS if (g["vertical"], g["group"]) != (own["vertical"], own["group"])), None
+		)
 		if out is None:
 			self.skipTest(f"no out-of-grain grain for case {c.id}")
 
 		if c.attack == "A12":
 			# Grain clamp: an out-of-grain AXIS is rejected by _grains_from_axes (PermissionError).
-			view = {"label": "authz-clamp", "base_object": "Lead",
-			        "vertical": out["vertical"], "group": out["group"], "program": out["program"]}
+			view = {
+				"label": "authz-clamp",
+				"base_object": "Lead",
+				"vertical": out["vertical"],
+				"group": out["group"],
+				"program": out["program"],
+			}
 		else:
 			# Column leak: the OWN (entitled) axis passes the clamp, but a column outside that grain's
 			# catalog is rejected by _validate_columns (ValidationError) — fail-closed allowlist.
-			view = {"label": "authz-col", "base_object": "Lead",
-			        "vertical": own["vertical"], "group": own["group"], "program": own["program"],
-			        "columns": ["lead:authz_out_of_grain_col"]}
+			view = {
+				"label": "authz-col",
+				"base_object": "Lead",
+				"vertical": own["vertical"],
+				"group": own["group"],
+				"program": own["program"],
+				"columns": ["lead:authz_out_of_grain_col"],
+			}
 		# _grains_from_axes raises PermissionError, _validate_columns raises ValidationError — both are
 		# the clamp refusing; widen the catch so neither path can become a false pass.
 		with set_user(user):
@@ -725,7 +865,7 @@ class TestRegistryCases(AuthzTestCase):
 		if not scope or not scope.switch:
 			self.skipTest(f"A9: {c.doctype} is not a switchable row-scoped doctype")
 		switch = scope.switch
-		in_user = roster.email("grain_1")   # owner of the grain_1 lead the child hangs off
+		in_user = roster.email("grain_1")  # owner of the grain_1 lead the child hangs off
 		out_user = roster.email("grain_2")  # the peer that natively cannot read that lead
 		lead = self._lead_in_grain(grains.GRAINS[0])
 		if lead is None:
@@ -739,12 +879,15 @@ class TestRegistryCases(AuthzTestCase):
 				frappe.clear_cache()
 				child = self._a9_make_child(c.doctype, lead)
 				self.assertEqual(
-					visibility.scoped_pqc(c.doctype, out_user), "",
-					f"A9: {c.doctype} switch OFF must yield NO scoped PQC (stock CRM)")
+					visibility.scoped_pqc(c.doctype, out_user),
+					"",
+					f"A9: {c.doctype} switch OFF must yield NO scoped PQC (stock CRM)",
+				)
 				self.assertTrue(
 					visibility.scoped_has_permission(child, "read", out_user),
 					f"A9: {c.doctype} switch OFF must expose the child to any role-permitted user "
-					"(the documented stock-CRM exposure delta)")
+					"(the documented stock-CRM exposure delta)",
+				)
 				return
 			# every other branch is the switch-ON (scoped) state.
 			frappe.db.set_value("CRM Tatva Automation", switch, "enabled", 1)
@@ -752,20 +895,33 @@ class TestRegistryCases(AuthzTestCase):
 			if c.surface == "child_shape":
 				pqc = visibility.scoped_pqc(c.doctype, out_user)
 				has_assigned, ref_col = _A9_SHAPE[c.doctype]
-				self.assertIn(f"`tab{c.doctype}`.`owner`=", pqc,
-				              f"A9 shape: {c.doctype} PQC missing the owner self-ownership clause")
-				self.assertIn("reference_doctype", pqc,
-				              f"A9 shape: {c.doctype} PQC missing the reference_doctype parent clause")
+				self.assertIn(
+					f"`tab{c.doctype}`.`owner`=",
+					pqc,
+					f"A9 shape: {c.doctype} PQC missing the owner self-ownership clause",
+				)
+				self.assertIn(
+					"reference_doctype",
+					pqc,
+					f"A9 shape: {c.doctype} PQC missing the reference_doctype parent clause",
+				)
 				self.assertIn(ref_col, pqc, f"A9 shape: {c.doctype} PQC missing the {ref_col} column")
 				if has_assigned:
-					self.assertIn("assigned_to", pqc,
-					              f"A9 shape: {c.doctype} PQC missing its assigned_to clause")
+					self.assertIn(
+						"assigned_to", pqc, f"A9 shape: {c.doctype} PQC missing its assigned_to clause"
+					)
 				else:
-					self.assertNotIn("assigned_to", pqc,
-					                 f"A9 shape: {c.doctype} PQC has an assigned_to clause it should not")
+					self.assertNotIn(
+						"assigned_to",
+						pqc,
+						f"A9 shape: {c.doctype} PQC has an assigned_to clause it should not",
+					)
 				if ref_col == "reference_name":
-					self.assertNotIn("reference_docname", pqc,
-					                 "A9 shape: WhatsApp Message must key on reference_name, not reference_docname")
+					self.assertNotIn(
+						"reference_docname",
+						pqc,
+						"A9 shape: WhatsApp Message must key on reference_name, not reference_docname",
+					)
 				return
 			if c.surface == "child_orphan":
 				# A links-only Call Log has no reference_* parent -> orphan -> fail-closed even in-scope.
@@ -773,28 +929,33 @@ class TestRegistryCases(AuthzTestCase):
 				self.assertFalse(
 					visibility.scoped_has_permission(child, "read", in_user),
 					"A9: a links-only Call Log (no reference parent) must fail closed even for the "
-					"in-scope user")
+					"in-scope user",
+				)
 				return
 			if c.surface == "child_assignee":
 				# Least-privilege carve-out: the assignee sees their own task on a hidden parent.
 				child = self._a9_make_child(c.doctype, lead, assigned_to=out_user)
 				self.assertTrue(
 					visibility.scoped_has_permission(child, "read", out_user),
-					"A9: an assignee must see their own task even on a parent they cannot read")
+					"A9: an assignee must see their own task even on a parent they cannot read",
+				)
 				return
 			# default: child_scope — switch ON blocks the peer AND keeps the in-scope owner.
 			child = self._a9_make_child(c.doctype, lead)
 			self.assertTrue(
 				visibility.scoped_has_permission(child, "read", in_user),
-				f"A9 REGRESSION: in-scope grain_1 denied its own {c.doctype} {child.name}")
+				f"A9 REGRESSION: in-scope grain_1 denied its own {c.doctype} {child.name}",
+			)
 			self.assertFalse(
 				visibility.scoped_has_permission(child, "read", out_user),
-				f"A9 LEAK: out-of-scope grain_2 saw {c.doctype} {child.name} on a lead it cannot read")
+				f"A9 LEAK: out-of-scope grain_2 saw {c.doctype} {child.name} on a lead it cannot read",
+			)
 			with set_user(out_user):
 				self.assertFalse(
 					frappe.has_permission(c.doctype, "read", child.name),
 					f"A9 LEAK: frappe.has_permission exposed {c.doctype} {child.name} to grain_2 "
-					"(the wired has_permission hook must deny too)")
+					"(the wired has_permission hook must deny too)",
+				)
 		finally:
 			frappe.db.rollback(save_point=save_point)
 			frappe.clear_cache()
@@ -822,7 +983,8 @@ class TestRegistryCases(AuthzTestCase):
 			if c.doctype == "CRM Call Log":
 				# The guard is CRM Call Log read; with the switch ON the peer inherits the lead denial.
 				frappe.db.set_value(
-					"CRM Tatva Automation", "Telephony::CRM Call Log::visibility", "enabled", 1)
+					"CRM Tatva Automation", "Telephony::CRM Call Log::visibility", "enabled", 1
+				)
 				frappe.clear_cache()
 				target = self._plant_call_log(lead, f"A10-{frappe.generate_hash(length=6)}")
 			else:
