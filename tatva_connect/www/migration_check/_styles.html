@@ -6,7 +6,10 @@
 
 	.mc-head { margin-bottom: var(--margin-lg, 1rem); }
 	.mc-head h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 .4rem; color: var(--text-color); }
-	.mc-lede { color: var(--text-muted); font-size: .875rem; line-height: 1.55; margin: 0; max-width: 68ch; }
+	.mc-lede { color: var(--text-muted); font-size: .875rem; line-height: 1.55; margin: 0; }
+	.mc-abort { background: var(--bg-red, #b52a2a); color: #fff; border: 0; border-radius: .5rem;
+		padding: 0 1.25rem; height: 2.5rem; font-weight: 600; cursor: pointer; }
+	.mc-abort:disabled { opacity: .5; cursor: default; }
 
 	.mc-banner {
 		background: var(--bg-yellow); color: var(--text-on-yellow);
@@ -128,6 +131,7 @@
 	/* run list + two-pane batch view */
 	.mc-split { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
 	.mc-left { flex: 1 1 20rem; min-width: 0; max-width: 26rem; }
+	.mc-left .mc-card { position: sticky; top: 1rem; }
 	.mc-right { flex: 2 1 26rem; min-width: 0; }
 	.mc-list { list-style: none; margin: 0; padding: 0; max-height: 32rem; overflow-y: auto; }
 	.mc-list li { border-bottom: 1px solid var(--border-color); }

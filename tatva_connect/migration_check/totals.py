@@ -18,6 +18,7 @@ database agree, and a control total should not be priced at one HTTP round trip 
 """
 
 import frappe
+from frappe.query_builder.functions import Count
 
 from tatva_connect.migration_check import audit, guard, storage
 from tatva_connect.migration_check import constants as C
@@ -60,9 +61,15 @@ def execute(run_id: str, grain: str, user: str) -> None:
 	try:
 		creds = guard.credentials(grain)
 		with Client(creds.lsq_host, creds.lsq_access_key, creds.lsq_secret_key, delay=BATCH_DELAY) as client:
-			lead_total = _count_leads(client)
-			by_code = _count_activities(client, resolved)
+			lead_total = _count_leads(client, run_id)
+			by_code = _count_activities(client, resolved, run_id)
 			payload["lsq_calls"] = client.calls
+
+		if jobs.abort_requested(run_id):
+			payload["status"] = "aborted"
+			payload["error"] = "Aborted by the operator."
+			storage.write(run_id, payload)
+			return
 
 		payload["rows"] = _build_rows(resolved, lead_total, by_code)
 		payload["summary"] = _summarise(payload["rows"])
@@ -87,10 +94,14 @@ def execute(run_id: str, grain: str, user: str) -> None:
 # -- LeadSquared -------------------------------------------------------------
 
 
-def _count_leads(client: Client) -> int:
+def _count_leads(client: Client, run_id: str | None = None) -> int:
 	"""Exact, by paging. Only ProspectID is requested, so each page stays small."""
+	from tatva_connect.migration_check import jobs
+
 	seen: set[str] = set()
 	for page in range(1, MAX_LEAD_PAGES + 1):
+		if run_id and jobs.abort_requested(run_id):
+			break
 		rows = client._call(
 			"LeadManagement.svc/Leads.Get",
 			body={
@@ -114,10 +125,14 @@ def _count_leads(client: Client) -> int:
 	return len(seen)
 
 
-def _count_activities(client: Client, grain: C.Grain) -> dict:
+def _count_activities(client: Client, grain: C.Grain, run_id: str | None = None) -> dict:
 	"""One call per event code. RecordCount prices the whole code however large."""
+	from tatva_connect.migration_check import jobs
+
 	counts = {}
 	for code in sorted(grain.mapped_event_codes, key=int):
+		if run_id and jobs.abort_requested(run_id):
+			break
 		payload = client._call(
 			"ProspectActivity.svc/CustomActivity/RetrieveByActivityEvent",
 			body={
@@ -147,38 +162,56 @@ def _crm_leads(grain: C.Grain) -> int:
 	)
 
 
-def _crm_activities_by_type(grain: C.Grain) -> dict:
-	"""Migrated activities per bare task type, for this grain only."""
-	rows = frappe.db.sql(
-		"""
-		SELECT SUBSTRING_INDEX(t.custom_task_type, '::', -1) AS task_type, COUNT(*) AS n
-		FROM `tabCRM Task` t
-		JOIN `tabCRM Lead` l ON l.name = t.reference_docname
-		WHERE t.reference_doctype = 'CRM Lead'
-		  AND t.custom_lsq_activity_id IS NOT NULL
-		  AND l.custom_vertical = %s AND l.custom_group = %s
-		GROUP BY task_type
-		""",
-		(grain.vertical, grain.group),
-		as_dict=True,
+def crm_tasks_by_bare_type(grain: C.Grain, lead_name: str | None = None) -> dict:
+	"""Activities per bare task type — the ONE query both the certificate (per grain) and the bulk
+	check (per lead) count through, so the two tabs can never disagree on what "counted" means.
+
+	COUNTS EVERY TASK OF AN AGREED TYPE, migrated or not, and the pages say so. It used to filter
+	`custom_lsq_activity_id IS NOT NULL` — the provenance stamp that would tell the two apart — but
+	the migration never writes that column: measured 3,046 of 3,046 tasks NULL, so the predicate
+	excluded every row and the Frappe side of every activity line read a structural zero while the
+	calls line (keyed off the LEAD's prospect id, which IS written) reconciled fine. Counting what
+	can honestly be counted beats reporting a zero that looks like a migration failure. Stamping
+	provenance is the real fix and is raised in docs/pending.
+
+	The composite key is split in PYTHON, not by a SQL function: a grain has tens of task types, so
+	the grouping is small, and it keeps the whole read inside the query builder."""
+	task, lead = frappe.qb.DocType("CRM Task"), frappe.qb.DocType("CRM Lead")
+	query = (
+		frappe.qb.from_(task)
+		.join(lead)
+		.on(lead.name == task.reference_docname)
+		.select(task.custom_task_type, Count("*").as_("n"))
+		.where(task.reference_doctype == "CRM Lead")
+		.where(task.custom_task_type.isnotnull())
+		.where(lead.custom_vertical == grain.vertical)
+		.where(lead.custom_group == grain.group)
+		.groupby(task.custom_task_type)
 	)
-	return {r.task_type: int(r.n) for r in rows}
+	if lead_name:
+		query = query.where(task.reference_docname == lead_name)
+	rows = query.run(as_dict=True)
+
+	out: dict[str, int] = {}
+	for row in rows:
+		bare = (row.get("custom_task_type") or "").rsplit(C.KEY_SEPARATOR, 1)[-1]
+		out[bare] = out.get(bare, 0) + int(row.get("n") or 0)
+	return out
 
 
 def _crm_calls(grain: C.Grain) -> int:
-	row = frappe.db.sql(
-		"""
-		SELECT COUNT(*) AS n
-		FROM `tabCRM Call Log` c
-		JOIN `tabCRM Lead` l ON l.name = c.reference_docname
-		WHERE c.reference_doctype = 'CRM Lead'
-		  AND l.custom_vertical = %s AND l.custom_group = %s
-		  AND l.custom_lsq_prospect_id IS NOT NULL
-		""",
-		(grain.vertical, grain.group),
-		as_dict=True,
-	)
-	return int(row[0].n) if row else 0
+	call, lead = frappe.qb.DocType("CRM Call Log"), frappe.qb.DocType("CRM Lead")
+	rows = (
+		frappe.qb.from_(call)
+		.join(lead)
+		.on(lead.name == call.reference_docname)
+		.select(Count("*").as_("n"))
+		.where(call.reference_doctype == "CRM Lead")
+		.where(lead.custom_vertical == grain.vertical)
+		.where(lead.custom_group == grain.group)
+		.where(lead.custom_lsq_prospect_id.isnotnull())
+	).run(as_dict=True)
+	return int(rows[0].get("n") or 0) if rows else 0
 
 
 # -- the certificate ---------------------------------------------------------
@@ -187,7 +220,7 @@ def _crm_calls(grain: C.Grain) -> int:
 def _build_rows(grain: C.Grain, lead_total: int, by_code: dict) -> list[dict]:
 	rows = [_row("Leads", lead_total, _crm_leads(grain))]
 
-	crm_by_type = _crm_activities_by_type(grain)
+	crm_by_type = crm_tasks_by_bare_type(grain)
 	activity_codes = [c for c in by_code if c in grain.activity_task_types]
 	call_codes = [c for c in by_code if c in grain.call_log_events]
 

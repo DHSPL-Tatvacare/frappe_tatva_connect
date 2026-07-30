@@ -2,7 +2,7 @@
 {# TEMPORARY — migration reconciliation demo, remove before prod. #}
 {# See tatva_connect/migration_check/REMOVE-ME.md #}
 
-{% block title %}Sample check{% endblock %}
+{% block title %}Bulk check{% endblock %}
 
 {% block head_include %}
 {% include "tatva_connect/www/migration_check/_styles.html" %}
@@ -11,11 +11,10 @@
 {% block page_content %}
 <div class="mc">
 	<div class="mc-head">
-		<h1>Sample check</h1>
+		<h1>Bulk check</h1>
 		<p class="mc-lede">
-			Up to 100 leads checked in one run. Paste the ProspectIDs &mdash; choosing them yourself is
-			the point, since a sample nobody picked proves nothing. Each lead is read from LeadSquared
-			and from Frappe and placed in one of three buckets, with every difference named.
+			Up to 100 leads are checked in one run: each is read from LeadSquared and from Frappe, then placed
+			in one of three buckets with every difference named. The ProspectIDs are chosen by the operator &mdash; a sample nobody picked proves nothing.
 		</p>
 		{% set page = "batch" %}
 		{% include "tatva_connect/www/migration_check/_nav.html" %}
@@ -26,6 +25,7 @@
 			<label for="grain">Programme</label>
 			<select id="grain" required><option value="">Loading&hellip;</option></select>
 			<button class="mc-go" type="submit" id="go" style="margin-top:.75rem;width:100%">Run check</button>
+			<button class="mc-abort" type="button" id="stop" hidden style="margin-top:.5rem;width:100%">Abort</button>
 			<p class="mc-sub" id="budget"></p>
 		</div>
 		<div class="mc-f grow">
@@ -47,11 +47,11 @@
 
 	const M = "tatva_connect.migration_check.api.";
 	const $ = (id) => document.getElementById(id);
-	const grainEl = $("grain"), idsEl = $("ids"), go = $("go");
+	const grainEl = $("grain"), idsEl = $("ids"), go = $("go"), stop = $("stop");
 	const statusEl = $("status"), outEl = $("out"), errEl = $("err");
 	const countEl = $("count"), budgetEl = $("budget");
 
-	let OPTS = null, MAX = 100, poll = null, selected = null, current = null;
+	let OPTS = null, MAX = 100, poll = null, selected = null, current = null, followedRun = null;
 
 	const esc = (v) => String(v === null || v === undefined ? "" : v).replace(
 		/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -151,6 +151,8 @@
 
 	function follow(runId) {
 		clearInterval(poll);
+		followedRun = runId;
+		stop.hidden = false;
 		const tick = async () => {
 			let data;
 			try { data = await call("run", { run_id: runId }); } catch (e) { return; }
@@ -163,8 +165,10 @@
 			}
 			clearInterval(poll);
 			go.disabled = false;
+			stop.hidden = true;
 			statusEl.className = data.status === "failed" ? "mc-status err" : "mc-status";
-			statusEl.textContent = data.status === "failed" ? (data.error || "The run failed.") : "";
+			statusEl.textContent = data.status === "failed" ? (data.error || "The run failed.")
+				: (data.status === "aborted" ? (data.error || "Aborted.") : "");
 		};
 		tick();
 		poll = setInterval(tick, 1500);
@@ -178,6 +182,7 @@
 	};
 
 	function render(d) {
+		if ([...grainEl.options].some((o) => o.value === d.grain)) grainEl.value = d.grain;
 		const s = d.summary || {};
 		const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
 		const leads = d.leads || [];
@@ -206,7 +211,9 @@
 				partner API agreed with the database. ${esc(d.control.note)}</p>` : ""}
 			<div class="mc-split">
 				<div class="mc-left"><div class="mc-card">
-					<h2>${esc(d.grain_label)} &mdash; ${esc(leads.length)} checked</h2>
+					<h2>${esc(d.grain_label)} &mdash; ${esc(leads.length)} checked
+						${d.status === "complete" ? `<a class="mc-go" style="float:right;display:inline-block;line-height:2.2rem;text-decoration:none;font-size:.8rem"
+							href="/api/method/${M}download?run_id=${encodeURIComponent(d.run_id)}">Download CSV</a>` : ""}</h2>
 					<ul class="mc-list" id="list">${leads.map(rowItem).join("")}</ul>
 				</div></div>
 				<div class="mc-right" id="detail">${detail(leads[selected])}</div>
@@ -218,11 +225,11 @@
 				${d.control ? `${esc(d.control.agree)} of ${esc(d.control.checked)} leads were then re-read
 				through the partner API and agreed` : "a control re-read was not possible"}, which is what
 				makes the faster path safe to rely on. Only agreed activity types are compared.
+				Activities are compared over the agreed types only, and Frappe counts every task of an
+				agreed type &mdash; migrated or created since &mdash; because task rows carry no provenance stamp.
 				Read only throughout; every run is recorded in the Integration Request log.
 				Finished ${esc(d.finished_at || "")}.
-			</p><p style="margin-top:1rem">
-				<a class="mc-go" style="display:inline-block;line-height:2.5rem;text-decoration:none"
-					href="/api/method/${M}download?run_id=${encodeURIComponent(d.run_id)}">Download CSV</a></p>` : ""}`;
+			</p>` : ""}`;
 
 		const list = $("list");
 		if (list) list.querySelectorAll("button").forEach((b, i) => {
@@ -293,6 +300,13 @@
 						<th class="mc-n">Frappe</th><th>Result</th></tr></thead>
 					<tbody>${types}</tbody></table></div></div>` : ""}`;
 	}
+
+	stop.addEventListener("click", async () => {
+		if (!followedRun) return;
+		stop.disabled = true;
+		try { await call("abort", { run_id: followedRun }); } catch (e) { /* the poll reports the outcome */ }
+		stop.disabled = false;
+	});
 
 	boot();
 })();

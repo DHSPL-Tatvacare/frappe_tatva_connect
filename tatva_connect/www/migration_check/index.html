@@ -2,7 +2,7 @@
 {# TEMPORARY — migration reconciliation demo, remove before prod. #}
 {# See tatva_connect/migration_check/REMOVE-ME.md #}
 
-{% block title %}Migration Check{% endblock %}
+{% block title %}Migration Reconciliation{% endblock %}
 
 {% block head_include %}
 {% include "tatva_connect/www/migration_check/_styles.html" %}
@@ -11,16 +11,10 @@
 {% block page_content %}
 <div class="mc">
 	<div class="mc-head">
-		<h1>Migration Check</h1>
+		<h1>Migration Reconciliation</h1>
 		<p class="mc-lede">
-			Records held against a single lead are counted in LeadSquared and in Frappe, then shown
-			side by side. Both systems are read only &mdash; nothing is created, changed or deleted.
-			Select the programme the lead belongs to, since each one is a separate LeadSquared account
-			with its own agreed set of records to migrate.
-		</p>
-		<p class="mc-banner">
-			Temporary verification tool for the LeadSquared migration on <strong>{{ site_name }}</strong>.
-			It is removed once data parity is signed off.
+			Records migrated from LeadSquared are compared against Frappe, side by side, so every variance is
+			seen and explained before sign-off. Both systems are read live and read only &mdash; nothing is created, changed or deleted.
 		</p>
 		{% set page = "lead" %}
 		{% include "tatva_connect/www/migration_check/_nav.html" %}
@@ -39,6 +33,7 @@
 				placeholder="e.g. fff6267b-f9b5-4a9a-bc89-2d22b180b9f9">
 		</div>
 		<button class="mc-go" type="submit" id="go">Check</button>
+		<button class="mc-abort" type="button" id="stop" hidden>Abort</button>
 	</form>
 
 	<div id="err"></div>
@@ -52,8 +47,10 @@
 
 	const M = "tatva_connect.migration_check.api.";
 	const $ = (id) => document.getElementById(id);
-	const form = $("f"), grainEl = $("grain"), pidEl = $("pid"), go = $("go");
+	const form = $("f"), grainEl = $("grain"), pidEl = $("pid"), go = $("go"), stop = $("stop");
 	const stepsEl = $("steps"), outEl = $("out"), errEl = $("err");
+	const STASH = "mc:lead";  // last finished check, per browser tab — survives refresh and tab switches
+	let aborter = null;
 
 	const esc = (v) => String(v === null || v === undefined ? "" : v).replace(
 		/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -66,6 +63,7 @@
 			method: "GET",
 			credentials: "same-origin",
 			headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+			signal: aborter ? aborter.signal : undefined,
 		});
 
 		let body = null;
@@ -108,7 +106,29 @@
 		grainEl.innerHTML = OPTS.grains
 			.map((g) => `<option value="${esc(g.slug)}">${esc(g.label)}</option>`).join("");
 		go.disabled = false;
+		restore();
 		pidEl.focus();
+	}
+
+	// ---- persistence: the last finished check survives a refresh or a tab switch ----
+
+	function stash() {
+		try {
+			sessionStorage.setItem(STASH, JSON.stringify({
+				grain: grainEl.value, pid: pidEl.value,
+				steps: stepsEl.innerHTML, out: outEl.innerHTML,
+			}));
+		} catch (e) { /* storage full or blocked — losing the stash is fine */ }
+	}
+
+	function restore() {
+		let saved = null;
+		try { saved = JSON.parse(sessionStorage.getItem(STASH) || "null"); } catch (e) { /* ignore */ }
+		if (!saved || !saved.out) return;
+		if ([...grainEl.options].some((o) => o.value === saved.grain)) grainEl.value = saved.grain;
+		pidEl.value = saved.pid || "";
+		stepsEl.innerHTML = saved.steps || "";
+		outEl.innerHTML = saved.out;
 	}
 
 	// ---- progress checklist -------------------------------------------------
@@ -157,6 +177,8 @@
 		if (!prospect_id || !grain) return;
 
 		go.disabled = true;
+		stop.hidden = false;
+		aborter = new AbortController();
 		errEl.innerHTML = "";
 		outEl.innerHTML = "";
 		steps = [];
@@ -203,11 +225,23 @@
 			outEl.innerHTML = verdict(view) + renderLead(view) + renderCounts(view) + renderCodes(view)
 				+ renderFields(view) + renderUnmapped(view) + evidence(view);
 		} catch (e) {
-			errEl.innerHTML = `<div class="mc-err">${esc(e.message)}</div>`;
+			if (e.name === "AbortError") {
+				steps.filter((s) => s.state === "pending" || s.state === "active")
+					.forEach((s) => { s.state = "skipped"; });
+				drawSteps();
+				errEl.innerHTML = '<div class="mc-err">Aborted. Steps already completed are shown; nothing was left running.</div>';
+			} else {
+				errEl.innerHTML = `<div class="mc-err">${esc(e.message)}</div>`;
+			}
 		} finally {
 			go.disabled = false;
+			stop.hidden = true;
+			aborter = null;
+			stash();
 		}
 	});
+
+	stop.addEventListener("click", () => { if (aborter) aborter.abort(); });
 
 	// ---- rendering ----------------------------------------------------------
 

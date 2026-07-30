@@ -227,8 +227,13 @@ def _clean(value) -> str:
 
 
 def _comparable(value: str) -> str:
-	"""Compare on meaning, not formatting: case, spacing, and LeadSquared's midnight suffix."""
+	"""Compare on meaning, not formatting: case, spacing, LeadSquared's midnight suffix — and the
+	grain-composite primary key. A Frappe Link to a grain master stores `{vertical}::{group}::{program}::{name}`
+	(taxonomy/labels.py) while LeadSquared holds the bare name, so every such field read as "different"
+	when the two values meant the same thing. The answer is the LAST segment, whatever the key's arity."""
 	text = " ".join(value.split()).lower()
+	if C.KEY_SEPARATOR in text:
+		text = text.rsplit(C.KEY_SEPARATOR, 1)[-1].strip()
 	for suffix in (" 00:00:00.000", " 00:00:00", ".000"):
 		if text.endswith(suffix):
 			text = text[: -len(suffix)]

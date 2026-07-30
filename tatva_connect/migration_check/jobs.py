@@ -56,6 +56,23 @@ def current_run() -> str | None:
 	return holder.decode() if isinstance(holder, bytes) else holder
 
 
+# -- graceful abort ------------------------------------------------------------
+
+
+def request_abort(run_id: str) -> None:
+	"""Ask a running job to stop. A flag, not a kill: the job finishes the record in hand, writes
+	what it has with status `aborted`, and releases its lock — nothing is left half-written."""
+	_cache().set(f"migration_check:abort:{run_id}", "1", ex=RUN_LOCK_TTL)
+
+
+def abort_requested(run_id: str) -> bool:
+	return bool(_cache().get(f"migration_check:abort:{run_id}"))
+
+
+def clear_abort(run_id: str) -> None:
+	_cache().delete(f"migration_check:abort:{run_id}")
+
+
 # -- daily budget ------------------------------------------------------------
 
 

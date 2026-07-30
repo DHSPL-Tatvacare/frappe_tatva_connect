@@ -219,6 +219,7 @@ def start_totals(grain: str | None = None):
 	jobs.check_daily_budget(slug)
 	run_id = totals.run_id_for(slug)
 	jobs.acquire_lock(run_id)
+	jobs.clear_abort(run_id)
 	jobs.spend_daily_budget(slug)
 
 	jobs.enqueue(
@@ -245,6 +246,7 @@ def start_batch(grain: str | None = None, prospect_ids: str | None = None):
 	jobs.check_daily_budget(slug)
 	run_id = batch.run_id_for(slug)
 	jobs.acquire_lock(run_id)
+	jobs.clear_abort(run_id)
 	jobs.spend_daily_budget(slug)
 
 	jobs.enqueue(
@@ -255,6 +257,21 @@ def start_batch(grain: str | None = None, prospect_ids: str | None = None):
 		user=frappe.session.user,
 	)
 	return {"run_id": run_id, "count": len(ids), "budget_left": jobs.budget_left(slug)}
+
+
+@frappe.whitelist(methods=["GET"])
+def abort(run_id: str | None = None):
+	"""Ask the running job to stop, gracefully: it finishes the record in hand, writes what it has
+	with status `aborted`, and releases its lock. Nothing is killed and nothing is left half-written.
+	GET like every sibling here — the portal page ships no CSRF bundle (see index.html), and the only
+	side effect is a flag on a run the caller is already permitted to see."""
+	guard.assert_permitted()
+	run_id = (run_id or "").strip()
+	if not run_id or not storage.read(run_id):
+		frappe.throw("That run was not found.", frappe.ValidationError)
+	jobs.request_abort(run_id)
+	audit.log_call("abort", {"run_id": run_id})
+	return {"run_id": run_id, "aborting": True}
 
 
 @frappe.whitelist(methods=["GET"])

@@ -27,6 +27,7 @@
 			<select id="grain" required><option value="">Loading&hellip;</option></select>
 		</div>
 		<button class="mc-go" type="submit" id="go">Count everything</button>
+		<button class="mc-abort" type="button" id="stop" hidden>Abort</button>
 	</form>
 
 	<p class="mc-status" id="status"></p>
@@ -40,8 +41,9 @@
 
 	const M = "tatva_connect.migration_check.api.";
 	const $ = (id) => document.getElementById(id);
-	const grainEl = $("grain"), go = $("go"), statusEl = $("status"), outEl = $("out"), errEl = $("err");
-	let poll = null;
+	const grainEl = $("grain"), go = $("go"), stop = $("stop");
+	const statusEl = $("status"), outEl = $("out"), errEl = $("err");
+	let poll = null, followedRun = null;
 
 	const esc = (v) => String(v === null || v === undefined ? "" : v).replace(
 		/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -114,6 +116,8 @@
 
 	function follow(runId) {
 		clearInterval(poll);
+		followedRun = runId;
+		stop.hidden = false;
 		statusEl.className = "mc-status busy";
 		statusEl.textContent = "Counting LeadSquared — this takes under a minute";
 		poll = setInterval(async () => {
@@ -122,9 +126,10 @@
 			if (data.status === "running") return;
 			clearInterval(poll);
 			go.disabled = false;
+			stop.hidden = true;
 			statusEl.className = "mc-status";
 			statusEl.textContent = "";
-			if (data.status === "failed") {
+			if (data.status === "failed" || data.status === "aborted") {
 				errEl.innerHTML = `<div class="mc-err">${esc(data.error || "The run failed.")}</div>`;
 				return;
 			}
@@ -132,7 +137,17 @@
 		}, 1500);
 	}
 
+	stop.addEventListener("click", async () => {
+		if (!followedRun) return;
+		stop.disabled = true;
+		try { await call("abort", { run_id: followedRun }); } catch (e) { /* the poll reports the outcome */ }
+		stop.disabled = false;
+	});
+
 	function render(d) {
+		// The dropdown must always say WHOSE numbers are on screen — a card counting Anaya under a
+		// selector reading Inside Sales is a certificate whose header contradicts its body.
+		if ([...grainEl.options].some((o) => o.value === d.grain)) grainEl.value = d.grain;
 		const rows = (d.rows || []).map((r) => {
 			const scored = r.variance !== null && r.variance !== undefined;
 			const indent = r.label.startsWith("    ");
@@ -164,7 +179,9 @@
 				<div class="mc-tile"><b>${esc(d.lsq_calls || 0)}</b><span>LeadSquared calls</span></div>
 			</div>
 			<div class="mc-card">
-				<h2>${esc(d.grain_label)} &mdash; generated ${esc(d.finished_at || d.started_at)}</h2>
+				<h2>${esc(d.grain_label)} &mdash; generated ${esc(d.finished_at || d.started_at)}
+					<a class="mc-go" style="float:right;display:inline-block;line-height:2.2rem;text-decoration:none;font-size:.8rem"
+						href="/api/method/${M}download?run_id=${encodeURIComponent(d.run_id)}">Download CSV</a></h2>
 				<div class="mc-scroll"><table class="mc-t">
 					<colgroup><col><col style="width:8rem"><col style="width:8rem"><col style="width:7rem"></colgroup>
 					<thead><tr><th>Record type</th><th class="mc-n">LeadSquared</th>
@@ -176,13 +193,14 @@
 						<b>How this was produced.</b> Lead totals were counted by paging every lead in the
 						LeadSquared account; activity totals came from LeadSquared&rsquo;s own record count,
 						one request per agreed event code &mdash; ${esc(d.lsq_calls || 0)} requests in all.
-						Frappe figures were counted directly in the database for the same programme.
-						Notes, open tasks and files are not counted here because LeadSquared reports them
-						per lead only; those are verified by sample instead. Read only throughout.
-						Requested by ${esc(d.requested_by)}, ${esc(d.finished_at || d.started_at)}.
+						Frappe figures were counted in the database for the same programme: every task of an
+						agreed type is counted, whether created by the migration or in Frappe since, because
+						task rows carry no provenance stamp to tell the two apart. Notes, open tasks and files
+						are verified by sample instead &mdash; LeadSquared reports them per lead only. A LeadSquared
+						task completed without its activity form being logged appears in the task count but never
+						in an activity count; that gap is operations behaviour, not a migration loss.
+						Read only throughout. Requested by ${esc(d.requested_by)}, ${esc(d.finished_at || d.started_at)}.
 					</p>
-					<a class="mc-go" style="display:inline-block;line-height:2.5rem;text-decoration:none"
-						href="/api/method/${M}download?run_id=${encodeURIComponent(d.run_id)}">Download CSV</a>
 				</div>
 			</div>`;
 	}

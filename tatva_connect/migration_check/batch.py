@@ -17,8 +17,9 @@ Every lead lands in one of three buckets:
 """
 
 import frappe
+from frappe.query_builder.functions import Count
 
-from tatva_connect.migration_check import audit, guard, storage
+from tatva_connect.migration_check import audit, guard, jobs, storage, totals
 from tatva_connect.migration_check import constants as C
 from tatva_connect.migration_check.compare import lsq_side
 from tatva_connect.migration_check.lsq import BATCH_DELAY, Client
@@ -40,8 +41,6 @@ def run_id_for(grain: str) -> str:
 
 def execute(run_id: str, grain: str, prospect_ids: list, user: str) -> None:
 	"""Background entry point. The run file is rewritten after every lead so the page can follow."""
-	from tatva_connect.migration_check import jobs
-
 	resolved = C.Grain(grain)
 	payload = {
 		"kind": "batch",
@@ -66,6 +65,11 @@ def execute(run_id: str, grain: str, prospect_ids: list, user: str) -> None:
 		creds = guard.credentials(grain)
 		with Client(creds.lsq_host, creds.lsq_access_key, creds.lsq_secret_key, delay=BATCH_DELAY) as client:
 			for index, pid in enumerate(prospect_ids, start=1):
+				if jobs.abort_requested(run_id):
+					payload["status"] = "aborted"
+					payload["error"] = f"Aborted by the operator after {index - 1} of {len(prospect_ids)} leads."
+					storage.write(run_id, payload)
+					return
 				payload["leads"].append(_check_one(client, resolved, pid))
 				payload["done"] = index
 				payload["lsq_calls"] = client.calls
@@ -156,15 +160,14 @@ def _check_one(client: Client, grain: C.Grain, prospect_id: str) -> dict:
 
 
 def _crm_counts(grain: C.Grain, lead_name: str) -> dict:
+	"""One figure per record type. Activities are summed over the AGREED types only, through the same
+	query brain the control-totals certificate counts with (`totals.crm_tasks_by_bare_type`) — so a
+	lead that tallies here can never contradict the whole-programme line, and a task of an unmapped
+	type (a rep's own to-do) never inflates the comparison against LeadSquared's agreed codes."""
+	agreed = set(grain.activity_task_types.values())
+	by_type = totals.crm_tasks_by_bare_type(grain, lead_name)
 	counts = {
-		"activities": frappe.db.count(
-			"CRM Task",
-			{
-				"reference_doctype": "CRM Lead",
-				"reference_docname": lead_name,
-				"custom_lsq_activity_id": ["is", "set"],
-			},
-		),
+		"activities": sum(n for t, n in by_type.items() if t in agreed),
 		"notes": frappe.db.count("FCRM Note", {"reference_docname": lead_name}),
 		"files": _file_count(lead_name),
 	}
@@ -177,32 +180,23 @@ def _crm_counts(grain: C.Grain, lead_name: str) -> dict:
 
 def _file_count(lead_name: str) -> int:
 	"""Files homed on the lead or on any of its notes and activities."""
-	row = frappe.db.sql(
-		"""
-		SELECT COUNT(*) AS n FROM `tabFile` f
-		WHERE f.attached_to_name = %(lead)s
-		   OR f.attached_to_name IN (SELECT name FROM `tabFCRM Note` WHERE reference_docname = %(lead)s)
-		   OR f.attached_to_name IN (SELECT name FROM `tabCRM Task` WHERE reference_docname = %(lead)s)
-		""",
-		{"lead": lead_name},
-		as_dict=True,
-	)
-	return int(row[0].n) if row else 0
+	file, note, task = frappe.qb.DocType("File"), frappe.qb.DocType("FCRM Note"), frappe.qb.DocType("CRM Task")
+	notes_of = frappe.qb.from_(note).select(note.name).where(note.reference_docname == lead_name)
+	tasks_of = frappe.qb.from_(task).select(task.name).where(task.reference_docname == lead_name)
+	rows = (
+		frappe.qb.from_(file)
+		.select(Count("*").as_("n"))
+		.where(
+			(file.attached_to_name == lead_name)
+			| file.attached_to_name.isin(notes_of)
+			| file.attached_to_name.isin(tasks_of)
+		)
+	).run(as_dict=True)
+	return int(rows[0].get("n") or 0) if rows else 0
 
 
 def _by_type(grain: C.Grain, lead_name: str, lsq_types: list) -> list:
-	rows = frappe.db.sql(
-		"""
-		SELECT SUBSTRING_INDEX(custom_task_type, '::', -1) AS task_type, COUNT(*) AS n
-		FROM `tabCRM Task`
-		WHERE reference_doctype = 'CRM Lead' AND reference_docname = %s
-		  AND custom_lsq_activity_id IS NOT NULL
-		GROUP BY task_type
-		""",
-		lead_name,
-		as_dict=True,
-	)
-	crm = {r.task_type: int(r.n) for r in rows}
+	crm = totals.crm_tasks_by_bare_type(grain, lead_name)
 
 	out, seen = [], set()
 	for entry in lsq_types:

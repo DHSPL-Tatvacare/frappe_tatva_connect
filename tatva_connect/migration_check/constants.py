@@ -22,6 +22,9 @@ def _load() -> dict:
 
 GRAINS: dict[str, dict] = _load()
 
+# The grain masters autoname to a composite key — `CRM Task Type` is {vertical}::{group}::{program}::{type_name}. Authority is taxonomy/labels.py; this only names the separator so no call site spells it inline.
+KEY_SEPARATOR = "::"
+
 
 class UnknownGrain(ValueError):
 	pass
