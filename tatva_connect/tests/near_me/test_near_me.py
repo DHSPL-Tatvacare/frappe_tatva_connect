@@ -126,3 +126,39 @@ class TestNearMe(FrappeTestCase):
 		res = api.doctors_in_territory(_LAT, _LNG)
 		self.assertEqual(res["doctors"], [])
 		self.assertEqual(res["radius_km"], api.RADIUS_LADDER[-1])
+
+	# --- the row ceiling (NM-04) ------------------------------------------
+
+	def test_a_dense_ring_is_capped_nearest_first_and_says_so(self):
+		"""RED before the pass: location/api.py:166 read with limit_page_length=0 and no cap, so a dense
+		ring returned every row and the response had no `capped` key at all."""
+		from unittest.mock import patch as mpatch
+
+		from tatva_connect.location import api as location_api
+
+		nearest = self._make_lead(_LAT, _LNG)
+		second = self._make_lead(_LAT + 0.001, _LNG + 0.001)  # ~157 m
+		self._make_lead(_LAT + 0.01, _LNG + 0.01)             # ~1.6 km — the row the cap must shed
+
+		self._open_gates()
+		with mpatch.object(location_api, "NEAR_MAX_ROWS", 2):
+			res = api.doctors_in_territory(_LAT, _LNG, 15)
+		self.assertTrue(res["capped"])  # the ring held 3, only the nearest 2 came back — and it says so
+		self.assertEqual([r["name"] for r in res["doctors"]], [nearest, second])
+
+	def test_an_uncrowded_ring_is_not_called_capped(self):
+		"""The flag is a fact, not a fixture: under the ceiling it must be False."""
+		self._make_lead(_LAT, _LNG)
+		self._open_gates()
+		res = api.doctors_in_territory(_LAT, _LNG, 15)
+		self.assertFalse(res["capped"])
+
+	# --- the retired second door (NM-06) ----------------------------------
+
+	def test_the_ungated_desk_endpoint_is_gone(self):
+		"""RED before the pass: location.api.leads_near was whitelisted with NO switch and NO role check,
+		a second Near Me that bypassed the dormant-by-default gate (location/api.py:491)."""
+		from tatva_connect.location import api as location_api
+
+		self.assertFalse(hasattr(location_api, "leads_near"),
+		                 "the ungated leads_near endpoint grew back — the SPA brain is the only door")

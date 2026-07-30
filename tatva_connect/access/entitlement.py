@@ -186,23 +186,21 @@ def _internal_ticks():
 	return request_cache(_INTERNAL_TICKS_CACHE, "all", build)
 
 
-def _contract_covers(contract_grain, grain):
-	"""THE grain-match rule, identical to taxonomy.grain._score and every other matcher: a SET axis on the
-	CONTRACT must equal the target's; a BLANK axis is a wildcard. Contracts are declared at the level
-	visibility is granted (a rep sees all of Goodflip-Care/Anaya whatever program the patient enrolled
-	into), so a blank program covers every program — it never means the empty string."""
-	# strict=True: a grain that is not a full 3-tuple is a defect (every input surface populates all three axes), and a short one would zip to nothing and match EVERYTHING.
-	return all(c == "" or c == t for c, t in zip(contract_grain, grain, strict=True))
-
-
 def field_in_grains_via_contract(field_key, grains):
 	"""The ONE membership brain: True iff `field_key` is ticked by a contract COVERING any grain in
 	`grains`. ALL_GRAINS (System Manager) → True. Reads NO grain_* column (they were dropped in Phase 9) —
-	the per-grain contract, seeded from GRAIN_FIELDS, is the sole source of internal field visibility."""
+	the per-grain contract, seeded from GRAIN_FIELDS, is the sole source of internal field visibility.
+
+	The covers question is `taxonomy.grain.covers` and ONLY it: this module once spelled the wildcard rule
+	locally with `==`, which compares bytes where MariaDB compares case-insensitively — the same divergence
+	class that hid 129 fields from 1,894 leads. One matcher, one home, casefold included."""
 	if grains == ALL_GRAINS:
 		return True
 	for contract_grain, keys in _internal_ticks().items():
-		if field_key in keys and any(_contract_covers(contract_grain, g) for g in grains):
+		if field_key not in keys:
+			continue
+		candidate = dict(zip(taxonomy_grain.AXES, contract_grain, strict=True))
+		if any(taxonomy_grain.covers(candidate, *g) for g in grains):
 			return True
 	return False
 

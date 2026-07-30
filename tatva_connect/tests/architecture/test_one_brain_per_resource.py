@@ -143,3 +143,55 @@ class TestNoTaskSectionSecondaryPath(FrappeTestCase):
                     if len(named) >= 2:
                         hits.append(f"{rel}:{node.lineno}: literal naming {sorted(named)}")
         self.assertEqual(hits, [], f"task section key decided in code: {hits}")
+
+
+# Grain matching has ONE home. A per-axis wildcard loop (`c == "" or c == t` over zipped axes) is a
+# second copy of "blank means ANY", and a second copy is exactly the defect that hid 129 fields from
+# 1,894 leads and refused vertical-wide Smart Views to everyone entitled to them (SV-01/SV-11): the
+# copies drift — one casefolds because MariaDB does, the other compares bytes. taxonomy/grain.py is
+# the home; entitlement's wrappers delegate to it; nobody else may spell the rule.
+GRAIN_MATCH_EXEMPT = ("taxonomy/grain.py",)
+FORBIDDEN_GRAIN_SYMBOLS = {"_contract_covers"}
+
+
+class TestGrainMatchHasOneHome(FrappeTestCase):
+    def test_no_retired_matcher_symbol_survives(self):
+        hits = []
+        for py in APP.rglob("*.py"):
+            if "/tests/" in str(py) or "/.archive/" in str(py):
+                continue
+            src = py.read_text()
+            for sym in FORBIDDEN_GRAIN_SYMBOLS:
+                if re.search(rf"\b{re.escape(sym)}\b", src):
+                    hits.append(f"{py.relative_to(APP)}: {sym}")
+        self.assertEqual(hits, [], f"retired grain matcher still present: {hits}")
+
+    def test_no_per_axis_wildcard_loop_outside_the_home(self):
+        """The exact shape both defects took: a comprehension whose element ORs an equality against the
+        empty string with an equality between two names — "blank means any", spelled locally."""
+        hits = []
+        for py in APP.rglob("*.py"):
+            rel = str(py.relative_to(APP))
+            if "/tests/" in str(py) or "/.archive/" in str(py) or any(x in rel for x in GRAIN_MATCH_EXEMPT):
+                continue
+            tree = ast.parse(py.read_text())
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
+                    continue
+                elt = node.elt
+                if not (isinstance(elt, ast.BoolOp) and isinstance(elt.op, ast.Or)):
+                    continue
+                empty_eq = any(
+                    isinstance(v, ast.Compare) and len(v.ops) == 1 and isinstance(v.ops[0], ast.Eq)
+                    and any(isinstance(c, ast.Constant) and c.value == "" for c in [v.left, *v.comparators])
+                    for v in elt.values
+                )
+                name_eq = any(
+                    isinstance(v, ast.Compare) and len(v.ops) == 1 and isinstance(v.ops[0], ast.Eq)
+                    and isinstance(v.left, ast.Name)
+                    and all(isinstance(c, ast.Name) for c in v.comparators)
+                    for v in elt.values
+                )
+                if empty_eq and name_eq:
+                    hits.append(f"{rel}:{node.lineno}")
+        self.assertEqual(hits, [], f"per-axis wildcard loop outside taxonomy/grain.py: {hits}")

@@ -103,35 +103,71 @@ def location_guard_applies(task_type, lead):
 	return is_location_tracked(lead)
 
 
-def _match_condition(when, values):
-	"""Parse a location_when condition against the submitted values; True if it matches.
-	Supports '<field>==<value>' and '<field> in v1|v2|v3'. Empty/None condition => False.
-	No business field or value is hardcoded — both come from config + the submitted form."""
-	if not when:
-		return False
-	when = when.strip()
-	if "==" in when:
-		field, _, value = when.partition("==")
-		return str(values.get(field.strip()) or "") == value.strip()
-	if " in " in when:
-		field, _, opts = when.partition(" in ")
-		choices = [o.strip() for o in opts.split("|")]
-		return str(values.get(field.strip()) or "") in choices
-	return False
+def captures_location(visit_mode, condition_field):
+	"""Can this type EVER demand a location — always (In-Person), or under a declared condition?
+
+	One rule, asked by every surface that reports it. `activity.api` wrote this boolean out twice, in
+	`_type_config` and in `capture_flags`, so the card and the modal each carried their own copy of the
+	same test. Whether a location is demanded on THIS save is a different question, and it is
+	`location_required`."""
+	return (visit_mode or "") == "In-Person" or bool((condition_field or "").strip())
+
+
+def _condition_holds(tt, values):
+	"""Does this type's declared location condition hold for these answers?
+
+	There is NO grammar, parser or evaluator here — this is the activity engine's rule seam, asked a second
+	question. The condition is authored as the same three columns a rule row carries, compiled by the same
+	`_rule_atom`, and evaluated by the same `_field_visible` that decides every field's visibility. The
+	previous implementation parsed its own `<field>==<value>` / `<field> in a|b` string, which was a second
+	predicate language for one idea: its own operator set, its own parser, and — because an unparseable
+	string returned False — a DECLARED condition that silently meant "location not required", with a visit
+	audit row recorded as "Not Required" to match.
+
+	The answers are SETTLED here, once, so every caller judges the same bag. `compute_activity` passes the
+	raw submission and the `enforce_location` backstop passes values reconstructed from storage; settling
+	inside this function is what makes those two arrive at the same answer, and it is what makes a HIDDEN
+	field's value inert for this gate exactly as D22 makes it inert for every rule. A condition on a field
+	the form did not show reads blank and does not fire.
+
+	Only a field the TYPE DECLARES can be asked about — that is enforced when the type is saved
+	(`CRMTaskType._validate_location_condition`), so a condition can never name an answer the form does not
+	collect.
+
+	The settle is paid again here when `compute_activity` has already settled the same answers in the same
+	request. That is one bounded in-process fixpoint over a handful of fields and no SQL, and it buys
+	correctness by construction — every caller judges the same bag without having to remember to. It is
+	deliberately NOT memoised: this repo's rule is measure before designing, and it has not been measured."""
+	from tatva_connect.activity.api import _field_visible, _rule_atom, _settled, compiled_fields
+
+	field = (tt.get("location_condition_field") or "").strip()
+	if not field:
+		return False  # no condition declared — visit_mode alone decides
+	_shown, live = _settled(compiled_fields(tt), values or {})
+	atom = _rule_atom(frappe._dict(
+		condition_field=field,
+		operator=tt.get("location_operator"),
+		condition_value=tt.get("location_condition_value"),
+	))
+	return bool(_field_visible(f"eval:{atom}", live))
 
 
 def location_required(task_type, lead, values):
 	"""The conditional gate, called by the activity writer AND the validate backstop: returns the
 	allowed radius (metres) when this activity must capture+guard location for THESE submitted
-	values (type visit_mode == In-Person OR its location_when condition matches), else None.
+	values (type visit_mode == In-Person OR its declared location condition holds), else None.
 	Reuses is_location_tracked for the radius — one brain for both the always-visit and the
-	conditional-visit branches."""
+	conditional-visit branches.
+
+	ONE cached document read serves both halves. It used to ask the database twice — `db.get_value` for the
+	columns, then the condition parse — on every activity save and every backstop pass; `get_cached_doc` is
+	frappe's own memoised read and the condition needs the doc's schema anyway."""
 	if not (task_type and lead):
 		return None
-	tt = frappe.db.get_value("CRM Task Type", task_type, ["visit_mode", "location_when"], as_dict=True)
-	if not tt:
+	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	if tt.visit_mode != "In-Person" and not _match_condition(tt.location_when, values or {}):
+	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	if (tt.visit_mode or "") != "In-Person" and not _condition_holds(tt, values):
 		return None
 	return is_location_tracked(lead)
 
@@ -146,13 +182,21 @@ def haversine(lat1, lng1, lat2, lng2):
 	return 2 * r * math.asin(math.sqrt(a))
 
 
-def leads_within_radius(lat, lng, radius_km, fields, query=None):
+# The most rows one radius search may answer with — the same ceiling shape smartview PAGE_MAX takes.
+# A dense metro at 120 km is thousands of anchors; the panel renders one card and one marker per row,
+# so past this the page is unusable anyway and the honest answer is "the nearest 200, capped".
+NEAR_MAX_ROWS = 200
+
+
+def leads_within_radius(lat, lng, radius_km, fields, query=None, cap=None):
 	"""CRM Leads whose clinic anchor is within `radius_km` of (lat,lng), nearest first — the ONE
-	box+haversine brain both map surfaces share. An indexed bounding-box prefilter narrows the set,
+	box+haversine brain every map surface shares. An indexed bounding-box prefilter narrows the set,
 	then haversine refines to a true circle. `query` picks the scope: frappe.get_list (default,
 	permission-scoped to the caller's own leads) or frappe.get_all (deliberate cross-grain). `fields`
-	MUST include the clinic lat/lng. Returns [(row, distance_m), …] sorted nearest-first."""
+	MUST include the clinic lat/lng. Returns ([(row, distance_m), …] nearest-first, capped) — the cap
+	truncates AFTER the distance sort, so it always keeps the closest and says so."""
 	query = query or frappe.get_list
+	cap = NEAR_MAX_ROWS if cap is None else cap  # resolved at call time, so the ceiling is one module fact
 	lat, lng, radius_km = flt(lat), flt(lng), flt(radius_km)
 	dlat = radius_km / 111.0
 	dlng = radius_km / (111.0 * max(0.15, math.cos(math.radians(lat))))
@@ -171,7 +215,8 @@ def leads_within_radius(lat, lng, radius_km, fields, query=None):
 		if (d := haversine(lat, lng, r.custom_clinic_latitude, r.custom_clinic_longitude)) <= radius_km * 1000
 	]
 	near.sort(key=lambda t: t[1])
-	return near
+	capped = len(near) > cap
+	return (near[:cap] if capped else near), capped
 
 
 def _geojson_point(lat, lng):
@@ -486,32 +531,6 @@ def set_clinic_location(lead, lat, lng, address=None):
 	ld = frappe.get_doc("CRM Lead", lead)
 	_write_anchor(ld, flt(lat), flt(lng), ANCHOR_ADDRESS, address=address)
 	return {"lat": flt(lat), "lng": flt(lng), "address": address or "", "source": ANCHOR_ADDRESS}
-
-
-@frappe.whitelist()
-def leads_near(lat, lng, radius_km=15):
-	"""Doctor leads whose clinic anchor is within radius_km of (lat,lng), nearest first. The Near Me
-	map source. Permission-scoped — frappe.get_list applies the user's read scope, so a rep sees only
-	their own leads. A bounding-box SQL prefilter (indexed on the clinic lat/lng) narrows the set, then
-	haversine refines to a true circle. No grain hardcoded; works for every product's leads."""
-	near = leads_within_radius(
-		lat, lng, flt(radius_km) or 15.0,
-		fields=["name", "lead_name", "mobile_no", "custom_clinic_latitude", "custom_clinic_longitude",
-				"custom_clinic_address", "custom_stage", "status"],
-	)
-	return [
-		{
-			"name": r.name,
-			"title": r.lead_name or r.name,
-			"mobile_no": r.mobile_no or "",
-			"lat": r.custom_clinic_latitude,
-			"lng": r.custom_clinic_longitude,
-			"address": r.custom_clinic_address or "",
-			"stage": r.custom_stage or r.status or "",
-			"distance_m": dist,
-		}
-		for r, dist in near
-	]
 
 
 @frappe.whitelist()

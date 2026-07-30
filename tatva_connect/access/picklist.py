@@ -28,7 +28,7 @@ def _grain_clause(grain):
 	Axis values are quoted via frappe.db.escape — never string-interpolated raw.
 	"""
 	parts = []
-	# strict=True: a grain that is not a full 3-tuple is a defect, and a short one would silently drop its missing axes' constraints and widen the read — the fail-open `entitlement._contract_covers` guards the same way.
+	# strict=True: a grain that is not a full 3-tuple is a defect, and a short one would silently drop its missing axes' constraints and widen the read — the taxonomy.grain matchers guard the same way.
 	for col, val in zip(_AXES, grain, strict=True):
 		col = f"`tabCRM Picklist Value`.`{col}`"
 		if val:

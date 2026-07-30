@@ -1,15 +1,18 @@
-"""Near Me — a cross-business-line geographic directory of doctor leads, for field reps.
+"""Near Me — a cross-business-line geographic directory of leads with a clinic anchor, for field reps.
 
-The page lives in the CRM fork (a left-menu item → a full screen: map + doctor list); this
-module is its ONLY brain. Two gates, both required (CLAUDE.md #6, ships dormant):
+HONESTY (NM-07): nothing here filters to doctors. The row set is "every CRM Lead with a pinned clinic
+location" — for the practice grains that IS the doctor book, but the words say what the query does.
+
+The page lives in the CRM fork (a left-menu item → a full screen: map + list); this module is its ONLY
+brain — the ungated Desk page and its `leads_near` endpoint were retired (NM-06). Two gates, both
+required (CLAUDE.md #6, ships dormant):
   • the `Location::NearMe::directory` automation switch (operator flips it on), and
   • the `Field Map User` role on the user (operator assigns it; seeded by schema_setup).
 Neither defaults on, so the feature is invisible until an operator deliberately enables it.
 
-Unlike `location.api.leads_near` (permission-scoped to a rep's OWN leads), this is a deliberate
-CROSS-GRAIN territory read: every doctor lead with a pinned clinic, across all business lines —
-the user's explicit choice. The role+switch IS the boundary; `_assert_access` enforces it
-server-side (fail-closed) before any data leaves, so the client can never widen scope.
+This is a deliberate CROSS-GRAIN territory read: every anchored lead, across all business lines — the
+user's explicit choice. The role+switch IS the boundary; `_assert_access` enforces it server-side
+(fail-closed) before any data leaves, so the client can never widen scope.
 """
 import frappe
 from frappe import _
@@ -50,40 +53,48 @@ def near_me_access():
 	return {"visible": _can_access()}
 
 
-_FIELDS = ["name", "lead_name", "mobile_no", "image", "source",
+# `first_name` rides along for one reason: it is what the CRM labels an avatar with (`Leads.vue:451`
+# image_label: lead.first_name). `lead_name` carries the salutation, so labelling an avatar with it draws
+# "D" on every doctor in the territory — seventeen identical letters and no information.
+_FIELDS = ["name", "lead_name", "first_name", "mobile_no", "image", "source",
 		   "custom_clinic_latitude", "custom_clinic_longitude", "custom_clinic_address",
 		   "custom_stage", "status", "custom_vertical"]
 
 
 def _search(lat, lng, radius_km):
-	"""One ring. get_all (NOT get_list): the territory view deliberately bypasses per-lead read scope —
-	access is owned by _assert_access. Box+haversine math is the shared location.leads_within_radius."""
+	"""One ring, as (rows, capped). get_all (NOT get_list): the territory view deliberately bypasses
+	per-lead read scope — access is owned by _assert_access. Box+haversine math AND the row ceiling are
+	the shared location.leads_within_radius (NM-04): nearest-first, truncated after the distance sort."""
 	return leads_within_radius(lat, lng, radius_km, fields=_FIELDS, query=frappe.get_all)
 
 
 @frappe.whitelist()
 def doctors_in_territory(lat, lng, radius_km=None):
-	"""Every doctor lead with a clinic anchor near (lat,lng), nearest first — cross-grain, all owners.
+	"""Every anchored lead near (lat,lng), nearest first — cross-grain, all owners.
 
 	`radius_km` given (the user picked one) => that ring, exactly. Omitted (first load) => walk
-	RADIUS_LADDER and stop at the first ring that holds a doctor, so the page never opens on an empty
-	list where doctors merely sit further out than one hardcoded default. Either way the radius that
+	RADIUS_LADDER and stop at the first ring that holds a row, so the page never opens on an empty
+	list where results merely sit further out than one hardcoded default. Either way the radius that
 	answered comes back with the rows — the panel and the map circle both read it, so what the user is
-	told matches what was searched."""
+	told matches what was searched. `capped` says the ring held more than NEAR_MAX_ROWS and only the
+	nearest were returned, so the client can render the count honestly (C7)."""
 	_assert_access()
 	rungs = [flt(radius_km)] if flt(radius_km) > 0 else list(RADIUS_LADDER)
-	used, near = rungs[-1], []
+	used, near, capped = rungs[-1], [], False
 	for rung in rungs:
-		near = _search(lat, lng, rung)
+		near, capped = _search(lat, lng, rung)
 		if near:
 			used = rung
 			break
 	return {
 		"radius_km": used,
+		"capped": capped,
 		"doctors": [
 			{
 				"name": r.name,
 				"title": r.lead_name or r.name,
+				# The avatar's label, under the key and by the rule the CRM's own lists already use.
+				"image_label": r.first_name or r.lead_name or r.name,
 				"mobile_no": r.mobile_no or "",
 				"image": r.image or "",
 				"lat": r.custom_clinic_latitude,

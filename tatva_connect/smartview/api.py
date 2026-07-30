@@ -32,6 +32,7 @@ from tatva_connect import tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.taxonomy import labels
 
 SMART_VIEW_DT = "CRM Smart View"
@@ -283,9 +284,13 @@ def _catalog_fields(base_object, activity_type, grains, roles):
 
 
 def _grains_for_view(v):
-	"""The grain a saved view resolves its fields against: its own stored (vertical, group,
-	program) when set, else the caller's entitled grains (fail-closed fallback)."""
-	return _grains_from_axes(v.vertical, v.group, v.program)
+	"""The grain a saved view resolves its FIELDS against — a READ of a view the caller was already
+	admitted to, so it never throws. The entitlement clamp (`_grains_from_axes`) belongs to the
+	authoring paths, where a caller is CHOOSING a grain; asking it here is what refused every
+	vertical-wide and cross-grain-shared view the tab row had just offered (SV-01)."""
+	if v.vertical or v.group or v.program:
+		return {(v.vertical or "", v.group or "", v.program or "")}
+	return entitlement.entitled_grains()
 
 
 def _settle_grain(vertical, group, program):
@@ -360,21 +365,10 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 
 
 # ---------------------------------------------------------------------------
-# Tabs + sidebar gate — the READ-ONLY surface the SPA boots from.
-# get_smart_views feeds the store (the row of tabs); access() is the Near Me-style
-# fail-closed sidebar gate. Neither writes; neither ever throws on the happy path.
+# Tabs — the READ-ONLY surface the SPA boots from. get_smart_views feeds the store
+# (the row of tabs); read-only, returns [] (never throws) when nothing is offered.
+# Who may see a view is smartview/permissions.py's ONE predicate — offer == open.
 # ---------------------------------------------------------------------------
-
-def _can_write_view(d):
-	"""Whether the caller may edit/delete this view: a standard view is operator-only; a personal
-	view is editable by its owner (or an operator). Drives the tab's edit affordance — the server
-	upsert/delete still enforces the same rule, so the UI flag is convenience, never the gate."""
-	if _is_operator():
-		return True
-	if d.get("is_standard"):
-		return False
-	return (d.get("owner_user") or None) == frappe.session.user
-
 
 def _smart_view_tab(d):
 	"""One tab row for the frontend store — the minimal shape SmartViewTabs renders."""
@@ -392,85 +386,36 @@ def _smart_view_tab(d):
 		# Presentation only — the grid applies it on its first paint so a remembered width never jumps.
 		"column_widths": frappe.parse_json(d.column_widths) if d.get("column_widths") else {},
 		"is_standard": bool(d.get("is_standard")),
-		"can_write": _can_write_view(d),
+		"can_write": sv_perms.can_write(d),
 	}
 
 
 @frappe.whitelist()
 def get_smart_views():
-	"""The caller's tabs: the standard views of grains they are entitled to, plus their own, plus any
-	shared with them. Ordered. Read-only; returns [] (never throws) when nothing is seeded, so the
-	surface degrades gracefully.
+	"""The caller's tabs: the standard views whose RULE grain overlaps their entitlement, plus their
+	own, plus any shared with them (native DocShare). Ordered. Read-only; returns [] (never throws)
+	when nothing is offered, so the surface degrades gracefully.
 
-	A STANDARD VIEW IS SCOPED TO ITS GRAIN. It used to be shown to every user on the site, which the
-	doctype never claimed — `is_standard` reads "shown to every user IN THE GRAIN" and the axes were
-	stored and then ignored. With eighty task types across several business lines that is not clutter, it
-	is one line's curated worklists appearing in another line's sidebar. The match is
-	`entitlement._contract_covers`, the SAME rule the field catalog and every other matcher already use:
-	a blank axis on the VIEW is a wildcard (a view declared for a whole vertical reaches every group
-	inside it), never the empty string, and a System Manager sees the lot.
-
-	Personal and shared views are NOT grain-filtered: the first is the caller's own, and the second was
-	handed to them deliberately by someone who could. The rows inside any of them are still the viewer's
-	own — the composer ANDs their permission conditions on every run — so this decides what is OFFERED,
-	never what is readable."""
-	user = frappe.session.user
-	# A view reaches a caller three ways, and the third is frappe's own: it is PUBLIC (`is_standard`),
-	# it is THEIRS, or it was SHARED with them through native DocShare. `get_shared` is the framework's
-	# reader for the last one, so nothing here re-implements what a share means.
-	shared = frappe.share.get_shared(SMART_VIEW_DT, user) or []
-	rows = frappe.get_all(
-		"CRM Smart View",
-		or_filters={"is_standard": 1, "owner_user": user, "name": ["in", shared or [""]]},
-		fields=[
-			"name", "label", "base_object", "activity_type",
-			"color", "icon", "view_order", "pinned", "is_standard", "owner_user",
-			# The axes the offer is scoped by — read here so the decision needs no second query per view.
-			"vertical", "group", "program",
-			# Presentation only, and it rides HERE because the list applies it on its FIRST paint —
-			# fetching it separately would mean the grid renders at default widths and then jumps.
-			"column_widths",
-		],
-		order_by="view_order asc, label asc",
-	)
-	grains = entitlement.entitled_grains(user)
-	return [
-		_smart_view_tab(frappe._dict(r)) for r in rows
-		if _view_offered(frappe._dict(r), user, shared, grains)
-	]
+	ONE predicate decides this — `smartview/permissions.can_read`, the same answer `get_view`,
+	`get_data` and `export_view` enforce — so a tab that is offered always opens. The rows inside any
+	view are still the viewer's own (the composer ANDs their permission conditions on every run):
+	this decides what is OFFERED, never what rows are readable."""
+	return [_smart_view_tab(r) for r in sv_perms.readable_views()]
 
 
-def _view_offered(v, user, shared, grains):
-	"""Whether this view belongs on the caller's tab row. Three ways in, and only the first is scoped."""
-	if (v.owner_user or None) == user or v.name in shared:
-		return True  # theirs, or handed to them on purpose
-	if not v.is_standard:
-		return False
-	return _grain_admits(v, grains)
-
-
-def _grain_admits(v, grains):
-	"""Is this view's grain covered by any grain the caller holds? ALL_GRAINS (System Manager) → yes.
-
-	Asked of `entitlement._contract_covers`, never re-derived: a view declared for a vertical with the
-	group left blank is a WILDCARD over that vertical, exactly as a contract is, and comparing the tuples
-	directly would hide it from everybody. That exact defect once hid 129 fields from 1,894 leads."""
-	if grains == entitlement.ALL_GRAINS:
-		return True
-	view_grain = (v.vertical or "", v.group or "", v.program or "")
-	if view_grain == ("", "", ""):
-		return True  # declared for no grain in particular: a site-wide view, offered to everyone
-	return any(entitlement._contract_covers(view_grain, g) for g in (grains or []))
+def _assert_read(d):
+	"""Fail-closed read gate — the ONE predicate, thrown the one way every endpoint throws it."""
+	if not sv_perms.can_read(d):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 
 @frappe.whitelist()
 def get_view(name):
 	"""The full editable definition of one view (for the authoring editor): scope + parsed
-	predicate + column keys. Readable when it's a standard view, the caller's own, or by an
-	operator; otherwise refused (fail-closed). Read-only."""
+	predicate + column keys. Gated by the one predicate (standard-in-grain / own / shared /
+	operator); otherwise refused (fail-closed). Read-only."""
 	d = frappe.get_doc("CRM Smart View", name)
-	if not _can_read_view(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	_assert_read(d)
 	try:
 		predicate = frappe.parse_json(d.predicate) if d.predicate else None
 	except Exception:
@@ -497,28 +442,8 @@ def get_view(name):
 		"columns": columns,
 		"column_widths": frappe.parse_json(d.column_widths) if d.column_widths else {},
 		"is_standard": bool(d.is_standard),
-		"can_write": _can_write_view(d),
+		"can_write": sv_perms.can_write(d),
 	}
-
-
-@frappe.whitelist()
-def access():
-	"""The sidebar gate (Near Me pattern). Fail-closed: visible only when the caller has at
-	least one Smart View to land on (a standard view or one of their own). Never throws — any
-	error reads as not-visible, so stock CRM shows no link when the surface is empty/absent."""
-	try:
-		user = frappe.session.user
-		if user in ("Guest", "Administrator"):
-			visible = frappe.db.count("CRM Smart View", {"is_standard": 1}) > 0 if user == "Administrator" else False
-		else:
-			visible = bool(
-				frappe.db.exists("CRM Smart View", {"is_standard": 1})
-				or frappe.db.exists("CRM Smart View", {"owner_user": user})
-			)
-	except Exception:
-		frappe.log_error(title="smartview: access gate check failed")
-		visible = False
-	return {"visible": visible}
 
 
 # ---------------------------------------------------------------------------
@@ -779,6 +704,9 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	`columns` (optional) is an interactive, catalog-bounded override of the saved column set
 	(the ColumnSettings picker) — a transient projection, never persisted by this read path."""
 	v = frappe.get_doc("CRM Smart View", view)
+	# The same gate every other read wears (SV-02): rows were always PQC-scoped, but a private view's
+	# COLUMN SET is its definition, and it used to come back to any authenticated caller who knew the name.
+	_assert_read(v)
 	base_object = v.base_object
 	activity_type = v.activity_type
 
@@ -969,10 +897,6 @@ def _hydrate(rows, keys, cat, driving_name):
 OWNER_VIEW_CAP = 20
 
 
-def _is_operator():
-	return "System Manager" in frappe.get_roles()
-
-
 def _validate_columns(columns, cat):
 	"""The requested columns, every one a catalog field_key for the scope. Throws on any
 	unknown key (fail-closed allowlist). Returns the cleaned, order-preserving list."""
@@ -1052,12 +976,12 @@ def upsert_view(view):
 	if predicate:
 		_validate_predicate(predicate, cat)
 
-	operator = _is_operator()
+	operator = sv_perms.is_operator()
 	name = view.get("name")
 	if name:
 		doc = frappe.get_doc("CRM Smart View", cstr(name))
-		# A standard view, or any view you don't own, is operator-only to edit.
-		if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not operator:
+		# The one write predicate: a standard view, or any view you don't own, is operator-only to edit.
+		if not sv_perms.can_write(doc):
 			frappe.throw(_("You can only edit your own views."), frappe.PermissionError)
 	else:
 		# Create: enforce the per-owner cap on a non-operator's personal views.
@@ -1096,7 +1020,7 @@ def set_column_widths(view, widths):
 	view: it must not re-validate a predicate, must not re-check a column set, and must not fail because
 	the saved definition has drifted. It writes ONE field.
 
-	Gated by the SAME rule the rest of the write path uses (`_can_write_view`) — a standard view is
+	Gated by the SAME rule the rest of the write path uses (`permissions.can_write`) — a standard view is
 	operator-only, a personal view is its owner's — and a caller who may not write simply keeps the width
 	for their session rather than being shown an error for dragging a column.
 
@@ -1104,7 +1028,7 @@ def set_column_widths(view, widths):
 	would make every drag look like an edit in the audit trail) and must not fire the doctype's validate.
 	"""
 	d = frappe.get_doc("CRM Smart View", view)
-	if not _can_write_view(d):
+	if not sv_perms.can_write(d):
 		return {"saved": False}
 	widths = frappe.parse_json(widths) if isinstance(widths, str) else (widths or {})
 	if not isinstance(widths, dict):
@@ -1121,19 +1045,6 @@ def set_column_widths(view, widths):
 	return {"saved": True, "column_widths": clean}
 
 
-def _can_read_view(d):
-	"""Whether the caller may OPEN this view: it is public, it is theirs, they operate, or it was SHARED
-	with them. The share half is frappe's own `check_share_permission`, never a DocShare query of ours."""
-	if d.get("is_standard") or _is_operator():
-		return True
-	if (d.get("owner_user") or None) == frappe.session.user:
-		return True
-	# `get_shared`, not `check_share_permission`: the latter asks whether the CALLER may share the
-	# doctype and throws when they may not, which is a different question and refused every ordinary
-	# rep. This one simply reads the DocShare rows the framework wrote.
-	return d.name in (frappe.share.get_shared(SMART_VIEW_DT, frappe.session.user) or [])
-
-
 # ---------------------------------------------------------------------------
 # Sharing — frappe's OWN DocShare. A view is a saved QUESTION, never a saved answer: sharing one grants
 # no data. Every run still ANDs the VIEWER's permission conditions, so two people opening one shared view
@@ -1141,17 +1052,20 @@ def _can_read_view(d):
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
 def share_view(view, user, write=0):
-	"""Share a view with one user, through `frappe.share.add`.
+	"""Share a view with one user, through frappe's own DocShare writer.
 
-	Gated by the SAME rule as every other write here: you may share a view you may edit. `frappe.share`
-	does the rest — the DocShare row, the de-duplication, the notification — so no part of what a share
-	IS is restated here."""
+	Gated by the SAME rule as every other write here: you may share a view you may edit. The doctype's
+	DocPerms stay System-Manager-only, so `check_share_permission` would refuse the very OWNER this
+	endpoint exists for (frappe/share.py:56) — the flag skips frappe's gate because OURS already ran.
+	`add_docshare` still does the rest: the row, the de-duplication, the notification."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not _can_write_view(d):
+	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	if not frappe.db.exists("User", user):
 		frappe.throw(_("{0} is not a user.").format(user))
-	frappe.share.add(SMART_VIEW_DT, view, user, read=1, write=cint(write), notify=1)
+	# authz-ok: tier-b — gated by sv_perms.can_write above; DocPerms are deliberately SM-only
+	frappe.share.add_docshare(SMART_VIEW_DT, view, user, read=1, write=cint(write), notify=1,
+	                          flags={"ignore_share_permission": True})
 	return shared_with(view)
 
 
@@ -1159,7 +1073,7 @@ def share_view(view, user, write=0):
 def unshare_view(view, user):
 	"""Take a share back. Same gate, same framework call."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not _can_write_view(d):
+	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	frappe.share.remove(SMART_VIEW_DT, view, user)
 	return shared_with(view)
@@ -1169,9 +1083,8 @@ def unshare_view(view, user):
 def shared_with(view):
 	"""Who this view is shared with. Readable by anyone who may open the view."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not _can_read_view(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
-	return frappe.get_all(  # authz-ok: tier-b — gated by _can_read_view on the view these shares belong to
+	_assert_read(d)
+	return frappe.get_all(  # authz-ok: tier-b — gated by _assert_read on the view these shares belong to
 		"DocShare",
 		filters={"share_doctype": SMART_VIEW_DT, "share_name": view},
 		fields=["user", "read", "write"],
@@ -1183,7 +1096,7 @@ def set_public(view, value):
 	"""Make a view public to everyone, or take it back to its owner — crm's own `public()` rule, applied
 	to this doctype: operator-only, and going public clears the owner because a public view belongs to
 	nobody. Kept as its own endpoint for the same reason crm keeps one: it is not authoring a view."""
-	if not _is_operator():
+	if not sv_perms.is_operator():
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	public = bool(cint(value))
 	frappe.db.set_value(SMART_VIEW_DT, view, {
@@ -1216,8 +1129,7 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 	    the building.
 	"""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
-	if not _can_read_view(d):
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	_assert_read(d)
 	driving_name, _tbl = _driving(d.base_object)
 	if not frappe.has_permission(driving_name, "export"):
 		frappe.throw(
@@ -1274,12 +1186,9 @@ def can_export(base_object):
 
 @frappe.whitelist()
 def delete_view(name):
-	"""Delete a Smart View — owner-scoped. A standard view (or another user's) is operator-only."""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	"""Delete a Smart View — the one write predicate: standard (or another user's) is operator-only."""
 	doc = frappe.get_doc("CRM Smart View", name)
-	if (doc.is_standard or (doc.owner_user and doc.owner_user != user)) and not _is_operator():
+	if not sv_perms.can_write(doc):
 		frappe.throw(_("You can only delete your own views."), frappe.PermissionError)
 	frappe.delete_doc("CRM Smart View", name, ignore_permissions=True)  # authz-ok: tier-a — smart-view scaffolding, operator-run
 	return {"deleted": name}

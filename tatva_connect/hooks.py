@@ -110,6 +110,8 @@ permission_query_conditions = {
 	"CRM Workflow Run": "tatva_connect.workflow_engine.permissions.get_run_permission_query_conditions",
 	"CRM Workflow Event": "tatva_connect.workflow_engine.permissions.get_event_permission_query_conditions",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
+	# Smart Views: restrictive backstop — the SAME predicate the SPA endpoints grant through (smartview/permissions.py), so Desk can never see more than the app door.
+	"CRM Smart View": "tatva_connect.smartview.permissions.get_smart_view_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
@@ -119,6 +121,8 @@ has_permission = {
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
+	# Smart Views: deny-only backstop; never denies an operator or a DocShare recipient (controllers run BEFORE the share fallback).
+	"CRM Smart View": "tatva_connect.smartview.permissions.has_smart_view_permission",
 }
 
 # Global spotlight search — a native Frappe FTS5 search class. List-valued hook: this ADDS our class
@@ -317,7 +321,7 @@ scheduler_events = {
 		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
 		# Daily: purge finished async bulk jobs + results + payload past the retention window.
 		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
-		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on Voice::Reconciler::catchup). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
+		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
 		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",
 			"tatva_connect.voice.reconcile.sweep",

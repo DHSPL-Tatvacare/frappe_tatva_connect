@@ -17,7 +17,12 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access import entitlement, internal_contract
-from tatva_connect.taxonomy.grain import resolve_scoped
+from tatva_connect.taxonomy.grain import AXES, covers, resolve_scoped
+
+
+def _covers(contract_grain, axes):
+	"""The contract question, asked of the ONE home — entitlement's local copy was retired (SV-11)."""
+	return covers(dict(zip(AXES, contract_grain, strict=True)), *axes)
 
 
 class TestContractCoversRule(FrappeTestCase):
@@ -25,15 +30,19 @@ class TestContractCoversRule(FrappeTestCase):
 
 	def test_blank_axis_is_a_wildcard(self):
 		# contract (V, G, blank) covers a lead on ANY program of that vertical+group
-		self.assertTrue(entitlement._contract_covers(("V", "G", ""), ("V", "G", "P1")))
-		self.assertTrue(entitlement._contract_covers(("V", "G", ""), ("V", "G", "P2")))
-		self.assertTrue(entitlement._contract_covers(("V", "", ""), ("V", "G", "P1")))
-		self.assertTrue(entitlement._contract_covers(("", "", ""), ("V", "G", "P1")))
+		self.assertTrue(_covers(("V", "G", ""), ("V", "G", "P1")))
+		self.assertTrue(_covers(("V", "G", ""), ("V", "G", "P2")))
+		self.assertTrue(_covers(("V", "", ""), ("V", "G", "P1")))
+		self.assertTrue(_covers(("", "", ""), ("V", "G", "P1")))
 
 	def test_set_axis_must_equal(self):
-		self.assertTrue(entitlement._contract_covers(("V", "G", "P1"), ("V", "G", "P1")))
-		self.assertFalse(entitlement._contract_covers(("V", "G", "P1"), ("V", "G", "P2")))
-		self.assertFalse(entitlement._contract_covers(("V2", "G", ""), ("V", "G", "P1")))
+		self.assertTrue(_covers(("V", "G", "P1"), ("V", "G", "P1")))
+		self.assertFalse(_covers(("V", "G", "P1"), ("V", "G", "P2")))
+		self.assertFalse(_covers(("V2", "G", ""), ("V", "G", "P1")))
+
+	def test_two_casings_are_one_key(self):
+		# MariaDB stores grain axes under a ci collation; the matcher must agree with the database (SV-11).
+		self.assertTrue(_covers(("goodflip", "G", ""), ("GOODFLIP", "G", "P1")))
 
 	def test_agrees_with_the_canonical_brain(self):
 		"""taxonomy.grain is the reference implementation — the contract matcher must not diverge."""
@@ -44,7 +53,7 @@ class TestContractCoversRule(FrappeTestCase):
 				[{"vertical": cg[0], "group": cg[1], "program": cg[2]}], *axes
 			) is not None
 			self.assertEqual(
-				entitlement._contract_covers(cg, axes), canonical,
+				_covers(cg, axes), canonical,
 				f"contract {cg} vs {axes}: diverged from taxonomy.grain",
 			)
 

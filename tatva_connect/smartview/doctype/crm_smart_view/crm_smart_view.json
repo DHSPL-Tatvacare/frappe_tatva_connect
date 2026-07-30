@@ -11,7 +11,6 @@
   "label",
   "owner_user",
   "is_standard",
-  "is_shared",
   "pinned",
   "scope_section",
   "base_object",
@@ -53,12 +52,6 @@
    "label": "Is Standard",
    "in_list_view": 1,
    "description": "A grain-standard view shown to every user in the grain (curated, ops-seeded)."
-  },
-  {
-   "fieldname": "is_shared",
-   "fieldtype": "Check",
-   "label": "Is Shared",
-   "description": "Shared with other users in the grain (vs private to the owner)."
   },
   {
    "fieldname": "pinned",
@@ -129,7 +122,7 @@
    "fieldname": "column_widths",
    "fieldtype": "JSON",
    "label": "Column Widths",
-   "description": "{field_key: css width} — what a rep dragged the grid to, remembered per view. Presentation only: it never reaches the query, and a key with no entry falls back to the width its fieldtype implies. Kept BESIDE `columns` rather than inside it so the column set stays a plain validated list of field keys."
+   "description": "{field_key: css width} \u2014 what a rep dragged the grid to, remembered per view. Presentation only: it never reaches the query, and a key with no entry falls back to the width its fieldtype implies. Kept BESIDE `columns` rather than inside it so the column set stays a plain validated list of field keys."
   },
   {
    "fieldname": "presentation_section",
