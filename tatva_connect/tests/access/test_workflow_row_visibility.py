@@ -2,7 +2,7 @@
 # See license.txt
 """The row-visibility brain must actually COVER every doctype it claims to.
 
-`_SWITCH_OF` listed the three workflow tables, and the app's docstrings, hooks and `permissions.py`
+The registry listed the three workflow tables, and the app's docstrings, hooks and `permissions.py`
 all read as though they were scoped. None of it worked, in three separate ways, and nothing was red:
 
   1. the switch keys were never declared in `automation.registry.AUTOMATIONS`, so `seed.sync_catalog`
@@ -44,23 +44,55 @@ class TestWorkflowRowVisibility(FrappeTestCase):
 
 	# ------------------------------------------------------------------ drift locks
 
-	def test_every_switched_doctype_has_a_parent_resolver(self):
-		"""A doctype in `_SWITCH_OF` and not in `PARENT_OF` gates lists and then KeyErrors on the
-		single-doc read — half-scoped, which is worse than unscoped because it looks finished."""
-		missing = sorted(set(visibility._SWITCH_OF) - set(visibility.PARENT_OF))
-		self.assertEqual(missing, [], f"no PARENT_OF resolver for: {missing}")
+	def test_every_scoped_doctype_declares_at_least_one_strategy(self):
+		"""A doctype registered with no way to reach it is not "locked down" — `_compose` answers `1=0`
+		and the list is empty for everyone but an operator, which reads as data loss, not as a gate."""
+		empty = sorted(dt for dt, scope in visibility.SCOPED.items() if not scope.by)
+		self.assertEqual(empty, [], f"registered with no strategy at all: {empty}")
+
+	def test_every_hooked_doctype_is_declared_and_every_declared_one_is_hooked(self):
+		"""THE drift lock, both directions. A doctype wired in `hooks.py` but absent from `SCOPED` is
+		unscoped while looking scoped — the exact way three of these tables sat open for months. One
+		declared but never hooked is a rule nothing consults.
+
+		Read out of `hooks.py` itself, so adding a hook without a declaration cannot pass.
+		"""
+		from tatva_connect import hooks
+
+		hooked = set(hooks.permission_query_conditions) & set(hooks.has_permission)
+		# Leads/Deals are scoped by crm's own hierarchy, and the picklist clamp is a grain filter on a
+		# master, not row visibility. Neither belongs to this registry.
+		outside = {"CRM Picklist Value"}
+		missing = sorted((hooked - outside) - set(visibility.SCOPED))
+		self.assertEqual(missing, [], f"hooked in hooks.py but never declared: {missing}")
+		unhooked = sorted(set(visibility.SCOPED) - hooked)
+		self.assertEqual(unhooked, [], f"declared but no hook consults it: {unhooked}")
 
 	def test_every_switch_is_a_declared_automation(self):
 		"""A switch key the registry does not declare gets no row from the seed, and `is_enabled`
 		answers False for ever — the scoping is decoration, not enforcement."""
 		declared = {auto.key for auto in AUTOMATIONS}
-		undeclared = sorted(set(visibility._SWITCH_OF.values()) - declared)
+		switches = {s.switch for s in visibility.SCOPED.values() if s.switch}
+		undeclared = sorted(switches - declared)
 		self.assertEqual(undeclared, [], f"switch declared nowhere in AUTOMATIONS: {undeclared}")
+
+	def test_a_strategy_names_the_columns_its_own_predicate_reads(self):
+		"""`fields()` is what every row-fetching caller asks for. A strategy that reads a column it does
+		not declare gets `None` from `row.get` and silently denies — a gate that fails closed for the
+		wrong reason is indistinguishable from one that works."""
+		for doctype, scope in visibility.SCOPED.items():
+			with self.subTest(doctype=doctype):
+				for strategy in scope.by:
+					for column in strategy.fields:
+						self.assertIn(column, scope.fields())
 
 	# ------------------------------------------------------------------ the SQL really runs
 
-	def test_every_switched_doctype_produces_runnable_sql(self):
-		for doctype in visibility._SWITCH_OF:
+	def test_every_scoped_doctype_produces_runnable_sql(self):
+		"""ONE entry point for every doctype, whatever its strategies — that there is only one is the
+		point. Each clause is then really executed: defect 3 in this file's header was a clause naming a
+		column that does not exist, which no amount of reading catches."""
+		for doctype in visibility.SCOPED:
 			with self.subTest(doctype=doctype):
 				clause = visibility.scoped_pqc(doctype, USER)
 				self.assertTrue(clause, "a non-privileged user must get a scoping clause")

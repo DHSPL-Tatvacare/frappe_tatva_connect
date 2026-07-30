@@ -1,24 +1,34 @@
 """Row visibility — the ONE brain for "which RECORDS may an internal user see".
 
-Sibling of `entitlement.py` (which fields). crm scopes Leads/Deals through the org
-hierarchy but never their child records (Tasks, Call Logs, …), so an agent otherwise
-sees every child. This restores parity: a child is visible iff its parent Lead/Deal is,
-or it is the user's own / assigned record. Native permission hooks — no fork, no
-re-derivation of crm's scope.
+Sibling of `entitlement.py` (which FIELDS). crm scopes Leads/Deals through the org hierarchy but never
+their child records, so an agent otherwise sees every Task, Call Log and Note in the business. This
+restores parity, natively — no fork, no re-derivation of crm's own scope.
 
-Two functions, driven by one structural registry:
-  * `scoped_pqc(doctype, user)` — the `permission_query_conditions` list filter.
-  * `scoped_has_permission(doc, ptype, user)` — the `has_permission` single-doc gate.
+THE MODEL: a doctype DECLARES how it is scoped; nothing re-decides it.
 
-The ptype contract: visibility ALWAYS checks the parent's **read** scope. The child's
-own action level (read/write/delete) is its role docperm — so write needs role-write on
-the child AND read-visibility on the parent. No per-ptype branching here.
+    SCOPED["CRM Task"] = Scope(switch=…, by=[Own("owner", "assigned_to"), ViaParent("reference_doctype", …)])
 
-`PARENT_OF` maps each child doctype to a RESOLVER `(doc) -> (parent_doctype, parent_name)
-| None` — linkage differs per doctype (Task uses reference_doctype/docname; Call Log uses
-those AND/OR a `links` child table), so it's a resolver, not a field pair. Read from the
-REAL doctype, never assumed. `_SWITCH_OF` maps each to its operator toggle — OFF -> stock
-crm (no scoping). Fail-closed: an unrecognised/missing parent for a non-owner -> deny.
+A `Strategy` answers the same question two ways and nothing else — `clause()` for a list read,
+`admits()` for one row — and a doctype's strategies are ORed. Everything that is NOT the doctype's own
+linkage is written ONCE, in the two entry points: the switch gate, the privilege short-circuit,
+fail-open-when-off, and fail-closed-to-`1=0` when nothing admits. Adding a doctype is a row in `SCOPED`.
+
+WHY THIS SHAPE, WRITTEN DOWN SO IT IS NOT UNDONE. There used to be a hand-maintained `PARENT_OF` of
+near-identical resolver functions, a `_VIA` beside it, a `_link_columns` that PROBED the schema to
+rediscover what those resolvers already knew, and — after `CRM Workflow` needed scoping by its own grain
+rather than through a parent — a whole parallel family (`grain_admits`, `grain_readable_names`,
+`grain_scoped_pqc`, `grain_scoped_has_permission`) that duplicated the switch gate, the privilege check,
+the fail-open rule and the `1=0` rule a second time. `smartview/permissions.py` had duplicated the same
+grain rule a third time. One question, three implementations, and the drift lock that was supposed to
+protect it merely asserted the split was tidy. A fourth doctype would have been a fourth copy: that is
+how three of these tables sat unscoped for months while every docstring claimed otherwise.
+
+The ptype contract: visibility ALWAYS asks the READ scope. A child's own action level (read/write/delete)
+is its role docperm — so a write needs role-write on the child AND read-visibility on its parent. No
+per-ptype branching here.
+
+Fail-closed: an unresolvable parent for a non-owner denies. Fail-OPEN on the switch is deliberate and is
+the seam's contract — dormant-by-default means stock crm until an operator arms it.
 """
 import frappe
 from frappe.model.db_query import DatabaseQuery
@@ -31,84 +41,358 @@ from tatva_connect.access import request_cache
 PARENT_DOCTYPES = ("CRM Lead", "CRM Deal")
 
 
-def _is_privileged(user):
+def is_privileged(user=None):
+	"""Administrator or System Manager. The ONE spelling — `smartview.is_operator` delegates here."""
+	user = user or frappe.session.user
 	return user == "Administrator" or "System Manager" in frappe.get_roles(user)
 
 
-def _ref_parent(doc):
-	"""reference_doctype/reference_docname pointing at a Lead/Deal (CRM Task, and the
-	primary linkage on CRM Call Log)."""
-	if doc.get("reference_doctype") in PARENT_DOCTYPES and doc.get("reference_docname"):
-		return doc.get("reference_doctype"), doc.get("reference_docname")
-	return None
+def _q(value):
+	return frappe.db.escape(value)
 
 
-def _ref_name_parent(doc):
-	"""WhatsApp Message links its parent via reference_doctype + `reference_name` (NOT the
-	`reference_docname` field name CRM Task/FCRM Note use). frappe_whatsapp's own doctype: the
-	dynamic-link target is `reference_name`."""
-	if doc.get("reference_doctype") in PARENT_DOCTYPES and doc.get("reference_name"):
-		return doc.get("reference_doctype"), doc.get("reference_name")
-	return None
-
-
-def _subject_parent(doc):
-	"""The workflow tables name their parent `subject_doctype`/`subject_name` — a journey is about one
-	record and an Event is addressed to one."""
-	if doc.get("subject_doctype") in PARENT_DOCTYPES and doc.get("subject_name"):
-		return doc.get("subject_doctype"), doc.get("subject_name")
-	return None
-
-
-def _run_subject_parent(doc):
-	"""A step log names no subject doctype at all — only `journey` and a bare `subject_name`.
-	So its parent is its journey's parent, read from the journey. Indirect linkage is exactly why PARENT_OF
-	is a resolver rather than a field pair."""
-	journey = doc.get("journey")
-	if not journey:
+def _name_in(doctype, names):
+	"""`name in (…)` for a strategy that decides in Python. None when it admits nothing, so the caller
+	can tell "this strategy contributes no rows" from "it contributes every row"."""
+	if not names:
 		return None
-	subject = frappe.db.get_value("CRM Workflow Journey", journey, ["subject_doctype", "subject_name"], as_dict=True)
-	return _subject_parent(subject) if subject else None
+	return f"`tab{doctype}`.`name` in ({', '.join(_q(n) for n in names)})"
 
 
-# child doctype -> resolver(doc) -> (parent_doctype, parent_name) | None
-PARENT_OF = {
-	"CRM Task": _ref_parent,
-	"CRM Call Log": _ref_parent,
-	"FCRM Note": _ref_parent,
-	"WhatsApp Message": _ref_name_parent,
-	"CRM Workflow Journey": _subject_parent,
-	"CRM Workflow Signal": _subject_parent,
-	"CRM Workflow Step Log": _run_subject_parent,
+class Strategy:
+	"""One way a row may reach a caller. `fields` are the columns `admits` reads, so a caller that
+	fetches rows itself can ask for exactly the right shape and never find a key missing.
+
+	`context()` is per-SWEEP state — something worth resolving once when judging many rows, such as the
+	set of names DocShare hands this user. It is deliberately NOT a request cache: a memo keyed on the
+	user goes stale the moment a share or an entitlement changes inside one request, which is a gate
+	silently answering yesterday's question. Built fresh by `sweep_context`, handed down, thrown away.
+	"""
+
+	fields = ()
+
+	def context(self, doctype, user):
+		return None
+
+	def clause(self, doctype, user):
+		raise NotImplementedError
+
+	def admits(self, row, doctype, user, ctx=None):
+		raise NotImplementedError
+
+
+class Own(Strategy):
+	"""It is the caller's own record. `columns` are the self-ownership markers this doctype really has —
+	declared, never probed: CRM Task has `assigned_to`, Call Log/Note/WhatsApp have only `owner`, and a
+	Smart View spells it `owner_user`."""
+
+	def __init__(self, *columns):
+		self.fields = columns or ("owner",)
+
+	def clause(self, doctype, user):
+		return " or ".join(f"`tab{doctype}`.`{c}`={_q(user)}" for c in self.fields)
+
+	def admits(self, row, doctype, user, ctx=None):
+		return any((row.get(c) or None) == user for c in self.fields)
+
+
+class ViaParent(Strategy):
+	"""It hangs off a Lead or Deal the caller may read. The dynamic-link column PAIR is declared once and
+	both halves derive from it — the schema probe that used to rediscover it existed only because this
+	map was implicit."""
+
+	def __init__(self, type_column, name_column):
+		self.type_column, self.name_column = type_column, name_column
+		self.fields = (type_column, name_column)
+
+	def clause(self, doctype, user):
+		tbl = f"`tab{doctype}`"
+		return " or ".join(
+			f"({tbl}.`{self.type_column}`={_q(p)} and {tbl}.`{self.name_column}` in "
+			f"{_visible_parent_subquery(p, user)})"
+			for p in PARENT_DOCTYPES
+		)
+
+	def resolve(self, row):
+		"""(parent_doctype, parent_name) or None. The linkage itself, for a caller that wants the PARENT
+		rather than a verdict — the search index asks which lead a row belongs to."""
+		if row.get(self.type_column) not in PARENT_DOCTYPES or not row.get(self.name_column):
+			return None
+		return row.get(self.type_column), row.get(self.name_column)
+
+	def admits(self, row, doctype, user, ctx=None):
+		parent = self.resolve(row)
+		return parent_readable(parent[0], parent[1], user) if parent else False
+
+
+class ViaSibling(Strategy):
+	"""It reaches its Lead only through ANOTHER scoped row — a Step Log is visible exactly when its
+	Journey is. Both halves recurse into the sibling's own strategies, so the rule is stated once and the
+	two can never answer differently.
+
+	The sibling's own SWITCH is deliberately not consulted: the question being answered is THIS doctype's
+	switch, and a Step Log scoped while Journeys are not is a narrower answer, never a wider one."""
+
+	def __init__(self, column, parent_doctype):
+		self.column, self.parent_doctype = column, parent_doctype
+		self.fields = (column,)
+
+	def clause(self, doctype, user):
+		inner = _compose(self.parent_doctype, user)
+		return (
+			f"`tab{doctype}`.`{self.column}` in "
+			f"(select `name` from `tab{self.parent_doctype}` where {inner})"
+		)
+
+	def admits(self, row, doctype, user, ctx=None):
+		name = row.get(self.column)
+		if not name:
+			return False
+		parent = frappe.db.get_value(
+			self.parent_doctype, name, _row_fields(self.parent_doctype), as_dict=True,
+		)
+		return bool(parent) and row_admits(parent, self.parent_doctype, user)
+
+
+class Shared(Strategy):
+	"""Frappe's own DocShare handed it over. Never grain-filtered: someone who could share it decided this
+	person should have it, so scoping it away would make cross-line sharing silently do nothing."""
+
+	def context(self, doctype, user):
+		return _shared_names(doctype, user)
+
+	def clause(self, doctype, user):
+		return _name_in(doctype, self.context(doctype, user))
+
+	def admits(self, row, doctype, user, ctx=None):
+		name = row.get("name")
+		shared = self.context(doctype, user) if ctx is None else ctx
+		return bool(name) and name in shared
+
+
+class RuleGrain(Strategy):
+	"""The row DECLARES a business line, and it overlaps the caller's entitlement.
+
+	For a row that is a RULE rather than a record — a workflow, a saved view. Its grain is a RULE grain:
+	authored, and free to leave an axis BLANK meaning ANY. So it is asked of
+	`entitlement.grain_overlaps_entitlement`, never `grain_entitled`, which takes a record's DATA grain and
+	would read that blank as the literal empty string. That is the defect that once hid 129 fields from
+	1,894 leads with every test green, and it is why nothing here compares a grain tuple.
+
+	Declaring NO line at all is not "a rule about nothing" — it is site-wide, shown to everyone and asked
+	of nobody's entitlement.
+
+	`only_when` names a column that must be truthy for this strategy to apply at all: a Smart View's grain
+	governs STANDARD views, and a personal one reaches its owner or nobody.
+
+	It decides in Python and answers as a name list, because the wildcard semantics live in
+	`taxonomy.grain` and writing them a second time in SQL is the twin this module exists to prevent.
+	These tables hold tens of rows.
+	"""
+
+	def __init__(self, *axes, only_when=None):
+		self.axes, self.only_when = axes, only_when
+		self.fields = (*axes, *((only_when,) if only_when else ()))
+
+	def clause(self, doctype, user):
+		# `get_all` deliberately: it ignores permissions, so building the clause cannot recurse back into
+		# the hook that is asking for it. Every row is then gated by `admits` below.
+		rows = frappe.get_all(doctype, fields=["name", *self.fields])  # authz-ok: tier-b — gated row by row below
+		return _name_in(doctype, [r.name for r in rows if self.admits(r, doctype, user)])
+
+	def admits(self, row, doctype, user, ctx=None):
+		from tatva_connect.access import entitlement  # local: entitlement reads this module's siblings
+
+		if self.only_when and not row.get(self.only_when):
+			return False
+		grain = tuple((row.get(axis) or "") for axis in self.axes)
+		if not any(grain):
+			return True
+		return entitlement.grain_overlaps_entitlement(grain, user=user)
+
+
+class Scope:
+	"""How one doctype is scoped. `switch` None means NOT switchable — enforced always, which is right
+	only where the app's own endpoints are the granting door and nothing ever shipped it dormant."""
+
+	def __init__(self, switch, by):
+		self.switch, self.by = switch, by
+
+	def fields(self):
+		seen = []
+		for strategy in self.by:
+			seen += [f for f in strategy.fields if f not in seen]
+		return tuple(seen)
+
+	def armed(self):
+		return True if self.switch is None else automation.is_enabled(self.switch)
+
+
+# THE REGISTRY. A doctype is scoped iff it is here, and how it is scoped is this row and nothing else.
+SCOPED = {
+	"CRM Task": Scope(
+		"Task::CRM Task::visibility",
+		[Own("owner", "assigned_to"), ViaParent("reference_doctype", "reference_docname")],
+	),
+	"CRM Call Log": Scope(
+		"Telephony::CRM Call Log::visibility",
+		[Own(), ViaParent("reference_doctype", "reference_docname")],
+	),
+	"FCRM Note": Scope(
+		"Note::FCRM Note::visibility",
+		[Own(), ViaParent("reference_doctype", "reference_docname")],
+	),
+	# frappe_whatsapp's own doctype names the link target `reference_name`, not `reference_docname`.
+	"WhatsApp Message": Scope(
+		"WhatsApp::WhatsApp Message::visibility",
+		[Own(), ViaParent("reference_doctype", "reference_name")],
+	),
+	# A journey carries its lead's field values in `state_json` and a signal its payload; unscoped, anyone
+	# who could open these lists read every other grain's lead data.
+	"CRM Workflow Journey": Scope(
+		"Workflow::CRM Workflow Journey::visibility",
+		[Own(), ViaParent("subject_doctype", "subject_name")],
+	),
+	"CRM Workflow Signal": Scope(
+		"Workflow::CRM Workflow Signal::visibility",
+		[Own(), ViaParent("subject_doctype", "subject_name")],
+	),
+	# A Step Log has `subject_name` and NO `subject_doctype`, so it cannot name its own parent — it is
+	# visible exactly when its Journey is.
+	"CRM Workflow Step Log": Scope(
+		"Workflow::CRM Workflow Step Log::visibility",
+		[Own(), ViaSibling("journey", "CRM Workflow Journey")],
+	),
+	# The Definition is a RULE, not a record hanging off a lead: it has no parent, and `Own` alone would
+	# show a rep only the workflows they personally authored, which is not what "may see" means for a rule
+	# that governs their own patients. It names the fields it reads and the messages it sends, so unscoped
+	# it tells everyone how every other business line runs.
+	"CRM Workflow": Scope(
+		"Workflow::CRM Workflow::visibility",
+		[RuleGrain("trigger_vertical", "trigger_group", "trigger_program")],
+	),
+	# Not switchable, and deliberately so: the SPA endpoints are the granting door (the doctype's DocPerms
+	# are System-Manager-only), so this has never been dormant and a switch would imply it could be.
+	"CRM Smart View": Scope(
+		None,
+		[Own("owner_user"), Shared(), RuleGrain("vertical", "group", "program", only_when="is_standard")],
+	),
 }
 
-# child doctype -> (own link column, parent doctype) for a row that reaches its Lead/Deal INDIRECTLY.
-# A step log has no `subject_doctype` column, so the direct clause below cannot be written for it; it
-# is visible exactly when its journey is, and `scoped_pqc` recurses to say so once rather than twice.
-_VIA = {
-	"CRM Workflow Step Log": ("journey", "CRM Workflow Journey"),
-}
 
-# child doctype -> its operator switch (control plane). OFF -> stock crm (no scoping).
-_SWITCH_OF = {
-	"CRM Task": "Task::CRM Task::visibility",
-	"CRM Call Log": "Telephony::CRM Call Log::visibility",
-	"FCRM Note": "Note::FCRM Note::visibility",
-	# A journey carries its lead's field values in `state_json`, and a step log carries them in `detail`.
-	# Unscoped, any manager could read every other grain's leads through the workflow lists.
-	"CRM Workflow Journey": "Workflow::CRM Workflow Journey::visibility",
-	"CRM Workflow Signal": "Workflow::CRM Workflow Signal::visibility",
-	"CRM Workflow Step Log": "Workflow::CRM Workflow Step Log::visibility",
-	"WhatsApp Message": "WhatsApp::WhatsApp Message::visibility",
-}
+def _shared_names(doctype, user):
+	"""The names frappe's own DocShare hands this user. Asked FRESH every time — see `Strategy.context`
+	for why this must never become a request memo. A sweep resolves it once through `sweep_context`."""
+	return set(frappe.share.get_shared(doctype, user) or [])
 
 
-def _owns(doc, user):
-	return doc.owner == user or doc.get("assigned_to") == user
+def _compose(doctype, user):
+	"""The OR of every strategy's clause for one doctype, switch and privilege already decided.
+
+	Nothing admitting selects NOTHING. `1=0` is the only honest answer: returning "" would silently widen
+	a scoped list to the whole table, which is the failure mode this module exists to prevent."""
+	parts = [c for c in (s.clause(doctype, user) for s in SCOPED[doctype].by) if c]
+	return "(" + " or ".join(parts) + ")" if parts else "1=0"
+
+
+def sweep_context(doctype, user=None):
+	"""Each strategy's per-sweep state, resolved once, for a caller judging many rows of one doctype.
+	Hand it to `row_admits`; never hold it across requests."""
+	user = user or frappe.session.user
+	return {s: s.context(doctype, user) for s in SCOPED[doctype].by}
+
+
+def row_admits(row, doctype, user=None, ctx=None):
+	"""May this caller see this row — the ONE predicate, asked of a row the caller already holds.
+
+	Privilege first, so an operator never depends on holding an entitlement or a share. `ctx` is an
+	optional `sweep_context`; without it every strategy resolves its own state fresh, which is the correct
+	answer for a single row and the only safe default."""
+	user = user or frappe.session.user
+	if is_privileged(user):
+		return True
+	scope = SCOPED.get(doctype)
+	if not scope:
+		return False
+	return any(s.admits(row, doctype, user, ctx.get(s) if ctx else None) for s in scope.by)
+
+
+def scoped_pqc(doctype, user=None):
+	"""The `permission_query_conditions` hook: list scoping for `doctype`.
+
+	Privileged, switch-OFF, or a doctype nobody declared -> "" (no extra conditions; stock crm)."""
+	scope = SCOPED.get(doctype)
+	if not scope or not scope.armed():
+		return ""
+	user = user or frappe.session.user
+	if is_privileged(user):
+		return ""
+	return _compose(doctype, user)
+
+
+def scoped_has_permission(doc, ptype, user):
+	"""The `has_permission` hook: the single-doc / deep-link gate, mirroring the list rule so a row on a
+	hidden parent cannot be opened by name.
+
+	Deny-only by construction — a controller cannot GRANT what the DocPerms withhold (frappe
+	`permissions.py:481`) — so an undeclared doctype or a disarmed switch answers True."""
+	doctype = doc.get("doctype") if doc else None
+	scope = SCOPED.get(doctype)
+	if not scope or not scope.armed():
+		return True
+	return row_admits(doc, doctype, user or frappe.session.user)
+
+
+def _row_fields(doctype):
+	"""Exactly the columns this doctype's predicate reads, deduped. `name` and `owner` always ride along:
+	`Shared` keys on the name and a fetched row is compared by owner wherever `Own` is declared."""
+	seen = ["name", "owner"]
+	return seen + [f for f in SCOPED[doctype].fields() if f not in seen]
+
+
+def parent_of(row, doctype):
+	"""Which Lead/Deal this row hangs off, or None — the LINKAGE without the verdict.
+
+	Read off the doctype's own declaration, so a caller that needs the parent (the search index, deciding
+	which lead a hit belongs to) uses the same column pair the gate does. It used to import the resolver
+	function directly, which is how a private helper became a second consumer nobody could see.
+	"""
+	scope = SCOPED.get(doctype)
+	if not scope:
+		return None
+	for strategy in scope.by:
+		if isinstance(strategy, ViaParent):
+			found = strategy.resolve(row)
+			if found:
+				return found
+	return None
+
+
+def parent_readable(parent_doctype, parent_name, user=None):
+	"""May `user` READ this parent Lead/Deal? The rule every child defers to, written once.
+
+	A read surface that already KNOWS the parent — the journey-history endpoints, whose whole argument is
+	one lead — asks it directly instead of synthesising a child row to be resolved back again.
+
+	Missing and unreadable both answer False, so a caller cannot tell a record that is not there from one
+	that is not theirs. Privilege is answered by `frappe.has_permission` itself; there is deliberately no
+	second privilege check here.
+	"""
+	if not parent_doctype or not parent_name:
+		return False
+	if not frappe.db.exists(parent_doctype, parent_name):
+		return False
+	return bool(frappe.has_permission(parent_doctype, "read", parent_name, user=user))
+
+
+# ---------------------------------------------------------------------------------------------------
+# The QUERY side: applying frappe's own row gate to a query this app assembled itself. A different
+# concern from the registry above — that decides the rule, this carries it into hand-built SQL.
+# ---------------------------------------------------------------------------------------------------
 
 
 def match_conditions(doctype, user=None):
-	"""THE row gate: the SQL core applies to this doctype's own list for this user. "" = unrestricted.
+	"""THE row gate: the SQL core applying to this doctype's own list for this user. "" = unrestricted.
 
 	`build_match_conditions` is the whole of it — User Permissions, the owner constraint, shares — and it
 	calls the app's `permission_query_conditions` hooks on the way. Asking `get_permission_query_conditions`
@@ -156,106 +440,8 @@ def scope(query, doctype, table, user=None):
 
 
 def _visible_parent_subquery(parent, user):
-	"""The parent rows this user may read, as a SQL '(select name ...)', for the child-doctype hooks.
-	Same gate as `match_conditions`, shaped as a string because a PQC hook returns SQL, not a criterion."""
+	"""The parent rows this user may read, as a SQL '(select name ...)', for `ViaParent`. Same gate as
+	`match_conditions`, shaped as a string because a PQC hook returns SQL, not a criterion."""
 	cond = match_conditions(parent, user)
 	where = f" and ({cond})" if cond else ""
 	return f"(select `name` from `tab{parent}` where 1=1{where})"
-
-
-def _link_columns(doctype):
-	"""The (doctype, name) column pair naming this row's parent. Read from the REAL schema, never
-	assumed: CRM Task and friends use `reference_doctype`/`reference_docname`, WhatsApp Message uses
-	`reference_name`, and CRM Workflow Journey/Event use `subject_doctype`/`subject_name`. One resolver, so
-	a new consumer is scoped by declaring nothing. The probe is the DOCTYPE column of each pair, because
-	that is the one that is missing when a doctype only looks like it carries the pair — CRM Workflow
-	Step Log has `subject_name` and no `subject_doctype`, and probing the name column emitted a clause
-	on a column that does not exist. Such a doctype belongs in `_VIA`, not here."""
-	if frappe.db.has_column(doctype, "subject_doctype"):
-		return "subject_doctype", "subject_name"
-	if frappe.db.has_column(doctype, "reference_docname"):
-		return "reference_doctype", "reference_docname"
-	return "reference_doctype", "reference_name"
-
-
-def scoped_pqc(doctype, user=None):
-	"""List scoping for `doctype`. A row is visible iff it is the user's own/assigned, OR its
-	parent Lead/Deal is visible (reusing the parent's own list conditions). Privileged or
-	switch-OFF or an unregistered doctype -> "" (no extra conditions; stock crm)."""
-	switch = _SWITCH_OF.get(doctype)
-	if not switch or not automation.is_enabled(switch):
-		return ""
-	user = user or frappe.session.user
-	if _is_privileged(user):
-		return ""
-	return _row_clause(doctype, user)
-
-
-def _row_clause(doctype, user):
-	"""The scoping SQL for one doctype, switch and privilege already decided. Split out so `_VIA` can
-	recurse into its parent's clause: the parent's OWN switch is not consulted there, because the
-	question being answered is the CHILD's switch — a step log scoped while journeys are not is a narrower
-	answer, never a wider one."""
-	via = _VIA.get(doctype)
-	if via:
-		column, parent = via
-		u = frappe.db.escape(user)
-		inner = _row_clause(parent, user)
-		return (
-			f"(`tab{doctype}`.`owner`={u} or `tab{doctype}`.`{column}` in "
-			f"(select `name` from `tab{parent}` where {inner}))"
-		)
-	tbl = f"`tab{doctype}`"
-	u = frappe.db.escape(user)
-	clauses = [f"{tbl}.`owner`={u}"]
-	# `assigned_to` is a CRM Task field; Call Log/Note/WhatsApp have no such column (owner is
-	# the only self-ownership marker there). Only emit the clause where the column exists.
-	if frappe.db.has_column(doctype, "assigned_to"):
-		clauses.append(f"{tbl}.`assigned_to`={u}")
-	# The dynamic-link docname column differs per doctype: CRM Task/Call Log/FCRM Note use
-	# `reference_docname`; WhatsApp Message uses `reference_name`. Pick the one that exists.
-	ref_type, ref_name = _link_columns(doctype)
-	for parent in PARENT_DOCTYPES:
-		clauses.append(
-			f"({tbl}.`{ref_type}`={frappe.db.escape(parent)} "
-			f"and {tbl}.`{ref_name}` in {_visible_parent_subquery(parent, user)})"
-		)
-	return "(" + " or ".join(clauses) + ")"
-
-
-def scoped_has_permission(doc, ptype, user):
-	"""Single-doc / deep-link gate (the PQC governs lists only). Mirror the list rule so a
-	child on a hidden parent can't be opened by name. Privileged or switch-OFF -> True.
-	Owner/assignee -> True. Else resolve the parent and defer to its READ scope; no resolvable
-	parent -> deny (fail-closed for a privacy CRM)."""
-	doctype = doc.doctype
-	switch = _SWITCH_OF.get(doctype)
-	if not switch or not automation.is_enabled(switch):
-		return True
-	user = user or frappe.session.user
-	if _is_privileged(user):
-		return True
-	if _owns(doc, user):
-		return True
-	parent = PARENT_OF[doctype](doc)
-	# standalone, orphaned (parent deleted), or unrecognised parent: not owner/assignee
-	# (returned above) -> deny, matching the list PQC.
-	return parent_readable(parent[0], parent[1], user) if parent else False
-
-
-def parent_readable(parent_doctype, parent_name, user=None):
-	"""May `user` READ this parent Lead/Deal? The rule every child defers to, written once.
-
-	`scoped_has_permission` asks it after resolving a child's parent from the child row. A read
-	surface that already KNOWS the parent — the journey-history endpoints, whose whole argument is one
-	lead — asks it directly instead of synthesising a child doc to be resolved back again.
-
-	Missing and unreadable both answer False, so a caller cannot tell a record that is not there from
-	one that is not theirs. Privilege is answered by `frappe.has_permission` itself; there is
-	deliberately no second privilege check here.
-	"""
-	if not parent_doctype or not parent_name:
-		return False
-	if not frappe.db.exists(parent_doctype, parent_name):
-		return False
-	return bool(frappe.has_permission(parent_doctype, "read", parent_name, user=user))

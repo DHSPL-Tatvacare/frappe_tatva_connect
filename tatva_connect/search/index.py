@@ -17,7 +17,7 @@ from frappe import _
 from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch
 from frappe.utils.caching import redis_cache, request_cache
 
-from tatva_connect.access.visibility import _ref_parent
+from tatva_connect.access.visibility import parent_of
 from tatva_connect.api.partner_file import _file_lead
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.phone import match_digits
@@ -435,7 +435,8 @@ class CRMLeadSearch(SQLiteSearch):
 			return doc.name
 		if doc.doctype == "File":
 			return _file_lead(doc)
-		ref = _ref_parent(doc)
+		# The declared linkage for this doctype, never a private resolver imported behind the gate's back.
+		ref = parent_of(doc, doc.doctype)
 		if ref and ref[0] == "CRM Lead":
 			return ref[1]
 		return None

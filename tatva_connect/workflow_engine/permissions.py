@@ -12,6 +12,16 @@ import frappe
 from tatva_connect.access import visibility
 
 
+def get_workflow_permission_query_conditions(user=None):
+	"""The Definition itself. HOW it is scoped — by the grain it declares, because it has no parent lead —
+	is declared in `visibility.SCOPED`, not decided here; these stay one line each, like their siblings."""
+	return visibility.scoped_pqc("CRM Workflow", user)
+
+
+def has_workflow_permission(doc, ptype, user):
+	return visibility.scoped_has_permission(doc, ptype, user)
+
+
 def get_journey_permission_query_conditions(user=None):
 	return visibility.scoped_pqc("CRM Workflow Journey", user)
 

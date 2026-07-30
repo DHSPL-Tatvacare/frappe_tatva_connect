@@ -107,6 +107,8 @@ permission_query_conditions = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
 	# Picklist Engine: clamp any generic list read of CRM Picklist Value to the caller's entitled grains, so get_list can't bypass the scoped picklist_query.
 	"CRM Picklist Value": "tatva_connect.access.picklist.get_picklist_value_permission_query_conditions",
+	# The Definition is scoped by the grain it DECLARES, not through a parent lead — it has none. Who may see a workflow is a different question from whose leads it acts on; the engine reads workflows with get_all and is untouched by this.
+	"CRM Workflow": "tatva_connect.workflow_engine.permissions.get_workflow_permission_query_conditions",
 	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.get_journey_permission_query_conditions",
 	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.get_signal_permission_query_conditions",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
@@ -116,6 +118,7 @@ permission_query_conditions = {
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
 	"CRM Call Log": "tatva_connect.telephony.permissions.has_call_log_permission",
+	"CRM Workflow": "tatva_connect.workflow_engine.permissions.has_workflow_permission",
 	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.has_journey_permission",
 	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.has_signal_permission",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",

@@ -31,7 +31,7 @@ break sharing site-wide.
 """
 import frappe
 
-from tatva_connect.access import entitlement
+from tatva_connect.access import visibility
 
 SMART_VIEW_DT = "CRM Smart View"
 # The columns the predicate reads. One list, so every caller fetches the same shape and no consumer
@@ -44,46 +44,23 @@ TAB_FIELDS = ("label", "base_object", "activity_type", "color", "icon", "view_or
 
 
 def is_operator(user=None) -> bool:
-	"""Privileged, the same way `visibility._is_privileged` reads it — Administrator or System Manager."""
-	user = user or frappe.session.user
-	return user == "Administrator" or "System Manager" in frappe.get_roles(user)
+	"""Privileged — Administrator or System Manager. One spelling, in the row-visibility brain."""
+	return visibility.is_privileged(user)
 
 
-def _rule_grain(v):
-	"""A view's declared scope as a rule grain: a blank axis means ANY, never the empty string."""
-	return (v.get("vertical") or "", v.get("group") or "", v.get("program") or "")
-
-
-def _shared_names(user):
-	"""The views frappe's DocShare hands this user — the framework's own reader."""
-	return set(frappe.share.get_shared(SMART_VIEW_DT, user) or [])
-
-
-def can_read(view, user=None, shared=None) -> bool:
+def can_read(view, user=None, ctx=None) -> bool:
 	"""May this caller OPEN the view — tab row, definition, rows, export and share list alike.
 
-	`shared` lets a LIST caller resolve DocShare once and hand it down, so scanning N views costs one
-	share query rather than N. Deliberately a parameter and not a request cache: a memo keyed on the user
-	would go stale the moment entitlement or a share changed inside one request, and the suites that
-	re-ask the same user under different grains would silently read the first answer."""
-	user = user or frappe.session.user
-	if is_operator(user):
-		return True
-	if (view.get("owner_user") or None) == user:
-		return True
-	name = view.get("name")
-	# A share is asked BEFORE the grain, and of a standard view too: a share is deliberate, so scoping it
-	# away would make sharing across business lines silently do nothing (`test_share_and_export`:144).
-	if name and name in (_shared_names(user) if shared is None else shared):
-		return True
-	if not view.get("is_standard"):
-		return False
-	grain = _rule_grain(view)
-	# Declared for no grain at all is not "a rule about nothing" — it is site-wide, offered to everyone,
-	# and asked of nobody's entitlement. Zero-entitlement callers exist and still see their own rows only.
-	if grain == ("", "", ""):
-		return True
-	return entitlement.grain_overlaps_entitlement(grain, user=user)
+	THE RULE ITSELF LIVES IN `access/visibility.SCOPED["CRM Smart View"]`, which declares the three ways a
+	view reaches a caller — `Own("owner_user")`, `Shared()`, and `RuleGrain(..., only_when="is_standard")`
+	— and ORs them. This used to spell all three out here, including a third copy of the wildcard-grain
+	rule that `CRM Workflow` and the row gate each had their own copy of.
+
+	`ctx` is a `visibility.sweep_context`, the successor to this function's old `shared` argument and there
+	for the same reason: a list scanning N views resolves DocShare once rather than N times. It is passed
+	DOWN a sweep and never held — a memo that outlives the request answers with yesterday's shares.
+	"""
+	return visibility.row_admits(view, SMART_VIEW_DT, user, ctx=ctx)
 
 
 def can_write(view, user=None) -> bool:
@@ -111,24 +88,17 @@ def readable_views(user=None):
 	)
 	if is_operator(user):
 		return rows
-	shared = _shared_names(user)  # resolved ONCE for the whole sweep, then handed to every row
-	return [r for r in rows if can_read(r, user, shared=shared)]
+	ctx = visibility.sweep_context(SMART_VIEW_DT, user)  # DocShare resolved ONCE for the whole sweep
+	return [r for r in rows if can_read(r, user, ctx=ctx)]
 
 
 def get_smart_view_permission_query_conditions(user=None):
 	"""The `permission_query_conditions` hook: a native list read narrowed to the same predicate.
 
-	A name-IN list built from that one predicate — no SQL twin of the grain rule. Values are quoted with
-	`frappe.db.escape`, the same way `access/picklist.py` builds its clamp. Nothing readable selects
-	NOTHING (`1=0`, the deny `access/visibility.py` already uses), never everything."""
-	user = user or frappe.session.user
-	if is_operator(user):
-		return ""
-	names = [r.name for r in readable_views(user)]
-	if not names:
-		return "1=0"
-	joined = ", ".join(frappe.db.escape(n) for n in names)
-	return f"`tab{SMART_VIEW_DT}`.`name` in ({joined})"
+	Composed from the SAME declaration `can_read` resolves through, so Desk and the SPA can never offer
+	different sets — and the owner and share halves are now plain SQL rather than a name list built by
+	scanning every row in Python."""
+	return visibility.scoped_pqc(SMART_VIEW_DT, user)
 
 
 def has_smart_view_permission(doc, ptype, user):

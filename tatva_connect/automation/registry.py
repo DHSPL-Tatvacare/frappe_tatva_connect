@@ -620,6 +620,24 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Workflow::CRM Workflow::visibility",
+		fires_on="Permission",
+		trigger_detail="CRM Workflow · permission_query_conditions + has_permission",
+		purpose=(
+			"Workflows are scoped to the business line they are written for: a workflow is listed for a person "
+			"only when the vertical, group and program it declares overlap what that person is entitled to, and "
+			"a workflow declaring no line at all is shown to everyone. A workflow names the fields it reads and "
+			"the messages it sends, so off, anyone who can open the Workflows list reads how every other "
+			"business line runs. This scopes who may SEE a workflow and changes nothing about which patients it "
+			"acts on — that stays the workflow's own declared line and its criteria.\n"
+			"Example: a rep on one programme opens Workflows and sees the journeys written for their own "
+			"programme, not the whole business's."
+		),
+		# Same as its three siblings below: gated inside the visibility brain, not a doc_event, so `backs`
+		# is empty — the drift lock walks doc_events and scheduler entries only.
+		backs=[],
+	),
+	Auto(
 		key="Workflow::CRM Workflow Journey::visibility",
 		fires_on="Permission",
 		trigger_detail="CRM Workflow Journey · permission_query_conditions + has_permission",

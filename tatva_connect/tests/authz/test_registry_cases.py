@@ -721,9 +721,10 @@ class TestRegistryCases(AuthzTestCase):
 	def _run_a9_case(self, c):
 		from tatva_connect.access import visibility
 
-		switch = visibility._SWITCH_OF.get(c.doctype)
-		if not switch:
-			self.skipTest(f"A9: {c.doctype} is not a registered child-scope doctype")
+		scope = visibility.SCOPED.get(c.doctype)
+		if not scope or not scope.switch:
+			self.skipTest(f"A9: {c.doctype} is not a switchable row-scoped doctype")
+		switch = scope.switch
 		in_user = roster.email("grain_1")   # owner of the grain_1 lead the child hangs off
 		out_user = roster.email("grain_2")  # the peer that natively cannot read that lead
 		lead = self._lead_in_grain(grains.GRAINS[0])
