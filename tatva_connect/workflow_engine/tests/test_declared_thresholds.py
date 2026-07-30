@@ -127,7 +127,7 @@ class TestTheHandoverIsUnderFrappesOwnCeiling(FrappeTestCase):
 class TestTheLaneIsADeployContractNotOneMachinesComposeFile(FrappeTestCase):
 	"""6d: the `workflow` lane lived ONLY in `.localdev/compose.yml`, which is git-excluded.
 
-	Deploy anywhere else and every parked run sets a timer alarm into a queue nothing services — the runs
+	Deploy anywhere else and every parked journey sets a timer alarm into a queue nothing services — the journeys
 	park correctly, the alarms are written correctly, and not one of them ever fires. There is no error
 	and no red anywhere, which is exactly why this assert exists.
 	"""
@@ -158,7 +158,7 @@ class TestTheLaneIsADeployContractNotOneMachinesComposeFile(FrappeTestCase):
 			wakeups.assert_lane_registered()  # must not raise
 
 	def test_this_bench_registers_the_lane_it_declares(self):
-		"""The bench this runs on is itself the proof the contract is satisfiable as written."""
+		"""The bench this journeys on is itself the proof the contract is satisfiable as written."""
 		lane = (frappe.conf.get("workers") or {}).get(wakeups.WAKE_QUEUE)
 		self.assertTrue(lane, f"this bench has no `{wakeups.WAKE_QUEUE}` lane registered")
 		self.assertGreaterEqual(lane.get("timeout") or 0, thresholds.WAKE_JOB_TIMEOUT)

@@ -8,7 +8,7 @@ of individually-valid nodes can still be nonsense: no Trigger, a Route with one 
 an edge pointing at a node someone deleted, a loop with no Wait in it, a Terminal nothing reaches.
 
 Every one of those used to publish and activate cleanly, then die on a live lead as `_Permanent` — the
-author discovering it from a failed run days later, on a real patient's record. The docstrings on
+author discovering it from a failed journey days later, on a real patient's record. The docstrings on
 `workflows.api.publish` and `crm_workflow.apply_transition` described this contract as though it existed.
 It did not. This module is that contract.
 
@@ -25,7 +25,7 @@ from frappe import _
 from tatva_connect.workflow_engine import contract, refs, registry, upstream
 
 # A graph may loop, but only through a Wait. A loop with no Wait in it spins the interpreter until the
-# hop budget kills the run, which is a hang the author cannot see coming.
+# hop budget kills the journey, which is a hang the author cannot see coming.
 _SUSPENDS = "Wait"
 
 # The Wait modes that park on an outcome, from the registry's own vocabulary — never re-spelled here.
@@ -58,7 +58,7 @@ def problems(nodes, entry_node=None):
 
 
 def _collision_problems(nodes, context):
-	"""A node id may not be the slug of a record the run can reach.
+	"""A node id may not be the slug of a record the journey can reach.
 
 	The namespaced contract makes two values with the same NAME distinguishable, and it does that by making
 	the SOURCE unique. A node called `crm_lead` breaks exactly that: `crm_lead.status` would then name both
@@ -66,7 +66,7 @@ def _collision_problems(nodes, context):
 	the node would silently shadow the subject, which is the collision this whole contract removes. It
 	cannot be resolved at runtime and it must not be publishable.
 
-	`actions.reachable_targets` is the ONE answer to what a run can reach, shared with the runtime write
+	`actions.reachable_targets` is the ONE answer to what a journey can reach, shared with the runtime write
 	resolver and with the `Target` row's check in `registry`, which is where the write-target rule moved
 	when it stopped being hand-written here.
 	"""
@@ -76,7 +76,7 @@ def _collision_problems(nodes, context):
 	return [
 		_at(node["node_id"], _("{0} is also the name of the {1} this workflow reads. Rename the node.")
 		    .format(node["node_id"], taken[node["node_id"]]),
-		    code="node.name-collision", fix=_("Rename the node so it does not shadow a record the run reads."))
+		    code="node.name-collision", fix=_("Rename the node so it does not shadow a record the journey reads."))
 		for node in nodes
 		if node["node_id"] in taken
 	]
@@ -87,7 +87,7 @@ def _reference_problems(nodes, context):
 
 	The half of the node contract that was declared and never enforced. `emits` said what each verb
 	writes and `upstream` turned that into what each node may read, but the gate never asked the
-	question — so a misspelled variable published green and then either killed the run on a live record
+	question — so a misspelled variable published green and then either killed the journey on a live record
 	(a predicate raises) or did nothing at all and said nothing (`Variable` reads resolve to None: the
 	assignee silently becomes `nobody`, the due date silently becomes the default, the written value
 	silently becomes None).
@@ -123,13 +123,13 @@ def _reference_problems(nodes, context):
 def _wait_problems(nodes):
 	"""A Wait on an outcome must name a node that will really have run, and really emits that outcome.
 
-	Get this wrong and the run parks FOR EVER, invisibly: the correlation token comes from
+	Get this wrong and the journey parks FOR EVER, invisibly: the correlation token comes from
 	`_emitted[source_node]`, a node that never ran never minted one, and the null that results is matched
 	only against rows whose correlation is empty — which no real signal ever is. `Until Event` sets no
-	`resume_at`, so no timer sweep will ever select the row either. The run sits Parked with no error, no
+	`resume_at`, so no timer sweep will ever select the row either. The journey sits Parked with no error, no
 	step log and no clock, and the lead simply never gets its next task.
 
-	Author time is the only place this is catchable. At runtime it looks exactly like a run that is
+	Author time is the only place this is catchable. At runtime it looks exactly like a journey that is
 	legitimately still waiting.
 	"""
 	by_id = _by_id(nodes)
@@ -156,7 +156,7 @@ def _wait_problems(nodes):
 			                 fix=_("Wait on a node that is in this workflow.")))
 			continue
 		if source not in upstream_ancestors(nodes, node_id):
-			found.append(_at(node_id, _("{0} waits on {1}, which does not always run before it — the run would park for ever.")
+			found.append(_at(node_id, _("{0} waits on {1}, which does not always run before it — the journey would park for ever.")
 			                 .format(node_id, source), "source_node", code="wait.source-unreachable",
 			                 fix=_("Wait on a node that always runs before this one.")))
 			continue
@@ -301,7 +301,7 @@ def _edges_of(node):
 
 
 def _trigger_problems(nodes, entry_node, context):
-	"""Exactly one Trigger, and it is where runs begin.
+	"""Exactly one Trigger, and it is where journeys begin.
 
 	The entry used to fall back to "the first node by sequence" when `entry_node` was unset, so a graph
 	whose earliest-authored node was a Create Task started THERE and skipped the Trigger — silently
@@ -315,7 +315,7 @@ def _trigger_problems(nodes, entry_node, context):
 		return [_at(None, _("A workflow may have only one Trigger; this one has {0}.").format(len(triggers)),
 		            code="trigger.duplicate", fix=_("Keep exactly one Trigger."))]
 	if entry_node and entry_node != triggers[0]["node_id"]:
-		return [_at(entry_node, _("Runs must begin at the Trigger, not at {0}.").format(entry_node),
+		return [_at(entry_node, _("Journeys must begin at the Trigger, not at {0}.").format(entry_node),
 		            code="trigger.entry", fix=_("Make the Trigger the entry node."))]
 	return _schedule_problems(triggers[0])
 
@@ -323,7 +323,7 @@ def _trigger_problems(nodes, entry_node, context):
 def _schedule_problems(trigger):
 	"""A scheduled Trigger names a schedule that can actually be read.
 
-	Unreadable, the workflow publishes green and simply never fires — no error, no run, no clue, and the
+	Unreadable, the workflow publishes green and simply never fires — no error, no journey, no clue, and the
 	author finds out when the month's cohort does not go out. `registry.SCHEDULES` is the one vocabulary,
 	so a value outside it is refused here rather than silently answering `None` at `cohort.next_run_at`.
 	"""
@@ -397,7 +397,7 @@ def _reachability_problems(nodes, entry_node, context):
 			                 code="node.unreachable", fix=_("Wire this node into the graph, or delete it.")))
 
 	if not any(known[n]["node_type"] == "Terminal" for n in seen):
-		found.append(_at(None, _("No End node can be reached, so a run would never finish."),
+		found.append(_at(None, _("No End node can be reached, so a journey would never finish."),
 		                 code="graph.no-terminal", fix=_("Add an End node the graph can reach.")))
 	return found
 
@@ -405,7 +405,7 @@ def _reachability_problems(nodes, entry_node, context):
 def _loop_problems(nodes):
 	"""A cycle is legal only if a Wait sits on it.
 
-	Without one the interpreter walks the loop as fast as it can until the hop budget stops it — the run
+	Without one the interpreter walks the loop as fast as it can until the hop budget stops it — the journey
 	fails, having done whatever its nodes do, over and over, on the way there.
 	"""
 	known = _by_id(nodes)
@@ -415,7 +415,7 @@ def _loop_problems(nodes):
 		if node_id in walking:
 			ring = path[path.index(node_id):]
 			if not any(known[n]["node_type"] == _SUSPENDS for n in ring):
-				found.append(_at(node_id, _("{0} loops back on itself with no Wait in between, so a run would spin.").format(
+				found.append(_at(node_id, _("{0} loops back on itself with no Wait in between, so a journey would spin.").format(
 					" → ".join(ring)
 				), code="loop.no-wait", fix=_("Put a Wait on the loop, or break the cycle.")))
 			return

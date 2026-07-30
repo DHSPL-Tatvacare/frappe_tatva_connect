@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class CRMWorkflowRun(Document):
+class CRMWorkflowJourney(Document):
 	pass

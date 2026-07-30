@@ -2,10 +2,10 @@
 # See license.txt
 """W7.2 PART B — the drain that walks a cohort. ONE job, a keyset cursor, committed per chunk.
 
-A COHORT IS A RUN FACTORY, NOT A SECOND ENGINE. The schedule fires, this walks the leads the Trigger's
-criteria select, and each one gets its OWN ordinary run through `triggers.start_run` — the SAME entry the
+A COHORT IS A journey FACTORY, NOT A SECOND ENGINE. The schedule fires, this walks the leads the Trigger's
+criteria select, and each one gets its OWN ordinary journey through `triggers.start_journey` — the SAME entry the
 record-event lane calls. Nothing about node contracts, park/resume or the interpreter changes, and there
-is no recipient-set inside a run: that is the evals model and it is deliberately not ours.
+is no recipient-set inside a journey: that is the evals model and it is deliberately not ours.
 
 WHY ONE JOB AND NOT ONE PER LEAD. `frappe.enqueue` THROWS above `MAX_QUEUED_JOBS = 500`. A 2,000-lead
 cohort turned into 2,000 jobs errors partway and leaves the rest of the cohort silently unstarted — the
@@ -18,14 +18,14 @@ lead name, ascending, stored as it goes, and a resume asks for `name > cursor`.
 
 WHAT IT REUSES, SO THERE IS NO SECOND BRAIN:
   * the criteria     — `cohort.matching_leads`, the same grain + `rules.predicate_match` the preview counts with
-  * the start        — `triggers.start_run`, the same entry a save uses; its `active_key` UNIQUE index is
+  * the start        — `triggers.start_journey`, the same entry a save uses; its `active_key` UNIQUE index is
                        what makes a resume unable to double-start a lead even if the cursor were lost
   * the pacing       — `api._base._bucket_pair`, the partner API's own atomic Redis bucket
   * the drain shape  — `api.partner_bulk_worker`: claim the row, chunk, commit each, re-read the abort
                        flag between chunks, resume from stored state. Same moves, same order.
 
 DORMANT. `Workflow::Cohort::drain` ships OFF, and both the sweep and the job re-read it — the job because
-the switch may be turned off between the two, which is exactly what `triggers.start_run` guards against.
+the switch may be turned off between the two, which is exactly what `triggers.start_journey` guards against.
 """
 import frappe
 from frappe.utils import now_datetime
@@ -96,7 +96,7 @@ def _claim(workflow_name):
 	"""Take this cohort, or lose to whoever already has it. Exactly one caller can win.
 
 	The engine's own claim, three lines from here: `get_value(..., for_update=True)` takes a row lock and
-	filters on the state we require in the SAME read — `wakeups.drive_instance:170`, `signals:79` and
+	filters on the state we require in the SAME read — `wakeups.drive_journey:170`, `signals:79` and
 	`interpreter:375` all do this. A second sweep BLOCKS on the lock until this one commits, then
 	re-evaluates its filter, sees `Draining` and returns nothing. That is the whole guarantee, and it is
 	the reason the state has to be inside the filter rather than checked after the read.
@@ -120,7 +120,7 @@ def _claim(workflow_name):
 def abort(workflow_name):
 	"""Stop THIS cohort at the next chunk boundary. Already-started runs are left alone.
 
-	The product owner's decision, and the line matters: this is not a per-lead cancel — a run that has
+	The product owner's decision, and the line matters: this is not a per-lead cancel — a journey that has
 	begun keeps going, because killing one lead's journey mid-flight is a different question with
 	different consequences, and it belongs with W10.
 	"""
@@ -129,7 +129,7 @@ def abort(workflow_name):
 
 
 def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch=True):
-	"""Walk this workflow's cohort, starting one ordinary run per lead. The queued entry point.
+	"""Walk this workflow's cohort, starting one ordinary journey per lead. The queued entry point.
 
 	Re-reads the switch and the abort flag AT EVERY CHUNK BOUNDARY and commits each, so a cohort can be
 	stopped mid-flight and a killed worker resumes from the stored cursor rather than from the top.
@@ -195,7 +195,7 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 
 
 def _start_one(workflow_name, version, lead):
-	"""One ordinary run for one lead, through the entry a save uses.
+	"""One ordinary journey for one lead, through the entry a save uses.
 
 	Called INLINE, never enqueued: N enqueues is the shape this whole chunk exists to avoid. A lead that
 	is already running is not an error — `_start_one`'s `active_key` UNIQUE index makes the second attempt
@@ -204,7 +204,7 @@ def _start_one(workflow_name, version, lead):
 	from tatva_connect.workflow_engine import triggers
 
 	try:
-		triggers.start_run(workflow_name, version, lead)
+		triggers.start_journey(workflow_name, version, lead)
 	except Exception:
 		# One lead's failure is not the cohort's. It is recorded and the walk goes on, exactly as a
 		# per-record failure does in `partner_bulk_worker._drain`.
@@ -223,7 +223,7 @@ def _release(workflow_name, clear_cursor=False):
 
 
 def _take_token(workflow_name):
-	"""Charge one run against the partner API's OWN atomic bucket — global and per-workflow, both must pay.
+	"""Charge one journey against the partner API's OWN atomic bucket — global and per-workflow, both must pay.
 
 	`_bucket_pair` is the one limiter in this app and its Lua is what makes the check atomic under
 	concurrency. It is imported rather than copied: a second limiter would be a second answer to "may this

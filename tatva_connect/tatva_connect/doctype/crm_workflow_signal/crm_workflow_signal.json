@@ -56,7 +56,7 @@
    "fieldtype": "Long Text",
    "label": "Payload (JSON)",
    "read_only": 1,
-   "description": "Carries the external payload; the receiving Wait merges only its declared accepts paths into Instance state."
+   "description": "Carries the external payload; the receiving Wait merges only its declared accepts paths into Journey state."
   },
   {
    "fieldname": "status",
@@ -73,9 +73,9 @@
    "fieldname": "consumed_by",
    "fieldtype": "Link",
    "label": "Consumed By",
-   "options": "CRM Workflow Run",
+   "options": "CRM Workflow Journey",
    "read_only": 1,
-   "description": "Records the Instance that consumed this signal, for audit."
+   "description": "Records the Journey that consumed this signal, for audit."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -84,7 +84,7 @@
  "modified": "2026-07-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
- "name": "CRM Workflow Event",
+ "name": "CRM Workflow Signal",
  "owner": "Administrator",
  "permissions": [
   {

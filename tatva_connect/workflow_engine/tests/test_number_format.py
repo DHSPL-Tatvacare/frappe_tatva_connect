@@ -277,7 +277,7 @@ class TestTheAdapterCannotAlterWhatItDeclared(FrappeTestCase):
 
 class TestTheRunRoutesInsteadOfDying(_SendHarness):
 	"""The engine half: a refusal is DATA the author routes on, exactly like `no mobile_no`. Not an
-	exception, and never a run marked Failed — a patient with a badly stored number must not kill a
+	exception, and never a journey marked Failed — a patient with a badly stored number must not kill a
 	journey that is still correct for every other patient."""
 
 	@classmethod
@@ -308,10 +308,10 @@ class TestTheRunRoutesInsteadOfDying(_SendHarness):
 		     patch.object(routing, "resolve_account_for_lead", return_value=self.account), \
 		     patch.object(channel, "is_enabled", return_value=True), \
 		     patch.object(resolve, "adapter_for", return_value=_Adapter(wati.DECLARATION)):
-			run = fx.start_run(self.workflow, self.lead.name, "start")
-			interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
+			run = fx.start_journey(self.workflow, self.lead.name, "start")
+			interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
 
-		run = frappe.get_doc(fx.RUN_DT, run.name)
+		run = frappe.get_doc(fx.JOURNEY_DT, run.name)
 		self.assertEqual(run.status, "Done", "a badly stored number is a data state, not a system fault")
 		self.assertEqual(run.current_node, "failed_end")
 		details = " ".join(log["detail"] or "" for log in fx.logs(run.name))

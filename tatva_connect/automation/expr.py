@@ -44,7 +44,7 @@ def resolve_expression(expr, context):
 	`context` is a `refs.Values` — a REAL mapping, not a dict. An author writes `add_days(ctx["date_2"], 3)`
 	and now writes `add_days(ctx["crm_lead.date_2"], 3)`; that is an ordinary string subscript, so it parses
 	and `context_keys` extracts it unchanged. What it needs is an object that can ANSWER it, and a flat dict
-	of namespaced keys cannot: the subject is never copied into run state, so `crm_lead.date_2` is served
+	of namespaced keys cannot: the subject is never copied into journey state, so `crm_lead.date_2` is served
 	off the live document by the resolver. `safe_eval` calls `__getitem__` on the local exactly as it would
 	on a dict — the sandbox is untouched and no new global is exposed."""
 	return frappe.safe_eval(expr, dict(_SAFE_GLOBALS), {"ctx": context})

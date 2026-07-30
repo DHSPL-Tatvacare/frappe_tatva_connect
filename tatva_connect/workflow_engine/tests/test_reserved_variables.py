@@ -1,11 +1,11 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""An engine-reserved name is refused on EVERY field that writes run state, not only on a Mapping.
+"""An engine-reserved name is refused on EVERY field that writes journey state, not only on a Mapping.
 
 `RESERVED_VARIABLES` says these names are "refused at author time rather than debugged at 3am". They were
 not: `validate_node` ran the check only for `type == "Mapping"`, and the two fields that actually write
 state — `Set Variables.assign` and `Wait.accepts` — are `Code`. So `{"_emitted": "x"}` published green,
-`state.update` replaced the correlation map the wake reads, and the run parked with nothing able to reach
+`state.update` replaced the correlation map the wake reads, and the journey parked with nothing able to reach
 it. For `accepts` the value comes off an external signal payload, so anyone who can edit the subject could
 route it onto `_emitted`.
 

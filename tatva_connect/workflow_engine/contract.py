@@ -10,7 +10,7 @@ was wired to the authoring picker and to nothing else, and publish had no opinio
 node's references could be satisfied.
 
 The result was a workflow that published green and then failed on a live patient record: a predicate
-naming a variable no upstream node writes raises at evaluation and marks the run Failed, while a
+naming a variable no upstream node writes raises at evaluation and marks the journey Failed, while a
 `Variable` field naming the same missing key fails SILENTLY — the assignee resolves to None and the node
 leaves by `nobody`, the due date resolves to None and the task quietly takes its default, the value
 written onto a field is None. No log distinguishes any of that from a workflow behaving correctly.
@@ -40,7 +40,7 @@ from tatva_connect.workflow_engine import refs, registry
 
 _CTX_PREFIX = refs.CTX_PREFIX
 
-# A `value_rows` row reads run state only in this mode. RE-EXPOSED, never re-declared: `sends` and
+# A `value_rows` row reads journey state only in this mode. RE-EXPOSED, never re-declared: `sends` and
 # `registry` read these off `contract`, and the same objects keep them working while W5.4 leaves exactly
 # one place where the words are written down.
 FROM_CONTEXT = refs.FROM_CONTEXT
@@ -48,7 +48,7 @@ LITERAL = refs.LITERAL
 
 
 def reads_of(node_type, config):
-	"""Every run-state value this node references, as `{ref, field, label}` — the SAME word `upstream` uses for what a node writes, because it is the same string.
+	"""Every journey-state value this node references, as `{ref, field, label}` — the SAME word `upstream` uses for what a node writes, because it is the same string.
 
 	`field` and `label` travel with the name so a problem can be anchored on the control that carries the
 	bad reference rather than on the node as a whole — the author needs to know WHICH box to fix.
@@ -86,7 +86,7 @@ def _references(field, value):
 
 
 def value_row_keys(rows):
-	"""The run-state names a `value_rows` field references — its `From Context` rows, and only those.
+	"""The journey-state names a `value_rows` field references — its `From Context` rows, and only those.
 
 	Added because a WhatsApp template's placeholders were an ENTIRELY UNDECLARED read surface: the node's
 	only param was a Link to the template, `sends.send_whatsapp` then did `ctx.get(name)` for every
@@ -146,7 +146,7 @@ def _ctx_json_keys(value):
 	Asked of `actions`, which owns the walk the runtime itself performs. This used to iterate
 	`data.values()` — one level — which was true enough for a child row's flat field map and became a hole
 	the moment a node carried a real API body: `{"messages": [{"content": "$ctx.…"}]}` nests its reference
-	inside a list of objects, so the gate saw nothing, published green, and the run then sent the literal
+	inside a list of objects, so the gate saw nothing, published green, and the journey then sent the literal
 	string `$ctx.crm_lead.first_name` to a live provider.
 
 	One walk, two callers — locked by `test_the_gate_sees_every_reference_the_runtime_will_resolve`.

@@ -138,7 +138,7 @@ class TestPredicate(unittest.TestCase):
 	# --- without a schema, the context is the declaration ------------------------------------------------
 
 	def test_with_no_field_types_the_context_keys_are_the_allowlist(self):
-		"""A Branch tests run state, which has no schema. The same loudness rule applies to its keys —
+		"""A Branch tests journey state, which has no schema. The same loudness rule applies to its keys —
 		a Branch reading a key no earlier node ever set is a broken graph, not a false."""
 		self.assertTrue(rules.predicate_match(_rule("taken", "is", 0), {"taken": 0}, None))
 		with self.assertRaises(rules.PredicateError):

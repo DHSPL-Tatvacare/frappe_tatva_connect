@@ -5,7 +5,7 @@
 Verbs have always declared `emits`, and `upstream.available_at` has always turned those declarations into
 the list of values a node may read — but only the authoring picker ever asked. The gate never did. So a
 workflow naming a variable no upstream node writes published green and failed on a live record: a
-predicate raises and kills the run, while every other kind of reference fails SILENTLY (the assignee
+predicate raises and kills the journey, while every other kind of reference fails SILENTLY (the assignee
 becomes None and the node leaves by `nobody`; the due date becomes None and the task takes its default;
 the written value becomes None). Nothing in a log distinguishes any of that from correct behaviour.
 
@@ -177,7 +177,7 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 
 
 class TestPublishRefusesANodeIdThatCollidesWithAReachableRecord(FrappeTestCase):
-	"""A node id may not be the slug of a record the run can reach.
+	"""A node id may not be the slug of a record the journey can reach.
 
 	The namespaced contract distinguishes two values by making the SOURCE unique. A node called `crm_lead`
 	breaks exactly that: `crm_lead.status` would name both the lead's column and whatever the node emitted,
@@ -205,7 +205,7 @@ class TestPublishRefusesANodeIdThatCollidesWithAReachableRecord(FrappeTestCase):
 
 
 class TestPublishRefusesAnUnwakeableWait(FrappeTestCase):
-	"""A Wait that can never be woken — the failure that leaves a run Parked for ever with no error."""
+	"""A Wait that can never be woken — the failure that leaves a journey Parked for ever with no error."""
 
 	def _wait(self, **config):
 		return _graph(
@@ -230,7 +230,7 @@ class TestPublishRefusesAnUnwakeableWait(FrappeTestCase):
 		self.assertIn("not in this workflow", _messages(self._wait(source_node="ghost", event_name="task.completed")))
 
 	def test_a_wait_naming_a_node_that_does_not_run_first_is_refused(self):
-		"""The quiet one: a node on another leg mints no token for this run, so nothing can ever wake it."""
+		"""The quiet one: a node on another leg mints no token for this journey, so nothing can ever wake it."""
 		nodes = _graph(
 			_trigger(to="b1"),
 			_node("b1", "Route", {"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},

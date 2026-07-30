@@ -83,7 +83,7 @@ def test_call(endpoint, request_body=None, lead=None):
 	"""Fire a Call API node's request for real, so an author can map what actually comes back.
 
 	THE SAME PATH A RUN TAKES — `actions._call_endpoint`, unchanged. A preview that built its own request
-	would show the author a response the run never receives, which is worse than no preview: it would be
+	would show the author a response the journey never receives, which is worse than no preview: it would be
 	confidently wrong. Endpoint, method, headers and secret still come off the curated `Webhook`; the
 	author supplies only the body, exactly as at runtime.
 

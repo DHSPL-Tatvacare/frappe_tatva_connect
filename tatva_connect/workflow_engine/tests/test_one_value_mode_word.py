@@ -16,7 +16,7 @@ silent on a live patient record, which is the failure class this engine removed 
 
 WHY `refs.py` IS THE HOME, and it is not an arbitrary pick. `refs` is titled "the value contract: every
 value carries where it came from", and `Literal` vs `From Context` is exactly that distinction — a value
-the author typed, or a value that names run state. It is also the only module BOTH layers already import
+the author typed, or a value that names journey state. It is also the only module BOTH layers already import
 at module scope (`actions.py:29`, `contract.py:39`), which is what dissolves the import cycle the earlier
 note called the obstacle: `contract` → `registry` → `actions` is a cycle, but neither reaches `refs`.
 

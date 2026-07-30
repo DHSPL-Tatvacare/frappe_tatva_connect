@@ -634,7 +634,7 @@
 		},
 		{
 			"role": "Sales Manager",
-			"doctype": "CRM Workflow Event",
+			"doctype": "CRM Workflow Signal",
 			"r": 1,
 			"w": 0,
 			"c": 0,
@@ -650,7 +650,7 @@
 		},
 		{
 			"role": "Sales Manager",
-			"doctype": "CRM Workflow Run",
+			"doctype": "CRM Workflow Journey",
 			"r": 1,
 			"w": 0,
 			"c": 0,

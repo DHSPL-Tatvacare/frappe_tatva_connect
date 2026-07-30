@@ -103,7 +103,7 @@ class TestRegistryConformance(unittest.TestCase):
 						self.assertTrue(field.get(key), f"{node_type} config field lacks {key}")
 
 	def test_every_type_can_actually_be_executed(self):
-		"""The declaration must correspond to an execution branch, or a run reaches the node and dies on
+		"""The declaration must correspond to an execution branch, or a journey reaches the node and dies on
 		'unknown node type'. Exactly the bug that registering Trigger exposed.
 
 		Read from the interpreter's source rather than by running a graph: this stays a static check that
@@ -202,7 +202,7 @@ class TestRegistryConformance(unittest.TestCase):
 
 	def test_every_effect_verb_is_a_node_type(self):
 		"""A node IS a verb. Every verb the engine can actually run must be placeable on the canvas, or it
-		is a capability nobody can reach; and every verb node must name a real handler, or a run reaches it
+		is a capability nobody can reach; and every verb node must name a real handler, or a journey reaches it
 		and dies. Iterated from the verb declaration, so a verb added there is covered the same day."""
 		from tatva_connect.automation import actions
 
@@ -214,7 +214,7 @@ class TestRegistryConformance(unittest.TestCase):
 
 	def test_a_guard_verb_is_never_a_node_type(self):
 		"""A guard qualifies a save and is declared on the Trigger as a Requirement. Offering it as a node
-		would put it after the save, where raising blocks nothing and only fails the run."""
+		would put it after the save, where raising blocks nothing and only fails the journey."""
 		from tatva_connect.automation import actions
 
 		for verb in actions.verbs_in_lane("guard"):

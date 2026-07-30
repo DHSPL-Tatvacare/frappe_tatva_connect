@@ -36,7 +36,7 @@ EVENT_OR_TIMEOUT = "Event-or-Timeout"
 
 TRIGGER = "Trigger"
 
-# How a run is born: a save starts ONE run; a schedule takes a COHORT, each lead its own ordinary run.
+# How a journey is born: a save starts ONE journey; a schedule takes a COHORT, each lead its own ordinary journey.
 MODE_RECORD = "Record Event"
 MODE_SCHEDULE = "Schedule"
 
@@ -127,14 +127,14 @@ NODE_TYPES = {
 	},
 	"Set Variables": {
 		"label": "Set Variables",
-		"description": "Computes values into the run's state for later nodes to read. Nothing to do with people — to change who owns a lead, use Assign to User.",
+		"description": "Computes values into the journey's state for later nodes to read. Nothing to do with people — to change who owns a lead, use Assign to User.",
 		"outputs": ["next"],
 		"config": [_field("assign", "Values", "Code", options="JSON", reqd=True,
 		                  reads="expression", writes="expression_dict")],
 	},
 	"Wait": {
 		"label": "Wait",
-		"description": "Suspends the run until an event arrives, a clock expires, or whichever comes first.",
+		"description": "Suspends the journey until an event arrives, a clock expires, or whichever comes first.",
 		# Outputs depend on the mode: waiting only on an event has no timeout edge to draw or validate.
 		"outputs_by": {
 			"field": "mode",
@@ -164,7 +164,7 @@ NODE_TYPES = {
 	},
 	"Terminal": {
 		"label": "End",
-		"description": "Ends the run. Declares no outputs, so the canvas draws no handle to drag from.",
+		"description": "Ends the journey. Declares no outputs, so the canvas draws no handle to drag from.",
 		"outputs": [],
 		"config": [],
 	},
@@ -186,8 +186,8 @@ def outcomes_for(node_type):
 	"""The events this node type can emit — the choices a downstream Wait may name.
 
 	Declared with the verb, so a Wait offers exactly what the node it waits on can actually produce. A
-	free-text event name was the old shape, and a typo there parked a run for ever with nothing able to
-	wake it: unwakeable, indistinguishable from a run that is legitimately still waiting.
+	free-text event name was the old shape, and a typo there parked a journey for ever with nothing able to
+	wake it: unwakeable, indistinguishable from a journey that is legitimately still waiting.
 	"""
 	from tatva_connect.automation import actions
 
@@ -318,7 +318,7 @@ def _expression_problem(value):
 
 def _json_problem(value):
 	"""The `reads=ctx_json` / `writes=payload_map` check — it must PARSE. `frappe.parse_json` is the
-	platform's own reader and is what the runtime uses, so a body this accepts is one the run can read."""
+	platform's own reader and is what the runtime uses, so a body this accepts is one the journey can read."""
 	if not value:
 		return None
 	try:
@@ -494,14 +494,14 @@ def _walk_predicate(node, label, depth=0):
 
 
 # The engine's own namespace, and the one source name an author may not write as. Bookkeeping used to sit
-# in the SAME flat dict as the run's variables under four bare names, so a capture called `_emitted`
-# replaced the map the wake depends on and the run parked for ever with nothing able to reach it. It now
+# in the SAME flat dict as the journey's variables under four bare names, so a capture called `_emitted`
+# replaced the map the wake depends on and the journey parked for ever with nothing able to reach it. It now
 # lives under `_engine.*` and an author's value lives under its NODE, so the collision is gone
 # structurally. This stays because the two namespaces must not be confusable by sight either.
 RESERVED_SOURCE = refs.ENGINE
 
 # The names an author may not take, spelled ONCE — in `refs`, where the engine's namespace is declared.
-# It used to be four bare keys because the engine shared one flat dict with the run's variables; there is
+# It used to be four bare keys because the engine shared one flat dict with the journey's variables; there is
 # now exactly one name to refuse, because there is exactly one engine source.
 RESERVED_VARIABLES = (refs.ENGINE,)
 
@@ -529,15 +529,15 @@ def _variable_problems(value, field, config=None, context=None):
 
 
 def _written_name_problems(node_type, config, field):
-	"""Reserved names, asked of a field that WRITES run state rather than one that captures into it.
+	"""Reserved names, asked of a field that WRITES journey state rather than one that captures into it.
 
 	`Set Variables.assign` and `Wait.accepts` are `Code`, not `Mapping`, so the reserved-name rule never
 	reached them: `{"_emitted": "x"}` published green, `state.update` then replaced the correlation map
-	the wake depends on, and the run parked for ever. For `accepts` this was reachable by anyone who can
+	the wake depends on, and the journey parked for ever. For `accepts` this was reachable by anyone who can
 	edit the subject, since `signals.deliver_signal` routes an external payload through that map.
 
-	The keys are read through `upstream.write_fields_of` — the same enumerator the run's own available-
-	values walk uses — so what is refused here is exactly what the run would really merge. A field whose
+	The keys are read through `upstream.write_fields_of` — the same enumerator the journey's own available-
+	values walk uses — so what is refused here is exactly what the journey would really merge. A field whose
 	keys cannot be enumerated (a computed `assign` key) yields `None` and is NOT checked: it cannot be,
 	without evaluating the author's expression. That gap is the price of allowing computed keys at all,
 	and the runtime is unchanged by it.
@@ -582,10 +582,10 @@ def graph_context(nodes):
 
 
 def _target_problems(value, field, config, context):
-	"""A write must aim at a record the run can actually reach. MOVED off `graph._write_target_problems`.
+	"""A write must aim at a record the journey can actually reach. MOVED off `graph._write_target_problems`.
 
 	Refuses: a doctype that is neither the Lead nor the subject the Trigger watches — `_resolve_write_target`
-	raises for anything else at runtime, so the author would find out from a dead run on a real patient.
+	raises for anything else at runtime, so the author would find out from a dead journey on a real patient.
 	Does NOT refuse: whether a particular record exists, or whether this lead has one. Both are runtime.
 	"""
 	if not value or not context:
@@ -744,7 +744,7 @@ FIELD_TYPES = {
 	"Field": {"control": "field-picker", "check": _settable_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Route Rows": {"control": "route-rows", "check": None, "primitive": False, "reads": "predicate_rows", "scalar": False, "summary": {"count": "routes"}},
-	# `reads` is None and that is not an oversight: an arm is a share of chance, so it references no run
+	# `reads` is None and that is not an oversight: an arm is a share of chance, so it references no journey
 	# state at all. The `check` is where a Sample's one refusable fact lives — see `_share_problems`.
 	"Sample Rows": {"control": "sample-rows", "check": _share_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "arms"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
@@ -758,7 +758,7 @@ FIELD_TYPES = {
 	# `check` and `reads` are both None DELIBERATELY. A read kind would hand these names to
 	# `contract.reads_of`, and a field the schema later lost would turn a tidier picker into a publish
 	# BLOCK — two answers to "what may be read", which is the second brain this whole declaration avoids.
-	# Run state still falls through to the live document and publish still accepts any real field.
+	# Journey state still falls through to the live document and publish still accepts any real field.
 	"Field Set": {"control": "field-set", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "fields"}},
 	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
@@ -871,7 +871,7 @@ def _carries_grain(doctype):
 
 	Derived from the target's own schema rather than tagged per field. Tagging means every new link
 	someone adds is unscoped until they remember the flag — and nobody notices, because an unscoped
-	picker looks exactly like a scoped one until a run is refused at execution.
+	picker looks exactly like a scoped one until a journey is refused at execution.
 	"""
 	if not doctype or not frappe.db.exists("DocType", doctype):
 		return False

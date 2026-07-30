@@ -1,6 +1,6 @@
 """The workflow interpreter - run to suspension, commit at the boundary.
 
-`advance(instance)` walks the frozen graph from `instance.current_node` until it hits a suspension
+`advance(journey)` walks the frozen graph from `journey.current_node` until it hits a suspension
 (a Wait park, or a Terminal), then commits ONCE (per-SEGMENT, not per-node - F3). A crash mid-segment
 auto-rolls-back to the last durable Parked/Done state; nothing is ever left `Running` with no owner.
 
@@ -10,7 +10,7 @@ predicate evaluator `automation.rules.predicate_match` (the same one the Trigger
 through `automation.expr`; a For-Duration Wait's wake time comes from the ONE arithmetic
 `automation.actions.wait_resume_at` (`frappe.utils.add_to_date`). No second executor, no second evaluator.
 
-INVARIANT (F6): every `advance()` is entered ONLY after the caller has claimed the Instance row
+INVARIANT (F6): every `advance()` is entered ONLY after the caller has claimed the Journey row
 `for_update`. This module does not re-claim; it trusts the claim and re-reads status via the passed doc.
 
 A Wait[event mode] tries the durable signal inbox FIRST (`_consume_signal`): an early, duplicate, or
@@ -28,9 +28,9 @@ import frappe
 from tatva_connect.automation import actions, expr, rules
 from tatva_connect.workflow_engine import refs, registry
 
-INSTANCE_DT = "CRM Workflow Run"
+JOURNEY_DT = "CRM Workflow Journey"
 STEP_LOG_DT = "CRM Workflow Step Log"
-SIGNAL_DT = "CRM Workflow Event"
+SIGNAL_DT = "CRM Workflow Signal"
 
 # W4.4 — born PENDING, terminal at CONSUMED (a park took it) or EXPIRED (the reaper aged it out).
 PENDING, CONSUMED, EXPIRED = "Pending", "Consumed", "Expired"
@@ -48,10 +48,10 @@ _TIME_MODES = frozenset({"For Duration", "Until Time", "Event-or-Timeout"})
 
 class _Permanent(Exception):
 	"""A permanent (non-retryable) failure - bad config, a bad expression, a broken graph. Terminal:
-	the Instance goes Failed, so a re-drive cannot storm.
+	the Journey goes Failed, so a re-drive cannot storm.
 
 	`code` is optional and matches the Bouncer's code for the SAME fault where both layers can hit it — so
-	an edge to a node that is not in the graph is named identically whether publish catches it or the run
+	an edge to a node that is not in the graph is named identically whether publish catches it or the journey
 	does. It stays None for faults only the runtime can reach; the drift test proves the shared ones agree.
 	"""
 
@@ -71,12 +71,12 @@ def wait_deadline(wait_mode, wait_expression, state, base=None):
 	return actions.wait_resume_at(wait_expression, state, base)
 
 
-# Keys the ENGINE owns inside run state are declared ONCE, by `registry.RESERVED_VARIABLES` — the same
+# Keys the ENGINE owns inside journey state are declared ONCE, by `registry.RESERVED_VARIABLES` — the same
 # place that refuses an author's variable taking one of those names. A second tuple lived here, unread.
 
 
 def _storable(state):
-	"""What is persisted between segments: the run's OWN values, nested by the node that wrote them.
+	"""What is persisted between segments: the journey's OWN values, nested by the node that wrote them.
 
 	`state.buckets` holds exactly what writers put there. The subject's fields are never in it — they are
 	read from the document each segment, because the document is where they live and Frappe already
@@ -85,7 +85,7 @@ def _storable(state):
 	return frappe.as_json(state.buckets)
 
 
-def _subject_loader(instance):
+def _subject_loader(journey):
 	"""A zero-argument loader for the subject's fields AS THEY ARE NOW, or `None` when there is no subject.
 
 	A LOADER and not a snapshot, because it is called on the first reference of the segment and not before.
@@ -95,24 +95,24 @@ def _subject_loader(instance):
 	why dates decayed — a datetime survives one JSON round trip as a string, and every comparison after the
 	first park was string-vs-datetime.
 	"""
-	if not instance.subject_doctype or not instance.subject_name:
+	if not journey.subject_doctype or not journey.subject_name:
 		return None
 
 	def load():
-		if not frappe.db.exists(instance.subject_doctype, instance.subject_name):
-			return {}  # deleted mid-flight; the run fails at its next real read, not while reading state
+		if not frappe.db.exists(journey.subject_doctype, journey.subject_name):
+			return {}  # deleted mid-flight; the journey fails at its next real read, not while reading state
 		from tatva_connect.automation import context as ctx_build
 
-		doc = frappe.get_doc(instance.subject_doctype, instance.subject_name)
+		doc = frappe.get_doc(journey.subject_doctype, journey.subject_name)
 		# The SAME builder the Trigger uses, unpacked back to this record's own bucket. A second walk here
 		# is how the two evaluators came to speak different languages in the first place.
-		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(instance.subject_doctype), {})
+		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(journey.subject_doctype), {})
 
 	return load
 
 
-def _refreshed_state(instance):
-	"""The evaluation context for this segment: the run's own values, plus the subject read live.
+def _refreshed_state(journey):
+	"""The evaluation context for this segment: the journey's own values, plus the subject read live.
 
 	`refs.Values`, not a ChainMap. A ChainMap merged two FLAT dicts, so a node's `status` and the lead's
 	`status` were one name with the node's winning — the lead's own status was unreadable below a Call API,
@@ -121,83 +121,83 @@ def _refreshed_state(instance):
 	loader, so it is still read as it is NOW and still never copied into what persists.
 	"""
 	return refs.Values(
-		buckets=frappe.parse_json(instance.state_json or "{}"),
-		records={refs.slug(instance.subject_doctype): _subject_loader(instance)}
-		if instance.subject_doctype
+		buckets=frappe.parse_json(journey.state_json or "{}"),
+		records={refs.slug(journey.subject_doctype): _subject_loader(journey)}
+		if journey.subject_doctype
 		else {},
 	)
 
 
-def advance(instance):
+def advance(journey):
 	"""Walk the frozen graph to the next suspension and commit once. The caller already holds the
-	`for_update` claim (F6). Returns the (mutated) instance doc."""
-	version = versions_load(instance.workflow_version)
+	`for_update` claim (F6). Returns the (mutated) journey doc."""
+	version = versions_load(journey.workflow_version)
 	nodes = {n.node_id: n for n in version.nodes}  # O(1) lookup, built once (F6)
-	state = _refreshed_state(instance)
-	was_parked = instance.status == "Parked"
-	entry_node = instance.current_node
+	state = _refreshed_state(journey)
+	was_parked = journey.status == "Parked"
+	entry_node = journey.current_node
 	seen, hops = set(), 0
 	deferred = []
 	try:
 		while True:
-			node = nodes.get(instance.current_node)
+			node = nodes.get(journey.current_node)
 			if node is None:
-				raise _Permanent(f"node {instance.current_node!r} is not in the frozen graph",
+				raise _Permanent(f"node {journey.current_node!r} is not in the frozen graph",
 				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 
 			if node.node_type == "Terminal":
-				_persist(instance, {"status": "Done", "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
-				_step_log(instance, node, "done")
+				_persist(journey, {"status": "Done", "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
+				_step_log(journey, node, "done")
 				frappe.db.commit()
 				_run_deferred(deferred)
-				return instance
+				return journey
 
 			if node.node_type == "Wait":
 				wait = _config(node)
 				# The inbox first: a Pending row for this Wait is consumed and merged before parking.
 				if wait.get("mode") in _EVENT_MODES:
-					sig = _consume_signal(instance, wait.get("event_name"), _wait_correlation(wait, state))
+					sig = _consume_signal(journey, wait.get("event_name"), _wait_correlation(wait, state))
 					if sig is not None:
 						state.writing_as(node.node_id).update(_map_payload(wait.get("accepts"), sig))
 						was_parked = False
 						# A tap leaves by the branch the SEND declared for that button. The engine matches an arrived id against DECLARED edges - it never invents one for an id nobody offered.
 						tapped = (sig or {}).get("button_id")
 						leaving = tapped if tapped and _edge(node, tapped) else "event"
-						_step_log(instance, node, "resumed", f"event {wait.get('event_name')}")
-						instance.current_node = _edge(node, leaving)
+						_step_log(journey, node, "resumed", f"event {wait.get('event_name')}")
+						journey.current_node = _edge(node, leaving)
 						continue
 				# No event buffered. If we were parked HERE and the clock is due, leave by the time edge.
-				if was_parked and node.node_id == entry_node and wait.get("mode") in _TIME_MODES and _clock_due(instance):
+				if was_parked and node.node_id == entry_node and wait.get("mode") in _TIME_MODES and _clock_due(journey):
 					was_parked = False
 					timed_out = wait.get("mode") == "Event-or-Timeout"
-					_step_log(instance, node, "resumed", "timeout" if timed_out else "timer")
-					instance.current_node = _edge(node, "timeout" if timed_out else "next")
+					_step_log(journey, node, "resumed", "timeout" if timed_out else "timer")
+					journey.current_node = _edge(node, "timeout" if timed_out else "next")
 					continue
 				# Nothing to leave by - PARK (idempotent: a re-drive that arrives too early re-parks unchanged).
-				_park(instance, node, state)
+				_park(journey, node, state)
 				frappe.db.commit()
 				_run_deferred(deferred)
-				return instance
+				return journey
 
-			if instance.current_node in seen:
-				raise _Permanent(f"cycle with no intervening Wait at node {instance.current_node}")
+			if journey.current_node in seen:
+				raise _Permanent(f"cycle with no intervening Wait at node {journey.current_node}")
 			hops += 1
 			if hops > MAX_HOPS:
 				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
-			seen.add(instance.current_node)
+			seen.add(journey.current_node)
 
 			started = time.monotonic()
 			if actions.lane_of(node.node_type) == "effect":
-				step_deferred, marker = _run_verb(node, instance.subject_name, _trigger_doc(instance), state, _axes(instance.subject_doctype, instance.subject_name), run_name=instance.name)
+				step_deferred, marker = _run_verb(node, journey.subject_name, _trigger_doc(journey), state, _axes(journey.subject_doctype, journey.subject_name), journey_name=journey.name)
 				deferred += step_deferred
-				# The verb's DECLARED output is both where the run goes and what the audit records. It used to pick the edge and then be thrown away, so a refused send was filed as `ok` beside its own failure reason.
+				# The verb's DECLARED output is both where the journey goes and what the audit records. It used to pick the edge and then be thrown away, so a refused send was filed as `ok` beside its own failure reason.
 				output = _verb_output(node, state)
 				nxt = _edge(node, output)
 				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
 				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				nxt, detail = _next_control(node, state, instance.subject_name)  # the ONE control-flow step, shared with run_inline
+				nxt, detail = _next_control(node, state, journey.subject_name)  # the ONE control-flow step, shared with run_inline
 				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
 			elif node.node_type == registry.TRIGGER:
 				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
@@ -206,36 +206,36 @@ def advance(instance):
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 
-			_step_log(instance, node, outcome, detail, int((time.monotonic() - started) * 1000))
-			instance.current_node = nxt
+			_step_log(journey, node, outcome, detail, int((time.monotonic() - started) * 1000))
+			journey.current_node = nxt
 	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):  # real lock-wait / deadlock — TRANSIENT (F4)
 		frappe.db.rollback()  # back to the last durable suspend
-		if (instance.retry_count or 0) < MAX_RETRIES:
-			_bump_retry(instance)  # leave it at its last durable state; the reconciler re-drives
+		if (journey.retry_count or 0) < MAX_RETRIES:
+			_bump_retry(journey)  # leave it at its last durable state; the reconciler re-drives
 		else:
-			_fail(instance, "exhausted transient retries")
-		return instance
+			_fail(journey, "exhausted transient retries")
+		return journey
 	except Exception as e:  # bad config / bad expr — PERMANENT (F4)
 		frappe.db.rollback()
-		_fail(instance, str(e))
-		return instance
+		_fail(journey, str(e))
+		return journey
 
 
-def _trigger_doc(instance):
-	"""The record whose save started this run — a Task, a File, or the lead itself.
+def _trigger_doc(journey):
+	"""The record whose save started this journey — a Task, a File, or the lead itself.
 
-	The subject of a durable run is ALWAYS the resolved parent lead, so this used to hand every verb the
+	The subject of a durable journey is ALWAYS the resolved parent lead, so this used to hand every verb the
 	lead and call it the trigger doc. A Call API set to send the trigger doc therefore sent the lead, a
 	Create Task could never see the file it was raised for, and an Update Field aimed at the triggering
-	Task failed the run outright. The author's choice changed nothing and nothing said so.
+	Task failed the journey outright. The author's choice changed nothing and nothing said so.
 
-	Falls back to the subject: a run started before this was recorded, or one the lead itself fired, has
+	Falls back to the subject: a journey started before this was recorded, or one the lead itself fired, has
 	no separate trigger, and the lead is then the honest answer rather than a missing one.
 	"""
-	if instance.get("trigger_doctype") and instance.get("trigger_name"):
-		if frappe.db.exists(instance.trigger_doctype, instance.trigger_name):
-			return frappe.get_doc(instance.trigger_doctype, instance.trigger_name)
-	return frappe.get_doc(instance.subject_doctype, instance.subject_name)
+	if journey.get("trigger_doctype") and journey.get("trigger_name"):
+		if frappe.db.exists(journey.trigger_doctype, journey.trigger_name):
+			return frappe.get_doc(journey.trigger_doctype, journey.trigger_name)
+	return frappe.get_doc(journey.subject_doctype, journey.subject_name)
 
 
 def _config(node):
@@ -279,7 +279,7 @@ def _next_control(node, state, subject=None):
 		raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
 	# Through the node's own writer view, so `{"stage": "Qualified"}` lands at `<node_id>.stage`. An author
 	# names a value; which node produced it is the engine's to know, and `upstream` offers it under exactly
-	# this reference — so the picker and the run agree without the author ever typing a node id.
+	# this reference — so the picker and the journey agree without the author ever typing a node id.
 	state.writing_as(node.node_id).update(result)
 	return _edge(node, "next"), "keys: " + ",".join(sorted(result.keys()))
 
@@ -316,17 +316,17 @@ def _arm_of(node, config, subject):
 
 def has_wait(version):
 	"""True iff the frozen graph parks anywhere - the ONE classifier the front-door uses to choose the
-	shape (D4): a graph with a Wait is CONTINUOUS (a durable Instance carries its state across the park);
+	shape (D4): a graph with a Wait is CONTINUOUS (a durable Journey carries its state across the park);
 	a graph with none is EPHEMERAL (it runs to Terminal inline, persisting nothing, exactly like a rule)."""
 	return any(n.node_type == "Wait" for n in version.nodes)
 
 
 def run_inline(version_name, lead_name, trigger_doc, seed_state):
-	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Instance - the
+	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Journey - the
 	rule-shaped Flow. The SAME node executor as `advance` (`_run_verb`, the Route/Assign logic, `expr`) -
-	one interpreter, two shapes - minus the durable machinery a rule never needs (no Instance row, no
+	one interpreter, two shapes - minus the durable machinery a rule never needs (no Journey row, no
 	active_key, no park, no signal inbox). A Wait node is a config error here: a graph that parks must run
-	as a continuous Instance, and the front-door only routes a wait-free graph to this path.
+	as a continuous Journey, and the front-door only routes a wait-free graph to this path.
 
 	`seed_state` is the trigger context (the record's fields), so a Route reads the trigger's values and an
 	effect verb sees them exactly as the durable path sees signal-merged state. The whole walk runs inside
@@ -355,7 +355,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 			if node.node_type == "Terminal":
 				break
 			if node.node_type == "Wait":
-				raise _Permanent(f"ephemeral Flow reached Wait node {node.node_id} - a waiting Flow must run as a durable Instance")
+				raise _Permanent(f"ephemeral Flow reached Wait node {node.node_id} - a waiting Flow must run as a durable Journey")
 			if cursor in seen:
 				raise _Permanent(f"cycle with no intervening Wait at node {cursor}")
 			hops += 1
@@ -388,20 +388,20 @@ def rules_lead_axes(lead_name):
 	return rules.lead_axes(lead_name)
 
 
-def _clock_due(instance):
-	"""True iff this Instance's clock deadline has arrived. A caller (the timer/reconciler sweep) only
+def _clock_due(journey):
+	"""True iff this Journey's clock deadline has arrived. A caller (the timer/reconciler sweep) only
 	picks due rows, but a signal-wake path may re-enter a still-early Event-or-Timeout Wait, so the edge
 	is gated on the deadline itself rather than on who woke it."""
-	return bool(instance.resume_at) and frappe.utils.get_datetime(instance.resume_at) <= frappe.utils.now_datetime()
+	return bool(journey.resume_at) and frappe.utils.get_datetime(journey.resume_at) <= frappe.utils.now_datetime()
 
 
 def _wait_correlation(wait, state):
 	"""What THIS Wait correlates on. The ONE reader — both the park and the consume side ask it.
 
 	A Wait that names an upstream node answers to the token that node minted, which is what makes the
-	wake per-task. A Wait that names none falls back to the run-level `_corr`, which is what a signal
+	wake per-task. A Wait that names none falls back to the journey-level `_corr`, which is what a signal
 	delivered from outside the graph carries. Two readers of this rule is exactly the bug it was written
-	after: parking on the token while consuming on `_corr` left the row in the inbox and the run parked
+	after: parking on the token while consuming on `_corr` left the row in the inbox and the journey parked
 	for ever, with every part looking individually correct.
 	"""
 	source = wait.get("source_node")
@@ -410,27 +410,27 @@ def _wait_correlation(wait, state):
 	return state.get(refs.CORRELATION)
 
 
-def _consume_signal(instance, signal_name, correlation):
+def _consume_signal(journey, signal_name, correlation):
 	"""Claim the FIRST Pending inbox row matching (subject, signal, correlation) under a write lock, mark
 	it Consumed (+ consumed_by), and return its parsed payload; `None` if none is buffered (→ park). A null
 	awaiting correlation matches rows with a null/empty correlation (`None` in an `in` list becomes
 	`IS NULL`). Claiming under `for_update` + a single mark is what makes a duplicate delivery advance
 	exactly once (F2): two Pending rows with the same correlation, one consumed, the other purged by the
 	sweep's stale-signal GC (`wakeups._purge_stale_signals`) - never a second advance."""
-	filters = pending_signal_filters(instance.subject_doctype, instance.subject_name, signal_name, correlation)
+	filters = pending_signal_filters(journey.subject_doctype, journey.subject_name, signal_name, correlation)
 	row = frappe.db.get_value(SIGNAL_DT, filters, ["name", "payload_json"], as_dict=True, order_by="creation asc", for_update=True)
 	if not row:
 		return None
-	frappe.db.set_value(SIGNAL_DT, row.name, {"status": CONSUMED, "consumed_by": instance.name}, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
+	frappe.db.set_value(SIGNAL_DT, row.name, {"status": CONSUMED, "consumed_by": journey.name}, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
 	return frappe.parse_json(row.payload_json or "{}")
 
 
 def pending_signal_filters(subject_doctype, subject_name, signal_name, correlation):
 	"""The ONE description of "an inbox row that would wake this park".
 
-	`_consume_signal` claims by it. The run-history surface ASKS by it, to tell a park that a buffered
+	`_consume_signal` claims by it. The journey-history surface ASKS by it, to tell a park that a buffered
 	signal will end from one that nothing has arrived for — and a second filter dict there would be a
-	second opinion about what counts as a match, which is exactly the class of bug that left runs
+	second opinion about what counts as a match, which is exactly the class of bug that left journeys
 	parked for ever while every part looked individually correct.
 
 	A null correlation matches rows with a null/empty correlation (`None` inside an `in` list becomes
@@ -487,7 +487,7 @@ def _pluck(payload, dotted_path):
 	return cur
 
 
-def _park(instance, node, state):
+def _park(journey, node, state):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
 	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the timer/reconciler sweep
 	and `resume_for_signal` find the row by. The inbox itself is consumed on the NEXT advance, not here."""
@@ -511,14 +511,14 @@ def _park(instance, node, state):
 		values["awaiting_correlation"] = correlation
 	else:
 		values["awaiting_signal"] = None
-	_persist(instance, values)
+	_persist(journey, values)
 	# The diary row is written; set the alarm so the clock is kept to the minute rather than to the */15
 	# sweep. After-commit and losable by design — the sweep still finds this row if the alarm never fires.
 	if values.get("resume_at"):
 		from tatva_connect.workflow_engine import wakeups
 
-		wakeups.schedule_wake(instance.name, values["resume_at"])
-	_step_log(instance, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
+		wakeups.schedule_wake(journey.name, values["resume_at"])
+	_step_log(journey, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
 
 
 def _verb_output(node, state):
@@ -531,7 +531,7 @@ def _verb_output(node, state):
 	return "next"
 
 
-def _run_verb(node, lead_name, trigger_doc, state, axes, run_name=None):
+def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 	"""Run THIS node's verb, with the node's own config as its parameters, inside a savepoint.
 
 	A node is a verb now — its type names what it does and its config is exactly that verb's declared
@@ -555,8 +555,8 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, run_name=None):
 	# A verb that can be ANSWERED (a task someone completes) gets a token identifying this node in this
 	# run. The handler stamps it on whatever it creates, and a Wait downstream correlates on the same
 	# token — which is what makes the wake per-task instead of per-lead.
-	if run_name and actions.outcomes_of(verb):
-		token = f"{run_name}::{node.node_id}"
+	if journey_name and actions.outcomes_of(verb):
+		token = f"{journey_name}::{node.node_id}"
 		state[refs.TOKEN] = token
 		state.setdefault(refs.EMITTED, {})[node.node_id] = token
 	else:
@@ -608,19 +608,19 @@ def stop_for_subject(subject_doctype, subject_name, reason):
 	NULL so neither the timer sweep nor a delivered signal can ever wake it again. Nothing is deleted —
 	a stopped journey is still readable, and `stop_reason` is what it says when read.
 
-	Each row is claimed `for_update` and re-checked inside the lock, exactly as `wakeups.drive_instance`
-	does: a sweep may be driving this very instance, and the loser of that race must take nothing rather
+	Each row is claimed `for_update` and re-checked inside the lock, exactly as `wakeups.drive_journey`
+	does: a sweep may be driving this very journey, and the loser of that race must take nothing rather
 	than stop a journey that has already moved on. NO raw SQL — the claim is `get_value(for_update=True)`.
 	"""
 	stopped = 0
 	for name in frappe.get_all(
-		INSTANCE_DT,
+		JOURNEY_DT,
 		filters={"subject_doctype": subject_doctype, "subject_name": subject_name, "status": ["in", LIVE_STATES]},
 		pluck="name",
 	):
-		if not frappe.db.get_value(INSTANCE_DT, {"name": name, "status": ["in", LIVE_STATES]}, "name", for_update=True):
+		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": ["in", LIVE_STATES]}, "name", for_update=True):
 			continue  # already terminal, or another driver holds it — re-checked INSIDE the lock
-		_persist(frappe.get_doc(INSTANCE_DT, name), {
+		_persist(frappe.get_doc(JOURNEY_DT, name), {
 			"status": STOPPED,
 			"stop_reason": reason,
 			"active_key": None,
@@ -632,85 +632,85 @@ def stop_for_subject(subject_doctype, subject_name, reason):
 	return stopped
 
 
-def _persist(instance, values):
+def _persist(journey, values):
 	"""Write the runtime columns and mirror them onto the in-memory doc, so the caller sees fresh state.
 	`update_modified=True` keeps the (status, modified) retention index honest."""
-	frappe.db.set_value(INSTANCE_DT, instance.name, values, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
+	frappe.db.set_value(JOURNEY_DT, journey.name, values, update_modified=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
 	for k, v in values.items():
-		instance.set(k, v)
+		journey.set(k, v)
 
 
-def _step_log(instance, node, outcome, detail="", duration_ms=0):
+def _step_log(journey, node, outcome, detail="", duration_ms=0):
 	"""One audit row per node execution. Written in the interpreter's transaction and committed at the
 	boundary with everything else (a rolled-back segment writes no log)."""
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
-		"workflow_run": instance.name,
-		"subject_name": instance.subject_name,
+		"journey": journey.name,
+		"subject_name": journey.subject_name,
 		"node_id": node.node_id,
 		"node_type": node.node_type,
 		"outcome": outcome,
 		"detail": detail,
 		"duration_ms": duration_ms,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
-	_publish_step(instance, node, outcome, detail)
+	_publish_step(journey, node, outcome, detail)
 
 
-def _publish_step(instance, node, outcome, detail):
-	"""Tell any open canvas which node this run just executed.
+def _publish_step(journey, node, outcome, detail):
+	"""Tell any open canvas which node this journey just executed.
 
 	The SAME shape the WhatsApp history refresh proved: ONE event carrying its own state, published to
 	the WORKFLOW'S doc room. Not the site room — with neither doctype nor user Frappe broadcasts to every
-	Desk user on the site, which would put one lead's run onto every open browser. `doc_subscribe` joins
+	Desk user on the site, which would put one lead's journey onto every open browser. `doc_subscribe` joins
 	this room only for a user who may read the workflow, so the permission is Frappe's, not ours.
 
-	Best-effort by construction: a canvas nobody has open must never be able to fail a run, so a socket
+	Best-effort by construction: a canvas nobody has open must never be able to fail a journey, so a socket
 	that is down is swallowed. The audit row is already written — this is a notification, not the record.
 	"""
 	try:
 		frappe.publish_realtime(
 			"workflow_step",
 			{
-				"workflow": instance.workflow,
-				"run": instance.name,
+				"workflow": journey.workflow,
+				"journey": journey.name,
 				"node_id": node.node_id,
 				"outcome": outcome,
 				"detail": detail,
 			},
 			doctype="CRM Workflow",
-			docname=instance.workflow,
+			docname=journey.workflow,
 			after_commit=True,
 		)
-	except Exception:  # nosec B110 — a notification must never take a run down
+	except Exception:  # nosec B110 — a notification must never take a journey down
 		pass
 
 
-def _bump_retry(instance):
-	"""A transient failure: increment the retry counter and commit, leaving the Instance at its last
+def _bump_retry(journey):
+	"""A transient failure: increment the retry counter and commit, leaving the Journey at its last
 	durable state for the reconciler to re-drive. Its own commit — the segment already rolled back, so this
-	counter write is the only pending change. On the ENTRY path the Instance row may not be committed yet
+	counter write is the only pending change. On the ENTRY path the Journey row may not be committed yet
 	(the rollback dropped the uncommitted insert); there is nothing durable to retry, so log and return."""
-	if not frappe.db.exists(INSTANCE_DT, instance.name):
-		frappe.log_error(title="workflow: entry-segment transient failure (Flow never started)", message=f"instance={instance.name}")
+	if not frappe.db.exists(JOURNEY_DT, journey.name):
+		frappe.log_error(title="workflow: entry-segment transient failure (Flow never started)", message=f"journey={journey.name}")
 		return
-	_persist(instance, {"retry_count": (instance.retry_count or 0) + 1})
+	_persist(journey, {"retry_count": (journey.retry_count or 0) + 1})
 	frappe.db.commit()
 
 
-def _fail(instance, reason):
+def _fail(journey, reason):
 	"""A permanent failure: mark Failed (terminal, so no retry storm) and drop the active_key so a fresh
-	Instance can start. Runs after a rollback, so it commits its own single write plus an audit row. On the
-	ENTRY path the Instance row may already be gone (the rollback dropped the uncommitted insert) — log the
-	reason and return rather than write a dangling audit row to a vanished Instance."""
-	if not frappe.db.exists(INSTANCE_DT, instance.name):
-		frappe.log_error(title="workflow: entry-segment failed before commit", message=f"instance={instance.name} :: {reason[:1500]}")
+	Journey can start. Runs after a rollback, so it commits its own single write plus an audit row. On the
+	ENTRY path the Journey row may already be gone (the rollback dropped the uncommitted insert) — log the
+	reason and return rather than write a dangling audit row to a vanished Journey."""
+	if not frappe.db.exists(JOURNEY_DT, journey.name):
+		frappe.log_error(title="workflow: entry-segment failed before commit", message=f"journey={journey.name} :: {reason[:1500]}")
 		return
-	_persist(instance, {"status": "Failed", "active_key": None})
+	_persist(journey, {"status": "Failed", "active_key": None})
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
-		"workflow_run": instance.name,
-		"subject_name": instance.subject_name,
-		"node_id": instance.current_node,
+		"journey": journey.name,
+		"subject_name": journey.subject_name,
+		"node_id": journey.current_node,
 		"node_type": "",
 		"outcome": "failed",
 		"detail": reason[:2000],

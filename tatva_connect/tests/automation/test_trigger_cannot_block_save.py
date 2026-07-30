@@ -103,9 +103,9 @@ def _clear_probe_leads():
 	for name in names:
 		for task in frappe.get_all("CRM Task", filters={"reference_docname": name}, pluck="name"):
 			frappe.delete_doc("CRM Task", task, force=True, ignore_permissions=True)
-		for run in frappe.get_all(fx.RUN_DT, filters={"subject_name": name}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-			frappe.db.delete(fx.RUN_DT, {"name": run})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"subject_name": name}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+			frappe.db.delete(fx.JOURNEY_DT, {"name": run})
 		frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 
@@ -190,7 +190,7 @@ class TestThePredicateIsTheReplacement(FrappeTestCase):
 	What the deleted verb demanded of a REP is now a condition the workflow applies to ITSELF, on the
 	Trigger's existing `predicate`. The save always succeeds either way; the only thing an unmet condition
 	changes is whether the WORKFLOW acts. The graph parks on a Wait so "it acted" is a durable
-	`CRM Workflow Run` row rather than something invisible.
+	`CRM Workflow Journey` row rather than something invisible.
 
 	The reference is `crm_lead.first_name`, deliberately the same one `workflow_engine/tests/
 	test_guard_lane.py` used: at FIRE time `rules._rule_match` treats the allowlist-derived `field_types`
@@ -238,7 +238,7 @@ class TestThePredicateIsTheReplacement(FrappeTestCase):
 
 	def _runs_for(self, lead_name):
 		return frappe.get_all(
-			fx.RUN_DT, filters={"workflow": self.workflow.name, "subject_name": lead_name}, pluck="name"
+			fx.JOURNEY_DT, filters={"workflow": self.workflow.name, "subject_name": lead_name}, pluck="name"
 		)
 
 	def test_an_unmet_condition_lets_the_save_through_and_the_workflow_does_not_act(self):
@@ -255,7 +255,7 @@ class TestThePredicateIsTheReplacement(FrappeTestCase):
 		self.assertTrue(frappe.db.exists("CRM Lead", lead.name))
 		self.assertEqual(
 			len(self._runs_for(lead.name)), 1,
-			"the condition held, so exactly one run must have started",
+			"the condition held, so exactly one journey must have started",
 		)
 
 

@@ -3,12 +3,12 @@
  "allow_rename": 0,
  "autoname": "autoincrement",
  "creation": "2026-07-15 00:00:00.000000",
- "description": "Audit log: one row per node execution in a workflow Instance - node id, type, outcome, detail, duration. Written in the interpreter's transaction and committed at the suspension boundary with everything else. Retention by age.",
+ "description": "Audit log: one row per node execution in a workflow Journey - node id, type, outcome, detail, duration. Written in the interpreter's transaction and committed at the suspension boundary with everything else. Retention by age.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
-  "workflow_run",
+  "journey",
   "subject_name",
   "node_id",
   "node_type",
@@ -18,14 +18,14 @@
  ],
  "fields": [
   {
-   "fieldname": "workflow_run",
+   "fieldname": "journey",
    "fieldtype": "Link",
-   "label": "Run",
-   "options": "CRM Workflow Run",
+   "label": "Journey",
+   "options": "CRM Workflow Journey",
    "in_list_view": 1,
    "read_only": 1,
    "reqd": 1,
-   "description": "The Instance this node execution belongs to."
+   "description": "The Journey this step belongs to."
   },
   {
    "fieldname": "subject_name",
@@ -33,7 +33,7 @@
    "label": "Subject Name",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "The subject record the Instance is about - denormalised for quick filtering."
+   "description": "The subject record the Journey is about - denormalised for quick filtering."
   },
   {
    "fieldname": "node_id",

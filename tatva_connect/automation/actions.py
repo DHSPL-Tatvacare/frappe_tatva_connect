@@ -30,9 +30,9 @@ from tatva_connect.workflow_engine import refs
 
 
 def _action_label(a):
-	"""Short human label of an action for the per-action audit trail in the run log."""
+	"""Short human label of an action for the per-action audit trail in the journey log."""
 	if a.action_type == "Create Task":
-		# The run log is read by an operator, so name the type, not its composite PK.
+		# The journey log is read by an operator, so name the type, not its composite PK.
 		return "Create Task {}".format(labels.label(a.task_type, labels.TASK_TYPE) or "?")
 	if a.action_type == "Update Field":
 		return "Update Field {}".format(a.fieldname or "?")
@@ -78,7 +78,7 @@ _LOG_LIMIT = 10000  # an Integration Request records the shape of an answer, nev
 
 # -- the record a verb acts on ------------------------------------------------
 
-TARGET_LEAD = "lead"          # the parent lead the run is about, whatever fired it
+TARGET_LEAD = "lead"          # the parent lead the journey is about, whatever fired it
 TARGET_AUTHORED = "authored"  # whichever reachable record the author's `Target` parameter names
 TARGET_NONE = "none"          # this verb writes no record at all
 TARGET_KINDS = (TARGET_LEAD, TARGET_AUTHORED, TARGET_NONE)
@@ -102,7 +102,7 @@ def authored_target_field(verb):
 def reachable_targets(subject_doctype):
 	"""The records a verb's target can resolve to in a workflow watching `subject_doctype`.
 
-	Exactly what `resolve_target` will accept: the parent lead the run is about, and the record that fired
+	Exactly what `resolve_target` will accept: the parent lead the journey is about, and the record that fired
 	it (whose doctype IS the subject). Read by the publish gate (`graph._write_target_problems`) and by the
 	authoring vocabulary (`describe.builder_schema`) alike — two copies of "what can a write reach" is how
 	the picker came to offer lead fields under a `CRM Task` target.
@@ -115,7 +115,7 @@ def resolve_target(action, lead_name, trigger_doc):
 
 	Four verbs used to answer this four different ways with nothing written down: Update Field honoured
 	the author's choice, while Create Note, Assign to User and both child-row verbs always wrote the lead
-	even when a Task or a File fired the run. An author who learned one rule guessed wrong on the next.
+	even when a Task or a File fired the journey. An author who learned one rule guessed wrong on the next.
 	The answer now lives in the verb's `target` and the decision lives here; handlers never name a doctype.
 
 	A rule's write scope is {the Lead} ∪ {the triggering doc}: anything else is out of scope and raises
@@ -150,7 +150,7 @@ def _resolve_write_target(action, lead_name, trigger_doc):
 
 
 def _action_assign_to_user(action, lead, context, axes, trigger_doc):
-	"""ASSIGN TO USER — move ownership of the lead as a consequence of what happened in this run.
+	"""ASSIGN TO USER — move ownership of the lead as a consequence of what happened in this journey.
 
 	The DEFAULT owner is not this node's job. An Assignment Rule declares that per grain, in the Desk,
 	because round-robin rotation is state Frappe already keeps and ownership must happen whether or not a
@@ -165,7 +165,7 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	find the work back on their list.
 
 	Leaves by `assigned` or by `nobody`: an escalation with no one to escalate to is a real outcome the
-	author must be able to route, not an error that kills the run.
+	author must be able to route, not an error that kills the journey.
 	"""
 	from frappe.desk.form import assign_to
 
@@ -207,7 +207,7 @@ def _assert_entitled_to_act(user, axes):
 	that rep may see. No second notion of user-grain entitlement, and no query against the permission
 	tables: a reverse query would be a second matcher free to disagree with the forward one.
 
-	`axes` is the record's DATA grain, which is what `grain_entitled` expects. A run carrying no axes at
+	`axes` is the record's DATA grain, which is what `grain_entitled` expects. A journey carrying no axes at
 	all (a non-Lead subject on the durable path) has no grain to enforce, and inventing one here would
 	refuse every File-triggered workflow rather than protect anything.
 	"""
@@ -258,7 +258,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	lead = resolve_target(action, lead, trigger_doc)[1]  # declared `lead` — resolved, never assumed
 	# The token that ties this task back to the node that raised it. A Wait downstream correlates on the
 	# same token, so completing THIS task wakes THIS iteration — never another lead's, and never a
-	# different task of the same type on the same lead. Absent on an ephemeral run, which cannot park.
+	# different task of the same type on the same lead. Absent on an ephemeral journey, which cannot park.
 	token = context.get(refs.TOKEN) if hasattr(context, "get") else None
 
 	# Carry the completing task's assignee onto the next task (old-engine parity). Only a trigger that
@@ -449,11 +449,11 @@ def _action_call_api(action, lead, context, axes, trigger_doc):
 	network trusts (an SSRF the product would be shipping deliberately).
 
 	The response becomes an ordinary context: `status`, `ok`, and the parsed `body`. `capture` maps paths
-	out of it into named run variables, so every downstream node reads them like any other value; and
+	out of it into named journey variables, so every downstream node reads them like any other value; and
 	`success_when` — the same predicate control the Trigger and Route use — decides which of the node's
-	two outputs the run takes. No `success_when` means the HTTP status decides.
+	two outputs the journey takes. No `success_when` means the HTTP status decides.
 
-	Runs INLINE rather than deferred: an output the run must route on cannot arrive after the run has
+	Runs INLINE rather than deferred: an output the journey must route on cannot arrive after the journey has
 	already moved past this node. A transport failure is not an exception here — it is the `failed`
 	output, which is a graph the author can handle.
 	"""
@@ -461,7 +461,7 @@ def _action_call_api(action, lead, context, axes, trigger_doc):
 	if not endpoint:
 		raise ValueError("Call API node missing an endpoint")
 	# The "endpoint exists" check MOVED to the publish gate (`graph._endpoint_problems`): a deleted Webhook
-	# is author error the author now learns at publish, not from the first run. A published graph reaches
+	# is author error the author now learns at publish, not from the first journey. A published graph reaches
 	# here only with a real endpoint, so `_call_endpoint`'s own `get_doc` is the whole resolution.
 
 	source = action.webhook_payload_source or "Lead"
@@ -489,7 +489,7 @@ def _call_endpoint(endpoint, payload_doc, body=None):
 
 	Every failure mode lands in the SAME shape — a transport error is `status: 0, ok: False` with the
 	reason in `error` — so a graph handles a refused connection and a 500 identically, and neither takes
-	the run down. We do NOT use `make_request`: it raises on any non-2xx, and a failed call here is data
+	the journey down. We do NOT use `make_request`: it raises on any non-2xx, and a failed call here is data
 	the author routes on, not an exception.
 	"""
 	hook = frappe.get_doc("Webhook", endpoint)
@@ -531,7 +531,7 @@ def _call_endpoint(endpoint, payload_doc, body=None):
 
 
 def _write_response_state(capture, response, context):
-	"""THE one writer of run state for a Call API — the declared response shape, then the author's rows.
+	"""THE one writer of journey state for a Call API — the declared response shape, then the author's rows.
 
 	`emits` promises `status`, `ok` and `error` are always written, and `upstream` offers them to every
 	node downstream; nothing ever wrote them, so a Route on `ok` published green and then raised on the
@@ -553,7 +553,7 @@ def _write_response_state(capture, response, context):
 
 
 def _response_state(response):
-	"""The response as run state, in the TYPES the verb declares — `Int`, `Check`, `Data`.
+	"""The response as journey state, in the TYPES the verb declares — `Int`, `Check`, `Data`.
 
 	One shaping, two consumers: what a downstream node reads and what `success_when` is judged against
 	are the same values, so an author's predicate on `ok` cannot mean one thing at the node and another
@@ -611,7 +611,7 @@ def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
 	sends through the EXISTING WATI brain (grain-routed account + template, A.11/A.8). This handler
 	only resolves the action's config off the rule row; no adapter logic lives here.
 
-	`_output` names the edge the run leaves by, exactly as Call API does — the ONE routing mechanism,
+	`_output` names the edge the journey leaves by, exactly as Call API does — the ONE routing mechanism,
 	validated by `interpreter._verb_output` against what the verb declares. The decision itself belongs
 	to `sends`, which is the module that knows why a send did not happen."""
 	from tatva_connect.automation import sends
@@ -642,7 +642,7 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 
 def _action_place_voice_call(action, lead, context, axes, trigger_doc):
 	"""AI VOICE CALL (effect, W7.4) — the SAME dormant sends gate as Send WhatsApp. The node always places
-	a SINGLE call (our engine is one-run-per-lead); the cohort/batch path is W7.2. `sends.send_voice`
+	a SINGLE call (our engine is one-journey-per-lead); the cohort/batch path is W7.2. `sends.send_voice`
 	records the fire behind `Workflow::Engine::sends` (OFF by default) and, in pass 2, will resolve against
 	the Bolna adapter. This handler only reads the action's config; no adapter logic lives here."""
 	from tatva_connect.automation import sends
@@ -707,17 +707,17 @@ def wait_resume_at(wait_expression, context, base):
 # second brain over the record's own rules. What they demanded is a Trigger `predicate` about the
 # workflow itself; the location rule is the task type's, enforced once by `location.api`.
 #
-# `emits` are the run-state VARIABLES a verb writes, so a downstream node can be offered them instead of
+# `emits` are the journey-state VARIABLES a verb writes, so a downstream node can be offered them instead of
 # asking the author to type a name from memory. Static keys are listed here; a verb whose keys depend on
 # its own config (Call API's `capture` rows) names the config field in `emits_from` and the resolver
 # reads the author's rows. This is the same lesson as `outcomes`, applied to state instead of events:
-# a name typed blind is a name that can be typed wrong, and nothing notices until a run behaves oddly.
+# a name typed blind is a name that can be typed wrong, and nothing notices until a journey behaves oddly.
 #
-# `outcomes` are the events a verb can later EMIT. A verb that emits nothing finishes and the run moves
+# `outcomes` are the events a verb can later EMIT. A verb that emits nothing finishes and the journey moves
 # on; a verb that emits is something the world answers — a task someone completes, a message someone
 # replies to — and a Wait downstream can name one of those outcomes and suspend until it arrives. The
 # names are declared here so a Wait offers a CHOICE rather than a free-text box: a typo in an event name
-# used to mean a run that parks for ever with nothing able to wake it.
+# used to mean a journey that parks for ever with nothing able to wake it.
 VERBS = {
 	"Assign to User": {
 		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD,
@@ -940,7 +940,7 @@ VERBS = {
 
 
 def emits_of(verb, config=None):
-	"""The run-state variables this verb writes, given how it is configured.
+	"""The journey-state variables this verb writes, given how it is configured.
 
 	Static keys come from the declaration; config-derived ones are read from the field named by
 	`emits_from` — for Call API that is the author's own `capture` rows, so the variables offered
@@ -1065,7 +1065,7 @@ def build_request_body(raw, context):
 
 
 def body_references(raw):
-	"""Every run-state reference the authored body names — the same walk `build_request_body` performs.
+	"""Every journey-state reference the authored body names — the same walk `build_request_body` performs.
 
 	Exported so the publish gate asks THIS module what the body reads, rather than re-deriving it from a
 	structure it would have to learn the shape of independently.

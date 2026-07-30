@@ -6,7 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "workflow_run",
+  "journey",
   "node_id",
   "verb",
   "idempotency_key",
@@ -15,12 +15,12 @@
  ],
  "fields": [
   {
-   "fieldname": "workflow_run",
+   "fieldname": "journey",
    "fieldtype": "Link",
-   "options": "CRM Workflow Run",
+   "options": "CRM Workflow Journey",
    "reqd": 1,
    "in_list_view": 1,
-   "label": "Run"
+   "label": "Journey"
   },
   {
    "fieldname": "node_id",

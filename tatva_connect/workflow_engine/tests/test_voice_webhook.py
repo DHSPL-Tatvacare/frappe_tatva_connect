@@ -1,9 +1,9 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""AI VOICE (Bolna) — pass 2: the door the outcome comes back through, and the run it wakes.
+"""AI VOICE (Bolna) — pass 2: the door the outcome comes back through, and the journey it wakes.
 
-THE TEST THAT MATTERS IS THE NEGATIVE ONE. A callback carrying a DIFFERENT run's token must leave this
-run parked. Without correlation the wake is keyed on the lead, so any finished call could advance any
+THE TEST THAT MATTERS IS THE NEGATIVE ONE. A callback carrying a DIFFERENT journey's token must leave this
+journey parked. Without correlation the wake is keyed on the lead, so any finished call could advance any
 journey waiting on any call — silently, and looking exactly like correct behaviour. That is the same
 defect the task bridge was built to remove, and voice closes it the same way.
 
@@ -11,7 +11,7 @@ Correlation here is the PROVIDER'S OWN ECHO: `place_call` puts the opaque `run::
 `user_data`, Bolna hands it back on the terminal callback, and `handle` reads it out. No lookup row, so
 there is no window in which the callback beats the row that would have matched it.
 
-Nothing in this file dials. The send switch stays OFF, so the voice node parks the run without touching
+Nothing in this file dials. The send switch stays OFF, so the voice node parks the journey without touching
 the adapter, and no `requests` call is made anywhere in the suite.
 """
 import frappe
@@ -135,17 +135,17 @@ class TestScreeningDecidesBeforeAnythingIsWritten(FrappeTestCase):
 
 	def test_a_failed_call_wakes_only_the_coarse_done_event(self):
 		"""`voice.failed` is a SYNCHRONOUS output of the node, so no Wait may be authored on it — and a
-		call that failed after being placed must still free a run parked on `voice.completed`."""
+		call that failed after being placed must still free a journey parked on `voice.completed`."""
 		self.assertEqual(bolna.waitable_signals("answered"), ["voice.answered", "voice.completed"])
 		self.assertEqual(bolna.waitable_signals("no_answer"), ["voice.completed", "voice.no_answer"])
 		self.assertEqual(bolna.waitable_signals("failed"), ["voice.completed"])
 
 
 class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
-	"""End to end on the real engine: a run walks to the voice node, parks on the Wait that follows it,
-	and the provider's callback advances THAT run — and only that one.
+	"""End to end on the real engine: a journey walks to the voice node, parks on the Wait that follows it,
+	and the provider's callback advances THAT journey — and only that one.
 
-	The send switch is OFF throughout, so the node parks the run without touching the adapter. Which is
+	The send switch is OFF throughout, so the node parks the journey without touching the adapter. Which is
 	the point: the wake is proved on a graph where no call was ever placed."""
 
 	@classmethod
@@ -155,7 +155,7 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		fx.arm_engine(True, cls)
 		cls.account = _account()
 		cls.lead = fx.make_lead()
-		# A number in the declared +E.164 shape, so the node takes `placed` and the run reaches the Wait.
+		# A number in the declared +E.164 shape, so the node takes `placed` and the journey reaches the Wait.
 		# It is never dialled — the send switch is off, so the node parks without touching the adapter.
 		cls.lead.db_set("mobile_no", "+919999999999")
 		cls.workflow = fx.make_workflow(_WORKFLOW, [
@@ -174,7 +174,7 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 	@classmethod
 	def tearDownClass(cls):
 		fx.purge(_WORKFLOW)
-		frappe.db.delete(fx.EVENT_DT, {"subject_name": cls.lead.name})
+		frappe.db.delete(fx.SIGNAL_DT, {"subject_name": cls.lead.name})
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
 		frappe.delete_doc("CRM AI Voice Account", _ACCOUNT, force=True, ignore_permissions=True)
 		frappe.db.commit()
@@ -187,28 +187,28 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		self._reset()
 
 	def _reset(self):
-		for run in frappe.get_all(fx.RUN_DT, filters={"workflow": _WORKFLOW}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-		frappe.db.delete(fx.RUN_DT, {"workflow": _WORKFLOW})
-		frappe.db.delete(fx.EVENT_DT, {"subject_name": self.lead.name})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": _WORKFLOW}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": _WORKFLOW})
+		frappe.db.delete(fx.SIGNAL_DT, {"subject_name": self.lead.name})
 		frappe.db.commit()
 
 	def _park(self):
-		"""Walk a run to the Wait after the voice node. Returns (run_name, its correlation token)."""
-		run = fx.start_run(self.workflow, self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
+		"""Walk a journey to the Wait after the voice node. Returns (journey_name, its correlation token)."""
+		run = fx.start_journey(self.workflow, self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
 		frappe.db.commit()
 		return run.name, f"{run.name}::call"
 
-	def _row(self, run_name):
+	def _row(self, journey_name):
 		return frappe.db.get_value(
-			fx.RUN_DT, run_name, ["status", "current_node", "awaiting_signal", "awaiting_correlation"],
+			fx.JOURNEY_DT, journey_name, ["status", "current_node", "awaiting_signal", "awaiting_correlation"],
 			as_dict=True,
 		)
 
 	def test_the_run_parks_on_the_token_the_voice_node_minted(self):
-		run_name, token = self._park()
-		row = self._row(run_name)
+		journey_name, token = self._park()
+		row = self._row(journey_name)
 		self.assertEqual(row.status, "Parked")
 		self.assertEqual(row.awaiting_signal, "voice.answered")
 		self.assertEqual(row.awaiting_correlation, token)
@@ -219,7 +219,7 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		frappe.db.commit()
 
 		events = frappe.get_all(
-			fx.EVENT_DT, filters={"subject_name": self.lead.name, "correlation": token},
+			fx.SIGNAL_DT, filters={"subject_name": self.lead.name, "correlation": token},
 			fields=["event_name", "correlation"], order_by="event_name asc",
 		)
 		self.assertEqual(
@@ -228,26 +228,26 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		)
 
 	def test_the_delivered_outcome_resumes_the_run(self):
-		run_name, token = self._park()
+		journey_name, token = self._park()
 		bolna.handle(_callback(token), None, _ACCOUNT)
 		signals.resume_for_signal("CRM Lead", self.lead.name, "voice.answered", correlation=token)
 		frappe.db.commit()
 
-		row = self._row(run_name)
-		self.assertNotEqual(row.status, "Parked", "the callback must free the run it correlates to")
+		row = self._row(journey_name)
+		self.assertNotEqual(row.status, "Parked", "the callback must free the journey it correlates to")
 		self.assertEqual(row.current_node, "end")
 
 	def test_what_the_call_captured_reaches_run_state(self):
 		"""The Wait's `accepts` map merges the signal payload into state, which is what makes an outcome
 		routable downstream rather than merely an edge."""
-		run_name, token = self._park()
+		journey_name, token = self._park()
 		bolna.handle(_callback(token), None, _ACCOUNT)
 		signals.resume_for_signal("CRM Lead", self.lead.name, "voice.answered", correlation=token)
 		frappe.db.commit()
 
 		# Namespaced under the WAIT that accepted it — a Wait writes as itself, so downstream reads
 		# `w1.voice_outcome` and two Waits on one graph can never collide on a bare name.
-		state = frappe.parse_json(frappe.db.get_value(fx.RUN_DT, run_name, "state_json")) or {}
+		state = frappe.parse_json(frappe.db.get_value(fx.JOURNEY_DT, journey_name, "state_json")) or {}
 		self.assertEqual(state.get("w1", {}).get("voice_outcome"), "answered", state)
 
 	def test_another_runs_callback_leaves_this_run_parked(self):
@@ -256,31 +256,31 @@ class TestTheEchoWakesTheRunThatPlacedTheCall(FrappeTestCase):
 		Correlating on the lead would advance whichever run answered first, which is exactly the defect
 		this exists to prevent when one lead is in two journeys.
 		"""
-		run_name, _token = self._park()
+		journey_name, _token = self._park()
 		other_run, other_token = self._park()
-		self.assertNotEqual(run_name, other_run)
+		self.assertNotEqual(journey_name, other_run)
 
 		bolna.handle(_callback(other_token), None, _ACCOUNT)
 		signals.resume_for_signal("CRM Lead", self.lead.name, "voice.answered", correlation=other_token)
 		frappe.db.commit()
 
-		self.assertEqual(self._row(run_name).status, "Parked", "the OTHER call must not move this run")
+		self.assertEqual(self._row(journey_name).status, "Parked", "the OTHER call must not move this journey")
 		self.assertEqual(self._row(other_run).current_node, "end")
 
 	def test_a_callback_for_no_known_run_wakes_nothing(self):
-		run_name, _token = self._park()
+		journey_name, _token = self._park()
 		bolna.handle(_callback("NOT-A-RUN::call"), None, _ACCOUNT)
 		frappe.db.commit()
 
-		self.assertEqual(self._row(run_name).status, "Parked")
+		self.assertEqual(self._row(journey_name).status, "Parked")
 		self.assertFalse(
-			frappe.get_all(fx.EVENT_DT, filters={"correlation": "NOT-A-RUN::call"}),
-			"a callback whose run cannot be found must deliver no signal",
+			frappe.get_all(fx.SIGNAL_DT, filters={"correlation": "NOT-A-RUN::call"}),
+			"a callback whose journey cannot be found must deliver no signal",
 		)
 
 	def test_a_redelivered_callback_is_recognised_and_not_replayed(self):
 		"""Providers re-send. The spine collapses byte-identical copies; this catches a copy that differs
-		in a field the wake does not read, and must not wake the run a second time."""
+		in a field the wake does not read, and must not wake the journey a second time."""
 		_run_name, token = self._park()
 		self.assertFalse(bolna.already_processed(_callback(token), None, _ACCOUNT))
 		bolna.handle(_callback(token), None, _ACCOUNT)

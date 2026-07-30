@@ -96,9 +96,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Runs",
+   "label": "Journeys",
    "link_count": 0,
-   "link_to": "CRM Workflow Run",
+   "link_to": "CRM Workflow Journey",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -106,9 +106,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Events",
+   "label": "Signals",
    "link_count": 0,
-   "link_to": "CRM Workflow Event",
+   "link_to": "CRM Workflow Signal",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -124,7 +124,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-26 12:00:00.000000",
+ "modified": "2026-07-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",

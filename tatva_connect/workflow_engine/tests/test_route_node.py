@@ -108,7 +108,7 @@ class TestBranchIsDeleted(unittest.TestCase):
 
 
 class TestRouteTakesExactlyOneBranchByFirstMatch(FrappeTestCase):
-	"""Runtime, through the real interpreter. The outcome asserted is the node the run finished on."""
+	"""Runtime, through the real interpreter. The outcome asserted is the node the journey finished on."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -139,11 +139,11 @@ class TestRouteTakesExactlyOneBranchByFirstMatch(FrappeTestCase):
 	def _walk_with_status(self, status):
 		frappe.db.set_value("CRM Lead", self.lead.name, "status", status)
 		frappe.db.commit()
-		run = fx.start_run(self.workflow, self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		result = frappe.get_doc(fx.RUN_DT, run.name)
-		frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run.name})
-		frappe.db.delete(fx.RUN_DT, {"name": run.name})
+		run = fx.start_journey(self.workflow, self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		result = frappe.get_doc(fx.JOURNEY_DT, run.name)
+		frappe.db.delete(fx.STEP_LOG_DT, {"journey": run.name})
+		frappe.db.delete(fx.JOURNEY_DT, {"name": run.name})
 		frappe.db.commit()
 		return result
 

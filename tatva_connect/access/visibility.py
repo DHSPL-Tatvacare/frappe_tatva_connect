@@ -53,7 +53,7 @@ def _ref_name_parent(doc):
 
 
 def _subject_parent(doc):
-	"""The workflow tables name their parent `subject_doctype`/`subject_name` — a Run is about one
+	"""The workflow tables name their parent `subject_doctype`/`subject_name` — a journey is about one
 	record and an Event is addressed to one."""
 	if doc.get("subject_doctype") in PARENT_DOCTYPES and doc.get("subject_name"):
 		return doc.get("subject_doctype"), doc.get("subject_name")
@@ -61,13 +61,13 @@ def _subject_parent(doc):
 
 
 def _run_subject_parent(doc):
-	"""A step log names no subject doctype at all — only `workflow_run` and a bare `subject_name`.
-	So its parent is its run's parent, read from the run. Indirect linkage is exactly why PARENT_OF
+	"""A step log names no subject doctype at all — only `journey` and a bare `subject_name`.
+	So its parent is its journey's parent, read from the journey. Indirect linkage is exactly why PARENT_OF
 	is a resolver rather than a field pair."""
-	run = doc.get("workflow_run")
-	if not run:
+	journey = doc.get("journey")
+	if not journey:
 		return None
-	subject = frappe.db.get_value("CRM Workflow Run", run, ["subject_doctype", "subject_name"], as_dict=True)
+	subject = frappe.db.get_value("CRM Workflow Journey", journey, ["subject_doctype", "subject_name"], as_dict=True)
 	return _subject_parent(subject) if subject else None
 
 
@@ -77,16 +77,16 @@ PARENT_OF = {
 	"CRM Call Log": _ref_parent,
 	"FCRM Note": _ref_parent,
 	"WhatsApp Message": _ref_name_parent,
-	"CRM Workflow Run": _subject_parent,
-	"CRM Workflow Event": _subject_parent,
+	"CRM Workflow Journey": _subject_parent,
+	"CRM Workflow Signal": _subject_parent,
 	"CRM Workflow Step Log": _run_subject_parent,
 }
 
 # child doctype -> (own link column, parent doctype) for a row that reaches its Lead/Deal INDIRECTLY.
 # A step log has no `subject_doctype` column, so the direct clause below cannot be written for it; it
-# is visible exactly when its run is, and `scoped_pqc` recurses to say so once rather than twice.
+# is visible exactly when its journey is, and `scoped_pqc` recurses to say so once rather than twice.
 _VIA = {
-	"CRM Workflow Step Log": ("workflow_run", "CRM Workflow Run"),
+	"CRM Workflow Step Log": ("journey", "CRM Workflow Journey"),
 }
 
 # child doctype -> its operator switch (control plane). OFF -> stock crm (no scoping).
@@ -94,10 +94,10 @@ _SWITCH_OF = {
 	"CRM Task": "Task::CRM Task::visibility",
 	"CRM Call Log": "Telephony::CRM Call Log::visibility",
 	"FCRM Note": "Note::FCRM Note::visibility",
-	# A run carries its lead's field values in `state_json`, and a step log carries them in `detail`.
+	# A journey carries its lead's field values in `state_json`, and a step log carries them in `detail`.
 	# Unscoped, any manager could read every other grain's leads through the workflow lists.
-	"CRM Workflow Run": "Workflow::CRM Workflow Run::visibility",
-	"CRM Workflow Event": "Workflow::CRM Workflow Event::visibility",
+	"CRM Workflow Journey": "Workflow::CRM Workflow Journey::visibility",
+	"CRM Workflow Signal": "Workflow::CRM Workflow Signal::visibility",
 	"CRM Workflow Step Log": "Workflow::CRM Workflow Step Log::visibility",
 	"WhatsApp Message": "WhatsApp::WhatsApp Message::visibility",
 }
@@ -166,7 +166,7 @@ def _visible_parent_subquery(parent, user):
 def _link_columns(doctype):
 	"""The (doctype, name) column pair naming this row's parent. Read from the REAL schema, never
 	assumed: CRM Task and friends use `reference_doctype`/`reference_docname`, WhatsApp Message uses
-	`reference_name`, and CRM Workflow Run/Event use `subject_doctype`/`subject_name`. One resolver, so
+	`reference_name`, and CRM Workflow Journey/Event use `subject_doctype`/`subject_name`. One resolver, so
 	a new consumer is scoped by declaring nothing. The probe is the DOCTYPE column of each pair, because
 	that is the one that is missing when a doctype only looks like it carries the pair — CRM Workflow
 	Step Log has `subject_name` and no `subject_doctype`, and probing the name column emitted a clause
@@ -194,7 +194,7 @@ def scoped_pqc(doctype, user=None):
 def _row_clause(doctype, user):
 	"""The scoping SQL for one doctype, switch and privilege already decided. Split out so `_VIA` can
 	recurse into its parent's clause: the parent's OWN switch is not consulted there, because the
-	question being answered is the CHILD's switch — a step log scoped while runs are not is a narrower
+	question being answered is the CHILD's switch — a step log scoped while journeys are not is a narrower
 	answer, never a wider one."""
 	via = _VIA.get(doctype)
 	if via:
@@ -247,7 +247,7 @@ def parent_readable(parent_doctype, parent_name, user=None):
 	"""May `user` READ this parent Lead/Deal? The rule every child defers to, written once.
 
 	`scoped_has_permission` asks it after resolving a child's parent from the child row. A read
-	surface that already KNOWS the parent — the run-history endpoints, whose whole argument is one
+	surface that already KNOWS the parent — the journey-history endpoints, whose whole argument is one
 	lead — asks it directly instead of synthesising a child doc to be resolved back again.
 
 	Missing and unreadable both answer False, so a caller cannot tell a record that is not there from

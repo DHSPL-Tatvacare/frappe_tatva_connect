@@ -30,7 +30,7 @@ DRAIN_CHUNK = 100
 # Drains one sweep will start; more than a handful due in one minute is a misconfiguration, not load.
 MAX_DUE_PER_SWEEP = 20
 
-# Runs started per minute, global and per workflow — the provider is the binding constraint, not us.
+# Journeys started per minute, global and per workflow — the provider is the binding constraint, not us.
 DRAIN_RATE = 60
 DRAIN_BURST = 60
 DRAIN_WINDOW = 60

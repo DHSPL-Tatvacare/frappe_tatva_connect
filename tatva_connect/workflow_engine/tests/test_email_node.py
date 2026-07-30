@@ -201,7 +201,7 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		self.assertIn("Hello Asha", seen.get("message"))
 
 	def test_a_recipient_that_resolves_to_nothing_routes_to_failed(self):
-		"""DATA, not an exception — the run must not die because one record has no address."""
+		"""DATA, not an exception — the journey must not die because one record has no address."""
 		output, seen = self._send("sv.email", {}, [])
 
 		self.assertEqual(output, sends.FAILED)

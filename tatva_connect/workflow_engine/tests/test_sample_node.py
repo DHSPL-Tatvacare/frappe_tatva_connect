@@ -98,7 +98,7 @@ class TestSampleIsSingularAndIsNotRoute(unittest.TestCase):
 class TestAssignmentIsAStableHashAndNeverADiceRoll(FrappeTestCase):
 	"""G8 — the runtime is locked against the declaration, and against its own promise.
 
-	`_arm_of` is driven directly rather than through a run, because what is being asserted is the FUNCTION's
+	`_arm_of` is driven directly rather than through a journey, because what is being asserted is the FUNCTION's
 	stability: a test that walked the graph once could not tell a stable hash from a lucky draw.
 	"""
 
@@ -156,7 +156,7 @@ def _expected_arm(subject, node_id, arms):
 
 
 class TestSampleTakesItsArmThroughTheRealInterpreter(FrappeTestCase):
-	"""Runtime, end to end. The outcome asserted is the node the run finished on."""
+	"""Runtime, end to end. The outcome asserted is the node the journey finished on."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -184,11 +184,11 @@ class TestSampleTakesItsArmThroughTheRealInterpreter(FrappeTestCase):
 	def test_a_hundred_percent_arm_takes_every_lead(self):
 		"""A share of 100 is the one split whose outcome is knowable without asserting the digest, so the
 		WIRING is what this proves: the arm's id really is an edge and the interpreter really leaves by it."""
-		run = fx.start_run(self.workflow, self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		result = frappe.get_doc(fx.RUN_DT, run.name)
-		frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run.name})
-		frappe.db.delete(fx.RUN_DT, {"name": run.name})
+		run = fx.start_journey(self.workflow, self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		result = frappe.get_doc(fx.JOURNEY_DT, run.name)
+		frappe.db.delete(fx.STEP_LOG_DT, {"journey": run.name})
+		frappe.db.delete(fx.JOURNEY_DT, {"name": run.name})
 		frappe.db.commit()
 		self.assertEqual(result.current_node, "end_a")
 

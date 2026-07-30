@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A run walks the new graph: Trigger → Step → Branch → Wait → park → resume → Terminal.
+"""A journey walks the new graph: Trigger → Step → Branch → Wait → park → resume → Terminal.
 
 Scope is deliberate. W0/W1 rewrote exactly four things in the interpreter — routing by named edge,
 reading a node's config out of `config_json`, running a node's own actions, and the Trigger
@@ -71,19 +71,19 @@ class TestEngineWalk(FrappeTestCase):
 		self._clear_runs()
 
 	def _clear_runs(self):
-		for run in frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow.name}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-		frappe.db.delete(fx.RUN_DT, {"workflow": self.workflow.name})
-		frappe.db.delete(fx.EVENT_DT, {"subject_name": self.lead.name})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow.name}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": self.workflow.name})
+		frappe.db.delete(fx.SIGNAL_DT, {"subject_name": self.lead.name})
 		frappe.db.commit()
 
 	def _run(self):
-		run = fx.start_run(self.workflow, self.lead.name, "start", state={"seed": {"taken": 0}})
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
+		run = fx.start_journey(self.workflow, self.lead.name, "start", state={"seed": {"taken": 0}})
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
 		return run
 
-	def _state(self, run_name):
-		return frappe.parse_json(frappe.db.get_value(fx.RUN_DT, run_name, "state_json") or "{}")
+	def _state(self, journey_name):
+		return frappe.parse_json(frappe.db.get_value(fx.JOURNEY_DT, journey_name, "state_json") or "{}")
 
 	# --- the four things W0/W1 changed ---------------------------------------------------------------
 
@@ -91,12 +91,12 @@ class TestEngineWalk(FrappeTestCase):
 		"""Trigger passes through, the Step runs, the Route routes by its named edge, and the Wait parks.
 
 		One test covers all four rewrites because they are links in one chain — if routing by edge name
-		were broken the run would stop at the Trigger, and if config reading were broken the Wait would
+		were broken the journey would stop at the Trigger, and if config reading were broken the Wait would
 		not know it was waiting on an event.
 		"""
 		run = self._run()
 		row = frappe.db.get_value(
-			fx.RUN_DT, run.name, ["status", "current_node", "awaiting_signal"], as_dict=True
+			fx.JOURNEY_DT, run.name, ["status", "current_node", "awaiting_signal"], as_dict=True
 		)
 		self.assertEqual(row.status, "Parked")
 		self.assertEqual(row.current_node, "w1")
@@ -106,7 +106,7 @@ class TestEngineWalk(FrappeTestCase):
 		self.assertEqual(
 			walked,
 			[("start", "ok"), ("s1", "ok"), ("b1", "ok"), ("w1", "parked")],
-			"the run must pass through the Trigger, the Step and the Branch, then park",
+			"the journey must pass through the Trigger, the Step and the Branch, then park",
 		)
 
 	def test_the_route_took_its_first_row_by_name(self):
@@ -135,7 +135,7 @@ class TestEngineWalk(FrappeTestCase):
 		)
 		frappe.db.commit()
 
-		row = frappe.db.get_value(fx.RUN_DT, run.name, ["status", "current_node"], as_dict=True)
+		row = frappe.db.get_value(fx.JOURNEY_DT, run.name, ["status", "current_node"], as_dict=True)
 		self.assertEqual(row.status, "Done")
 		self.assertEqual(row.current_node, "end")
 		self.assertEqual(
@@ -144,8 +144,8 @@ class TestEngineWalk(FrappeTestCase):
 		)
 
 	def test_the_frozen_version_carries_the_graph_and_the_actions(self):
-		"""A parked run executes the graph it started on. Edges and actions are inlined into the version,
-		so an edit to the workflow cannot reach a run already under way."""
+		"""A parked journey executes the graph it started on. Edges and actions are inlined into the version,
+		so an edit to the workflow cannot reach a journey already under way."""
 		payload = versions.build_payload(self.workflow)
 		by_id = {n["node_id"]: n for n in payload["nodes"]}
 		self.assertEqual(by_id["b1"]["edges"], [{"output": "otherwise", "to": "end"}, {"output": "r1", "to": "w1"}])

@@ -4,7 +4,7 @@
 
 Four verbs answered this question four different ways and nothing declared any of them. `Update Field`
 honoured the author's `target_doctype`; `Create Note`, `Assign to User` and the two child-row verbs always
-wrote the lead, even when a Task or a File fired the run. An author who learned one rule guessed wrong on
+wrote the lead, even when a Task or a File fired the journey. An author who learned one rule guessed wrong on
 the next, and there was nothing to read that said which was which.
 
 So the answer moves into the declaration (`target` on the verb) and the decision into ONE place

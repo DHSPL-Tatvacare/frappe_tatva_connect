@@ -74,12 +74,12 @@ _SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # The engine's own namespace. Replaces the four scattered reserved names (`_token`, `_emitted`, `_corr`,
 # `_output`): an author's value is written under its NODE, so it can no longer land on engine bookkeeping
 # at all. Structural, not a check.
-# The prefix marking a value inside a JSON map as a run-state reference. Declared HERE because both the
+# The prefix marking a value inside a JSON map as a journey-state reference. Declared HERE because both the
 # contract and the action layer spell it, and contract imports registry which builds itself from actions.
 CTX_PREFIX = "$ctx."
 
 # W5.4 — HOW A VALUE IS FILLED, declared once. `Literal` is what the author typed; `From Context` names
-# run state; `Expression` computes from it. This is the same distinction `refs` already owns — a value
+# journey state; `Expression` computes from it. This is the same distinction `refs` already owns — a value
 # and where it came from — and the same reason `CTX_PREFIX` lives here: the contract and the action layer
 # both spell it, and `contract` imports `registry` which builds itself from `actions`.
 # These are the words an AUTHOR PICKS from a Select, so a rename here must reach every runtime `==` or a
@@ -195,10 +195,10 @@ def _describe():
 
 
 class Values:
-	"""Run state and trigger context, as ONE object — a real mapping over namespaced references.
+	"""Journey state and trigger context, as ONE object — a real mapping over namespaced references.
 
 	THE SAME TYPE IN BOTH PLACES, DELIBERATELY. A Trigger predicate is judged at dispatch against the
-	triggering document; a Route predicate is judged at execution against the run. Two builders, two
+	triggering document; a Route predicate is judged at execution against the journey. Two builders, two
 	shapes and one predicate control is how the Trigger and the Route came to mean different things by
 	the same condition. Both now build a `Values`, so there is one vocabulary and one resolver.
 
@@ -208,7 +208,7 @@ class Values:
 	    This is what persists between segments.
 	  * RECORDS — the reachable documents, keyed by slug, each a zero-argument loader. Loaded at most
 	    ONCE, on first reference, and never copied into the buckets. That is why a 30-day Wait reads the
-	    lead as it is now rather than as it was when the run started.
+	    lead as it is now rather than as it was when the journey started.
 
 	It is a real mapping (`__getitem__`, `get`, `__contains__`) because an author's expression reads
 	`ctx["crm_lead.date_2"]` through `frappe.safe_eval`, and a plain dict of namespaced keys cannot serve
@@ -257,7 +257,7 @@ class Values:
 
 	def _record(self, source):
 		"""The reachable record for a slug, loaded at most once. A loader that cannot answer (a subject
-		deleted mid-flight) yields an empty record, so state reads stay honest and the run fails at its
+		deleted mid-flight) yields an empty record, so state reads stay honest and the journey fails at its
 		next REAL read rather than while assembling state."""
 		if source in self._loaded:
 			return self._loaded[source]

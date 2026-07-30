@@ -2,7 +2,7 @@
 WhatsApp` / `Send Email` effect verbs raise goes through here. `Workflow::Engine::sends` ships OFF
 (A.6, dormant by default — a blank/absent row reads as disabled): while dormant, both functions
 record a `"suppressed: sends dormant"` marker and call NO adapter — the engine runs end to end (rule
-fires, action runs, Run Log records it) without a message ever leaving. Once the operator flips the
+fires, action runs, Journey Log records it) without a message ever leaving. Once the operator flips the
 switch, the SAME functions resolve against the EXISTING WhatsApp send brain (`whatsapp.routing`
 grain-routing + `channels.resolve.adapter_for` + the adapter's `send_template`) or native
 `frappe.sendmail` (A.18), never a second HTTP path (A.11/A.8, one brain). Both irreversible side
@@ -12,9 +12,9 @@ Queue insert is itself the transactional write - a segment that rolls back sends
 
 DATA IS ROUTED, AUTHOR ERROR RAISES — the split, and why it falls where it does
 ------------------------------------------------------------------------------
-Both verbs declare two outputs, `sent` and `failed`, and every function here returns which one the run
+Both verbs declare two outputs, `sent` and `failed`, and every function here returns which one the journey
 leaves by. Before this, neither verb declared any output at all, so every failure mode RAISED, reached
-`interpreter.advance`, and marked the whole run **Failed**. "This patient has no phone number" is an
+`interpreter.advance`, and marked the whole journey **Failed**. "This patient has no phone number" is an
 ordinary state of a patient record, not a system fault, and killing a journey over it is wrong — the
 author must be able to route it, which is what a real production flow (WhatsApp → wait → call → branch)
 wires on every messaging node.
@@ -26,7 +26,7 @@ The line is drawn at WHO CAN FIX IT, not at how bad it is:
     channel switched off; a declared mapping row whose variable resolved blank; a recipient variable that
     resolved to nothing. All of these mean exactly one thing — the message did not reach the patient — and
     that is precisely what the author's `failed` edge is for. Raising instead turns a routable, per-record
-    condition into a dead run, and during a channel outage it would kill every run on the site rather than
+    condition into a dead journey, and during a channel outage it would kill every journey on the site rather than
     let each one take its declared failure path.
   * RAISE — anything only the AUTHOR can fix, which no data state can produce and which is wrong for every
     record equally. A blank template or recipient or subject or body on the node; a template that does not
@@ -44,7 +44,7 @@ WATI answers **HTTP 429** when a rate limit is exceeded (the account is on the P
 10s on `/sendTemplateMessage`), and 5xx on its own server faults. A 429 is not DATA and not author error;
 it means "ask again shortly", and BOTH obvious placements are wrong. Routing it to `failed` would drop
 that patient's message for a reason that has nothing to do with the patient — on a scheduled campaign,
-silently dropping a slice of the cohort down the failure branch. Raising and marking the run Failed is
+silently dropping a slice of the cohort down the failure branch. Raising and marking the journey Failed is
 worse: a healthy journey killed because the sender was momentarily busy. **Do not "simplify" a transient
 into the failure edge.** It is a third thing, and it needs retry, not routing.
 
@@ -55,7 +55,7 @@ in `_deliver_whatsapp`, inside the background job `enqueue_after_commit=True` sc
 means "accepted for delivery and handed to the provider", never "the patient received it"; a 429 lands in
 the job, where `_deliver_whatsapp` raises and the native job runner's failed registry holds it. That is
 the existing retry classification doing its job, the status is not swallowed, and nothing here marks the
-run terminal on a transient. Real backoff against the token bucket is Phase 5 work.
+journey terminal on a transient. Real backoff against the token bucket is Phase 5 work.
 
 WHICH EDGE A DORMANT SEND LEAVES BY: `sent`
 -------------------------------------------
@@ -145,19 +145,19 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 	`_output`, which `interpreter._verb_output` validates against the verb's DECLARED outputs. While
 	dormant the answer is `(SENT, marker)` - nothing to defer, nothing was queued.
 
-	`contact_number` is the REF the node declared, resolved here against run state. The lead's `mobile_no` is no longer read
+	`contact_number` is the REF the node declared, resolved here against journey state. The lead's `mobile_no` is no longer read
 	here and there is no fallback to it: the author picks the contact field, and a recipient that resolves
 	to nothing is a routable refusal rather than a quiet substitution. Nobody choosing the recipient is
 	what put a real patient's message on a stranger's phone in another country.
 
-	`correlation` is the engine's own token for the node that is sending (`run::node`). It is carried
+	`correlation` is the engine's own token for the node that is sending (`journey::node`). It is carried
 	all the way to the `WhatsApp Message` row, which is what lets a delivery receipt arriving seconds
-	later wake THIS run rather than another run parked on the same lead. The provider's id does not exist
-	yet at this point - the run parks before the send job runs - so the token is what travels, and the row
+	later wake THIS journey rather than another journey parked on the same lead. The provider's id does not exist
+	yet at this point - the journey parks before the send job runs - so the token is what travels, and the row
 	is where the two identities finally meet.
 
 	`values` is the node's DECLARED template mapping, and it is the whole reason a placeholder is no
-	longer an invisible read of run state. `_template_parameters` builds the outbound list from it - this
+	longer an invisible read of journey state. `_template_parameters` builds the outbound list from it - this
 	stays the one and only place outbound WhatsApp parameters are assembled."""
 	if not template_name:
 		raise ValueError("Send WhatsApp action has no WhatsApp Template configured")
@@ -197,7 +197,7 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 		)
 	return SENT, lambda: frappe.enqueue(
 		"tatva_connect.automation.sends._deliver_whatsapp",
-		# Named, not defaulted: `default` is consumed by BOTH worker services, so an unnamed send rides the same lane as the sweep that rescues parked runs.
+		# Named, not defaulted: `default` is consumed by BOTH worker services, so an unnamed send rides the same lane as the sweep that rescues parked journeys.
 		queue="workflow",
 		enqueue_after_commit=True,
 		account_name=account_name,
@@ -286,7 +286,7 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 	THIS is where a TRANSIENT lives, and it deliberately still raises. WATI answers 429 when the account's
 	rate limit is exceeded and 5xx on its own faults; neither is data the graph should route on and neither
 	is author error. Raising here puts the job on the native failed registry with the provider's reason
-	intact, which is the retry surface — the run itself is already committed and is NOT marked terminal by
+	intact, which is the retry surface — the journey itself is already committed and is NOT marked terminal by
 	it. Do not "fix" this by returning a `failed` output: the routing decision has already been made and
 	committed by then, and folding a rate limit into the failure edge would silently drop a slice of a
 	scheduled cohort down the escalation branch. Real backoff is Phase 5.
@@ -359,7 +359,7 @@ def _record_sent_message(account_name, to_number, template, parameters, message_
 		"whatsapp_account": account_name,
 		"reference_doctype": "CRM Lead",
 		"reference_name": lead,
-		# The two identities meet HERE and nowhere else: the provider's id and the run+node that sent it.
+		# The two identities meet HERE and nowhere else: the provider's id and the journey+node that sent it.
 		"custom_workflow_correlation": correlation,
 		# The tap-join key. `message_id` above stays the localMessageId, which is the only id status events echo.
 		"custom_outbound_wamid": wamid,
@@ -369,7 +369,7 @@ def _record_sent_message(account_name, to_number, template, parameters, message_
 
 
 def _preview_context(lead=None):
-	"""The lead an author's preview is built from, and the run-shaped context over it. Returns `(doc, ctx)`.
+	"""The lead an author's preview is built from, and the journey-shaped context over it. Returns `(doc, ctx)`.
 
 	The SAME choice `context.test_call` makes for Call API: pick the most recently touched lead unless the
 	author named one, and say which. A response — or a message — is shaped by the record behind it, and an
@@ -406,7 +406,7 @@ def _preview_gate(lead, values):
 def whatsapp_template_preview(template, values=None, lead=None):
 	"""What this node would really send, for one real lead. The author's answer to "is it filled in?".
 
-	THE SAME PATH A RUN TAKES — `_template_parameters`, unchanged, against the account this lead's grain
+	THE SAME PATH A journey TAKES — `_template_parameters`, unchanged, against the account this lead's grain
 	really routes to. A preview that filled the slots its own way would be confidently wrong, which is
 	worse than no preview; and `blank` here is the SAME verdict that routes the live send to `failed`, so
 	an author sees the hole before a patient does rather than after.
@@ -621,7 +621,7 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 	DEFERRED past commit via a thunk (`_deliver_voice`) so a rolled-back segment dials nothing.
 
 	`correlation` is the engine token for THIS node — carried to the provider in `user_data` so the terminal
-	webhook wakes this run and no other.
+	webhook wakes this journey and no other.
 
 	GUARDS, IN ORDER, and the order is the point: no number → failed; no country code → REFUSED, never
 	dialled, before any switch is read; sends gate OFF → suppressed `placed`, no adapter touched; VOICE
@@ -685,9 +685,9 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 	execution_id for AUDIT: the wake correlation rides the `user_data` echo, so there is no lookup row to
 	write and no commit-race — the terminal webhook reads the engine token straight back out.
 
-	A RAISE HERE IS THE CORRECT BEHAVIOUR, not a bug to smooth over. The run already took the `placed`
+	A RAISE HERE IS THE CORRECT BEHAVIOUR, not a bug to smooth over. The journey already took the `placed`
 	edge and cannot be walked back; the failure belongs on the RQ failed registry where it is visible and
-	replayable, exactly as `_deliver_whatsapp` argues. What frees a run parked behind a call that never
+	replayable, exactly as `_deliver_whatsapp` argues. What frees a journey parked behind a call that never
 	happened is the Wait's own timeout leg, or the catch-up reconciler — never a rewritten output here.
 	"""
 	from tatva_connect.voice import api as voice_api
@@ -742,22 +742,22 @@ def _write_voice_call_log(result, account_name, lead):
 
 
 def _log_voice_placement(correlation, account_name, execution_id, lead):
-	"""One audit row on the run's own step log: which provider execution this node's call became.
+	"""One audit row on the journey's own step log: which provider execution this node's call became.
 
-	It is also what the catch-up reconciler reads back — the run is parked on the engine token, and this is
+	It is also what the catch-up reconciler reads back — the journey is parked on the engine token, and this is
 	the only place the provider's id for that token is durably recorded. Best-effort: a call that really
 	was placed must not be reported as failed because its audit row could not be written.
 	"""
-	run, _, node_id = (correlation or "").partition("::")
-	if not (run and node_id and frappe.db.exists("CRM Workflow Run", run)):
+	journey, _, node_id = (correlation or "").partition("::")
+	if not (journey and node_id and frappe.db.exists("CRM Workflow Journey", journey)):
 		frappe.logger("workflow_voice").info(
-			f"voice call placed outside a run: lead={lead} execution_id={execution_id}"
+			f"voice call placed outside a journey: lead={lead} execution_id={execution_id}"
 		)
 		return
 	try:
 		frappe.get_doc({
 			"doctype": "CRM Workflow Step Log",
-			"workflow_run": run,
+			"journey": journey,
 			"subject_name": lead,
 			"node_id": node_id,
 			"node_type": "AI Voice Call",

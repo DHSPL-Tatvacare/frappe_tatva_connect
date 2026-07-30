@@ -4,7 +4,7 @@
 
 `_action_set_field` fails closed at runtime and `_resolve_write_target` raises on an out-of-scope doctype,
 which is correct — and invisible. `validate_node` skipped `Target` outright and `Field` carries no options
-list, so a workflow naming a misspelt field or a doctype the run cannot reach published green and then
+list, so a workflow naming a misspelt field or a doctype the journey cannot reach published green and then
 died `_Permanent` on a real record. That is the failure class `graph.py` exists to remove.
 
 The publish check is deliberately WEAKER than the runtime one, and this suite proves the split: membership

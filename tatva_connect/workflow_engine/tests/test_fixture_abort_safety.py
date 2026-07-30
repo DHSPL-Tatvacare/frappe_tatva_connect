@@ -107,7 +107,7 @@ class TestArmEngineIsAbortSafe(FrappeTestCase):
 
 	def test_arming_a_bench_that_is_already_armed_fails_loudly(self):
 		"""The half that `addClassCleanup` alone does not fix, and it was found the hard way: after the
-		cleanup landed, the switch was STILL ON at the end of a run, because the baseline had already been
+		cleanup landed, the switch was STILL ON at the end of a journey, because the baseline had already been
 		poisoned and every suite was faithfully restoring `was = 1`.
 
 		Restoring "whatever it was" is the propagation mechanism. OFF is the only correct resting state of
@@ -130,7 +130,7 @@ class TestArmEngineIsAbortSafe(FrappeTestCase):
 		self.assertIn("already ON", str(caught.exception))
 
 	def test_the_engine_is_left_off_even_when_it_started_on(self):
-		"""And the leak is CLEANED, not merely reported: a run that starts poisoned must not end poisoned."""
+		"""And the leak is CLEANED, not merely reported: a journey that starts poisoned must not end poisoned."""
 		fx._set_engine(True)
 
 		class _Nested(unittest.TestCase):

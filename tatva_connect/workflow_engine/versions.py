@@ -2,17 +2,17 @@
 
 WHY THIS EXISTS
 ---------------
-A Workflow is a PROGRAM: a graph of nodes. A subject entering it starts a RUN that can park for weeks on
-a timer or an event. If that Run re-read the graph live out of the mutable Workflow at resume time, an
+A Workflow is a PROGRAM: a graph of nodes. A subject entering it starts a journey that can park for weeks on
+a timer or an event. If that journey re-read the graph live out of the mutable Workflow at resume time, an
 edit could re-route it, drop the node it sleeps in, or orphan it entirely.
 
-So: on save, the Workflow's graph is frozen into a content-addressed, immutable version, and every Run
-binds to a VERSION, never to the Workflow. Editing a Workflow mints a new Version; in-flight Runs keep
+So: on save, the Workflow's graph is frozen into a content-addressed, immutable version, and every journey
+binds to a VERSION, never to the Workflow. Editing a Workflow mints a new Version; in-flight Journeys keep
 the one they started on.
 
 A node is its own record now, carrying its edges and its actions as child rows. The freeze therefore
 walks Node records rather than child rows of the Workflow, and inlines both tables — so a frozen node is
-self-contained and a parked Run executes the graph AND the bodies it began with.
+self-contained and a parked journey executes the graph AND the bodies it began with.
 """
 import frappe
 from frappe import _
@@ -36,7 +36,7 @@ def build_payload(workflow):
 	"""The graph-relevant definition of `workflow`, in canonical shape.
 
 	Self-contained by construction: every node inlines its own edges and actions, so a frozen version
-	needs nothing else to execute and editing a workflow can never reach a Run already in flight.
+	needs nothing else to execute and editing a workflow can never reach a journey already in flight.
 	"""
 	# The grain lives on the header under its dispatch names (`trigger_vertical`, ...). Which column carries
 	# which axis is declared ONCE, by the controller's TRIGGER_INDEX; read it rather than restate it.
@@ -123,13 +123,13 @@ def _mark_current(workflow_name, version_name):
 
 
 def current_name(workflow_name):
-	"""The version a NEW Run binds to. One indexed read; a workflow with no version yet mints lazily."""
+	"""The version a NEW journey binds to. One indexed read; a workflow with no version yet mints lazily."""
 	name = frappe.db.get_value(DOCTYPE, {"workflow": workflow_name, "is_current": 1})
 	return name or ensure_version(frappe.get_doc("CRM Workflow", workflow_name))
 
 
 def entry_node_of(version):
-	"""Where a new Run begins: the declared Start node (entry_node), falling back to the first node. The ONE entry-resolution brain — both the durable
+	"""Where a new journey begins: the declared Start node (entry_node), falling back to the first node. The ONE entry-resolution brain — both the durable
 	start (triggers._start_one) and the ephemeral run (interpreter.run_inline) call this, never their own
 	copy, so the fallback policy can never drift between the two paths."""
 	return version.entry_node or version.nodes[0].node_id

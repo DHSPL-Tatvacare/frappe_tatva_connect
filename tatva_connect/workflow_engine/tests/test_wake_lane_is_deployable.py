@@ -5,7 +5,7 @@
 W4.1 put the timer accelerator on a queue Frappe's own scheduler does not manage. That lane only exists
 if the bench DECLARES it in `common_site_config.workers`. It was registered by hand on the dev bench and
 nowhere else, which is the exact booby trap W4 §5.1 documents: `enqueue_at` succeeds, returns a job, and
-nothing ever executes it. No exception, no log line, no failed job — the run just waits for the sweep.
+nothing ever executes it. No exception, no log line, no failed job — the journey just waits for the sweep.
 
 `partner_bulk` had the same gap and is fixed by the same line.
 

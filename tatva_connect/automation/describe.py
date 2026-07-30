@@ -202,7 +202,7 @@ def _settable_fields(doctype, vertical, group, program):
 
 
 def _settable_targets(subject, vertical, group, program):
-	"""Every field a write node in this workflow may target, across every record the run can reach.
+	"""Every field a write node in this workflow may target, across every record the journey can reach.
 
 	It used to ask for `CRM Lead` whatever the workflow watched, so a Task-triggered workflow offered the
 	Target `CRM Task` and then listed LEAD fields underneath it — two controls describing different

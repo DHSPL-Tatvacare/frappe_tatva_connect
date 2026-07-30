@@ -2,10 +2,10 @@
 # See license.txt
 """W7.2 PART A — the Trigger learns to wake on a schedule. NOTHING WALKS THE INDEX YET.
 
-A cohort is a RUN FACTORY, not a second engine: when the drain lands (Part B) each selected lead gets its
+A cohort is a journey FACTORY, not a second engine: when the drain lands (Part B) each selected lead gets its
 own ordinary run down the identical graph. This pass builds only the half that DECLARES a cohort — the
 Trigger's schedule mode, the columns the drain will query, the publish rules, and the count an author
-sees before arming. No run can be born from a schedule after this chunk, because nothing reads
+sees before arming. No journey can be born from a schedule after this chunk, because nothing reads
 `trigger_next_run_at`. That is the point of stopping here.
 
 THE SINGULAR RULE, AND THE ONE PLACE IT COULD BE BROKEN. `W1-contract.md:212` rejects a node changing
@@ -148,7 +148,7 @@ class TestPublishRefusesAnIncompleteSchedule(FrappeTestCase):
 
 
 class TestThePreviewCountsThroughTheExistingMatcher(FrappeTestCase):
-	"""'This will start 3,140 runs', shown BEFORE arming. It counts with the same grain matcher and the
+	"""'This will start 3,140 journeys', shown BEFORE arming. It counts with the same grain matcher and the
 	same predicate evaluator the record-event lane uses — never a SQL translation of the criteria, which
 	would be a second criteria brain that could disagree with the one that actually runs."""
 
@@ -199,4 +199,4 @@ class TestThePreviewCountsThroughTheExistingMatcher(FrappeTestCase):
 		result = cohort.preview(frappe.as_json({
 			"mode": registry.MODE_RECORD, "subject_doctype": "CRM Lead", "event": "Created",
 		}))
-		self.assertIsNone(result["count"], "a record-event workflow starts one run per save, not a cohort")
+		self.assertIsNone(result["count"], "a record-event workflow starts one journey per save, not a cohort")

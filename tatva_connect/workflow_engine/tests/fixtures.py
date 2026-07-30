@@ -17,8 +17,8 @@ from tatva_connect.workflow_engine import ENGINE_SWITCH
 
 WORKFLOW_DT = "CRM Workflow"
 NODE_DT = "CRM Workflow Node"
-RUN_DT = "CRM Workflow Run"
-EVENT_DT = "CRM Workflow Event"
+JOURNEY_DT = "CRM Workflow Journey"
+SIGNAL_DT = "CRM Workflow Signal"
 VERSION_DT = "CRM Workflow Version"
 STEP_LOG_DT = "CRM Workflow Step Log"
 
@@ -104,24 +104,24 @@ def make_workflow(name, nodes, entry=None, lifecycle_state="Active"):
 	return workflow
 
 
-def start_run(workflow, subject, current_node, state=None):
-	"""A Run positioned at a node, as the trigger lane would have created it."""
+def start_journey(workflow, subject, current_node, state=None):
+	"""A journey positioned at a node, as the trigger lane would have created it."""
 	from tatva_connect.workflow_engine import versions
 
 	run = frappe.get_doc({
-		"doctype": RUN_DT, "workflow": workflow.name,
+		"doctype": JOURNEY_DT, "workflow": workflow.name,
 		"workflow_version": versions.current_name(workflow.name),
 		"subject_doctype": "CRM Lead", "subject_name": subject,
 		"current_node": current_node, "state_json": frappe.as_json(state or {}), "status": "Running",
 	}).insert(ignore_permissions=True)
-	# Committed on purpose: the entry segment refuses to retry a Run that is not yet durable.
+	# Committed on purpose: the entry segment refuses to retry a journey that is not yet durable.
 	frappe.db.commit()
 	return run
 
 
-def logs(run_name):
+def logs(journey_name):
 	return frappe.get_all(
-		STEP_LOG_DT, filters={"workflow_run": run_name},
+		STEP_LOG_DT, filters={"journey": journey_name},
 		fields=["node_id", "node_type", "outcome", "detail"], order_by="creation asc, name asc",
 	)
 
@@ -129,9 +129,9 @@ def logs(run_name):
 def purge(*workflow_names):
 	"""Remove a workflow and everything hanging off it. Runs commit, so a rollback cannot undo them."""
 	for name in workflow_names:
-		for run in frappe.get_all(RUN_DT, filters={"workflow": name}, pluck="name"):
-			frappe.db.delete(STEP_LOG_DT, {"workflow_run": run})
-		frappe.db.delete(RUN_DT, {"workflow": name})
+		for run in frappe.get_all(JOURNEY_DT, filters={"workflow": name}, pluck="name"):
+			frappe.db.delete(STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(JOURNEY_DT, {"workflow": name})
 		frappe.db.delete(VERSION_DT, {"workflow": name})
 		for node_name in frappe.get_all(NODE_DT, filters={"workflow": name}, pluck="name"):
 			frappe.delete_doc(NODE_DT, node_name, force=True, ignore_permissions=True)
@@ -177,7 +177,7 @@ def arm_engine(enabled=True, cls=None):
 			raise AssertionError(
 				f"{ENGINE_SWITCH} was already ON before {cls.__name__} armed it. A suite left it behind, so "
 				"this bench's baseline cannot be trusted - disarm it and find what leaked before relying on "
-				"any run that follows."
+				"any journey that follows."
 			)
 		# Registered BEFORE the write, so an abort between the two still disarms.
 		cls.addClassCleanup(_set_engine, False)

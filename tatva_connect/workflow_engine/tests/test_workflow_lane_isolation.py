@@ -2,7 +2,7 @@
 # See license.txt
 """EVERY WORKFLOW ENQUEUE GOES ON THE WORKFLOW LANE, OR THE SAFETY NET IS TIED TO THE FALLING ROCK.
 
-W4.1 put the timer alarm on `workflow` and left the rest where they were: `start_run` and
+W4.1 put the timer alarm on `workflow` and left the rest where they were: `start_journey` and
 `resume_for_signal` on `short`, the WhatsApp delivery thunk on `default` by omission. Both worker
 services consume `short` (`--queue short,default` and `--queue long,default,short`), so a burst of
 workflow work starves `wakeups.sweep` - the reconciler whose entire job is rescuing runs whose wake was

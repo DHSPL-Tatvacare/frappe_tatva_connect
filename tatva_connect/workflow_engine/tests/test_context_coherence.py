@@ -8,7 +8,7 @@ different code paths:
 
   * a TRIGGER predicate is judged at DISPATCH, against `automation.context.context_for(doc, changed)` —
     the doc's own field dict;
-  * a BRANCH predicate is judged at EXECUTION, against the run's state.
+  * a BRANCH predicate is judged at EXECUTION, against the journey's state.
 
 Nothing joined them. Namespace one and not the other and the same control means two different things,
 which is precisely the Trigger/Branch divergence this codebase has already found once.
@@ -54,7 +54,7 @@ def _graph():
 
 
 def _node_writes(state, node_id, key, value):
-	"""Model "node `node_id` wrote `key`" against whatever shape run state has.
+	"""Model "node `node_id` wrote `key`" against whatever shape journey state has.
 
 	The engine scopes a writer's values under that writer; a state object that cannot express a writer
 	has one flat bag and the write goes there. Either way this is the same event — a Call API capturing
@@ -152,7 +152,7 @@ class TestContextCoherence(FrappeTestCase):
 	def test_the_expression_context_is_backed_by_the_resolver_not_a_copied_dict(self):
 		"""The half a flat dict CANNOT do, which is why `Values` is a real mapping.
 
-		The subject is never copied into run state — it is served off the live document on first reference.
+		The subject is never copied into journey state — it is served off the live document on first reference.
 		So a dict of namespaced keys built at the top of the segment would answer `crm_lead.*` with whatever
 		was true then, and `safe_eval` would happily compute on a stale value. Proven by changing the
 		document after the state object exists: the expression must see the NEW value.

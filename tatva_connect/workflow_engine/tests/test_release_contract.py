@@ -81,7 +81,7 @@ class TestGraphRules(FrappeTestCase):
 		self.assertTrue(any("orphan" in p["message"] for p in found), found)
 
 	def test_a_loop_with_no_wait_is_refused(self):
-		"""A run would walk it until the hop budget stops it, doing its work over and over."""
+		"""A journey would walk it until the hop budget stops it, doing its work over and over."""
 		found = graph.problems(_graph(
 			fx.trigger(to="a"),
 			fx.node("a", "Create Note", config={"comment_mode": "Literal", "comment_text": "hi"},
@@ -152,7 +152,7 @@ class TestPublish(FrappeTestCase):
 
 	def test_editing_and_republishing_takes_effect(self):
 		"""The defect that made every later edit a no-op: the freeze was lazy, so v1 stayed current for
-		ever and the author's changes never reached a run."""
+		ever and the author's changes never reached a journey."""
 		workflow = self._make([fx.trigger(to="end"), fx.node("end", "Terminal")])
 		workflow.apply_transition("Published")
 		frappe.db.commit()

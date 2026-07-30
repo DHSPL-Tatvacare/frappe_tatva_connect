@@ -76,9 +76,9 @@ AUTOMATIONS = [
 		trigger_detail="every 15m · starts a drain for each workflow whose cohort is due",
 		purpose=(
 			"A workflow can take a COHORT on a schedule instead of waiting for a save: every lead matching "
-			"its criteria and grain is given its own ordinary run down the same graph, walked by one job in "
+			"its criteria and grain is given its own ordinary journey down the same graph, walked by one job in "
 			"committed chunks so a cohort of thousands is one piece of work rather than thousands. Off, a "
-			"workflow set to repeat simply never comes due and no run is born from a clock.\n"
+			"workflow set to repeat simply never comes due and no journey is born from a clock.\n"
 			"Example: on the first of the month every enrolled patient on a program is started down the "
 			"renewal journey."
 		),
@@ -111,7 +111,7 @@ AUTOMATIONS = [
 			"A call whose outcome webhook never arrived is chased up: the provider is asked directly what "
 			"became of it, and a journey waiting on that call is moved on. The webhook is the fast path "
 			"and it is not a guarantee — a dropped callback otherwise leaves the patient's journey stopped "
-			"with nothing to show for it. Off, only the webhook can move such a run.\n"
+			"with nothing to show for it. Off, only the webhook can move such a journey.\n"
 			"Example: a call that completed during a deploy, whose callback was lost, still advances the "
 			"journey at the next sweep."
 		),
@@ -620,15 +620,15 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Workflow::CRM Workflow Run::visibility",
+		key="Workflow::CRM Workflow Journey::visibility",
 		fires_on="Permission",
-		trigger_detail="CRM Workflow Run · permission_query_conditions + has_permission",
+		trigger_detail="CRM Workflow Journey · permission_query_conditions + has_permission",
 		purpose=(
-			"Workflow runs are scoped to the people who should see them: a run is visible to a rep only "
-			"when it is theirs, or it is about a Lead or Deal already visible to them. A run carries its "
-			"lead's field values in its saved state, so off, anyone who can open the run list reads "
+			"Workflow journeys are scoped to the people who should see them: a journey is visible to a rep only "
+			"when it is theirs, or it is about a Lead or Deal already visible to them. A journey carries its "
+			"lead's field values in its saved state, so off, anyone who can open the journey list reads "
 			"every other grain's lead data.\n"
-			"Example: the Workflow Runs list shows a manager only the runs on their own leads, not the "
+			"Example: the Workflow Journeys list shows a manager only the journeys on their own leads, not the "
 			"whole business's."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
@@ -637,13 +637,13 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Workflow::CRM Workflow Event::visibility",
+		key="Workflow::CRM Workflow Signal::visibility",
 		fires_on="Permission",
-		trigger_detail="CRM Workflow Event · permission_query_conditions + has_permission",
+		trigger_detail="CRM Workflow Signal · permission_query_conditions + has_permission",
 		purpose=(
 			"Workflow events are scoped to the people who should see them: a signal is visible to a rep "
 			"only when it is theirs, or it is addressed to a Lead or Deal already visible to them. An "
-			"event carries the payload that woke a run, so off, anyone who can open the event list reads "
+			"event carries the payload that woke a journey, so off, anyone who can open the event list reads "
 			"every other grain's lead data.\n"
 			"Example: the Workflow Events inbox shows a manager only the signals on their own leads."
 		),
@@ -658,9 +658,9 @@ AUTOMATIONS = [
 		trigger_detail="CRM Workflow Step Log · permission_query_conditions + has_permission",
 		purpose=(
 			"Workflow step logs are scoped to the people who should see them: a step is visible to a rep "
-			"only when the run it belongs to is. A step's detail quotes the values the node acted on, so "
+			"only when the journey it belongs to is. A step's detail quotes the values the node acted on, so "
 			"off, anyone who can open the step list reads every other grain's lead data.\n"
-			"Example: a lead's workflow history shows a rep the steps of their own leads' runs only."
+			"Example: a lead's workflow history shows a rep the steps of their own leads' journeys only."
 		),
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
@@ -673,11 +673,11 @@ AUTOMATIONS = [
 		trigger_detail="automation/sends gate · Send WhatsApp / Send Email effect verbs",
 		purpose=(
 			"The send gate for the engine's Send WhatsApp and Send Email effects. Off, which is how it "
-			"ships, a workflow carrying a Send action still fires end to end and the Run Log records the "
+			"ships, a workflow carrying a Send action still fires end to end and the Journey Log records the "
 			"intent, but no template and no email ever leaves the building. On, those same actions "
 			"send for real, through the existing grain-routed WhatsApp account and frappe's own mailer — "
 			"never a second transport.\n"
-			"Example: a 'Welcome' workflow is built and tested with the gate off, the Run Log reading "
+			"Example: a 'Welcome' workflow is built and tested with the gate off, the Journey Log reading "
 			"'suppressed: sends dormant', and the same workflow starts sending the real message the day "
 			"it is switched on at go-live."
 		),
@@ -691,7 +691,7 @@ AUTOMATIONS = [
 		purpose=(
 			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
 			"starts one durable Instance that walks a graph of steps, branches, and waits, parking on "
-			"timers and external signals for as long as the journey needs. One instance runs per subject, "
+			"timers and external signals for as long as the journey needs. One journey runs per subject, "
 			"guarded by a database unique key so a subject can never start the same workflow twice, and "
 			"an external event is delivered by dropping a row in a durable inbox that the matching wait "
 			"consumes — so an early, duplicate, or out-of-order signal is handled by construction rather "

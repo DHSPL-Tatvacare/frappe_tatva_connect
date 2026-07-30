@@ -2,8 +2,8 @@
 # See license.txt
 """W7.2 PART B — the drain that walks the cohort. ONE JOB, a keyset cursor, committed per chunk.
 
-A COHORT IS A RUN FACTORY. The schedule fires, the drain walks the leads its criteria select, and each
-one gets its OWN ordinary run down the identical graph through `triggers.start_run` — the same entry the
+A COHORT IS A journey FACTORY. The schedule fires, the drain walks the leads its criteria select, and each
+one gets its OWN ordinary journey down the identical graph through `triggers.start_journey` — the same entry the
 record-event lane uses. Nothing about node contracts, park/resume or the interpreter changes.
 
 THE FOUR THINGS THIS SUITE EXISTS TO HOLD:
@@ -15,7 +15,7 @@ THE FOUR THINGS THIS SUITE EXISTS TO HOLD:
     A per-lead cancel is a different need and belongs with W10.
   * WITH THE SWITCH OFF, NOTHING IS BORN. The switch ships OFF and arms nothing by existing.
 
-Nothing here sends. The engine switch is armed only inside the tests that need a run to exist, and the
+Nothing here sends. The engine switch is armed only inside the tests that need a journey to exist, and the
 sends gate stays off throughout, so no node reaches a provider.
 """
 from unittest.mock import patch
@@ -85,16 +85,16 @@ class _CohortCase(FrappeTestCase):
 		self._reset()
 
 	def _reset(self):
-		for run in frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-		frappe.db.delete(fx.RUN_DT, {"workflow": self.workflow_name})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": self.workflow_name})
 		frappe.db.set_value("CRM Workflow", self.workflow_name, {
 			"cohort_cursor": "", "cohort_abort": 0, "cohort_state": "",
 		}, update_modified=False)
 		frappe.db.commit()
 
 	def _runs(self):
-		return frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, pluck="subject_name")
+		return frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name}, pluck="subject_name")
 
 
 class TestTheDrainIsOneJobNotOnePerLead(_CohortCase):
@@ -122,8 +122,16 @@ class TestTheDrainIsOneJobNotOnePerLead(_CohortCase):
 		missed while the list is written to underneath. The cursor is the lead name, ascending."""
 		with patch("frappe.get_all", wraps=frappe.get_all) as get_all:
 			drain.run_cohort(self.workflow_name, chunk=3, respect_switch=False)
-		lead_reads = [c for c in get_all.call_args_list if c.args and c.args[0] == "CRM Lead"]
-		self.assertTrue(lead_reads)
+		# THE SELECTOR's own reads, identified by its projection — it asks for `name` and nothing else.
+		# Deliberately not "every CRM Lead read during the drain": instantiating a lead Document makes
+		# frappe evaluate `custom_patient_other_programs`, a VIRTUAL FIELD whose `options` expression reads
+		# CRM Lead by phone (`base_document._evaluate_virtual_field_options`). That is a field hydration,
+		# not pagination, and a lock that cannot tell the two apart reports the lead layer as a drain bug.
+		lead_reads = [
+			c for c in get_all.call_args_list
+			if c.args and c.args[0] == "CRM Lead" and c.kwargs.get("fields") == ["name"]
+		]
+		self.assertTrue(lead_reads, "the selector's own paged reads were not seen — this would pass vacuously")
 		for call in lead_reads:
 			self.assertNotIn("start", call.kwargs, "a drain must never paginate by OFFSET")
 			self.assertEqual(call.kwargs.get("order_by"), "name asc")
@@ -169,7 +177,7 @@ class TestOnlyOneSweepCanTakeACohort(_CohortCase):
 
 	Asserted on the OUTCOME — one winner, one enqueue — so it survives however the claim is implemented.
 	The claim is a `for_update` row lock whose filter names the state it requires, the shape
-	`wakeups.drive_instance` and `signals.resume_for_signal` already use: the loser blocks on the lock,
+	`wakeups.drive_journey` and `signals.resume_for_signal` already use: the loser blocks on the lock,
 	re-reads, sees `Draining` and takes nothing. An earlier cut asserted `ROW_COUNT()` instead, which
 	tested how the claim was written rather than what it promises.
 	"""
@@ -252,12 +260,12 @@ class TestTheAbortStopsTheCohortBetweenChunks(_CohortCase):
 
 	def test_the_abort_leaves_already_started_runs_alone(self):
 		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1, respect_switch=False)
-		alive = frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
+		alive = frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
 		drain.abort(self.workflow_name)
-		after = frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
+		after = frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
 		self.assertEqual(
 			sorted((r.name, r.status) for r in alive), sorted((r.name, r.status) for r in after),
-			"a cohort abort must not touch a run that already started — that is W10's per-lead kill",
+			"a cohort abort must not touch a journey that already started — that is W10's per-lead kill",
 		)
 
 
@@ -277,7 +285,7 @@ class TestNothingIsBornWithTheSwitchOff(_CohortCase):
 
 	def test_the_drain_itself_refuses_while_the_switch_is_off(self):
 		"""The job re-reads the switch, because it may have been turned off between the sweep and the job
-		running — the same re-check `triggers.start_run` makes, and for the same reason."""
+		running — the same re-check `triggers.start_journey` makes, and for the same reason."""
 		drain.run_cohort(self.workflow_name, respect_switch=True)
 		self.assertEqual(self._runs(), [])
 

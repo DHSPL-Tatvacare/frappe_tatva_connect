@@ -1,6 +1,6 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""A NODE'S WAITABLE EVENTS COME FROM THE ADAPTER'S DECLARATION, AND A RECEIPT WAKES THE RUN THAT SENT IT.
+"""A NODE'S WAITABLE EVENTS COME FROM THE ADAPTER'S DECLARATION, AND A RECEIPT WAKES THE journey THAT SENT IT.
 
 Two halves of one contract.
 
@@ -15,7 +15,7 @@ They land on the verb's `outcomes` — the events a downstream Wait may name —
 handle would have told the canvas the send node knows immediately, which is false.
 
 W1.2 — THE BRIDGE, and the identity problem at its heart. The engine mints `run::node`; the provider
-mints `localMessageId`. **They are different values, and the run parks before the provider id exists** —
+mints `localMessageId`. **They are different values, and the journey parks before the provider id exists** —
 the send is deferred past the segment commit, so at park time there is nothing to park on but the token.
 The two identities therefore meet on the `WhatsApp Message` row: the send job writes both, the status
 ingest reads them back.
@@ -27,7 +27,7 @@ else supports it.
 
 NOTHING IS SENT. The sends switch stays OFF and every provider call is patched at the transport boundary.
 The engine switch is armed in-process where a signal must actually be delivered, and restored — and
-because `fx.arm_engine` is NOT abort-safe, the run that produced this file also checked both switches
+because `fx.arm_engine` is NOT abort-safe, the journey that produced this file also checked both switches
 directly afterwards rather than trusting teardown.
 """
 import hashlib
@@ -89,7 +89,7 @@ class TestOutcomesAreDerivedFromTheAdapterDeclaration(FrappeTestCase):
 		self.assertEqual(offered, [], "sent/failed are synchronous outputs, so nothing is left to wait on")
 
 	def test_the_synchronous_outputs_are_never_offered_as_waitable(self):
-		"""Not taxonomy — a race. The send path returned `sent` to the run before any provider was called,
+		"""Not taxonomy — a race. The send path returned `sent` to the journey before any provider was called,
 		and a `sent` status can arrive before the row the bridge correlates through is even committed. A
 		Wait on `sent` could never be woken reliably, so it must not be declarable."""
 		offered = actions.outcomes_of(_SEND_VERB)
@@ -190,13 +190,13 @@ class _BridgeHarness(FrappeTestCase):
 		return wf
 
 	def _park_a_run(self, name):
-		"""Walk a run until it parks on the Wait, and hand back the token it is waiting on."""
+		"""Walk a journey until it parks on the Wait, and hand back the token it is waiting on."""
 		from tatva_connect.workflow_engine import interpreter
 
 		workflow = self._graph(name)
-		run = fx.start_run(workflow, self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		row = frappe.get_doc(fx.RUN_DT, run.name)
+		run = fx.start_journey(workflow, self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		row = frappe.get_doc(fx.JOURNEY_DT, run.name)
 		return row
 
 	def _sent_message(self, message_id, token):
@@ -227,7 +227,7 @@ class TestAReceiptWakesOnlyTheRunThatSentThatMessage(_BridgeHarness):
 	def test_two_runs_on_one_lead_are_woken_independently(self):
 		run_a = self._park_a_run(f"{_WORKFLOW}-a")
 		run_b = self._park_a_run(f"{_WORKFLOW}-b")
-		self.assertEqual(run_a.status, "Parked", "the run must be waiting before a receipt can wake it")
+		self.assertEqual(run_a.status, "Parked", "the journey must be waiting before a receipt can wake it")
 		self.assertEqual(run_b.status, "Parked")
 		self.assertNotEqual(
 			run_a.awaiting_correlation, run_b.awaiting_correlation,
@@ -238,9 +238,9 @@ class TestAReceiptWakesOnlyTheRunThatSentThatMessage(_BridgeHarness):
 
 		self._deliver("MID-A")
 
-		after_a = frappe.get_doc(fx.RUN_DT, run_a.name)
-		after_b = frappe.get_doc(fx.RUN_DT, run_b.name)
-		self.assertEqual(after_a.status, "Done", "the run that sent MID-A must have been woken")
+		after_a = frappe.get_doc(fx.JOURNEY_DT, run_a.name)
+		after_b = frappe.get_doc(fx.JOURNEY_DT, run_b.name)
+		self.assertEqual(after_a.status, "Done", "the journey that sent MID-A must have been woken")
 		self.assertEqual(after_a.current_node, "end")
 		self.assertEqual(after_b.status, "Parked", "the OTHER run on the same lead must not have moved")
 
@@ -263,11 +263,11 @@ class TestAReceiptWakesOnlyTheRunThatSentThatMessage(_BridgeHarness):
 		with patch.object(frappe, "log_error") as logged:
 			self._deliver("MID-MANUAL")
 
-		self.assertEqual(frappe.get_doc(fx.RUN_DT, run.name).status, "Parked")
+		self.assertEqual(frappe.get_doc(fx.JOURNEY_DT, run.name).status, "Parked")
 		self.assertFalse(logged.called, "a manual send is not an unmappable status")
 
 	def test_a_status_matching_no_message_is_logged_never_dropped(self):
-		"""The not-found path. A run may be parked waiting for exactly this receipt, and the operator's
+		"""The not-found path. A journey may be parked waiting for exactly this receipt, and the operator's
 		only other clue would be a journey that silently stopped."""
 		with patch.object(frappe, "log_error") as logged:
 			self._deliver("MID-NOTHING-MATCHES")
@@ -293,7 +293,7 @@ class TestTheSendJobReallyWritesTheCorrelation(_BridgeHarness):
 		self.assertTrue(name, "the send job must file the message it sent")
 		self.assertEqual(
 			frappe.db.get_value("WhatsApp Message", name, "custom_workflow_correlation"), "RUN-X::wa",
-			"a row written without the token can never be correlated back to its run",
+			"a row written without the token can never be correlated back to its journey",
 		)
 
 

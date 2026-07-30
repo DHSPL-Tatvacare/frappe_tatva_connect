@@ -11,7 +11,7 @@ Not-self, and can-emit. No position at all. A Wait was therefore offered every e
 graph INCLUDING ITS OWN DESCENDANTS — measured in the browser on 2026-07-22, where `wait-1` offered
 `send-whatsapp-1`, the node it blocks.
 
-Publish already refuses that graph (`graph._wait_problems` — "does not always run before it, the run
+Publish already refuses that graph (`graph._wait_problems` — "does not always run before it, the journey
 would park for ever"), so this was never a live outage. It is an authoring surface inviting a mistake
 the gate then rejects, and it is C17.1 exactly: the canvas re-deciding what the backend already answers.
 
@@ -74,7 +74,7 @@ class TestTheOfferIsPositional(FrappeTestCase):
 	def test_a_node_downstream_of_the_wait_is_not_offered(self):
 		self.assertNotIn(
 			_DOWN, _offered_at(_WAIT),
-			f"{_WAIT} is offered {_DOWN}, which runs AFTER it — the run would park for ever",
+			f"{_WAIT} is offered {_DOWN}, which journeys AFTER it — the journey would park for ever",
 		)
 
 	def test_a_node_upstream_of_the_wait_is_still_offered(self):

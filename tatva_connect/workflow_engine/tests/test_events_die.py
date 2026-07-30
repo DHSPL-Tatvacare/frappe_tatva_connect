@@ -2,8 +2,8 @@
 # See license.txt
 """W4.4 — NOTHING ACCUMULATES FOR EVER. Every event reaches a terminal state, and a dead one is inert.
 
-THE RED. `CRM Workflow Event` had two states and only one way out: a Wait consuming the row. A signal
-nothing ever claimed — an early delivery for a run that died before it parked, a duplicate, a receipt for
+THE RED. `CRM Workflow Signal` had two states and only one way out: a Wait consuming the row. A signal
+nothing ever claimed — an early delivery for a journey that died before it parked, a duplicate, a receipt for
 a workflow since archived — sat `Pending` for a month and was then DELETED. Seventeen were measured on
 this bench spanning a whole day. Two defects in one shape: the row reached no terminal state, so the inbox
 could never say what became of it; and for the whole month it stayed live it could still be claimed by a
@@ -112,7 +112,7 @@ class TestAStaleEventCannotWakeAJourney(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value(SIGNAL_DT, filters, "name"), name)
 
 	def test_the_backstop_asks_through_the_same_filter_it_would_consume_by(self):
-		"""It carried a private copy of this dict, which is exactly what would let an Expired row wake a run."""
+		"""It carried a private copy of this dict, which is exactly what would let an Expired row wake a journey."""
 		subject = fixtures.make_lead().name
 		_event(status=interpreter.EXPIRED, subject=subject)
 		row = frappe._dict(

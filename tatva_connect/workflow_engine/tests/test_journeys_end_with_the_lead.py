@@ -28,7 +28,7 @@ from tatva_connect.tests.authz.grains import GRAINS
 from tatva_connect.workflow_engine import interpreter, triggers, wakeups
 from tatva_connect.workflow_engine.tests import fixtures
 
-RUN_DT = fixtures.RUN_DT
+JOURNEY_DT = fixtures.JOURNEY_DT
 _WF_A = "ZZ Journeys End A"
 _WF_B = "ZZ Journeys End B"
 
@@ -50,15 +50,15 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		self.runs = [self._park(workflow, self.lead.name) for workflow in self.workflows]
 
 	def tearDown(self):
-		for name in frappe.get_all(RUN_DT, filters={"workflow": ["in", [_WF_A, _WF_B]]}, pluck="name"):
-			frappe.db.delete(fixtures.STEP_LOG_DT, {"workflow_run": name})
-		frappe.db.delete(RUN_DT, {"workflow": ["in", [_WF_A, _WF_B]]})
+		for name in frappe.get_all(JOURNEY_DT, filters={"workflow": ["in", [_WF_A, _WF_B]]}, pluck="name"):
+			frappe.db.delete(fixtures.STEP_LOG_DT, {"journey": name})
+		frappe.db.delete(JOURNEY_DT, {"workflow": ["in", [_WF_A, _WF_B]]})
 		frappe.db.commit()
 
 	def _park(self, workflow, lead_name):
 		"""A journey parked on a timer AND on a signal — every column a stop must clear is populated."""
-		run = fixtures.start_run(workflow, lead_name, "n1")
-		frappe.db.set_value(RUN_DT, run.name, {
+		run = fixtures.start_journey(workflow, lead_name, "n1")
+		frappe.db.set_value(JOURNEY_DT, run.name, {
 			"status": "Parked",
 			"resume_at": frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-1),
 			"awaiting_signal": "document.uploaded",
@@ -68,16 +68,16 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		frappe.db.commit()
 		return run
 
-	def _state(self, run_name):
+	def _state(self, journey_name):
 		return frappe.db.get_value(
-			RUN_DT, run_name,
+			JOURNEY_DT, journey_name,
 			["status", "stop_reason", "active_key", "resume_at", "awaiting_signal", "awaiting_correlation"],
 			as_dict=True,
 		)
 
-	def _assert_stopped(self, run_name, reason_contains):
-		state = self._state(run_name)
-		self.assertEqual(state.status, interpreter.STOPPED, f"{run_name} is {state.status}, not Stopped")
+	def _assert_stopped(self, journey_name, reason_contains):
+		state = self._state(journey_name)
+		self.assertEqual(state.status, interpreter.STOPPED, f"{journey_name} is {state.status}, not Stopped")
 		self.assertIn(reason_contains, state.stop_reason or "", "a stopped journey must say why")
 		for column in ("active_key", "resume_at", "awaiting_signal", "awaiting_correlation"):
 			self.assertIsNone(state[column], f"{column} survived the stop — the journey is still wakeable")
@@ -147,7 +147,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 	def test_a_journey_that_was_already_terminal_is_untouched(self):
 		"""No double transition, no resurrection: a Done journey stays Done and gains no stop reason."""
 		done = self.runs[0]
-		frappe.db.set_value(RUN_DT, done.name, {"status": "Done", "active_key": None}, update_modified=False)
+		frappe.db.set_value(JOURNEY_DT, done.name, {"status": "Done", "active_key": None}, update_modified=False)
 		frappe.db.commit()
 
 		frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)

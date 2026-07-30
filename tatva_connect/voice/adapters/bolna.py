@@ -10,9 +10,9 @@ PASS 2 ADDS THE HALF THAT DIALS AND THE HALF THAT WAKES: the single `place_call`
 surface, the read-only agent listings, and `fetch_execution` for the dormant reconciler. Nothing dials
 unless an operator turns the send switch on AND enables an account — both ship off.
 
-CORRELATION IS THE PROVIDER'S OWN ECHO. `place_call` puts OUR opaque engine token (`run::node`, no PII)
+CORRELATION IS THE PROVIDER'S OWN ECHO. `place_call` puts OUR opaque engine token (`journey::node`, no PII)
 into `user_data`; Bolna echoes it on the terminal callback; `handle` reads it back and wakes exactly that
-parked run. No lookup row, so no window in which the callback beats the row that would have matched it —
+parked journey. No lookup row, so no window in which the callback beats the row that would have matched it —
 the defect WATI's message-row correlation has to live with because WATI echoes nothing.
 
 THE NUMBER FORMAT IS DECLARED, NOT CODED. `number_format=E164_PLUS`: Bolna sits on Twilio/Plivo and needs
@@ -57,12 +57,12 @@ class BolnaServiceError(RuntimeError):
 # reference is explicit: "Only `completed` is the final status for every conversation" — `call-disconnected`
 # only means the audio ended, and `completed` follows 2-3 minutes later once recording and extraction are
 # done. Four live calls confirmed it, four for four, across every ending (inactivity timeout, voicemail,
-# real conversation). Left in this set it fired FIRST and classified as `no_answer`, so a run parked on
+# real conversation). Left in this set it fired FIRST and classified as `no_answer`, so a journey parked on
 # `voice.completed` woke early carrying "nobody picked up" for a call the patient had answered and talked
-# through. Screened out, the run waits the extra two minutes and gets the truth.
+# through. Screened out, the journey waits the extra two minutes and gets the truth.
 #
 # The rest are the statuses where NO conversation happens, so no post-call processing follows and no
-# `completed` ever arrives. They must stay terminal or those runs park for ever.
+# `completed` ever arrives. They must stay terminal or those journeys park for ever.
 _TERMINAL_STATUSES = frozenset({
 	"completed",                                  # the one true final status
 	"busy", "no-answer", "balance-low",           # unanswered — the call never connected
@@ -141,7 +141,7 @@ def _resolve_from_phone(override, connection_default):
 	return None
 
 
-# The `user_data` key carrying OUR opaque engine correlation token (`run::node`, no PII). Bolna echoes
+# The `user_data` key carrying OUR opaque engine correlation token (`journey::node`, no PII). Bolna echoes
 # `user_data` on its terminal webhook, so this is the ONE key `place_call` writes and the webhook reads —
 # correlation rides the provider's echo, not a lookup row (WATI, which cannot echo, stores a row instead).
 USER_DATA_CORRELATION_KEY = "recipient_id"
@@ -149,11 +149,11 @@ USER_DATA_CORRELATION_KEY = "recipient_id"
 
 def place_call(connection, to_number, agent_id, from_override, correlation, variables=None):
 	"""Place ONE outbound call now: POST /call → execution_id. The node-facing caller (our engine is
-	one-run-per-lead); the cohort/batch path is `place_call_batch`, W7.2.
+	one-journey-per-lead); the cohort/batch path is `place_call_batch`, W7.2.
 
 	`to_number` is ALREADY conformed to +E.164 by the send path's declared `number_format` — this adapter
 	adds NO formatter of its own (the pass-1 one-brain rule). `correlation` is the engine token, placed in
-	`user_data` so the terminal webhook wakes THIS parked run and no other.
+	`user_data` so the terminal webhook wakes THIS parked journey and no other.
 	"""
 	api_key = connection.get("api_key") or ""
 	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
@@ -195,7 +195,7 @@ def _as_dict(value):
 
 
 def engine_token(payload):
-	"""OUR opaque `run::node` token, read back off Bolna's echo. `place_call` writes it into `user_data`;
+	"""OUR opaque `journey::node` token, read back off Bolna's echo. `place_call` writes it into `user_data`;
 	the batch path (W7.2) carries the same key under `context_details.recipient_data`, so both are read."""
 	user_data = _as_dict(payload.get("user_data"))
 	recipient_data = _as_dict(_as_dict(payload.get("context_details")).get("recipient_data"))
@@ -209,7 +209,7 @@ def execution_id_of(payload):
 	return str(payload.get("id") or payload.get("execution_id") or payload.get("batch_id") or "")
 
 
-# A transcript is a whole conversation; it rides a signal payload into run state, so it is bounded here.
+# A transcript is a whole conversation; it rides a signal payload into journey state, so it is bounded here.
 _TRANSCRIPT_LIMIT = 10000
 
 
@@ -282,7 +282,7 @@ def screen(payload, event, account):
 
 def already_processed(payload, event, account):
 	"""True once every signal this callback would deliver is already in the inbox. A provider re-sending
-	a terminal callback must not wake the run twice; the spine collapses byte-identical copies, this
+	a terminal callback must not wake the journey twice; the spine collapses byte-identical copies, this
 	catches a copy that differs in some field the wake does not read."""
 	correlation = engine_token(payload)
 	if not correlation:
@@ -292,30 +292,30 @@ def already_processed(payload, event, account):
 	if not names:
 		return False
 	return all(
-		frappe.db.exists("CRM Workflow Event", {"correlation": correlation, "event_name": name})
+		frappe.db.exists("CRM Workflow Signal", {"correlation": correlation, "event_name": name})
 		for name in names
 	)
 
 
 def handle(payload, event, account):
-	"""Wake the run that placed THIS call — never another run on the same lead.
+	"""Wake the journey that placed THIS call — never another journey on the same lead.
 
-	The engine token identifies the run AND the node, so the subject is read off the run rather than
+	The engine token identifies the journey AND the node, so the subject is read off the journey rather than
 	guessed from the number Bolna dialled: two journeys on one lead park on two different tokens, and
 	correlating on the lead is exactly the defect that would merge them.
 	"""
 	correlation = engine_token(payload)
 	subject_doctype, subject_name = run_subject(correlation)
 	if not subject_name:
-		# A terminal call whose run cannot be found. Never silent: a run may be parked waiting for exactly
+		# A terminal call whose journey cannot be found. Never silent: a journey may be parked waiting for exactly
 		# this, and the operator's only other clue would be a journey that simply stopped.
 		frappe.log_error(
-			title="voice: terminal call matches no workflow run",
+			title="voice: terminal call matches no workflow journey",
 			message=f"correlation={correlation} execution_id={execution_id_of(payload)} status={payload.get('status')}",
 		)
 		return
 
-	# The call's row on the lead is closed by the SAME callback that wakes the run — one delivery, both
+	# The call's row on the lead is closed by the SAME callback that wakes the journey — one delivery, both
 	# effects, so the timeline can never disagree with the journey about how the call ended.
 	update_call_log(payload)
 
@@ -482,12 +482,12 @@ def _as_seconds(value):
 
 
 def run_subject(correlation):
-	"""(subject_doctype, subject_name) for the run half of a `run::node` token, or (None, None)."""
-	run = (correlation or "").split("::", 1)[0].strip()
-	if not run:
+	"""(subject_doctype, subject_name) for the journey half of a `journey::node` token, or (None, None)."""
+	journey = (correlation or "").split("::", 1)[0].strip()
+	if not journey:
 		return None, None
 	row = frappe.db.get_value(
-		"CRM Workflow Run", run, ["subject_doctype", "subject_name"], as_dict=True,
+		"CRM Workflow Journey", journey, ["subject_doctype", "subject_name"], as_dict=True,
 	)
 	return (row.subject_doctype, row.subject_name) if row else (None, None)
 
@@ -496,7 +496,7 @@ def account_for_payload(payload, event):
 	"""Re-derive the receiving account on REPLAY, which carries no token.
 
 	Bolna's callback names no account of its own, and nothing about the wake needs one — the engine token
-	identifies the run without help. So this answers the only question that is truthfully answerable: when
+	identifies the journey without help. So this answers the only question that is truthfully answerable: when
 	exactly one voice account is live, the delivery is that account's. With none or several it declines,
 	and the spine says the delivery cannot be replayed rather than attributing it to a guess.
 	"""
@@ -623,7 +623,7 @@ def _build_batch_csv(requests_, recipient_ids):
 
 
 # W7.2 (cohort drain) IS THE ONLY FUTURE CALLER of `place_call_batch`. It is caller-less today — the
-# workflow NODE places a SINGLE call (one run per lead) and never enters this path. Ported faithfully so
+# workflow NODE places a SINGLE call (one journey per lead) and never enters this path. Ported faithfully so
 # the cohort optimisation exists when W7.2 arrives; wire it there, never to the node.
 def place_call_batch(connection, requests_, recipient_ids):
 	"""Place a COHORT of calls in one Bolna batch: POST /batches (a CSV of recipients) → batch_id →

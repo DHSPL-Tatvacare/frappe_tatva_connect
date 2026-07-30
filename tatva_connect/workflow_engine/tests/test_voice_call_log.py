@@ -12,7 +12,7 @@ telephony's reconciler or its permission conditions.
 
 TWO WRITES, AND NO THIRD:
   * AT PLACEMENT, inside the DEFERRED `_deliver_voice` job — the same job that places the call, never a
-    second enqueue, and never in the run's own segment. The row is bonded to the lead at birth.
+    second enqueue, and never in the journey's own segment. The row is bonded to the lead at birth.
   * AT THE TERMINAL WEBHOOK, the SAME row, found by `id`. `CRM Call Log.id` is UNIQUE and the doctype
     autonames from it, so the execution_id IS the row's name: idempotency is a primary-key seek, no new
     index, no correlation column invented.

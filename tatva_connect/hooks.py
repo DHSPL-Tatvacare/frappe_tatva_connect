@@ -107,8 +107,8 @@ permission_query_conditions = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
 	# Picklist Engine: clamp any generic list read of CRM Picklist Value to the caller's entitled grains, so get_list can't bypass the scoped picklist_query.
 	"CRM Picklist Value": "tatva_connect.access.picklist.get_picklist_value_permission_query_conditions",
-	"CRM Workflow Run": "tatva_connect.workflow_engine.permissions.get_run_permission_query_conditions",
-	"CRM Workflow Event": "tatva_connect.workflow_engine.permissions.get_event_permission_query_conditions",
+	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.get_journey_permission_query_conditions",
+	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.get_signal_permission_query_conditions",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
 	# Smart Views: restrictive backstop — the SAME predicate the SPA endpoints grant through (smartview/permissions.py), so Desk can never see more than the app door.
 	"CRM Smart View": "tatva_connect.smartview.permissions.get_smart_view_permission_query_conditions",
@@ -116,8 +116,8 @@ permission_query_conditions = {
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
 	"CRM Call Log": "tatva_connect.telephony.permissions.has_call_log_permission",
-	"CRM Workflow Run": "tatva_connect.workflow_engine.permissions.has_run_permission",
-	"CRM Workflow Event": "tatva_connect.workflow_engine.permissions.has_event_permission",
+	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.has_journey_permission",
+	"CRM Workflow Signal": "tatva_connect.workflow_engine.permissions.has_signal_permission",
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.has_step_log_permission",
 	"FCRM Note": "tatva_connect.notes.permissions.has_note_permission",
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
@@ -736,8 +736,8 @@ app_include_js = "tatva_connect.bundle.js"
 # -----------------------------------------------------------
 
 # CRM Call Media holds a call's artifact state and points at the File holding its audio. That pointer must never be able to REFUSE a delete: the blob's life is the call's life (M1), so deleting a call has to reach `File.on_trash` and reclaim the bytes, and a Link check would leave patient audio in the container for ever. Frappe's own hook for exactly this, and the same reason Communication and ToDo are on core's list.
-# A derived execution record must not PIN the record it is about: the run/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
-ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Run", "CRM Workflow Event"]
+# A derived execution record must not PIN the record it is about: the journey/event Dynamic Links to the subject made frappe refuse to delete any lead that had ever entered a workflow. The journeys are stopped on the lead's own on_trash first, and the event inbox is aged out by its reaper.
+ignore_links_on_delete = ["CRM Call Media", "CRM Workflow Journey", "CRM Workflow Signal"]
 
 # Request Events
 # ----------------

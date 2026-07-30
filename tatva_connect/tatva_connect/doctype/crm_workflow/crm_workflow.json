@@ -29,7 +29,7 @@
    "label": "Workflow Name",
    "reqd": 1,
    "unique": 1,
-   "description": "Names the workflow for operators; every Instance and log references it by this name."
+   "description": "Names the workflow for operators; every Journey and log references it by this name."
   },
   {
    "default": "Draft",
@@ -40,7 +40,7 @@
    "in_standard_filter": 1,
    "read_only": 1,
    "label": "Lifecycle State",
-   "description": "The Definition's editorial lifecycle, advanced only through its transition verbs (never edited by hand): Draft (authoring, mutable) -> Publish freezes an immutable Version -> Activate arms the entry trigger -> Suspend disarms it -> Archive retires it. A new Instance starts only while Active; running Instances stay pinned to their Version across every later transition."
+   "description": "The Definition's editorial lifecycle, advanced only through its transition verbs (never edited by hand): Draft (authoring, mutable) -> Publish freezes an immutable Version -> Activate arms the entry trigger -> Suspend disarms it -> Archive retires it. A new Journey starts only while Active; running Journeys stay pinned to their Version across every later transition."
   },
   {
    "fieldname": "entry_node",

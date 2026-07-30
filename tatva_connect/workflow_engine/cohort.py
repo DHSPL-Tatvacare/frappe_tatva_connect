@@ -2,18 +2,18 @@
 # See license.txt
 """W7.2 PART A — what a scheduled Trigger DECLARES, and what an author is shown before arming it.
 
-A COHORT IS A RUN FACTORY, NOT A SECOND ENGINE. When the drain lands (Part B) a due workflow selects its
-leads and each one gets its OWN ordinary run down the identical graph. Nothing about node contracts,
-park/resume or the interpreter changes, and nothing here starts a run: this module answers two questions
+A COHORT IS A journey FACTORY, NOT A SECOND ENGINE. When the drain lands (Part B) a due workflow selects its
+leads and each one gets its OWN ordinary journey down the identical graph. Nothing about node contracts,
+park/resume or the interpreter changes, and nothing here starts a journey: this module answers two questions
 and no more — *when is this workflow next due* and *how many leads would it take*.
 
 NOTHING WALKS `trigger_next_run_at` YET. That is deliberate and it is the stopping point: a materialised
-column that no sweep reads cannot start a run, so this half ships inert rather than half-wired.
+column that no sweep reads cannot start a journey, so this half ships inert rather than half-wired.
 
 WHAT IT REUSES, AND WHY THERE IS NO SECOND BRAIN:
   * the grain matcher  — `taxonomy.grain`, the same one `triggers._trigger_context` narrows with
   * the criteria       — `rules.predicate_match`, the same evaluator the record-event lane runs
-  * the context        — `automation.context`, so a lead is judged by the values a real run would read
+  * the context        — `automation.context`, so a lead is judged by the values a real journey would read
 The preview therefore cannot disagree with the drain, because it is asking the same code the same way.
 Translating the predicate into SQL would have been faster and would have been a second criteria brain
 that silently diverges the first time an operator is added.
@@ -79,9 +79,9 @@ def _next_occurrence(cron, after=None):
 def preview(config, cap=PREVIEW_CAP):
 	"""How many leads this Trigger's criteria would take, counted the way the engine really judges them.
 
-	`{count, capped, subject}` — `count` is None for a record-event Trigger, which starts one run per save
+	`{count, capped, subject}` — `count` is None for a record-event Trigger, which starts one journey per save
 	and has no cohort to count. At these volumes the number IS the safety feature: *"this will start 3,140
-	runs"* is the difference between a mistake and an incident, and an author who cannot see it before
+	journeys"* is the difference between a mistake and an incident, and an author who cannot see it before
 	arming is guessing.
 
     Counted, never estimated: grain narrows in SQL (it is columns on the lead), then each candidate is

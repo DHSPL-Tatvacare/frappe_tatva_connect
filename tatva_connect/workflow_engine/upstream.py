@@ -5,17 +5,17 @@
 An author configuring a Route has to name a field. Until now the only way to do that was to type it,
 from memory, with nothing checking the spelling: a typo produced a condition that looked right, never
 matched, and reported nothing. The engine already learned this lesson once, for event names — a Wait's
-event is picked from a declared list precisely because "a typo there parked a run for ever with nothing
+event is picked from a declared list precisely because "a typo there parked a journey for ever with nothing
 able to wake it". The same argument applies to every variable name, and this module is that fix.
 
 TWO SOURCES, ONE LIST
 ---------------------
   * the SUBJECT's own fields, from the Trigger — the lead (or task) the workflow watches, read through
     `automation.describe.builder_schema`, which is already grain-scoped and allowlist-filtered.
-  * whatever ANCESTOR nodes write into run state, from each verb's `emits` declaration — including the
+  * whatever ANCESTOR nodes write into journey state, from each verb's `emits` declaration — including the
     variables an author named themselves in a Call API's `capture` rows.
 
-Only ancestors count. A value written by a node that runs after this one, or on a branch this one is not
+Only ancestors count. A value written by a node that journeys after this one, or on a branch this one is not
 reachable from, is not available here — offering it would be inviting exactly the silent non-match this
 module exists to prevent.
 
@@ -157,7 +157,7 @@ def _shaped(name, ftype, label, source, source_label, options=None):
 
 
 def _emitted_by(node):
-	"""The run-state variables one node writes, from its verb's declaration plus its own config."""
+	"""The journey-state variables one node writes, from its verb's declaration plus its own config."""
 	from tatva_connect.automation import actions
 
 	config = _config(node)
@@ -190,7 +190,7 @@ def _expression_dict_keys(value):
 def _payload_map_keys(value):
 	"""A Wait's `accepts`. The map is `{dotted payload path: state key}`, so what it WRITES is its
 	values — read through the interpreter's own parser, never a second one, so what the gate believes a
-	Wait contributes is exactly what the run really merges."""
+	Wait contributes is exactly what the journey really merges."""
 	from tatva_connect.workflow_engine import interpreter
 
 	return {str(key) for key in interpreter.accepts_map(value).values() if key}
@@ -214,8 +214,8 @@ def write_fields_of(node_type, config):
 	"""`(field, keys-or-None)` for every field of THIS node type that declares `writes` — the same walk
 	`_write_fields` does, addressed by type and config rather than by a node row.
 
-	Exists so the publish-time reserved-name gate reads the keys through the ONE enumerator the run
-	itself uses. A second walk there would let the gate bless a key the run really merges (or refuse one
+	Exists so the publish-time reserved-name gate reads the keys through the ONE enumerator the journey
+	itself uses. A second walk there would let the gate bless a key the journey really merges (or refuse one
 	it does not), which is the whole failure class this declaration was added to close.
 	"""
 	return _write_fields({"node_type": node_type}, config or {})
@@ -298,7 +298,7 @@ def _subject_fields(by_id):
 	"""The subject's own fields — ALL of them, because READING is not WRITING.
 
 	This used to offer `builder_schema`, which is the curated allowlist of fields automation may SET. That
-	is the right answer for a write target and the wrong one for a read: run state falls through to the
+	is the right answer for a write target and the wrong one for a read: journey state falls through to the
 	live document, so a condition or a template value may read any field the record has, allowlist or not.
 	The gate already knew this — `_subject_readable` has always allowed the whole schema — so the picker
 	offered a fraction of what publish accepted, and on a site whose write allowlist is unseeded it

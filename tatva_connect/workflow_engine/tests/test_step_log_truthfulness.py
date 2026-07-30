@@ -86,9 +86,9 @@ class _WalkHarness(FrappeTestCase):
 		super().tearDownClass()
 
 	def _walk(self, workflow, at="start"):
-		run = fx.start_run(workflow, self.lead.name, at)
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		return frappe.get_doc(fx.RUN_DT, run.name)
+		run = fx.start_journey(workflow, self.lead.name, at)
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		return frappe.get_doc(fx.JOURNEY_DT, run.name)
 
 	def _steps(self, run):
 		"""The audit rows as the reader really gets them — straight out of the table."""
@@ -144,7 +144,7 @@ class TestASendRecordsWhetherItReachedThePatient(_WalkHarness):
 		self.assertIn(sends.DORMANT_MARKER, step["detail"])
 
 	def test_the_control_flow_is_unchanged_by_the_audit_fix(self):
-		"""The guard that matters most: this chunk changes what is WRITTEN DOWN, never where the run goes.
+		"""The guard that matters most: this chunk changes what is WRITTEN DOWN, never where the journey goes.
 		Both runs must still leave the send by the edge their output names."""
 		failing = self._send_graph(f"{_WORKFLOW}-fail-route")
 		dormant = self._send_graph(f"{_WORKFLOW}-sent-route")
@@ -244,7 +244,7 @@ class TestAFailedRunStillReportsItsReason(_WalkHarness):
 	a send that was handled instead of the fault that killed it."""
 
 	def test_a_run_the_engine_could_not_continue_reports_the_terminal_reason(self):
-		"""Driven by positioning a run at a node the frozen graph does not contain — a real `_Permanent`,
+		"""Driven by positioning a journey at a node the frozen graph does not contain — a real `_Permanent`,
 		through the real `_fail`, with nothing patched."""
 		workflow = self._send_graph(f"{_WORKFLOW}-dead")
 
@@ -256,7 +256,7 @@ class TestAFailedRunStillReportsItsReason(_WalkHarness):
 		self.assertIn("ghost", failure["detail"])
 
 	def test_a_run_that_handled_its_own_failure_reports_no_failure(self):
-		"""The guard on the guard. A run whose send failed and whose graph carried on is DONE — it did
+		"""The guard on the guard. A journey whose send failed and whose graph carried on is DONE — it did
 		what the author built it to do — and `_failure` must keep returning None for it even though its
 		step log now genuinely contains a `failed` row."""
 		workflow = self._send_graph(f"{_WORKFLOW}-handled")

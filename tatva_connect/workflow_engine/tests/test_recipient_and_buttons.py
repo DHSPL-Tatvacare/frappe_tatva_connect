@@ -10,7 +10,7 @@ so there was no control on which to show a warning and no author who had looked 
 It now declares `contact_number` — the SAME field, the same picker, in every trigger mode (§8b.1,
 CONFIRMED). Not conditional on trigger mode: a node whose controls change shape according to something
 else in the graph is an inconsistent authoring layer, and the inconsistency is the defect, not the extra
-field. The engine resolves the declared ref against the run's subject; it never supplies one.
+field. The engine resolves the declared ref against the journey's subject; it never supplies one.
 
 `contact_number` is `Variable` WITHOUT `free_text`, which is the one place it differs from
 `email_recipient`. It is PICKED, never typed, so it resolves purely as a reference. Routing it through
@@ -84,7 +84,7 @@ class TestTheRecipientIsDeclared(FrappeTestCase):
 
 	def test_the_same_field_is_offered_in_every_trigger_mode(self):
 		"""H1. The declaration carries no `depends_on_value`, so the author opens the same node and sees
-		the same controls whatever fired the run. §8d.2 proposed the conditional shape and it is REJECTED."""
+		the same controls whatever fired the journey. §8d.2 proposed the conditional shape and it is REJECTED."""
 		field = {p["name"]: p for p in actions.VERBS[_SEND_VERB]["params"]}["contact_number"]
 		self.assertIsNone(
 			field.get("depends_on_value"),
@@ -246,9 +246,9 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 		return wf
 
 	def _park(self, name):
-		run = fx.start_run(self._graph(name), self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		return frappe.get_doc(fx.RUN_DT, run.name)
+		run = fx.start_journey(self._graph(name), self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		return frappe.get_doc(fx.JOURNEY_DT, run.name)
 
 	def _sent_row(self, wamid, token, message_id):
 		doc = frappe.get_doc({
@@ -265,31 +265,31 @@ class TestATapWakesTheRunThatOfferedTheButtons(_SendHarness):
 		return doc.name
 
 	def test_a_tap_wakes_the_run_that_sent_that_message(self):
-		"""THE headline red. Before this the tap was ingested as an inbound message and the run stayed
+		"""THE headline red. Before this the tap was ingested as an inbound message and the journey stayed
 		parked for ever, because the bridge was reachable only from the status path."""
 		run = self._park(f"{_WORKFLOW}-tap")
-		self.assertEqual(run.status, "Parked", "the run must really be waiting before a tap can wake it")
+		self.assertEqual(run.status, "Parked", "the journey must really be waiting before a tap can wake it")
 		self._sent_row(_WAMID, run.awaiting_correlation, "MID-TAP")
 
 		ingest.apply(wati.normalize(_tap_payload(_WAMID, "yes"), account=self.account))
 
-		after = frappe.get_doc(fx.RUN_DT, run.name)
-		self.assertEqual(after.status, "Done", "the tap must wake the run that offered the buttons")
+		after = frappe.get_doc(fx.JOURNEY_DT, run.name)
+		self.assertEqual(after.status, "Done", "the tap must wake the journey that offered the buttons")
 		self.assertEqual(
 			after.current_node, "said_yes",
-			"the run must leave by the branch declared for the button that was actually tapped",
+			"the journey must leave by the branch declared for the button that was actually tapped",
 		)
 
 	def test_a_tap_on_another_message_does_not_wake_this_run(self):
 		"""The other direction, and the one that matters clinically: one lead, two journeys."""
-		# Its OWN wamid: two sent messages can never share one, and sharing it would let another test's tap wake this run.
+		# Its OWN wamid: two sent messages can never share one, and sharing it would let another test's tap wake this journey.
 		run = self._park(f"{_WORKFLOW}-other")
 		self.assertEqual(run.status, "Parked")
 		self._sent_row("wamid.OTHER-MESSAGE-ENTIRELY", run.awaiting_correlation, "MID-OTHER")
 
 		ingest.apply(wati.normalize(_tap_payload("wamid.SOMETHING-ELSE", "yes"), account=self.account))
 
-		self.assertEqual(frappe.get_doc(fx.RUN_DT, run.name).status, "Parked")
+		self.assertEqual(frappe.get_doc(fx.JOURNEY_DT, run.name).status, "Parked")
 
 	def test_the_send_job_stores_the_wamid_alongside_the_local_message_id(self):
 		"""The join column. `message_id` must STILL be the localMessageId — a row stored under a wamid

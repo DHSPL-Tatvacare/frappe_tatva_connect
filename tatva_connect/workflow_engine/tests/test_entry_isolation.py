@@ -8,10 +8,10 @@ its commit committed the user's whole pending write, and its rollback on the fai
 record the user had just saved — while the request still returned success. A rep pressed Save, saw it
 work, and the lead was not there.
 
-So the property under test is not "the run started". It is "the lead is still there afterwards", under
+So the property under test is not "the journey started". It is "the lead is still there afterwards", under
 every outcome the engine can have: it started, it failed, it was a duplicate, it ran inline.
 
-These assert on the LEAD, deliberately. A test that only checks the run would have stayed green through
+These assert on the LEAD, deliberately. A test that only checks the journey would have stayed green through
 the entire bug.
 """
 from unittest.mock import patch
@@ -96,14 +96,14 @@ class TestEntryIsolation(FrappeTestCase):
 		frappe.db.commit()
 
 		parked = frappe.get_all(
-			fx.RUN_DT, filters={"workflow": self.waiting.name, "subject_name": lead.name},
+			fx.JOURNEY_DT, filters={"workflow": self.waiting.name, "subject_name": lead.name},
 			fields=["status", "current_node", "active_key"],
 		)
-		self.assertEqual(len(parked), 1, "the queued start must produce exactly one run")
+		self.assertEqual(len(parked), 1, "the queued start must produce exactly one journey")
 		self.assertEqual(parked[0].status, "Parked")
 		self.assertEqual(
 			parked[0].active_key, f"{self.waiting.name}::{lead.name}",
-			"the run must carry the key the duplicate guard rests on",
+			"the journey must carry the key the duplicate guard rests on",
 		)
 
 	def test_only_one_live_run_exists_per_lead(self):
@@ -117,7 +117,7 @@ class TestEntryIsolation(FrappeTestCase):
 			frappe.db.commit()
 
 		live = frappe.get_all(
-			fx.RUN_DT,
+			fx.JOURNEY_DT,
 			filters={"workflow": self.waiting.name, "subject_name": lead.name,
 			         "status": ["in", ("Running", "Parked")]},
 			pluck="name",
@@ -132,7 +132,7 @@ _PROBE = "Entry Isolation Probe"
 
 def _clear_leads():
 	for name in frappe.get_all("CRM Lead", filters={"lead_name": _PROBE}, pluck="name"):
-		for run in frappe.get_all(fx.RUN_DT, filters={"subject_name": name}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-			frappe.db.delete(fx.RUN_DT, {"name": run})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"subject_name": name}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+			frappe.db.delete(fx.JOURNEY_DT, {"name": run})
 		frappe.delete_doc("CRM Lead", name, force=True, ignore_permissions=True)

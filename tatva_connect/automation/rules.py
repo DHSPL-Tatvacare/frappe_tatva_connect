@@ -36,7 +36,7 @@ class PredicateError(Exception):
 
 	It is an EXCEPTION and not a False on purpose. A predicate that silently evaluates to false when it
 	names a field that does not exist is the single worst failure mode this engine can have: the author
-	sees a rule that looks right, the run never fires, and nothing anywhere says why. Loud and stopped
+	sees a rule that looks right, the journey never fires, and nothing anywhere says why. Loud and stopped
 	beats quiet and wrong."""
 
 

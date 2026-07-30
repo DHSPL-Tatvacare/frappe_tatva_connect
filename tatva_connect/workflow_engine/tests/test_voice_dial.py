@@ -9,7 +9,7 @@ Turkey disaster with audio; these are the guards that make it impossible.
 
 Correlation rides Bolna's `user_data` echo (settled): the OPAQUE engine token (`run::node`, no PII) goes
 into `user_data` at `place_call`, Bolna echoes it on the terminal webhook, and the webhook wakes THAT
-parked run — no lookup row, no commit-race. `execution_id` is kept for audit only.
+parked journey — no lookup row, no commit-race. `execution_id` is kept for audit only.
 """
 from unittest.mock import MagicMock, patch
 
@@ -114,7 +114,7 @@ class TestTheLiveCallIsDeferredAndCarriesTheEngineToken(FrappeTestCase):
 
 class TestPlaceCallRefusesAResponseThatCannotBeCorrelated(FrappeTestCase):
 	"""A /call answer with no execution_id cannot be correlated to a webhook — Bolna is asked to fail loud
-	rather than place a call whose outcome can never wake the run."""
+	rather than place a call whose outcome can never wake the journey."""
 
 	def test_a_response_without_execution_id_raises(self):
 		blank = MagicMock(status_code=200, content=b"{}")

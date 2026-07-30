@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class CRMWorkflowEvent(Document):
+class CRMWorkflowSignal(Document):
 	pass

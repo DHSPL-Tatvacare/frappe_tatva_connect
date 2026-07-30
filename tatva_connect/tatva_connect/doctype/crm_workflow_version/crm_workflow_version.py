@@ -10,10 +10,10 @@ _FROZEN = ("workflow", "version_no", "definition_hash", "payload_json", "node_co
 
 class CRMWorkflowVersion(Document):
 	"""An immutable snapshot of one workflow's graph. Rows are minted by `workflow_engine.versions` and
-	their DEFINITION is never edited afterwards - a running Instance reads it from here, so a mutation
+	their DEFINITION is never edited afterwards - a running Journey reads it from here, so a mutation
 	would reintroduce exactly the drift versioning exists to remove.
 
-	`is_current` is the one mutable column: it records which definition a NEW Instance binds to, and moves
+	`is_current` is the one mutable column: it records which definition a NEW Journey binds to, and moves
 	when the Definition is edited (or reverted). That is a fact about the workflow's present, not about
 	this frozen graph, so it can move without the definition ever changing."""
 

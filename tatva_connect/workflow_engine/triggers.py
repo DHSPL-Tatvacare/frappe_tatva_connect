@@ -1,9 +1,9 @@
-"""The entry trigger - the ONE seam that starts an Instance, on the wildcard `doc_events["*"]` (the
+"""The entry trigger - the ONE seam that starts an Journey, on the wildcard `doc_events["*"]` (the
 automation router's proven precedent), guarded by its OWN `frappe.flags.in_workflow` re-entrancy flag so
 it coexists with the automation engine's `in_automation` guard and neither engine fires the other.
 
 On the trigger subject's event (Created/Updated/Deleted), every ACTIVE workflow whose grain
-matches the subject starts: an Instance is created AND its first segment runs in ONE transaction,
+matches the subject starts: an Journey is created AND its first segment runs in ONE transaction,
 committing at the first suspend (F3 - no `Running` orphan if it crashes before the first park). The
 `active_key` UNIQUE index rejects a duplicate start; that `IntegrityError` is caught and treated as
 "already running", never surfaced (F3 double-start guard, closed at the DB).
@@ -22,7 +22,7 @@ from tatva_connect.taxonomy import grain
 from tatva_connect.taxonomy.picklist import _LEAD_AXES
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, registry, versions
 
-INSTANCE_DT = interpreter.INSTANCE_DT
+JOURNEY_DT = interpreter.JOURNEY_DT
 _WORKFLOW_DT = "CRM Workflow"
 
 
@@ -33,7 +33,7 @@ def _engine_may_run() -> bool:
 
 	  in_workflow  — re-entrancy. A write the engine itself made must not re-enter its own lane.
 	  in_migrate / in_install / in_patch — the schema is being CHANGED underneath us. A patch that saves
-	      a document would otherwise fire the dispatcher against a half-migrated table, and the run
+	      a document would otherwise fire the dispatcher against a half-migrated table, and the journey
 	      would either crash the migration or, worse, fire real automation at a customer mid-upgrade.
 	      Frappe sets these flags itself; this is its own signal, not a bench workaround.
 	  the engine switch — dormant by default. An operator arms it, and until they do nothing runs.
@@ -45,7 +45,7 @@ def _engine_may_run() -> bool:
 	return automation.is_enabled(ENGINE_SWITCH)
 
 
-# PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_run` the cohort drain uses, and `active_key` stops a double-run.
+# PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_journey` the cohort drain uses, and `active_key` stops a double-run.
 @fail_safe
 def on_created(doc, method=None):
 	_maybe_start(doc, "Created")
@@ -93,7 +93,7 @@ def on_lead_grain_changed(doc, method=None):
 		interpreter.stop_for_subject(doc.doctype, doc.name, f"Lead grain changed ({', '.join(moved)})")
 
 
-# A Frappe lifecycle event AS a signal source: completing a task the engine raised wakes the run that
+# A Frappe lifecycle event AS a signal source: completing a task the engine raised wakes the journey that
 # raised it. The task carries the token its node minted, so the wake is PER TASK — the detector used to
 # match on the task's lead and one hardcoded `review_done` signal, which meant any Done task of any type
 # could wake a journey waiting on a different task of the same lead, and only one flavour of wait was
@@ -102,14 +102,14 @@ _TASK_OUTCOMES = {"Done": "task.completed", "Completed": "task.completed", "Clos
                   "Cancelled": "task.cancelled"}
 
 
-# PROPAGATE (@fail_safe): a lost emission leaves the run Parked exactly where it was, and this fires on
+# PROPAGATE (@fail_safe): a lost emission leaves the journey Parked exactly where it was, and this fires on
 # EVERY update of a terminal-status task — so the next save of that task re-emits the same correlated signal.
 @fail_safe
 def on_task_done(doc, method=None):
 	"""Wildcard `doc_events["*"]["on_update"]`: a CRM Task reaching a terminal status emits its outcome.
 
 	The outcome name comes from the status, and the correlation comes from the task's own workflow token
-	— so `deliver_signal` reaches exactly the run and the wait that raised THIS task. A task the engine
+	— so `deliver_signal` reaches exactly the journey and the wait that raised THIS task. A task the engine
 	did not raise carries no token and emits nothing. Dormant-by-default and non-re-entrant, and every
 	cheap shape check runs before the gates, because this fires on every doctype's update.
 	"""
@@ -133,7 +133,7 @@ def on_task_done(doc, method=None):
 def _maybe_start(doc, event):
 	"""The after-save lane: run every ACTIVE workflow whose Trigger (subject, event) + grain + predicate match
 	this write. A wait-free Flow runs inline and persists nothing (EPHEMERAL, D4); a Flow that parks starts
-	a durable Instance (CONTINUOUS). A workflow never runs before the save and never blocks it (Phase 11)."""
+	a durable Journey (CONTINUOUS). A workflow never runs before the save and never blocks it (Phase 11)."""
 	if not _engine_may_run():
 		return
 	ctx = _trigger_context(doc, event)
@@ -144,7 +144,7 @@ def _maybe_start(doc, event):
 		if not _predicate_holds(version, ctx):
 			continue  # the When did not hold — this Flow does not act on this write
 		if interpreter.has_wait(version):
-			# The triggering record travels with the run: the subject is always the parent lead, so without
+			# The triggering record travels with the journey: the subject is always the parent lead, so without
 			# this a node configured to act on the trigger doc silently acted on the lead instead.
 			_enqueue_start(version.workflow, version_name, ctx.subject, _run_seed(ctx.context), (doc.doctype, doc.name))
 		else:
@@ -192,7 +192,7 @@ def _run_ephemeral(version_name, lead_name, trigger_doc, context):
 	try:
 		interpreter.run_inline(version_name, lead_name, trigger_doc, context)
 	except Exception:
-		frappe.log_error(title="workflow: ephemeral run failed", message=f"version={version_name} subject={lead_name} :: {frappe.get_traceback()}")
+		frappe.log_error(title="workflow: ephemeral journey failed", message=f"version={version_name} subject={lead_name} :: {frappe.get_traceback()}")
 	finally:
 		frappe.flags.in_workflow = False
 
@@ -201,7 +201,7 @@ def _trigger_config(version):
 	"""What this workflow's Trigger declares, read out of the FROZEN version. The ONE reader.
 
 	Everything that qualifies a subject — the predicate and the requirements — is declared on the Trigger,
-	so a Run already under way is judged by the terms it started under and editing the workflow cannot
+	so a journey already under way is judged by the terms it started under and editing the workflow cannot
 	reach back. Both callers below come through here; neither goes looking for the Trigger itself.
 	"""
 	trigger = next((n for n in version.nodes if n.get("node_type") == registry.TRIGGER), None)
@@ -219,7 +219,7 @@ def _predicate_holds(version, ctx):
 
 
 def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):
-	"""Start a durable run AFTER the triggering save commits — never inside the user's transaction.
+	"""Start a durable journey AFTER the triggering save commits — never inside the user's transaction.
 
 	This used to call `_start_one` inline, and that was a data-loss bug rather than a style one. A
 	doc_event runs inside the caller's transaction, so the engine's own `frappe.db.commit()` committed
@@ -233,7 +233,7 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 	defence behind this one.
 	"""
 	frappe.enqueue(
-		"tatva_connect.workflow_engine.triggers.start_run",
+		"tatva_connect.workflow_engine.triggers.start_journey",
 		# The workflow lane, its own worker: on `short` a burst of starts starves `wakeups.sweep`, which is the reconciler that rescues runs whose wake was lost.
 		queue="workflow",
 		enqueue_after_commit=True,
@@ -248,9 +248,9 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 	)
 
 
-def start_run(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):
+def start_journey(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):
 	"""The queued entry point. Re-checks the gate, because the switch may have been turned off between
-	the save and the job running, and a job that starts a run the operator has disarmed is exactly the
+	the save and the job running, and a job that starts a journey the operator has disarmed is exactly the
 	kind of thing dormant-by-default exists to prevent."""
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return
@@ -258,10 +258,10 @@ def start_run(workflow_name, version_name, lead_name, seed_context=None, trigger
 
 
 def _run_seed(context):
-	"""The part of the trigger context worth STORING on the run, in `state_json`'s nested-by-writer shape.
+	"""The part of the trigger context worth STORING on the journey, in `state_json`'s nested-by-writer shape.
 
 	A document's fields belong to the document. The only thing here that cannot be read back later is the
-	before/after pair the `changed to` operators need, so that is all a run carries forward — and it stays
+	before/after pair the `changed to` operators need, so that is all a journey carries forward — and it stays
 	in the record's OWN namespace, because a before-value is a value of that record. Nothing shadows the
 	live document by doing so: no doctype has a `<field>__before` column.
 
@@ -279,9 +279,9 @@ def _run_seed(context):
 
 
 def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):
-	"""Create the durable Instance for a CONTINUOUS Flow and run its first segment in ONE transaction,
-	committing at the first suspend (advance). The Instance's subject is the resolved parent LEAD (D7) — so
-	effects act on the lead and the review-signal detector (which looks up Parked instances by CRM Lead) can
+	"""Create the durable Journey for a CONTINUOUS Flow and run its first segment in ONE transaction,
+	committing at the first suspend (advance). The Journey's subject is the resolved parent LEAD (D7) — so
+	effects act on the lead and the review-signal detector (which looks up Parked journeys by CRM Lead) can
 	find it — while `seed_context` (the trigger record's own fields) is carried in `state_json`, so a Route
 	or Assign before the first Wait reads real trigger values instead of `{}`. The version is the one
 	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
@@ -290,8 +290,8 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 	entry_node = versions.entry_node_of(versions.load(version_name))  # the ONE entry-resolution brain
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
-		instance = frappe.get_doc({
-			"doctype": INSTANCE_DT,
+		journey = frappe.get_doc({
+			"doctype": JOURNEY_DT,
 			"workflow": workflow_name,
 			"workflow_version": version_name,
 			"subject_doctype": "CRM Lead",
@@ -304,18 +304,18 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 			# Only what a later segment cannot re-derive. The subject's own fields are NOT seeded: they
 			# live on the document and are read from it each segment, so copying them here would freeze
 			# the lead as it was at trigger time — which is what made a 30-day Wait test 30-day-old data.
-			# The `__before` pairs are kept, because the change that fired this run is not re-derivable.
+			# The `__before` pairs are kept, because the change that fired this journey is not re-derivable.
 			"state_json": frappe.as_json(seed_context or {}),
 			"status": "Running",
 			# The uniqueness key the double-start guard rests on. It was DECLARED on the doctype and
 			# described in three docstrings, but the column was not unique and nothing ever wrote it — so
 			# every save of a matching lead started another journey, and each one sent its own messages.
-			# Cleared when the run reaches a terminal state, so the same lead may enter again later.
+			# Cleared when the journey reaches a terminal state, so the same lead may enter again later.
 			"active_key": f"{workflow_name}::{lead_name}",
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
-		interpreter.advance(instance)
+		interpreter.advance(journey)
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
-		frappe.db.rollback()  # active_key UNIQUE rejected a second live Instance - already running (F3)
+		frappe.db.rollback()  # active_key UNIQUE rejected a second live Journey - already running (F3)
 	except Exception:
 		frappe.db.rollback()
 		frappe.log_error(title="workflow: entry start failed", message=f"workflow={workflow_name} lead={lead_name} :: {frappe.get_traceback()}")

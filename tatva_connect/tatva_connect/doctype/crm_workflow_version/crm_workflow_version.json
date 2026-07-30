@@ -43,7 +43,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Marks the version a new Instance binds to. Exactly one per workflow; reverting a Definition re-flags that version rather than minting a duplicate."
+   "description": "Marks the version a new Journey binds to. Exactly one per workflow; reverting a Definition re-flags that version rather than minting a duplicate."
   },
   {
    "fieldname": "node_count",
@@ -68,7 +68,7 @@
    "label": "Definition (JSON)",
    "reqd": 1,
    "read_only": 1,
-   "description": "Stores the immutable, canonical graph an Instance executes; a running Instance reads this, never the editable Definition."
+   "description": "Stores the immutable, canonical graph an Journey executes; a running Journey reads this, never the editable Definition."
   }
  ],
  "index_web_pages_for_search": 0,

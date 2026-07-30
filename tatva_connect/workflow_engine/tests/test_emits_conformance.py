@@ -8,12 +8,12 @@ that reads something nothing upstream produces. The gate is therefore only as tr
 it trusts, and a false declaration makes it worse than no gate at all:
 
   * declared but not written — the gate CERTIFIES a graph that fails on a live record. A Branch on `ok`
-    publishes green, then `rules._rule_match` raises and the run is marked Failed; a `Variable` field
+    publishes green, then `rules._rule_match` raises and the journey is marked Failed; a `Variable` field
     resolves to None and the node silently takes its empty path with nothing logged.
   * written but not declared — the gate REJECTS a correct graph. A false rejection is worse still: it
     teaches authors that the check is wrong and must be worked around.
 
-So every declaration is DRIVEN here and compared with the state the run really carries afterwards.
+So every declaration is DRIVEN here and compared with the state the journey really carries afterwards.
 Engine bookkeeping (`registry.RESERVED_VARIABLES`) is excluded from the comparison rather than tolerated
 as an extra — an author may not take those names, so they are not part of anybody's contract.
 
@@ -109,7 +109,7 @@ class TestEmitsConformance(FrappeTestCase):
 			"node_id": "w", "node_type": verb,
 			"config_json": frappe.as_json(config), "edges": [],
 		})
-		interpreter._run_verb(node, self.lead.name, self.lead, state, fx.AXES, run_name="conformance")
+		interpreter._run_verb(node, self.lead.name, self.lead, state, fx.AXES, journey_name="conformance")
 		before = {refs.of_node(source, k) for source, bucket in (seed or {}).items() for k in bucket}
 		return _reserved(state.keys()) - _reserved(before)
 
@@ -145,11 +145,11 @@ class TestEmitsConformance(FrappeTestCase):
 				)
 
 	def test_a_guard_verb_declares_no_emits(self):
-		"""A guard runs inside `validate`, where there is no run state at all. Anything it declared as
+		"""A guard runs inside `validate`, where there is no journey state at all. Anything it declared as
 		emitted would be offered downstream by a resolver that could never see it written."""
 		for verb in actions.verbs_in_lane("guard"):
 			with self.subTest(verb=verb):
-				self.assertFalse(actions.emits_of(verb), f"{verb} is a guard and cannot write run state")
+				self.assertFalse(actions.emits_of(verb), f"{verb} is a guard and cannot write journey state")
 
 	def test_every_node_type_declaring_writes_is_driven(self):
 		"""The same rule for the core node types, whose writes are declared on a config FIELD."""

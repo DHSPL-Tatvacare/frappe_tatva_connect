@@ -10,7 +10,7 @@ all read as though they were scoped. None of it worked, in three separate ways, 
      not be created by hand either. `is_enabled` therefore answered False for ever and the three
      tables were entirely unscoped.
   2. `PARENT_OF` had no resolver for them, so the single-doc gate raised
-     `KeyError('CRM Workflow Run')` for every non-privileged, non-owner caller.
+     `KeyError('CRM Workflow Journey')` for every non-privileged, non-owner caller.
   3. `CRM Workflow Step Log` carries `subject_name` but NO `subject_doctype`, and `_link_columns`
      probed the name column — so the list clause named a column that does not exist and every query
      died with `(1054, "Unknown column ...")`.
@@ -28,7 +28,7 @@ from frappe.tests.utils import FrappeTestCase
 from tatva_connect.access import visibility
 from tatva_connect.automation.registry import AUTOMATIONS
 
-WORKFLOW_DOCTYPES = ("CRM Workflow Run", "CRM Workflow Event", "CRM Workflow Step Log")
+WORKFLOW_DOCTYPES = ("CRM Workflow Journey", "CRM Workflow Signal", "CRM Workflow Step Log")
 USER = "vis.probe@example.test"
 
 
@@ -67,12 +67,12 @@ class TestWorkflowRowVisibility(FrappeTestCase):
 				frappe.db.sql(f"select name from `tab{doctype}` where {clause} limit 1")
 
 	def test_a_step_log_is_scoped_through_its_run(self):
-		"""It has no `subject_doctype` of its own, so the clause must reach its lead via `workflow_run`
+		"""It has no `subject_doctype` of its own, so the clause must reach its lead via `journey`
 		— naming a column the table does not have is what broke it before."""
 		clause = visibility.scoped_pqc("CRM Workflow Step Log", USER)
-		self.assertIn("`workflow_run`", clause)
+		self.assertIn("`journey`", clause)
 		self.assertNotIn("`tabCRM Workflow Step Log`.`subject_doctype`", clause)
-		self.assertIn("`tabCRM Workflow Run`", clause, "it must recurse into the run's own clause")
+		self.assertIn("`tabCRM Workflow Journey`", clause, "it must recurse into the journey's own clause")
 
 	# ------------------------------------------------------------------ the single-doc gate
 
@@ -82,7 +82,7 @@ class TestWorkflowRowVisibility(FrappeTestCase):
 				doc = frappe._dict(
 					doctype=doctype, owner="someone-else@example.test",
 					subject_doctype="CRM Lead", subject_name="CRM-LEAD-DOES-NOT-EXIST",
-					workflow_run="CRM-RUN-DOES-NOT-EXIST",
+					journey="CRM-RUN-DOES-NOT-EXIST",
 				)
 				self.assertFalse(
 					visibility.scoped_has_permission(doc, "read", USER),

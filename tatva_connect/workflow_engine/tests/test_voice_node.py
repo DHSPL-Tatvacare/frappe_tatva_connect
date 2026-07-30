@@ -124,7 +124,7 @@ class TestClassificationIsPortedVerbatim(unittest.TestCase):
 		"""Bolna's own status reference: "Only `completed` is the final status for every conversation."
 
 		The rest below are the statuses where NO conversation happens, so no post-call processing follows
-		and no `completed` ever arrives — they must stay terminal or those runs park for ever.
+		and no `completed` ever arrives — they must stay terminal or those journeys park for ever.
 		"""
 		for terminal in ("completed", "no-answer", "busy", "balance-low", "canceled", "failed", "stopped", "error"):
 			self.assertTrue(bolna.is_terminal(terminal), terminal)
@@ -134,8 +134,8 @@ class TestClassificationIsPortedVerbatim(unittest.TestCase):
 	def test_call_disconnected_is_not_terminal(self):
 		"""LIVE DEFECT, four calls, four for four. `call-disconnected` means the audio ended; `completed`
 		follows 2-3 minutes later once recording and extraction finish. Treated as terminal it fired FIRST
-		and classified `no_answer`, so a run parked on `voice.completed` woke early carrying "nobody picked
-		up" for a call the patient had answered and talked through. Screened out, the run gets the truth."""
+		and classified `no_answer`, so a journey parked on `voice.completed` woke early carrying "nobody picked
+		up" for a call the patient had answered and talked through. Screened out, the journey gets the truth."""
 		self.assertFalse(bolna.is_terminal("call-disconnected"))
 		wanted, reason = bolna.screen({"status": "call-disconnected", "user_data": {"recipient_id": "r::n"}}, None, "acct")
 		self.assertFalse(wanted)

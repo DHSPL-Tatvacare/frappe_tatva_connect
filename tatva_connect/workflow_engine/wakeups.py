@@ -1,7 +1,7 @@
 """Scheduled wakeups + the reliability backstop.
 
-PRINCIPLE (F5): the durable Instance row is the source of truth; every enqueue is only a latency
-optimisation. If a wake job is lost (Redis flush, worker death), the reconciler still drives the Instance
+PRINCIPLE (F5): the durable Journey row is the source of truth; every enqueue is only a latency
+optimisation. If a wake job is lost (Redis flush, worker death), the reconciler still drives the Journey
 forward from its durable state - nothing depends on an RQ job surviving.
 
 `sweep()` is the ONE scheduled entry (hooks.scheduler_events, ~*/15), gated on the SWEEP switch alone -
@@ -10,12 +10,12 @@ by hand. An operator can still pause the sweep without killing the engine. It ru
   * `timer_sweep` - the TIMER side: `status='Parked' AND resume_at<=now`, claim each `for_update`,
     `advance`, commit PER ROW (a worker killed mid-sweep never replays a segment whose sends already left).
   * `reconciler_sweep` - the reliability backstop: re-drives (a) due-timer Parked rows and (b) a `Parked`
-    Instance whose `awaiting_signal` already has a matching Pending inbox row but was never woken (a lost
+    Journey whose `awaiting_signal` already has a matching Pending inbox row but was never woken (a lost
     enqueue). Overlaps timer_sweep on (a) by design - a re-drive of an already-advanced row is a claimed
     no-op (F6) - so the reconciler is a COMPLETE standalone backstop.
   * `_purge_stale_signals` - THE reaper (W4.4): expire orphan Pending rows, delete old terminal ones.
 
-Every drive claims the Instance `for_update` and re-checks status BEFORE work (F6), and sets
+Every drive claims the Journey `for_update` and re-checks status BEFORE work (F6), and sets
 `frappe.flags.in_workflow` so the engine's own writes don't re-enter entry/signal detection.
 """
 import frappe
@@ -23,7 +23,7 @@ import frappe
 from tatva_connect import automation
 from tatva_connect.workflow_engine import ENGINE_SWITCH, SWEEP_SWITCH, interpreter, thresholds
 
-INSTANCE_DT = interpreter.INSTANCE_DT
+JOURNEY_DT = interpreter.JOURNEY_DT
 SIGNAL_DT = interpreter.SIGNAL_DT
 
 # The lane Frappe's own scheduler does not manage, so our RQ scheduler can service it without two
@@ -33,7 +33,7 @@ WAKE_QUEUE = "workflow"
 # THE DEPLOY CONTRACT FOR THIS LANE, in the repo rather than in one machine's compose file.
 # Until now it existed ONLY in `.localdev/compose.yml`, which is git-excluded — so the engine ran here
 # and nowhere else, and a deploy that missed it would write timer alarms into a queue nothing services.
-# That failure is SILENT: every run parks correctly, every alarm is set, and none of them ever fires.
+# That failure is SILENT: every journey parks correctly, every alarm is set, and none of them ever fires.
 # `assert_lane_registered` below is what makes it loud, and these are the three things it is about:
 #
 #   1. bench set-config -gp workers "{'workflow': {'background_workers': 1, 'timeout': 1500}}"
@@ -42,7 +42,7 @@ WAKE_QUEUE = "workflow"
 #
 # (3) is our RQ scheduler for this lane. Frappe hard-disables RQ's scheduler on both worker paths so its
 # own is the only one running — correct, and it means a lane Frappe does not manage is an empty lane.
-# It is NOT load-bearing: kill it and parked runs still wake off the */15 sweep, late.
+# It is NOT load-bearing: kill it and parked journeys still wake off the */15 sweep, late.
 LANE_WORKER_COMMAND = f"bench worker --queue {WAKE_QUEUE}"
 LANE_SCHEDULER_COMMAND = "bench --site <site> execute tatva_connect.workflow_engine.wakeups.run_wake_scheduler"
 
@@ -72,7 +72,7 @@ def assert_lane_registered():
 
 
 def schedule_wake(name, resume_at):
-	"""Set the alarm for a parked run. The diary row is already written; this only makes it PUNCTUAL.
+	"""Set the alarm for a parked journey. The diary row is already written; this only makes it PUNCTUAL.
 
 	`frappe.enqueue` has no delay parameter, and Frappe hard-disables RQ's scheduler on both worker paths
 	(`background_jobs.py:359`, `:364-366`) so that its own scheduler is the only one running. That is a
@@ -80,8 +80,8 @@ def schedule_wake(name, resume_at):
 	not manage is an empty lane. `enqueue_at` takes the identical job `enqueue_call` already builds, so
 	this mirrors `queue_args` and adds nothing to the queue layer.
 
-	AFTER COMMIT, always: the alarm must not exist for a segment that rolled back. Deduplicated on the run
-	name so a re-park cannot stack alarms. The payload is the NAME — `drive_instance` re-reads the row and
+	AFTER COMMIT, always: the alarm must not exist for a segment that rolled back. Deduplicated on the journey
+	name so a re-park cannot stack alarms. The payload is the NAME — `drive_journey` re-reads the row and
 	re-claims it, so a stale or duplicated job is a no-op and a lost one is caught by the sweep.
 	"""
 	from frappe.utils.background_jobs import create_job_id, get_queue
@@ -89,7 +89,7 @@ def schedule_wake(name, resume_at):
 	queue_args = {
 		"site": frappe.local.site,
 		"user": frappe.session.user,
-		"method": "tatva_connect.workflow_engine.wakeups.drive_instance",
+		"method": "tatva_connect.workflow_engine.wakeups.drive_journey",
 		"event": None,
 		"job_name": "workflow-wake",
 		"is_async": True,
@@ -132,7 +132,7 @@ def run_wake_scheduler(interval=1):
 	than the one `Worker.work(with_scheduler=True)` forks, and the per-queue Redis lock (TTL =
 	interval + 60) already guarantees only one is ever moving jobs.
 
-	IT IS NOT LOAD-BEARING. Kill it and every run still wakes, late, off the sweep — which is exactly what
+	IT IS NOT LOAD-BEARING. Kill it and every journey still wakes, late, off the sweep — which is exactly what
 	covers the ~61s window while a dead scheduler's lock expires.
 	"""
 	from frappe.utils.background_jobs import generate_qname, get_redis_conn
@@ -142,7 +142,7 @@ def run_wake_scheduler(interval=1):
 
 
 def _forget_wake(queue, job_id):
-	"""Drop any alarm already set for this run, so a re-park replaces rather than stacks."""
+	"""Drop any alarm already set for this journey, so a re-park replaces rather than stacks."""
 	from rq.registry import ScheduledJobRegistry
 
 	registry = ScheduledJobRegistry(queue=queue)
@@ -160,11 +160,11 @@ def sweep():
 
 
 def timer_sweep():
-	"""Wake every `Parked` Instance whose clock deadline has arrived, oldest first, capped. Per-row commit."""
+	"""Wake every `Parked` Journey whose clock deadline has arrived, oldest first, capped. Per-row commit."""
 	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	for name in _due_parked():
-		drive_instance(name)
+		drive_journey(name)
 		frappe.db.commit()
 
 
@@ -176,16 +176,16 @@ def reconciler_sweep():
 	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	for name in _due_parked():
-		drive_instance(name)
+		drive_journey(name)
 		frappe.db.commit()
 	for row in frappe.get_all(
-		INSTANCE_DT,
+		JOURNEY_DT,
 		filters={"status": "Parked", "awaiting_signal": ["is", "set"]},
 		fields=["name", "subject_doctype", "subject_name", "awaiting_signal", "awaiting_correlation"],
 		limit=thresholds.SWEEP_PAGE,
 	):
 		if _has_pending_signal(row):
-			drive_instance(row.name)
+			drive_journey(row.name)
 			frappe.db.commit()
 
 
@@ -210,25 +210,25 @@ def _purge_stale_signals():
 	frappe.db.commit()
 
 
-def drive_instance(name):
-	"""Claim the Instance `for_update`, re-check it is still `Parked`, and `advance` (F6). Sets
+def drive_journey(name):
+	"""Claim the Journey `for_update`, re-check it is still `Parked`, and `advance` (F6). Sets
 	`in_workflow` so the segment's own writes to the subject don't re-enter entry/signal detection. Plumbing
 	failures are logged, never raised, so one bad row never aborts a sweep."""
 	frappe.flags.in_workflow = True
 	try:
-		if not frappe.db.get_value(INSTANCE_DT, {"name": name, "status": "Parked"}, "name", for_update=True):
+		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": "Parked"}, "name", for_update=True):
 			return  # already claimed/advanced by another driver, or no longer parked (idempotent)
-		interpreter.advance(frappe.get_doc(INSTANCE_DT, name))
+		interpreter.advance(frappe.get_doc(JOURNEY_DT, name))
 	except Exception:
-		frappe.log_error(title="workflow: drive failed", message=f"instance={name} :: {frappe.get_traceback()}")
+		frappe.log_error(title="workflow: drive failed", message=f"journey={name} :: {frappe.get_traceback()}")
 	finally:
 		frappe.flags.in_workflow = False
 
 
 def _due_parked():
-	"""Names of `Parked` Instances whose clock deadline has arrived, oldest first, capped."""
+	"""Names of `Parked` Journeys whose clock deadline has arrived, oldest first, capped."""
 	return frappe.get_all(
-		INSTANCE_DT,
+		JOURNEY_DT,
 		filters={"status": "Parked", "resume_at": ["<=", frappe.utils.now_datetime()]},
 		order_by="resume_at asc",
 		limit=thresholds.SWEEP_PAGE,
@@ -237,11 +237,11 @@ def _due_parked():
 
 
 def _has_pending_signal(row):
-	"""True iff a live inbox row matches this Instance's awaited (subject, signal, correlation).
+	"""True iff a live inbox row matches this Journey's awaited (subject, signal, correlation).
 
 	Asks through `pending_signal_filters`, the ONE description of "a row that would wake this park", so the
-	backstop can never re-drive a run on a row the drive itself would then decline to consume. It carried
-	its own copy of that dict until W4.4, which is what would have let an EXPIRED row wake a run for ever.
+	backstop can never re-drive a journey on a row the drive itself would then decline to consume. It carried
+	its own copy of that dict until W4.4, which is what would have let an EXPIRED row wake a journey for ever.
 	"""
 	filters = interpreter.pending_signal_filters(
 		row.subject_doctype, row.subject_name, row.awaiting_signal, row.awaiting_correlation

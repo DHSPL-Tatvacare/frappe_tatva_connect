@@ -7,7 +7,7 @@ runtime that disagreed, with publish siding with the wrong one.
 
 1. `Send WhatsApp` and `Send Email` declared NO outputs, so they defaulted to `next` and every failure
    mode raised. A lead with no `mobile_no` — an ordinary state of an ordinary patient record — reached
-   `interpreter.advance` as an exception and marked the whole run **Failed**. A real production flow
+   `interpreter.advance` as an exception and marked the whole journey **Failed**. A real production flow
    (WhatsApp → wait → call → branch → WhatsApp) wires a failure edge on every messaging node, and ours
    could not express one.
 
@@ -22,7 +22,7 @@ runtime that disagreed, with publish siding with the wrong one.
    address. So publish actively CERTIFIED a node that queued mail to the literal string
    `"escalation_email"`.
 
-Every assertion here is an OUTCOME — which edge the run really left by, what the publish gate really
+Every assertion here is an OUTCOME — which edge the journey really left by, what the publish gate really
 returned, what address really reached the mail boundary. Never a call count: a mocked assertion on
 `mock_send.called` is exactly what let three months of file bugs through this repo.
 
@@ -75,7 +75,7 @@ class _FakeAdapter:
 
 
 class TestASendFailureRoutesInsteadOfKillingTheRun(FrappeTestCase):
-	"""Defect 1, end to end through the real interpreter. The outcome asserted is the node the run
+	"""Defect 1, end to end through the real interpreter. The outcome asserted is the node the journey
 	finished on — not that a function was called."""
 
 	@classmethod
@@ -106,15 +106,15 @@ class TestASendFailureRoutesInsteadOfKillingTheRun(FrappeTestCase):
 		self._clear_runs()
 
 	def _clear_runs(self):
-		for run in frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow.name}, pluck="name"):
-			frappe.db.delete(fx.STEP_LOG_DT, {"workflow_run": run})
-		frappe.db.delete(fx.RUN_DT, {"workflow": self.workflow.name})
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": self.workflow.name}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": self.workflow.name})
 		frappe.db.commit()
 
 	def _walk(self):
-		run = fx.start_run(self.workflow, self.lead.name, "start")
-		interpreter.advance(frappe.get_doc(fx.RUN_DT, run.name))
-		return frappe.get_doc(fx.RUN_DT, run.name)
+		run = fx.start_journey(self.workflow, self.lead.name, "start")
+		interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		return frappe.get_doc(fx.JOURNEY_DT, run.name)
 
 	def test_the_sends_switch_is_dormant_so_this_suite_sends_nothing(self):
 		"""A control. If the switch were armed on this bench the two tests below would mean something
@@ -123,14 +123,14 @@ class TestASendFailureRoutesInsteadOfKillingTheRun(FrappeTestCase):
 
 	def test_a_lead_with_no_phone_number_leaves_by_the_failed_edge(self):
 		"""THE headline. "This patient has no phone number" is an ordinary data state; before this it
-		raised, reached `advance`, and marked the run Failed — killing the journey."""
+		raised, reached `advance`, and marked the journey Failed — killing the journey."""
 		frappe.db.set_value("CRM Lead", self.lead.name, "mobile_no", "")
 		frappe.db.commit()
 
 		run = self._walk()
 
-		self.assertEqual(run.status, "Done", "an ordinary data state must not fail the run")
-		self.assertEqual(run.current_node, "failed_end", "the run must leave the send by its `failed` edge")
+		self.assertEqual(run.status, "Done", "an ordinary data state must not fail the journey")
+		self.assertEqual(run.current_node, "failed_end", "the journey must leave the send by its `failed` edge")
 		details = " ".join(log["detail"] or "" for log in fx.logs(run.name))
 		self.assertIn("mobile_no", details, "the step log must say WHY the send did not happen")
 
@@ -153,7 +153,7 @@ class TestTheSendVerbsRouteThroughTheOneMechanism(FrappeTestCase):
 	"""B3: a declaration nothing checks is a lie waiting to happen.
 
 	`interpreter._verb_output` falls back to `next` when a handler names no output — and neither send verb
-	declares `next` any more. So a handler that forgot to set `_output` would route the run to a node that
+	declares `next` any more. So a handler that forgot to set `_output` would route the journey to a node that
 	does not exist, silently. This locks the declaration against the runtime for every verb that declares
 	custom outputs, iterated from `VERBS` so a verb added tomorrow is covered tomorrow.
 	"""
@@ -191,7 +191,7 @@ class TestTheSendVerbsRouteThroughTheOneMechanism(FrappeTestCase):
 				self.assertIn(
 					state.get(refs.OUTPUT), declared,
 					f"{verb} left `{refs.OUTPUT}` at {state.get(refs.OUTPUT)!r}, which it does not declare — "
-					"the interpreter would fall back to `next` and route the run nowhere",
+					"the interpreter would fall back to `next` and route the journey nowhere",
 				)
 
 	def test_every_send_verb_declares_both_a_sent_and_a_failed_edge(self):
