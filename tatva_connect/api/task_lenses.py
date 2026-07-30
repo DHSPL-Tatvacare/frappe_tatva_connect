@@ -22,8 +22,11 @@ to `ColumnSettings.vue`'s existing `fieldSource` prop from `ViewControls.vue`.
 
 Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md §6 and §9 Phase 6.
 """
+
 import frappe
 from frappe.model.document import get_controller
+
+from tatva_connect.list_engine import engine
 
 TASK = "CRM Task"
 
@@ -39,11 +42,15 @@ def declared_fields(doctype):
 
 
 def _narrow(fields, doctype):
-	"""The native answer, keeping only what the declaration names. Every lens returns `fieldname` dicts."""
+	"""The native answer, keeping only what the declaration names, plus the doctype's derived fields.
+
+	A derived field is not in `frappe.get_meta`, so no native lens can find it; it is offered here in the
+	same dict shape a real field arrives in, which is what lets every picker treat it as ordinary."""
 	declared = declared_fields(doctype)
 	if declared is None:
-		return fields
-	return [f for f in fields if f.get("fieldname") in declared]
+		return [*fields, *engine.lens_fields(doctype)]
+	kept = [f for f in fields if f.get("fieldname") in declared]
+	return [*kept, *engine.lens_fields(doctype)]
 
 
 @frappe.whitelist()
@@ -68,11 +75,20 @@ def sort_options(doctype: str):
 
 
 @frappe.whitelist()
+def get_quick_filters(doctype: str, cached: bool = True):
+	"""The fifth menu. It is not one of the four lenses — it reads `meta.fields` and `in_standard_filter`
+	directly — so a derived field is appended in that endpoint's own shape and nothing native is narrowed."""
+	from crm.api.doc import get_quick_filters as _native
+
+	return [*_native(doctype, cached), *engine.quick_filter_fields(doctype)]
+
+
+@frappe.whitelist()
 def get_column_fields(doctype: str):
 	"""The column lens. Its picker has no native endpoint, so this answers the declaration's set in the
 	shape `ColumnSettings.vue`'s `fieldSource` prop already takes — the same narrowed list the filter
 	lens returns, so all four menus have one source. An empty list for a doctype this layer does not
 	narrow is that prop's own contract for "keep the stock doctype-meta source"."""
-	if declared_fields(doctype) is None:
+	if declared_fields(doctype) is None and not engine.lens_fields(doctype):
 		return []
 	return get_filterable_fields(doctype)

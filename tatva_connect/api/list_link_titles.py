@@ -14,6 +14,7 @@ One generic place, driven by the framework's own flag, no per-field or per-surfa
 the unchanged native `get_data` (same pattern as `access/native_guards`), and the title_field read
 itself lives once, in `taxonomy.labels.title_of`.
 """
+
 import frappe
 
 from tatva_connect.taxonomy import labels
@@ -28,11 +29,11 @@ def get_data(**kwargs):
 
 
 def _native_get_data(**kwargs):
-	from crm.api.doc import get_data as native
+	# The list engine, which delegates to the unchanged native `get_data` for every doctype that declares
+	# no derived field — so this stays the one door and the inert path is byte-identical.
+	from tatva_connect.list_engine import engine
 
-	# This override is dispatched with the full form_dict (cmd, etc.); forward only the args the
-	# native signature accepts — frappe.get_newargs is the same filter frappe.call uses.
-	return native(**frappe.get_newargs(native, kwargs))
+	return engine.get_data(**kwargs)
 
 
 def _attach_link_titles(result, doctype=None):

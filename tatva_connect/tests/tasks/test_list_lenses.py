@@ -27,11 +27,14 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.tasks.test_list_lenses
 """
+
 import json
 
 import frappe
 from frappe.model.document import get_controller
 from frappe.tests.utils import FrappeTestCase
+
+from tatva_connect.list_engine import derived
 
 TASK = "CRM Task"
 
@@ -54,23 +57,49 @@ OTHER_DOCTYPES = ("CRM Lead", "CRM Deal", "FCRM Note", "CRM Call Log")
 # What a rep may never be offered. This is the TEST's statement of plan §6 — the expectation lives here
 # precisely because the code may not carry such a list.
 SLOTS = (
-	"custom_key_date_1", "custom_key_date_2", "custom_key_date_3", "custom_key_date_4",
-	"custom_reference", "custom_activity_payload",
+	"custom_key_date_1",
+	"custom_key_date_2",
+	"custom_key_date_3",
+	"custom_key_date_4",
+	"custom_reference",
+	"custom_activity_payload",
 )
 OPERATIONAL = (
-	"custom_automated", "custom_lsq_task_id", "custom_lsq_activity_id", "custom_external_id",
-	"custom_workflow_token", "custom_due_soon_notified_for", "custom_overdue_notified_for",
-	"custom_location_latitude", "custom_location_longitude", "custom_location_address",
-	"custom_location_accuracy_m", "custom_location_captured_at", "custom_location_geo",
-	"custom_asm", "custom_checklist",
+	"custom_automated",
+	"custom_lsq_task_id",
+	"custom_lsq_activity_id",
+	"custom_external_id",
+	"custom_workflow_token",
+	"custom_due_soon_notified_for",
+	"custom_overdue_notified_for",
+	"custom_location_latitude",
+	"custom_location_longitude",
+	"custom_location_address",
+	"custom_location_accuracy_m",
+	"custom_location_captured_at",
+	"custom_location_geo",
+	"custom_asm",
+	"custom_checklist",
 )
 
 # Plan §6's rep-facing set, verbatim. The declaration must name every one of these or a rep loses a
 # question they can legitimately ask of the list.
 REP_FACING = {
-	"name", "custom_task_type", "title", "reference_docname", "reference_doctype", "status",
-	"priority", "due_date", "start_date", "custom_completed_on", "assigned_to", "custom_outcome",
-	"custom_followup_at", "custom_scheduled_at", "description",
+	"name",
+	"custom_task_type",
+	"title",
+	"reference_docname",
+	"reference_doctype",
+	"status",
+	"priority",
+	"due_date",
+	"start_date",
+	"custom_completed_on",
+	"assigned_to",
+	"custom_outcome",
+	"custom_followup_at",
+	"custom_scheduled_at",
+	"description",
 }
 
 
@@ -99,12 +128,16 @@ class TestTaskListLenses(FrappeTestCase):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		cls.declared = set(get_controller(TASK).default_list_data().get("rows") or [])
+		# The second declaration: fields that exist only in `list_engine/fields.py`, never in doctype meta.
+		cls.derived = set(derived.names(TASK))
 
 	def test_the_declaration_names_the_whole_rep_facing_set(self):
 		"""The premise of every other test: the lenses resolve through the declaration, so the
 		declaration must BE plan §6. A field missing here silently disappears from all four menus."""
 		missing = REP_FACING - self.declared
-		self.assertEqual(missing, set(), f"CRM Task.default_list_data() omits rep-facing fields: {sorted(missing)}")
+		self.assertEqual(
+			missing, set(), f"CRM Task.default_list_data() omits rep-facing fields: {sorted(missing)}"
+		)
 
 	def test_the_declaration_names_no_slot_and_no_operational_column(self):
 		"""The other half of the premise. Nothing can filter a slot out downstream if it is declared."""
@@ -133,23 +166,36 @@ class TestTaskListLenses(FrappeTestCase):
 			self.assertEqual(leaked, set(), f"{cmd} still offers a rep: {sorted(leaked)}")
 
 	def test_each_lens_is_the_declaration_intersected_with_the_native_answer(self):
-		"""The DESIGN, not just its effect. A lens offers exactly `declared & native`: nothing outside
-		the declaration (so a new doctype column is invisible until declared), and nothing the native
+		"""The DESIGN, not just its effect. A lens offers exactly `(declared & native) | derived`: nothing
+		outside a declaration (so a new doctype column is invisible until declared), and nothing the native
 		lens itself rules out (fieldtype eligibility and standard fields stay upstream's business).
 		A suppression list cannot satisfy the first half — it would leak every undeclared field nobody
-		remembered to name."""
+		remembered to name.
+
+		The derived half is the second declaration, not an exception to the first. A derived field is not in
+		`frappe.get_meta`, so no native lens can find it and the intersection could never contain it; it is
+		offered because `list_engine/fields.py` declares it, on exactly the same terms."""
 		for cmd in NATIVE_LENSES:
 			offered = _names(_dispatched(cmd)(TASK))
-			expected = self.declared & _names(_native(cmd)(TASK))
+			expected = (self.declared & _names(_native(cmd)(TASK))) | self.derived
 			self.assertTrue(offered, f"{cmd} offers nothing at all for {TASK}")
-			self.assertEqual(offered, expected, f"{cmd} is not the declaration intersected with native")
+			self.assertEqual(offered, expected, f"{cmd} is not the declarations intersected with native")
+
+	def test_a_derived_field_is_offered_only_where_it_is_declared(self):
+		"""The derived half narrows too: a doctype that declares no derived field is offered none."""
+		self.assertIn("due_state", _names(_dispatched(NATIVE_LENSES[0])(TASK)))
+		for doctype in OTHER_DOCTYPES:
+			with self.subTest(doctype):
+				self.assertNotIn("due_state", _names(_dispatched(NATIVE_LENSES[0])(doctype)))
 
 	def test_the_column_lens_is_the_declaration_too(self):
 		"""The fourth menu, whose picker has no native endpoint to intersect with — it is fed by the
 		same narrowed answer the filter lens returns, so all four have one source."""
 		offered = _names(_dispatched(COLUMN_LENS)(TASK))
 		self.assertTrue(offered, "the column lens offers nothing at all for CRM Task")
-		self.assertLessEqual(offered, self.declared, "the column lens offers fields the declaration omits")
+		self.assertLessEqual(
+			offered, self.declared | self.derived, "the column lens offers fields no declaration names"
+		)
 		self.assertEqual(offered, _names(_dispatched(NATIVE_LENSES[0])(TASK)))
 
 	def test_grouping_by_task_type_is_still_possible(self):
