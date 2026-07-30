@@ -690,12 +690,12 @@ AUTOMATIONS = [
 		trigger_detail='wildcard "*" · validate (guard lane) + after_insert (Created) + on_update (Updated) + on_trash (Deleted) — workflow entry',
 		purpose=(
 			"The workflow engine itself: a subject entering an enabled workflow whose grain matches "
-			"starts one durable Instance that walks a graph of steps, branches, and waits, parking on "
-			"timers and external signals for as long as the journey needs. One journey runs per subject, "
+			"starts one durable journey that walks a graph of steps, branches, and waits, parking on "
+			"timers and external signals for as long as it needs. One journey runs per subject, "
 			"guarded by a database unique key so a subject can never start the same workflow twice, and "
 			"an external event is delivered by dropping a row in a durable inbox that the matching wait "
 			"consumes — so an early, duplicate, or out-of-order signal is handled by construction rather "
-			"than lost. Off, which is how it ships, no instance starts and no signal is delivered.\n"
+			"than lost. Off, which is how it ships, no journey starts and no signal is delivered.\n"
 			"Example: a lead is created, a welcome step fires, the journey waits for a document upload, "
 			"and the upload's signal resumes it weeks later exactly where it parked."
 		),
@@ -715,7 +715,7 @@ AUTOMATIONS = [
 		trigger_detail="every 15 min · timer wake + reconciler re-drive",
 		purpose=(
 			"The scheduled heartbeat behind the workflow engine's waits: every 15 minutes it wakes each "
-			"instance whose timer has elapsed and re-drives any instance whose awaited signal is already "
+			"journey whose timer has elapsed and re-drives any journey whose awaited signal is already "
 			"waiting in the inbox but whose wake was lost, so the durable state is always the source of "
 			"truth and no lost job can strand a journey. It is gated on its own switch as well as the "
 			"engine's, so the sweep can be paused without taking the engine down. Off, timers and "
@@ -998,6 +998,8 @@ AUTOMATIONS = [
 			"tatva_connect.search.index.reindex_on_assignment",
 			"tatva_connect.search.index.reindex_on_assignment_change",
 			"tatva_connect.search.index.reindex_on_share",
+			# Hourly: drops an index that can no longer be READ, the one damaged state frappe's own 3-hourly check cannot see — it asks whether the file exists, not whether it opens. Gated here because a disabled feature has no index to keep healthy.
+			"tatva_connect.search.index.sweep_index_health",
 		],
 	),
 	Auto(
