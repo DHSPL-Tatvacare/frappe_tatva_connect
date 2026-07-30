@@ -29,6 +29,7 @@ _INTERPRETER = Path(frappe.get_app_path("tatva_connect")) / "workflow_engine" / 
 _VALID_EXAMPLE = {
 	"Trigger": {"subject_doctype": "CRM Lead", "event": "Created"},
 	"Route": {"routes": [{"id": "r1", "label": "r1", "condition": {"type": "rule", "field": "status", "operator": "is", "value": "New"}}]},
+	"Sample": {"arms": [{"id": "a1", "label": "Treatment", "percent": 50}]},
 	"Set Variables": {"assign": "{'x': 1}"},
 	"Wait": {"mode": registry.FOR_DURATION, "expression": "{'minutes': 5}"},
 	"Terminal": {},

@@ -20,6 +20,7 @@ and the Wait leaves by its `event` output; otherwise, if the clock is due, it le
 (Event-or-Timeout) or `next` (pure timer); else it parks. The scheduler sweep + `deliver_signal` +
 `resume_for_signal` (the wake callers) live in `wakeups.py` / `signals.py` and hold the `for_update` claim.
 """
+import hashlib
 import time
 
 import frappe
@@ -195,8 +196,8 @@ def advance(instance):
 				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
 				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
-			elif node.node_type in ("Route", "Set Variables"):
-				nxt, detail = _next_control(node, state)  # the ONE control-flow step, shared with run_inline
+			elif node.node_type in ("Route", "Sample", "Set Variables"):
+				nxt, detail = _next_control(node, state, instance.subject_name)  # the ONE control-flow step, shared with run_inline
 				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
 			elif node.node_type == registry.TRIGGER:
 				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
@@ -252,20 +253,27 @@ def _edge(node, output):
 	return None
 
 
-def _next_control(node, state):
-	"""Route/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one interpreter, not
-	two copies). Returns `(next_node_id, detail)` — `advance` logs the detail, `run_inline` ignores it.
+def _next_control(node, state, subject=None):
+	"""Route/Sample/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one
+	interpreter, not two copies). Returns `(next_node_id, detail)` — `advance` logs the detail,
+	`run_inline` ignores it.
 
 	A Route routes on the SAME predicate structure the Trigger uses, through the same evaluator: one
 	control for the author, one meaning at runtime. Rows are tried top to bottom and the FIRST whose
 	condition matches takes its edge — order is logic. A lead matching none takes `otherwise`, which is
-	reserved and always wired, so it can never fall out of the graph."""
+	reserved and always wired, so it can never fall out of the graph.
+
+	A Sample asks the other question a graph can ask when it splits — which arm did this person land in —
+	and answers it from `_arm_of`, never from chance at the moment of asking."""
 	config = _config(node)
 	if node.node_type == "Route":
 		for row in config.get("routes") or []:
 			if rules.predicate_match(row.get("condition"), state):
 				return _edge(node, row["id"]), row["id"]
 		return _edge(node, "otherwise"), "otherwise"
+	if node.node_type == "Sample":
+		arm = _arm_of(node, config, subject)
+		return _edge(node, arm), arm
 	result = expr.resolve_expression(config.get("assign"), state)
 	if not isinstance(result, dict):
 		raise _Permanent(f"Assign node {node.node_id} did not evaluate to a dict")
@@ -274,6 +282,36 @@ def _next_control(node, state):
 	# this reference — so the picker and the run agree without the author ever typing a node id.
 	state.writing_as(node.node_id).update(result)
 	return _edge(node, "next"), "keys: " + ",".join(sorted(result.keys()))
+
+
+def _arm_of(node, config, subject):
+	"""Which arm this subject lands in — a STABLE HASH of subject + node, never a draw.
+
+	THIS IS THE WHOLE REASON SAMPLE IS A SEPARATE NODE FROM ROUTE. A control group that reshuffles is not
+	a control group: the same lead judged again — a resume off the sweep, a re-run, a second cohort — must
+	land where it landed the first time, and nothing is stored to make that true. The node id is in the
+	digest so two Samples in one graph split independently rather than in lockstep.
+
+	`sha256` and not Python's `hash()`: `hash()` of a str is salted per process (`PYTHONHASHSEED`), so
+	every worker restart would re-randomise every assignment while looking perfectly deterministic inside
+	one process. `random.Random(seed)` would also be stable, and is rejected because it says "draw" where
+	this says "read" — there is no chance here at execution time, only arithmetic on a digest.
+
+	The share ladder is walked in the author's own row order, and a subject past the last arm takes the
+	reserved `remainder`, so the arms never have to add up to 100.
+	"""
+	digest = hashlib.sha256(f"{subject}::{node.node_id}".encode()).hexdigest()
+	# Two decimals of a percent, which is the finest share an author can express.
+	point = int(digest[:8], 16) % 10000 / 100.0
+	ceiling = 0.0
+	for row in config.get("arms") or []:
+		try:
+			ceiling += float(row.get("percent"))
+		except (TypeError, ValueError):
+			continue
+		if point < ceiling and row.get("id"):
+			return row["id"]
+	return "remainder"
 
 
 def has_wait(version):
@@ -328,8 +366,8 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 				step_deferred, _marker = _run_verb(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
 				cursor = _edge(node, _verb_output(node, state))
-			elif node.node_type in ("Route", "Set Variables"):
-				cursor, _ = _next_control(node, state)  # the ONE control-flow step, shared with advance
+			elif node.node_type in ("Route", "Sample", "Set Variables"):
+				cursor, _ = _next_control(node, state, lead_name)  # the ONE control-flow step, shared with advance
 			elif node.node_type == registry.TRIGGER:
 				cursor = _edge(node, "next")  # a pass-through here too — see `advance`
 			else:

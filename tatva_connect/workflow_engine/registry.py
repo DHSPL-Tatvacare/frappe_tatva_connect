@@ -112,6 +112,19 @@ NODE_TYPES = {
 		},
 		"config": [_field("routes", "Routes", "Route Rows", reqd=True)],
 	},
+	"Sample": {
+		"label": "Sample",
+		"description": "Splits by chance into arms of a declared size, for a trial or a control group. A lead lands in the SAME arm every time it is judged, so a control group stays a control group. Whatever share is left over takes Remainder.",
+		# The SAME `rows_from` seam Route reads its own config through — rows lead, the fixed base follows.
+		# Sample is a SEPARATE node from Route and never a mode of it: this node's rule is that assignment
+		# is stable per lead, and that rule is meaningless on a conditional, so merging them would put a
+		# dead control on every Route.
+		"outputs_by": {
+			"base": ["remainder"],
+			"rows_from": {"declares": "arms", "key": "id"},
+		},
+		"config": [_field("arms", "Arms", "Sample Rows", reqd=True)],
+	},
 	"Set Variables": {
 		"label": "Set Variables",
 		"description": "Computes values into the run's state for later nodes to read. Nothing to do with people — to change who owns a lead, use Assign to User.",
@@ -652,6 +665,41 @@ def _option_problems(value, field, config, context):
 	]
 
 
+def _share_problems(value, field, config, context):
+	"""A Sample's arms must add up to a share that can actually be honoured.
+
+	NO NEW VALIDATOR SEAM — this is a `check` on the field type, exactly where `Select`, `Link`, `Field`
+	and `Predicate` already put theirs, so `graph.py` gains nothing and the rule fires wherever
+	`validate_node` runs. It refuses only what is arithmetically impossible: a share that is not a positive
+	number, and a total above the whole. It does NOT demand the arms sum to exactly 100 — the leftover IS
+	the Remainder edge, which is the point of having one.
+	"""
+	found, total = [], 0.0
+	for row in value if isinstance(value, list) else []:
+		if not isinstance(row, dict):
+			continue
+		name = row.get("label") or row.get("id") or "?"
+		try:
+			share = float(row.get("percent"))
+		except (TypeError, ValueError):
+			found.append(_("{0} needs a percentage.").format(name))
+			continue
+		if share <= 0:
+			found.append(_("{0} is {1}% — an arm nobody can land in is a branch that never runs.").format(
+				name, _trim(share)))
+			continue
+		total += share
+	if total > 100:
+		found.append(_("The arms add up to {0}% — more than the whole, so the last of them cannot be "
+		               "honoured.").format(_trim(total)))
+	return found
+
+
+def _trim(number):
+	"""A share reads as `40` and `12.5`, never `40.0` — the author typed one of those and not the other."""
+	return int(number) if float(number).is_integer() else number
+
+
 # `scalar` — does the stored value fit on a line as itself? A list or a tree does not, and a card that
 # prints one shows `[object Object]`. `summary` is how such a value is NAMED instead: `{"count": noun}`
 # renders "3 required", `{"phrase": text}` a fixed sentence where a count means nothing. Every non-scalar
@@ -696,6 +744,9 @@ FIELD_TYPES = {
 	"Field": {"control": "field-picker", "check": _settable_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Route Rows": {"control": "route-rows", "check": None, "primitive": False, "reads": "predicate_rows", "scalar": False, "summary": {"count": "routes"}},
+	# `reads` is None and that is not an oversight: an arm is a share of chance, so it references no run
+	# state at all. The `check` is where a Sample's one refusable fact lives — see `_share_problems`.
+	"Sample Rows": {"control": "sample-rows", "check": _share_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "arms"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
