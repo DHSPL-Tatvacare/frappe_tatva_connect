@@ -145,9 +145,11 @@ def _condition_holds(tt, values):
 	collect.
 
 	The settle is paid again here when `compute_activity` has already settled the same answers in the same
-	request. That is one bounded in-process fixpoint over a handful of fields and no SQL, and it buys
-	correctness by construction — every caller judges the same bag without having to remember to. It is
-	deliberately NOT memoised: this repo's rule is measure before designing, and it has not been measured."""
+	request, and the two are PROVABLY the same answer rather than merely likely to be: `_settled` is pure, and
+	both sides now compile from a `get_doc` read of the same task type (see `location_required`). That is what
+	makes the repeat safe to leave — a bounded in-process fixpoint over a handful of fields, no SQL, and no
+	way for the gate and the writer to judge two different declarations. Passing the settled bag down instead
+	would save that fixpoint at the cost of a fourth caller having to remember to settle first."""
 	from tatva_connect.activity.api import _field_visible, _rule_atom, _settled, compiled_fields
 
 	field = (tt.get("location_condition_field") or "").strip()
@@ -169,14 +171,21 @@ def location_required(task_type, lead, values):
 	Reuses is_location_tracked for the radius — one brain for both the always-visit and the
 	conditional-visit branches.
 
-	ONE cached document read serves both halves. It used to ask the database twice — `db.get_value` for the
-	columns, then the condition parse — on every activity save and every backstop pass; `get_cached_doc` is
-	frappe's own memoised read and the condition needs the doc's schema anyway."""
+	ONE document read serves both halves — it used to ask the database twice, `db.get_value` for the columns
+	and then the condition parse, on every activity save and every backstop pass.
+
+	`get_doc` and NOT `get_cached_doc`, deliberately, and this is the one place in the module where that
+	matters. `compute_activity` reads the type with `get_doc` and settles the answers against THAT schema
+	before enforcing required fields; if this gate read a cached copy, the two would judge the same
+	submission against two declarations. The cache is not hypothetically stale here — every activity seed in
+	this app is raw SQL, which never invalidates it, which is why `apply-seeds.sh` ends with `clear-cache`.
+	So an ENFORCEMENT gate reads what the writer reads. `location_guard_applies` above is a door-first probe
+	that settles nothing and compares one column, so a cached read is correct there."""
 	if not (task_type and lead):
 		return None
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	tt = frappe.get_doc("CRM Task Type", task_type)
 	if (tt.visit_mode or "") != VISIT_IN_PERSON and not _condition_holds(tt, values):
 		return None
 	return is_location_tracked(lead)

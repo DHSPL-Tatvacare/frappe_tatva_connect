@@ -178,6 +178,42 @@ class TestLocationConditionIsDeclared(FrappeTestCase):
 
 		self.assertIn("ZZ Not An Option", str(caught.exception), "the refusal must name the bad value")
 
+	def test_an_operator_the_engine_does_not_understand_is_refused(self):
+		"""The operator vocabulary is enforced by the doctype's own Select options, not by a Python twin.
+
+		An audit flagged this as a missing refusal. It is not: frappe's `_validate_selects`
+		(base_document.py:1093) refuses any value outside a Select's declared options, naming them. Adding a
+		check here would be a second list of the four operators beside the one in the JSON — the declaration
+		IS the enforcement. This test locks that: if the options are ever emptied from the doctype, frappe
+		stops checking and this goes red."""
+		with self.assertRaises(frappe.ValidationError) as caught:
+			task_type_fixture.mint_type(
+				f"{TYPE_NAME} Bad Operator", SCHEMA,
+				extra={"location_condition_field": MEETING, "location_operator": "contains",
+					   "location_condition_value": "Physical Visit"})
+
+		self.assertIn("contains", str(caught.exception), "the refusal must name the operator")
+
+	def test_a_rule_operator_the_engine_does_not_understand_is_refused(self):
+		"""Same enforcement on the rules grid, from the same place — its own Select's options."""
+		with self.assertRaises(frappe.ValidationError) as caught:
+			task_type_fixture.mint_type(
+				f"{TYPE_NAME} Bad Rule Operator", SCHEMA,
+				rules=({"rule_label": "ZZ bad op", "condition_field": OUTCOME, "operator": "equals",
+						"condition_value": "Connected", "action": "Show", "targets": MEETING},))
+
+		self.assertIn("equals", str(caught.exception), "the refusal must name the operator")
+
+	def test_a_blank_operator_is_still_allowed(self):
+		"""Blank is the doctype's `default`, and frappe skips a Select whose value is empty, so it must save.
+		`_rule_atom` reads it as `is` — which is why the default exists rather than a refusal."""
+		name = task_type_fixture.mint_type(
+			f"{TYPE_NAME} Blank Operator", SCHEMA,
+			extra={"location_condition_field": MEETING, "location_operator": "",
+				   "location_condition_value": "Physical Visit"})
+
+		self.assertTrue(frappe.db.exists("CRM Task Type", name), "a blank operator was refused")
+
 	def test_a_declared_condition_saves(self):
 		name = task_type_fixture.mint_type(
 			f"{TYPE_NAME} Good", SCHEMA,

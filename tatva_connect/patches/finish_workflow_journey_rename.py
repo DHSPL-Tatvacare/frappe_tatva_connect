@@ -16,7 +16,7 @@ table's column list and a schema change never invalidates it, so the next `has_c
 migrate reads a pre-change lie.
 
 THE OLD COLUMN IS LEFT IN PLACE. `rename_field` copies rather than moves, and dropping a column is a
-separate guarded step — the same call `convert_location_when_to_a_predicate` made for `location_when`.
+separate guarded step — the same call `retire_task_slot_columns` made for the slot columns.
 Nothing reads it: the doctype JSON no longer declares it, so no code path can address it.
 
 THE DESK GOES THROUGH `_desk.reimport` AND NOWHERE ELSE. Bumping `modified` alone ships nothing on a site
