@@ -49,6 +49,12 @@ _BUSY_TIMEOUT_MS = 500
 # The ONE title every index write failure is logged under, so a single Error Log notification rule catches them all.
 _WRITE_ERROR = "Search Index Error"
 
+# A repaired index is its own event, not _WRITE_ERROR: a dropped write is noise, a dropped INDEX is not.
+_REPAIR_NOTICE = "Search Index Repaired"
+
+# `quick_check` catches page damage — the whole failure mode of a half-written file — at 5 ms against integrity_check's 20 ms on a real 3.3 MB index; both detect the same scribbled page, and only the hourly sweep pays it.
+_HEALTH_PRAGMA = "PRAGMA quick_check"
+
 # THE ID RULE, declared ONCE: a unique ID is INPUT — indexed so a punched ID finds its record, never shown in a
 # row except in the one dedicated slot, when that ID is what the user typed. This tuple is the whole declaration:
 # it fills `keys` (searched), stores the value as returned metadata, and names which ID a typed query matched.
@@ -254,6 +260,30 @@ class CRMLeadSearch(SQLiteSearch):
 			super().remove_doc(doctype, docname)
 		except Exception:
 			frappe.log_error(title=_WRITE_ERROR, message=f"remove {doctype}:{docname}\n\n{frappe.get_traceback()}")
+
+	def index_is_readable(self):
+		"""Can the index file still be READ — the one lifecycle state the framework has no branch for.
+
+		`index_exists()` answers "is the file there and does it hold the FTS table", and that is deliberately
+		all it answers, because frappe hooks `update_doc_index` / `delete_doc_index` into `doc_events["*"]`:
+		it runs on EVERY save of EVERY doctype site-wide. A health check belongs nowhere near it — that is why
+		this is a separate method, asked once an hour by `sweep_index_health` and by nothing else.
+
+		Damage is invisible to every existing check. A half-written file still exists and still carries
+		`search_fts`, so `index_exists()` says yes, the schema fingerprint still matches, and frappe's 3-hourly
+		`build_index_if_not_exists` looks at it and does nothing. Meanwhile every read fails
+		(`sqlite_search.py:272` logs and returns empty) and every write fails (`index_doc` / `remove_doc` log
+		and move on). Nobody is blocked and nobody is told: measured on this bench, one index was damaged on
+		2026-07-26 and was still silently returning nothing on 2026-07-30, 41 log entries later.
+
+		A damaged file RAISES here rather than returning a verdict, so the exception is the answer as much as
+		the string is."""
+		if not self.index_exists():
+			return True  # nothing to judge; a missing index is the one state frappe already repairs
+		try:
+			return (self.sql(_HEALTH_PRAGMA, read_only=True) or [["ok"]])[0][0] == "ok"
+		except Exception:
+			return False
 
 	def build_index(self, batch_size=1000, is_continuation=False):
 		# Both native entrypoints — the enqueued build_index and the 3-hourly build_index_if_not_exists — land here.
@@ -479,6 +509,54 @@ class CRMLeadSearch(SQLiteSearch):
 def build_index():
 	# Console/enqueue entrypoint for a full (re)build — mirrors helpdesk's module function.
 	CRMLeadSearch().build_index()
+
+
+def sweep_index_health():
+	"""Hourly: throw away an index that can no longer be read, so the framework rebuilds it.
+
+	THE GAP THIS CLOSES. Frappe's own 3-hourly `build_index_if_not_exists` recovers exactly two states — a
+	build interrupted midway (a temp file survives) and no index at all. A file that exists but is DAMAGED
+	passes both tests, so it is never repaired: search returns nothing for ever, the failures go to the Error
+	Log, and no check ever looks at them. That is the disease; the log entries were the symptom.
+
+	IT REBUILDS NOTHING ITSELF. Dropping the file is the whole of this function, and the rebuild is handed
+	straight back to `build_index_in_background`, frappe's own entry point — which enqueues on the long queue
+	under a `job_id` with `deduplicate=True` (`sqlite_search.py:1794-1803`). So there is ONE builder, one job
+	id, and frappe's next health pass collapses into the same job rather than racing it. A second builder here
+	would risk writing the very corruption this repairs, since both would use the same temp path.
+
+	IT NEVER TOUCHES A REP'S SAVE. This runs on the scheduler; the read and write paths are untouched, and
+	`index_is_readable` is called from here and nowhere else. Corruption already fails soft on both — a search
+	returns empty, an index write logs and moves on — so this changes nothing a user can feel except that
+	search starts working again within the hour.
+
+	Skips while a build is in flight, mirroring frappe's own first branch: a temp file means a builder owns
+	this index right now, and dropping the live file under it would strand the swap. Dormant with the feature
+	(`TOGGLE`), and silent on a site with no index — that is the state frappe already handles.
+	"""
+	import os
+
+	from frappe.search.sqlite_search import build_index_in_background
+
+	if frappe.flags.in_migrate or frappe.flags.in_install:
+		return
+	engine = CRMLeadSearch()
+	if not (engine.is_search_enabled() and engine.index_exists()):
+		return
+	if os.path.exists(engine._get_db_path(is_temp=True)):
+		return  # a build owns the index right now; let it finish or let frappe continue it
+	if engine.index_is_readable():
+		return
+
+	engine.drop_index()  # frappe's own, so the file is removed exactly as a rebuild expects to find it
+	build_index_in_background()
+	# Logged, never silent: a site repairing this repeatedly has an infrastructure fault no rebuild will cure.
+	frappe.log_error(
+		title=_REPAIR_NOTICE,
+		message="The lead search index could not be read and was dropped; a rebuild is enqueued.\n\n"
+				"Search returns nothing until it finishes. A repeat means writes are being interrupted — "
+				"look for the worker being killed, the host restarting, or the volume filling up.",
+	)
 
 
 def reindex_lead(lead):

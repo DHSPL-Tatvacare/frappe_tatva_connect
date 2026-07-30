@@ -317,8 +317,11 @@ scheduler_events = {
 		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
 		# Daily: drop expired partner-API idempotency records.
 		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
-		# Hourly: fail any async bulk job stranded InProgress past its worker timeout (worker died).
-		"45 * * * *": ["tatva_connect.api.partner_bulk_worker.reap_stranded_jobs"],
+		# Hourly: fail any async bulk job stranded InProgress past its worker timeout (worker died); and drop a search index that can no longer be READ, which is the one damaged state frappe's own 3-hourly check cannot see (it asks whether the file exists, not whether it opens).
+		"45 * * * *": [
+			"tatva_connect.api.partner_bulk_worker.reap_stranded_jobs",
+			"tatva_connect.search.index.sweep_index_health",
+		],
 		# Daily: purge finished async bulk jobs + results + payload past the retention window.
 		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
 		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
