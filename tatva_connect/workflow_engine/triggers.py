@@ -313,6 +313,14 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 			# Cleared when the journey reaches a terminal state, so the same lead may enter again later.
 			"active_key": f"{workflow_name}::{lead_name}",
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
+		# The list view's "Last journey" column, MATERIALISED — the same shape `trigger_next_run_at`
+		# already uses on this header, because a list view cannot join to the journey table. Stamped when a
+		# journey is BORN and never on its steps: touching the header once per node of every journey is the
+		# cost this column was explicitly scoped to avoid. Inside the try, so a start that rolls back leaves
+		# no claim that one happened. `update_modified=False` — the operator did not edit this workflow.
+		frappe.db.set_value(
+			_WORKFLOW_DT, workflow_name, "last_journey_at", journey.creation, update_modified=False,
+		)
 		interpreter.advance(journey)
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 		frappe.db.rollback()  # active_key UNIQUE rejected a second live Journey - already running (F3)

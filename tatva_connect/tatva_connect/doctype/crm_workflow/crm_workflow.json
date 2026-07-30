@@ -13,6 +13,7 @@
   "trigger_event",
   "trigger_mode",
   "trigger_next_run_at",
+  "last_journey_at",
   "cohort_state",
   "cohort_cursor",
   "cohort_abort",
@@ -39,7 +40,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "read_only": 1,
-   "label": "Lifecycle State",
+   "label": "Status",
    "description": "The Definition's editorial lifecycle, advanced only through its transition verbs (never edited by hand): Draft (authoring, mutable) -> Publish freezes an immutable Version -> Activate arms the entry trigger -> Suspend disarms it -> Archive retires it. A new Journey starts only while Active; running Journeys stay pinned to their Version across every later transition."
   },
   {
@@ -51,16 +52,17 @@
   {
    "fieldname": "trigger_doctype",
    "fieldtype": "Data",
-   "label": "Trigger Doctype",
+   "label": "Subject",
    "read_only": 1,
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query — a predicate in JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query — a predicate in JSON cannot answer that. One writer: the Workflow controller.",
+   "in_list_view": 1
   },
   {
    "fieldname": "trigger_event",
    "fieldtype": "Data",
-   "label": "Trigger Event",
+   "label": "Event",
    "read_only": 1,
    "in_standard_filter": 1,
    "search_index": 1,
@@ -83,6 +85,16 @@
    "search_index": 1,
    "no_copy": 1,
    "description": "Derived. When this workflow's cohort is next due. Blank on a record-event workflow, which is woken by a save and is never due."
+  },
+  {
+   "fieldname": "last_journey_at",
+   "fieldtype": "Datetime",
+   "label": "Last journey",
+   "read_only": 1,
+   "search_index": 1,
+   "in_list_view": 1,
+   "no_copy": 1,
+   "description": "Derived. When a Journey was last STARTED down this workflow — materialised here because a list view cannot join to the Journey table, the same way trigger_next_run_at is. Written once as a Journey is born, never on its steps: touching this header on every node of every Journey is the cost this column was scoped to avoid. It does not mean 'when a Journey last did anything'."
   },
   {
    "fieldname": "cohort_state",
@@ -121,34 +133,37 @@
    "fieldname": "trigger_vertical",
    "fieldtype": "Data",
    "read_only": 1,
-   "label": "Trigger Vertical",
+   "label": "Vertical",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "in_list_view": 1
   },
   {
    "fieldname": "trigger_group",
    "fieldtype": "Data",
    "read_only": 1,
-   "label": "Trigger Group",
+   "label": "Group",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "in_list_view": 1
   },
   {
    "fieldname": "trigger_program",
    "fieldtype": "Data",
    "read_only": 1,
-   "label": "Trigger Program",
+   "label": "Program",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller."
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "in_list_view": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-07-20 00:00:00.000000",
+ "modified": "2026-07-30 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow",
