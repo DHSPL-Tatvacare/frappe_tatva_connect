@@ -78,6 +78,16 @@ _SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # contract and the action layer spell it, and contract imports registry which builds itself from actions.
 CTX_PREFIX = "$ctx."
 
+# W5.4 — HOW A VALUE IS FILLED, declared once. `Literal` is what the author typed; `From Context` names
+# run state; `Expression` computes from it. This is the same distinction `refs` already owns — a value
+# and where it came from — and the same reason `CTX_PREFIX` lives here: the contract and the action layer
+# both spell it, and `contract` imports `registry` which builds itself from `actions`.
+# These are the words an AUTHOR PICKS from a Select, so a rename here must reach every runtime `==` or a
+# Set Field silently writes the variable's NAME onto a patient's field and a task takes its default date.
+LITERAL = "Literal"
+FROM_CONTEXT = "From Context"
+EXPRESSION = "Expression"
+
 ENGINE = "_engine"
 
 TOKEN = f"{ENGINE}{SEP}token"

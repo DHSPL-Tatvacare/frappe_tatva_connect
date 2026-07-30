@@ -77,37 +77,61 @@ class TestWhatAnAuthorIsOfferedIsTheDeclarationItself(FrappeTestCase):
 	"""The other half: the Select the author picks from must BE the declared words, not a typed pair that
 	happens to match. Rename the constant and a hardcoded options list goes red here."""
 
-	def _mode_params(self):
-		found = [
-			(verb, param)
-			for verb, spec in actions.VERBS.items()
-			for param in spec.get("params") or []
-			if param.get("name", "").endswith("_mode") and param.get("options")
-		]
-		self.assertTrue(found, "no mode param is declared — this lock would pass vacuously")
+	def _value_mode_params(self):
+		"""Which Selects are about HOW A VALUE IS FILLED — decided structurally, never by the name.
+
+		A param ending in `_mode` is not automatically one of these: `Assign to User.assign_mode` is
+		`Assign|Reassign`, a different question entirely, and a lock that cannot tell them apart reports
+		a naming decision as a defect. Two structural signals, unioned, and each covers the other's hole:
+
+		  * its options OVERLAP the declared vocabulary — so renaming one of the three in one place only
+		    leaves the param overlapping on the other two and it stays caught;
+		  * it gates a sibling that `reads: expression` — so a param whose words were ALL restated at once
+		    is still in scope, which overlap alone would miss.
+
+		Returns `(verb, param, own_params)`.
+		"""
+		found = []
+		for verb, spec in actions.VERBS.items():
+			params = spec.get("params") or []
+			expression_gates = {
+				field
+				for sibling in params
+				if sibling.get("reads") == "expression"
+				for field in (sibling.get("depends_on_value") or {})
+			}
+			for param in params:
+				options = set(param.get("options") or ())
+				if not options:
+					continue
+				if options & self._declared() or param["name"] in expression_gates:
+					found.append((verb, param, params))
+		self.assertTrue(found, "no value-mode param is declared — this lock would pass vacuously")
 		return found
 
+	def _declared(self):
+		return {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION}
+
 	def test_every_offered_mode_is_a_declared_one(self):
-		declared = {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION}
-		for verb, param in self._mode_params():
+		for verb, param, _params in self._value_mode_params():
 			with self.subTest(verb=verb, param=param["name"]):
 				self.assertLessEqual(
-					set(param["options"]), declared,
+					set(param["options"]), self._declared(),
 					f"{verb}.{param['name']} offers a mode nothing declares: {param['options']}",
 				)
 
 	def test_the_gate_a_mode_opens_names_a_declared_mode(self):
 		"""`depends_on_value` decides which box the author sees. A stale word there hides the control for a
 		mode that is still live, which reads as 'the field vanished' rather than as a bug."""
-		declared = {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION}
+		in_scope = {(verb, param["name"]) for verb, param, _ in self._value_mode_params()}
 		for verb, spec in actions.VERBS.items():
 			for param in spec.get("params") or []:
 				gate = param.get("depends_on_value") or {}
 				for field, values in gate.items():
-					if not field.endswith("_mode"):
+					if (verb, field) not in in_scope:
 						continue
 					with self.subTest(verb=verb, param=param["name"]):
-						self.assertLessEqual(set(values), declared,
+						self.assertLessEqual(set(values), self._declared(),
 						                     f"{verb}.{param['name']} is gated on an undeclared mode: {values}")
 
 

@@ -374,9 +374,9 @@ def _resolve_set_field_value(action, context):
 	rule's savepoint rolls back — no partial write)."""
 	from tatva_connect.automation import expr
 
-	if action.value_mode == "Expression":
+	if action.value_mode == refs.EXPRESSION:
 		return expr.resolve_expression(action.expression, context)
-	if action.value_mode == "From Context":
+	if action.value_mode == refs.FROM_CONTEXT:
 		return context.get(action.context_field)
 	return action.value
 
@@ -388,7 +388,7 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 	re-fire the Field-Changed dispatcher on that doc (no new re-entrancy surface)."""
 	from tatva_connect.automation import expr
 
-	if action.comment_mode == "Expression":
+	if action.comment_mode == refs.EXPRESSION:
 		text = expr.resolve_expression(action.comment_expression, context)
 		if not isinstance(text, str):
 			raise ValueError("Add Comment expression did not evaluate to a string")
@@ -746,11 +746,12 @@ VERBS = {
 		"outcomes": ["task.completed", "task.cancelled"],
 		"params": [
 			{"name": "task_type", "label": "Task Type", "type": "Link", "link": "CRM Task Type", "reqd": True},
-			{"name": "due_mode", "label": "Due Mode", "type": "Select", "options": ["From Context", "Expression"]},
+			{"name": "due_mode", "label": "Due Mode", "type": "Select",
+			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION]},
 			{"name": "due_from", "label": "Due date from", "type": "Variable",
-			 "depends_on_value": {"due_mode": ["From Context"]}},
+			 "depends_on_value": {"due_mode": [refs.FROM_CONTEXT]}},
 			{"name": "due_expression", "label": "Due Expression", "type": "Small Text", "reads": "expression",
-			 "depends_on_value": {"due_mode": ["Expression"]}},
+			 "depends_on_value": {"due_mode": [refs.EXPRESSION]}},
 		],
 	},
 	"Update Field": {
@@ -763,12 +764,13 @@ VERBS = {
 			{"name": "fieldname", "label": "Field to set", "type": "Field", "reqd": True,
 			 "doctype_from": "target_doctype"},
 			{"name": "value_mode", "label": "Value Mode", "type": "Select",
-			 "options": ["Literal", "From Context", "Expression"], "reqd": True},
-			{"name": "value", "label": "Value", "type": "Data", "depends_on_value": {"value_mode": ["Literal"]}},
+			 "options": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION], "reqd": True},
+			{"name": "value", "label": "Value", "type": "Data",
+			 "depends_on_value": {"value_mode": [refs.LITERAL]}},
 			{"name": "context_field", "label": "Take the value from", "type": "Variable",
-			 "depends_on_value": {"value_mode": ["From Context"]}},
+			 "depends_on_value": {"value_mode": [refs.FROM_CONTEXT]}},
 			{"name": "expression", "label": "Expression", "type": "Small Text", "reads": "expression",
-			 "depends_on_value": {"value_mode": ["Expression"]}},
+			 "depends_on_value": {"value_mode": [refs.EXPRESSION]}},
 		],
 	},
 	"Append Child Row": {
@@ -825,11 +827,12 @@ VERBS = {
 		"label": "Create Note",
 		"description": "Adds a note to the lead's timeline.",
 		"params": [
-			{"name": "comment_mode", "label": "Mode", "type": "Select", "options": ["Literal", "Expression"]},
+			{"name": "comment_mode", "label": "Mode", "type": "Select",
+			 "options": [refs.LITERAL, refs.EXPRESSION]},
 			{"name": "comment_text", "label": "Text", "type": "Data",
-			 "depends_on_value": {"comment_mode": ["Literal"]}},
+			 "depends_on_value": {"comment_mode": [refs.LITERAL]}},
 			{"name": "comment_expression", "label": "Expression", "type": "Small Text", "reads": "expression",
-			 "depends_on_value": {"comment_mode": ["Expression"]}},
+			 "depends_on_value": {"comment_mode": [refs.EXPRESSION]}},
 		],
 	},
 	"Send WhatsApp": {
@@ -1007,9 +1010,9 @@ def _due_at(action, context):
 	modes — From Context (read a context key) and Expression (safe_eval against ctx)."""
 	from tatva_connect.automation import expr
 
-	if action.due_mode == "Expression":
+	if action.due_mode == refs.EXPRESSION:
 		raw = expr.resolve_expression(action.due_expression, context)
-	else:  # From Context (the v1 default; also the pre-Expression behavior)
+	else:  # From Context is the `else`, so a renamed Expression falls silently to the default due date.
 		if not action.due_from:
 			return None
 		raw = context.get(action.due_from)

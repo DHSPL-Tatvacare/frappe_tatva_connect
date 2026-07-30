@@ -40,10 +40,11 @@ from tatva_connect.workflow_engine import refs, registry
 
 _CTX_PREFIX = refs.CTX_PREFIX
 
-# A `value_rows` row reads run state only in this mode. The vocabulary is `Update Field.value_mode`'s,
-# deliberately — one word for one idea across every verb that can take a value from either place.
-FROM_CONTEXT = "From Context"
-LITERAL = "Literal"
+# A `value_rows` row reads run state only in this mode. RE-EXPOSED, never re-declared: `sends` and
+# `registry` read these off `contract`, and the same objects keep them working while W5.4 leaves exactly
+# one place where the words are written down.
+FROM_CONTEXT = refs.FROM_CONTEXT
+LITERAL = refs.LITERAL
 
 
 def reads_of(node_type, config):
