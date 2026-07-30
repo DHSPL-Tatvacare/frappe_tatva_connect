@@ -9,7 +9,7 @@ an edge pointing at a node someone deleted, a loop with no Wait in it, a Termina
 
 Every one of those used to publish and activate cleanly, then die on a live lead as `_Permanent` — the
 author discovering it from a failed run days later, on a real patient's record. The docstrings on
-`campaigns.api.publish` and `crm_workflow.apply_transition` described this contract as though it existed.
+`workflows.api.publish` and `crm_workflow.apply_transition` described this contract as though it existed.
 It did not. This module is that contract.
 
 RETURNS problems, never throws. One publish should tell an author everything wrong with their graph, not

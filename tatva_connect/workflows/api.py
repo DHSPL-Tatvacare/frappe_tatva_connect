@@ -1,4 +1,4 @@
-# The Campaigns canvas API — the ONLY backend the CRM Campaigns SPA calls. Mirrors near_me/api.py and
+# The Workflows canvas API — the ONLY backend the CRM Workflows SPA calls. Mirrors near_me/api.py and
 # smartview/api.py: the fork frontend dispatches here, backend logic lives in tatva_connect. It exposes two
 # things and nothing else: authoring a DRAFT graph, and moving a Definition along its lifecycle. The
 # lifecycle state machine itself lives on the controller (crm_workflow.apply_transition) - these
@@ -33,7 +33,7 @@ _NODE_FIELDS = ("node_id", "node_type", "sequence", "config_json")
 
 
 @frappe.whitelist()
-def get_campaign(name):
+def get_workflow(name):
 	"""Load a workflow for the canvas — header (lifecycle_state, entry_node, canvas_json) + its node graph.
 
 	Nodes are their own records now, not a child table, so they are fetched and attached under `nodes`
@@ -90,8 +90,8 @@ def _nodes_of(workflow):
 
 
 @frappe.whitelist()
-def create_campaign(workflow_name):
-	"""Create a campaign as a blank Draft — the canvas opens EMPTY and the author drags the graph. No seeded
+def create_workflow(workflow_name):
+	"""Create a workflow as a blank Draft — the canvas opens EMPTY and the author drags the graph. No seeded
 	node: a Draft is not validated and mints no Version (the on_update + validate gates only bite in a
 	released state), so an empty canvas is a legal resting state, not an error to paper over with a stub."""
 	doc = frappe.new_doc(DOCTYPE)
