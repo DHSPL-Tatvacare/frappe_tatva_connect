@@ -24,6 +24,7 @@ from tatva_connect.patches import (
 	add_call_log_reference_index,
 	add_call_media_recording_index,
 	add_clinic_anchor_index,
+	add_task_due_state_index,
 	add_crm_task_metrics_index,
 	add_integration_request_index,
 	add_lead_dedup_unique_index,
@@ -60,6 +61,10 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
+	# (status, due_date) on CRM Task — every due-state predicate and every team_charts due count seek on
+	# that pair; the existing indexes lead with reference_docname and cannot serve it. Composite, so not
+	# JSON-declarable, and install-app baselines its patch without running it.
+	add_task_due_state_index,
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
 	# UNIQUE (mobile_no, custom_vertical, custom_group) on CRM Lead — the partner API's dedup rule; a composite unique cannot be declared in crm's JSON, so this is its only fresh-install path.
@@ -120,9 +125,24 @@ def apply_schema():
 	_ensure_new_modules()
 	_assert_observability_bands()
 	if failures:
-		# Each step isolates its own failure above (rollback + log) so the rest still run — but a
-		# real structural gap must NOT pass as a green migrate. Fail loud once every step ran.
-		# COMMIT FIRST: this throw fires inside @atomic post_schema_updates, so without it the whole migrate rolls back — INCLUDING the Patch Log rows written earlier in the same run, which made every retry re-run all 52 patches from scratch and nothing ever record as done.
+		# Each step isolates its own failure above (rollback + log) so the rest still run — but a real
+		# structural gap must NOT pass as a green migrate. The throw is DEFERRED to assert_schema_applied,
+		# wired LAST in the after_migrate/after_sync chain, because this function is the SECOND entry of
+		# twenty-four: throwing here skipped every seed, every drift assert and the lockdown behind it, and
+		# a fresh site came up with no sections, no switches and no lockdown off ONE failed index.
+		# COMMIT FIRST: this runs inside @atomic post_schema_updates, so without it a later throw rolls the whole migrate back — INCLUDING the Patch Log rows written earlier in the same run, which made every retry re-run all 52 patches from scratch and nothing ever record as done.
+		frappe.db.commit()
+		frappe.flags.tc_schema_failures = list(failures)
+		print("apply_schema: FAILED for {0} — the chain continues; assert_schema_applied will fail the run at the end.".format(", ".join(failures)))
+	else:
+		frappe.flags.tc_schema_failures = []
+
+
+def assert_schema_applied():
+	"""Fail the migrate if apply_schema could not land a structural step. LAST in the chain, so a broken
+	index no longer costs a site its seeds — everything else has already run by the time this throws."""
+	failures = getattr(frappe.flags, "tc_schema_failures", None)
+	if failures:
 		frappe.db.commit()
 		frappe.throw(_("Schema setup failed for: {0}. See Error Log for tracebacks.").format(", ".join(failures)))
 

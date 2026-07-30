@@ -61,6 +61,8 @@ override_whitelisted_methods = {
 	"crm.api.doc.get_filterable_fields": "tatva_connect.api.task_lenses.get_filterable_fields",
 	"crm.api.doc.get_group_by_fields": "tatva_connect.api.task_lenses.get_group_by_fields",
 	"crm.api.doc.sort_options": "tatva_connect.api.task_lenses.sort_options",
+	# The fifth field menu; it reads doctype meta directly, so a derived field reaches it only through here.
+	"crm.api.doc.get_quick_filters": "tatva_connect.api.task_lenses.get_quick_filters",
 	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
@@ -345,6 +347,8 @@ scheduler_events = {
 after_migrate = [
 	# FIRST: field_target routes through these rows, and apply_schema below runs steps that ask it. Seeded ahead of everything so no step ever sees an empty catalog. Its own inputs are CRM Task columns, which sync_fixtures has already landed by now.
 	"tatva_connect.taxonomy.task_field_seed.ensure_rows",
+	# BEFORE apply_schema, not after: add_task_answer_question_index reads the key-value CRM Task Section rows to know which tables to index, so seeded later it found none on a fresh site and the index landed a whole migrate late. Depends only on the doctype and the fixture Table fields on CRM Task, both present by now on either path.
+	"tatva_connect.taxonomy.task_section_seed.ensure_rows",
 	# Structural patches (indexes/Select options/custom fields); install-app baselines patches.txt WITHOUT running it, so re-run them here (idempotent). Schema before data.
 	"tatva_connect.schema_setup.apply_schema",
 	# Lock the stock-open doctype permission matrix on shared/core doctypes (Layer-1 VAPT fix); structural + idempotent, same reason as schema_setup above.
@@ -355,8 +359,6 @@ after_migrate = [
 	"tatva_connect.partner_api.section_seed.ensure_rows",
 	# The three catalog rows the Facebook fold stamps by field_key; a key with no row has no declared home.
 	"tatva_connect.lead_sync.catalog_seed.ensure_rows",
-	# The three activity sections an activity field's answer is routed by; after fixtures, because each names a Table field on CRM Task that lands there.
-	"tatva_connect.taxonomy.task_section_seed.ensure_rows",
 	# The token-expiry alert as a native Notification, seeded DISABLED — no job is written; Frappe owns the Days Before scheduler.
 	"tatva_connect.lead_sync.notification_seed.ensure_notification",
 	# Per-grain INTERNAL visibility contracts (is_internal=1) moved OUT of after_migrate to the seed tail (db-seeds/2026-07-24-internal-contracts.bench-console.py): they derive from the taxonomy MASTERS + the lead-field CATALOG, both MANUAL seeds that land AFTER migrate, so on a fresh Day-0 site after_migrate ran with no masters and (via the _masters_exist guard) built NOTHING silently — every rep saw zero grain fields. Built at the tail of apply-seeds now, where masters + catalog exist. ensure_internal_contracts stays additive + idempotent.
@@ -394,6 +396,8 @@ after_migrate = [
 	"tatva_connect.wiki_reconcile.reconcile",
 	# Phase 3 of the task-sections plan: every answer a task ALREADY carries gets the home field_target names. Here and not only in its patch because the answers land in fixture Table fields routed by the section seed above — both AFTER post-model-sync patches, so on the upgrade that carries the whole chain in one migrate the patch runs before its own prerequisites and is logged applied. Idempotent; writes only what is missing.
 	"tatva_connect.activity.backfill.ensure_section_rows",
+	# LAST, deliberately: apply_schema records a failed structural step instead of throwing on the spot, because it is entry two of twenty-four and a throw there skipped every seed, drift assert and the lockdown behind it. The run still fails — after everything else has had its chance to land.
+	"tatva_connect.schema_setup.assert_schema_applied",
 ]
 
 # The SAME chain on the install path: `after_sync` fires at installer.py:343, after sync_fixtures (:339) — where after_migrate sits on the upgrade path. `after_install` (:332) was rejected: it runs BEFORE fixtures, and section_seed/reconcile_fieldtypes would skip on fields that do not exist yet. One list, two doors.
