@@ -324,11 +324,11 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 	def setUp(self):
 		super().setUp()
 		# Every test in this class starts DORMANT, whatever an earlier committed run left on the bench.
-		frappe.db.set_value("CRM Tatva Automation", call_media.SWEEP_SWITCH, "enabled", 0)
+		frappe.db.set_value("CRM Tatva Automation", call_media.RETRY_SWITCH, "enabled", 0)
 		frappe.db.commit()
 
 	def tearDown(self):
-		frappe.db.set_value("CRM Tatva Automation", call_media.SWEEP_SWITCH, "enabled", 0)
+		frappe.db.set_value("CRM Tatva Automation", call_media.RETRY_SWITCH, "enabled", 0)
 		frappe.db.set_value("CRM Tatva Automation", _OFFLOAD, "enabled", 0)
 		for name in frappe.get_all("File", filters={"attached_to_doctype": "CRM Call Log",
 		                                            "attached_to_name": self.call}, pluck="name"):
@@ -339,7 +339,7 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 		super().tearDown()
 
 	def _arm(self):
-		frappe.db.set_value("CRM Tatva Automation", call_media.SWEEP_SWITCH, "enabled", 1)
+		frappe.db.set_value("CRM Tatva Automation", call_media.RETRY_SWITCH, "enabled", 1)
 
 	def _due(self, **values):
 		call_media._set(self.call, {

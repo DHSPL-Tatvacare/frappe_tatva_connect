@@ -63,7 +63,7 @@ ABANDONED = "Abandoned"
 TERMINAL_RECORDING_STATES = (STORED, ABSENT, ABANDONED)
 
 # The sweep's own switch — dormant by default, like every automation in this app.
-SWEEP_SWITCH = "Storage::Recording::catchup"
+RETRY_SWITCH = "Storage::Recording::retry"
 
 # The sweep's one question, and the only read here that is not a primary-key seek.
 RECORDING_INDEX = "ix_call_media_recording_due"
@@ -331,7 +331,7 @@ def sweep():
 	step-log lookup `voice.reconcile._placement_of` already performs. Do NOT add an account column to
 	`CRM Call Log` for it: no producer has that problem, and the table is upstream and mixed.
 	"""
-	if not settings.is_enabled(SWEEP_SWITCH):
+	if not settings.is_enabled(RETRY_SWITCH):
 		return 0
 	from tatva_connect.channels import contract
 

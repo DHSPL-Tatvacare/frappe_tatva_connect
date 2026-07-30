@@ -4,7 +4,7 @@
 
 The three checklist files (`docs/go-live/3-seed/db-seeds/go-live-config-checklist/`) are the operator's
 "what do I turn on" map. They drifted once already: the versioning + wait/resume work added
-`Task::Automation::sends`, `Task::Automation::resume` and `Partner::Idempotency::cleanup` to the
+`Workflow::Engine::sends`, `Task::Automation::resume` and `Partner::Idempotency::cleanup` to the
 registry, and the checklist was never updated. This gate makes that class of drift a red build.
 
 The registry (`AUTOMATIONS`) is the source of truth. The relation is exact set equality on the toggle

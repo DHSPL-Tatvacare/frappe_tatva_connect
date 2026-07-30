@@ -31,7 +31,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from tatva_connect.automation import settings as automation
-from tatva_connect.workflow_engine import ENGINE_SWITCH, cohort, thresholds
+from tatva_connect.workflow_engine import cohort, thresholds
 
 SWITCH_COHORT = "Workflow::Cohort::drain"
 
@@ -70,8 +70,8 @@ def sweep(respect_switch=True):
 
 
 def _armed():
-	"""Both switches, fresh. The engine's own and the cohort's — a cohort is the engine at volume."""
-	return automation.is_enabled(ENGINE_SWITCH) and automation.is_enabled(SWITCH_COHORT)
+	"""The cohort's own switch, fresh. Its `requires` names the engine switch, so `is_enabled` answers both."""
+	return automation.is_enabled(SWITCH_COHORT)
 
 
 def _due_workflows():

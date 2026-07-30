@@ -61,7 +61,7 @@ class TestTheNodeIsDeclaredLikeSendWhatsApp(FrappeTestCase):
 
 
 class TestTheVoiceSendIsDormantAndNeverDials(FrappeTestCase):
-	"""The send ships OFF (`Task::Automation::sends`). While dormant it records a suppression marker and
+	"""The send ships OFF (`Workflow::Engine::sends`). While dormant it records a suppression marker and
 	touches NO adapter — the engine runs end to end and no call is placed."""
 
 	def test_the_sends_switch_is_off_on_this_bench(self):

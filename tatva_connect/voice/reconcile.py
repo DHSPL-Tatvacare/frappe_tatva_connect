@@ -5,13 +5,13 @@ deploy can eat one, and the run parked behind it then waits for an event that wi
 platform learned this and answered it with a poller, and this is that poller ported to our shapes —
 correctness never depends on a callback arriving.
 
-WHY IT IS OFF. It is gated on `Voice::Reconciler::catchup`, a switch whose row does not exist, so
+WHY IT IS OFF. It is gated on `AI Voice::Channel::reconcile`, a switch whose row does not exist, so
 `settings.is_enabled` reads False and every entry point below returns immediately. Two lines still have to
 be written by hand before it can ever run, and they are deliberately NOT written here (both files are
 being edited by another change):
 
     hooks.py            scheduler_events["cron"]["*/15 * * * *"] += ["tatva_connect.voice.reconcile.sweep"]
-    automation/registry.py   Auto("Voice::Reconciler::catchup", "Voice — catch up on call outcomes", ...)
+    automation/registry.py   Auto("AI Voice::Channel::reconcile", "AI Voice — catch up on call outcomes", ...)
 
 Until both exist this module is a function nothing schedules and no operator can enable.
 

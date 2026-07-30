@@ -231,12 +231,12 @@ def refresh_calls(reference_name: str, dry_run=1) -> dict:
 def scheduled_reconcile(hours: int = 24) -> dict:
 	"""Scheduler entry — top up recently-active leads from the call records API.
 
-	DORMANT and NOT WIRED in hooks.py. Gated by the `Telephony::Acefone::reconcile` switch, which is OFF
+	DORMANT and NOT WIRED in hooks.py. Gated by the `Telephony::Channel::reconcile` switch, which is OFF
 	by default. The operator arms it: turn the switch on and register a Scheduled Job Type for this
 	method with the chosen cron. A no-op until then, even if called.
 	"""
-	if not automation.is_enabled("Telephony::Acefone::reconcile"):
-		return {"ok": False, "reason": "Telephony::Acefone::reconcile disabled"}
+	if not automation.is_enabled("Telephony::Channel::reconcile"):
+		return {"ok": False, "reason": "Telephony::Channel::reconcile disabled"}
 
 	since = add_to_date(now_datetime(), hours=-int(hours))
 	leads = frappe.get_all(

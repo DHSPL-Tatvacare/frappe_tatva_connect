@@ -40,6 +40,7 @@
    "fieldname": "area",
    "fieldtype": "Data",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Area",
    "read_only": 1
   },
@@ -68,10 +69,12 @@
    "label": "Enabled"
   },
   {
-   "description": "The automation this one leans on. It stays dormant until that one is enabled as well, however this switch is set, so the dependency is enabled first.",
+   "description": "The automation this one leans on. It cannot be enabled while that one is off, and switching that one off switches this one off with it, so the dependency is enabled first and disabled last.",
    "fieldname": "requires",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Requires",
+   "options": "CRM Tatva Automation",
    "read_only": 1
   },
   {
@@ -93,7 +96,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-17 00:00:00.000000",
+ "modified": "2026-07-30 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Tatva Automation",

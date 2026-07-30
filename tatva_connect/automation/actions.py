@@ -607,7 +607,7 @@ def _api_succeeded(success_when, response, context=None):
 
 def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
 	"""SEND_WHATSAPP (effect, Task 7) — the dormant sends gate. `sends.send_whatsapp` records the
-	fire behind `Task::Automation::sends` (OFF by default, A.6) and, once the operator flips it,
+	fire behind `Workflow::Engine::sends` (OFF by default, A.6) and, once the operator flips it,
 	sends through the EXISTING WATI brain (grain-routed account + template, A.11/A.8). This handler
 	only resolves the action's config off the rule row; no adapter logic lives here.
 
@@ -643,7 +643,7 @@ def _action_send_email(action, lead, context, axes, trigger_doc):
 def _action_place_voice_call(action, lead, context, axes, trigger_doc):
 	"""AI VOICE CALL (effect, W7.4) — the SAME dormant sends gate as Send WhatsApp. The node always places
 	a SINGLE call (our engine is one-run-per-lead); the cohort/batch path is W7.2. `sends.send_voice`
-	records the fire behind `Task::Automation::sends` (OFF by default) and, in pass 2, will resolve against
+	records the fire behind `Workflow::Engine::sends` (OFF by default) and, in pass 2, will resolve against
 	the Bolna adapter. This handler only reads the action's config; no adapter logic lives here."""
 	from tatva_connect.automation import sends
 

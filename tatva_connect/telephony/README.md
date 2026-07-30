@@ -188,4 +188,4 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
    reconcile.
 4. **CRM Telephony Capture Rule** — say what to capture. **Empty captures nothing.**
 5. **CRM Telephony Agent Map** — only for agents whose email does not auto-resolve.
-6. Turn on the **`Telephony::Acefone::calls`** switch. For outbound, also enable the Exotel slot.
+6. Turn on the **`Telephony::Channel::calls`** switch. For outbound, also enable the Exotel slot.

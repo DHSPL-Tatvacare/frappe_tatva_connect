@@ -35,7 +35,7 @@ SNAPSHOT = Path(__file__).resolve().parent / "reports" / "toggles.snapshot.json"
 # dedup anchor keys on -- without it duplicate leads slip through, and the test would report a defect
 # that the test itself created.
 TURN_OFF = (
-	"Telephony::Acefone::calls",     # outbound: places calls
+	"Telephony::Channel::calls",     # outbound: places calls
 	"Location::Google::capture",     # outbound: geocodes against Google
 	"Storage::Azure::offload",       # outbound: ships bytes to blob storage
 	"Task::Review::mirror",          # outbound: posts a review verdict webhook

@@ -2,8 +2,8 @@
 # See license.txt
 """THE VOICE MASTER KILL-SWITCH KILLS OUTBOUND TOO — the asymmetry this suite exists to close.
 
-`Voice::Channel::calls` gated the INBOUND webhook only. The outbound dial sat behind
-`Task::Automation::sends` alone, so an operator who switched the voice channel OFF stopped hearing about
+`AI Voice::Channel::calls` gated the INBOUND webhook only. The outbound dial sat behind
+`Workflow::Engine::sends` alone, so an operator who switched the voice channel OFF stopped hearing about
 calls and went on placing them. WhatsApp has never had that gap — `send_whatsapp` consults
 `whatsapp.channel.is_enabled()` on top of the sends gate (sends.py:180) — and voice was the odd one out.
 

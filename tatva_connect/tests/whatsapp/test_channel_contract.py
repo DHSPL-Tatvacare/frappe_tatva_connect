@@ -250,7 +250,7 @@ class TestChannelContract(FrappeTestCase):
 		"""Defect §3: keyed `WhatsApp::WATI::messaging`, an operator changing provider would have gone
 		dark on the migrate that introduced the new key — it defaults OFF, and nothing would have said
 		why. The vendor's own control is the account's Active/Inactive status."""
-		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_BACKFILL, channel.SWITCH_RECOVERY):
+		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_RECONCILE, channel.SWITCH_RECOVERY):
 			self.assertNotIn("WATI", key)
 			self.assertTrue(key.startswith("WhatsApp::"), key)
 			self.assertTrue(
@@ -260,7 +260,7 @@ class TestChannelContract(FrappeTestCase):
 
 	def test_the_switches_are_all_dormant_by_default(self):
 		"""Constitution: every automation ships OFF. The rekey must not have flipped one on."""
-		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_BACKFILL, channel.SWITCH_RECOVERY):
+		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_RECONCILE, channel.SWITCH_RECOVERY):
 			self.assertFalse(
 				frappe.db.get_value("CRM Tatva Automation", key, "enabled"),
 				f"{key} must ship dormant",

@@ -92,7 +92,7 @@ class TestAutomationKeyShape(FrappeTestCase):
 		deliberately not the vendor-scoped `WhatsApp::WATI::*` they replaced."""
 		from tatva_connect.whatsapp import channel
 
-		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_BACKFILL):
+		for key in (channel.SWITCH_MESSAGING, channel.SWITCH_TEMPLATES, channel.SWITCH_RECONCILE):
 			with self.subTest(key=key):
 				assert_valid_key(key)
 				self.assertEqual(key.split("::")[:2], ["WhatsApp", "Channel"])

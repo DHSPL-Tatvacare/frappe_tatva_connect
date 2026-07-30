@@ -29,8 +29,13 @@ def _structural_values(auto):
 	}
 
 
+def _parents_first(autos):
+	# `requires` is a Link, so a row's target must already exist when it is written. One level deep.
+	return [auto for auto in autos if not auto.requires] + [auto for auto in autos if auto.requires]
+
+
 def sync_catalog():
-	for auto in AUTOMATIONS:
+	for auto in _parents_first(AUTOMATIONS):
 		if frappe.db.exists("CRM Tatva Automation", auto.key):
 			doc = frappe.get_doc("CRM Tatva Automation", auto.key)
 			for field, value in _structural_values(auto).items():
@@ -47,6 +52,8 @@ def sync_catalog():
 
 	# Prune rows whose key left the registry (a retired automation). The catalog is the
 	# source of truth; an unreferenced row is a dead toggle — deleting it changes nothing.
+	# No delete order is needed: `force=True` bypasses the link check (frappe delete_doc.py:45), and a
+	# stale parent under a live child cannot exist because `assert_valid_graph` refuses a dead `requires`.
 	live = {auto.key for auto in AUTOMATIONS}
 	for name in frappe.get_all("CRM Tatva Automation", pluck="name"):
 		if name not in live:

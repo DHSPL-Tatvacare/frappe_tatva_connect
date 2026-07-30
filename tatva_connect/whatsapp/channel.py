@@ -3,7 +3,7 @@
 A switch is a property of the channel, not of the vendor behind it. `WhatsApp::WATI::messaging` said
 otherwise, and it meant an operator who changed provider would silently lose their own configuration:
 the new vendor's key defaults OFF, so WhatsApp would go dark on migrate with nothing in the log to say
-why. The keys are `WhatsApp::Channel::messaging|templates|backfill` — `Channel` is the subject because
+why. The keys are `WhatsApp::Channel::messaging|templates|reconcile` — `Channel` is the subject because
 they gate the whole channel, not one vendor — and the per-vendor control is the one that genuinely
 belongs to a vendor: an account's Active/Inactive status.
 
@@ -20,7 +20,7 @@ CHANNEL = "whatsapp"
 # The operator toggles. Vendor-free by construction — see the module docstring.
 SWITCH_MESSAGING = "WhatsApp::Channel::messaging"
 SWITCH_TEMPLATES = "WhatsApp::Channel::templates"
-SWITCH_BACKFILL = "WhatsApp::Channel::backfill"
+SWITCH_RECONCILE = "WhatsApp::Channel::reconcile"
 SWITCH_RECOVERY = "WhatsApp::Channel::recovery"
 
 

@@ -18,7 +18,7 @@ from tatva_connect.automation.settings import is_enabled
 # gated by these keys, NOT by the three above. Missing them = a real push during a test.
 COMMS_SWITCHES = (
 	"WhatsApp::Channel::messaging",         # WhatsApp outbound/inbound master gate
-	"Telephony::Acefone::calls",   # Acefone click-to-call + logging
+	"Telephony::Channel::calls",  # Acefone click-to-call + logging
 	"Task::Assignment::followup",  # auto-creates follow-up tasks (can trigger notifications)
 	"Notify::Lead::assigned",      # FCM push to rep's mobile on lead assignment
 	"Notify::Task::assigned",      # FCM push to rep's mobile on task assignment

@@ -22,7 +22,7 @@ asymmetry is by design (mirror of the note in telephony/reconcile.py).
 De-dup is by the provider's own message id (`custom_provider_message_id`), the one identity present on
 BOTH the live webhook and the history API — so live and backfill never double-insert.
 
-DORMANT BY DESIGN: the scheduled entry is gated by the `WhatsApp::Channel::backfill` switch (OFF by default)
+DORMANT BY DESIGN: the scheduled entry is gated by the `WhatsApp::Channel::reconcile` switch (OFF by default)
 and is NOT wired in hooks.py — the operator arms it by turning the switch on and registering a
 Scheduled Job Type with their chosen cron. The manual entry (`refresh_history`) defaults to a dry-run.
 """
@@ -89,11 +89,11 @@ def refresh_history(reference_name: str, dry_run=1) -> dict:
 def scheduled_backfill(hours: int = 24) -> dict:
 	"""Scheduler entry — top up recently-active conversations from provider history.
 
-	⚠️ DORMANT + NOT WIRED in hooks.py. Gated by the `WhatsApp::Channel::backfill` switch (OFF by default). The
+	⚠️ DORMANT + NOT WIRED in hooks.py. Gated by the `WhatsApp::Channel::reconcile` switch (OFF by default). The
 	operator arms it: turn the switch ON and register a Scheduled Job Type for this method with the
 	desired cron. A no-op until then, even if called."""
-	if not automation.is_enabled(channel.SWITCH_BACKFILL):
-		return {"ok": False, "reason": f"{channel.SWITCH_BACKFILL} disabled"}
+	if not automation.is_enabled(channel.SWITCH_RECONCILE):
+		return {"ok": False, "reason": f"{channel.SWITCH_RECONCILE} disabled"}
 	since = add_to_date(now_datetime(), hours=-int(hours))
 	leads = frappe.get_all(
 		"WhatsApp Message",

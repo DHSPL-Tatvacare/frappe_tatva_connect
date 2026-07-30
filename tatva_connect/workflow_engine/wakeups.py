@@ -4,9 +4,9 @@ PRINCIPLE (F5): the durable Instance row is the source of truth; every enqueue i
 optimisation. If a wake job is lost (Redis flush, worker death), the reconciler still drives the Instance
 forward from its durable state - nothing depends on an RQ job surviving.
 
-`sweep()` is the ONE scheduled entry (hooks.scheduler_events, ~*/15), double-gated - the master engine
-switch AND the sweep switch (so an operator can pause the sweep without killing the engine). It runs, in
-order:
+`sweep()` is the ONE scheduled entry (hooks.scheduler_events, ~*/15), gated on the SWEEP switch alone -
+its `requires` names the engine switch, so `is_enabled` answers for both and nothing here checks the pair
+by hand. An operator can still pause the sweep without killing the engine. It runs, in order:
   * `timer_sweep` - the TIMER side: `status='Parked' AND resume_at<=now`, claim each `for_update`,
     `advance`, commit PER ROW (a worker killed mid-sweep never replays a segment whose sends already left).
   * `reconciler_sweep` - the reliability backstop: re-drives (a) due-timer Parked rows and (b) a `Parked`
@@ -151,8 +151,8 @@ def _forget_wake(queue, job_id):
 
 
 def sweep():
-	"""The scheduled tick: timer wake, signal backstop, stale-signal purge. Double-gated (engine + sweep)."""
-	if not (automation.is_enabled(ENGINE_SWITCH) and automation.is_enabled(SWEEP_SWITCH)):
+	"""The scheduled tick: timer wake, signal backstop, stale-signal purge. Gated on the sweep switch."""
+	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	timer_sweep()
 	reconciler_sweep()
@@ -161,7 +161,7 @@ def sweep():
 
 def timer_sweep():
 	"""Wake every `Parked` Instance whose clock deadline has arrived, oldest first, capped. Per-row commit."""
-	if not (automation.is_enabled(ENGINE_SWITCH) and automation.is_enabled(SWEEP_SWITCH)):
+	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	for name in _due_parked():
 		drive_instance(name)
@@ -173,7 +173,7 @@ def reconciler_sweep():
 	signal is already buffered but was never woken (a lost enqueue). Per-row commit. Overlaps timer_sweep on
 	(a) BY DESIGN - a re-drive of an already-advanced row is a claimed no-op (F6), never a double-run - so
 	the reconciler is a COMPLETE standalone backstop, not dependent on timer_sweep having run first."""
-	if not (automation.is_enabled(ENGINE_SWITCH) and automation.is_enabled(SWEEP_SWITCH)):
+	if not automation.is_enabled(SWEEP_SWITCH):
 		return
 	for name in _due_parked():
 		drive_instance(name)

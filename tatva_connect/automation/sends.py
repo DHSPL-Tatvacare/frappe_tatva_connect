@@ -1,5 +1,5 @@
 """The dormant sends gate (Task 7) — every outbound WhatsApp/email the automation engine's `Send
-WhatsApp` / `Send Email` effect verbs raise goes through here. `Task::Automation::sends` ships OFF
+WhatsApp` / `Send Email` effect verbs raise goes through here. `Workflow::Engine::sends` ships OFF
 (A.6, dormant by default — a blank/absent row reads as disabled): while dormant, both functions
 record a `"suppressed: sends dormant"` marker and call NO adapter — the engine runs end to end (rule
 fires, action runs, Run Log records it) without a message ever leaving. Once the operator flips the
@@ -73,7 +73,7 @@ import frappe
 
 from tatva_connect import automation
 
-SENDS_SWITCH = "Task::Automation::sends"
+SENDS_SWITCH = "Workflow::Engine::sends"
 _RECORD_SAVEPOINT = "automation_whatsapp_record"
 
 # The two edges a send leaves by. Declared here, beside the code that CHOOSES between them, and read by
@@ -617,7 +617,7 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
                values=None, correlation=None):
 	"""Place an outbound AI voice call to `subject_lead`, or route on why it did not happen. The structural
 	twin of `send_whatsapp`: the recipient is a DECLARED reference conformed by the channel's declared
-	format, the send is behind the SAME dormant `Task::Automation::sends` gate, and the provider call is
+	format, the send is behind the SAME dormant `Workflow::Engine::sends` gate, and the provider call is
 	DEFERRED past commit via a thunk (`_deliver_voice`) so a rolled-back segment dials nothing.
 
 	`correlation` is the engine token for THIS node — carried to the provider in `user_data` so the terminal

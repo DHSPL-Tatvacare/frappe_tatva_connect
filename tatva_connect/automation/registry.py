@@ -29,6 +29,29 @@ def assert_valid_key(key):
 	return key
 
 
+def assert_valid_graph(autos):
+	"""The ONE graph check — every `requires` names a declared key, and no chain of them loops."""
+	parents = {auto.key: auto.requires for auto in autos}
+	for key, parent in parents.items():
+		if parent and parent not in parents:
+			raise ValueError(
+				f"Automation {key!r} requires {parent!r}, which no row declares. "
+				"A `requires` must name a key in this same catalog."
+			)
+	for key in parents:
+		chain = [key]
+		parent = parents[key]
+		while parent:
+			if parent in chain:
+				raise ValueError(
+					f"Automation hierarchy is cyclic: {' -> '.join(chain + [parent])}. "
+					"A `requires` chain must end at a row that requires nothing."
+				)
+			chain.append(parent)
+			parent = parents[parent]
+	return parents
+
+
 @dataclass(frozen=True)
 class Auto:
 	key: str
@@ -63,7 +86,7 @@ AUTOMATIONS = [
 		requires="Workflow::Engine::run",
 	),
 	Auto(
-		key="Voice::Channel::calls",
+		key="AI Voice::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="automation/sends.send_voice gate · webhooks/spine kill-switch · voice ingress",
 		purpose=(
@@ -81,7 +104,7 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Voice::Reconciler::catchup",
+		key="AI Voice::Channel::reconcile",
 		fires_on="Schedule",
 		trigger_detail="every 15m · polls the provider for calls whose outcome never arrived",
 		purpose=(
@@ -93,10 +116,10 @@ AUTOMATIONS = [
 			"journey at the next sweep."
 		),
 		backs=["tatva_connect.voice.reconcile.sweep"],
-		requires="Voice::Channel::calls",
+		requires="AI Voice::Channel::calls",
 	),
 	Auto(
-		key="Storage::Recording::catchup",
+		key="Storage::Recording::retry",
 		fires_on="Schedule",
 		trigger_detail="every 15m · retries call recordings whose download failed, with backoff",
 		purpose=(
@@ -157,7 +180,7 @@ AUTOMATIONS = [
 		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
-		key="WhatsApp::Channel::backfill",
+		key="WhatsApp::Channel::reconcile",
 		fires_on="Schedule",
 		trigger_detail="operator-armed · getMessages history pull",
 		purpose=(
@@ -189,24 +212,24 @@ AUTOMATIONS = [
 		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
-		key="Telephony::Acefone::calls",
+		key="Telephony::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="telephony/api gate",
 		purpose=(
-			"Click-to-call and call logging are enabled on the Acefone line routed to the lead's "
-			"grain. Off, a lead's number cannot be dialled from the CRM and no call is written back "
-			"to it.\n"
-			"Example: a lead's number is clicked, Acefone bridges the call to the rep's phone, and "
-			"the call is pulled into that lead's call log."
+			"Click-to-call and call logging are enabled on the telephony line routed to the lead's "
+			"grain, through whichever provider that line names. Off, a lead's number cannot be "
+			"dialled from the CRM and no call is written back to it.\n"
+			"Example: a lead's number is clicked, the provider bridges the call to the rep's phone, "
+			"and the call is pulled into that lead's call log."
 		),
 		backs=[],
 	),
 	Auto(
-		key="Telephony::Acefone::reconcile",
+		key="Telephony::Channel::reconcile",
 		fires_on="Schedule",
 		trigger_detail="operator-armed · call records pull",
 		purpose=(
-			"A lead's call log is topped up from Acefone's call records: the calls on the lead's "
+			"A lead's call log is topped up from the provider's call records: the calls on the lead's "
 			"routed line are pulled and any the live webhook missed are written in, de-duplicated by "
 			"the provider's call id. Calls a rep logged by hand are never touched. The row is "
 			"dormant and unscheduled by default; a cron is armed by the operator when a gap needs "
@@ -215,7 +238,7 @@ AUTOMATIONS = [
 			"call log."
 		),
 		backs=["tatva_connect.telephony.reconcile.scheduled_reconcile"],
-		requires="Telephony::Acefone::calls",
+		requires="Telephony::Channel::calls",
 	),
 	Auto(
 		key="Storage::Azure::offload",
@@ -645,18 +668,18 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
-		key="Task::Automation::sends",
+		key="Workflow::Engine::sends",
 		fires_on="Provider call",
 		trigger_detail="automation/sends gate · Send WhatsApp / Send Email effect verbs",
 		purpose=(
 			"The send gate for the engine's Send WhatsApp and Send Email effects. Off, which is how it "
-			"ships, a rule carrying a Send action still fires end to end and the Run Log records the "
+			"ships, a workflow carrying a Send action still fires end to end and the Run Log records the "
 			"intent, but no template and no email ever leaves the building. On, those same actions "
 			"send for real, through the existing grain-routed WhatsApp account and frappe's own mailer — "
 			"never a second transport.\n"
-			"Example: a 'Welcome' rule is built and tested with the gate off, the Run Log reading "
-			"'suppressed: sends dormant', and the same rule starts sending the real message the day it "
-			"is switched on at go-live."
+			"Example: a 'Welcome' workflow is built and tested with the gate off, the Run Log reading "
+			"'suppressed: sends dormant', and the same workflow starts sending the real message the day "
+			"it is switched on at go-live."
 		),
 		backs=[],
 		requires="Workflow::Engine::run",
@@ -1018,6 +1041,14 @@ AUTOMATIONS = [
 		requires="Search::Index::indexing",
 	),
 ]
+
+# Import-time graph gate: a `requires` naming a dead key, or a cycle, cannot reach the catalog.
+_PARENT_OF = assert_valid_graph(AUTOMATIONS)
+
+
+def parent_of(key):
+	"""The ONE parent lookup — the key this row requires, or `""` when it stands alone."""
+	return _PARENT_OF.get(key, "")
 
 
 def activator_for(key):
