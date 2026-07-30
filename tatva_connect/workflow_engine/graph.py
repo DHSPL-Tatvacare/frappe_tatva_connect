@@ -170,34 +170,48 @@ def _wait_problems(nodes):
 
 
 def _template_mapping_problems(nodes, context):
-	"""Every placeholder a picked template declares has a mapping row. This RAISED mid-run in
+	"""Every placeholder a picked template or agent declares has a mapping row. This RAISED mid-run in
 	`sends._template_parameters`, days after the author left; now refused at publish. The placeholder names
 	come from the SAME adapter the send-time builder reads, and the missing set from the SAME
 	`sends.missing_value_rows` — one rule, two callers, never a re-implementation.
+
+	DRIVEN BY THE DECLARATION, never by a map of verbs kept here. A field that has slots says so itself:
+	`slots_from` names the sibling holding the thing whose slots matter, `slots_method` names who can
+	enumerate them, and `slots_args` names any further siblings that answer needs. This walks whatever
+	declares them, so a send verb added later is gated the day it is declared — the same shape
+	`registry.FIELD_TYPES` and `READ_KINDS` already use.
+
+	IT USED TO BE A HARDCODED {"Send WhatsApp": ..., "Send Email": ...} AND AI VOICE FELL THROUGH IT. The
+	verb registry declared `agent_values` with its `slots_from`/`slots_method`, this gate re-decided the
+	same question with a shorter list, and a voice node with an unmapped agent placeholder published green
+	and raised at send time on the first real lead — verbatim the failure the paragraph above claims is
+	refused at publish. A third such verb would have fallen through too.
+
+	A slots method that cannot reach its provider answers with no names rather than throwing
+	(`voice.api.agent_slots`), so an unreachable provider leaves publish silent here instead of refusing a
+	graph for a reason the author cannot act on. We cannot demand a row for a slot we could not enumerate.
 	"""
 	from tatva_connect.automation import sends
 
-	slots_by_verb = {
-		"Send WhatsApp": ("whatsapp_template", sends.whatsapp_template_slots),
-		"Send Email": ("email_template", sends.email_template_slots),
-	}
 	found = []
 	for node in nodes:
-		spec = slots_by_verb.get(node["node_type"])
-		if not spec:
-			continue
-		template_field, slots_of = spec
 		config = _config_of(node)
-		template = config.get(template_field)
-		if not template:
-			continue  # a blank template is the `reqd` rule's business (W2.2), not this move's
-		for name in sends.missing_value_rows(slots_of(template), config.get("template_values")):
-			found.append(_at(
-				node["node_id"],
-				_("{0} has no value declared for {1} — every placeholder needs a row.").format(template, name),
-				"template_values", code="template.slot-unmapped",
-				fix=_("Map {0}, or the message would go out with a blank in it.").format(name),
-			))
+		for field in registry.config_fields(node["node_type"]):
+			source, method = field.get("slots_from"), field.get("slots_method")
+			if not (source and method):
+				continue
+			picked = config.get(source)
+			if not picked:
+				continue  # a blank template is the `reqd` rule's business (W2.2), not this move's
+			args = {kw: config.get(sibling) for kw, sibling in (field.get("slots_args") or {}).items()}
+			names = frappe.get_attr(method)(picked, **args)
+			for name in sends.missing_value_rows(names, config.get(field["name"])):
+				found.append(_at(
+					node["node_id"],
+					_("{0} has no value declared for {1} — every placeholder needs a row.").format(picked, name),
+					field["name"], code="template.slot-unmapped",
+					fix=_("Map {0}, or it goes out blank when this runs.").format(name),
+				))
 	return found
 
 
