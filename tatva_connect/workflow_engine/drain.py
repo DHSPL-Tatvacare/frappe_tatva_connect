@@ -50,6 +50,14 @@ def sweep(respect_switch=True):
 	so a per-workflow schedule would mean a row per workflow inside frappe's own scheduler loop, where our
 	switch, our grain and our abort flag cannot reach it. One tick asking one indexed question is smaller
 	and stays ours.
+
+	THE CLAIM AND THE ENQUEUE SHARE ONE COMMIT, and that is why the commit is HERE rather than inside
+	`_claim`. `enqueue_after_commit=True` does not enqueue — it registers the call on `frappe.db.after_commit`
+	and returns (`background_jobs.py:205`), so it fires on the NEXT commit. With `_claim` committing first,
+	each deferred enqueue would have been fired by the FOLLOWING workflow's claim and the last one by
+	whatever committed after the tick, which under a test's rollback is nothing at all. Committing after the
+	registration instead makes the pair atomic: the row lock `_claim` took is held across both, so a cohort
+	can never be left `Draining` with no job, and no job can exist for a claim that rolled back.
 	"""
 	if respect_switch and not _armed():
 		return 0
@@ -62,9 +70,11 @@ def sweep(respect_switch=True):
 			queue="workflow",
 			job_id=f"cohort-drain::{name}",
 			deduplicate=True,
+			enqueue_after_commit=True,
 			now=bool(frappe.flags.get("in_test")),
 			workflow_name=name,
 		)
+		frappe.db.commit()
 		started += 1
 	return started
 
@@ -103,6 +113,10 @@ def _claim(workflow_name):
 
 	The clock is pushed forward as part of the claim: a workflow still showing due after being claimed
 	would be picked up again by the very next tick and drained twice.
+
+	IT DOES NOT COMMIT — `sweep` does, once, after it has also registered the enqueue. The lock is held
+	until that commit, so the guarantee above is unchanged; what changes is that the claim and the job it
+	exists to start can no longer land apart.
 	"""
 	if not frappe.db.get_value(
 		_WORKFLOW_DT, {"name": workflow_name, "cohort_state": ["in", ["", None]]}, "name", for_update=True,
@@ -113,7 +127,6 @@ def _claim(workflow_name):
 		"cohort_abort": 0,
 		"trigger_next_run_at": cohort.next_run_at(_trigger_config(workflow_name)),
 	}, update_modified=False)
-	frappe.db.commit()
 	return True
 
 

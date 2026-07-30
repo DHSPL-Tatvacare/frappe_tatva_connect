@@ -319,7 +319,7 @@ class TestTheKillSwitchReachesARunningDrain(_CohortCase):
 		with patch("frappe.enqueue") as enqueue, patch.object(drain, "_armed", return_value=True):
 			drain.sweep()
 		job = dict(enqueue.call_args.kwargs)
-		for plumbing in ("queue", "job_id", "deduplicate", "now"):
+		for plumbing in ("queue", "job_id", "deduplicate", "enqueue_after_commit", "now"):
 			job.pop(plumbing, None)
 		# The switch is OFF from here — exactly the window between sweep and job the docstring names.
 		drain.run_cohort(**job)
