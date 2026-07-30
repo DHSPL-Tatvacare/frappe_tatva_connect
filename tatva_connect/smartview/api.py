@@ -284,13 +284,16 @@ def _catalog_fields(base_object, activity_type, grains, roles):
 
 
 def _grains_for_view(v):
-	"""The grain a saved view resolves its FIELDS against — a READ of a view the caller was already
-	admitted to, so it never throws. The entitlement clamp (`_grains_from_axes`) belongs to the
-	authoring paths, where a caller is CHOOSING a grain; asking it here is what refused every
-	vertical-wide and cross-grain-shared view the tab row had just offered (SV-01)."""
-	if v.vertical or v.group or v.program:
-		return {(v.vertical or "", v.group or "", v.program or "")}
-	return entitlement.entitled_grains()
+	"""The grain a saved view resolves its FIELDS against: the CALLER's entitlement, narrowed to the
+	view's declared scope — `entitlement.entitled_grains_within`, which owns that rule.
+
+	It is a READ of a view the caller was already admitted to, so it never throws: asking the authoring
+	clamp (`_grains_from_axes`) here is what refused every vertical-wide and cross-grain-shared view the
+	tab row had just offered (SV-01). But the fix for that must not become a second field gate. Returning
+	the VIEW's grain shipped a rep `lead:status` on all 17 rows of a vertical-wide view while their own
+	field catalog withheld it — and, because filter and sort read the catalog, the column could not even
+	be filtered. Grain entitlement decides which fields a user sees; a view only narrows it."""
+	return entitlement.entitled_grains_within((v.vertical, v.group, v.program))
 
 
 def _settle_grain(vertical, group, program):

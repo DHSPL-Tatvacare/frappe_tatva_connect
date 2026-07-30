@@ -4,15 +4,17 @@ Sibling of `access/visibility.py` (which RECORDS a user may see) and `access/ent
 FIELDS). Same shape as both: one predicate here, two thin hook entry points wired in hooks.py, and every
 consumer — the SPA endpoints, Desk, a report view — resolving through it rather than re-deciding.
 
-A view reaches a caller three ways, and each is asked exactly once:
-  * it is STANDARD and its grain OVERLAPS the caller's entitlement. A saved view's grain is a RULE
-    grain — authored, and free to leave an axis blank meaning ANY — so it is asked of
+A view reaches a caller three ways, asked in this order because only the LAST one is scoped:
+  * it is THEIRS (`owner_user`).
+  * it was SHARED with them, through frappe's own DocShare (`frappe.share.get_shared`). Nothing here
+    restates what a share means, and a share is never grain-filtered — someone who could share it decided
+    this person should have it, so scoping it away would make cross-line sharing silently do nothing.
+  * it is STANDARD and its grain OVERLAPS the caller's entitlement — with a grain declaring NO axis at
+    all meaning site-wide, offered to everyone and asked of nobody's entitlement. A saved view's grain is
+    a RULE grain — authored, and free to leave an axis blank meaning ANY — so it is asked of
     `entitlement.grain_overlaps_entitlement`, never `covers`. Comparing that blank as the literal empty
     string is what offered a vertical-wide view on the tab row and then refused to open it, and the same
     shape once hid 129 fields from 1,894 leads.
-  * it is THEIRS (`owner_user`).
-  * it was SHARED with them, through frappe's own DocShare (`frappe.share.get_shared`). Nothing here
-    restates what a share means.
 WRITE is narrower: an operator, or the owner of a non-standard view. Sharing rides the WRITE gate —
 you may hand on a view you may edit — which is the rule the endpoints already enforced.
 
@@ -69,10 +71,19 @@ def can_read(view, user=None, shared=None) -> bool:
 		return True
 	if (view.get("owner_user") or None) == user:
 		return True
-	if view.get("is_standard"):
-		return entitlement.grain_overlaps_entitlement(_rule_grain(view), user=user)
 	name = view.get("name")
-	return bool(name) and name in (_shared_names(user) if shared is None else shared)
+	# A share is asked BEFORE the grain, and of a standard view too: a share is deliberate, so scoping it
+	# away would make sharing across business lines silently do nothing (`test_share_and_export`:144).
+	if name and name in (_shared_names(user) if shared is None else shared):
+		return True
+	if not view.get("is_standard"):
+		return False
+	grain = _rule_grain(view)
+	# Declared for no grain at all is not "a rule about nothing" — it is site-wide, offered to everyone,
+	# and asked of nobody's entitlement. Zero-entitlement callers exist and still see their own rows only.
+	if grain == ("", "", ""):
+		return True
+	return entitlement.grain_overlaps_entitlement(grain, user=user)
 
 
 def can_write(view, user=None) -> bool:

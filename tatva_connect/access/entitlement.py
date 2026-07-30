@@ -254,14 +254,32 @@ def grain_overlaps_entitlement(rule_grain, user=None):
 	side too, so it is symmetric and resolves through `taxonomy.grain.overlaps`. Handing a rule grain to
 	`grain_entitled` would compare that wildcard as the empty string and answer confidently wrong.
 	"""
+	grains = entitled_grains_within(rule_grain, user)
+	return grains == ALL_GRAINS or bool(grains)
+
+
+def entitled_grains_within(rule_grain, user=None):
+	"""WHICH of the caller's entitled grains fall inside `rule_grain` — the FIELD scope for reading a
+	surface that declares one.
+
+	The set-valued form of the question above, and the one a reader must ask. Entitlement decides which
+	fields a user may see; a surface's own declared grain may only NARROW that, never widen it. Resolving
+	a view's fields against the view's grain instead handed a rep columns their entitlement withholds.
+
+	ALL_GRAINS (System Manager) stays ALL_GRAINS. A rule declaring no axis narrows nothing — it is not a
+	rule about no records, it is a rule about any of them. Both sides are RULE grains, so the question is
+	`taxonomy.grain.overlaps` and never `covers`; nothing here re-spells that comparison."""
 	grains = entitled_grains(user)
 	if grains == ALL_GRAINS:
-		return True
+		return grains
 	rv, rg, rp = _rule_axes(rule_grain)
-	return any(
-		taxonomy_grain.overlaps({"vertical": gv, "group": gg, "program": gp}, rv, rg, rp)
+	if not (rv or rg or rp):
+		return grains
+	return {
+		(gv, gg, gp)
 		for gv, gg, gp in grains
-	)
+		if taxonomy_grain.overlaps({"vertical": gv, "group": gg, "program": gp}, rv, rg, rp)
+	}
 
 
 def users_entitled_to(rule_grain, txt=None, limit=20, scan=500):
