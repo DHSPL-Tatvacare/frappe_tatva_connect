@@ -200,13 +200,34 @@ class TestLinkFieldNamesADoctype(FrappeTestCase):
 		self.addCleanup(frappe.db.rollback)
 		frappe.set_user("Administrator")
 
-	def test_a_link_with_no_target_is_refused(self):
+	def test_a_NEW_link_with_no_target_is_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
 			task_type_fixture.mint_type(
 				f"{TYPE_NAME} Blind Link",
 				({"label": "ZZ Coach", "fieldname": "zz_coach", "fieldtype": "Link"},))
 
 		self.assertIn("ZZ Coach", str(caught.exception), "the refusal must name the field")
+
+	def test_an_EXISTING_link_with_no_target_still_saves(self):
+		"""14 of the 66 seeded types already carry such a row. Refusing them outright would block an operator
+		editing an unrelated field on a defect they did not introduce and cannot safely fix — what those
+		fields hold is unknown, and declaring them `Link → User` could refuse the migrated value. D-O's
+		lesson: scope the new rule to the transition."""
+		name = task_type_fixture.mint_type(
+			f"{TYPE_NAME} Grandfathered",
+			({"label": "ZZ Coach", "fieldname": "zz_coach", "fieldtype": "Link", "options": "User"},))
+		# Put it in the bad state the way a raw seed did, then edit something else and save.
+		doc = frappe.get_doc("CRM Task Type", name)
+		frappe.db.set_value("CRM Task Type Field", doc.schema[0].name, "options", "")  # authz-ok: tier-c — test reproduces a seeded state
+		frappe.db.commit()
+
+		doc = frappe.get_doc("CRM Task Type", name)
+		doc.description = "ZZ touched something unrelated"
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("CRM Task Type", name, "description"),
+						 "ZZ touched something unrelated",
+						 "a pre-existing blind Link blocked an unrelated edit")
 
 	def test_a_link_to_a_missing_doctype_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

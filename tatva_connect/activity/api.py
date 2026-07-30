@@ -443,15 +443,20 @@ def _rules_by_target(tt):
 	for row in tt.get("rules") or []:
 		atom = _rule_atom(row)
 		conditional = bool((row.condition_field or "").strip())
-		for target in _rule_targets(row):
+		for target in rule_targets(row.targets):
 			out.setdefault(target, {}).setdefault(row.action or "", []).append((atom, conditional))
 	return out
 
 
-def _rule_targets(row):
-	"""The fieldnames one rule row acts on — comma-separated text (D26), because a child table cannot hold
-	a multiselect (`model/__init__.py:99`); the Desk script paints the picker that appends to it."""
-	return [t.strip() for t in (row.targets or "").split(",") if t.strip()]
+def rule_targets(targets):
+	"""The fieldnames a comma-separated `targets` declaration names — THE one reading of it.
+
+	Targets is text and not a multiselect because a child table cannot hold one (`model/__init__.py:99`,
+	D26); the Desk script paints the picker that appends to it. The compile here and
+	`CRMTaskType._validate_rules` both address the same text, so they resolve through this rather than each
+	splitting it — two splitters could disagree on trimming or on a trailing comma and the validator would
+	then bless a target the compile never sees."""
+	return [t.strip() for t in (targets or "").split(",") if t.strip()]
 
 
 def _compiled_visibility(entry, own):

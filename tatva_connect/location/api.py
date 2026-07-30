@@ -5,7 +5,7 @@ Two layers, one brain:
     write_location (map coords onto a record incl. the native Geolocation GeoJSON Point).
   • The activity location guard — `location_guard_applies` is the door-first probe (pure visit_mode
     == In-Person AND the lead grain is location-tracked, grain-scoped via taxonomy.grain), while
-    `location_required` adds the conditional `location_when` branch enforced at save. The activity
+    `location_required` adds the declared-condition branch enforced at save. The activity
     writer (compute_activity) and the validate backstop (tasks.enforce_location) key off
     `location_required`; `set_or_check_anchor` owns the clinic-anchor + radius rule. (Phase B consolidated
     the v1 task-type trigger — `location_required` + task_location.js — into this; see archive/.)
@@ -48,6 +48,11 @@ def _region():
 
 
 DEFAULT_RADIUS_M = 100
+
+# The one visit_mode value that makes a type ALWAYS location-eligible, named the way the rule grammar is
+# named in activity.api (RULE_SHOW / RULE_HIDE / ...): the vocabulary is declared as the Select options of
+# CRM Task Type.visit_mode, and read back here once instead of spelled out at each of the three gates.
+VISIT_IN_PERSON = "In-Person"
 
 # How the clinic anchor was established (custom_clinic_source on CRM Lead).
 ANCHOR_ADDRESS = "Doctor Address"
@@ -95,10 +100,15 @@ def location_guard_applies(task_type, lead):
 	"""Pure visit_mode gate for the door-first client probe: returns the allowed radius (metres)
 	when the type is ALWAYS an in-person visit (visit_mode == In-Person) AND the lead grain is
 	tracked, else None. Upfront-certain types only — the conditional branch lives in
-	location_required (enforced at save, since the visit/phone choice isn't known at the door)."""
+	location_required (enforced at save, since the visit/phone choice isn't known at the door).
+
+	Reads the type the same way `location_required` does — `get_cached_doc`, frappe's own memoised read —
+	so the two gates in this module never ask the database two different ways for the same row."""
 	if not (task_type and lead):
 		return None
-	if frappe.db.get_value("CRM Task Type", task_type, "visit_mode") != "In-Person":
+	if not frappe.db.exists("CRM Task Type", task_type):
+		return None
+	if (frappe.get_cached_doc("CRM Task Type", task_type).visit_mode or "") != VISIT_IN_PERSON:
 		return None
 	return is_location_tracked(lead)
 
@@ -110,7 +120,7 @@ def captures_location(visit_mode, condition_field):
 	`_type_config` and in `capture_flags`, so the card and the modal each carried their own copy of the
 	same test. Whether a location is demanded on THIS save is a different question, and it is
 	`location_required`."""
-	return (visit_mode or "") == "In-Person" or bool((condition_field or "").strip())
+	return (visit_mode or "") == VISIT_IN_PERSON or bool((condition_field or "").strip())
 
 
 def _condition_holds(tt, values):
@@ -167,7 +177,7 @@ def location_required(task_type, lead, values):
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
 	tt = frappe.get_cached_doc("CRM Task Type", task_type)
-	if (tt.visit_mode or "") != "In-Person" and not _condition_holds(tt, values):
+	if (tt.visit_mode or "") != VISIT_IN_PERSON and not _condition_holds(tt, values):
 		return None
 	return is_location_tracked(lead)
 
@@ -360,7 +370,7 @@ def reanchor(lead, lat, lng, accuracy=None):
 
 @frappe.whitelist()
 def location_needed(lead, task_type, values=None):
-	"""Does this activity need a location for THESE submitted values? (In-Person OR a location_when
+	"""Does this activity need a location for THESE submitted values? (In-Person OR the declared
 	branch that matches, on a tracked grain.) The client's one probe before capturing GPS."""
 	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
 	if isinstance(values, str):

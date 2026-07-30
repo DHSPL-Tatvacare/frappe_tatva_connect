@@ -40,7 +40,7 @@
   },
   {
    "columns": 1,
-   "description": "The last three are LAYOUT, not questions: they store nothing and open a new tab, heading or column that the rows below them fall into — exactly as they do on a Frappe DocType.",
+   "description": "The control the rep is given. Tab Break, Section Break and Column Break are layout instead of questions: they store nothing and open a new tab, heading or column that the rows below them fall into.",
    "fieldname": "fieldtype",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -72,7 +72,7 @@
    "length": 1000
   },
   {
-   "description": "Compiled from the type's rules — do not type here. The condition under which this field is required (native frappe-ui mandatory_depends_on); a hidden field is never required.",
+   "description": "Compiled from the type's rules and not typed here. It carries the condition under which the field is required, and a hidden field is never required.",
    "fieldname": "mandatory_depends_on",
    "fieldtype": "Data",
    "label": "Mandatory Depends On",
@@ -82,7 +82,7 @@
   {
    "columns": 1,
    "default": "Activity",
-   "description": "Whose record the value belongs to. Activity is answered by the rep and stored on the task. Lead is read from the patient record on the server, shown read-only, and snapshotted onto the activity as it stood that day — the lead is never written back.",
+   "description": "Whose record the value belongs to. Activity is answered by the rep and stored on the task; Lead is read from the patient record, shown read-only, and snapshotted as it stood that day.",
    "fieldname": "source",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -100,15 +100,33 @@
   },
   {
    "columns": 1,
-   "description": "The column the answer occupies: a column of the Section's Target DocType, or — with no Section — a settable column of CRM Task. Left blank, the answer is stored as a row addressed by its fieldname.",
+   "description": "The column the answer occupies \u2014 a column of the Section's DocType, or a settable CRM Task column when no Section is named. Left blank, the answer is stored under its own fieldname.",
    "fieldname": "target",
-   "fieldtype": "Data",
+   "fieldtype": "Autocomplete",
    "in_list_view": 1,
    "label": "Target"
   },
-  {"fieldname": "can_read", "fieldtype": "Check", "default": "0", "label": "Automation: Readable", "description": "A workflow criterion may test this activity field."},
-  {"fieldname": "can_watch", "fieldtype": "Check", "default": "0", "label": "Automation: Watchable", "description": "A change to this field may fire a workflow (only meaningful for a promoted-column field with a Target). Implies Readable."},
-  {"fieldname": "can_set", "fieldtype": "Check", "default": "0", "label": "Automation: Settable", "description": "A workflow action may write this activity field."}
+  {
+   "fieldname": "can_read",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Automation: Readable",
+   "description": "A workflow criterion may test this activity field."
+  },
+  {
+   "fieldname": "can_watch",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Automation: Watchable",
+   "description": "A change to this field may fire a workflow, which is meaningful only where the field names a Target column. Readable is implied."
+  },
+  {
+   "fieldname": "can_set",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Automation: Settable",
+   "description": "A workflow action may write this activity field."
+  }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,

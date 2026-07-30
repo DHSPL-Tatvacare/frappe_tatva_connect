@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "format:{vertical}::{group}::{program}::{type_name}",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "A task type is declared once on this page and consumed everywhere — the rep's form, the task list, Smart Views, automation and the workflow engine all read this single declaration. Configuration is completed top-down: grain, enforcement, fields, then rules.",
+ "description": "A task type is declared once here and read everywhere \u2014 the rep's form, the task list, Smart Views, automation and the workflow engine. It is configured top-down: grain, enforcement, fields, then rules.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -35,13 +35,13 @@
    "reqd": 1
   },
   {
-   "description": "The type name is displayed to reps wherever the activity appears. The grain (vertical · group · program) is chosen first; every downstream picker, permission and workflow offer is scoped by it, and a lead outside the grain is refused this activity at save.",
+   "description": "The name reps see, and the grain that scopes it. Every picker, permission and workflow offer is scoped by vertical \u00b7 group \u00b7 program, and a lead outside the grain is refused this activity at save.",
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
    "label": "Identity & Grain"
   },
   {
-   "description": "Grain axis. Blank = wildcard (available across that axis). The composite key is vertical::group::program::type_name, so the SAME type_name can carry a different schema per grain.",
+   "description": "Grain axis. Blank means any value on that axis. The composite key is vertical::group::program::type_name, so one type name can carry a different schema per grain.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "label": "Vertical",
@@ -65,20 +65,20 @@
    "label": "Description"
   },
   {
-   "description": "Everything that may block a bad save is declared here and nowhere else. Visit Mode marks the activity location-eligible when In-Person. The three Location fields declare the condition under which coordinates are demanded at save. Completes on save closes the task the moment its form is submitted. Disable bulk complete forces every completion through the form, one by one.",
+   "description": "Everything that may block a bad save is declared here and nowhere else: when a location is demanded, whether submitting the form completes the task, and whether bulk completion is allowed.",
    "fieldname": "activity_section",
    "fieldtype": "Section Break",
    "label": "Enforcement"
   },
   {
-   "description": "In-Person makes the type location-eligible (Phase B). Blank = not an in-person visit.",
+   "description": "In-Person marks the activity as a visit, which demands a location at save. Blank or Phone marks it as one that does not.",
    "fieldname": "visit_mode",
    "fieldtype": "Select",
    "label": "Visit Mode",
    "options": "\nIn-Person\nPhone\nNone"
   },
   {
-   "description": "Location is demanded at save when this field's answer satisfies the condition below. The field is one this type declares under Fields, so the condition is asked of an answer the form actually collects. Left blank, Visit Mode alone decides.",
+   "description": "Location is demanded at save when this field's answer satisfies the condition below. Only a question declared under Fields may be named. Left blank, Visit Mode alone decides.",
    "fieldname": "location_condition_field",
    "fieldtype": "Select",
    "label": "Location Required When"
@@ -101,20 +101,20 @@
   },
   {
    "default": "1",
-   "description": "On: this type is logged complete on save (an activity). Off: a plain open to-do.",
+   "description": "The task is completed the moment its form is submitted. Left off, the type is a plain open to-do.",
    "fieldname": "is_logged_complete",
    "fieldtype": "Check",
    "label": "Logged Complete"
   },
   {
    "default": "0",
-   "description": "On: a task of this type cannot be completed from the list's bulk action — its form must be filled one at a time.",
+   "description": "Completion is forced through the form, one task at a time. The list's bulk action refuses a task of this type.",
    "fieldname": "disable_bulk_complete",
    "fieldtype": "Check",
    "label": "Disable Bulk Complete"
   },
   {
-   "description": "One row is added per question the form asks; row order is form order and rows are reordered by their drag handle. Label is shown to the rep; Fieldname is the stable key every consumer addresses. Fieldtype and Options drive the control and its choices. Source declares whose data is captured — Activity is answered by the rep, Lead is read from the patient record and snapshotted read-only onto the activity. Section and Target name where the answer is filed; left blank it is filed in the answers store. Required marks a field mandatory on every save; a conditional one is declared under Rules.",
+   "description": "One row is added per question the form asks, and row order is form order. Source declares whose data is captured, Section and Target where the answer is filed, Required whether it is always mandatory.",
    "fieldname": "schema_section",
    "fieldtype": "Section Break",
    "label": "Fields"
@@ -127,7 +127,7 @@
    "options": "CRM Task Type Field"
   },
   {
-   "description": "One row declares one reaction of the form. Rule label is a free name used only for reading the grid. The When columns name a field, an operator and a value; a blank When declares the form's opening state. Action is one of Show, Hide or Make Mandatory, applied to every field listed in Targets. Add target appends a picked field to Targets and clears itself. A hidden field is never required and its value is never accepted, so chained rules resolve without ordering.",
+   "description": "One row declares one reaction of the form: when a field's answer matches, every listed target is shown, hidden or made mandatory. A blank When declares the form's opening state.",
    "fieldname": "rules_section",
    "fieldtype": "Section Break",
    "label": "Rules"

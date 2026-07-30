@@ -53,16 +53,15 @@ function tatva_section_table_field_options(frm) {
 }
 
 // {value,label} pairs for every real column of a doctype. `add_options` reads .label/.value, so the admin
-// reads the label while the column name is what is stored. Layout rows store nothing and are dropped.
+// reads the label while the column name is what is stored. Layout rows store nothing and are dropped through
+// `frappe.model.no_value_type`, the client twin of the server's `NO_VALUE_FIELDS`.
 // Cached by frappe's own meta cache, so a second call for the same doctype costs nothing.
-const TATVA_LAYOUT_FIELDTYPES = ['Tab Break', 'Section Break', 'Column Break'];
-
 function tatva_doctype_fields(doctype) {
   return new Promise((resolve) => {
     frappe.model.with_doctype(doctype, () => {
       resolve(
         (frappe.get_meta(doctype).fields || [])
-          .filter((f) => !TATVA_LAYOUT_FIELDTYPES.includes(f.fieldtype))
+          .filter((f) => !frappe.model.no_value_type.includes(f.fieldtype))
           .map((f) => ({ value: f.fieldname, label: f.label ? f.label + ' (' + f.fieldname + ')' : f.fieldname })),
       );
     });

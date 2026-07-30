@@ -62,17 +62,15 @@ frappe.ui.form.on('CRM Task Type Rule', {
 
 // ---- the type's own schema, as dropdown data --------------------------------
 
-// Layout rows open a tab, heading or column and store nothing, so they hold no answer to test. The server
-// says the same thing twice over — `_validate_rules` refuses a layout row as a When Field ("is a layout row
-// and holds no value to test") and `_declared_questions` excludes them from a location condition — so a
-// picker that offered one would offer a pick the save refuses.
-const TATVA_LAYOUT_FIELDTYPES = ['Tab Break', 'Section Break', 'Column Break'];
-
 // {value,label} pairs for every QUESTION the open type asks. Frappe escapes these in the dropdown, and
 // `add_options` reads .label/.value, so the admin reads the label while the fieldname is what is stored.
+// A layout row stores nothing, so it holds no answer to test and is excluded: the server refuses one as a
+// When Field ("is a layout row and holds no value to test") and `_declared_questions` keeps one out of a
+// location condition, so offering one would offer a pick the save rejects. `frappe.model.no_value_type` is
+// the client twin of the server's `NO_VALUE_FIELDS` — the same ten entries, so no third list is kept here.
 function tatva_task_questions(frm) {
   return (frm.doc.schema || [])
-    .filter((f) => (f.fieldname || '').trim() && !TATVA_LAYOUT_FIELDTYPES.includes(f.fieldtype))
+    .filter((f) => (f.fieldname || '').trim() && !frappe.model.no_value_type.includes(f.fieldtype))
     .map((f) => ({ value: f.fieldname, label: f.label || f.fieldname }));
 }
 
@@ -128,7 +126,7 @@ function tatva_task_target_options(frm, cdt, cdn) {
   const row = locals[cdt] && locals[cdt][cdn];
   const grid = frm.fields_dict.schema && frm.fields_dict.schema.grid;
   if (!row || !grid) return;
-  if (TATVA_LAYOUT_FIELDTYPES.includes(row.fieldtype)) {
+  if (frappe.model.no_value_type.includes(row.fieldtype)) {
     tatva_set_grid_row_options(grid, cdn, 'target', []);  // a marker stores nothing, so it targets nothing
     return;
   }
@@ -147,6 +145,13 @@ function tatva_task_target_columns(frm, section) {
 
 // ---- Depends On: read-only where the rules decide it ------------------------
 
+// The fieldnames a comma-separated `targets` declaration names — the client twin of the server's
+// `activity.api.rule_targets`, and the ONE reading of it here. Two copies had already drifted: one kept
+// empty entries and the other filtered them.
+function tatva_task_targets(text) {
+  return (text || '').split(',').map((t) => t.trim()).filter(Boolean);
+}
+
 // `_compiled_visibility` returns the hand-typed condition ONLY when no Show and no Hide rule names the
 // field; the moment one does, the compiled expression replaces it. So on such a row the box would display a
 // value that will not run. Its twin `mandatory_depends_on` is read-only outright for the same reason — this
@@ -157,7 +162,7 @@ function tatva_task_depends_on_state(frm, cdt, cdn) {
   if (!row || !grid) return;
   const ruled = (frm.doc.rules || []).some(
     (r) => ['Show', 'Hide'].includes(r.action) &&
-      (r.targets || '').split(',').map((t) => t.trim()).includes(row.fieldname));
+      tatva_task_targets(r.targets).includes(row.fieldname));
   const field = grid.grid_rows_by_docname[cdn] &&
     grid.grid_rows_by_docname[cdn].grid_form &&
     grid.grid_rows_by_docname[cdn].grid_form.fields_dict.depends_on;
@@ -209,10 +214,7 @@ function tatva_task_rule_append_target(frm, cdt, cdn) {
   const row = locals[cdt] && locals[cdt][cdn];
   const picked = row && (row.add_target || '').trim();
   if (!picked) return;
-  const existing = (row.targets || '')
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const existing = tatva_task_targets(row.targets);
   if (!existing.includes(picked)) existing.push(picked);
   frappe.model.set_value(cdt, cdn, 'targets', existing.join(', '));
   frappe.model.set_value(cdt, cdn, 'add_target', '');

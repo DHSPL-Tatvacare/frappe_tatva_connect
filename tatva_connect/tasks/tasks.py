@@ -109,7 +109,7 @@ def enforce_location(doc, method=None):
 	It used to stand down when an authored 'Require Location' workflow covered the same save. That verb is
 	gone (Phase 11) — a workflow decides whether IT runs, never whether a rep may save — and with it the
 	only reason this backstop ever consulted the workflow engine. Location is declared once on the task
-	type (`visit_mode` / `location_when`) and enforced here and in `compute_activity`, nowhere else."""
+	type (`visit_mode` plus the location condition) and enforced here and in `compute_activity`, nowhere else."""
 	from tatva_connect.activity.automation import reconstruct_values
 	from tatva_connect.location.api import location_required
 

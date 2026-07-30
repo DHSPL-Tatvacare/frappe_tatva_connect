@@ -10,6 +10,13 @@ from frappe.utils import cstr
 from tatva_connect.taxonomy.normalize import normalize_field
 
 
+def _options_of(row):
+	"""The choices a declared field offers, as a list. ONE reading of `options`, because a rule's value and
+	the location condition's value are both checked against it and two readings could disagree on trimming
+	or on a trailing blank line."""
+	return [o.strip() for o in (row.options or "").split("\n") if o.strip()]
+
+
 class CRMTaskType(Document):
 	def validate(self):
 		# M-2: normalize the display value so "Apollo " / "apollo" never fork.
@@ -67,37 +74,46 @@ class CRMTaskType(Document):
 
 		The declaration is the enforcement: the offered values are the field's own `options`, and the operator
 		vocabulary is the compile's (`activity.api.RULE_VALUE_OPERATORS`) rather than restated here."""
-		from tatva_connect.activity.api import RULE_VALUE_OPERATORS
+		from tatva_connect.activity.api import RULE_VALUE_OPERATORS, rule_targets
 
-		declared = {(f.fieldname or "").strip(): f for f in self.schema if (f.fieldname or "").strip()}
+		rows, questions = self._declared_rows(), self._declared_questions()
 		for row in self.rules:
 			field = (row.condition_field or "").strip()
-			if field and field not in declared:
+			if field and field not in rows:
 				frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
 							 title=_("Unknown field"))
 			# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
-			if field and (declared[field].fieldtype or "") in NO_VALUE_FIELDS:
+			if field and field not in questions:
 				frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
 							 title=_("Not a question"))
 			value = cstr(row.condition_value or "").strip()
 			if field and value and (row.operator or "").strip() in RULE_VALUE_OPERATORS:
-				options = [o.strip() for o in (declared[field].options or "").split("\n") if o.strip()]
+				options = _options_of(questions[field])
 				if options and value not in options:
 					frappe.throw(
 						_("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
 						title=_("Unknown value"))
-			for target in [t.strip() for t in (row.targets or "").split(",") if t.strip()]:
-				if target not in declared:
+			for target in rule_targets(row.targets):
+				if target not in rows:
 					frappe.throw(
 						_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
 						title=_("Unknown target"))
 
+	def _declared_rows(self):
+		"""Every declared row of this type, keyed by fieldname — layout markers INCLUDED.
+
+		This is what a rule may TARGET: a Section Break is a legitimate target, because showing or hiding one
+		is how a whole section appears. The two helpers here are the only definitions of "what this type
+		declares" on this doctype, so no validator builds its own."""
+		return {(f.fieldname or "").strip(): f for f in self.schema if (f.fieldname or "").strip()}
+
 	def _declared_questions(self):
-		"""The fields of this type that hold an ANSWER a condition can be asked about — every declared row
-		except the layout markers, which store nothing. Asked by both condition validators below so
-		"what may a predicate name" has one definition on this doctype."""
-		return {(f.fieldname or "").strip(): f for f in self.schema
-				if (f.fieldname or "").strip() and (f.fieldtype or "") not in NO_VALUE_FIELDS}
+		"""The declared rows that hold an ANSWER — layout markers excluded, because they store nothing.
+
+		This is what any PREDICATE may name, whether it is a rule's When field or the location condition.
+		Both ask this one helper, so the two can never disagree about what is askable."""
+		return {name: f for name, f in self._declared_rows().items()
+				if (f.fieldtype or "") not in NO_VALUE_FIELDS}
 
 	def _validate_location_condition(self):
 		"""The location gate's condition must name a field THIS type declares, and a value that field offers.
@@ -115,8 +131,8 @@ class CRMTaskType(Document):
 		field = (self.get("location_condition_field") or "").strip()
 		if not field:
 			return  # no condition declared: visit_mode alone decides, and that is a complete declaration
-		declared = self._declared_questions()
-		if field not in declared:
+		questions = self._declared_questions()
+		if field not in questions:
 			frappe.throw(
 				_("Location Required When names `{0}`, which is not a question this task type asks. A location "
 				  "condition can only be asked of a field declared under Fields — otherwise it can never hold "
@@ -124,7 +140,7 @@ class CRMTaskType(Document):
 				title=_("Not a declared field"))
 		value = cstr(self.get("location_condition_value") or "").strip()
 		if value and (self.get("location_operator") or "").strip() in RULE_VALUE_OPERATORS:
-			options = [o.strip() for o in (declared[field].options or "").split("\n") if o.strip()]
+			options = _options_of(questions[field])
 			if options and value not in options:
 				frappe.throw(
 					_("Location Required When compares `{0}` against `{1}`, which is not one of the options "
@@ -135,25 +151,42 @@ class CRMTaskType(Document):
 		"""A `Link` row must say WHICH doctype it links to, or the rep is handed a picker over nothing.
 
 		`options` is free text because a `Select` row uses it for its newline-separated choices, so nothing
-		ever checked the `Link` case — and the seeds carry rows like `Select Junior Coach - Diet` and
-		`Select ASM` that declare `Link` with no target at all. Those fields cannot be answered.
+		ever checked the `Link` case. Two different failures, and they are refused differently:
 
-		Deliberately a REFUSAL and not a picker: the choice is one of a thousand doctypes, and a dropdown that
-		long teaches nothing. A named refusal at authoring time does."""
+		* **Naming a doctype that does not exist** is unambiguously an error, so it is refused outright.
+		* **Naming nothing** is refused only on a row that is NEW or whose fieldtype/options just changed.
+		  14 of the 66 seeded types carry such a row already (`Select ASM`, `Select CS Agent`, the three
+		  `Select Junior Coach *`), and refusing them outright would make those types unsaveable — an
+		  operator editing an unrelated field would be blocked by a defect they did not introduce and cannot
+		  safely fix, because what those fields actually hold is unknown: if the migration writes a plain
+		  name rather than a User id, declaring them `Link → User` would refuse the migrated value. So the
+		  rule hardens every new declaration and leaves the existing ones to be corrected deliberately.
+
+		This is D-O's lesson applied again: scope a new rule to the TRANSITION and the old state keeps
+		working. `has_value_changed` is not available on a child row, so the before-image is read off
+		`get_doc_before_save()` by row name — absent for a new row, which is exactly the case to judge.
+
+		Deliberately a refusal and not a picker: the choice is one of a thousand doctypes, and a dropdown
+		that long teaches nothing. A named refusal at authoring time does."""
+		before = {r.name: r for r in (getattr(self.get_doc_before_save(), "schema", None) or [])}
 		for row in self.schema:
 			if (row.fieldtype or "") != "Link":
 				continue
 			target = (row.options or "").strip()
-			if not target:
-				frappe.throw(
-					_("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
-					  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname),
-					title=_("Link needs a target"))
-			if not frappe.db.exists("DocType", target):
+			if target and not frappe.db.exists("DocType", target):
 				frappe.throw(
 					_("Schema row {0}: `{1}` links to `{2}`, which is not a DocType on this site.").format(
 						row.idx, row.label or row.fieldname, target),
 					title=_("Unknown DocType"))
+			if target:
+				continue
+			was = before.get(row.name)
+			if was and (was.fieldtype or "") == "Link" and not (was.options or "").strip():
+				continue  # already in this state before the save: a pre-existing defect, not this edit's
+			frappe.throw(
+				_("Schema row {0}: `{1}` is a Link but names no DocType in Options, so the rep would be "
+				  "offered a picker over nothing.").format(row.idx, row.label or row.fieldname),
+				title=_("Link needs a target"))
 
 
 @frappe.whitelist()
@@ -180,7 +213,14 @@ def list_target_columns(section=None):
 
 	section = (section or "").strip()
 	if not section:
-		return [{"fieldname": c, "label": c} for c in task_columns()]
+		# `task_columns()` is the GATE and answers in fieldnames; the label lives on the same `CRM Task Field`
+		# row and is read for presentation only. Without it this branch offered `custom_followup_at` while the
+		# section branch offered "Follow-up At" — one picker reading two ways.
+		settable = task_columns()
+		labels = dict(frappe.get_all(
+			"CRM Task Field", filters={"fieldname": ["in", settable]},
+			fields=["fieldname", "label"], as_list=True, limit=0))
+		return [{"fieldname": c, "label": labels.get(c) or c} for c in settable]
 	target_doctype = frappe.get_cached_value("CRM Task Section", section, "target_doctype")
 	if not target_doctype:
 		return []  # a section that is not declared owns no columns; the router falls back and says so
