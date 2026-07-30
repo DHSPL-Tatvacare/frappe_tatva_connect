@@ -128,18 +128,17 @@ def abort(workflow_name):
 	frappe.db.commit()
 
 
-def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch=False):
+def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch=True):
 	"""Walk this workflow's cohort, starting one ordinary run per lead. The queued entry point.
 
-	Re-reads the switch and the abort flag BETWEEN chunks and commits each, so a cohort can be stopped
-	mid-flight and a killed worker resumes from the stored cursor rather than from the top.
+	Re-reads the switch and the abort flag AT EVERY CHUNK BOUNDARY and commits each, so a cohort can be
+	stopped mid-flight and a killed worker resumes from the stored cursor rather than from the top.
 
-	`respect_switch` is the caller's honesty about context: the queued job passes True because the switch
-	may have been turned off between the sweep and the job running. A test drives it directly.
+	RESPECTING THE SWITCH IS THE DEFAULT, and that is the whole safety property: the sweep enqueues this
+	by name and kwargs, so anything it does not pass is whatever the signature says. It said False, so the
+	only caller in production read no switch at all. A caller that genuinely wants to bypass the switch —
+	a test driving the walk itself — says so out loud.
 	"""
-	if respect_switch and not _armed():
-		_release(workflow_name)
-		return 0
 	chunk = chunk or thresholds.DRAIN_CHUNK
 	config = _trigger_config(workflow_name)
 	subject = config.get("subject_doctype") or "CRM Lead"
@@ -150,6 +149,10 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 
 	started, chunks = 0, 0
 	while True:
+		# BOTH STOPS ARE READ HERE, on every pass, and both leave by the same door: the `break` falls to
+		# `_release` below, because a cohort left `Draining` is one `_claim` can never match again.
+		if respect_switch and not _armed():
+			break
 		row = frappe.db.get_value(
 			_WORKFLOW_DT, workflow_name, ["cohort_cursor", "cohort_abort"], as_dict=True,
 		) or frappe._dict()

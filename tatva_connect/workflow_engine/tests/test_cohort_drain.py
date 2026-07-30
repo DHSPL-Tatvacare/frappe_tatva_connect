@@ -30,7 +30,11 @@ _LEADS = 7
 
 
 class _CohortCase(FrappeTestCase):
-	"""A scheduled workflow over a handful of leads on one grain."""
+	"""A scheduled workflow over a handful of leads on one grain.
+
+	A test ABOUT THE WALK says `respect_switch=False` out loud, because `fx.arm_engine` arms
+	`Workflow::Engine::run` and never `Workflow::Cohort::drain`, and the safe value is the default.
+	"""
 
 	@classmethod
 	def setUpClass(cls):
@@ -110,14 +114,14 @@ class TestTheDrainIsOneJobNotOnePerLead(_CohortCase):
 		self.assertEqual(enqueue.call_count, 1, "a cohort must cost ONE enqueue, whatever its size")
 
 	def test_the_drain_starts_one_ordinary_run_per_lead(self):
-		drain.run_cohort(self.workflow_name)
+		drain.run_cohort(self.workflow_name, respect_switch=False)
 		self.assertCountEqual(self._runs(), [lead.name for lead in self.leads])
 
 	def test_it_walks_a_keyset_cursor_and_never_offset(self):
 		"""OFFSET re-reads every skipped row and shifts rows between pages, so a lead is counted twice or
 		missed while the list is written to underneath. The cursor is the lead name, ascending."""
 		with patch("frappe.get_all", wraps=frappe.get_all) as get_all:
-			drain.run_cohort(self.workflow_name, chunk=3)
+			drain.run_cohort(self.workflow_name, chunk=3, respect_switch=False)
 		lead_reads = [c for c in get_all.call_args_list if c.args and c.args[0] == "CRM Lead"]
 		self.assertTrue(lead_reads)
 		for call in lead_reads:
@@ -150,12 +154,12 @@ class TestACohortIsNotTruncatedByLeadsItDoesNotWant(_CohortCase):
 		super().tearDownClass()
 
 	def test_a_chunk_of_unwanted_leads_does_not_end_the_cohort(self):
-		drain.run_cohort(self.workflow_name, chunk=2)
+		drain.run_cohort(self.workflow_name, chunk=2, respect_switch=False)
 		self.assertCountEqual(self._runs(), [lead.name for lead in self.leads],
 		                      "every lead the criteria select must be started, whatever sorts ahead of them")
 
 	def test_no_decoy_is_ever_started(self):
-		drain.run_cohort(self.workflow_name, chunk=2)
+		drain.run_cohort(self.workflow_name, chunk=2, respect_switch=False)
 		for decoy in self.decoys:
 			self.assertNotIn(decoy.name, self._runs())
 
@@ -212,25 +216,25 @@ class TestAResumeCannotDoubleStartALead(_CohortCase):
 	`active_key` UNIQUE index behind `_start_one` is the second, so even a lost cursor cannot double-run."""
 
 	def test_the_cursor_is_stored_as_it_goes(self):
-		drain.run_cohort(self.workflow_name, chunk=3, stop_after_chunks=1)
+		drain.run_cohort(self.workflow_name, chunk=3, stop_after_chunks=1, respect_switch=False)
 		cursor = frappe.db.get_value("CRM Workflow", self.workflow_name, "cohort_cursor")
 		self.assertTrue(cursor, "a drain that stores no cursor restarts the cohort from the beginning")
 		self.assertEqual(len(self._runs()), 3)
 
     # A resume must pick up AFTER the cursor, not re-walk from the top.
 	def test_resuming_finishes_the_cohort_exactly_once(self):
-		drain.run_cohort(self.workflow_name, chunk=3, stop_after_chunks=1)
+		drain.run_cohort(self.workflow_name, chunk=3, stop_after_chunks=1, respect_switch=False)
 		started_first = set(self._runs())
-		drain.run_cohort(self.workflow_name, chunk=3)
+		drain.run_cohort(self.workflow_name, chunk=3, respect_switch=False)
 		all_started = self._runs()
 		self.assertEqual(len(all_started), len(set(all_started)), "a lead was started twice")
 		self.assertCountEqual(all_started, [lead.name for lead in self.leads])
 		self.assertTrue(started_first.issubset(set(all_started)))
 
 	def test_a_second_drain_of_a_finished_cohort_starts_nothing_new(self):
-		drain.run_cohort(self.workflow_name)
+		drain.run_cohort(self.workflow_name, respect_switch=False)
 		before = sorted(self._runs())
-		drain.run_cohort(self.workflow_name)
+		drain.run_cohort(self.workflow_name, respect_switch=False)
 		self.assertEqual(sorted(self._runs()), before)
 
 
@@ -239,15 +243,15 @@ class TestTheAbortStopsTheCohortBetweenChunks(_CohortCase):
 	per-lead cancel is a different need (W10) and is deliberately not built here."""
 
 	def test_an_abort_stops_further_starts(self):
-		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1)
+		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1, respect_switch=False)
 		started = len(self._runs())
 		self.assertEqual(started, 2)
 		drain.abort(self.workflow_name)
-		drain.run_cohort(self.workflow_name, chunk=2)
+		drain.run_cohort(self.workflow_name, chunk=2, respect_switch=False)
 		self.assertEqual(len(self._runs()), started, "the abort must stop the drain at the chunk boundary")
 
 	def test_the_abort_leaves_already_started_runs_alone(self):
-		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1)
+		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1, respect_switch=False)
 		alive = frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
 		drain.abort(self.workflow_name)
 		after = frappe.get_all(fx.RUN_DT, filters={"workflow": self.workflow_name}, fields=["name", "status"])
@@ -298,6 +302,12 @@ class TestTheKillSwitchReachesARunningDrain(_CohortCase):
 	def test_the_job_the_sweep_queues_refuses_once_the_switch_goes_off(self):
 		"""Driven through the REAL kwargs the sweep enqueues, not a hand-written call: the defect was
 		precisely that the sweep omitted an argument, so a test that supplied it could never see this."""
+		# The fixture's schedule is Daily 09:00, so it is only due for part of the day. Drive the clock
+		# the way every other sweep test here does, or `_due_workflows` finds nothing and the assertion
+		# below never reaches the code it is about.
+		frappe.db.set_value("CRM Workflow", self.workflow_name, "trigger_next_run_at",
+		                    frappe.utils.add_to_date(None, minutes=-1), update_modified=False)
+		frappe.db.commit()
 		with patch("frappe.enqueue") as enqueue, patch.object(drain, "_armed", return_value=True):
 			drain.sweep()
 		job = dict(enqueue.call_args.kwargs)
@@ -346,7 +356,7 @@ class TestPacingRidesTheExistingBucket(_CohortCase):
 
 	def test_a_refused_token_stops_the_chunk_rather_than_dropping_leads(self):
 		with patch("tatva_connect.workflow_engine.drain._take_token", return_value=False):
-			drain.run_cohort(self.workflow_name, chunk=3)
+			drain.run_cohort(self.workflow_name, chunk=3, respect_switch=False)
 		self.assertEqual(self._runs(), [], "a refused token must PAUSE the cohort, never skip a lead")
 		self.assertFalse(frappe.db.get_value("CRM Workflow", self.workflow_name, "cohort_cursor"),
 		                 "a lead that was never started must not be behind the cursor")
