@@ -136,22 +136,44 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 		self.assertIn(self.mine, names, "the user's own vertical must still be visible")
 		self.assertNotIn(self.other, names, "a lead in another vertical must never reach this user")
 
-	def test_a_lead_chart_counts_only_leads_the_user_may_see(self):
-		"""The Manager Dashboard assembles its own query, so Frappe's list gate never runs for it. Its only
-		gate was `sales_user_only` — "is this a sales user at all", never "which leads". A funnel by product
-		line still tells a rep how many patients exist in verticals they cannot open."""
-		from tatva_connect.dashboard import grain_charts
+	def _declared(self, chart_name):
+		"""The seeded declaration, read as the endpoint reads it, so the test drives the real door."""
+		from tatva_connect.dashboard import api
 
-		data = self._as_user(lambda: grain_charts.leads_by_vertical())["data"]
-		counted = {row["vertical"] for row in data}
+		rows = frappe.get_list(
+			"CRM Dashboard Chart", filters={"name": chart_name}, fields=list(api._CHART_FIELDS), limit=1
+		)
+		if not rows:
+			self.skipTest(f"{chart_name} is not seeded on this site")
+		return rows[0]
+
+	def test_a_lead_chart_counts_only_leads_the_user_may_see(self):
+		"""A card is a declaration run through `frappe.get_list`, so the row gate answers it exactly as it
+		answers a list. The dashboard used to assemble its own query, and its only gate was `sales_user_only`
+		— "is this a sales user at all", never "which leads". A funnel by product line still told a rep how
+		many patients exist in verticals they cannot open."""
+		from tatva_connect.dashboard import executor
+
+		chart = self._declared("leads_by_vertical")
+		points = self._as_user(lambda: executor.run(chart))["points"]
+		counted = {point["raw"] for point in points}
 		self.assertIn(VERTICAL_MINE, counted, "the user's own vertical must still be counted")
 		self.assertNotIn(VERTICAL_OTHER, counted, "a vertical this user cannot see must not be counted")
 
 	def test_a_task_chart_counts_only_tasks_on_leads_the_user_may_see(self):
-		"""Same gap on the task side, and tasks carry their own row gate through the parent lead."""
-		from tatva_connect.dashboard import team_charts
+		"""Same gap on the task side, and tasks carry their own row gate through the parent lead.
 
-		mine = self._as_user(lambda: team_charts.total_tasks()["value"])
+		The task gate is an automation switch and ships dormant, so on a bench where nobody armed it every
+		task is legitimately visible to everyone — asserting a narrowing there would be asserting that a
+		deliberately-off toggle is on. Skipped rather than quietly passing, so the day it IS armed this
+		proves the card obeys it."""
+		from tatva_connect.access import visibility
+		from tatva_connect.dashboard import executor
+
+		if not (visibility.match_conditions("CRM Task", USER) or "").strip():
+			self.skipTest("the CRM Task row gate is disarmed on this site, so there is nothing to narrow")
+		chart = self._declared("total_tasks")
+		mine = self._as_user(lambda: executor.run(chart)["value"])
 		everything = frappe.db.count("CRM Task")
 		self.assertLess(
 			mine, everything,

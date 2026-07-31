@@ -149,6 +149,25 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 				"site, and every Task Status filter reads the whole table",
 			)
 
+	def test_the_borrowed_app_security_settings_are_pinned(self):
+		"""`lockdown.APP_SECURITY_SETTINGS` — security switches owned by ANOTHER app, which ships them
+		permissive and which no drift guard of ours otherwise watches. Insights queries the site DB
+		directly, so with `enable_permissions` off every Insights role reads every `tab*` — CRM Lead
+		included — and neither the grain brain nor the doctype matrix is in that path. Reads the
+		declaration, so a setting added there is covered the day it is added."""
+		from tatva_connect.access.lockdown import APP_SECURITY_SETTINGS
+
+		for doctype, values in APP_SECURITY_SETTINGS.items():
+			if not frappe.db.exists("DocType", doctype):
+				continue
+			for field, expected in values.items():
+				self.assertEqual(
+					frappe.db.get_single_value(doctype, field),
+					expected,
+					f"{doctype}.{field} is not {expected} — lockdown.apply never ran, or an operator "
+					"turned it back off; that reopens the whole site database to that app's users",
+				)
+
 	def test_every_declared_automation_has_its_switch_row(self):
 		"""`automation.seed.sync_catalog`. A key with no row is a gate on a switch that does not exist."""
 		from tatva_connect.automation.registry import AUTOMATIONS

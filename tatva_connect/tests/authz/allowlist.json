@@ -1,9 +1,10 @@
 {
 	"_comment": "APPROVED permission surface for the cross-app drift guard (test_surface_audit.py). Baselined 2026-06-26 from the live dev DB via effective_grants(role) over the audited ROLES. The test fails on any (role, doctype) grant BEYOND this set (widening) — it does NOT fail on a grant being REMOVED. To re-bless after an intentional change, re-run the generator in effective_grants's docstring and review the diff. NONE of the sensitive CRM/patient doctypes (CRM Lead, CRM Deal, CRM Task, FCRM Note, CRM Call Log, Contact, WhatsApp Message) are open to All or Guest — verified at baseline.",
 	"_findings": [
-		"REVIEWED, ACCEPTED (framework defaults, not CRM/patient data): the following All/Guest write/create/delete grants are stock Frappe / Helpdesk / Wiki upstream defaults, present on a clean install and not introduced by tatva_connect. They are blessed into the baseline but flagged here for human visibility: All->Address(w,c), All->Communication(d), All->File(w,c,d), All->HD Article Feedback(w,c,d), All->HD Ticket(w,c), All->Notification Settings(w,c), All->Tag(w,c), All->Tag Link(w,c), All->ToDo(w,c,d), All->Token Cache(d), All->Wiki Feedback(w,c), All->Wiki Page Patch(w,c,d), Guest->HD View(w,c,d), Guest->Wiki Feedback(w,c). File(w,c,d) for All is the only patient-adjacent concern (attachments) but file PRIVACY is enforced by the fail-closed Azure layer (invariant 15), not the DocPerm; row access is gated separately.",
+		"REVIEWED, ACCEPTED (framework defaults, not CRM/patient data): the following All/Guest write/create/delete grants are stock Frappe / Helpdesk / Wiki upstream defaults, present on a clean install and not introduced by tatva_connect. They are blessed into the baseline but flagged here for human visibility: All->Address(w,c), All->Communication(d), All->File(w,c,d), All->HD Article Feedback(w,c,d), All->HD Ticket(w,c), All->Notification Settings(w,c), All->Tag(w,c), All->Tag Link(w,c), All->ToDo(w,c,d), All->Token Cache(d), All->Wiki Page Patch(w,c,d), Guest->HD View(w,c,d). File(w,c,d) for All is the only patient-adjacent concern (attachments) but file PRIVACY is enforced by the fail-closed Azure layer (invariant 15), not the DocPerm; row access is gated separately.",
 		"Purchase Master Manager (a junk ERPNext role) has ZERO effective grants in the baseline — the VAPT lockdown removed its prior broad Contact read. Any future grant to it is therefore drift and will fail the audit.",
 		"RE-BLESSED 2026-07-13 (fresh-site parity). The baseline was taken from the dev DB on 2026-06-26 and four grants have appeared since, so the guard was RED on every site and nobody saw it — the suite refuses to run while a comms switch is on, which it has been. Each is read-only except Comment, and none touches patient data: (All, Comment) w+d with if_owner — OUR rule (access/lockdown.py): a user may edit or delete only their OWN comment; it is the fix for the cross-user comment IDOR, not a widening. (All, Event) read — stock Frappe calendar, no CRM data. (Sales Manager, CRM Automation Resume) read — our own doctype: a manager may see rule fires parked at a Wait step. (Sales Manager, CRM File Scan Log) read — our own doctype: a manager may see the file-screening verdicts.",
+		"TIGHTENED 2026-07-31 (VAPT round 2, Wiki). The wiki here is the internal handbook — every URL is behind login and there is no public docs site — so the two stock ANONYMOUS grants were removed from the baseline, not just from the DB: Guest->Wiki Feedback(w,c) let an unauthenticated request create AND edit feedback rows, and Guest->Wiki Page Patch(r) let one read every legacy contribution. Wiki Feedback loses its All row entirely: create moves to `Wiki User` (the role every real login already holds), because a non-if_owner All create is exactly what lockdown.assert_locked forbids — granting it to All fails the migrate on our own guard, which is the guard being right. All->Wiki Page Patch stays: it is if_owner, the sanctioned own-records-only shape. Removing them from this file is the point — left blessed, their return would pass the guard. Enforced by access/lockdown._WIKI.",
 		"RE-BLESSED 2026-07-23 (grain-rename + registry work). Ten read-only (r=1, w=c=d=0) grants appeared as new doctypes landed since the 07-13 baseline; all verified read-only and NONE holds patient/PII data: (Sales Manager) CRM Grain, CRM Bulk Job(+Result), and the six CRM Workflow* engine doctypes; (Sales User) CRM Grain. CRM Grain read mirrors the existing CRM Vertical/Group read a rep already has (it is the valid-combination registry, config not records). The CRM Workflow* grants belong to the workflow engine, which is under active rework — expect a re-bless when that lands."
 	],
 	"roles_audited": [
@@ -242,14 +243,6 @@
 		},
 		{
 			"role": "All",
-			"doctype": "Wiki Feedback",
-			"r": 0,
-			"w": 1,
-			"c": 1,
-			"d": 0
-		},
-		{
-			"role": "All",
 			"doctype": "Wiki Page Patch",
 			"r": 1,
 			"w": 1,
@@ -279,22 +272,6 @@
 			"w": 1,
 			"c": 1,
 			"d": 1
-		},
-		{
-			"role": "Guest",
-			"doctype": "Wiki Feedback",
-			"r": 0,
-			"w": 1,
-			"c": 1,
-			"d": 0
-		},
-		{
-			"role": "Guest",
-			"doctype": "Wiki Page Patch",
-			"r": 1,
-			"w": 0,
-			"c": 0,
-			"d": 0
 		},
 		{
 			"role": "Sales Manager",

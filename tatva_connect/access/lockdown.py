@@ -118,7 +118,44 @@ _WHATSAPP = {
 	},
 }
 
-LOCKED_MATRIX = {**_CRM_CORE, **_HELPDESK, **_WHATSAPP}
+# --- Wiki (internal handbook; login-only, there is no public wiki — product decision 2026-07-31) ---
+# Stock ships the public docs-site surface: Wiki Feedback write+create to BOTH `All` and `Guest` (the
+# anonymous page-rating widget) and Wiki Page Patch read to `Guest` (the anonymous contribution flow).
+# Neither exists here — every wiki URL is behind login. Drop both Guest rows. `All` keeps create on
+# feedback so a logged-in reader can still rate a page, and loses write (nothing edits a submitted
+# rating). Wiki Page Patch is the LEGACY contribution flow, superseded by Wiki Change Request; its
+# `All` row is already own-records-only, the sanctioned shape (policy §5 rule 2), so it is kept as is
+# and only the Guest read goes. Wiki Page Patch is submittable — hence the 6th element on the two
+# manager rows, without which the rebuild would silently strip submit/cancel/amend.
+_WIKI = {
+	"Wiki Feedback": {
+		"System Manager": (1, 1, 1, 1),
+		"Wiki Approver": (1, 1, 1, 1),
+		# Create only — submit a rating, never read or edit one. Granted to `Wiki User`, NOT `All`:
+		# a non-if_owner All create is precisely what assert_locked forbids, and it would fail the
+		# migrate on our own guard. Wiki User is the role every real login already carries, so the
+		# widget is unchanged for everyone who can reach a wiki page in the first place.
+		"Wiki User": (0, 0, 1, 0),
+	},
+	"Wiki Page Patch": {
+		"System Manager": (1, 1, 1, 1, 0, 1),
+		"Wiki Approver": (1, 1, 1, 1, 0, 1),
+		"All": (1, 1, 1, 1, 1),  # own records only — stock shape, kept
+	},
+}
+
+LOCKED_MATRIX = {**_CRM_CORE, **_HELPDESK, **_WHATSAPP, **_WIKI}
+
+# Single-doctype security settings another app owns and ships permissive. Pinned here, on after_migrate,
+# for the same reason as the matrix: a fresh install baselines patches.txt without running it, and an
+# operator toggle that silently reverts is exactly the drift this module exists to stop.
+APP_SECURITY_SETTINGS = {
+	# Insights queries the SITE DB directly — every `tab*`, CRM Lead included — so its own two layers are
+	# the only thing between an Insights role and every patient row. `enable_permissions` OFF means every
+	# Insights user sees every table. No effect on today's holders (all System Managers, whom Insights
+	# treats as admins and exempts); this closes the door for anyone added later who is not one.
+	"Insights Settings": {"enable_permissions": 1, "apply_user_permissions": 1},
+}
 
 # doctype -> {permlevel: {role: (read, write)}}. A permlevel-1 field is INVISIBLE to a role holding no
 # permlevel-1 read — so without these rows the lock is a blackout, not a lock, and that is why the grain
@@ -193,6 +230,7 @@ def apply(*_args, **_kwargs):
 		for role, perms in roles.items():
 			r, w, c, d = perms[:4]
 			if_owner = perms[4] if len(perms) > 4 else 0  # optional 5th element (own-records-only)
+			submittable = perms[5] if len(perms) > 5 else 0  # optional 6th: submit/cancel/amend, together
 			frappe.get_doc(
 				{
 					"doctype": "Custom DocPerm",
@@ -206,11 +244,25 @@ def apply(*_args, **_kwargs):
 					"create": c,
 					"delete": d,
 					"if_owner": if_owner,
+					"submit": submittable,
+					"cancel": submittable,
+					"amend": submittable,
 				}
 			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	apply_field_levels()
 	apply_lms_field_permlevels()
+	apply_app_security_settings()
 	frappe.clear_cache()
+
+
+def apply_app_security_settings():
+	"""Pin APP_SECURITY_SETTINGS. Idempotent, and a no-op on a site where the app is not installed."""
+	for doctype, values in APP_SECURITY_SETTINGS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		for field, value in values.items():
+			if frappe.db.get_single_value(doctype, field) != value:
+				frappe.db.set_single_value(doctype, field, value)
 
 
 def effective_all_guest_grants(doctype):

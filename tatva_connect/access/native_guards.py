@@ -293,3 +293,56 @@ def get_quiz_with_questions(quiz):
 	if cache.get_value(key) is None:
 		cache.set_value(key, now_datetime().timestamp(), expires_in_sec=_QUIZ_START_TTL)
 	return data
+
+
+# --- Wiki (internal handbook, login-only) -------------------------------------------------------
+@frappe.whitelist()
+def get_revisions(wiki_page_name):
+	"""Legacy Wiki Page history. Native is allow_guest AND reads through `frappe.db.get_all`, which
+	bypasses the permission engine entirely — so neither the doctype matrix nor a has_permission hook
+	can reach it, and the full rendered content of every revision comes back to anyone who asks. Gate
+	on read of the page itself; dropping allow_guest is correct because no wiki URL here is public."""
+	_require_read("Wiki Page", wiki_page_name)
+	from wiki.wiki.doctype.wiki_page_revision.wiki_page_revision import get_revisions as _native
+
+	return _native(wiki_page_name)
+
+
+# --- Insights (queries the SITE DB, so a leak here is a leak of every table) ---------------------
+# Replaying a query at an EARLIER pipeline step returns the source table before the query's own
+# filters ran. Harmless for a caller who may read the query; on the public path it is the raw table.
+_INSIGHTS_REWIND_ARGS = ("active_operation_idx",)
+
+
+def _insights_privileged(doctype, name):
+	"""True if the caller may natively READ the target doc — i.e. is not on Insights' public path.
+
+	The same shape as `_lms_privileged` above: a per-caller narrowing gate, not a deny. Fail-closed
+	on a malformed target (no doctype/name), which native rejects a moment later anyway."""
+	return bool(doctype and name and frappe.has_permission(doctype, "read", name))
+
+
+def _strip_rewind_args(args):
+	"""Drop the pipeline-rewind arguments from a client-supplied `args` payload."""
+	if isinstance(args, str):
+		args = frappe.parse_json(args)
+	if not isinstance(args, dict):
+		return args
+	return {k: v for k, v in args.items() if k not in _INSIGHTS_REWIND_ARGS}
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _insights_privileged narrows an unprivileged caller by stripping the rewind arg
+def run_doc_method(method: str, docs, args=None):
+	"""Insights' guest doc-method door. When the caller cannot read the target, native falls back to
+	running the method with ignore_permissions AND raises a flag that makes Insights skip row and
+	column permissions altogether — deliberate, so a published dashboard renders for a stranger. The
+	hole is that `active_operation_idx` then rewinds the query past its own filters to the unfiltered
+	source table. Strip it exactly on that path; a caller who may read the doc keeps the full contract."""
+	parsed = frappe.parse_json(docs) if isinstance(docs, str) else docs
+	doctype = (parsed or {}).get("doctype")
+	name = (parsed or {}).get("name")
+	if not _insights_privileged(doctype, name):
+		args = _strip_rewind_args(args)
+	from insights.api import run_doc_method as _native
+
+	return _native(method, docs, args)
