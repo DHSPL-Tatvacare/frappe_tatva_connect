@@ -370,6 +370,8 @@ after_migrate = [
 	# Per-grain INTERNAL visibility contracts (is_internal=1) moved OUT of after_migrate to the seed tail (db-seeds/2026-07-24-internal-contracts.bench-console.py): they derive from the taxonomy MASTERS + the lead-field CATALOG, both MANUAL seeds that land AFTER migrate, so on a fresh Day-0 site after_migrate ran with no masters and (via the _masters_exist guard) built NOTHING silently — every rep saw zero grain fields. Built at the tail of apply-seeds now, where masters + catalog exist. ensure_internal_contracts stays additive + idempotent.
 	# Master-data seeds run BEFORE the drift asserts below so a registry-drift throw never skips them; depend only on schema + fixtures (already applied); idempotent.
 	"tatva_connect.seeds.seed_master_data",
+	# Dashboard cards + the one seeded role layout; after master data because a layout Links to a Role, and after fixtures because a card names custom_* columns that land in sync_fixtures.
+	"tatva_connect.dashboard.seed.ensure_rows",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.

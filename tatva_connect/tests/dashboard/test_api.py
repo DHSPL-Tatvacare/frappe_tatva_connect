@@ -3,9 +3,8 @@
 """The endpoint answers for WHOEVER IS ASKING, and it cannot be asked for anything else.
 
 The caller sends a date range and the filters their own layout offered them. It cannot name a card, a
-list or a column, so there is nothing to guess at — and `get_chart`, which does take a name, refuses any
-name the caller's own layout does not already place. Without that refusal a single-card refresh would be
-a way to read any card on the site by guessing its slug.
+list or a column, so there is nothing to guess at: what is shown is resolved server-side from the caller's
+own roles, and there is no endpoint that takes a card name.
 
 Two more properties matter as much as the answer itself:
 
@@ -26,7 +25,7 @@ import json
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.dashboard import api
+from tatva_connect.dashboard import api, declaration
 
 CHART = "CRM Dashboard Chart"
 LAYOUT = "CRM Dashboard Layout"
@@ -86,6 +85,8 @@ class ApiCase(FrappeTestCase):
 		frappe.db.delete("User", {"name": PROBE_USER})
 		frappe.db.delete("Role", {"name": PROBE_ROLE})
 		frappe.db.delete(CHART, {"chart_name": ["like", "probe_api%"]})
+		frappe.db.delete("CRM Lead", {"first_name": ["like", "ApiProbe%"]})
+		declaration.retire_cache()
 		self._forget()
 
 	def _forget(self):
@@ -156,21 +157,78 @@ class TestOneCardCannotTakeTheDashboardDown(ApiCase):
 		self.assertIn("error", cards[BROKEN])
 
 
-class TestASingleCardRefreshIsNotAWayToReadAnyCard(ApiCase):
-	def test_a_card_the_layout_places_refreshes(self):
-		self._seed_layout(GOOD)
-		self._as_probe()
-		self.assertEqual(api.get_chart(GOOD)["chart"], GOOD)
 
-	def test_a_card_outside_the_callers_layout_is_refused(self):
-		self._seed_layout(GOOD)
-		self._as_probe()
-		with self.assertRaises(frappe.PermissionError):
-			api.get_chart(STRANGER)
+class TestACachedDashboardIsOnePersonsAnswer(ApiCase):
+	"""The figures are cached, and the row gate differs per person — so the cache key has to carry the user
+	or one rep's dashboard is served to another. That is the failure this class exists for."""
 
-	def test_a_card_that_does_not_exist_is_refused_the_same_way(self):
-		"""Missing and not-yours answer alike, so guessing a slug never confirms one exists."""
+	SECOND_USER = "probe-api-two@tatvacare.test"
+
+	def _lead_for(self, owner):
+		frappe.get_doc(
+			{
+				"doctype": "CRM Lead",
+				"first_name": f"ApiProbe {owner}",
+				"status": frappe.db.get_value("CRM Lead Status", {}, "name"),
+				"lead_owner": owner,
+			}
+		).insert(ignore_permissions=True)
+
+	def _second_user(self):
+		frappe.db.delete("Has Role", {"parent": self.SECOND_USER})
+		frappe.db.delete("User", {"name": self.SECOND_USER})
+		user = frappe.get_doc(
+			{"doctype": "User", "email": self.SECOND_USER, "first_name": "Two", "send_welcome_email": 0}
+		).insert(ignore_permissions=True)
+		user.add_roles(PROBE_ROLE, "Sales User")
+		return user.name
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.delete("Has Role", {"parent": self.SECOND_USER})
+		frappe.db.delete("User", {"name": self.SECOND_USER})
+		super().tearDown()
+
+	def test_a_second_ask_is_answered_from_the_cache(self):
 		self._seed_layout(GOOD)
 		self._as_probe()
-		with self.assertRaises(frappe.PermissionError):
-			api.get_chart("no_such_card_at_all")
+		self.assertEqual(api.get_dashboard()["charts"][0]["value"], 0)
+		frappe.set_user("Administrator")
+		self._lead_for(PROBE_USER)
+		self._as_probe()
+		self.assertEqual(
+			api.get_dashboard()["charts"][0]["value"], 0, "the second ask re-counted instead of reading the cache"
+		)
+
+	def test_retiring_the_cache_shows_the_new_figure(self):
+		self._seed_layout(GOOD)
+		self._as_probe()
+		api.get_dashboard()
+		frappe.set_user("Administrator")
+		self._lead_for(PROBE_USER)
+		declaration.retire_cache()
+		self._as_probe()
+		self.assertEqual(api.get_dashboard()["charts"][0]["value"], 1)
+
+	def test_one_users_dashboard_is_never_served_to_another(self):
+		"""The leak: two people on the same layout, one owning a lead the other cannot see."""
+		second = self._second_user()
+		self._seed_layout(GOOD)
+		self._lead_for(PROBE_USER)
+		self._as_probe()
+		self.assertEqual(api.get_dashboard()["charts"][0]["value"], 1)
+		frappe.set_user(second)
+		self._forget()
+		self.assertEqual(
+			api.get_dashboard()["charts"][0]["value"], 0, "a cached dashboard leaked across users"
+		)
+
+	def test_saving_a_card_retires_every_cached_dashboard(self):
+		self._seed_layout(GOOD)
+		self._as_probe()
+		api.get_dashboard()
+		frappe.set_user("Administrator")
+		self._lead_for(PROBE_USER)
+		frappe.get_doc(CHART, GOOD).save(ignore_permissions=True)
+		self._as_probe()
+		self.assertEqual(api.get_dashboard()["charts"][0]["value"], 1)

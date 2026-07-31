@@ -138,10 +138,10 @@ class TestRowGateHasOneAnswer(FrappeTestCase):
 
 	def _declared(self, chart_name):
 		"""The seeded declaration, read as the endpoint reads it, so the test drives the real door."""
-		from tatva_connect.dashboard import api
+		from tatva_connect.dashboard import declaration
 
 		rows = frappe.get_list(
-			"CRM Dashboard Chart", filters={"name": chart_name}, fields=list(api._CHART_FIELDS), limit=1
+			"CRM Dashboard Chart", filters={"name": chart_name}, fields=list(declaration.READ), limit=1
 		)
 		if not rows:
 			self.skipTest(f"{chart_name} is not seeded on this site")

@@ -21,79 +21,28 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import escape_html
 
-from tatva_connect.access import visibility
-from tatva_connect.dashboard import executor
-
-CHART_DOCTYPE = "CRM Dashboard Chart"
-
-# The role that already sees everything, so an ungated card tells it nothing it could not already read.
-PRIVILEGED_ROLE = "System Manager"
+from tatva_connect.dashboard import declaration, executor
 
 # What one placement declares. A key nothing reads would be stored and then silently ignored.
 _PLACEMENT_KEYS = ("chart", "x", "y", "w", "h")
 
 
-def _is_disarmed(source_doctype):
-	"""True only for a list whose gate is a switch somebody has left off — the registry is the one answer.
-
-	A doctype absent from `visibility.SCOPED` is not ungated: CRM Lead is gated by the crm app's own
-	permission_query_conditions plus the grain User Permissions, which are always on. Only a registered
-	Scope can be switched off, so only a registered Scope can be disarmed."""
-	scope = visibility.SCOPED.get(source_doctype)
-	return bool(scope) and not scope.armed()
-
 
 class CRMDashboardLayout(Document):
 	"""One role's dashboard. Every card it names is proved to exist before the row can be saved."""
+
+	def on_update(self):
+		declaration.retire_cache()
 
 	def validate(self):
 		placements = self._placements()
 		self._assert_charts_exist(placements)
 		self._assert_no_card_appears_twice(placements)
-		self._assert_every_card_is_gated(placements)
 		self._assert_exposed_filters()
-
-	def _assert_every_card_is_gated(self, placements):
-		"""A card counts whatever the row gate lets it count, so a card over an UNGATED list shows the whole
-		site to whoever holds this role. CRM Task's gate is an automation switch and ships dormant, which is
-		correct — but it means the six task cards count every activity in the system for every viewer. That
-		is invisible while only System Manager has a layout and becomes a leak the moment a rep gets one, so
-		it is refused HERE, loudly, at the moment somebody writes that layout."""
-		if self.role == PRIVILEGED_ROLE:
-			return
-		charts = [placement["chart"] for placement in placements]
-		if not charts:
-			return
-		rows = frappe.get_all(
-			CHART_DOCTYPE, filters={"name": ["in", charts]}, fields=["name", "source_doctype"]
-		)  # authz-ok: tier-c — reads operator chart config to refuse an ungated placement
-		ungated = sorted({row["name"] for row in rows if _is_disarmed(row["source_doctype"])})
-		if ungated:
-			frappe.throw(
-				_("{0} cannot go on a {1} dashboard while the {2} row gate is switched off — every one of"
-				  " them would count records this role cannot open. Arm the gate, or place these on a"
-				  " System Manager dashboard only.").format(
-					frappe.bold(", ".join(ungated)), frappe.bold(self.role), frappe.bold("CRM Task")
-				),
-				title=_("These cards are not gated yet"),
-			)
 
 	def _placements(self):
 		"""The layout read as a list of placements, checked where a reader would otherwise read past it."""
-		try:
-			parsed = frappe.parse_json(self.layout or "[]")
-		except (TypeError, ValueError) as unreadable:
-			frappe.throw(
-				_("Layout is not valid JSON: {0}").format(escape_html(str(unreadable))),
-				title=_("That JSON cannot be read"),
-			)
-		if not isinstance(parsed, list):
-			frappe.throw(
-				_("Layout is a LIST of cards, not {0}. Each entry names one card and where it sits.").format(
-					frappe.bold(type(parsed).__name__)
-				),
-				title=_("Layout is a list"),
-			)
+		parsed = declaration.parsed(self.layout, _("Layout"), list)
 		for placement in parsed:
 			if not isinstance(placement, dict):
 				frappe.throw(
@@ -120,7 +69,7 @@ class CRMDashboardLayout(Document):
 		if not named:
 			return
 		rows = frappe.get_list(
-			CHART_DOCTYPE,
+			declaration.CHART,
 			filters={"name": ["in", named]},
 			fields=["name"],
 			limit=len(named),
@@ -151,20 +100,7 @@ class CRMDashboardLayout(Document):
 			)
 
 	def _assert_exposed_filters(self):
-		try:
-			parsed = frappe.parse_json(self.exposed_filters or "[]")
-		except (TypeError, ValueError) as unreadable:
-			frappe.throw(
-				_("Exposed Filters is not valid JSON: {0}").format(escape_html(str(unreadable))),
-				title=_("That JSON cannot be read"),
-			)
-		if not isinstance(parsed, list):
-			frappe.throw(
-				_("Exposed Filters is a LIST of filter names, not {0}.").format(
-					frappe.bold(type(parsed).__name__)
-				),
-				title=_("Exposed Filters is a list"),
-			)
+		parsed = declaration.parsed(self.exposed_filters, _("Exposed Filters"), list)
 		# Asked of the executor, never restated here — a fifth name would draw a control that does nothing.
 		unknown = sorted(name for name in parsed if name not in executor.KNOWN_FILTERS)
 		if unknown:

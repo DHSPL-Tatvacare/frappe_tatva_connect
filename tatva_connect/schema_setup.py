@@ -25,8 +25,8 @@ from tatva_connect.patches import (
 	add_call_log_reference_index,
 	add_call_media_recording_index,
 	add_clinic_anchor_index,
-	add_task_due_state_index,
 	add_crm_task_metrics_index,
+	add_dashboard_card_indexes,
 	add_integration_request_index,
 	add_lead_dedup_unique_index,
 	add_lead_timeline_indexes,
@@ -34,6 +34,7 @@ from tatva_connect.patches import (
 	add_task_answer_fieldname_index,
 	add_task_answer_question_index,
 	add_task_document_kind_index,
+	add_task_due_state_index,
 	add_task_lead_snapshot_index,
 	add_timeline_paging_indexes,
 	add_workflow_due_index,
@@ -68,6 +69,8 @@ _STEPS = (
 	# that pair; the existing indexes lead with reference_docname and cannot serve it. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_task_due_state_index,
+	# (creation, status) and (status, modified) on CRM Task — the dashboard's activity cards group on a low-cardinality column over a date range, so the range seeks and the group column rides in the leaf to make the index covering. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_dashboard_card_indexes,
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
 	# UNIQUE (mobile_no, custom_vertical, custom_group) on CRM Lead — the partner API's dedup rule; a composite unique cannot be declared in crm's JSON, so this is its only fresh-install path.

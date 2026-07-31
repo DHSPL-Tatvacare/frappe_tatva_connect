@@ -10,7 +10,7 @@ diverge:
   * THE FIGURE IS THE GROUPED COUNT, and the declared filters really narrow it.
   * THE DATE RANGE APPLIES WHEN THE CARD SAYS IT DOES, and is absent when the card declares itself a
     snapshot. A dashboard that quietly mixed the two would be wrong in a way nobody could see.
-  * `__now__` AND `__today__` MEAN REQUEST TIME. A stored filter cannot hold "now", and the whole of
+  * `__NOW__` AND `__TODAY__` MEAN REQUEST TIME. A stored filter cannot hold "now", and the whole of
     Overdue depends on this.
   * A BLANK GROUP IS NAMED IN PYTHON, because SQL's IFNULL cannot take a literal here — and the drill for
     that slice still filters on the blank it really had, NEVER on the words "Not set".
@@ -160,14 +160,14 @@ class TestTheDateRangeIsADeclaredChoice(ExecutorCase):
 
 class TestTheTokensMeanRequestTime(ExecutorCase):
 	def test_now_is_substituted_before_the_query(self):
-		"""Two of the seven are open and already past due; a stored `__now__` proves it is read on the way in."""
+		"""Two of the seven are open and already past due; a stored `__NOW__` proves it is read on the way in."""
 		payload = executor.run(
 			_chart(
 				chart_type="number",
 				group_by_field="",
 				base_filters='{"title": ["like", "'
 				+ PROBE
-				+ '%"], "status": ["in", ["Backlog", "Todo", "In Progress"]], "due_date": ["between", ["1900-01-01", "__now__"]]}',
+				+ '%"], "status": ["in", ["Backlog", "Todo", "In Progress"]], "due_date": ["between", ["1900-01-01", "__NOW__"]]}',
 			)
 		)
 		self.assertEqual(payload["value"], 2)
@@ -220,3 +220,30 @@ class TestDrillIsADeclaredChoice(ExecutorCase):
 		point = self._by_raw(payload)["Done"]
 		self.assertEqual(point["drill"]["filters"]["status"], "Done")
 		self.assertEqual(point["drill"]["filters"]["title"], ["like", f"{PROBE}%"])
+
+
+class TestAnUngatedListNeverReachesAPlainRole(ExecutorCase):
+	"""The gate is asked on EVERY read, not once when a layout was saved.
+
+	CRM Task's row gate is an automation switch, so it can be turned off long after somebody wrote a rep's
+	dashboard. Checking at save time would leave that layout in place, counting every activity in the
+	business, with nothing to re-check it. So the question is asked here, on the way out."""
+
+	def test_a_card_over_a_switched_off_gate_is_not_offered_to_a_plain_role(self):
+		from tatva_connect.access import visibility
+
+		if visibility.SCOPED[TASK].armed():
+			self.skipTest("the CRM Task gate is armed on this site, so the card is legitimate")
+		frappe.set_user(PROBE_USER)
+		try:
+			self.assertFalse(executor.is_gated(_chart()))
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_same_card_is_offered_to_a_privileged_viewer(self):
+		"""A System Manager already sees every row, so withholding the card hides nothing from them."""
+		self.assertTrue(executor.is_gated(_chart()))
+
+	def test_a_list_whose_gate_is_not_a_switch_is_always_offered(self):
+		"""CRM Lead is gated by the crm app's own conditions and the grain permissions, which have no switch."""
+		self.assertTrue(executor.is_gated(_chart(source_doctype="CRM Lead")))

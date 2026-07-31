@@ -23,11 +23,14 @@ import json
 import frappe
 from frappe.utils import cstr
 
-CHART_DOCTYPE = "CRM Dashboard Chart"
-LAYOUT_DOCTYPE = "CRM Dashboard Layout"
+from tatva_connect.dashboard import declaration
 
 # The three activity statuses that mean "still to do", named once and meant the same way in three cards.
 _OPEN = ["in", ["Backlog", "Todo", "In Progress"]]
+
+# What the Leads list itself shows (Leads.vue hardcodes it). A card that counted converted leads would open
+# a list that excludes them, so the card says it too — the figure and the list are one question.
+_UNCONVERTED = {"converted": 0}
 
 
 def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
@@ -54,26 +57,22 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 
 
 _CHARTS = [
-	_card("total_leads", "Leads", "Created in the selected range", "number", "CRM Lead", date_field="creation", honours_date_range=1),
+	_card("total_leads", "Leads", "Created in the selected range", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
 	_card("total_tasks", "Activities", "Created in the selected range", "number", "CRM Task", date_field="creation", honours_date_range=1),
 	# A snapshot, not a range: "still open" is a fact about now, and dating it by creation answers something else.
 	_card("pending_tasks", "Pending Activities", "Open right now", "number", "CRM Task", base_filters={"status": _OPEN}),
 	# `between` and not `<`: frappe compares as ifnull(due_date, ''), so `<` counts every activity that has NO due date as overdue.
-	_card("overdue_tasks", "Overdue Activities", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__now__"]]}),
+	_card("overdue_tasks", "Overdue Activities", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
 	# CRM Task carries no completion date, so `modified` is the closest honest stamp for when it was closed.
 	_card("completed_tasks", "Completed Activities", "Closed in the selected range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
-	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["__today__", "__today__"]]}),
-	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", group_by_field="source", date_field="creation", honours_date_range=1),
-	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
+	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["__TODAY__", "__TODAY__"]]}),
+	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
+	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
 	# Grouped on the owner column and LABELLED with the person's name: the name is display, the column filters.
-	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", group_by_field="lead_owner", label_field="lead_owner.full_name", date_field="creation", honours_date_range=1),
+	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", label_field="lead_owner.full_name", date_field="creation", honours_date_range=1),
 	_card("tasks_by_status", "Activities by Status", "Created in the selected range", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
 ]
 
-# What a card MEANS: asserted every migrate. Label, subtitle and Enabled are the operator's, set once at insert.
-_STRUCTURAL = ("chart_type", "source_doctype", "aggregate", "aggregate_field", "group_by_field",
-               "label_field", "date_field", "honours_date_range", "base_filters", "row_limit",
-               "drill_enabled")
 
 _PLACED = (
 	("total_leads", 0, 0, 2, 2),
@@ -104,18 +103,18 @@ _LAYOUTS = [
 def ensure_rows():
 	"""Idempotent: what our code depends on is asserted, and an operator's own arrangement is left alone."""
 	# skip-until-ready: an early caller can run before these doctypes sync; the after_migrate pass seeds then.
-	if not (frappe.db.table_exists(CHART_DOCTYPE) and frappe.db.table_exists(LAYOUT_DOCTYPE)):
+	if not (frappe.db.table_exists(declaration.CHART) and frappe.db.table_exists(declaration.LAYOUT)):
 		return
 	for row in _CHARTS:
-		if not frappe.db.exists(CHART_DOCTYPE, row["chart_name"]):
-			frappe.get_doc({"doctype": CHART_DOCTYPE, "enabled": 1, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
+		if not frappe.db.exists(declaration.CHART, row["chart_name"]):
+			frappe.get_doc({"doctype": declaration.CHART, "enabled": 1, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 			continue
-		declared = {field: row[field] for field in _STRUCTURAL}
-		stored = frappe.db.get_value(CHART_DOCTYPE, row["chart_name"], _STRUCTURAL, as_dict=True)
-		if any(cstr(stored[field]) != cstr(declared[field]) for field in _STRUCTURAL):
-			frappe.db.set_value(CHART_DOCTYPE, row["chart_name"], declared)  # authz-ok: tier-c — after_migrate, structural fields this app owns
+		declared = {field: row[field] for field in declaration.STRUCTURAL}
+		stored = frappe.db.get_value(declaration.CHART, row["chart_name"], declaration.STRUCTURAL, as_dict=True)
+		if any(cstr(stored[field]) != cstr(declared[field]) for field in declaration.STRUCTURAL):
+			frappe.db.set_value(declaration.CHART, row["chart_name"], declared)  # authz-ok: tier-c — after_migrate, structural fields this app owns
 	for row in _LAYOUTS:
 		# A layout is placement, and placement is the operator's: seeded once and never re-imposed.
-		if not frappe.db.exists(LAYOUT_DOCTYPE, row["role"]) and frappe.db.exists("Role", row["role"]):
-			frappe.get_doc({"doctype": LAYOUT_DOCTYPE, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
+		if not frappe.db.exists(declaration.LAYOUT, row["role"]) and frappe.db.exists("Role", row["role"]):
+			frappe.get_doc({"doctype": declaration.LAYOUT, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 	frappe.db.commit()

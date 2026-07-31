@@ -19,7 +19,7 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.dashboard import seed
+from tatva_connect.dashboard import declaration, seed
 
 CHART = "CRM Dashboard Chart"
 LAYOUT = "CRM Dashboard Layout"
@@ -32,7 +32,7 @@ class SeedCase(FrappeTestCase):
 		frappe.set_user("Administrator")
 		seed.ensure_rows()
 		self.before = frappe.db.get_value(
-			CHART, SUBJECT, ("label", "subtitle", *seed._STRUCTURAL), as_dict=True
+			CHART, SUBJECT, ("label", "subtitle", *declaration.STRUCTURAL), as_dict=True
 		)
 
 	def tearDown(self):

@@ -27,7 +27,15 @@ import pathlib
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-_MODULE = pathlib.Path(frappe.get_app_path("tatva_connect")) / "dashboard"
+_APP = pathlib.Path(frappe.get_app_path("tatva_connect"))
+
+# The feature is the package AND its two doctype controllers: a read written in a controller is the same
+# read, and the lock claimed "no exceptions" while the controllers sat outside it.
+_MODULE = (
+	_APP / "dashboard",
+	_APP / "tatva_connect" / "doctype" / "crm_dashboard_chart",
+	_APP / "tatva_connect" / "doctype" / "crm_dashboard_layout",
+)
 
 # There is no allowlist. `grain_charts.py` and `team_charts.py` were the only two files that ever needed
 # one and they were deleted in Phase 2, Sequence 8 — this lock now covers the module with no exceptions,
@@ -57,7 +65,7 @@ def _hits(tree):
 class TestTheDashboardOnlyEverAsksGetList(FrappeTestCase):
 	def test_no_dashboard_module_builds_its_own_query(self):
 		hits = []
-		for path in sorted(_MODULE.rglob("*.py")):
+		for path in sorted(p for root in _MODULE for p in root.rglob("*.py")):
 			if "tests" in path.parts:
 				continue
 			for lineno, what in _hits(ast.parse(path.read_text())):

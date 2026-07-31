@@ -120,36 +120,3 @@ class TestExposedFiltersAreOnesThatDoSomething(LayoutDeclarationCase):
 		)
 		self.assertEqual(frappe.parse_json(doc.exposed_filters), list(executor.KNOWN_FILTERS))
 
-
-class TestAnUngatedCardCannotReachANonPrivilegedRole(LayoutDeclarationCase):
-	"""The leak this refusal exists to stop: CRM Task's row gate is an automation switch that ships dormant,
-	so while it is off every task card counts every activity on the site for whoever holds the layout."""
-
-	def _task_card(self):
-		if not frappe.db.exists(CHART, "probe_layout_task_card"):
-			frappe.get_doc(
-				{
-					"doctype": CHART,
-					"chart_name": "probe_layout_task_card",
-					"label": "Probe Task Card",
-					"chart_type": "number",
-					"source_doctype": "CRM Task",
-					"aggregate": "COUNT",
-					"base_filters": "{}",
-				}
-			).insert(ignore_permissions=True)
-		return "probe_layout_task_card"
-
-	def test_a_task_card_is_refused_by_name_for_a_plain_role_while_the_gate_is_off(self):
-		from tatva_connect.access import visibility
-
-		if visibility.SCOPED["CRM Task"].armed():
-			self.skipTest("the CRM Task gate is armed on this site, so the placement is legitimate")
-		message = self._refused(layout=json.dumps([_placed(chart=self._task_card())]))
-		self.assertIn("probe_layout_task_card", message)
-
-	def test_a_lead_card_is_allowed_because_its_gate_is_never_a_switch(self):
-		"""The refusal must not over-reach: CRM Lead is gated by the crm app's own permission conditions and
-		the grain User Permissions, which have no off switch, so a lead card on a plain role is legitimate."""
-		doc = self._layout(layout=json.dumps([_placed()])).insert(ignore_permissions=True)
-		self.assertTrue(doc.name)

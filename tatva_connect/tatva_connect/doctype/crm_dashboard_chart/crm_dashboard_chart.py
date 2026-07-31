@@ -28,12 +28,17 @@ from frappe.model import default_fields
 from frappe.model.document import Document
 from frappe.utils import escape_html
 
+from tatva_connect.dashboard import declaration
+
 # A donut and a bar are one figure broken down by a column; a number card is the figure alone.
 _GROUPED = ("donut", "bar")
 
 
 class CRMDashboardChart(Document):
 	"""One declared card. Everything the executor assumes about it is proved before it can be saved."""
+
+	def on_update(self):
+		declaration.retire_cache()
 
 	def validate(self):
 		self.chart_name = (self.chart_name or "").strip()
@@ -113,23 +118,7 @@ class CRMDashboardChart(Document):
 	def _assert_base_filters_shape(self):
 		"""What is typed here is byte for byte what `frappe.get_list(filters=...)` is handed, so it is an
 		object of column to condition and nothing else."""
-		if not (self.base_filters or "").strip():
-			self.base_filters = "{}"
-			return
-		try:
-			parsed = frappe.parse_json(self.base_filters)
-		except (TypeError, ValueError) as unreadable:
-			frappe.throw(
-				_("Base Filters is not valid JSON: {0}").format(escape_html(str(unreadable))),
-				title=_("That JSON cannot be read"),
-			)
-		if not isinstance(parsed, dict):
-			frappe.throw(
-				_(
-					"Base Filters is an object of column to condition, not {0}. For example {1}."
-				).format(frappe.bold(type(parsed).__name__), frappe.bold('{"status": "Done"}')),
-				title=_("Base Filters is an object"),
-			)
+		declaration.parsed(self.base_filters, _("Base Filters"), dict)
 
 	def _assert_column(self, fieldname, role):
 		meta = frappe.get_meta(self.source_doctype)

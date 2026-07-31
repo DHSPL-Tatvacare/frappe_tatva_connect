@@ -7,9 +7,9 @@ a card saying 247 that opens a list of 180. Every unit test can pass while that 
 right, the filter is right, and they are right about different sets of rows.
 
 So each seeded card is run as a NON-PRIVILEGED user carrying a real `User Permission`, and each datapoint
-is then re-counted by handing its own drill filter straight back to `frappe.get_list`. Three things have
-to agree for that to hold, and they are exactly the three the design rests on: the aggregate, the drill
-filter derived from the same query, and the row gate applying identically to both.
+is re-counted by handing its own drill filter to `crm.api.doc.get_data` — the endpoint the drilled LIST
+calls, not `frappe.get_list`. That distinction is the whole point: they are different code paths, and
+every way this drill has broken so far broke between them.
 
 The User Permission is not decoration. As Administrator the gate is open and every count reconciles
 trivially — the test would pass having proved nothing about the one thing it exists to prove.
@@ -20,15 +20,21 @@ Run:
 """
 
 import frappe
+from crm.api.doc import get_data
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, nowdate
 
-from tatva_connect.dashboard import api, executor, seed
+from tatva_connect.dashboard import api, declaration, executor, seed
 
 CHART = "CRM Dashboard Chart"
 PROBE = "ReconcileProbe"
 PROBE_USER = "probe-reconcile@tatvacare.test"
 GATED_ROLE = "Sales User"
+
+# What each SPA page hands ViewControls as its own baseline filter (Leads.vue:26; Tasks passes none). It is
+# ANDed server-side and OVERRIDES the drill on a shared key, so a card must declare the same thing or it
+# opens a list that disagrees with it.
+_PAGE_FILTERS = {"CRM Lead": {"converted": 0}, "CRM Task": None}
 
 # Wide enough that the ranged cards have something to count; reconciliation holds for any window.
 WINDOW = {"from_date": add_to_date(nowdate(), years=-5), "to_date": nowdate()}
@@ -48,7 +54,7 @@ class ReconcileCase(FrappeTestCase):
 		entitled = self._narrow(user.name)
 		self._own_rows(entitled)
 		self.charts = frappe.get_list(
-			CHART, filters={"enabled": 1}, fields=list(api._CHART_FIELDS), limit=0, ignore_permissions=True
+			CHART, filters={"enabled": 1}, fields=list(declaration.READ), limit=0, ignore_permissions=True
 		)
 		frappe.set_user(PROBE_USER)
 
@@ -98,6 +104,10 @@ class ReconcileCase(FrappeTestCase):
 					"lead_owner": PROBE_USER,
 					"custom_vertical": vertical,
 					"source": "Cold Call" if index % 2 else None,
+					# One converted lead, and it is the whole point of the fixture: the Leads page hides
+					# converted leads, so a card that does not also hide them counts a row its own list will
+					# never show. Without this row every card reconciles whether or not it declares it.
+					"converted": 1 if index == 0 else 0,
 				}
 			).insert(ignore_permissions=True)
 			frappe.get_doc(
@@ -112,8 +122,19 @@ class ReconcileCase(FrappeTestCase):
 			).insert(ignore_permissions=True)
 
 	def _rows_behind(self, drill):
-		"""The drill filter, handed straight back to the same door the figure came out of."""
-		return len(frappe.get_list(drill["doctype"], filters=drill["filters"], limit=0))
+		"""The drill filter through `crm.api.doc.get_data` — the endpoint the drilled LIST calls, not
+		`frappe.get_list`. They are different code paths, and everything that has ever broken this drill broke
+		in between them: the page's own default_filters, which get_data lets override the drill.
+
+		`_PAGE_FILTERS` mirrors what each page hands ViewControls, so the test asks the question the browser
+		asks. `total_count` and not the row count, because the page shows a total, not a page."""
+		answer = get_data(
+			doctype=drill["doctype"],
+			filters=dict(drill["filters"]),
+			order_by="modified desc",
+			default_filters=_PAGE_FILTERS.get(drill["doctype"]),
+		)
+		return answer["total_count"]
 
 
 class TestEveryCardReconcilesWithItsOwnList(ReconcileCase):
