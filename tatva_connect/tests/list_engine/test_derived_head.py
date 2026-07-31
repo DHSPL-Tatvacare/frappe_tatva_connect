@@ -285,6 +285,65 @@ class TestADeclarationThatCannotBeServedIsRefusedAtSave(HeadCase):
 		self.assertIn("status", str(raised.exception))
 		self.assertFalse(frappe.db.exists(DOCTYPE, {"dt": TASK, "fieldname": "status"}))
 
+	def test_a_value_with_a_line_break_is_refused(self):
+		"""Options travel newline-separated, so one line break inside a value becomes TWO entries in every
+		menu — and no record can ever read as either of them."""
+		for bad in ("Over\ndue", "Over\tdue", " Overdue "):
+			with self.subTest(repr(bad)):
+				with self.assertRaises(frappe.ValidationError):
+					self.author(TASK, "_head_newline", [{"value": bad, "filters": [["status", "is", "set"]]}])
+				self.assertFalse(frappe.db.exists(DOCTYPE, {"dt": TASK, "fieldname": "_head_newline"}))
+
+	def test_a_colour_no_badge_can_wear_is_refused_and_the_colours_are_named(self):
+		"""A colour outside frappe-ui's tokens draws an unstyled pill, which reads as a bug on screen. The
+		client filters nothing, so this is the ONE place a bad colour can be caught."""
+		with self.assertRaises(frappe.ValidationError) as raised:
+			self.author(
+				TASK,
+				"_head_colour",
+				[{"value": "Any", "theme": "purple", "filters": [["status", "is", "set"]]}],
+			)
+		self.assertIn("purple", str(raised.exception))
+		self.assertIn("orange", str(raised.exception), "the refusal does not name the colours that work")
+
+
+class TestRetiringAFieldIsNeverBlocked(HeadCase):
+	"""Switching a field OFF must always be possible, whatever has happened to the columns it reads.
+
+	The proof runs the declaration against real records, so a field whose source column has since changed
+	fails it — and if that ran on every save, the operator could not even retire the thing. Off is the
+	escape hatch; an escape hatch with a lock on it is not one.
+
+	RED before the fix: `_prove` runs unconditionally and the disable is refused."""
+
+	def test_a_declaration_that_no_longer_proves_can_still_be_switched_off(self):
+		row = self.author(TASK, "_head_retire", [{"value": "Any", "filters": [["status", "is", "set"]]}])
+		# Overlapping buckets: the same declaration would now be refused if it were being turned ON.
+		row.buckets = frappe.as_json(
+			[
+				{"value": "Open", "filters": [["status", "not in", CLOSED]]},
+				{"value": "Any Status", "filters": [["status", "is", "set"]]},
+			]
+		)
+		row.enabled = 0
+		row.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value(DOCTYPE, row.name, "enabled"), 0)
+
+	def test_switching_it_back_ON_is_still_refused(self):
+		"""The escape hatch must not become a way to smuggle a broken declaration into every rep's list."""
+		row = self.author(TASK, "_head_retire", [{"value": "Any", "filters": [["status", "is", "set"]]}])
+		row.buckets = frappe.as_json(
+			[
+				{"value": "Open", "filters": [["status", "not in", CLOSED]]},
+				{"value": "Any Status", "filters": [["status", "is", "set"]]},
+			]
+		)
+		row.enabled = 0
+		row.save(ignore_permissions=True)
+		row.enabled = 1
+		with self.assertRaises(frappe.ValidationError):
+			row.save(ignore_permissions=True)
+
 
 class TestADisabledRowChangesNothing(LeadCase):
 	"""`enabled` ships at 0, so a row can be written, read, reviewed and left off. Off must mean OFF.

@@ -44,6 +44,12 @@ override_doctype_class = {
 	# Mask secrets on every Error Log row, whichever app wrote it: frappe's own make_request logs the
 	# failing URL before our handler runs. Infrastructure, never a toggleable automation, hence bound here.
 	"Error Log": "tatva_connect.observability.error_log.MaskedErrorLog",
+	# The five listing declarations are ours, so they live here: get_controller is the ONE function the list payload, the saved-view seeder and the rep pickers all already call.
+	"CRM Lead": "tatva_connect.list_engine.columns.TatvaCRMLead",
+	"CRM Task": "tatva_connect.list_engine.columns.TatvaCRMTask",
+	"CRM Call Log": "tatva_connect.list_engine.columns.TatvaCRMCallLog",
+	"FCRM Note": "tatva_connect.list_engine.columns.TatvaFCRMNote",
+	"CRM Deal": "tatva_connect.list_engine.columns.TatvaCRMDeal",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from the account's provider (read-only mirror), not Meta — for the desk button and any caller.
@@ -65,6 +71,8 @@ override_whitelisted_methods = {
 	"crm.api.doc.get_quick_filters": "tatva_connect.api.task_lenses.get_quick_filters",
 	# Choosing that field records the choice natively but writes no in_standard_filter Property Setter — there is no DocField for one to describe.
 	"crm.api.doc.update_quick_filters": "tatva_connect.api.task_lenses.update_quick_filters",
+	# The vite door to the boot bag; the rendered-page door is `update_website_context` below. A rep's field menus are cached with no expiry, so the declaration version is what retires them when an operator authors a field.
+	"crm.www.crm.get_context_for_dev": "tatva_connect.api.boot.get_context_for_dev",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
@@ -85,6 +93,12 @@ override_whitelisted_methods = {
 	"crm.api.views.get_views": "tatva_connect.access.native_guards.get_views",
 	# VAPT hardening — Helpdesk (agent-only internal): the KB stats endpoint bypasses the engine (S.7).
 	"helpdesk.api.article.get_article_stats": "tatva_connect.access.native_guards.get_article_stats",
+	# VAPT hardening — Wiki (internal handbook): legacy page history is allow_guest and reads through a
+	# permission-bypassing query, so the doctype matrix cannot reach it; the wrapper gates on the page.
+	"wiki.wiki.doctype.wiki_page_revision.wiki_page_revision.get_revisions": "tatva_connect.access.native_guards.get_revisions",
+	# VAPT hardening — Insights (reads the site DB): the guest doc-method door runs with permissions off
+	# for a published dashboard; the wrapper strips the arg that rewinds a query to its unfiltered source.
+	"insights.api.run_doc_method": "tatva_connect.access.native_guards.run_doc_method",
 	# VAPT hardening — LMS (internal training, Mode 2): allow_guest + engine-bypass catalog reads; the
 	# wrapper NARROWS a non-privileged caller to published rows (courses/batches) and strips the
 	# creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
@@ -591,6 +605,9 @@ required_apps = ["crm", "frappe_whatsapp"]
 # Shared Desk helpers for the webhook account forms (token generator + URL banner); both account Client Scripts call this one asset.
 # A bundle, not a raw /assets path: esbuild hashes the filename, so a deploy can never leave a browser on a cached copy.
 app_include_js = "tatva_connect.bundle.js"
+
+# The rendered-page door to the app's boot bag: frappe's own context hook, so no line of crm/www/crm.py moves.
+update_website_context = "tatva_connect.api.boot.website_context"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/tatva_connect/css/tatva_connect.css"

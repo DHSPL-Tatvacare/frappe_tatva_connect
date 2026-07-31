@@ -95,6 +95,9 @@ GROUP_BY = "group_by"
 QUICK_FILTER = "quick_filter"
 SURFACES = (COLUMN, FILTER, SORT, GROUP_BY, QUICK_FILTER)
 
+# The colours a bucket may declare — frappe-ui's own Badge tokens, and the ONE place they are named.
+THEMES = ("gray", "blue", "green", "orange", "red")
+
 # What a default column is worth on screen; a rep resizes it and the saved view keeps their width.
 DEFAULT_COLUMN_WIDTH = "10rem"
 
@@ -268,6 +271,13 @@ def _validate(field):
 	unknown = [s for s in field.surfaces if s not in SURFACES]
 	if unknown:
 		raise DerivedFieldError(f"{field.fieldname}: {unknown} names no menu; the menus are {list(SURFACES)}")
+
+	# A colour no surface can wear draws an unstyled pill, which reads as a bug on screen and is one here.
+	unwearable = sorted({b.theme for b in field.buckets if b.theme and b.theme not in THEMES})
+	if unwearable:
+		raise DerivedFieldError(
+			f"{field.fieldname}: {unwearable} is not a colour a badge can wear; the colours are {list(THEMES)}"
+		)
 
 	# The proxy orders rows WITHIN a bucket, so it must be a bare fieldname a direction can be joined onto.
 	if field.order_by is not None:
@@ -507,6 +517,39 @@ def resolve(field, bucket, snap=None):
 	snapshot. The SAME list is handed to `evaluate_filters` and to `get_list`."""
 	snap = snapshot() if snap is None else snap
 	return [[field.doctype, f[0], f[1], _substitute(f[2], snap)] for f in bucket.filters]
+
+
+def group(field, bucket, snap=None):
+	"""One bucket as a SINGLE condition frappe can OR with another.
+
+	`resolve` returns the bucket's tuples as a flat list, which frappe ANDs. A union of buckets needs those
+	ANDed groups ORed together, and frappe 16 takes exactly that: `[cond, 'and', cond]` nests, and a nested
+	group is itself a condition. So a bucket with one tuple IS that tuple, and a bucket with more becomes
+	an and-group — which is what lets `union` express "in any of these buckets" as real SQL."""
+	terms = resolve(field, bucket, snap)
+	if len(terms) == 1:
+		return terms[0]
+	joined = [terms[0]]
+	for term in terms[1:]:
+		joined += ["and", term]
+	return joined
+
+
+def union(field, values, snap=None):
+	"""The rows in ANY of these buckets, as ONE condition — no identifiers, no cap, no second query.
+
+	This is what `!=`, `not in`, `in` and `is set` resolve to. Before frappe grew nested filters the only
+	way to express it was to run a query per bucket, collect every matching identifier and hand the whole
+	list back as `name in (…)` — fine at three thousand records, a table-sized query string at a hundred
+	thousand. The declaration's own tuples now reach SQL directly, so the cost is one query whatever the
+	table holds, and the rows the list SHOWS and the rows a filter RETURNS are still the same tuples."""
+	groups = [group(field, field.bucket(value), snap) for value in values]
+	if not groups:
+		return None
+	joined = [groups[0]]
+	for one in groups[1:]:
+		joined += ["or", one]
+	return joined
 
 
 def value_of(field, row, snap=None):

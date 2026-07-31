@@ -32,7 +32,7 @@ import json
 import frappe
 from frappe.utils import parse_json
 
-from tatva_connect.list_engine import derived
+from tatva_connect.list_engine import derived, repair
 
 
 def _board_field(doctype, view_type, column_field):
@@ -43,6 +43,27 @@ def _board_field(doctype, view_type, column_field):
 	return derived.get(doctype, column_field)
 
 
+def _retired(doctype, payload):
+	"""The names in this board payload that no longer exist anywhere — `repair`'s question, unchanged.
+
+	A saved view reaches the server through TWO doors: it is READ into a listing request, and it is WRITTEN
+	back when the rep changes the board. A field an operator deleted is stale at both, and native reads
+	`.fieldtype` off `frappe.get_meta`'s `None` at this one. So the same question is asked, the same removal
+	applied and the same `repair_view` persists it — one janitor, two doors, not two fixes."""
+	if not doctype:
+		return set()
+	return set(repair.unserveable(doctype, payload, payload.get("view") or {}))
+
+
+def _stored_view(doctype, given):
+	"""Which row this save payload is about, in the shape the janitor addresses a view by.
+
+	These endpoints name a view as `name` + `type`; a listing request names it as `custom_view_name` +
+	`view_type`. One translation, here, so `repair.saved_view` stays the only thing that knows how a rep's
+	standard view is found."""
+	return repair.saved_view(doctype, {"custom_view_name": given.get("name"), "view_type": given.get("type")})
+
+
 def _with_board_columns(view):
 	"""The caller's payload, returned untouched unless it is a derived board still missing its columns.
 
@@ -51,8 +72,14 @@ def _with_board_columns(view):
 	the helper's own kanban arm fires there just the same. So both keys are filled, with the one list
 	native would have assigned for a real Select, and the helper is never called on any branch."""
 	given = frappe._dict(view)
-	field = _board_field(given.dt or given.doctype, given.type, given.column_field)
+	doctype = given.dt or given.doctype
+	field = _board_field(doctype, given.type, given.column_field)
 	if not field:
+		gone = _retired(doctype, dict(given))
+		if gone:
+			# The load gate's own three steps: repair the stored row, then answer without the name.
+			repair.repair_view(_stored_view(doctype, given), gone)
+			return repair.without(dict(given), gone)
 		return view
 	filled = dict(given)
 	columns = [{"name": value} for value in field.options]
@@ -89,6 +116,9 @@ def fetch_and_update_kanban_columns(name: str | int):
 	doc = frappe.get_doc("CRM View Settings", name)
 	field = _board_field(doc.dt, doc.type, doc.column_field)
 	if not field:
+		# The same janitor, addressed by the row itself rather than by a payload — one repair, one write.
+		if repair.repair_view(doc.name):
+			return frappe.db.get_value("CRM View Settings", doc.name, "kanban_columns")
 		return _native(name)
 
 	existing_columns = parse_json(doc.kanban_columns or "[]")

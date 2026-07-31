@@ -29,11 +29,11 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime, nowdate
 
 from tatva_connect.api import list_link_titles, task_lenses
-from tatva_connect.list_engine import derived, fields
+from tatva_connect.list_engine import derived
 
 TASK = "CRM Task"
 PROBE = "EngineProbe"
-FIELD = fields.DUE_STATE.fieldname
+FIELD = "due_state"
 
 
 def _rows_arg(*names):
@@ -148,7 +148,7 @@ class TestColumnAndFilterAgree(ListEngineCase):
 
 	def test_filtering_returns_exactly_the_rows_the_list_shows(self):
 		shown = self._shown(self._get_data())
-		for value in fields.DUE_STATE.options:
+		for value in derived.get(TASK, FIELD).options:
 			with self.subTest(value):
 				filtered = self._get_data(filters={"title": ["like", f"{PROBE}%"], FIELD: value})
 				self.assertEqual(
@@ -191,7 +191,9 @@ class TestEveryBranchCarriesIt(ListEngineCase):
 			view={"view_type": "kanban"},
 			column_field=FIELD,
 		)
-		self.assertEqual([c["name"] for c in result["kanban_columns"]], list(fields.DUE_STATE.options))
+		self.assertEqual(
+			[c["name"] for c in result["kanban_columns"]], list(derived.get(TASK, FIELD).options)
+		)
 		seen = {}
 		for column in result["data"]:
 			for row in column["data"]:
@@ -220,14 +222,14 @@ class TestTheMenusOfferIt(ListEngineCase):
 				entry = next((f for f in offered if f.get("fieldname") == FIELD), None)
 				self.assertIsNotNone(entry, f"{name} lens does not offer {FIELD}")
 				self.assertEqual(entry["fieldtype"], "Select")
-				self.assertEqual(entry["options"].split("\n"), list(fields.DUE_STATE.options))
+				self.assertEqual(entry["options"].split("\n"), list(derived.get(TASK, FIELD).options))
 
 	def test_all_five_menus_describe_the_field_identically(self):
 		"""The anti-drift lock. Five endpoints offer this field and they must all report the ONE description
 		the declaration gives, so renaming it in `fields.py` moves every menu at once. Quick filters is the
 		one that reads doctype meta directly and so was hand-built at first; it is included here for exactly
 		that reason. `options` is deliberately not compared — quick filters legitimately pairs them."""
-		declared = fields.DUE_STATE.descriptor()
+		declared = derived.get(TASK, FIELD).descriptor()
 		# The bar is a stored CHOICE, not a lens: it offers what the rep picked, so the pick is made here
 		# before the description is compared. `_store` is that test module's own helper — the setup for a
 		# chosen quick filter lives in one place, the same way the field itself does.
@@ -255,7 +257,7 @@ class TestTheMenusOfferIt(ListEngineCase):
 		offered = task_lenses.get_quick_filters(TASK, cached=False)
 		entry = next(f for f in offered if f.get("fieldname") == FIELD)
 		self.assertEqual(entry["options"][0], {"label": "", "value": ""})
-		self.assertEqual([o["value"] for o in entry["options"][1:]], list(fields.DUE_STATE.options))
+		self.assertEqual([o["value"] for o in entry["options"][1:]], list(derived.get(TASK, FIELD).options))
 
 	def test_no_other_doctype_is_offered_it(self):
 		for doctype in ("CRM Lead", "CRM Deal", "FCRM Note", "CRM Call Log"):
@@ -299,7 +301,7 @@ class TestSortAndSafety(ListEngineCase):
 		which put Overdue, History and Upcoming in one interleaved list under a Task Status heading."""
 		ordered = self._get_data(order_by=f"{FIELD} asc", rows=_rows_arg("name", "due_date", FIELD))
 		seen = [r[FIELD] for r in ordered["data"] if r.get(FIELD)]
-		declared = list(fields.DUE_STATE.options)
+		declared = list(derived.get(TASK, FIELD).options)
 		self.assertEqual(
 			[v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v],
 			sorted({v for v in seen}, key=declared.index),
@@ -309,14 +311,25 @@ class TestSortAndSafety(ListEngineCase):
 	def test_sorting_descending_walks_the_buckets_backwards(self):
 		ordered = self._get_data(order_by=f"{FIELD} desc", rows=_rows_arg("name", "due_date", FIELD))
 		seen = [r[FIELD] for r in ordered["data"] if r.get(FIELD)]
-		declared = list(fields.DUE_STATE.options)
+		declared = list(derived.get(TASK, FIELD).options)
 		runs = [v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v]
 		self.assertEqual(runs, sorted(set(runs), key=declared.index, reverse=True))
 
 	def test_a_rep_sees_only_their_own_rows_through_the_derived_filter(self):
-		rep = frappe.db.get_value("User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest")]})
+		# A REP, not merely a non-admin: a probe account another suite leaves behind has no read on this list.
+		rep = next(
+			(
+				user.name
+				for user in frappe.get_all(
+					"User", filters={"enabled": 1}, fields=["name"], order_by="name asc", limit=0
+				)
+				if user.name not in ("Administrator", "Guest")
+				and frappe.has_permission(TASK, "read", user=user.name)
+			),
+			None,
+		)
 		if not rep:
-			self.skipTest("no non-admin user on this site")
+			self.skipTest("no non-admin user with read on this list")
 		frappe.set_user(rep)
 		try:
 			mine = self._get_data(filters={"title": ["like", f"{PROBE}%"], FIELD: "Overdue"})
@@ -460,7 +473,7 @@ class TestTheShapesTheFrontendActuallySends(ListEngineCase):
 		)
 		rows = [row for column in result["data"] for row in column["data"]]
 		self.assertTrue(rows, "the status board returned no rows at all")
-		self.assertTrue(all(row.get(FIELD) in fields.DUE_STATE.options for row in rows))
+		self.assertTrue(all(row.get(FIELD) in derived.get(TASK, FIELD).options for row in rows))
 
 	def test_both_paths_prepare_filters_the_same_way(self):
 		"""The one rule this layer states twice — native's `@me` rewrite and `default_filters` merge. The
@@ -472,7 +485,7 @@ class TestTheShapesTheFrontendActuallySends(ListEngineCase):
 		expected = {
 			r["name"]
 			for r in delegated["data"]
-			if derived.value_of(fields.DUE_STATE, frappe._dict(r)) == "Overdue"
+			if derived.value_of(derived.get(TASK, FIELD), frappe._dict(r)) == "Overdue"
 		}
 		self.assertEqual({r["name"] for r in orchestrated["data"]}, expected)
 

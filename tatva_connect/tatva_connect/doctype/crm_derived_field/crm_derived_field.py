@@ -101,7 +101,10 @@ class CRMDerivedField(Document):
 		self._assert_buckets_shape()
 		field = self._declaration()
 		self._assert_free(field)
-		self._prove(field)
+		# RETIRING IS ALWAYS ALLOWED. The proof reads the columns the buckets name, so a declaration whose
+		# column has since changed would fail it — and the operator could not even switch the field off.
+		if self.enabled:
+			self._prove(field)
 
 	# The registry is loaded lazily and keyed by nothing but the rows, so dropping the cache IS publishing
 	# the edit — and `declaration_version()` moves with it, which is what reaches a rep's stale menu cache.
@@ -173,6 +176,15 @@ class CRMDerivedField(Document):
 					frappe.bold(escape_html(json.dumps(bucket)))
 				),
 				title=_("A bucket has no value"),
+			)
+		# A value is a Select option, and options travel newline-separated: one line break inside a value
+		# splits it into two phantom entries in every menu, neither of which any record can ever read as.
+		if bucket["value"] != bucket["value"].strip() or any(c in bucket["value"] for c in "\n\r\t"):
+			frappe.throw(
+				_("{0} has a line break or padding around it. A value is one line of text.").format(
+					frappe.bold(escape_html(repr(bucket["value"])))
+				),
+				title=_("That value is not one line"),
 			)
 		if bucket.get("theme") is not None and not isinstance(bucket["theme"], str):
 			frappe.throw(
