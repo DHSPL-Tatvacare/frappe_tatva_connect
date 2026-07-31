@@ -294,10 +294,24 @@ class TestTheMenusOfferIt(ListEngineCase):
 
 
 class TestSortAndSafety(ListEngineCase):
-	def test_sorting_by_the_derived_field_resolves_to_its_declared_column(self):
+	def test_sorting_by_the_derived_field_groups_the_page_by_bucket(self):
+		"""A bucketed field sorts BY BUCKET, in declaration order. It used to resolve to the proxy column,
+		which put Overdue, History and Upcoming in one interleaved list under a Task Status heading."""
 		ordered = self._get_data(order_by=f"{FIELD} asc", rows=_rows_arg("name", "due_date", FIELD))
-		dates = [r["due_date"] for r in ordered["data"] if r["due_date"]]
-		self.assertEqual(dates, sorted(dates), "the derived sort did not resolve to due_date")
+		seen = [r[FIELD] for r in ordered["data"] if r.get(FIELD)]
+		declared = list(fields.DUE_STATE.options)
+		self.assertEqual(
+			[v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v],
+			sorted({v for v in seen}, key=declared.index),
+			"buckets are interleaved; the page is not composed in declaration order",
+		)
+
+	def test_sorting_descending_walks_the_buckets_backwards(self):
+		ordered = self._get_data(order_by=f"{FIELD} desc", rows=_rows_arg("name", "due_date", FIELD))
+		seen = [r[FIELD] for r in ordered["data"] if r.get(FIELD)]
+		declared = list(fields.DUE_STATE.options)
+		runs = [v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v]
+		self.assertEqual(runs, sorted(set(runs), key=declared.index, reverse=True))
 
 	def test_a_rep_sees_only_their_own_rows_through_the_derived_filter(self):
 		rep = frappe.db.get_value("User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest")]})

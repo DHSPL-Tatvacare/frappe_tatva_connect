@@ -307,16 +307,12 @@ class ListRequest:
 
 		terms = [t.strip() for t in str(self.raw.get("order_by") or "").split(",") if t.strip()]
 		if any(t.split(" ")[0] in by_name for t in terms):
-			rewritten = []
-			for term in terms:
-				parts = term.split(" ")
-				field = by_name.get(parts[0])
-				if not field:
-					rewritten.append(term)
-				elif field.order_by:
-					rewritten.append(" ".join([field.order_by, *parts[1:]]))
-			# No sort proxy means DROPPED, never passed through — the name would reach SQL as a column.
-			kwargs["order_by"] = ", ".join(rewritten) or None
+			# A derived name is not a column, so it is DROPPED here rather than swapped for its proxy:
+			# ordering by `due_date` when the rep asked for Task Status answers a different question under
+			# this field's label. The leading term is honoured by `_by_bucket`, which SQL cannot express.
+			# Empty, never None: native declares `order_by: str`, so None is a FrappeTypeError before the
+			# function is even entered. Empty lets the framework apply its own default ordering.
+			kwargs["order_by"] = ", ".join(t for t in terms if t.split(" ")[0] not in by_name)
 
 		kwargs.update(overrides)
 		return kwargs
@@ -385,16 +381,68 @@ class ListRequest:
 			self._fill_list(shell)
 		return shell
 
+	def _sort_leads_with(self):
+		"""The derived field the sort LEADS with, and whether it is descending.
+
+		Only the leading term can change how the list is COMPOSED; a derived term further along cannot be
+		expressed at all and is dropped by `for_native`."""
+		terms = [t.strip() for t in str(self.raw.get("order_by") or "").split(",") if t.strip()]
+		if not terms:
+			return None, False
+		head = terms[0].split(" ")
+		field = next((f for f in self.named if f.fieldname == head[0]), None)
+		return field, bool(field) and len(head) > 1 and head[1].lower().startswith("desc")
+
+	def _within_bucket(self, field):
+		"""How rows are ordered INSIDE one bucket: the caller's remaining terms, else the declaration's own
+		`order_by`. That is what a declared proxy is for — a tiebreaker within a bucket, never a stand-in
+		for the field itself."""
+		rest = self.for_native().get("order_by")
+		return rest or (f"{field.order_by} asc" if field.order_by else None)
+
+	def _by_bucket(self, field, descending, rows, page_length):
+		"""A bucketed field sorts BY BUCKET, in the order the declaration lists them.
+
+		SQL has no expression for "which bucket does this row read as" — that is the whole reason this field
+		is derived — so the page is composed the way `_fill_board` composes a board: one narrowed query per
+		bucket, in declaration order, stopping as soon as the page is full. Descending reverses the walk.
+		Ordering by the proxy column instead put Overdue, History and Upcoming rows in one interleaved list
+		under a Task Status heading."""
+		order_by = self._within_bucket(field)
+		values = list(field.options)
+		if descending:
+			values.reverse()
+		data = []
+		for value in values:
+			if len(data) >= page_length:
+				break
+			data.extend(
+				frappe.get_list(
+					self.doctype,
+					fields=rows,
+					filters=[*self.terms, *derived.predicate(field, value, self.snap)],
+					order_by=order_by,
+					limit=page_length - len(data),
+				)
+			)
+		return data
+
 	def _fill_list(self, shell):
 		from crm.api.doc import parse_list_data
 
 		page_length = frappe.cint(self.raw.get("page_length") or 20)
-		data = frappe.get_list(
-			self.doctype,
-			fields=shell.get("rows") or ["name"],
-			filters=self.terms,
-			order_by=self.for_native().get("order_by"),
-			limit=page_length,
+		rows = shell.get("rows") or ["name"]
+		field, descending = self._sort_leads_with()
+		data = (
+			self._by_bucket(field, descending, rows, page_length)
+			if field
+			else frappe.get_list(
+				self.doctype,
+				fields=rows,
+				filters=self.terms,
+				order_by=self.for_native().get("order_by"),
+				limit=page_length,
+			)
 		)
 		shell["data"] = parse_list_data(data, self.doctype)
 		shell["total_count"] = self._count(self.terms)

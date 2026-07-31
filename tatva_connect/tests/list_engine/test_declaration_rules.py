@@ -88,7 +88,7 @@ class TestASortProxyIsARealColumn(DeclarationCase):
 				self._register(_field("_probe_order_by", order_by=order_by))
 			self.assertIn("order_by", str(raised.exception), label)
 		# The control: the shape the engine actually joins a direction onto is accepted.
-		self.assertTrue(self._register(_field("_probe_order_by", order_by="due_date")).sortable)
+		self.assertEqual(self._register(_field("_probe_order_by", order_by="due_date")).order_by, "due_date")
 
 	def test_a_field_may_not_name_itself_as_its_own_sort_proxy(self):
 		with self.assertRaises(derived.DerivedFieldError):
@@ -109,29 +109,34 @@ class TestASortProxyIsARealColumn(DeclarationCase):
 		self.assertEqual(len(derived.for_doctype(TASK)), len(derived.names(TASK)))
 
 
-class TestOnlyASortableDeclarationReachesTheSortMenu(DeclarationCase):
-	"""Item #16. `lens_fields()` filters on nothing and feeds all four menus, so a declaration with no proxy
-	was offered in Sort — where the term is then dropped and the rep's chosen order silently does nothing.
-	The rule is the declaration's; the menu is the only place it is applied."""
+class TestEveryDeclarationReachesEveryMenu(DeclarationCase):
+	"""Item #16, REVISED 2026-07-31. The original rule withheld a proxy-less declaration from Sort, because
+	sorting meant "order by the declared proxy column" and without one the term was dropped silently.
 
-	def test_a_declaration_with_no_proxy_is_offered_by_every_menu_except_sort(self):
-		probe = self._register(_field("_probe_unsortable"))
-		self.assertFalse(probe.sortable)
+	That whole premise was wrong: ordering by the proxy answered a DIFFERENT question under the field's
+	label — Overdue, History and Upcoming rows interleaved by `due_date`. Sorting a bucketed field means
+	ordering BY BUCKET, in declaration order, which `engine._by_bucket` composes. Every declaration is an
+	ordered list of buckets, so EVERY declaration is sortable and no menu withholds anything. A declared
+	`order_by` is now only the tiebreaker WITHIN a bucket."""
+
+	def test_a_declaration_with_no_proxy_is_offered_by_every_menu_including_sort(self):
+		probe = self._register(_field("_probe_no_proxy"))
+		self.assertIsNone(probe.order_by)
 		for menu, offered in {
 			"filter": task_lenses.get_filterable_fields(TASK),
 			"group_by": task_lenses.get_group_by_fields(TASK),
 			"columns": task_lenses.get_column_fields(TASK),
+			"sort": task_lenses.sort_options(TASK),
 		}.items():
 			with self.subTest(menu):
 				self.assertIn(
 					probe.fieldname,
 					[f.get("fieldname") for f in offered],
-					f"{menu} must still offer a field the declaration answers for",
+					f"{menu} withholds a field the declaration answers for",
 				)
-
-		sortable = [f.get("fieldname") for f in task_lenses.sort_options(TASK)]
-		self.assertNotIn(probe.fieldname, sortable, "sort offers a field SQL has nothing to order by")
-		self.assertIn(fields.DUE_STATE.fieldname, sortable, "a declaration that HAS a proxy is still offered")
+		self.assertIn(
+			fields.DUE_STATE.fieldname, [f.get("fieldname") for f in task_lenses.sort_options(TASK)]
+		)
 
 		# THE ONE RULE: a doctype that declares nothing is answered by native on its own arguments.
 		from crm.api.doc import sort_options as native

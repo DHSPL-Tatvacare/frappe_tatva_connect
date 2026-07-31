@@ -58,7 +58,9 @@ class TestTheExportShipsWhatTheScreenShowed(ExportCase):
 		args = self._args(filters=frappe.as_json({**SCOPE, FIELD: "Overdue"}), order_by=f"{FIELD} asc")
 		self.assertNotIn(FIELD, args["fields"])
 		self.assertNotIn(FIELD, args["order_by"])
-		self.assertEqual(args["order_by"], "due_date asc")
+		# Dropped, not swapped for the proxy: an export ordered by `due_date` under a Task Status heading
+		# ships a different question's answer. Bucket order is not expressible to reportview.
+		self.assertEqual(args["order_by"], "")
 		self.assertNotIn(FIELD, frappe.as_json(args["filters"]))
 
 	def test_a_derived_column_is_dropped_even_when_nothing_derived_is_filtered_or_sorted(self):

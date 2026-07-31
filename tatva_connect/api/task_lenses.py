@@ -73,13 +73,12 @@ def get_group_by_fields(doctype: str):
 
 @frappe.whitelist()
 def sort_options(doctype: str):
-	"""The one lens a derived field has to earn. SQL orders by a column, so a declaration with no sort proxy
-	has nothing to be ordered by — `engine.for_native` drops the term and the rep's chosen sort silently does
-	nothing. It is withheld HERE alone; filter, group-by and columns still offer it."""
+	"""Every derived field is sortable, because a declaration is an ORDERED list of buckets and `_by_bucket`
+	composes the page in that order. A declared `order_by` is only the tiebreaker WITHIN a bucket, so a
+	field without one still sorts — its rows just fall back to the framework's own ordering inside each."""
 	from crm.api.doc import sort_options as _native
 
-	unsortable = {f.fieldname for f in derived.for_doctype(doctype) if not f.sortable}
-	return [f for f in _narrow(_native(doctype), doctype) if f.get("fieldname") not in unsortable]
+	return _narrow(_native(doctype), doctype)
 
 
 def _declared_quick_filters(doctype):

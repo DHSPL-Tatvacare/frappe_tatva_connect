@@ -169,23 +169,44 @@ class TestASortHasMoreThanOneTerm(TranslationCase):
 		self.assertIn(FIELD, [f.fieldname for f in request.named])
 		self.assertTrue(request.changes_the_query)
 
-	def test_every_derived_term_is_rewritten_in_place_whatever_its_position(self):
+	def test_a_derived_term_is_dropped_from_the_sql_sort_wherever_it_appears(self):
+		"""A derived name is not a column. It used to be swapped for its declared proxy, which ordered the
+		page by `due_date` under a Task Status heading — a different question wearing this field's label.
+		The LEADING term is honoured by composing the page bucket by bucket (`_by_bucket`); anywhere else
+		it cannot be expressed at all, so it is dropped and the real terms decide."""
 		for order_by, expected in (
-			(f"modified desc, {FIELD} asc", "modified desc, due_date asc"),
-			(f"{FIELD} asc, modified desc", "due_date asc, modified desc"),
-			(f"{FIELD} desc", "due_date desc"),
+			(f"modified desc, {FIELD} asc", "modified desc"),
+			(f"{FIELD} asc, modified desc", "modified desc"),
+			(f"{FIELD} desc", ""),
 		):
 			with self.subTest(order_by):
 				self.assertEqual(self._request(order_by=order_by).for_native()["order_by"], expected)
 
-	def test_a_second_term_naming_the_derived_field_really_orders_the_page(self):
-		# Every fixture is created without a priority, so the first term ties and the second one decides.
+	def test_a_sort_naming_only_the_derived_field_is_served_not_refused(self):
+		"""Asserting the rewritten STRING is not enough — native declares `order_by: str`, so handing it
+		None is a FrappeTypeError raised before the function is entered. This drives the endpoint."""
+		for order_by in (f"{FIELD} asc", f"{FIELD} desc"):
+			with self.subTest(order_by):
+				result = self._get_data(order_by=order_by, rows=_rows_arg("name", "due_date", FIELD))
+				self.assertTrue(result["data"], "a derived-only sort returned nothing")
+
+	def test_the_leading_derived_term_composes_the_page_by_bucket(self):
 		result = self._get_data(
-			order_by=f"priority asc, {FIELD} asc",
+			order_by=f"{FIELD} asc, due_date asc",
 			rows=_rows_arg("name", "priority", "due_date", FIELD),
 		)
+		seen = [r[FIELD] for r in result["data"] if r.get(FIELD)]
+		declared = list(fields.DUE_STATE.options)
+		runs = [v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v]
+		self.assertEqual(runs, sorted(set(runs), key=declared.index), f"buckets interleaved: {seen}")
+
+	def test_a_trailing_derived_term_leaves_the_real_primary_in_charge(self):
+		result = self._get_data(
+			order_by=f"due_date asc, {FIELD} asc",
+			rows=_rows_arg("name", "due_date", FIELD),
+		)
 		dates = [r["due_date"] for r in result["data"] if r["due_date"]]
-		self.assertEqual(dates, sorted(dates), "the trailing derived term did not resolve to due_date")
+		self.assertEqual(dates, sorted(dates), "the real primary term stopped deciding the order")
 
 	def test_a_multi_term_sort_of_real_columns_is_left_exactly_as_the_caller_wrote_it(self):
 		request = self._request(order_by="modified desc, due_date asc", rows=["name", FIELD])
@@ -221,7 +242,7 @@ class TestASortWithNoProxyNeverReachesSQL(TranslationCase):
 
 	def test_a_term_with_no_proxy_is_dropped_and_the_framework_default_stands(self):
 		name = self.unsortable.fieldname
-		self.assertIsNone(self._request(order_by=f"{name} asc").for_native()["order_by"])
+		self.assertEqual(self._request(order_by=f"{name} asc").for_native()["order_by"], "")
 		self.assertEqual(
 			self._request(order_by=f"modified desc, {name} asc").for_native()["order_by"], "modified desc"
 		)

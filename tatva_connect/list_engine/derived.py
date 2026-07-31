@@ -136,12 +136,6 @@ class DerivedField:
 	def options(self):
 		return tuple(b.value for b in self.buckets)
 
-	@property
-	def sortable(self):
-		"""SQL orders by a column, so a declaration is sortable exactly when it names a real one to stand in
-		for it. Without a proxy there is nothing to order by and the sort menu may not offer it."""
-		return bool(self.order_by)
-
 	def bucket(self, value):
 		for b in self.buckets:
 			if b.value == value:
@@ -184,7 +178,7 @@ def _validate(field):
 	if field.fieldname in field.depends_on:
 		raise DerivedFieldError(f"{field.fieldname}: a bucket may not filter on the derived field itself")
 
-	# The proxy is joined with the caller's own direction, so it must be a bare fieldname.
+	# The proxy orders rows WITHIN a bucket, so it must be a bare fieldname a direction can be joined onto.
 	if field.order_by is not None:
 		if not isinstance(field.order_by, str) or not field.order_by.isidentifier():
 			raise DerivedFieldError(
