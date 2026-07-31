@@ -75,3 +75,32 @@ def shown(doctype, fieldname, value):
 	if not df or df.fieldtype != "Link" or not df.options:
 		return value
 	return label(value, df.options)
+
+
+def stage_of(row):
+	"""THE ONE reading of "what stage is this lead at" — label plus the stage's own colour.
+
+	Every surface that shows a lead's stage resolves through here: the hover-preview card
+	(`api/lead_preview`) and the spotlight index (`search/index`). They answered differently before this
+	existed — one read `custom_substage or custom_stage` and looked the master up, the other read
+	`custom_stage` alone, split the composite key on `::` and fell back to the LEAD STATUS — so a lead
+	with no stage read as "Nurture" in search and as nothing on the card.
+
+	Sub-stage wins: it is the leaf a rep actually picks, and `custom_stage` is the parent derived from it.
+	The label is the master's `title_field`, never a split of the primary key, and the colour is the
+	master's own `color` — operator data, blank until someone sets it, and never defaulted to a hue here.
+
+	NO fallback to `status`. A lead status and a lead stage are different questions, and answering one
+	with the other is what made the two surfaces disagree.
+
+	Takes anything with the two fields — a Document or a plain row. Returns `(label, color)`, both "".
+	"""
+	key = (row.get("custom_substage") if hasattr(row, "get") else None) or (
+		row.get("custom_stage") if hasattr(row, "get") else None
+	)
+	if not key:
+		return "", ""
+	stage = frappe.get_cached_value(LEAD_STAGE, key, ["display_label", "stage", "color"], as_dict=True)
+	if not stage:
+		return "", ""
+	return (stage.display_label or stage.stage or ""), (stage.color or "")

@@ -20,6 +20,7 @@ from frappe.utils.caching import redis_cache, request_cache
 from tatva_connect.access.visibility import parent_of
 from tatva_connect.api.partner_file import _file_lead
 from tatva_connect.automation.settings import is_enabled
+from tatva_connect.taxonomy import labels
 from tatva_connect.phone import match_digits
 from tatva_connect.propagate import fail_safe
 from tatva_connect.taxonomy.picklist import _LEAD_AXES
@@ -80,8 +81,11 @@ _LEAD_FIELDS = (
 	"lead_name",
 	"lead_owner",
 	"owner",
+	# Both stage fields: `stage_of` prefers the sub-stage, and this list is ALSO the reindex trigger — a
+	# rep moving the sub-stage would otherwise leave the old stage searchable until a full rebuild.
+	# `status` is gone: a lead status is a different question and nothing here consumes it any more.
 	"custom_stage",
-	"status",
+	"custom_substage",
 	*(fieldname for _c, fieldname, _k in _IDENTIFIERS if fieldname != "name"),
 	*(fieldname for _c, fieldname in _AXES),
 )
@@ -216,7 +220,7 @@ class CRMLeadSearch(SQLiteSearch):
 		"text_fields": ["title", "content", "keys"],
 		# `principals` is the delimited owner/creator/assignee/share set — a permission column, matched by LIKE.
 		# The identifier columns are stored (so `ident` can name the ID that matched) and never tokenized here.
-		"metadata_fields": [*(column for column, _f, _k in _IDENTIFIERS), "status", *(column for column, _f in _AXES), "assignee", "principals", "file_url"],
+		"metadata_fields": [*(column for column, _f, _k in _IDENTIFIERS), "stage", "stage_color", *(column for column, _f in _AXES), "assignee", "principals", "file_url"],
 		"tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.+'",
 	}
 
@@ -421,7 +425,8 @@ class CRMLeadSearch(SQLiteSearch):
 		document["title"] = ctx.get("title") or lead
 		document["content"] = self._content_of(doc)
 		document["keys"] = self._keys_of(doc, ctx)
-		document["status"] = ctx.get("status")
+		document["stage"] = ctx.get("stage")
+		document["stage_color"] = ctx.get("stage_color")
 		document["assignee"] = ctx.get("owner_name")
 		document["principals"] = ctx.get("principals")
 		# One declaration writes every ID (`lead`, the docname, is one of them and is also the scope column) and every axis.
@@ -454,12 +459,17 @@ class CRMLeadSearch(SQLiteSearch):
 		row = frappe.db.get_value("CRM Lead", lead, list(_LEAD_FIELDS), as_dict=True)
 		if not row:
 			return None
+		_stage_label, _stage_color = labels.stage_of(row)
 		return {
 			"title": row.lead_name,
 			"owner": row.lead_owner,
 			"owner_name": self._user_name(row.lead_owner),
 			"principals": _principals_of(lead, row.lead_owner, row.owner),
-			"status": leaf(row.custom_stage) or row.status,
+			# The ONE stage reading, shared with the hover card — sub-stage first, the master's own label, and
+			# NO fallback to `status`: a status is a different question and answering with it made the two
+			# surfaces disagree. The colour rides along so the shared badge renders identically on both.
+			"stage": _stage_label,
+			"stage_color": _stage_color,
 			# The docname is the lead itself; every other ID and every axis is the value the declaration names.
 			"ids": {column: (lead if fieldname == "name" else row.get(fieldname)) for column, fieldname, _k in _IDENTIFIERS},
 			"axes": {column: row.get(fieldname) for column, fieldname in _AXES},

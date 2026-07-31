@@ -104,7 +104,10 @@ def _shape(r, query):
 		"title": r.get("title"),
 		"snippet": r.get("content"),
 		"phone": r.get("phone"),
-		"status": r.get("status"),
+		# The lead's STAGE, resolved once at index time through `taxonomy.labels.stage_of` — the same
+		# reading the hover card uses, colour included, so the shared badge renders identically on both.
+		"stage": r.get("stage"),
+		"stage_color": r.get("stage_color"),
 		"vertical": r.get("vertical"),
 		"group": r.get("lead_group"),
 		"program": r.get("program"),
