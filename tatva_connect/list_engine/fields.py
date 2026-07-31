@@ -1,47 +1,17 @@
-"""Every derived field this app declares. One file, so the answer to "what is derived?" has one place.
+"""Derived fields declared in CODE. There are none, and that is the point.
 
-A declaration is data, not code: a fieldname, a label, and an ordered list of `value -> filter tuples`
-read by both of frappe's evaluators. Nothing here decides anything; `derived.py` resolves it and
-`engine.py` serves it. Adding a field on any doctype is an edit to this file and nothing else.
+A derived field is OPERATOR DATA: a `CRM Derived Field` row authored in Desk, proven by `verify()` at
+Save and live the moment it is enabled — no deploy, no migrate, no restart. `due_state` ("Task Status")
+was the first citizen and moved here-to-there on 2026-07-31; `list_engine/seed.py` authors it on
+`after_migrate` and stands down once the row exists.
 
-Every field here is proven by `tests/list_engine`, which iterates the registry and runs `verify()` — so
-a declaration that cannot be filtered exactly as it is displayed fails the build the day it is written.
+This module stays because the registry takes two sources and the SECOND one is still legitimate: a
+declaration that must exist before any database row can (a bootstrap), or one an operator must not be
+able to retire. Register it here exactly as a row declares itself — `derived.register(DerivedField(...))`
+— and it wins the merge, because `CRM Derived Field.validate` refuses a row that would shadow it.
+
+Whichever source a declaration comes from, it lands in the ONE registry and nothing downstream — the
+engine, the five menus, the renderers, the wire contract — ever learns which one it was.
+
+Plan: docs/plans/tasks-ui/2026-07-31-derived-field-head.md
 """
-
-from tatva_connect.list_engine.derived import NOW, TOMORROW_START, Bucket, DerivedField, register
-
-TASK = "CRM Task"
-CLOSED = ["Done", "Canceled"]
-
-# Ranges are half-open (`>=` start, `< end`); an inclusive upper bound reads differently in SQL and Python.
-DUE_STATE = register(
-	DerivedField(
-		doctype=TASK,
-		fieldname="due_state",
-		label="Task Status",
-		order_by="due_date",
-		buckets=[
-			Bucket(
-				"Overdue",
-				[("status", "not in", CLOSED), ("due_date", "is", "set"), ("due_date", "<", NOW)],
-			),
-			Bucket(
-				"Due Today",
-				[
-					("status", "not in", CLOSED),
-					("due_date", ">=", NOW),
-					("due_date", "<", TOMORROW_START),
-				],
-			),
-			Bucket(
-				"Upcoming",
-				[("status", "not in", CLOSED), ("due_date", ">=", TOMORROW_START)],
-			),
-			Bucket(
-				"No Due Date",
-				[("status", "not in", CLOSED), ("due_date", "is", "not set")],
-			),
-			Bucket("History", [("status", "in", CLOSED)]),
-		],
-	)
-)

@@ -32,7 +32,10 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.api import task_lenses
-from tatva_connect.list_engine import derived, engine, fields
+from tatva_connect.list_engine import derived, engine
+
+CLOSED = ["Done", "Canceled"]
+FIELD = "due_state"
 
 TASK = "CRM Task"
 PROBE_DEFAULTS = {"title": "DeclarationProbe"}
@@ -45,8 +48,8 @@ def _field(fieldname, **overrides):
 		"fieldname": fieldname,
 		"label": "Probe",
 		"buckets": [
-			derived.Bucket("Closed", [("status", "in", fields.CLOSED)]),
-			derived.Bucket("Open", [("status", "not in", fields.CLOSED)]),
+			derived.Bucket("Closed", [("status", "in", CLOSED)]),
+			derived.Bucket("Open", [("status", "not in", CLOSED)]),
 		],
 	}
 	shape.update(overrides)
@@ -135,7 +138,7 @@ class TestEveryDeclarationReachesEveryMenu(DeclarationCase):
 					f"{menu} withholds a field the declaration answers for",
 				)
 		self.assertIn(
-			fields.DUE_STATE.fieldname, [f.get("fieldname") for f in task_lenses.sort_options(TASK)]
+			derived.get(TASK, FIELD).fieldname, [f.get("fieldname") for f in task_lenses.sort_options(TASK)]
 		)
 
 		# THE ONE RULE: a doctype that declares nothing is answered by native on its own arguments.

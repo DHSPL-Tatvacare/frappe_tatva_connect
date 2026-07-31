@@ -26,7 +26,7 @@ import copy
 
 import frappe
 
-from tatva_connect.list_engine import fields
+from tatva_connect.list_engine import derived
 from tatva_connect.tests.list_engine.test_list_engine import FIELD, PROBE, TASK, ListEngineCase, _rows_arg
 
 # The shape ColumnSettings really sends — six keys, no is_derived among them.
@@ -54,7 +54,7 @@ class TestTheColumnCarriesTheDescriptor(ListEngineCase):
 		result = self._answer()
 		column = next(c for c in result["columns"] if c.get("key") == FIELD)
 		self.assertEqual(result["columns"].index(column), 1, "the column moved")
-		declared = fields.DUE_STATE.descriptor()
+		declared = derived.get(TASK, FIELD).descriptor()
 		self.assertEqual(column, {**ASKED[1], "label": declared["label"], "is_derived": 1})
 
 	def test_a_stale_saved_label_is_replaced_by_the_declaration_s(self):
@@ -64,7 +64,7 @@ class TestTheColumnCarriesTheDescriptor(ListEngineCase):
 		stale[1]["label"] = "Due State"
 		result = self._get_data(columns=stale, rows=_rows_arg("name", "title", FIELD))
 		column = next(c for c in result["columns"] if c.get("key") == FIELD)
-		self.assertEqual(column["label"], fields.DUE_STATE.descriptor()["label"])
+		self.assertEqual(column["label"], derived.get(TASK, FIELD).descriptor()["label"])
 
 	def test_the_flag_is_on_the_column_and_not_only_in_fields(self):
 		"""Both readers of the response must agree, and the column is the one the renderer reads."""

@@ -24,12 +24,12 @@ import json
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.list_engine import fields, views
+from tatva_connect.list_engine import derived, fields, views
 
 TASK = "CRM Task"
 PROBE = "ViewProbe"
-FIELD = fields.DUE_STATE.fieldname
-BUCKETS = list(fields.DUE_STATE.options)
+FIELD = "due_state"
+BUCKETS = list(derived.get(TASK, FIELD).options)
 
 # Identity and the audit stamps differ between two runs of the same call; nothing else may.
 _VOLATILE = {"name", "label", "creation", "modified", "modified_by", "owner", "idx", "docstatus"}

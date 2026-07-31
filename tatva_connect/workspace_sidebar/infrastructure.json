@@ -159,9 +159,34 @@
    "show_arrow": 0,
    "type": "Link",
    "idx": 12
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "columns-3",
+   "indent": 1,
+   "keep_closed": 0,
+   "label": "Lists",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break",
+   "idx": 13
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "sigma",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Derived Fields",
+   "link_to": "CRM Derived Field",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link",
+   "idx": 14
   }
  ],
- "modified": "2026-07-26 12:00:00.000000",
+ "modified": "2026-07-31 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Infrastructure",

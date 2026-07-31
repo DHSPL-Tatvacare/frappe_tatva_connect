@@ -24,6 +24,10 @@ The quick-filter bar is not a lens at all and is the other pair here: its conten
 (one `CRM Global Settings` row), so it is READ at the position that row gives and WRITTEN without the
 Property Setter a derived name has no DocField to carry.
 
+WHICH MENUS a derived field reaches is the declaration's own answer, not this module's: each of the five
+asks `derived` for the fields that name ITS surface. A code declaration names none, which reads as all, so
+this file behaves exactly as it did before a field could be authored in Desk.
+
 Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md §6 and §9 Phase 6.
 """
 
@@ -45,30 +49,40 @@ def declared_fields(doctype):
 	return set(get_controller(TASK).default_list_data().get("rows") or [])
 
 
-def _narrow(fields, doctype):
-	"""The native answer, keeping only what the declaration names, plus the doctype's derived fields.
+def _offered(doctype, surface):
+	"""The doctype's derived fields for ONE menu, shaped exactly as `engine.lens_fields` shapes them.
+
+	`surfaces` is the declaration's own answer to which of the five menus offer it, so a field authored for
+	Columns alone never turns up in Filter. A code declaration names no surface, which reads as ALL — so
+	nothing that shipped before an operator could author a field moves by one byte."""
+	on_surface = {f.fieldname for f in derived.for_doctype(doctype) if surface in f.surfaces}
+	return [f for f in engine.lens_fields(doctype) if f["fieldname"] in on_surface]
+
+
+def _narrow(fields, doctype, surface):
+	"""The native answer, keeping only what the declaration names, plus the derived fields THIS menu offers.
 
 	A derived field is not in `frappe.get_meta`, so no native lens can find it; it is offered here in the
 	same dict shape a real field arrives in, which is what lets every picker treat it as ordinary."""
 	declared = declared_fields(doctype)
 	if declared is None:
-		return [*fields, *engine.lens_fields(doctype)]
+		return [*fields, *_offered(doctype, surface)]
 	kept = [f for f in fields if f.get("fieldname") in declared]
-	return [*kept, *engine.lens_fields(doctype)]
+	return [*kept, *_offered(doctype, surface)]
 
 
 @frappe.whitelist()
 def get_filterable_fields(doctype: str):
 	from crm.api.doc import get_filterable_fields as _native
 
-	return _narrow(_native(doctype), doctype)
+	return _narrow(_native(doctype), doctype, derived.FILTER)
 
 
 @frappe.whitelist()
 def get_group_by_fields(doctype: str):
 	from crm.api.doc import get_group_by_fields as _native
 
-	return _narrow(_native(doctype), doctype)
+	return _narrow(_native(doctype), doctype, derived.GROUP_BY)
 
 
 @frappe.whitelist()
@@ -78,12 +92,14 @@ def sort_options(doctype: str):
 	field without one still sorts — its rows just fall back to the framework's own ordering inside each."""
 	from crm.api.doc import sort_options as _native
 
-	return _narrow(_native(doctype), doctype)
+	return _narrow(_native(doctype), doctype, derived.SORT)
 
 
 def _declared_quick_filters(doctype):
-	"""The doctype's derived fields by fieldname, in the shape this ONE endpoint hands the client."""
-	return {f["fieldname"]: f for f in engine.quick_filter_fields(doctype)}
+	"""The derived fields that offer themselves to the BAR, by fieldname, in the shape this ONE endpoint
+	hands the client. A declaration that withholds this surface is simply not resolvable here."""
+	on_surface = {f.fieldname for f in derived.for_doctype(doctype) if derived.QUICK_FILTER in f.surfaces}
+	return {f["fieldname"]: f for f in engine.quick_filter_fields(doctype) if f["fieldname"] in on_surface}
 
 
 def _stored_choice(doctype):
@@ -135,11 +151,14 @@ def update_quick_filters(quick_filters: str, old_filters: str, doctype: str):
 	name is in `new_filters` on the first ever save even if the rep never touched it. A derived name is
 	withheld from the pair native diffs, so every REAL fieldname keeps native's behaviour exactly — the
 	removal write included; the choice is then recorded WITH it, since that row is what `get_quick_filters`
-	resolves against."""
+	resolves against.
+
+	The withheld set is EVERY derived name on the doctype, not the ones this surface offers: a Property
+	Setter describing a column that does not exist is wrong whichever menu the name reached the payload by."""
 	from crm.api.doc import create_update_global_settings
 	from crm.api.doc import update_quick_filters as _native
 
-	declared = _declared_quick_filters(doctype)
+	declared = set(derived.names(doctype))
 	if not declared:
 		return _native(quick_filters, old_filters, doctype)
 
@@ -152,9 +171,23 @@ def update_quick_filters(quick_filters: str, old_filters: str, doctype: str):
 @frappe.whitelist()
 def get_column_fields(doctype: str):
 	"""The column lens. Its picker has no native endpoint, so this answers the declaration's set in the
-	shape `ColumnSettings.vue`'s `fieldSource` prop already takes — the same narrowed list the filter
-	lens returns, so all four menus have one source. An empty list for a doctype this layer does not
-	narrow is that prop's own contract for "keep the stock doctype-meta source"."""
-	if declared_fields(doctype) is None and not engine.lens_fields(doctype):
+	shape `ColumnSettings.vue`'s `fieldSource` prop already takes — native's own filterable list, narrowed
+	the same way the other three are, so all four menus have one source. An empty list for a doctype this
+	layer does not narrow is that prop's own contract for "keep the stock doctype-meta source".
+
+	It also feeds `KanbanSettings.vue`'s `fieldSource`, so the board's column picker is this surface too."""
+	from crm.api.doc import get_filterable_fields as _native
+
+	if declared_fields(doctype) is None and not _offered(doctype, derived.COLUMN):
 		return []
-	return get_filterable_fields(doctype)
+	return _narrow(_native(doctype), doctype, derived.COLUMN)
+
+
+@frappe.whitelist()
+def declaration_version():
+	"""The one string a client keys the five menus by. Tiny on purpose — it is a version, not a payload.
+
+	Those menus are cached in IndexedDB with NO expiry (frappe-ui `resources.js` has no TTL anywhere, by
+	design), so a rep who loaded the page before an operator authored a field would never be offered it.
+	This is the mechanism that makes "live on Save" true on the client as well as the server."""
+	return derived.declaration_version()

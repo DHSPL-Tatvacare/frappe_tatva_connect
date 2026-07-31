@@ -30,10 +30,11 @@ import typing
 
 import frappe
 
-from tatva_connect.list_engine import derived, engine, fields
+from tatva_connect.list_engine import derived, engine
 from tatva_connect.tests.list_engine.test_list_engine import PROBE, TASK, ListEngineCase, _rows_arg
 
-FIELD = fields.DUE_STATE.fieldname
+FIELD = "due_state"
+CLOSED = ["Done", "Canceled"]
 
 
 class TranslationCase(ListEngineCase):
@@ -94,14 +95,14 @@ class TestEveryOperatorTheMenuOffers(TranslationCase):
 
 	def test_is_set_is_every_bucket_and_is_not_set_is_none_of_them(self):
 		_result, every = self._rows_for(["is", "set"])
-		self.assertEqual(every, self._fixtures_reading(*fields.DUE_STATE.options))
+		self.assertEqual(every, self._fixtures_reading(*derived.get(TASK, FIELD).options))
 		_result, none = self._rows_for(["is", "not set"])
 		self.assertEqual(none, set())
 
 	def test_a_filter_that_selects_no_bucket_returns_no_rows_rather_than_every_row(self):
 		# The honest answer to "not in (everything)" is nothing. Emitting no filter at all would widen the
 		# rep's list to the whole table, which is the one outcome this layer may not ship.
-		result, got = self._rows_for(["not in", list(fields.DUE_STATE.options)])
+		result, got = self._rows_for(["not in", list(derived.get(TASK, FIELD).options)])
 		self.assertEqual(got, set())
 		self.assertEqual(result["total_count"], 0)
 
@@ -121,7 +122,7 @@ class TestEveryOperatorTheMenuOffers(TranslationCase):
 	def test_an_operator_the_menu_never_offers_is_still_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
 			self._get_data(filters={FIELD: ["like", "%Over%"]})
-		self.assertIn(fields.DUE_STATE.label, str(caught.exception))
+		self.assertIn(derived.get(TASK, FIELD).label, str(caught.exception))
 
 	def test_the_same_operators_on_a_real_column_are_answered_by_native_byte_for_byte(self):
 		for label, shape in self.REAL_COLUMN.items():
@@ -154,7 +155,7 @@ class TestTheCardTitleIsANameToo(TranslationCase):
 		self.assertEqual(result["title_field"], FIELD, "the rep's pick did not survive the round trip")
 		rows = [row for column in result["data"] for row in column["data"]]
 		self.assertTrue(rows, "the status board returned no rows at all")
-		self.assertTrue(all(row.get(FIELD) in fields.DUE_STATE.options for row in rows))
+		self.assertTrue(all(row.get(FIELD) in derived.get(TASK, FIELD).options for row in rows))
 
 	def test_a_real_title_field_is_answered_by_native_byte_for_byte(self):
 		self._identical_to_native(**self.BOARD, title_field="title")
@@ -196,7 +197,7 @@ class TestASortHasMoreThanOneTerm(TranslationCase):
 			rows=_rows_arg("name", "priority", "due_date", FIELD),
 		)
 		seen = [r[FIELD] for r in result["data"] if r.get(FIELD)]
-		declared = list(fields.DUE_STATE.options)
+		declared = list(derived.get(TASK, FIELD).options)
 		runs = [v for i, v in enumerate(seen) if i == 0 or seen[i - 1] != v]
 		self.assertEqual(runs, sorted(set(runs), key=declared.index), f"buckets interleaved: {seen}")
 
@@ -229,8 +230,8 @@ class TestASortWithNoProxyNeverReachesSQL(TranslationCase):
 				fieldname="_probe_unsortable",
 				label="Unsortable Probe",
 				buckets=[
-					derived.Bucket("Closed", [("status", "in", fields.CLOSED)]),
-					derived.Bucket("Open", [("status", "not in", fields.CLOSED)]),
+					derived.Bucket("Closed", [("status", "in", CLOSED)]),
+					derived.Bucket("Open", [("status", "not in", CLOSED)]),
 				],
 			)
 		)

@@ -32,11 +32,11 @@ import json
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.list_engine import engine, fields
+from tatva_connect.list_engine import derived, engine
 
 TASK = "CRM Task"
 LEAD = "CRM Lead"
-FIELD = fields.DUE_STATE.fieldname
+FIELD = "due_state"
 SETTINGS = "CRM Global Settings"
 
 READ = "crm.api.doc.get_quick_filters"

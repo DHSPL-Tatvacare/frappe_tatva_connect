@@ -29,11 +29,11 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime, nowdate
 
 from tatva_connect.api import list_link_titles
-from tatva_connect.list_engine import fields
+from tatva_connect.list_engine import derived
 
 TASK = "CRM Task"
 PROBE = "NativeContractProbe"
-FIELD = fields.DUE_STATE.fieldname
+FIELD = "due_state"
 
 # The columns the group-by page really asks for; the derived name is NOT among them, so the only thing
 # putting it into `fields=` is native's own append at doc.py:355 — which is what this module pins.

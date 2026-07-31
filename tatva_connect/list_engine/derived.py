@@ -43,7 +43,17 @@ WHY NOT a stored column: a derived field may depend on the clock. MariaDB forbid
 or indexed generated column (error 3102), Salesforce forbids date literals in a roll-up, and ServiceNow's
 stored-calculated escape hatch costs a backfill script plus permanent staleness.
 
+TWO SOURCES, ONE REGISTRY. A declaration arrives either from `fields.py` (code, at import) or from an
+ENABLED `CRM Derived Field` row an operator authored in Desk. Both are answered by `for_doctype` / `get` /
+`names`, and nothing downstream — the engine, the five menus, the renderers, the wire contract — is ever
+told which one it is holding. That seam is why the operator head needed no change to any of them.
+
+The rows are read ONCE and cached, because `for_doctype` is called on every listing request in the app;
+`reload()` drops that cache and `declaration_version()` is the string that changes whenever an enabled row
+does, which is what a client keys its own no-expiry caches by.
+
 Plan + the hardline rules this module is bound by: docs/plans/tasks-ui/2026-07-30-derived-fields-list-engine.md
+The operator head: docs/plans/tasks-ui/2026-07-31-derived-field-head.md
 """
 
 import itertools
@@ -73,6 +83,30 @@ CORPUS_LIMIT = 400
 
 # The probe rows never outlive their check, and never reach a delete queue or a doc_event.
 _SAVEPOINT = "derived_field_verify"
+
+# The doctype an operator authors a declaration in. Absent until it migrates, which `_load` allows for.
+ROW_DOCTYPE = "CRM Derived Field"
+
+# The five field menus, each named by the endpoint that serves it. A declaration offers itself to any set.
+COLUMN = "column"
+FILTER = "filter"
+SORT = "sort"
+GROUP_BY = "group_by"
+QUICK_FILTER = "quick_filter"
+SURFACES = (COLUMN, FILTER, SORT, GROUP_BY, QUICK_FILTER)
+
+# What a default column is worth on screen; a rep resizes it and the saved view keeps their width.
+DEFAULT_COLUMN_WIDTH = "10rem"
+
+_CACHE_KEY = "derived_field_rows"
+
+# Explicit invalidation is the mechanism; the TTL is only the self-heal for a drop this app never made.
+_CACHE_TTL_SEC = 3600
+
+# A version has to be stable when there is nothing to version, or a client rebuilds its caches every load.
+EMPTY_VERSION = "0"
+
+_EMPTY = {"rows": [], "version": EMPTY_VERSION}
 
 _REGISTRY = {}
 
@@ -105,13 +139,17 @@ class Disagreement:
 
 class Bucket:
 	"""One value of a derived field and the filter tuples that define it, as `(fieldname, operator, value)`.
-	The doctype is added at resolve time and never declared, so a bucket cannot name another table."""
+	The doctype is added at resolve time and never declared, so a bucket cannot name another table.
 
-	__slots__ = ("filters", "value")
+	`theme` is the badge colour the declaration asks for, so a field authored in Desk needs no code to look
+	right. It is a hint and nothing reads it to decide anything — absent or unknown, a client draws gray."""
 
-	def __init__(self, value, filters):
+	__slots__ = ("filters", "theme", "value")
+
+	def __init__(self, value, filters, theme=None):
 		self.value = value
 		self.filters = tuple(tuple(f) for f in filters)
+		self.theme = theme or None
 
 	def __repr__(self):
 		return f"<Bucket {self.value}: {list(self.filters)}>"
@@ -119,22 +157,52 @@ class Bucket:
 
 class DerivedField:
 	"""The declaration. `depends_on` is DERIVED from the buckets, never declared, so the columns the engine
-	selects can never drift from the columns the buckets actually read."""
+	selects can never drift from the columns the buckets actually read.
 
-	__slots__ = ("buckets", "depends_on", "doctype", "fieldname", "fieldtype", "label", "order_by")
+	`surfaces` names the menus that offer it and `default_column` says it is SHOWN rather than merely
+	available. A code declaration passes neither, and both then read as they did before the operator head
+	existed: every menu, shown only once a rep adds it."""
 
-	def __init__(self, doctype, fieldname, label, buckets, order_by=None, fieldtype="Select"):
+	__slots__ = (
+		"buckets",
+		"default_column",
+		"depends_on",
+		"doctype",
+		"fieldname",
+		"fieldtype",
+		"label",
+		"order_by",
+		"surfaces",
+	)
+
+	def __init__(
+		self,
+		doctype,
+		fieldname,
+		label,
+		buckets,
+		order_by=None,
+		fieldtype="Select",
+		surfaces=None,
+		default_column=0,
+	):
 		self.doctype = doctype
 		self.fieldname = fieldname
 		self.label = label
 		self.buckets = tuple(buckets)
 		self.order_by = order_by
 		self.fieldtype = fieldtype
+		self.surfaces = tuple(surfaces) if surfaces else SURFACES
+		self.default_column = 1 if default_column else 0
 		self.depends_on = tuple(sorted({f[0] for b in self.buckets for f in b.filters}))
 
 	@property
 	def options(self):
 		return tuple(b.value for b in self.buckets)
+
+	@property
+	def themes(self):
+		return {b.value: b.theme for b in self.buckets if b.theme}
 
 	def bucket(self, value):
 		for b in self.buckets:
@@ -144,13 +212,31 @@ class DerivedField:
 
 	def descriptor(self):
 		"""The field shaped as the lens menus and `get_data`'s `columns`/`fields` already shape a REAL one.
-		`is_derived` is additive: a client may render a pill from it, and ignoring it yields a plain cell."""
-		return {
+		`is_derived` is additive: a client may render a pill from it, and ignoring it yields a plain cell.
+
+		`themes` is carried the same way and only when the declaration authored one, so a field that names
+		no colour describes itself byte for byte as it did before the key existed."""
+		described = {
 			"fieldname": self.fieldname,
 			"label": frappe._(self.label),
 			"fieldtype": self.fieldtype,
 			"options": "\n".join(self.options),
 			"is_derived": 1,
+		}
+		themes = self.themes
+		if themes:
+			described["themes"] = themes
+		return described
+
+	def column(self):
+		"""The field shaped as a listing COLUMN — the keys `ColumnSettings.vue:237-244` builds and
+		`default_list_data` declares, so a column the declaration adds is the one a rep would have added."""
+		return {
+			"label": frappe._(self.label),
+			"type": self.fieldtype,
+			"key": self.fieldname,
+			"options": "\n".join(self.options),
+			"width": DEFAULT_COLUMN_WIDTH,
 		}
 
 	def __repr__(self):
@@ -178,6 +264,11 @@ def _validate(field):
 	if field.fieldname in field.depends_on:
 		raise DerivedFieldError(f"{field.fieldname}: a bucket may not filter on the derived field itself")
 
+	# A surface nothing serves would be authored, saved and silently offered nowhere, so it is refused here.
+	unknown = [s for s in field.surfaces if s not in SURFACES]
+	if unknown:
+		raise DerivedFieldError(f"{field.fieldname}: {unknown} names no menu; the menus are {list(SURFACES)}")
+
 	# The proxy orders rows WITHIN a bucket, so it must be a bare fieldname a direction can be joined onto.
 	if field.order_by is not None:
 		if not isinstance(field.order_by, str) or not field.order_by.isidentifier():
@@ -191,17 +282,166 @@ def _validate(field):
 
 
 def register(field):
-	"""Declare a derived field. Shape is checked here, at import; agreement is checked by `verify()`, which
-	the registry-wide test runs for every declared field."""
+	"""Declare a derived field IN CODE. Shape is checked here, at import; agreement is checked by `verify()`,
+	which the registry-wide test runs for every declared field."""
 	_validate(field)
 	_REGISTRY.setdefault(field.doctype, {})[field.fieldname] = field
-	_validated().clear()
+	_invalidate()
 	return field
 
 
+def _surfaces(declared):
+	"""The menus an authored row offers itself to, off one comma- or newline-separated field.
+
+	Blank means ALL, which is what a code declaration is and what every field was before this existed.
+	Nothing is dropped here — an unknown name reaches `_validate`, so the operator is told at Save."""
+	named = tuple(
+		dict.fromkeys(
+			s.strip().lower() for s in str(declared or "").replace("\n", ",").split(",") if s.strip()
+		)
+	)
+	return named or SURFACES
+
+
+def from_row(row):
+	"""One authored `CRM Derived Field` row as a declaration.
+
+	The ONE place a stored row becomes a `DerivedField`, so the controller proving a row at Save proves
+	exactly what the loader will serve. Shape is checked here; agreement is `verify()`'s, as it is for code."""
+	declared = frappe.parse_json(row.get("buckets") or "[]") or []
+	field = DerivedField(
+		doctype=row.get("dt"),
+		fieldname=row.get("fieldname"),
+		label=row.get("label") or row.get("fieldname"),
+		buckets=[
+			Bucket(b.get("value"), b.get("filters") or [], b.get("theme"))
+			for b in declared
+			if isinstance(b, dict)
+		],
+		order_by=row.get("order_by") or None,
+		surfaces=_surfaces(row.get("surfaces")),
+		default_column=frappe.cint(row.get("default_column")),
+	)
+	_validate(field)
+	return field
+
+
+def code_declared(doctype, fieldname):
+	"""Whether a fieldname is declared IN CODE for a doctype — what an authored row may not collide with.
+
+	A row that shadowed a code declaration would be stored, enabled and then silently never served, because
+	code wins the merge. The controller asks this at Save and refuses, so that arm never fires."""
+	return fieldname in _REGISTRY.get(doctype, {})
+
+
+def _load():
+	"""Every ENABLED row as a plain payload, plus the version they carry. The only query this module makes.
+
+	The doctype is absent on a site that has not migrated yet, and this sits on the busiest read path — so
+	the table test lives INSIDE the build and is cached with the answer, never paid per request."""
+	if not frappe.db.table_exists(ROW_DOCTYPE):
+		return _EMPTY
+	rows = frappe.get_all(
+		ROW_DOCTYPE,
+		fields=[
+			"name",
+			"dt",
+			"fieldname",
+			"label",
+			"order_by",
+			"surfaces",
+			"default_column",
+			"buckets",
+			"modified",
+		],
+		filters={"enabled": 1},
+		order_by="dt asc, creation asc",
+		limit=0,
+	)
+	stamps = sorted(str(row.modified) for row in rows)
+	return {
+		"rows": [{k: v for k, v in row.items() if k != "modified"} for row in rows],
+		# The count is carried too: dropping the newest row leaves the remaining max where it was.
+		"version": f"{len(rows)}:{stamps[-1]}" if stamps else EMPTY_VERSION,
+	}
+
+
+def _rows():
+	"""The cached payload. Redis holds it across requests, `frappe.local` across one, `reload()` drops both."""
+	# No site bound — an import, or a bench command before `init`: there is no cache and no table to read.
+	if not frappe.db:
+		return _EMPTY
+	payload = getattr(frappe.local, "_derived_rows", None)
+	if payload is None:
+		payload = frappe.cache().get_value(_CACHE_KEY)
+		if payload is None:
+			payload = _load()
+			frappe.cache().set_value(_CACHE_KEY, payload, expires_in_sec=_CACHE_TTL_SEC)
+		frappe.local._derived_rows = payload
+	return payload
+
+
+def _authored():
+	"""The enabled rows as declarations, built once per REQUEST off the cached payload.
+
+	`DerivedField` objects are never cached: a pickled object graph outlives the code that defines it across
+	a deploy, and rebuilding is a handful of dict walks with no query. A row that no longer builds is SKIPPED
+	and logged rather than raised — it was proven at Save, so if a column has been dropped under it since,
+	that is one dead field, not every list in the app."""
+	built = getattr(frappe.local, "_derived_authored", None)
+	if built is None:
+		built = []
+		for row in _rows()["rows"]:
+			try:
+				built.append(from_row(frappe._dict(row)))
+			except (DerivedFieldError, ValueError, TypeError) as refused:
+				frappe.log_error(
+					title="Derived field skipped", message=f"{ROW_DOCTYPE} {row.get('name')}: {refused}"
+				)
+		frappe.local._derived_authored = built
+	return built
+
+
+def _declared_for(doctype):
+	"""BOTH sources for one doctype, keyed by fieldname. The only place the two are put together.
+
+	Code wins a collision: an operator can edit a row out from under the app but not `fields.py`, so the
+	shipped declaration is the safe one to keep. The controller refuses the collision at Save regardless."""
+	merged = dict(_REGISTRY.get(doctype) or {})
+	for field in _authored():
+		if field.doctype == doctype:
+			merged.setdefault(field.fieldname, field)
+	return merged
+
+
+def _invalidate():
+	"""Drop what this REQUEST built. The shadow verdict goes with it — a changed declaration may newly
+	shadow a real column, and a cached "already checked" would serve an unserveable field."""
+	frappe.local._derived_rows = None
+	frappe.local._derived_authored = None
+	_validated().clear()
+
+
+def reload(doc=None, method=None):
+	"""doc_events hook (`CRM Derived Field` on_update/on_trash) — drop the cache so the next read rebuilds.
+
+	The request-local build goes too, so the row that just saved is live in THIS request as well as the next
+	one. That is the whole of "live on Save": no deploy, no migrate, no worker restart."""
+	frappe.cache().delete_value(_CACHE_KEY)
+	_invalidate()
+
+
+def declaration_version():
+	"""A stable string that changes whenever any ENABLED row does.
+
+	The five field menus are cached in the browser with NO expiry, so this is what a client keys them by;
+	without it a rep who loaded the page yesterday would never see a field authored today."""
+	return _rows()["version"]
+
+
 def registered():
-	"""Every declared field, flat. The registry-wide verification test iterates this and nothing else."""
-	return tuple(f for by_name in _REGISTRY.values() for f in by_name.values())
+	"""Every declared field, flat, from both sources. The registry-wide verification test iterates this."""
+	return tuple(f for by_name in _REGISTRY.values() for f in by_name.values()) + tuple(_authored())
 
 
 def _assert_declarable(doctype):
@@ -211,7 +451,7 @@ def _assert_declarable(doctype):
 	if doctype in _validated():
 		return
 	meta = frappe.get_meta(doctype)
-	for fieldname, field in _REGISTRY.get(doctype, {}).items():
+	for fieldname, field in _declared_for(doctype).items():
 		if meta.get_field(fieldname) or fieldname in default_fields:
 			# Fail-loud is deliberate: a shadowed field is unserveable, so the message names the blast radius.
 			raise DerivedFieldError(
@@ -226,9 +466,10 @@ def _assert_declarable(doctype):
 
 
 def for_doctype(doctype):
-	"""Every derived field declared for a doctype, in declaration order. Empty for every doctype that
-	declares none, which is what keeps this layer out of the answer until something opts in."""
-	declared = _REGISTRY.get(doctype)
+	"""Every derived field declared for a doctype, code first then authored, in declaration order. Empty for
+	every doctype that declares none, which is what keeps this layer out of the answer until something opts
+	in — and it stays empty for a site with no enabled row, at the cost of one cached read."""
+	declared = _declared_for(doctype)
 	if not declared:
 		return ()
 	_assert_declarable(doctype)
@@ -237,14 +478,14 @@ def for_doctype(doctype):
 
 def get(doctype, fieldname):
 	"""One derived field, or None. `None` is the answer for every real field, so callers may ask freely."""
-	field = _REGISTRY.get(doctype, {}).get(fieldname)
+	field = _declared_for(doctype).get(fieldname)
 	if field:
 		_assert_declarable(doctype)
 	return field
 
 
 def names(doctype):
-	return tuple(_REGISTRY.get(doctype, {}).keys())
+	return tuple(_declared_for(doctype).keys())
 
 
 def snapshot():
