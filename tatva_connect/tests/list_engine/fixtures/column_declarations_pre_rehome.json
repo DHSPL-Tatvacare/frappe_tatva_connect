@@ -1,0 +1,562 @@
+{
+  "CRM Call Log": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Call ID",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "reference_docname",
+        "label": "Lead",
+        "options": "reference_doctype",
+        "type": "Dynamic Link",
+        "width": "11rem"
+      },
+      {
+        "key": "type",
+        "label": "Type",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "status",
+        "label": "Status",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "from",
+        "label": "From (number)",
+        "type": "Data",
+        "width": "9rem"
+      },
+      {
+        "key": "to",
+        "label": "To (number)",
+        "type": "Data",
+        "width": "9rem"
+      },
+      {
+        "key": "caller",
+        "label": "Caller",
+        "options": "User",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "receiver",
+        "label": "Received By",
+        "options": "User",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "duration",
+        "label": "Duration",
+        "type": "Duration",
+        "width": "6rem"
+      },
+      {
+        "key": "start_time",
+        "label": "Start Time",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "end_time",
+        "label": "End Time",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "telephony_medium",
+        "label": "Medium",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "custom_telephony_account",
+        "label": "Account",
+        "options": "CRM Telephony Account",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "creation",
+        "label": "Created On",
+        "type": "Datetime",
+        "width": "9rem"
+      }
+    ],
+    "rows": [
+      "name",
+      "reference_doctype",
+      "reference_docname",
+      "type",
+      "status",
+      "from",
+      "to",
+      "caller",
+      "receiver",
+      "duration",
+      "start_time",
+      "end_time",
+      "telephony_medium",
+      "custom_telephony_account",
+      "creation",
+      "note",
+      "recording_url"
+    ]
+  },
+  "CRM Deal": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Deal ID",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "lead",
+        "label": "Lead ID",
+        "options": "CRM Lead",
+        "type": "Link",
+        "width": "11rem"
+      },
+      {
+        "key": "lead_name",
+        "label": "Lead Name",
+        "type": "Data",
+        "width": "12rem"
+      },
+      {
+        "key": "organization",
+        "label": "Organization",
+        "options": "CRM Organization",
+        "type": "Link",
+        "width": "11rem"
+      },
+      {
+        "key": "status",
+        "label": "Status",
+        "options": "CRM Deal Status",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "deal_owner",
+        "label": "Deal Owner",
+        "options": "User",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "align": "right",
+        "key": "deal_value",
+        "label": "Deal Value",
+        "type": "Currency",
+        "width": "9rem"
+      },
+      {
+        "align": "right",
+        "key": "expected_deal_value",
+        "label": "Expected Value",
+        "type": "Currency",
+        "width": "9rem"
+      },
+      {
+        "key": "expected_closure_date",
+        "label": "Expected Closure",
+        "type": "Date",
+        "width": "9rem"
+      },
+      {
+        "key": "probability",
+        "label": "Probability",
+        "type": "Percent",
+        "width": "8rem"
+      },
+      {
+        "key": "source",
+        "label": "Source",
+        "options": "CRM Lead Source",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "mobile_no",
+        "label": "Mobile No.",
+        "type": "Data",
+        "width": "11rem"
+      },
+      {
+        "key": "email",
+        "label": "Email",
+        "type": "Data",
+        "width": "12rem"
+      },
+      {
+        "key": "creation",
+        "label": "Created On",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "modified",
+        "label": "Modified On",
+        "type": "Datetime",
+        "width": "9rem"
+      }
+    ],
+    "rows": [
+      "name",
+      "lead",
+      "lead_name",
+      "organization",
+      "status",
+      "deal_owner",
+      "deal_value",
+      "expected_deal_value",
+      "expected_closure_date",
+      "probability",
+      "source",
+      "mobile_no",
+      "email",
+      "creation",
+      "modified",
+      "currency",
+      "_assign"
+    ]
+  },
+  "CRM Lead": {
+    "columns": [
+      {
+        "key": "lead_name",
+        "label": "Full Name",
+        "type": "Data",
+        "width": "12rem"
+      },
+      {
+        "key": "mobile_no",
+        "label": "Mobile No.",
+        "type": "Data",
+        "width": "11rem"
+      },
+      {
+        "key": "custom_vertical",
+        "label": "Product Line",
+        "options": "CRM Vertical",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "custom_group",
+        "label": "Group",
+        "options": "CRM Group",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_current_program",
+        "label": "Program",
+        "options": "CRM Program",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "creation",
+        "label": "Created On",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "modified",
+        "label": "Modified On",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "_assign",
+        "label": "Assigned To",
+        "type": "Text",
+        "width": "10rem"
+      },
+      {
+        "key": "lead_owner",
+        "label": "Lead Owner",
+        "options": "User",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "status",
+        "label": "Status",
+        "options": "CRM Lead Status",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_stage",
+        "label": "Stage",
+        "options": "CRM Lead Stage",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_substage",
+        "label": "Sub-stage",
+        "options": "CRM Lead Stage",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_lead_temperature",
+        "label": "Temperature",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "source",
+        "label": "Source",
+        "options": "CRM Lead Source",
+        "type": "Link",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_source_origin",
+        "label": "Source Origin",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "email",
+        "label": "Email",
+        "type": "Data",
+        "width": "12rem"
+      },
+      {
+        "key": "custom_city",
+        "label": "City",
+        "type": "Data",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_state",
+        "label": "State",
+        "type": "Data",
+        "width": "9rem"
+      },
+      {
+        "key": "gender",
+        "label": "Gender",
+        "options": "Gender",
+        "type": "Link",
+        "width": "7rem"
+      },
+      {
+        "key": "custom_patient_id",
+        "label": "Patient ID",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "custom_prospectactivitydate_max",
+        "label": "Last Activity",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_last_report_date",
+        "label": "Last Report Date",
+        "type": "Date",
+        "width": "9rem"
+      },
+      {
+        "key": "custom_order_value",
+        "label": "Order Value",
+        "type": "Currency",
+        "width": "9rem"
+      },
+      {
+        "key": "sla_status",
+        "label": "SLA Status",
+        "type": "Select",
+        "width": "9rem"
+      }
+    ],
+    "rows": [
+      "name",
+      "mobile_no",
+      "lead_name",
+      "custom_vertical",
+      "custom_group",
+      "custom_current_program",
+      "creation",
+      "modified",
+      "_assign",
+      "lead_owner",
+      "status",
+      "custom_stage",
+      "custom_substage",
+      "custom_lead_temperature",
+      "source",
+      "custom_source_origin",
+      "email",
+      "custom_city",
+      "custom_state",
+      "gender",
+      "custom_patient_id",
+      "custom_prospectactivitydate_max",
+      "custom_last_report_date",
+      "custom_order_value",
+      "sla_status",
+      "first_name",
+      "image"
+    ]
+  },
+  "CRM Task": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Task ID",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "reference_docname",
+        "label": "Lead",
+        "options": "reference_doctype",
+        "type": "Dynamic Link",
+        "width": "11rem"
+      },
+      {
+        "key": "title",
+        "label": "Title",
+        "type": "Data",
+        "width": "16rem"
+      },
+      {
+        "key": "custom_task_type",
+        "label": "Task Type",
+        "options": "CRM Task Type",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "status",
+        "label": "Status",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "priority",
+        "label": "Priority",
+        "type": "Select",
+        "width": "8rem"
+      },
+      {
+        "key": "due_date",
+        "label": "Due Date",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "assigned_to",
+        "label": "Assigned To",
+        "options": "User",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "custom_completed_on",
+        "label": "Completed On",
+        "type": "Date",
+        "width": "9rem"
+      },
+      {
+        "key": "creation",
+        "label": "Created On",
+        "type": "Datetime",
+        "width": "9rem"
+      },
+      {
+        "key": "modified",
+        "label": "Modified On",
+        "type": "Datetime",
+        "width": "9rem"
+      }
+    ],
+    "rows": [
+      "name",
+      "reference_doctype",
+      "reference_docname",
+      "title",
+      "custom_task_type",
+      "status",
+      "priority",
+      "due_date",
+      "start_date",
+      "assigned_to",
+      "custom_completed_on",
+      "custom_outcome",
+      "custom_followup_at",
+      "custom_scheduled_at",
+      "creation",
+      "modified",
+      "description"
+    ]
+  },
+  "FCRM Note": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Note ID",
+        "type": "Data",
+        "width": "10rem"
+      },
+      {
+        "key": "reference_docname",
+        "label": "Lead",
+        "options": "reference_doctype",
+        "type": "Dynamic Link",
+        "width": "11rem"
+      },
+      {
+        "key": "title",
+        "label": "Title",
+        "type": "Data",
+        "width": "16rem"
+      },
+      {
+        "key": "content",
+        "label": "Content",
+        "type": "Text Editor",
+        "width": "22rem"
+      },
+      {
+        "key": "owner",
+        "label": "Created By",
+        "options": "User",
+        "type": "Link",
+        "width": "10rem"
+      },
+      {
+        "key": "modified",
+        "label": "Last Modified",
+        "type": "Datetime",
+        "width": "9rem"
+      }
+    ],
+    "rows": [
+      "name",
+      "title",
+      "content",
+      "reference_doctype",
+      "reference_docname",
+      "owner",
+      "modified"
+    ]
+  }
+}
