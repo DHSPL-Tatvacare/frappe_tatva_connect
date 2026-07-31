@@ -33,6 +33,15 @@ TWO PATHS, chosen by ONE question — does the payload change the QUERY, or only
     runs; we stamp. Group-by needs nothing further because `crm/api/doc.py:494` builds its options from
     the page that came back.
 
+FIVE OPERATORS, ONE MECHANISM. `Filter.vue:335-345` offers Equals / Not equals / In / Not in / Is on a
+Select, and `ViewControls.vue:878-891` persists the filter BEFORE the request runs — so an operator that
+throws is re-sent on every load and the rep cannot clear it. Each of the five names a SET of buckets. One
+bucket inlines its own tuples, unchanged; any other set is a UNION, and frappe's filters are flat and
+AND-only (§2 — `or_filters` ORs single conditions, which a multi-tuple bucket is not), so the union is
+resolved to the rows those buckets claim through the SAME `get_list` reader `=` uses. The declared tuples
+are never negated: De Morgan over NULL-bearing columns is the one class of silent disagreement this layer
+exists to prevent.
+
 ONE INSTANT. The clock is read once per request and threaded through translation and projection, so a
 row cannot be selected against one instant and displayed against another.
 
@@ -45,11 +54,19 @@ from tatva_connect.list_engine import derived
 
 KANBAN_PAGE_LENGTH = 20
 
+# A calendar is never paged — the component places every event it is given; this is the backstop.
+CALENDAR = "calendar"
+CALENDAR_ROW_CAP = 1000
+
 
 def get_data(**kwargs):
-	"""The override. Native answers the original request unless a derived field is named in it."""
+	"""The override. Native answers the original request unless a derived field is named in it.
+
+	The one exception is a view type native does not have: a calendar is always ours, on every doctype,
+	because there is no native branch to fall back to."""
 	doctype = kwargs.get("doctype")
-	if not (doctype and derived.for_doctype(doctype)):
+	view = frappe.parse_json(kwargs.get("view") or "{}") or {}
+	if view.get("view_type") != CALENDAR and not (doctype and derived.for_doctype(doctype)):
 		return _native(kwargs)
 	return ListRequest(kwargs).answer()
 
@@ -119,16 +136,22 @@ class ListRequest:
 		said.update(self._parse("kanban_fields"))
 		said.update(c.get("key") or c.get("fieldname") for c in self.asked_columns)
 		said.update(self.filters)
-		said.add(str(self.raw.get("order_by") or "").split(" ")[0])
-		# A board's column field and a group-by field each arrive from two places depending on the surface:
-		# top-level on the kwargs, or inside the saved `view`. Both are read, so a derived field named in
-		# either is recognised — missing one is how `group_by_field` reached the client as a bare string,
-		# which `GroupBy.vue:56` assigns straight into its button and prints as "Group By: undefined".
+		said.update(self._sorted_by())
+		# Board, group-by and title fields each arrive top-level OR inside the saved view; both are read.
 		said.add(self.raw.get("column_field"))
 		said.add(self.raw.get("group_by_field"))
+		said.add(self.raw.get("title_field"))
 		said.add(self.view.get("column_field"))
 		said.add(self.view.get("group_by_field"))
+		said.add(self.view.get("title_field"))
 		return tuple(f for f in self.declared if f.fieldname in said)
+
+	def _sorted_by(self):
+		"""Every field the sort names, not just the first. `SortBy.vue:277-284` builds "a asc, b desc" and
+		lets the rep drag the terms into any order, so reading term one alone sent "modified desc,
+		due_state asc" down the native path and the derived name reached SQL."""
+		terms = str(self.raw.get("order_by") or "").split(",")
+		return [term.strip().split(" ")[0] for term in terms if term.strip()]
 
 	def _board_field(self):
 		"""The derived field a kanban board is grouped by, when it is grouped by one."""
@@ -146,7 +169,7 @@ class ListRequest:
 		names = {f.fieldname for f in self.named}
 		if self.board or (set(self.filters) & names):
 			return True
-		return str(self.raw.get("order_by") or "").split(" ")[0] in names
+		return bool(names & set(self._sorted_by()))
 
 	def _parse(self, key, default="[]"):
 		return frappe.parse_json(self.raw.get(key) or default) or []
@@ -177,35 +200,83 @@ class ListRequest:
 	# -- the ONE translation -----------------------------------------------------------------------
 
 	def _translate(self):
-		"""Every filter as native tuples, each derived one replaced by its bucket's own terms.
+		"""Every filter as native tuples, each derived one replaced by the rows its buckets claim.
 
 		Also returns the derived-free remainder, which is a legal filters dict — so the call that fetches
-		the envelope can be narrowed by it instead of counting the whole table."""
+		the envelope can be narrowed by it instead of counting the whole table, and so the union below is
+		read inside the rep's own scope rather than across the table."""
 		from crm.api.doc import convert_filter_to_tuple
 
 		by_name = {f.fieldname: f for f in self.named}
-		plain, terms = frappe._dict(), []
-		for key, value in self.filters.items():
+		given = self.filters
+		plain = frappe._dict({k: v for k, v in given.items() if k not in by_name})
+		scope = convert_filter_to_tuple(self.doctype, plain)
+		terms = list(scope)
+		for key, value in given.items():
 			field = by_name.get(key)
-			if not field:
-				plain[key] = value
-				continue
-			wanted = value
-			if isinstance(value, list | tuple):
-				operator, wanted = value[0], value[1]
-				if str(operator).lower() not in ("=", "=="):
-					frappe.throw(
-						frappe._("{0} can be filtered by one value at a time").format(frappe._(field.label)),
-						title=frappe._("Unsupported filter"),
-					)
-			try:
-				terms.extend(derived.predicate(field, wanted, self.snap))
-			except derived.DerivedFieldError:
-				frappe.throw(
-					frappe._("{0} has no value called {1}").format(frappe._(field.label), wanted),
-					title=frappe._("Unknown filter value"),
+			if field:
+				terms.extend(self._predicate(field, value, scope))
+		return terms, plain
+
+	def _predicate(self, field, value, scope):
+		"""One derived filter as real terms, whichever of the five operators the menu sent.
+
+		A single bucket is its own declared tuples — the fast path, and the only one this took before. Any
+		other selection is a union of buckets, which frappe's flat AND-only grammar cannot carry, so it is
+		resolved to the rows those buckets claim by the same `get_list` reader `=` uses, narrowed by the
+		derived-free filters. The tuples themselves are never negated."""
+		chosen, unclaimed = self._chosen(field, value)
+		if not unclaimed and len(chosen) == 1:
+			return derived.predicate(field, chosen[0], self.snap)
+
+		names = []
+		for bucket in chosen:
+			names.extend(
+				row.name
+				for row in frappe.get_list(
+					self.doctype,
+					fields=["name"],
+					filters=[*scope, *derived.predicate(field, bucket, self.snap)],
+					limit=0,
 				)
-		return [*convert_filter_to_tuple(self.doctype, plain), *terms], plain
+			)
+		# A name is never blank, so an empty selection reads as "no rows", never as no filter at all.
+		return [[self.doctype, "name", "not in" if unclaimed else "in", names or [""]]]
+
+	def _chosen(self, field, value):
+		"""The buckets a filter selects, and whether it wants the rows NO bucket claims instead.
+
+		`!=` and `not in` name the OTHER buckets rather than negating anything — the declaration partitions,
+		which `derived.verify()` proves — and that is also what a real column does, where `!=` drops NULLs.
+		An operator outside the five the menu offers is still refused, as is a value no bucket declares."""
+		if not isinstance(value, list | tuple):
+			return [self._declared(field, value)], False
+
+		operator = str(value[0]).strip().lower()
+		wanted = value[1]
+		if operator == "is":
+			return list(field.options), str(wanted).strip().lower() == "not set"
+
+		listed = list(wanted) if isinstance(wanted, list | tuple) else [wanted]
+		named = [self._declared(field, v) for v in listed]
+		if operator in ("=", "==", "in"):
+			return named, False
+		if operator in ("!=", "not in"):
+			return [v for v in field.options if v not in named], False
+		frappe.throw(
+			frappe._("{0} cannot be filtered with {1}").format(frappe._(field.label), value[0]),
+			title=frappe._("Unsupported filter"),
+		)
+
+	def _declared(self, field, value):
+		"""A value the declaration really has. A saved view holding a renamed bucket asks for one it does
+		not, and that is refused readably rather than widened away or answered with a traceback."""
+		if field.bucket(value) is None:
+			frappe.throw(
+				frappe._("{0} has no value called {1}").format(frappe._(field.label), value),
+				title=frappe._("Unknown filter value"),
+			)
+		return value
 
 	def for_native(self, **overrides):
 		"""The payload with every derived NAME replaced by the real columns behind it.
@@ -230,10 +301,22 @@ class ListRequest:
 			kwargs["column_field"] = None
 			kwargs["kanban_columns"] = "[]"
 
-		parts = str(self.raw.get("order_by") or "").split(" ")
-		field = by_name.get(parts[0])
-		if field and field.order_by:
-			kwargs["order_by"] = " ".join([field.order_by, *parts[1:]])
+		# A derived card title is withheld so native falls back to its default; `_announce` restores the pick.
+		if by_name.get(self.raw.get("title_field")):
+			kwargs["title_field"] = None
+
+		terms = [t.strip() for t in str(self.raw.get("order_by") or "").split(",") if t.strip()]
+		if any(t.split(" ")[0] in by_name for t in terms):
+			rewritten = []
+			for term in terms:
+				parts = term.split(" ")
+				field = by_name.get(parts[0])
+				if not field:
+					rewritten.append(term)
+				elif field.order_by:
+					rewritten.append(" ".join([field.order_by, *parts[1:]]))
+			# No sort proxy means DROPPED, never passed through — the name would reach SQL as a column.
+			kwargs["order_by"] = ", ".join(rewritten) or None
 
 		kwargs.update(overrides)
 		return kwargs
@@ -242,10 +325,51 @@ class ListRequest:
 
 	def answer(self):
 		"""Native's verbatim answer when nothing derived is named; otherwise its envelope and our rows."""
+		if self.surface == CALENDAR:
+			return self.project(self._unpaged())
 		if not self.named:
 			return _native(self.raw)
 		result = self._queried() if self.changes_the_query else _native(self.for_native())
 		return self.project(result)
+
+	def _unpaged(self, shell=None):
+		"""A calendar is not paged — the component buckets events by date itself (CalendarMonthly.vue:99),
+		so it is given the whole set the caller's filters name and draws the ones on screen.
+
+		That is the ONLY thing a calendar needs from the server, and it is why there is no window here: no
+		range param, no date column this module has to know about, no refetch when the rep switches month.
+		Native has no calendar branch, so it answers the shell (fields, columns, rows) as a list and the rows
+		are ours — the same division `_queried` already makes. The cap is a backstop, not paging:
+		`total_count` is the truth and exceeding it is logged, never silently truncated."""
+		from crm.api.doc import parse_list_data
+
+		shell = shell or _native(
+			self.for_native(filters=self.plain, default_filters=None, page_length=1, page_length_count=1)
+		)
+		rows = shell.get("rows") or ["name"]
+		data = frappe.get_list(
+			self.doctype,
+			fields=rows,
+			filters=self.terms,
+			order_by=self.for_native().get("order_by"),
+			limit=CALENDAR_ROW_CAP,
+		)
+		shell["data"] = parse_list_data(data, self.doctype)
+		shell["total_count"] = self._count(self.terms)
+		shell["row_count"] = len(shell["data"])
+		shell["view_type"] = CALENDAR
+		# The shell was fetched with page_length=1 to buy a cheap count, and `ViewControls.vue:456` reads
+		# page_length straight back into the params it re-sends — so echoing the shell's 1 asked the NEXT
+		# request for one row. The caller's own page length is echoed, exactly as `_fill_list` echoes it.
+		page_length = frappe.cint(self.raw.get("page_length") or 20)
+		shell["page_length"] = page_length
+		shell["page_length_count"] = frappe.cint(self.raw.get("page_length_count") or page_length)
+		if shell["row_count"] < shell["total_count"]:
+			frappe.log_error(
+				title="Calendar truncated",
+				message=f"{self.doctype}: {shell['total_count']} rows match, {CALENDAR_ROW_CAP} drawn",
+			)
+		return shell
 
 	def _queried(self):
 		"""The envelope from native, the rows from us — native cannot carry a multi-term predicate.
@@ -319,6 +443,12 @@ class ListRequest:
 		shell["kanban_columns"] = columns
 		shell["column_field"] = self.board.fieldname
 		shell["data"] = data
+		# The shell was fetched with page_length=1, so the four paging keys are restored as `_fill_list` does.
+		asked = frappe.cint(self.raw.get("page_length") or 20)
+		shell["total_count"] = sum(column["all_count"] for column in columns)
+		shell["row_count"] = sum(column["count"] for column in columns)
+		shell["page_length"] = asked
+		shell["page_length_count"] = frappe.cint(self.raw.get("page_length_count") or asked)
 
 	def _count(self, terms):
 		from crm.api.doc import COUNT_NAME
@@ -357,6 +487,14 @@ class ListRequest:
 			row.update({c: read.get(row["name"], {}).get(c) for c in field.depends_on})
 
 	def _announce(self, result, field):
+		"""Announce the field the way native announces a real one — in `fields`, in `rows`, and on the COLUMN.
+
+		`fields` carries the descriptor, but a table renders each cell from the `columns` entry, and that dict
+		is the CALLER's: `ColumnSettings.vue:237-244` builds `{label, type, key, options, width, align}` and
+		has never heard of `is_derived`, so `column.is_derived` was undefined on every column and a renderer
+		had to branch on the fieldname itself. The flag is therefore stamped onto whichever column dict
+		carries the key — the caller's, or the one native loaded from the rep's saved view — and it is
+		ADDITIVE: a client that ignores it still renders a correct plain cell."""
 		descriptor = field.descriptor()
 		listed = result.setdefault("fields", [])
 		if isinstance(listed, list) and not any(
@@ -373,8 +511,22 @@ class ListRequest:
 		# the server replies without it, and the table silently reverts the rep's change.
 		asked = next((c for c in self.asked_columns if c.get("key") == field.fieldname), None)
 		columns = result.setdefault("columns", [])
-		if asked and isinstance(columns, list) and not any(c.get("key") == field.fieldname for c in columns):
-			columns.insert(min(self.asked_columns.index(asked), len(columns)), asked)
+		if isinstance(columns, list):
+			if asked and not any(c.get("key") == field.fieldname for c in columns):
+				columns.insert(min(self.asked_columns.index(asked), len(columns)), asked)
+			# Label and stamp are the DECLARATION's, never the saved view's snapshot — `CRM View Settings`
+			# stores the label a rep's column had when they added it, so renaming in `fields.py` would move
+			# four menus and leave the fifth surface reading the old name.
+			for column in columns:
+				if isinstance(column, dict) and column.get("key") == field.fieldname:
+					column["label"] = descriptor["label"]
+					column["is_derived"] = descriptor["is_derived"]
+
+		# The card title was withheld from the request for the same reason the column was, so it goes back
+		# into the answer. `ViewControls.vue:549` reads `data.title_field` into the params it re-sends, so
+		# leaving native's fallback there would silently revert the rep's pick on the next load.
+		if self.raw.get("title_field") == field.fieldname:
+			result["title_field"] = field.fieldname
 
 		# Native shapes this into a dict only for a field it finds in meta, so a derived one comes back as a
 		# bare string and the client's `?.label` reads undefined. It is shaped here to the same contract.
@@ -384,6 +536,9 @@ class ListRequest:
 				"fieldname": field.fieldname,
 				"fieldtype": field.fieldtype,
 				"options": list(field.options),
+				# Carried so a group HEADER reads the stamp, exactly as a column cell and a card field do.
+				# Without it the client has to name the field to know it is derived, which is a second brain.
+				"is_derived": descriptor["is_derived"],
 			}
 
 

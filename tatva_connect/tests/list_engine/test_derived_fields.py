@@ -42,12 +42,15 @@ def _defaults_for(doctype):
 
 def _sound_field(fieldname="_probe_due_state"):
 	"""The five-bucket shape `due_state` will ship with, under a probe name so these tests can never
-	depend on — or disturb — the real declaration. Every range is half-open."""
+	depend on — or disturb — the real declaration. Every range is half-open.
+
+	`order_by` is the BARE proxy column: the caller's own direction is appended to it, so "due_date asc"
+	here would build "due_date asc desc" and reach SQL. `_validate` now refuses that shape."""
 	return derived.DerivedField(
 		doctype=TASK,
 		fieldname=fieldname,
 		label="Probe Due State",
-		order_by="due_date asc",
+		order_by="due_date",
 		buckets=[
 			derived.Bucket(
 				"Overdue",

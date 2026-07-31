@@ -21,6 +21,7 @@ from frappe import _
 from tatva_connect.patches import (
 	add_acefone_telephony_medium,
 	add_ai_voice_telephony_medium,
+	add_calendar_view_type,
 	add_call_log_reference_index,
 	add_call_media_recording_index,
 	add_clinic_anchor_index,
@@ -56,6 +57,8 @@ _STEPS = (
 	add_acefone_telephony_medium,
 	# "AI Voice" on CRM Call Log.telephony_medium — an AI call lands in the same MIXED table as Acefone's and a rep's, and the medium is what tells them apart. A Property Setter because stock options drift between crm versions; install-app baselines its patch without running it.
 	add_ai_voice_telephony_medium,
+	# "calendar" on CRM View Settings.type — a view type must be storable or every save of one is a ValidationError; a Property Setter because stock options drift between crm versions.
+	add_calendar_view_type,
 	retire_location_captures_fields,
 	retire_lead_stage_legacy_fields,
 	retire_activity_legacy_columns,

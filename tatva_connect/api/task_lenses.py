@@ -20,13 +20,17 @@ the fork stays dispatch-only. The column picker is the exception — it has no n
 doctype meta in the browser (`stores/meta.js` `getFields`) — so `get_column_fields` IS that lens, fed
 to `ColumnSettings.vue`'s existing `fieldSource` prop from `ViewControls.vue`.
 
+The quick-filter bar is not a lens at all and is the other pair here: its contents are a STORED choice
+(one `CRM Global Settings` row), so it is READ at the position that row gives and WRITTEN without the
+Property Setter a derived name has no DocField to carry.
+
 Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-layer.md §6 and §9 Phase 6.
 """
 
 import frappe
 from frappe.model.document import get_controller
 
-from tatva_connect.list_engine import engine
+from tatva_connect.list_engine import derived, engine
 
 TASK = "CRM Task"
 
@@ -69,18 +73,81 @@ def get_group_by_fields(doctype: str):
 
 @frappe.whitelist()
 def sort_options(doctype: str):
+	"""The one lens a derived field has to earn. SQL orders by a column, so a declaration with no sort proxy
+	has nothing to be ordered by — `engine.for_native` drops the term and the rep's chosen sort silently does
+	nothing. It is withheld HERE alone; filter, group-by and columns still offer it."""
 	from crm.api.doc import sort_options as _native
 
-	return _narrow(_native(doctype), doctype)
+	unsortable = {f.fieldname for f in derived.for_doctype(doctype) if not f.sortable}
+	return [f for f in _narrow(_native(doctype), doctype) if f.get("fieldname") not in unsortable]
+
+
+def _declared_quick_filters(doctype):
+	"""The doctype's derived fields by fieldname, in the shape this ONE endpoint hands the client."""
+	return {f["fieldname"]: f for f in engine.quick_filter_fields(doctype)}
+
+
+def _stored_choice(doctype):
+	"""The chosen quick-filter fieldnames, read off the SAME `CRM Global Settings` row native reads.
+
+	`None` means there is no row, which is native's `in_standard_filter` fallback and a different question
+	entirely — not an empty choice."""
+	row = frappe.db.exists("CRM Global Settings", {"dt": doctype, "type": "Quick Filters"})
+	if not row:
+		return None
+	return frappe.parse_json(frappe.db.get_value("CRM Global Settings", row, "json")) or []
 
 
 @frappe.whitelist()
 def get_quick_filters(doctype: str, cached: bool = True):
-	"""The fifth menu. It is not one of the four lenses — it reads `meta.fields` and `in_standard_filter`
-	directly — so a derived field is appended in that endpoint's own shape and nothing native is narrowed."""
+	"""The fifth menu, and the only one that is a rep's STORED choice rather than a lens.
+
+	Which fields get a control is one `CRM Global Settings` row (`dt`, type `Quick Filters`, a json list of
+	fieldnames), and native resolves each chosen name through `frappe.get_meta` — which has never heard of a
+	derived field, so the rep's chosen POSITION is unreachable by it. It is resolved here AT that position,
+	off that same row; every real name is native's own entry, in native's own order, untouched. Appending
+	instead would also put back a field the rep had just removed, because a removal is a shorter list.
+
+	Absent that row native falls back to `in_standard_filter`, a DocField flag no derived field can carry.
+	A derived field is then OFFERED — the picker lists it — and NOT APPLIED: it never reaches the bar
+	unasked, which is this app's standing rule that nothing arrives switched on."""
 	from crm.api.doc import get_quick_filters as _native
 
-	return [*_native(doctype, cached), *engine.quick_filter_fields(doctype)]
+	native = _native(doctype, cached)
+	declared = _declared_quick_filters(doctype)
+	chosen = _stored_choice(doctype)
+	if not declared or chosen is None:
+		return native
+
+	by_name = {f.get("fieldname"): f for f in native}
+	return [
+		declared[name] if name in declared else by_name[name]
+		for name in chosen
+		if name in declared or name in by_name
+	]
+
+
+@frappe.whitelist()
+def update_quick_filters(quick_filters: str, old_filters: str, doctype: str):
+	"""Recording the rep's choice is native's; stamping a Property Setter for a derived name is refused.
+
+	`update_in_standard_filter` writes `<doctype>-<field>-in_standard_filter` for a field that has no DocField
+	to carry it, and it fires unasked — the client seeds its list from this endpoint's answer, so a derived
+	name is in `new_filters` on the first ever save even if the rep never touched it. A derived name is
+	withheld from the pair native diffs, so every REAL fieldname keeps native's behaviour exactly — the
+	removal write included; the choice is then recorded WITH it, since that row is what `get_quick_filters`
+	resolves against."""
+	from crm.api.doc import create_update_global_settings
+	from crm.api.doc import update_quick_filters as _native
+
+	declared = _declared_quick_filters(doctype)
+	if not declared:
+		return _native(quick_filters, old_filters, doctype)
+
+	chosen = frappe.parse_json(quick_filters) or []
+	real = lambda listed: frappe.as_json([n for n in listed if n not in declared])  # noqa: E731
+	_native(real(chosen), real(frappe.parse_json(old_filters) or []), doctype)
+	create_update_global_settings(doctype, chosen)
 
 
 @frappe.whitelist()

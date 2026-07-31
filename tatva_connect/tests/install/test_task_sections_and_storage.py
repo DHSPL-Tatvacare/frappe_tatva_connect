@@ -24,15 +24,29 @@ from tatva_connect import schema_setup
 from tatva_connect.patches import (
 	add_task_answer_fieldname_index,
 	add_task_document_kind_index,
+	add_task_due_state_index,
 	add_task_lead_snapshot_index,
 )
 from tatva_connect.taxonomy import task_section_seed
 
-# Each index patch and the fresh-install twin it must appear in; asserted as one list so a new index is
-# covered by having been added here rather than by anyone remembering to write another test.
-_INDEX_PATCHES = (add_task_document_kind_index, add_task_answer_fieldname_index, add_task_lead_snapshot_index)
+# Each index patch an activity read depends on, and the fresh-install twin it must appear in; asserted as
+# one list so a new index is covered by having been added here rather than by anyone remembering to write
+# another test. Not all of them are on a child table — the derived due-state predicate seeks CRM Task itself.
+_INDEX_PATCHES = (
+	add_task_document_kind_index,
+	add_task_answer_fieldname_index,
+	add_task_lead_snapshot_index,
+	add_task_due_state_index,
+)
 
 TASK_DOCTYPE = "CRM Task"
+
+
+def _index_names(patch):
+	"""An index patch declares what it builds as `_INDEXES` (the majority shape) or as a single `_INDEX`;
+	both are read here so a patch is registered as it was written rather than rewritten to suit a test."""
+	declared = getattr(patch, "_INDEXES", None) or [patch._INDEX]
+	return tuple(name for name, _columns in declared)
 
 
 class TestTaskSectionsAndStorage(FrappeTestCase):
@@ -114,14 +128,15 @@ class TestTaskSectionsAndStorage(FrappeTestCase):
 				f"section `{row['section_key']}` is key-value AND multi-row — it already holds exactly one row per field",
 			)
 
-	def test_the_child_table_indexes_exist(self):
-		"""Without them the latest-by-kind pick and the per-fieldname read full-scan every row on the site."""
+	def test_the_declared_task_indexes_exist(self):
+		"""Without them the latest-by-kind pick, the per-fieldname read and every due-state predicate,
+		board column and count read their table without an index."""
 		for patch in _INDEX_PATCHES:
-			name, _columns = patch._INDEX
-			self.assertTrue(
-				frappe.db.has_index(patch._TABLE, name),
-				f"`{name}` is missing from {patch._TABLE} — the pick reads the table without an index",
-			)
+			for name in _index_names(patch):
+				self.assertTrue(
+					frappe.db.has_index(patch._TABLE, name),
+					f"`{name}` is missing from {patch._TABLE} — the read walks the table without an index",
+				)
 
 	def test_every_index_patch_has_its_fresh_install_twin(self):
 		"""install-app baselines patches.txt WITHOUT running it, so a patch alone never reaches a new site."""

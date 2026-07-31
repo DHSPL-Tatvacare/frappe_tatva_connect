@@ -65,6 +65,9 @@ _TOKENS = {
 _DATE_FIELDTYPES = frozenset({"Date", "Datetime"})
 _NUMERIC_FIELDTYPES = frozenset({"Int", "Float", "Currency", "Percent", "Check"})
 
+# frappe's empty-case words; the corpus already probes those with `None`, so they name no boundary.
+_IS_MODES = frozenset({"set", "not set"})
+
 # A corpus is a product across the declared columns; this bounds it, and `verify` reports when it bites.
 CORPUS_LIMIT = 400
 
@@ -133,6 +136,12 @@ class DerivedField:
 	def options(self):
 		return tuple(b.value for b in self.buckets)
 
+	@property
+	def sortable(self):
+		"""SQL orders by a column, so a declaration is sortable exactly when it names a real one to stand in
+		for it. Without a proxy there is nothing to order by and the sort menu may not offer it."""
+		return bool(self.order_by)
+
 	def bucket(self, value):
 		for b in self.buckets:
 			if b.value == value:
@@ -175,6 +184,17 @@ def _validate(field):
 	if field.fieldname in field.depends_on:
 		raise DerivedFieldError(f"{field.fieldname}: a bucket may not filter on the derived field itself")
 
+	# The proxy is joined with the caller's own direction, so it must be a bare fieldname.
+	if field.order_by is not None:
+		if not isinstance(field.order_by, str) or not field.order_by.isidentifier():
+			raise DerivedFieldError(
+				f"{field.fieldname}: order_by is a bare fieldname, no direction, got {field.order_by!r}"
+			)
+		if field.order_by == field.fieldname:
+			raise DerivedFieldError(
+				f"{field.fieldname}: order_by names the real column standing in for it, not itself"
+			)
+
 
 def register(field):
 	"""Declare a derived field. Shape is checked here, at import; agreement is checked by `verify()`, which
@@ -192,13 +212,22 @@ def registered():
 
 def _assert_declarable(doctype):
 	"""A derived fieldname that shadows a real column would make the cell and the column disagree in
-	silence. Checked once per doctype per process, against the framework's own field list."""
+	silence, and a sort proxy naming no column reaches SQL. Neither is knowable without the framework's own
+	field list, so both are checked here — once per doctype per request, on the same meta."""
 	if doctype in _validated():
 		return
 	meta = frappe.get_meta(doctype)
-	for fieldname in _REGISTRY.get(doctype, {}):
+	for fieldname, field in _REGISTRY.get(doctype, {}).items():
 		if meta.get_field(fieldname) or fieldname in default_fields:
-			raise DerivedFieldError(f"{doctype}.{fieldname} already exists as a real field")
+			# Fail-loud is deliberate: a shadowed field is unserveable, so the message names the blast radius.
+			raise DerivedFieldError(
+				f"{doctype}.{fieldname} already exists as a real field, so every {doctype} list is "
+				f"unserveable until the declaration or the column is removed"
+			)
+		if field.order_by and not (field.order_by in default_fields or fieldtype_of(doctype, field.order_by)):
+			raise DerivedFieldError(
+				f"{doctype}.{fieldname}: order_by names {field.order_by}, which is not a column on {doctype}"
+			)
 	_validated().add(doctype)
 
 
@@ -314,23 +343,41 @@ def _as_datetime(value):
 		return None
 
 
-def _probe_values(fieldtype, options, literals):
+def _probe_values(fieldtype, options, literals, unrepresentable=None):
 	"""Values putting a row on every boundary this column has: each operand the column could hold, either
-	side of it, the empty cases, and one value the declaration never mentions."""
-	values = [None]
+	side of it, the empty cases, and one value the declaration never mentions.
+
+	An operand the column CANNOT hold is a hole, not a non-event — a `Timespan` word on a Datetime is the
+	measured case. It is collected into `unrepresentable` so `verify()` reports the boundary it never sat
+	on, rather than probing almost nothing and returning clean."""
+	values, rejected = [None], []
 	if fieldtype in _DATE_FIELDTYPES:
-		for moment in filter(None, (_as_datetime(literal) for literal in literals)):
+		for literal in literals:
+			moment = _as_datetime(literal)
+			if moment is None:
+				rejected.append(literal)
+				continue
 			values += [moment, add_to_date(moment, seconds=-1), add_to_date(moment, seconds=1)]
 		values.append(get_datetime(f"{nowdate()} 23:59:59"))
 	elif fieldtype in _NUMERIC_FIELDTYPES:
 		for literal in literals:
 			if isinstance(literal, int | float):
 				values += [literal, literal - 1, literal + 1]
+			else:
+				rejected.append(literal)
 		values.append(0)
 	elif options:
 		values += ["", *options]
+		rejected += [literal for literal in literals if literal not in options]
 	else:
 		values += ["", *[literal for literal in literals if literal is not None], "__unmentioned__"]
+
+	if unrepresentable is not None:
+		unrepresentable.extend(
+			literal
+			for literal in rejected
+			if literal is not None and str(literal).strip().lower() not in _IS_MODES
+		)
 
 	seen, unique = set(), []
 	for value in values:
@@ -340,12 +387,18 @@ def _probe_values(fieldtype, options, literals):
 	return unique
 
 
-def _corpus(field, snap):
-	"""One row per combination of boundary values across the declared columns, capped and reported."""
+def _corpus(field, snap, unrepresentable=None):
+	"""One row per combination of boundary values across the declared columns, capped and reported.
+
+	`unrepresentable`, when given, collects `(column, operand)` for every operand that column cannot hold —
+	a boundary no probe row sits on, which `verify()` reports rather than passing over in silence."""
 	per_column = []
 	for source in field.depends_on:
 		fieldtype, options = domain_of(field.doctype, source)
-		per_column.append(_probe_values(fieldtype, options, _literals(field, source, snap)))
+		rejected = []
+		per_column.append(_probe_values(fieldtype, options, _literals(field, source, snap), rejected))
+		if unrepresentable is not None:
+			unrepresentable.extend((source, literal) for literal in rejected)
 	combinations = [
 		dict(zip(field.depends_on, combo, strict=True)) for combo in itertools.product(*per_column)
 	]
@@ -355,9 +408,11 @@ def _corpus(field, snap):
 def verify(field, defaults=None, snap=None):
 	"""Prove this declaration on real rows and return every way it fails. Empty means admissible.
 
-	Two properties, both of which a curated operator list can only guess at. READER AGREEMENT: for every
+	Three properties, two of which a curated operator list can only guess at. READER AGREEMENT: for every
 	bucket, the rows SQL returns are exactly the rows `evaluate_filters` claims. PARTITION: no row is
-	claimed by two buckets, because SQL has no first-match ordering to fall back on.
+	claimed by two buckets, because SQL has no first-match ordering to fall back on. And COVERAGE: every
+	operand the declaration names became a probe row, or the boundary it names is reported as unprobed —
+	a verifier that may pass vacuously is worse than none, because it is believed.
 
 	The corpus is generated from the declaration itself — every value it compares against, either side of
 	each, plus the empty cases — so a new operator or fieldtype is covered without this module knowing it
@@ -365,8 +420,16 @@ def verify(field, defaults=None, snap=None):
 	background work and fires doc_events, so a throwaway row would depend on a running worker and could
 	trigger real automation. A rollback touches neither."""
 	snap = snapshot() if snap is None else snap
-	combinations, wanted = _corpus(field, snap)
-	problems = []
+	holes = []
+	combinations, wanted = _corpus(field, snap, holes)
+	problems = [
+		Disagreement(
+			"operand-unrepresentable",
+			None,
+			f"{source} cannot hold {literal!r}, so no probe row sits on the boundary it names",
+		)
+		for source, literal in holes
+	]
 	if wanted > len(combinations):
 		problems.append(
 			Disagreement("corpus-capped", None, f"{wanted} combinations wanted, {len(combinations)} verified")
@@ -378,6 +441,8 @@ def verify(field, defaults=None, snap=None):
 		for values in combinations:
 			doc = frappe.get_doc({"doctype": field.doctype, **(defaults or {}), **values})
 			try:
+				# authz-ok: tier-c — verification only, no session user: probe rows are generated from the
+				# declaration, live inside `_SAVEPOINT` and are rolled back before this function returns.
 				inserted.append(doc.insert(ignore_permissions=True).name)
 			except frappe.ValidationError as unrepresentable:
 				problems.append(Disagreement("corpus-unrepresentable", None, f"{values}: {unrepresentable}"))
@@ -388,11 +453,18 @@ def verify(field, defaults=None, snap=None):
 		claims = {}
 		for bucket in field.buckets:
 			terms = resolve(field, bucket, snap)
-			in_sql = {
-				r.name
-				for r in frappe.get_all(field.doctype, fields=["name"], filters=[*terms, scope], limit=0)
-			}
-			in_python = {r.name for r in fetched if evaluate_filters(r, terms)}
+			# A reader that RAISES is reported like one that disagrees; a verifier that throws hides the rest.
+			try:
+				in_sql = {
+					r.name
+					for r in frappe.get_all(field.doctype, fields=["name"], filters=[*terms, scope], limit=0)
+				}
+				in_python = {r.name for r in fetched if evaluate_filters(r, terms)}
+			except Exception as unreadable:
+				problems.append(
+					Disagreement("reader-error", bucket.value, f"{type(unreadable).__name__}: {unreadable}")
+				)
+				continue
 			if in_sql != in_python:
 				problems.append(
 					Disagreement(

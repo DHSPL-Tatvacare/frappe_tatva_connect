@@ -228,12 +228,18 @@ class TestTheMenusOfferIt(ListEngineCase):
 		one that reads doctype meta directly and so was hand-built at first; it is included here for exactly
 		that reason. `options` is deliberately not compared — quick filters legitimately pairs them."""
 		declared = fields.DUE_STATE.descriptor()
+		# The bar is a stored CHOICE, not a lens: it offers what the rep picked, so the pick is made here
+		# before the description is compared. `_store` is that test module's own helper — the setup for a
+		# chosen quick filter lives in one place, the same way the field itself does.
+		from tatva_connect.tests.list_engine.test_quick_filters import _store
+
+		_store(TASK, ["title", FIELD])
 		menus = {
 			"filter": task_lenses.get_filterable_fields(TASK),
 			"group_by": task_lenses.get_group_by_fields(TASK),
 			"sort": task_lenses.sort_options(TASK),
 			"columns": task_lenses.get_column_fields(TASK),
-			"quick_filters": task_lenses.get_quick_filters(TASK),
+			"quick_filters": task_lenses.get_quick_filters(TASK, cached=False),
 		}
 		for menu, offered in menus.items():
 			with self.subTest(menu):
@@ -243,7 +249,11 @@ class TestTheMenusOfferIt(ListEngineCase):
 					self.assertEqual(entry.get(key), declared[key], f"{menu} disagrees on {key}")
 
 	def test_quick_filters_pairs_the_options_the_way_that_endpoint_does(self):
-		entry = next(f for f in task_lenses.get_quick_filters(TASK) if f.get("fieldname") == FIELD)
+		from tatva_connect.tests.list_engine.test_quick_filters import _store
+
+		_store(TASK, ["title", FIELD])
+		offered = task_lenses.get_quick_filters(TASK, cached=False)
+		entry = next(f for f in offered if f.get("fieldname") == FIELD)
 		self.assertEqual(entry["options"][0], {"label": "", "value": ""})
 		self.assertEqual([o["value"] for o in entry["options"][1:]], list(fields.DUE_STATE.options))
 

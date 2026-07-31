@@ -122,8 +122,13 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 
 	def test_the_schema_steps_indexes_are_on_a_freshly_installed_site(self):
 		"""`install-app` BASELINES patches.txt without running it, so `schema_setup` is these indexes' only
-		road onto a new site. Both were measured absent on a fresh install before `after_sync` was wired."""
-		from tatva_connect.patches import add_call_log_reference_index, add_integration_request_index
+		road onto a new site. The first two were measured absent on a fresh install before `after_sync` was
+		wired; the third was in `schema_setup._STEPS` with nothing asserting it had ever arrived."""
+		from tatva_connect.patches import (
+			add_call_log_reference_index,
+			add_integration_request_index,
+			add_task_due_state_index,
+		)
 
 		self.assertTrue(
 			frappe.db.has_index("tabCRM Call Log", add_call_log_reference_index.INDEX),
@@ -135,6 +140,14 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 			),
 			f"{add_integration_request_index.INDEX} is missing — schema_setup never ran on this site",
 		)
+		# (status, due_date) on CRM Task — the pair every derived due-state predicate, board column and count
+		# seeks on; the table's other composites lead with reference_docname and cannot serve it.
+		for name, _columns in add_task_due_state_index._INDEXES:
+			self.assertTrue(
+				frappe.db.has_index(add_task_due_state_index._TABLE, name),
+				f"{name} is missing from {add_task_due_state_index._TABLE} — schema_setup never ran on this "
+				"site, and every Task Status filter reads the whole table",
+			)
 
 	def test_every_declared_automation_has_its_switch_row(self):
 		"""`automation.seed.sync_catalog`. A key with no row is a gate on a switch that does not exist."""

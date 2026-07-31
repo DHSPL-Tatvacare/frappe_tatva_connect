@@ -61,8 +61,14 @@ override_whitelisted_methods = {
 	"crm.api.doc.get_filterable_fields": "tatva_connect.api.task_lenses.get_filterable_fields",
 	"crm.api.doc.get_group_by_fields": "tatva_connect.api.task_lenses.get_group_by_fields",
 	"crm.api.doc.sort_options": "tatva_connect.api.task_lenses.sort_options",
-	# The fifth field menu; it reads doctype meta directly, so a derived field reaches it only through here.
+	# The fifth field menu; it reads doctype meta directly, so a derived field reaches it only through here — at the position the rep's stored choice gives it, never appended.
 	"crm.api.doc.get_quick_filters": "tatva_connect.api.task_lenses.get_quick_filters",
+	# Choosing that field records the choice natively but writes no in_standard_filter Property Setter — there is no DocField for one to describe.
+	"crm.api.doc.update_quick_filters": "tatva_connect.api.task_lenses.update_quick_filters",
+	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
+	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
+	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
+	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.fetch_and_update_kanban_columns": "tatva_connect.list_engine.views.fetch_and_update_kanban_columns",
 	# VAPT hardening — native crm methods that BYPASS the permission engine; intercept -> has_permission gate -> delegate to the unchanged native fn (no crm fork).
 	"crm.api.doc.get_assigned_users": "tatva_connect.access.native_guards.get_assigned_users",
 	"crm.api.doc.get_linked_docs_of_document": "tatva_connect.access.native_guards.get_linked_docs_of_document",
