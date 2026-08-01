@@ -72,6 +72,8 @@ The DATA checks above still run BEFORE the gate, so a dormant bench routes a lea
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.automation import contact_cap
+from tatva_connect.workflow_engine import refs
 
 SENDS_SWITCH = "Workflow::Engine::sends"
 _RECORD_SAVEPOINT = "automation_whatsapp_record"
@@ -92,6 +94,17 @@ MOBILE_CHANNELS = (WHATSAPP, VOICE)
 PLACED = "placed"
 
 DORMANT_MARKER = "suppressed: sends dormant"
+
+
+def _correlated_step(correlation):
+	"""`(journey, node_id)` out of the engine token the send is carrying, or `(None, None)`.
+
+	The token is `journey::node` — the identity `_run_verb` mints and the one a Wait already correlates
+	on. Split here rather than in `contact_cap`, because the token's shape belongs to the engine and the
+	cap should not learn it.
+	"""
+	journey, _, node_id = (correlation or "").partition("::")
+	return (journey or None), (node_id or None)
 
 
 def _canonical_contact(number):
@@ -117,19 +130,21 @@ def _canonical_contact(number):
 		return ""
 
 
-def _record_contact(context, channel, address):
+def _record_contact(context, channel, contact):
 	"""Tell the interpreter WHO this verb reached and HOW, through the engine namespace `_engine.output`
 	already travels on — the verb writes, the interpreter pops, and no signature carries it.
 
-	Recorded as soon as the address resolves, so a suppressed or refused step still says who it was for:
-	"which number did this journey message?" is asked of the failures more often than of the successes.
-	"""
-	from tatva_connect.workflow_engine import refs
+	`contact` is ALREADY canonical (`_canonical_contact`) for a mobile channel: the caller computes it
+	once, because the same value is what the cap counted a moment earlier and writing a second derivation
+	of one fact is how the two drift.
 
+	Called only on the path that really queues a send. The step log is what the ceiling counts, so a row
+	written for a message that never left would spend a patient's allowance on nothing.
+	"""
 	if context is None:
 		return
 	context[refs.CHANNEL] = channel
-	context[refs.CONTACT] = _canonical_contact(address) if channel in MOBILE_CHANNELS else (address or "")
+	context[refs.CONTACT] = contact or ""
 
 
 def sends_enabled() -> bool:
@@ -210,10 +225,15 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 	recipient = (context or {}).get(contact_number) if contact_number else None
 	if not recipient:
 		return FAILED, f"failed: {contact_number or 'no contact number'} resolved to no number for lead {subject_lead}"
-	_record_contact(context, WHATSAPP, recipient)
 
 	if not sends_enabled():
 		return SENT, DORMANT_MARKER
+
+	# The ceiling, on the SAME `failed` edge a bad number takes, and after the dormant gate — see `refusal`.
+	contact = _canonical_contact(recipient)
+	capped = contact_cap.refusal(WHATSAPP, contact)
+	if capped:
+		return FAILED, capped
 
 	from tatva_connect.channels import resolve
 	from tatva_connect.whatsapp import channel, routing
@@ -240,6 +260,8 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 		return FAILED, "failed: {} resolved to nothing, so the message would have gone out with a blank in it".format(
 			", ".join(sorted(blank))
 		)
+	# LAST, so only a send really being queued claims a slot against the ceiling — see `_record_contact`.
+	_record_contact(context, WHATSAPP, contact)
 	return SENT, lambda: frappe.enqueue(
 		"tatva_connect.automation.sends._deliver_whatsapp",
 		# Named, not defaulted: `default` is consumed by BOTH worker services, so an unnamed send rides the same lane as the sweep that rescues parked journeys.
@@ -362,6 +384,8 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 		)
 		return
 	if not result.accepted:
+		# REFUSED — `SendResult`'s third outcome, and the only one the ceiling gives a slot back for.
+		contact_cap.void(*_correlated_step(correlation))
 		frappe.throw(f"Send WhatsApp failed for lead {lead}: {result.error or 'unknown provider error'}")
 
 	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, the provider call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
@@ -676,7 +700,6 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 	number = (context or {}).get(contact_number) if contact_number else None
 	if not number:
 		return FAILED, f"failed: {contact_number or 'no recipient'} resolved to no number for lead {subject_lead}"
-	_record_contact(context, VOICE, number)
 
 	# Wrong-country prevention, voice form. `conform_number` is the ONE brain (the provider's declared
 	# `number_format`); a number with no country code cannot be known correct and is refused before any gate.
@@ -688,6 +711,12 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 
 	if not sends_enabled():
 		return PLACED, DORMANT_MARKER
+
+	# The SAME question of the SAME canonical number `send_whatsapp` asks — one patient, one person.
+	contact = _canonical_contact(number)
+	capped = contact_cap.refusal(VOICE, contact)
+	if capped:
+		return FAILED, capped
 
 	# The CHANNEL's own master switch, on top of the sends gate — exactly what `send_whatsapp` does above.
 	# Without it the switch governed the inbound webhook only, so an operator who turned voice off stopped
@@ -709,6 +738,8 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 	if blank:
 		return FAILED, f"failed: {', '.join(blank)} resolved blank for lead {subject_lead}, so the agent would speak a gap"
 
+	# LAST, for the reason `send_whatsapp` gives: only a call that is really being queued claims a slot.
+	_record_contact(context, VOICE, contact)
 	# Deferred exactly like `_deliver_whatsapp`: the provider call fires only after the segment commits, on
 	# the `workflow` lane, so a rolled-back segment enqueues nothing and dials nothing.
 	return PLACED, lambda: frappe.enqueue(
@@ -739,10 +770,15 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 	from tatva_connect.voice import api as voice_api
 	from tatva_connect.voice.adapters import bolna
 
-	result = bolna.place_call(
-		voice_api.connection_for(account_name), to_number, agent_id, from_override, correlation,
-		variables=variables,
-	)
+	try:
+		result = bolna.place_call(
+			voice_api.connection_for(account_name), to_number, agent_id, from_override, correlation,
+			variables=variables,
+		)
+	except bolna.BolnaServiceError:
+		# Bolna's own 4xx, declared non-retryable — refused at hand-off, so the ceiling gives the slot back.
+		contact_cap.void(*_correlated_step(correlation))
+		raise
 	_log_voice_placement(correlation, account_name, result.get("correlation_id"), lead)
 	# The call goes onto the LEAD, in the table every other call lands in, in THIS job — one background
 	# job places and logs, so the row and the call can never disagree about whether it happened.

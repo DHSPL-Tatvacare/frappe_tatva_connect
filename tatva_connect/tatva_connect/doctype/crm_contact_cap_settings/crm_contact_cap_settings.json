@@ -1,0 +1,40 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-01 12:00:00.000000",
+ "description": "A platform-level ceiling on how often ONE MOBILE NUMBER is contacted by the automation engine. Counts WhatsApp and voice together, over a rolling window. Email is not counted - a cap enforced on a number cannot have an address folded into it. Ships OFF.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "max_contacts",
+  "section_break_window",
+  "window_count",
+  "window_unit"
+ ],
+ "fields": [
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Cap how often one number is contacted", "default": "0", "description": "Off by default. While off nothing is counted and nothing is refused."},
+  {"fieldname": "max_contacts", "fieldtype": "Int", "label": "Most messages or calls to one number", "default": "5", "non_negative": 1, "description": "Between 1 and 20. WhatsApp and voice count together, because the cap is about how often a person is contacted, not about which channel did it."},
+  {"fieldname": "section_break_window", "fieldtype": "Section Break", "label": "Over what period"},
+  {"fieldname": "window_count", "fieldtype": "Int", "label": "Period", "default": "30", "non_negative": 1, "description": "The window is ROLLING: the last N days, counted back from now. A calendar month would let a patient be contacted the maximum on the last day of one month and the maximum again on the first day of the next."},
+  {"fieldname": "window_unit", "fieldtype": "Select", "label": "Unit", "options": "Days\nWeeks\nMonths", "default": "Days"}
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-01 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM Contact Cap Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "print": 1, "read": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"read": 1, "role": "Automation Manager", "write": 1}
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

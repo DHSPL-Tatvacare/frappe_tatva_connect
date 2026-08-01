@@ -69,6 +69,45 @@ def make_lead(**overrides):
 	}).insert(ignore_permissions=True)
 
 
+def whatsapp_account(name):
+	"""A WATI account a send can really route to. Returns its docname; the caller deletes it.
+
+	The channel number is derived from the account name so two suites cannot mint the same subscriber,
+	which is what makes a per-suite account safe to create and destroy.
+	"""
+	import hashlib
+
+	if frappe.db.exists("WhatsApp Account", name):
+		frappe.delete_doc("WhatsApp Account", name, force=True, ignore_permissions=True)
+	return frappe.get_doc({
+		"doctype": "WhatsApp Account", "account_name": name, "status": "Active",
+		"url": "https://live-mt-server.wati.io/000003", "token": "probe-token-never-real",
+		"custom_provider": "WATI",
+		"custom_wati_channel_number": f"9190{int(hashlib.md5(name.encode()).hexdigest(), 16) % 10**8:08d}",
+	}).insert(ignore_permissions=True).name  # authz-ok: tier-c — test fixture, no user input
+
+
+def whatsapp_template(name, account):
+	"""An APPROVED template row a send can resolve. Returns its docname; the caller deletes it.
+
+	`db_insert` bypasses the controller ON PURPOSE and it is not a shortcut: `WhatsAppTemplates.after_insert`
+	calls Meta's live API, so `doc.insert()` from a test would fire REAL provider traffic. The row is a
+	read-only catalogue entry mirrored from WATI, and in production it only ever lands this way too
+	(`templates_sync`) — so no rule-shaping hook is skipped; the hook avoided is an outbound network call.
+	"""
+	full_name = f"{name}-en"
+	if frappe.db.exists("WhatsApp Templates", full_name):
+		frappe.delete_doc("WhatsApp Templates", full_name, force=True, ignore_permissions=True)
+	doc = frappe.new_doc("WhatsApp Templates")
+	doc.update({
+		"template_name": name, "template": "<p>Hi</p>", "language_code": "en", "category": "UTILITY",
+		"whatsapp_account": account, "actual_name": name, "status": "APPROVED",
+	})
+	doc.name = full_name
+	doc.db_insert()
+	return full_name
+
+
 def make_workflow(name, nodes, entry=None, lifecycle_state="Active"):
 	"""Create a workflow and its nodes. Returns the workflow doc.
 
