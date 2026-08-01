@@ -19,7 +19,6 @@ from tatva_connect.automation import rules
 from tatva_connect.propagate import fail_safe
 from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 from tatva_connect.taxonomy import grain
-from tatva_connect.taxonomy.picklist import _LEAD_AXES
 from tatva_connect.workflow_engine import ENGINE_SWITCH, interpreter, registry, versions
 
 JOURNEY_DT = interpreter.JOURNEY_DT
@@ -77,7 +76,7 @@ def on_lead_grain_changed(doc, method=None):
 
 	Stopped and gone, never re-routed: the lead is picked up by the new grain's workflows the same way
 	enrolment already works, and a journey frozen against the grain it no longer has must not carry on.
-	The axes are read from the ONE declaration (`picklist._LEAD_AXES`), never restated here.
+	The axes are read from the schema (`grain.columns`), never restated here.
 
 	The guard is `get_doc_before_save()`, NOT `is_new()`/`has_value_changed()`: `has_value_changed` returns
 	True for EVERY field when there is no before-image (`document.py:684`), and `is_new()` is already False
@@ -88,7 +87,7 @@ def on_lead_grain_changed(doc, method=None):
 	before = doc.get_doc_before_save()
 	if not before or not _engine_may_run():
 		return
-	moved = [axis for axis in _LEAD_AXES if before.get(axis) != doc.get(axis)]
+	moved = [axis for axis in grain.columns("CRM Lead") if axis and before.get(axis) != doc.get(axis)]
 	if moved:
 		interpreter.stop_for_subject(doc.doctype, doc.name, f"Lead grain changed ({', '.join(moved)})")
 

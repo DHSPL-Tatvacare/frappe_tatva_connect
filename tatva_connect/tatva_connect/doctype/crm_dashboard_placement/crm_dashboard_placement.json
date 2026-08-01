@@ -6,7 +6,13 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": ["chart", "x", "y", "w", "h"],
+ "field_order": [
+  "chart",
+  "x",
+  "y",
+  "w",
+  "h"
+ ],
  "fields": [
   {
    "columns": 4,
@@ -65,7 +71,7 @@
  "modified": "2026-08-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
- "name": "CRM Dashboard Layout Chart",
+ "name": "CRM Dashboard Placement",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",

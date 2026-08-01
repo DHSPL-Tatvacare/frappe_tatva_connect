@@ -29,12 +29,13 @@ from frappe.tests.utils import FrappeTestCase
 
 _APP = pathlib.Path(frappe.get_app_path("tatva_connect"))
 
-# The feature is the package AND its two doctype controllers: a read written in a controller is the same
+# The feature is the package AND its doctype controllers: a read written in a controller is the same
 # read, and the lock claimed "no exceptions" while the controllers sat outside it.
+# `CRM Dashboard`'s controller is the override in `dashboard/overrides.py`, already inside the package.
 _MODULE = (
 	_APP / "dashboard",
 	_APP / "tatva_connect" / "doctype" / "crm_dashboard_chart",
-	_APP / "tatva_connect" / "doctype" / "crm_dashboard_layout",
+	_APP / "tatva_connect" / "doctype" / "crm_dashboard_placement",
 )
 
 # There is no allowlist. `grain_charts.py` and `team_charts.py` were the only two files that ever needed
@@ -69,7 +70,7 @@ class TestTheDashboardOnlyEverAsksGetList(FrappeTestCase):
 			if "tests" in path.parts:
 				continue
 			for lineno, what in _hits(ast.parse(path.read_text())):
-				hits.append(f"{path.relative_to(_MODULE.parent)}:{lineno}: {what}")
+				hits.append(f"{path.relative_to(_APP)}:{lineno}: {what}")
 		self.assertEqual(
 			hits,
 			[],

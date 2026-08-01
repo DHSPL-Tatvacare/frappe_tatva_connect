@@ -165,10 +165,9 @@ def _grain_filters(config):
 	The one matcher's semantic (`taxonomy.grain`), expressed as SQL rather than re-decided: an exact-tuple
 	comparison here is the defect that once hid 129 fields from 1,894 leads while every test stayed green.
 	"""
-	from tatva_connect.taxonomy.picklist import _LEAD_AXES
 
 	# Derived from the two tuples that already exist, never restated — `strict` goes red if they diverge.
-	columns = dict(zip(grain.AXES, _LEAD_AXES, strict=True))
+	columns = dict(zip(grain.AXES, grain.columns("CRM Lead"), strict=True))
 	return {
 		columns[axis]: (config.get(axis) or "").strip()
 		for axis in grain.AXES

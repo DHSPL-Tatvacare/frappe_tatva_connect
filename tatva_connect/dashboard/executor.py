@@ -15,25 +15,41 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now, nowdate
 
+from tatva_connect import tokens
 from tatva_connect.access import visibility
 
 _ROUTES = {"CRM Lead": "Leads", "CRM Task": "Tasks"}
 
-# Spelled like list_engine/derived.py's, because they are the same mechanism.
+# This surface's own vocabulary; the walker that applies it is shared with the list engine (tokens.py).
 _TOKENS = {"__TODAY__": nowdate, "__NOW__": now, "__SESSION_USER__": lambda: frappe.session.user}
-
-# The column each viewer filter narrows. The first one a list actually has wins; a list with none is skipped,
-# which is what lets one row of controls serve cards drawn from two different lists.
-_NARROWS = {
-	"vertical": ("custom_vertical",),
-	"program": ("custom_current_program",),
-	"user": ("lead_owner", "assigned_to"),
-}
 
 _GROUPED = ("donut", "bar")
 
-# The date range is applied by _window, the rest by _narrowing; together they are what a layout may expose.
-KNOWN_FILTERS = ("date_range", *_NARROWS)
+# A filter IS a fieldname. These two are not: a period is no column at all, and `user` means a different column per list.
+DATE_RANGE = "date_range"
+_ALIASES = {"user": ("lead_owner", "assigned_to")}
+
+# Wording for the two that have no field of their own; every other label is the field's own.
+_LABELS = {DATE_RANGE: "Period", "user": "Sales User"}
+
+
+def _columns(name):
+	return _ALIASES.get(name, (name,))
+
+
+def exposed_controls(names):
+	"""What the page draws above the cards: each control's name, its wording, and the lead column it narrows.
+	The browser renders what it is handed and holds no map of its own."""
+	meta = frappe.get_meta("CRM Lead")
+	controls = []
+	for name in names:
+		field = meta.get_field(name) if name not in _LABELS else None
+		controls.append({
+			"name": name,
+			"label": _(field.label if field else _LABELS.get(name, name)),
+			"column": field.fieldname if field else None,
+		})
+	return controls
 
 
 def is_gated(chart, user=None):
@@ -63,8 +79,7 @@ def run(chart, window=None, filters=None):
 	payload = envelope(chart)
 	if chart.chart_type in _GROUPED:
 		payload["points"] = _points(chart, _query(chart, query_filters, True), query_filters)
-	# Its own ungrouped query, never the sum of the points: those are capped at row_limit, so summing them
-	# would print a total disagreeing with the list this card's own drill opens.
+	# Its own ungrouped query, never the sum of the points: those are capped at row_limit and would disagree with the list this card's drill opens.
 	rows = _query(chart, query_filters, False)
 	payload["value"] = _measured(chart, rows[0].get("value") if rows else 0)
 	if cint(chart.drill_enabled):
@@ -73,23 +88,8 @@ def run(chart, window=None, filters=None):
 
 
 def _filters(chart, window, chosen):
-	base = _substitute(frappe.parse_json(chart.base_filters), _snapshot())
+	base = tokens.substitute(frappe.parse_json(chart.base_filters), tokens.snapshot(_TOKENS))
 	return {**base, **_narrowing(chart, chosen), **_window(chart, window)}
-
-
-def _snapshot():
-	"""The clock read once, so a figure and its drill filter cannot name different instants."""
-	return {token: read() for token, read in _TOKENS.items()}
-
-
-def _substitute(value, snap):
-	if isinstance(value, str):
-		return snap.get(value, value)
-	if isinstance(value, list | tuple):
-		return [_substitute(item, snap) for item in value]
-	if isinstance(value, dict):
-		return {key: _substitute(item, snap) for key, item in value.items()}
-	return value
 
 
 def _window(chart, window):
@@ -102,11 +102,14 @@ def _window(chart, window):
 
 
 def _narrowing(chart, chosen):
+	"""A chosen filter narrows the first of its columns this list actually has; a list with none is skipped,
+	which is what lets one row of controls serve cards drawn from two different lists."""
 	meta = frappe.get_meta(chart.source_doctype)
 	narrowed = {}
-	for name, columns in _NARROWS.items():
-		value = chosen.get(name)
-		column = next((c for c in columns if meta.get_field(c)), None) if value else None
+	for name, value in chosen.items():
+		if not value or name == DATE_RANGE:
+			continue
+		column = next((c for c in _columns(name) if meta.get_field(c)), None)
 		if column:
 			narrowed[column] = value
 	return narrowed

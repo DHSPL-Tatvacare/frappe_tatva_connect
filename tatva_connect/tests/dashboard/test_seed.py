@@ -21,8 +21,8 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.dashboard import declaration, seed
 
-CHART = "CRM Dashboard Chart"
-LAYOUT = "CRM Dashboard Layout"
+CHART = declaration.CHART
+LAYOUT = declaration.LAYOUT
 # The card under test. Any seeded card would do; this one is the simplest to reason about.
 SUBJECT = "total_leads"
 

@@ -17,6 +17,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from tatva_connect.taxonomy import grain
+
 _CAP = 50
 _MIN = 2
 
@@ -62,13 +64,10 @@ def _grain_from_form(filters):
 	read straight from the CRM Intake Form config. This is what stops cross-grain enumeration: the
 	`program`/`group`/`vertical` a scraper sends is simply never read."""
 	form = (_filters(filters).get("intake_form") or "").strip()
-	cfg = frappe.db.get_value(
-		"CRM Intake Form", form,
-		["enabled", "custom_vertical", "custom_group", "custom_current_program"], as_dict=True
-	) if form else None
-	if not cfg or not cfg.enabled:
+	enabled = frappe.db.get_value("CRM Intake Form", form, "enabled") if form else None
+	if not enabled:
 		frappe.throw(_("This form is not available."), frappe.PermissionError)
-	return {"vertical": cfg.custom_vertical, "group": cfg.custom_group, "program": cfg.custom_current_program}
+	return dict(zip(grain.AXES, grain.of("CRM Intake Form", form), strict=True))
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: public web-form autocomplete, read-only, server-scoped; never trusts a client grain (A.9)

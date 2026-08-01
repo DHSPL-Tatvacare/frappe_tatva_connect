@@ -19,6 +19,30 @@ AXES = ("vertical", "group", "program")
 # The master each axis is named by. A grain value is that master's PRIMARY KEY, never free text.
 _MASTER = {"vertical": "CRM Vertical", "group": "CRM Group", "program": "CRM Program"}
 
+_AXIS_OF = {master: axis for axis, master in _MASTER.items()}
+
+
+def columns(doctype="CRM Lead"):
+	"""Which column each axis lives in on `doctype`, in AXES order, `None` for an axis it does not carry.
+
+	READ FROM THE SCHEMA, never typed: a grain column is a Link to a grain master that frappe does not
+	exempt from User Permissions — which is exactly the set the framework already gates every query on. A
+	typed copy is a second statement of that, and the day the two disagree the framework wins in silence.
+	The history fields (custom_previous_program, custom_origin_vertical) are exempt and drop out on their own.
+	"""
+	found = {}
+	for field in frappe.get_meta(doctype).get("fields"):
+		if field.fieldtype == "Link" and field.options in _AXIS_OF and not field.ignore_user_permissions:
+			found.setdefault(_AXIS_OF[field.options], field.fieldname)
+	return tuple(found.get(axis) for axis in AXES)
+
+
+def of(doctype, name):
+	"""The (vertical, group, program) a record carries, blank for any axis it has no column for."""
+	wanted = [column for column in columns(doctype) if column]
+	row = (frappe.db.get_value(doctype, name, wanted, as_dict=True) or {}) if wanted else {}
+	return tuple((row.get(column) or "") if column else "" for column in columns(doctype))
+
 
 def same(a, b) -> bool:
 	"""Are these two grain axis values the same value?

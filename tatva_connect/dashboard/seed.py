@@ -23,13 +23,13 @@ import json
 import frappe
 from frappe.utils import cstr
 
-from tatva_connect.dashboard import declaration
+from tatva_connect.dashboard import declaration, executor
+from tatva_connect.taxonomy import grain
 
 # The three activity statuses that mean "still to do", named once and meant the same way in three cards.
 _OPEN = ["in", ["Backlog", "Todo", "In Progress"]]
 
-# What the Leads list itself shows (Leads.vue hardcodes it). A card that counted converted leads would open
-# a list that excludes them, so the card says it too — the figure and the list are one question.
+# What the Leads list itself shows: a card counting converted leads would open a list that excludes them, so the card says it too.
 _UNCONVERTED = {"converted": 0}
 
 
@@ -75,9 +75,7 @@ _CHARTS = [
 ]
 
 
-# h is in grid rows of `rowHeight` (60px). A chart tile must clear frappe-ui's own `min-h-[300px]` on its
-# ECharts container, so a chart is h=6 (360px) and never h=4 (240px) — at 240 the chart overflows its tile
-# and the ring is drawn into a box that is then clipped. A number card has no such minimum.
+# h is in 60px grid rows. A chart must clear frappe-ui's `min-h-[300px]`, so h=6 (360px) and never h=4 (240px), which clips the ring. A number card has no minimum.
 _PLACED = (
 	("total_leads", 0, 0, 2, 2),
 	("total_tasks", 2, 0, 2, 2),
@@ -91,15 +89,23 @@ _PLACED = (
 	("tasks_by_status", 0, 8, 12, 6),
 )
 
+
+def filters_shipped():
+	"""The controls a dashboard may offer: a period, the person, and one per grain column — and the grain
+	columns are READ FROM THE SCHEMA, so this cannot drift from what frappe actually gates on."""
+	return (executor.DATE_RANGE, "user", *(c for c in grain.columns("CRM Lead") if c))
+
+
 # Exactly one layout ships. A role with no row here has no dashboard, which is the answer, not a gap.
 _LAYOUTS = [
 	{
 		"role": "System Manager",
-		"title": "Dashboard",
+		# `CRM Dashboard` autonames on the title; nothing reads the name, so an operator may reword it.
+		"title": "System Manager Dashboard",
 		"enabled": 1,
 		"priority": 100,
 		"charts": [{"chart": name, "x": x, "y": y, "w": w, "h": h} for name, x, y, w, h in _PLACED],
-		"exposed_filters": json.dumps(["date_range", "vertical", "program", "user"]),
+		"exposed_filters": json.dumps(list(filters_shipped())),
 	}
 ]
 
@@ -108,6 +114,9 @@ def ensure_rows():
 	"""Idempotent: what our code depends on is asserted, and an operator's own arrangement is left alone."""
 	# skip-until-ready: an early caller can run before these doctypes sync; the after_migrate pass seeds then.
 	if not (frappe.db.table_exists(declaration.CHART) and frappe.db.table_exists(declaration.LAYOUT)):
+		return
+	# skip-until-ready: `role` is a custom field, so it lands at sync_fixtures — before after_migrate, not before a patch.
+	if not frappe.get_meta(declaration.LAYOUT).get_field("role"):
 		return
 	for row in _CHARTS:
 		if not frappe.db.exists(declaration.CHART, row["chart_name"]):
@@ -118,7 +127,7 @@ def ensure_rows():
 		if any(cstr(stored[field]) != cstr(declared[field]) for field in declaration.STRUCTURAL):
 			frappe.db.set_value(declaration.CHART, row["chart_name"], declared)  # authz-ok: tier-c — after_migrate, structural fields this app owns
 	for row in _LAYOUTS:
-		# A layout is placement, and placement is the operator's: seeded once and never re-imposed.
-		if not frappe.db.exists(declaration.LAYOUT, row["role"]) and frappe.db.exists("Role", row["role"]):
+		# Matched on the ROLE, never the name: the name is a title an operator may reword, and that is not a delete.
+		if not frappe.db.exists(declaration.LAYOUT, {"role": row["role"]}) and frappe.db.exists("Role", row["role"]):
 			frappe.get_doc({"doctype": declaration.LAYOUT, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
 	frappe.db.commit()

@@ -27,14 +27,13 @@ from frappe import _
 from frappe.utils import cint
 
 from tatva_connect.access import entitlement
+from tatva_connect.taxonomy import grain as grain_brain
 
 _CAP = 50
 _MIN = 2
 
-# CRM Picklist Value grain columns, in (vertical, group, program) order — the entitlement tuple shape.
-_AXES = ("vertical", "group", "program")
-# The lead's own grain axes (re-read server-side; never trust a client grain).
-_LEAD_AXES = ("custom_vertical", "custom_group", "custom_current_program")
+# The axis names, asked of the grain brain. The COLUMNS are read from the schema per call (grain.columns).
+_AXES = grain_brain.AXES
 
 
 def _filters(filters):
@@ -52,7 +51,7 @@ def _grain_from_lead(lead):
 	_grain_from_axes / the Smart View clamp) — else cross-grain options could be enumerated."""
 	doc = frappe.get_doc("CRM Lead", lead)
 	doc.check_permission("read")
-	grain = tuple((doc.get(f) or "") for f in _LEAD_AXES)
+	grain = tuple((doc.get(column) or "") for column in grain_brain.columns("CRM Lead"))
 	if not entitlement.grain_entitled(grain):
 		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
 	return grain

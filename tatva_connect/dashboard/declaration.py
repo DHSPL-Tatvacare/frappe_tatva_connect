@@ -1,10 +1,12 @@
 # Copyright (c) 2026, TatvaCare and contributors
 # For license information, please see license.txt
 
-"""What a dashboard IS: the two doctypes, their fields, and the one door that reads them.
+"""What a dashboard IS: the doctypes it spans, their fields, and the one door that reads them.
 
 Every other module here asks this one. STRUCTURAL is what our code depends on, so the seed asserts it on
 every migrate; PRESENTATION is the operator's wording, seeded once and never re-imposed.
+
+LAYOUT is the crm SPA's own `CRM Dashboard`, extended by custom fields — there is no second one beside it.
 """
 
 import frappe
@@ -12,8 +14,8 @@ from frappe import _
 from frappe.utils import escape_html
 
 CHART = "CRM Dashboard Chart"
-LAYOUT = "CRM Dashboard Layout"
-PLACEMENT_DOCTYPE = "CRM Dashboard Layout Chart"
+LAYOUT = "CRM Dashboard"
+PLACEMENT_DOCTYPE = "CRM Dashboard Placement"
 
 STRUCTURAL = (
 	"chart_type",

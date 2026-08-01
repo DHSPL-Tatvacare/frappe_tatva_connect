@@ -4,7 +4,7 @@
 from frappe.model.document import Document
 
 
-class CRMDashboardLayoutChart(Document):
+class CRMDashboardPlacement(Document):
 	"""A pointer at a card and where it sits. Its Link is validated by frappe, so there is nothing here."""
 
 	pass

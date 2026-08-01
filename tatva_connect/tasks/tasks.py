@@ -4,7 +4,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
@@ -325,14 +325,7 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 def _lead_axes(doc):
 	"""(vertical, group, program) of the linked lead, or blanks if not lead-linked."""
 	if doc.reference_doctype == "CRM Lead" and doc.reference_docname:
-		v = frappe.db.get_value(
-			"CRM Lead",
-			doc.reference_docname,
-			["custom_vertical", "custom_group", "custom_current_program"],
-			as_dict=True,
-		)
-		if v:
-			return (v.custom_vertical or ""), (v.custom_group or ""), (v.custom_current_program or "")
+		return grain.of("CRM Lead", doc.reference_docname)
 	return "", "", ""
 
 

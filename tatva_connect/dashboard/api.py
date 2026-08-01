@@ -15,9 +15,7 @@ from frappe.utils import get_first_day, get_last_day, getdate, nowdate
 
 from tatva_connect.dashboard import declaration, executor, resolver
 
-# Ten aggregates over millions of rows cannot be made instant by indexing — the rows still have to be
-# counted. So the first viewer of a given question pays for it and everyone else reads Redis, which is what
-# frappe's own BI tool does by default. Short, because a dashboard that lies for long is worse than a slow one.
+# The first viewer of a question pays for it and everyone else reads Redis; short, because a dashboard that lies for long is worse than a slow one.
 _CACHE_TTL = 300
 
 
@@ -27,7 +25,7 @@ def get_dashboard(from_date=None, to_date=None, filters=None):
 	if not layout:
 		return {"configured": False, "charts": [], "filters": []}
 	window = _window(from_date, to_date)
-	exposed = frappe.parse_json(layout["exposed_filters"])
+	exposed = frappe.parse_json(layout["exposed_filters"] or "[]")
 	chosen = _chosen(filters, exposed)
 	key = _cache_key(layout, window, chosen)
 	payload = frappe.cache.get_value(key)
@@ -41,8 +39,7 @@ def _cache_key(layout, window, chosen):
 	"""The user, because the row gate differs per person, and the question that was asked. An operator's
 	edit does not need to appear here: saving a card or a layout retires the whole namespace."""
 	question = frappe.as_json([layout["name"], window, chosen], indent=None)
-	# A digest, not frappe.generate_hash: that one ignores its argument and returns a random value, so every
-	# request minted a new key — the cache never hit and Redis grew a key per request.
+	# Not redis_cache: it keys on hash(args), which is stable for no-arg and numeric calls but NOT for text, and every arg here is text — so each worker would cache separately.
 	digest = hashlib.blake2b(question.encode(), digest_size=8).hexdigest()
 	return f"{declaration.CACHE_PREFIX}{frappe.session.user}:{digest}"
 
@@ -53,7 +50,7 @@ def _build(layout, window, exposed, chosen):
 	return {
 		"configured": True,
 		"title": layout["title"] or "",
-		"filters": exposed,
+		"filters": executor.exposed_controls(exposed),
 		"charts": [
 			_card(placement, declared[placement["chart"]], window, chosen)
 			for placement in placements

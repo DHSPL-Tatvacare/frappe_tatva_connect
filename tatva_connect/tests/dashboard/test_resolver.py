@@ -23,10 +23,10 @@ import json
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.dashboard import resolver
+from tatva_connect.dashboard import declaration, resolver
 
-CHART = "CRM Dashboard Chart"
-LAYOUT = "CRM Dashboard Layout"
+CHART = declaration.CHART
+LAYOUT = declaration.LAYOUT
 PROBE_CHART = "probe_resolver_card"
 PROBE_USER = "probe-resolver@tatvacare.test"
 # Deliberately named so `role asc` puts "Alpha" first — the tie-break has to be readable in the test.
@@ -63,7 +63,7 @@ class ResolverCase(FrappeTestCase):
 		self._clear()
 
 	def _clear(self):
-		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT})
+		frappe.db.delete(declaration.PLACEMENT_DOCTYPE, {"parenttype": LAYOUT})
 		frappe.db.delete(LAYOUT, {"role": ["in", [ALPHA, BETA]]})
 		frappe.db.delete("Has Role", {"role": ["in", [ALPHA, BETA]]})
 		frappe.db.delete("User", {"name": PROBE_USER})

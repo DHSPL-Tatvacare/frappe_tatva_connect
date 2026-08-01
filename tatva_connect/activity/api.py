@@ -16,7 +16,7 @@ from frappe import _
 from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
 
@@ -204,12 +204,9 @@ def set_schema_field(task, task_type, fieldname, value):
 
 
 def _lead_axes(lead):
-	v = frappe.db.get_value(
-		"CRM Lead", lead, ["custom_vertical", "custom_group", "custom_current_program"], as_dict=True
-	)
-	if not v:
+	if not frappe.db.exists("CRM Lead", lead):
 		frappe.throw(_("Lead {0} not found").format(lead))
-	return (v.custom_vertical or ""), (v.custom_group or ""), (v.custom_current_program or "")
+	return grain.of("CRM Lead", lead)
 
 
 def _grain_of(task_type):

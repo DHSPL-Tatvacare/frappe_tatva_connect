@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "field:chart_name",
  "creation": "2026-07-31 00:00:00.000000",
- "description": "One card on a dashboard, declared rather than programmed. The row says which list the number is counted from, what it is grouped by, which date column the dashboard's date range applies to and which rows are in scope before the range is applied \u2014 and one executor turns that into an ordinary list query. Because it is the SAME query the list itself runs, the number on the card and the number of rows behind it are the same answer, and every card is already narrowed to what the person looking at it is allowed to see. Nothing here grants or widens access. A chart is placed on a dashboard by a Dashboard Layout row, which points at this one by name, so editing a chart once changes it for every role that shows it.",
+ "description": "One card on a dashboard, declared rather than programmed. The row says which list the number is counted from, what it is grouped by, which date column the dashboard's date range applies to and which rows are in scope before the range is applied — and one executor turns that into an ordinary list query. Because it is the SAME query the list itself runs, the number on the card and the number of rows behind it are the same answer, and every card is already narrowed to what the person looking at it is allowed to see. Nothing here grants or widens access. A chart is placed by a CRM Dashboard, which points at this one by name, so editing a chart once changes it for every role that shows it.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -30,7 +30,7 @@
  ],
  "fields": [
   {
-   "description": "The short name a Dashboard Layout points at, in lower case letters, digits and underscores \u2014 for example leads_by_source. It cannot be changed once saved, because every layout showing this card names it by this word and would be left pointing at nothing.",
+   "description": "The short name a CRM Dashboard points at, in lower case letters, digits and underscores — for example leads_by_source. It cannot be changed once saved, because every dashboard showing this card names it by this word and would be left pointing at nothing.",
    "fieldname": "chart_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -54,7 +54,7 @@
   },
   {
    "default": "1",
-   "description": "A card that is not ticked is skipped everywhere \u2014 it is on no dashboard and is never queried, even where a layout still names it. This is how a card is taken down without editing every layout that shows it.",
+   "description": "A card that is not ticked is skipped everywhere — it is on no dashboard and is never queried, even where a layout still names it. This is how a card is taken down without editing every layout that shows it.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -89,7 +89,7 @@
    "reqd": 1
   },
   {
-   "description": "The figure itself, and \u2014 for a donut or a bar \u2014 the column it is broken down by.",
+   "description": "The figure itself, and — for a donut or a bar — the column it is broken down by.",
    "fieldname": "measure_section",
    "fieldtype": "Section Break",
    "label": "What Is Measured"
@@ -121,7 +121,7 @@
   },
   {
    "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "An optional column to SHOW instead of the grouped value, and it may reach through a link \u2014 lead_owner.full_name shows a person's name where the group is their login. It changes the words on the slice and nothing else; the drill-down always filters on the grouped value itself.",
+   "description": "An optional column to SHOW instead of the grouped value, and it may reach through a link — lead_owner.full_name shows a person's name where the group is their login. It changes the words on the slice and nothing else; the drill-down always filters on the grouped value itself.",
    "fieldname": "label_field",
    "fieldtype": "Data",
    "label": "Label Field"
@@ -141,21 +141,21 @@
    "label": "Which Records Count"
   },
   {
-   "description": "The date column the dashboard's date range is applied to \u2014 creation, modified, due_date and so on. Different cards honestly date from different columns, so each one says which is its own.",
+   "description": "The date column the dashboard's date range is applied to — creation, modified, due_date and so on. Different cards honestly date from different columns, so each one says which is its own.",
    "fieldname": "date_field",
    "fieldtype": "Data",
    "label": "Date Field"
   },
   {
    "default": "1",
-   "description": "Ticked, the card answers for the chosen date range. Unticked it is a snapshot of right now and ignores the range entirely \u2014 which is what a card like Overdue Activities means, and saying so here is what stops a dashboard quietly mixing the two.",
+   "description": "Ticked, the card answers for the chosen date range. Unticked it is a snapshot of right now and ignores the range entirely — which is what a card like Overdue Activities means, and saying so here is what stops a dashboard quietly mixing the two.",
    "fieldname": "honours_date_range",
    "fieldtype": "Check",
    "label": "Honours Date Range"
   },
   {
    "default": "{}",
-   "description": "The rows this card is about, as an ordinary filter object \u2014 {\"status\": [\"in\", [\"Backlog\", \"Todo\"]]}. Three words stand for the moment the dashboard is opened rather than the moment this row was saved: __TODAY__, __NOW__ and __SESSION_USER__. This narrows the card; it can never widen it, because what a person may see is decided before this is read.",
+   "description": "The rows this card is about, as an ordinary filter object — {\"status\": [\"in\", [\"Backlog\", \"Todo\"]]}. Three words stand for the moment the dashboard is opened rather than the moment this row was saved: __TODAY__, __NOW__ and __SESSION_USER__. This narrows the card; it can never widen it, because what a person may see is decided before this is read.",
    "fieldname": "base_filters",
    "fieldtype": "Code",
    "label": "Base Filters (JSON)",

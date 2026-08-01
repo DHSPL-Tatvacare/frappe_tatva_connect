@@ -878,5 +878,53 @@
   "property_type": "Text",
   "row_name": null,
   "value": "Duplicate\nFailure\nForm Questions Changed\nForm Without A Source\nSynced\nUnconfigured Form"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Dashboard",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "layout",
+  "is_system_generated": 1,
+  "modified": "2026-08-01 00:00:00",
+  "module": null,
+  "name": "CRM Dashboard-layout-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Dashboard",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "user",
+  "is_system_generated": 1,
+  "modified": "2026-08-01 00:00:00",
+  "module": null,
+  "name": "CRM Dashboard-user-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Dashboard",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "private",
+  "is_system_generated": 1,
+  "modified": "2026-08-01 00:00:00",
+  "module": null,
+  "name": "CRM Dashboard-private-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]

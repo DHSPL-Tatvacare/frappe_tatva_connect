@@ -27,9 +27,10 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.dashboard import api, declaration
 
-CHART = "CRM Dashboard Chart"
-LAYOUT = "CRM Dashboard Layout"
+CHART = declaration.CHART
+LAYOUT = declaration.LAYOUT
 PROBE_ROLE = "Probe Dash Api"
+PROBE_TITLE = "Probe Dashboard"
 PROBE_USER = "probe-api@tatvacare.test"
 STRANGER = "probe_api_unplaced"
 GOOD = "probe_api_good"
@@ -80,9 +81,9 @@ class ApiCase(FrappeTestCase):
 		frappe.set_user("Administrator")
 
 	def _clear(self):
-		# db.delete does not cascade to child rows, and `format:{role}` remints the same parent name — so
-		# without this the next layout inherits the last one's placements.
-		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT, "parent": PROBE_ROLE})
+		# db.delete does not cascade to child rows, and `field:title` remints the same parent name — so
+		# without this the next dashboard inherits the last one's placements.
+		frappe.db.delete(declaration.PLACEMENT_DOCTYPE, {"parenttype": LAYOUT, "parent": PROBE_TITLE})
 		frappe.db.delete(LAYOUT, {"role": PROBE_ROLE})
 		frappe.db.delete("Has Role", {"role": PROBE_ROLE})
 		frappe.db.delete("User", {"name": PROBE_USER})
@@ -100,7 +101,7 @@ class ApiCase(FrappeTestCase):
 			{
 				"doctype": LAYOUT,
 				"role": PROBE_ROLE,
-				"title": "Probe Dashboard",
+				"title": PROBE_TITLE,
 				"enabled": 1,
 				"priority": 500,
 				"charts": [{"chart": name, "x": i * 2, "y": 0, "w": 2, "h": 2} for i, name in enumerate(charts)],
@@ -146,7 +147,11 @@ class TestTheDashboardIsTheCallersOwn(ApiCase):
 	def test_the_exposed_filters_are_the_layouts_own(self):
 		self._seed_layout(GOOD)
 		self._as_probe()
-		self.assertEqual(api.get_dashboard()["filters"], ["date_range"])
+		# The payload is what the page DRAWS: name, wording and the column it narrows — decided server-side.
+		self.assertEqual(
+			api.get_dashboard()["filters"],
+			[{"name": "date_range", "label": "Period", "column": None}],
+		)
 
 
 class TestOneCardCannotTakeTheDashboardDown(ApiCase):

@@ -35,8 +35,7 @@ def _resolve(user):
 	)
 	if not rows:
 		return None
-	# get_list settles WHICH layout wins; the placements are child rows, and loading the document is how
-	# frappe reads those. Cached, and an operator's save invalidates it — no second cache to keep in step.
+	# get_list settles WHICH layout wins; the cards are child rows and loading the doc is how frappe reads those. Cached; an operator's save invalidates it.
 	doc = frappe.get_cached_doc(declaration.LAYOUT, rows[0]["name"])
 	layout = dict(rows[0])
 	layout["charts"] = [

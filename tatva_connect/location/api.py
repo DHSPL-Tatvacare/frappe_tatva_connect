@@ -22,7 +22,7 @@ from frappe import _
 from frappe.utils import cint, flt, format_datetime
 
 from tatva_connect import automation
-from tatva_connect.taxonomy import labels
+from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -61,12 +61,7 @@ ANCHOR_MANAGER = "Manager Re-anchor"
 
 
 def _lead_axes(lead):
-	v = frappe.db.get_value(
-		"CRM Lead", lead, ["custom_vertical", "custom_group", "custom_current_program"], as_dict=True
-	)
-	if not v:
-		return "", "", ""
-	return (v.custom_vertical or ""), (v.custom_group or ""), (v.custom_current_program or "")
+	return grain.of("CRM Lead", lead)
 
 
 def is_location_tracked(lead):

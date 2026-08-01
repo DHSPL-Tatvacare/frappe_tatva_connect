@@ -3,7 +3,7 @@
 """Create Lead: the grain axis fields are hidden server-side (GrainSelect stamps them), a section left with nothing visible hides itself, and mobile is marked required. Hidden, never removed — the layout editor saves `field.fieldname` back, so removing here would erase the row."""
 import frappe
 
-from tatva_connect.taxonomy.picklist import _LEAD_AXES
+from tatva_connect.taxonomy import grain
 
 
 @frappe.whitelist()
@@ -22,7 +22,7 @@ def get_fields_layout(doctype: str, type: str, parent_doctype: str | None = None
 			for field in fields:
 				if field["fieldname"] == "mobile_no":
 					field["reqd"] = 1
-				if hide_grain and field["fieldname"] in _LEAD_AXES:
+				if hide_grain and field["fieldname"] in grain.columns("CRM Lead"):
 					field["hidden"] = 1
 			if not any(not f.get("hidden") for f in fields):
 				section["hidden"] = True

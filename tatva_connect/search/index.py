@@ -23,7 +23,6 @@ from tatva_connect.automation.settings import is_enabled
 from tatva_connect.phone import match_digits
 from tatva_connect.propagate import fail_safe
 from tatva_connect.taxonomy import labels
-from tatva_connect.taxonomy.picklist import _LEAD_AXES
 
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.
 TOGGLE = "Search::Index::indexing"
@@ -68,9 +67,10 @@ _IDENTIFIERS = (
 	("prospect_id", "custom_lsq_prospect_id", "text"),
 )
 
-# The lead's grain axes, in the order the row shows them; the FIELDNAMES are the picklist brain's own lead axes,
-# imported not restated (taxonomy/picklist.py:37) — `strict` is what makes a drift in either list a crash, not a bug.
-_AXES = tuple(zip(("vertical", "lead_group", "program"), _LEAD_AXES, strict=True))
+# The lead's grain axes, in the order the row shows them. STATIC on purpose: this defines a persistent sqlite
+# schema that is read at import, and deriving it from `get_meta` here would run before a fresh install's custom
+# fields exist and write null columns. `tests/search/test_indexed_columns` locks it to `grain.columns("CRM Lead")`.
+_AXES = (("vertical", "custom_vertical"), ("lead_group", "custom_group"), ("program", "custom_current_program"))
 
 # Every CRM Lead field prepare_document consumes, derived from the two declarations above so it cannot drift.
 # This is ONE list doing TWO jobs, which is the whole point: the framework SELECTs it for the batch build AND

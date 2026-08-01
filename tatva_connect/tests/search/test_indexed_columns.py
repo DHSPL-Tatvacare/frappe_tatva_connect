@@ -335,3 +335,19 @@ class TestIndexedColumns(FrappeTestCase):
 		current = engine.schema_fingerprint()
 		with patch.object(CRMLeadSearch, "INDEXABLE_DOCTYPES", OLD_DOCTYPES):
 			self.assertNotEqual(current, CRMLeadSearch().schema_fingerprint())
+
+
+class TestTheIndexAxesMatchTheSchema(FrappeTestCase):
+	"""`index._AXES` is a static declaration because it defines a sqlite schema read at import — deriving it
+	from `get_meta` there would run before a fresh install's custom fields exist. This is the lock that makes
+	the copy safe: it must equal what the schema actually enforces the grain to be."""
+
+	def test_the_declared_axis_columns_are_the_ones_frappe_gates_on(self):
+		from tatva_connect.search import index
+		from tatva_connect.taxonomy import grain
+
+		self.assertEqual(
+			tuple(column for _axis, column in index._AXES),
+			grain.columns("CRM Lead"),
+			"index._AXES has drifted from the grain columns the schema declares",
+		)

@@ -20,12 +20,13 @@ import json
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.dashboard import executor
+from tatva_connect.dashboard import declaration, seed
 
-CHART = "CRM Dashboard Chart"
-LAYOUT = "CRM Dashboard Layout"
+CHART = declaration.CHART
+LAYOUT = declaration.LAYOUT
 PROBE_CHART = "probe_layout_card"
 PROBE_ROLE = "Probe Dashboard Role"
+PROBE_TITLE = "Probe Dashboard"
 
 
 def _placed(chart=PROBE_CHART, **overrides):
@@ -58,7 +59,7 @@ class LayoutDeclarationCase(FrappeTestCase):
 		self._clear()
 
 	def _clear(self):
-		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT, "parent": PROBE_ROLE})
+		frappe.db.delete(declaration.PLACEMENT_DOCTYPE, {"parenttype": LAYOUT, "parent": PROBE_TITLE})
 		frappe.db.delete(LAYOUT, {"role": PROBE_ROLE})
 		frappe.db.delete(CHART, {"chart_name": ["like", "probe_layout%"]})
 		frappe.db.delete("Role", {"name": PROBE_ROLE})
@@ -67,7 +68,7 @@ class LayoutDeclarationCase(FrappeTestCase):
 		row = {
 			"doctype": LAYOUT,
 			"role": PROBE_ROLE,
-			"title": "Probe Dashboard",
+			"title": PROBE_TITLE,
 			"enabled": 1,
 			"priority": 0,
 			"charts": [_placed()],
@@ -85,7 +86,8 @@ class LayoutDeclarationCase(FrappeTestCase):
 class TestALayoutOnlyPointsAtCardsThatExist(LayoutDeclarationCase):
 	def test_a_sound_layout_saves(self):
 		doc = self._layout().insert(ignore_permissions=True)
-		self.assertEqual(doc.name, PROBE_ROLE)
+		# `CRM Dashboard` autonames on the title; the role is a field, never the key.
+		self.assertEqual(doc.name, PROBE_TITLE)
 
 	def test_a_card_that_does_not_exist_is_refused_by_name(self):
 		"""A placement is a Link, so this is frappe's own refusal — proved here because the whole shape
@@ -113,9 +115,8 @@ class TestExposedFiltersAreOnesThatDoSomething(LayoutDeclarationCase):
 	def test_exposed_filters_that_are_not_a_list_are_refused(self):
 		self.assertTrue(self._refused(exposed_filters=json.dumps({"date_range": True})))
 
-	def test_every_known_filter_is_accepted(self):
-		doc = self._layout(exposed_filters=json.dumps(list(executor.KNOWN_FILTERS))).insert(
-			ignore_permissions=True
-		)
-		self.assertEqual(frappe.parse_json(doc.exposed_filters), list(executor.KNOWN_FILTERS))
+	def test_every_shipped_filter_is_accepted(self):
+		shipped = list(seed.filters_shipped())
+		doc = self._layout(exposed_filters=json.dumps(shipped)).insert(ignore_permissions=True)
+		self.assertEqual(frappe.parse_json(doc.exposed_filters), shipped)
 
