@@ -25,7 +25,7 @@ from tatva_connect.automation import sends
 from tatva_connect.voice import channel
 
 _ACCOUNT = "voice-killswitch-probe"
-_GOOD = "+919059067237"
+_GOOD = "+919876543210"
 _TOKEN = "run-ks::voice-1"
 
 
@@ -89,7 +89,7 @@ class TestTheVoiceChannelSwitchStopsOutbound(FrappeTestCase):
 		"""The E.164 refusal sits IN FRONT of both gates and stays there: a number that cannot be known
 		correct is refused on its own terms, not because a switch happened to be off."""
 		with patch("tatva_connect.voice.channel.is_enabled", return_value=True):
-			output, result, post, _enqueue = self._send(number="9059067237")
+			output, result, post, _enqueue = self._send(number="9876543210")
 		self.assertEqual(output, sends.FAILED)
 		self.assertIn("country code", result)
 		post.assert_not_called()

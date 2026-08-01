@@ -7,12 +7,12 @@
                                             refuses a number that is not real anywhere (libphonenumber)
   SEND   `Declaration.conform_number`       what THIS provider will accept on the wire
 
-They live apart on purpose. STORE produces `+919059067237`; WATI REJECTS that, because its sends put the
+They live apart on purpose. STORE produces `+919876543210`; WATI REJECTS that, because its sends put the
 number into a URL where `+` decodes as a space. Merging store and send is how a patient's message reaches
-a stranger in another country a second time, in a nicer wrapper.
+someone else in another country, in a nicer wrapper.
 
 MATCH is not an address and must never be used as one. It flattens `+91-7753022190` and a bare
-`9059067237` to digits, so two numbers a provider would DIAL DIFFERENTLY compare equal here. That is
+`9876543210` to digits, so two numbers a provider would DIAL DIFFERENTLY compare equal here. That is
 correct for lining an inbound event up against a stored number, and catastrophic on a send.
 
 This module sits above both domains because both call it: WhatsApp matches an inbound `waId` against a
@@ -21,7 +21,7 @@ import the other to shape a number.
 
 THE WORD "normalize" IS BANNED FOR PHONE NUMBERS. Three functions were called `normalize_number` /
 `phone_digits`; one of them claimed E.164 in its docstring and returned bare digits, and every caller
-believed the docstring. That is the sentence that cost a real misdelivery on 2026-07-21.
+believed the docstring. That sentence cost a real misdelivery.
 """
 import re
 

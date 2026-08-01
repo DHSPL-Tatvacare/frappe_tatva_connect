@@ -46,7 +46,7 @@ CAPABILITIES = (
 	"recording",
 )
 
-# How a provider spells a phone number ON THE WIRE. `+919059067237`, `919059067237` and `9059067237` are the same subscriber and no two providers agree on which to accept — WATI puts the number in a URL query (`?whatsappNumber=`), where a `+` decodes as a space; a voice provider wants the `+`. The format is therefore a fact about the PROVIDER and it is declared, never resolved centrally.
+# How a provider spells a phone number ON THE WIRE. `+919876543210`, `919876543210` and `9876543210` are the same subscriber and no two providers agree on which to accept — WATI puts the number in a URL query (`?whatsappNumber=`), where a `+` decodes as a space; a voice provider wants the `+`. The format is therefore a fact about the PROVIDER and it is declared, never resolved centrally.
 E164_PLUS = "e164_plus"
 E164_PLAIN = "e164_plain"
 NATIONAL = "national"
@@ -197,13 +197,13 @@ class Declaration:
 	def conform_number(self, number) -> str | None:
 		"""This number as THIS provider spells it, or None when it cannot be known to be right.
 
-		THE DEFECT THIS EXISTS TO DELETE. A lead's number was stored `9059067237` — a bare Indian
-		10-digit — and the send path reduced it with a `\\D`-strip that called itself E.164. WATI read the
-		leading `90` as Turkey's dialling code and a real patient message reached a stranger in Turkey.
-		Nothing in the system had declared a country, so the PROVIDER guessed one.
+		THE DEFECT THIS EXISTS TO DELETE. A lead's number was stored as a bare Indian 10-digit and the
+		send path reduced it with a `\\D`-strip that called itself E.164. WATI resolved the dialling plan
+		itself, read the leading digits as a country code, and the message reached a different subscriber
+		in another country. Nothing in the system had declared a country, so the PROVIDER guessed one.
 
-		The leading `+` is the ONLY in-band evidence that a country code is present: `919059067237` and
-		`9059067237` are both just digits, and deciding which is which means guessing a dialling plan.
+		The leading `+` is the ONLY in-band evidence that a country code is present: `919876543210` and
+		`9876543210` are both just digits, and deciding which is which means guessing a dialling plan.
 		So the judgement is symmetric and nothing is inferred in either direction — a `+`-carrying number
 		satisfies the two E.164 spellings and is REFUSED for `NATIONAL`, because a country code cannot be
 		stripped off without knowing how many digits it occupies; a plus-less number satisfies `NATIONAL`

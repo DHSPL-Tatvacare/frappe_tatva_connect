@@ -9,11 +9,11 @@ doing byte-identical work in three modules.
   STORE  `whatsapp.phone.to_e164`              the canonical `+91…` a row is saved as
   SEND   `Declaration.conform_number`          what THIS provider accepts on the wire
 
-STORE and SEND must never merge. The stored form `+919059067237` is exactly what WATI rejects — its
-sends put the number in a URL where `+` decodes as a space. Merging them is how Turkey happens again in
+STORE and SEND must never merge. The stored form `+919876543210` is exactly what WATI rejects — its
+sends put the number in a URL where `+` decodes as a space. Merging them is how a wrong-country send happens again in
 a nicer wrapper.
 
-MATCH must never be used as an address. It flattens `+91-7753022190` and a bare `9059067237` to the same
+MATCH must never be used as an address. It flattens `+91-7753022190` and a bare `9876543210` to the same
 digits, which is precisely the ambiguity that let a provider guess a country.
 
 THE WORD IS BANNED BECAUSE THE WORD IS WHAT HID THE BUG. `normalize_number` claimed E.164 in its
@@ -55,20 +55,20 @@ class TestTheThreeJobsStaySeparate(unittest.TestCase):
 	def test_store_and_send_disagree_on_purpose(self):
 		"""The stored form carries `+`; WATI's wire form must not. If these ever return the same string
 		for WATI, someone has merged the two and the plus will reach a URL query as a space."""
-		stored = store.to_e164("9059067237")
+		stored = store.to_e164("9876543210")
 		wire = contract.declare(
 			channel="whatsapp", provider="Probe", account_doctype="WhatsApp Account",
 			outcomes={"sent"}, capabilities={"templates"}, number_format=contract.E164_PLAIN,
 		).conform_number(stored)
 
-		self.assertEqual(stored, "+919059067237")
-		self.assertEqual(wire, "919059067237")
+		self.assertEqual(stored, "+919876543210")
+		self.assertEqual(wire, "919876543210")
 		self.assertNotEqual(stored, wire, "store and send are different questions and must stay separate")
 
 	def test_match_is_not_an_address(self):
 		"""MATCH flattens the ambiguity SEND exists to refuse. Proven, so nobody 'simplifies' one into
 		the other: the same match key comes from two numbers a provider would dial differently."""
-		self.assertEqual(phone.match_digits("9059067237"), phone.match_digits("+9059067237"))
+		self.assertEqual(phone.match_digits("9876543210"), phone.match_digits("+9876543210"))
 
 
 class TestTheWordIsGone(unittest.TestCase):

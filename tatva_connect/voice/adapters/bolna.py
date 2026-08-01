@@ -17,7 +17,7 @@ the defect WATI's message-row correlation has to live with because WATI echoes n
 
 THE NUMBER FORMAT IS DECLARED, NOT CODED. `number_format=E164_PLUS`: Bolna sits on Twilio/Plivo and needs
 `+<country><national>`. There is NO formatter in this adapter — `Declaration.conform_number` is the ONE
-brain, exactly as WhatsApp, and it REFUSES an uncountried number (the voice form of the Turkey disaster).
+brain, exactly as WhatsApp, and it REFUSES an uncountried number (the voice form of the same defect).
 """
 import csv as _csv
 import io as _io

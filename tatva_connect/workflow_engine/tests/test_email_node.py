@@ -14,7 +14,7 @@ template chain. So the node asks the same three questions Send WhatsApp asks:
 
 `free_text` is deleted, not merely unset. While the mechanism existed a future author could re-open the
 typed-literal hole: `resolve_recipient` treated a phone-shaped string as an address to send to, which is
-the same class of hole as the typed number that reached a stranger in Turkey.
+the same class of hole as the typed number that reached the wrong subscriber.
 
 THE ONE REAL DIFFERENCE from WhatsApp is the slot source, and it is a TWIN rather than a special case:
 WhatsApp templates carry positional `{{1}}` slots the provider declares, while an `Email Template` carries

@@ -507,7 +507,7 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 
 	`contact_email` is resolved as a PURE reference. The old `resolve_recipient` is deleted rather than
 	reused: it treated anything that did not look namespaced as a literal address, so a typed string was
-	mailed as-is. That is the same hole as the typed phone number that reached a stranger in Turkey.
+	mailed as-is. That is the same hole as the typed phone number that reached the wrong subscriber.
 
 	No `now=True`: `frappe.sendmail` only inserts an Email Queue row, a normal DB write that rides the
 	rule's own segment transaction, so a rolled-back segment sends nothing.
@@ -632,7 +632,7 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 	if not number:
 		return FAILED, f"failed: {contact_number or 'no recipient'} resolved to no number for lead {subject_lead}"
 
-	# Turkey-disaster prevention, voice form. `conform_number` is the ONE brain (the provider's declared
+	# Wrong-country prevention, voice form. `conform_number` is the ONE brain (the provider's declared
 	# `number_format`); a number with no country code cannot be known correct and is refused before any gate.
 	from tatva_connect.voice.adapters import bolna
 

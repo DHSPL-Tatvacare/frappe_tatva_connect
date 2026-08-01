@@ -5,9 +5,9 @@
 Two defects, one gate, because they are the same defect: a rule that exists in the send path's head
 rather than in one place every surface must go through.
 
-D1 — THE NUMBER. On 2026-07-21 a live trial delivered a real patient's message to a STRANGER IN TURKEY:
-the lead's number was stored `9059067237`, the send path reduced it with a `\\D`-strip, and WATI read the
-leading `90` as Turkey's dialling code. Chunk 1 fixed the WORKFLOW path only. A rep pressing Send in the
+D1 — THE NUMBER. A number stored without a country code is ambiguous, and the send path reduced it
+further with a `\\D`-strip. WATI resolves the dialling plan itself, so it read the leading digits as a
+country code and the message reached a different subscriber. Chunk 1 fixed the WORKFLOW path only. A rep pressing Send in the
 lead's WhatsApp tab, a notification, and a bulk campaign all still went straight to the provider with an
 ambiguous number.
 
@@ -44,10 +44,10 @@ _ACCOUNT = "Send-gate-probe-account"
 _TEMPLATE = "send-gate-probe"
 _GRAIN = GRAINS[2]
 
-# The number that really went to Turkey, and the canonical form of the same subscriber.
-_BARE = "9059067237"
-_CANONICAL = "+919059067237"
-_WIRE = "919059067237"
+# A bare 10-digit number and the canonical form of the same subscriber.
+_BARE = "9876543210"
+_CANONICAL = "+919876543210"
+_WIRE = "919876543210"
 
 
 def _account():
@@ -183,8 +183,8 @@ class TestABareNumberIsRefusedOnEverySurface(_GateHarness):
 	same number goes through once it carries a country code."""
 
 	def test_a_manual_send_to_a_bare_number_is_refused(self):
-		"""THE red. A rep pressing Send in the lead's WhatsApp tab sent `9059067237` to WATI, which read
-		the `90` as Turkey. Nothing in the manual path looked at the number at all."""
+		"""THE red. A rep pressing Send in the lead's WhatsApp tab handed a bare number to WATI, which
+		resolved the dialling plan itself. Nothing in the manual path looked at the number at all."""
 		lead = self._lead(_BARE)
 
 		with self.assertRaises(frappe.ValidationError) as caught:

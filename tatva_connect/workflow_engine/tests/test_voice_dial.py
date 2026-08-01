@@ -5,7 +5,7 @@ api.bolna.ai, and the send switch stays OFF the whole pass.
 
 TWO SAFETY TESTS COME FIRST and never go red: a dormant send places nothing (no `requests.post` reached),
 and a number with no country code is refused (routed to `failed`) before any dial. A real call is the
-Turkey disaster with audio; these are the guards that make it impossible.
+same wrong-country defect with audio; these are the guards that make it impossible.
 
 Correlation rides Bolna's `user_data` echo (settled): the OPAQUE engine token (`run::node`, no PII) goes
 into `user_data` at `place_call`, Bolna echoes it on the terminal webhook, and the webhook wakes THAT
@@ -20,8 +20,8 @@ from tatva_connect.automation import sends
 from tatva_connect.voice.adapters import bolna
 
 _ACCOUNT = "voice-dial-probe"
-_GOOD = "+919059067237"
-_BARE = "9059067237"
+_GOOD = "+919876543210"
+_BARE = "9876543210"
 _TOKEN = "run-abc::voice-1"
 
 

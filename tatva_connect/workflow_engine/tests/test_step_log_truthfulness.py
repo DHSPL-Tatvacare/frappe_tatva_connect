@@ -2,7 +2,7 @@
 # See license.txt
 """THE STEP LOG RECORDS WHAT HAPPENED, NOT THAT THE HANDLER RETURNED.
 
-Seen live on 2026-07-21, one row of `CRM Workflow Step Log`:
+Seen live, one row of `CRM Workflow Step Log`:
 
     Node Type | Send WhatsApp
     Outcome   | ok
@@ -116,7 +116,7 @@ class TestASendRecordsWhetherItReachedThePatient(_WalkHarness):
 	"""THE HEADLINE, both directions, both through the unmocked interpreter."""
 
 	def test_a_failed_send_records_failed_not_ok(self):
-		"""THE red, and it is the live row from 2026-07-21 reproduced exactly: sends armed, no routing
+		"""THE red, and it is that live row reproduced exactly: sends armed, no routing
 		rule for this lead's grain. `_step_log` is NOT patched — the row asserted on is the row a support
 		engineer would open."""
 		workflow = self._send_graph(f"{_WORKFLOW}-fail")

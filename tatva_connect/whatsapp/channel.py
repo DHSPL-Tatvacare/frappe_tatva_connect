@@ -54,7 +54,7 @@ def screen_send(adapter, to, reference_doctype=None, reference_name=None):
 	    by a rep, by a notification, identically.
 	  * THE ADDRESS, via `adapter.DECLARATION.conform_number` — Chunk 1's mechanism, asked, never
 	    reimplemented. A number the provider would have to guess the country of is refused, which is the
-	    defect that sent a patient's message to a stranger in Turkey on 2026-07-21.
+	    defect that sent a patient's message to a different subscriber in another country.
 
 	A send that names NO LEAD is refused. Consent belongs to a person, so a send to a naked number is a
 	send to somebody whose consent nobody established. No phone-number lookup rescues it: a number can

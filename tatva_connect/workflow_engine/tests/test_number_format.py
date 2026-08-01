@@ -2,10 +2,10 @@
 # See license.txt
 """THE ADAPTER DECLARES ITS NUMBER FORMAT. The send asks it. A number that does not conform is REFUSED.
 
-On 2026-07-21 a live trial sent a real WhatsApp message to a STRANGER IN TURKEY. The lead's number was
-stored as `9059067237` — a bare Indian 10-digit — and `channel.normalize_number` claimed in its docstring
-to produce E.164 while actually only stripping non-digits. An ambiguous number reached WATI and THE
-PROVIDER GUESSED THE COUNTRY: it read the leading `90` as Turkey's dialling code.
+A WhatsApp message once reached the wrong subscriber. The lead's number was stored as a bare Indian
+10-digit and `channel.normalize_number` claimed in its docstring to produce E.164 while actually only
+stripping non-digits. An ambiguous number reached WATI and THE PROVIDER GUESSED THE COUNTRY, reading the
+leading digits as a dialling code that was never declared.
 
 The engine inferred a country nobody declared. This suite locks the deletion of that inference.
 
@@ -19,7 +19,7 @@ Bolna on day one. So the format is a property of the PROVIDER, it is DECLARED, a
 BOTH DIRECTIONS ARE TESTED, AND THAT IS THE WHOLE POINT
 -------------------------------------------------------
 A suite that only proved "a bare number is refused" would have proved a global rule with extra steps. The
-same `9059067237` that WATI refuses is ACCEPTED by an adapter declaring `NATIONAL`, through the same code
+same bare number that WATI refuses is ACCEPTED by an adapter declaring `NATIONAL`, through the same code
 path, with no engine change. That is what makes the design generic rather than a hardcoded opinion about
 India.
 
@@ -49,10 +49,10 @@ _ACCOUNT = "Number-format-probe-account"
 _TEMPLATE = "number-format-probe"
 _WORKFLOW = "number-format-probe"
 
-# The number that was really sent to Turkey, and its correct canonical form. Kept as the fixture on purpose: the defect is a fact about this exact string.
-_BARE = "9059067237"
-_CANONICAL = "+91-9059067237"
-_WIRE_FOR_WATI = "919059067237"
+# A bare 10-digit number and its correct canonical form. The bare spelling is the fixture on purpose: an ambiguous number is what the provider guesses a country for.
+_BARE = "9876543210"
+_CANONICAL = "+91-9876543210"
+_WIRE_FOR_WATI = "919876543210"
 
 
 def _declaration(provider, number_format):
@@ -173,7 +173,7 @@ class TestTheDeclarationIsTheVocabulary(FrappeTestCase):
 	def test_every_declared_format_is_reachable_and_distinct(self):
 		"""The three spellings are the axis of real variation, and no two render the same string."""
 		rendered = {fmt: _declaration("P", fmt).conform_number(_CANONICAL) for fmt in contract.NUMBER_FORMATS}
-		self.assertEqual(rendered[contract.E164_PLUS], "+919059067237")
+		self.assertEqual(rendered[contract.E164_PLUS], "+919876543210")
 		self.assertEqual(rendered[contract.E164_PLAIN], _WIRE_FOR_WATI)
 		self.assertIsNone(
 			rendered[contract.NATIONAL],
@@ -191,7 +191,7 @@ class TestTheHeadlineLock(_SendHarness):
 	adapter declares it acceptable. Both directions, through one unchanged code path."""
 
 	def test_a_bare_number_is_refused_for_wati_and_nothing_is_queued(self):
-		"""THE red. This is the Turkey message: `9059067237` went to WATI, which read `90` as Turkey."""
+		"""THE red. A bare number went to WATI, which resolved a dialling plan nobody had declared."""
 		output, marker, wire = self._send(_BARE, _Adapter(wati.DECLARATION))
 
 		self.assertEqual(output, sends.FAILED, "an ambiguous number must never reach a provider")
@@ -208,7 +208,7 @@ class TestTheHeadlineLock(_SendHarness):
 		self.assertEqual(output, sends.SENT)
 		self.assertEqual(wire, _BARE, "a national-format provider takes the subscriber digits as stored")
 
-	def test_a_canonical_number_reaches_wati_as_digits_and_is_not_the_turkey_string(self):
+	def test_a_canonical_number_reaches_wati_as_digits_and_never_the_bare_form(self):
 		"""The positive path, asserted as the value on the wire."""
 		output, _thunk, wire = self._send(_CANONICAL, _Adapter(wati.DECLARATION))
 
@@ -224,7 +224,7 @@ class TestTheHeadlineLock(_SendHarness):
 		output, _thunk, wire = self._send(_CANONICAL, adapter)
 
 		self.assertEqual(output, sends.SENT)
-		self.assertEqual(wire, "+919059067237")
+		self.assertEqual(wire, "+919876543210")
 
 	def test_a_country_code_is_refused_for_a_national_only_provider(self):
 		"""The symmetry that keeps the engine out of it: we cannot strip a country code we cannot measure,
@@ -259,7 +259,7 @@ class TestTheAdapterCannotAlterWhatItDeclared(FrappeTestCase):
 			seen["to_number"] = to_number
 			return {"result": True, "local_message_id": "probe"}
 
-		for given in (_CANONICAL, "+919059067237", "+91 9059067237", _WIRE_FOR_WATI):
+		for given in (_CANONICAL, "+919876543210", "+91 9876543210", _WIRE_FOR_WATI):
 			with self.subTest(given=given):
 				seen.clear()
 				declared = wati.DECLARATION.conform_number(given)

@@ -40,7 +40,7 @@ DECLARATION = contract.declare(
 	capabilities={
 		"templates", "media", "session", "backfill", "recover_message", "recover_media",
 	},
-	# Digits with the country code and NO `+`: every send puts the number straight into a URL (`?whatsappNumber=`, `/sendSessionMessage/{number}`), where a `+` decodes as a space. The country code is required because WATI resolves the dialling plan itself — handed `9059067237` it read the `90` as Turkey and delivered a patient's message to a stranger there on 2026-07-21.
+	# Digits with the country code and NO `+`: every send puts the number straight into a URL (`?whatsappNumber=`, `/sendSessionMessage/{number}`), where a `+` decodes as a space. The country code is required because WATI resolves the dialling plan itself — handed a bare 10-digit number it reads the leading digits as a country code and delivers the patient's message to a different subscriber.
 	number_format=contract.E164_PLAIN,
 )
 

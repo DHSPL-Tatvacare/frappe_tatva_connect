@@ -69,26 +69,26 @@ class TestTheVoiceSendIsDormantAndNeverDials(FrappeTestCase):
 
 	def test_a_dialable_number_while_dormant_is_suppressed_placed(self):
 		output, marker = sends.send_voice("LEAD-1", "crm_lead.mobile_no", "acct", "agent-1",
-		                                  context={"crm_lead.mobile_no": "+919059067237"})
+		                                  context={"crm_lead.mobile_no": "+919876543210"})
 		self.assertEqual(output, sends.PLACED)
 		self.assertEqual(marker, sends.DORMANT_MARKER)
 
 
 class TestConformRefusesAnUncountriedNumber(FrappeTestCase):
-	"""THE Turkey-disaster prevention, voice form: a number with no country code cannot be known correct,
+	"""THE wrong-country prevention, voice form: a number with no country code cannot be known correct,
 	so it is REFUSED and routed to `failed` — never dialled. The ONE brain is `number_format=E164_PLUS`
 	and `conform_number`, exactly as WhatsApp, and the OPPOSITE of WATI's bare-digit `E164_PLAIN`."""
 
 	def test_a_bare_ten_digit_number_takes_failed_and_dials_nothing(self):
 		output, marker = sends.send_voice("LEAD-1", "crm_lead.mobile_no", "acct", "agent-1",
-		                                  context={"crm_lead.mobile_no": "9059067237"})
+		                                  context={"crm_lead.mobile_no": "9876543210"})
 		self.assertEqual(output, sends.FAILED)
 		self.assertIn("country code", marker)
 
 	def test_the_declaration_is_the_one_brain_and_the_plus_is_signal(self):
 		self.assertEqual(bolna.DECLARATION.number_format, "e164_plus")
-		self.assertEqual(bolna.DECLARATION.conform_number("+919059067237"), "+919059067237")
-		self.assertIsNone(bolna.DECLARATION.conform_number("9059067237"), "no country code → refused")
+		self.assertEqual(bolna.DECLARATION.conform_number("+919876543210"), "+919876543210")
+		self.assertIsNone(bolna.DECLARATION.conform_number("9876543210"), "no country code → refused")
 
 
 class TestClassificationIsPortedVerbatim(unittest.TestCase):

@@ -4,7 +4,7 @@
 
 W1.4 — THE RECIPIENT. `Send Email` has always declared `email_recipient`. `Send WhatsApp` declared
 nothing and resolved the number implicitly from the lead behind the author's back, and that is why it was
-the node that delivered a real patient's message to a stranger in Turkey: nobody ever CHOSE the recipient,
+the node that delivered a patient's message to the wrong subscriber: nobody ever CHOSE the recipient,
 so there was no control on which to show a warning and no author who had looked at it.
 
 It now declares `contact_number` — the SAME field, the same picker, in every trigger mode (§8b.1,
@@ -15,7 +15,7 @@ field. The engine resolves the declared ref against the journey's subject; it ne
 `contact_number` is `Variable` WITHOUT `free_text`, which is the one place it differs from
 `email_recipient`. It is PICKED, never typed, so it resolves purely as a reference. Routing it through
 `sends.resolve_recipient` would re-introduce that helper's literal path — which treats a phone-shaped
-string as an address to send to — and a typed number is precisely how Turkey happened.
+string as an address to send to — and a typed number is precisely how a wrong-country send happens.
 
 W1.3 — BUTTONS. `whatsapp.clicked` was DECLARED and selectable in the Wait picker from W1.1, and nothing
 could ever deliver it: `_wake_workflow` was reachable only from `_update_status`, and a tap arrives as
@@ -76,7 +76,7 @@ class TestTheRecipientIsDeclared(FrappeTestCase):
 
 	def test_the_recipient_is_picked_never_typed(self):
 		"""`Variable` without `free_text`. Send Email allows a typed literal address; a typed PHONE NUMBER
-		is what reached Turkey, so this control offers the picker and nothing else."""
+		is what reached the wrong subscriber, so this control offers the picker and nothing else."""
 		field = {p["name"]: p for p in actions.VERBS[_SEND_VERB]["params"]}["contact_number"]
 		self.assertEqual(field["type"], "Variable")
 		self.assertTrue(field["reqd"])
