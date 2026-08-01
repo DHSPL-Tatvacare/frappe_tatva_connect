@@ -64,6 +64,8 @@ RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/start.sh
 
 # TATVA: bake our nginx template (adds /docs route + WATI/Acefone webhooks) over frappe_docker's default.
 COPY nginx/frappe.conf.template /templates/nginx/frappe.conf.template
+# TATVA: and our security headers (adds Permissions-Policy + report-only CSP) over theirs.
+COPY nginx/security_headers.conf /etc/nginx/snippets/security_headers.conf
 
 USER frappe
 

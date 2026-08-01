@@ -168,6 +168,40 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 					"turned it back off; that reopens the whole site database to that app's users",
 				)
 
+	def test_the_sensitive_upstream_fields_are_at_permlevel_1(self):
+		"""`lockdown._PERMLEVEL_1_FIELDS`. At permlevel 0 these are readable by every role holding a plain
+		read: an Insights user would get connection strings and service-account keys, and a Wiki Approver
+		could write raw script into Head HTML, which every wiki page renders unescaped. Reads the
+		declaration, so a field added there is covered the day it is added."""
+		from tatva_connect.access.lockdown import _PERMLEVEL_1_FIELDS
+
+		for doctype, fields in _PERMLEVEL_1_FIELDS.items():
+			if not frappe.db.exists("DocType", doctype):
+				continue
+			meta = frappe.get_meta(doctype)
+			for fieldname in fields:
+				df = meta.get_field(fieldname)
+				self.assertIsNotNone(df, f"{doctype}.{fieldname} no longer exists — upstream renamed it; the lock now protects nothing")
+				self.assertEqual(
+					df.permlevel, 1, f"{doctype}.{fieldname} is at permlevel {df.permlevel} — lockdown.apply never ran, or an upstream release reset it"
+				)
+
+	def test_no_borrowed_web_form_is_published(self):
+		"""`lockdown.UNPUBLISHED_WEB_FORMS` — anonymous browser pages other apps ship published and
+		login-free. `sync_all` re-imports each from its app's JSON on every migrate AND every install,
+		so unpublishing by hand survives neither path; only the after_migrate/after_sync pass does.
+		Reads the declaration, so a form added there is covered the day it is added."""
+		from tatva_connect.access.lockdown import UNPUBLISHED_WEB_FORMS
+
+		for name, why in UNPUBLISHED_WEB_FORMS.items():
+			if not frappe.db.exists("Web Form", name):
+				continue
+			self.assertFalse(
+				frappe.db.get_value("Web Form", name, "published"),
+				f"Web Form `{name}` is published — an anonymous page on our domain. {why}. "
+				"lockdown.apply never ran, or sync_all re-imported it and nothing corrected it after",
+			)
+
 	def test_every_declared_automation_has_its_switch_row(self):
 		"""`automation.seed.sync_catalog`. A key with no row is a gate on a switch that does not exist."""
 		from tatva_connect.automation.registry import AUTOMATIONS

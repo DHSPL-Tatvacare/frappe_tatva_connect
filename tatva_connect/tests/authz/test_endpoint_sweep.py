@@ -53,6 +53,11 @@ _FOREIGN_SEED = {
 	# VAPT Jul: a real exercise carrying a hidden answer key, so the LMS cases have a foreign-owned target.
 	"LMS Programming Exercise": {"title": f"{TAG}-exercise", "problem_statement": "x", "language": "Python",
 	                             "test_cases": [{"input": f"{TAG}-in", "expected_output": f"{TAG}-out"}]},
+	# A null wiki_space makes it an ORPHAN, which wiki treats as readable by all — the weakest case, so a denial here is denial everywhere.
+	"Wiki Document": {"title": f"{TAG}-wikidoc"},
+	# Seeded before Insights Query v3, whose only reqd field Links it — the same two-step CRM Organization -> CRM Deal uses below.
+	"Insights Workbook": {"title": f"{TAG}-workbook"},
+	"Insights Query v3": {},  # special-cased in _seed_foreign_objects (workbook Link resolved live)
 }
 _ENDPOINT_BY_KEY = {e.key: e for e in (*endpoints.GENERIC_ENDPOINTS, *endpoints.APP_ENDPOINTS)}
 
@@ -72,6 +77,8 @@ def _seed_foreign_objects():
 		payload = dict(payload)
 		if doctype == "Comment" and lead:
 			payload["reference_name"] = lead  # bind the Comment to a real foreign-owned parent
+		if doctype == "Insights Query v3":  # resolve the workbook Link (seeded above), live
+			payload = {"title": f"{TAG}-query", "workbook": owned.get("Insights Workbook")}
 		if doctype == "CRM Deal":  # resolve the org Link (seeded above) + the reqd status Link, live
 			st = (frappe.get_all("CRM Deal Status", {"type": ["!=", "Lost"]}, pluck="name", limit=1)
 				or frappe.get_all("CRM Deal Status", pluck="name", limit=1))  # a Lost status demands a reason

@@ -70,6 +70,10 @@ APP_ENDPOINTS = [
 	             "B1", "LMS Quiz", "quiz"),
 	EndpointSpec("lms-quiz-questions", "lms.lms.utils.get_quiz_with_questions", "POST", "read", "B1",
 	             "LMS Quiz", "quiz"),
+	# Legacy wiki history: allow_guest + a permission-bypassing read, so no doctype matrix reaches it. Gated on a Wiki Page read, so it needs no seeded row.
+	EndpointSpec("wiki-page-revisions", "wiki.wiki.doctype.wiki_page_revision.wiki_page_revision.get_revisions",
+	             "POST", "read", "B1", "Wiki Page", "wiki_page_name"),
+	# insights.api.run_doc_method and the disabled upload endpoints are absent on purpose: build_params derives every body from the action and cannot produce theirs. Covered by the guest-endpoint lock, signature parity, and tests/access.
 ]
 
 # -- the objects a hostile principal must never reach (crossed with GENERIC_ENDPOINTS) --------------
@@ -90,6 +94,8 @@ SENSITIVE_DOCTYPES = [
 	# A student may legitimately READ the row (they must solve it), so the row sweep should say ALLOW —
 	# the leak is the permlevel-1 FIELD strip, judged by native_permitted_fields, not by row access.
 	{"doctype": "LMS Programming Exercise", "app": "lms", "private": False, "write_field": "title"},
+	{"doctype": "Wiki Document", "app": "wiki", "private": False, "write_field": "title"},  # protected by the SPACE role config, not its doctype matrix
+	{"doctype": "Insights Query v3", "app": "insights", "private": False, "write_field": "title"},  # the object that reads the site DB, CRM Lead included
 ]
 
 _BY_DOCTYPE = {d["doctype"]: d for d in SENSITIVE_DOCTYPES}

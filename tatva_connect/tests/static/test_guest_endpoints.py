@@ -69,13 +69,7 @@ MARKER = "guest-ok:"
 #     caller can never enumerate DRAFT catalog rows via a crafted filter (VAPT Jun'26, Mode 2).
 #   _lms_privileged         — the same module's LMS privilege check (get_job_details): strips the
 #     creator email (`owner`) for a non-privileged caller. A real per-caller narrowing gate.
-#   _insights_privileged    — access.native_guards' Insights wrapper (run_doc_method): Insights'
-#     public path deliberately runs a published dashboard's query with row/column permissions OFF,
-#     so a caller who cannot READ the target has the pipeline-REWIND argument stripped — without it
-#     that argument replays the query before its own filters, i.e. the raw source table. Same shape
-#     as _lms_privileged: a per-caller narrowing, not a deny. Named rather than matching
-#     `has_permission` directly, and deliberately: `has_permission` returns a BOOLEAN a caller may
-#     ignore, so accepting that name would clear any future endpoint that merely mentions it.
+#   _insights_privileged   — native_guards.run_doc_method: strips the pipeline-rewind arg when the caller cannot READ the target, so Insights' permissions-off public path cannot replay a query before its own filters. Named, not `has_permission`, which returns an IGNORABLE boolean.
 #   _published_course_from_referer — learning.outline's course recovery: the shim reads the course
 #     from the Referer, which is CLIENT-SUPPLIED and so forgeable, and therefore honours it only for
 #     a course the caller could already reach — published only for a non-privileged one (it reuses

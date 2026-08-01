@@ -118,27 +118,15 @@ _WHATSAPP = {
 	},
 }
 
-# --- Wiki (internal handbook; login-only, there is no public wiki — product decision 2026-07-31) ---
-# Stock ships the public docs-site surface: Wiki Feedback write+create to BOTH `All` and `Guest` (the
-# anonymous page-rating widget) and Wiki Page Patch read to `Guest` (the anonymous contribution flow).
-# Neither exists here — every wiki URL is behind login. Drop both Guest rows. `All` keeps create on
-# feedback so a logged-in reader can still rate a page, and loses write (nothing edits a submitted
-# rating). Wiki Page Patch is the LEGACY contribution flow, superseded by Wiki Change Request; its
-# `All` row is already own-records-only, the sanctioned shape (policy §5 rule 2), so it is kept as is
-# and only the Guest read goes. Wiki Page Patch is submittable — hence the 6th element on the two
-# manager rows, without which the rebuild would silently strip submit/cancel/amend.
+# --- Wiki (internal handbook, login-only; stock ships the public docs-site surface we do not have) ---
 _WIKI = {
-	"Wiki Feedback": {
+	"Wiki Feedback": {  # drops the Guest row: an anonymous caller could create AND edit ratings
 		"System Manager": (1, 1, 1, 1),
 		"Wiki Approver": (1, 1, 1, 1),
-		# Create only — submit a rating, never read or edit one. Granted to `Wiki User`, NOT `All`:
-		# a non-if_owner All create is precisely what assert_locked forbids, and it would fail the
-		# migrate on our own guard. Wiki User is the role every real login already carries, so the
-		# widget is unchanged for everyone who can reach a wiki page in the first place.
-		"Wiki User": (0, 0, 1, 0),
+		"Wiki User": (0, 0, 1, 0),  # rate a page; never read or edit one. Wiki User not All — assert_locked forbids a non-if_owner All create
 	},
-	"Wiki Page Patch": {
-		"System Manager": (1, 1, 1, 1, 0, 1),
+	"Wiki Page Patch": {  # legacy contribution flow, superseded by Wiki Change Request; drops the Guest read
+		"System Manager": (1, 1, 1, 1, 0, 1),  # 6th element = submit/cancel/amend; without it the rebuild strips them
 		"Wiki Approver": (1, 1, 1, 1, 0, 1),
 		"All": (1, 1, 1, 1, 1),  # own records only — stock shape, kept
 	},
@@ -146,15 +134,17 @@ _WIKI = {
 
 LOCKED_MATRIX = {**_CRM_CORE, **_HELPDESK, **_WHATSAPP, **_WIKI}
 
-# Single-doctype security settings another app owns and ships permissive. Pinned here, on after_migrate,
-# for the same reason as the matrix: a fresh install baselines patches.txt without running it, and an
-# operator toggle that silently reverts is exactly the drift this module exists to stop.
+# Security switches another app owns and ships permissive. Pinned on after_migrate, same reason as the matrix.
 APP_SECURITY_SETTINGS = {
-	# Insights queries the SITE DB directly — every `tab*`, CRM Lead included — so its own two layers are
-	# the only thing between an Insights role and every patient row. `enable_permissions` OFF means every
-	# Insights user sees every table. No effect on today's holders (all System Managers, whom Insights
-	# treats as admins and exempts); this closes the door for anyone added later who is not one.
+	# Insights queries the SITE DB directly, so with this OFF every Insights user reads every `tab*`, CRM Lead included.
 	"Insights Settings": {"enable_permissions": 1, "apply_user_permissions": 1},
+}
+
+# Standard Web Forms other apps ship PUBLISHED and login-free. sync_all re-imports them on every migrate AND install, so unpublishing by hand survives neither.
+UNPUBLISHED_WEB_FORMS = {
+	"request-data": "frappe's GDPR data-download form — no public website, and nobody monitors the doctype",
+	"request-to-delete-data": "frappe's GDPR erasure form — same",
+	"email-feedback": "helpdesk's ticket-rating page — there is no customer portal",
 }
 
 # doctype -> {permlevel: {role: (read, write)}}. A permlevel-1 field is INVISIBLE to a role holding no
@@ -170,11 +160,7 @@ FIELD_LEVELS = {
 			"Sales User": (1, 0),
 		}
 	},
-	# VAPT Jul N4/N5: the exercise's hidden grading fields (LMS Test Case.input/expected_output, bumped to
-	# permlevel 1 by apply_lms_field_permlevels) are read/written ONLY by the author roles. A permlevel-1
-	# CHILD field resolves against the PARENT's permlevel access (get_permissions() uses parent perms for an
-	# istable), so the grant here governs the child. LMS Student keeps its stock permlevel-0 read (solve the
-	# exercise) but holds no permlevel-1 row -> input/expected_output are stripped for a student.
+	# A permlevel-1 CHILD field resolves against the PARENT's permlevel access, so this grant governs LMS Test Case.
 	"LMS Programming Exercise": {
 		1: {
 			"System Manager": (1, 1),
@@ -182,11 +168,27 @@ FIELD_LEVELS = {
 			"Course Creator": (1, 1),
 		}
 	},
+	# Connection strings and service-account keys are plaintext at permlevel 0; the Password fields are already safe.
+	"Insights Data Source v3": {
+		1: {
+			"System Manager": (1, 1),
+			"Insights Admin": (1, 1),
+		}
+	},
+	# Head HTML is written into every wiki page unescaped — a script there runs in all 225 users' browsers.
+	"Wiki Settings": {
+		1: {
+			"System Manager": (1, 1),
+		}
+	},
 }
 
-# Upstream LMS grading fields reclassified to permlevel 1 via Property Setter (the non-fork way to change
-# an upstream field). Paired with the FIELD_LEVELS grant above. VAPT Jul N4/N5.
-_LMS_HIDDEN_FIELDS = {"LMS Test Case": ("input", "expected_output")}
+# Upstream fields reclassified to permlevel 1 via Property Setter (the non-fork way to change another app's field), paired with the FIELD_LEVELS grant above.
+_PERMLEVEL_1_FIELDS = {
+	"LMS Test Case": ("input", "expected_output"),
+	"Insights Data Source v3": ("connection_string", "bigquery_service_account_key", "http_headers", "api_custom_headers"),
+	"Wiki Settings": ("head_html",),
+}
 
 
 def apply_field_levels():
@@ -207,10 +209,10 @@ def apply_field_levels():
 	frappe.clear_cache()
 
 
-def apply_lms_field_permlevels():
-	"""Bump the LMS grading fields to permlevel 1 via Property Setter (idempotent upsert) — the non-fork way
-	to reclassify an upstream field so the FIELD_LEVELS grant can hide it. VAPT Jul N4/N5."""
-	for doctype, fields in _LMS_HIDDEN_FIELDS.items():
+def apply_field_permlevels():
+	"""Bump _PERMLEVEL_1_FIELDS to permlevel 1 via Property Setter (idempotent upsert) — the non-fork way
+	to reclassify an upstream field so the FIELD_LEVELS grant can hide it."""
+	for doctype, fields in _PERMLEVEL_1_FIELDS.items():
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		for fieldname in fields:
@@ -250,8 +252,9 @@ def apply(*_args, **_kwargs):
 				}
 			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	apply_field_levels()
-	apply_lms_field_permlevels()
+	apply_field_permlevels()
 	apply_app_security_settings()
+	apply_unpublished_web_forms()
 	frappe.clear_cache()
 
 
@@ -263,6 +266,13 @@ def apply_app_security_settings():
 		for field, value in values.items():
 			if frappe.db.get_single_value(doctype, field) != value:
 				frappe.db.set_single_value(doctype, field, value)
+
+
+def apply_unpublished_web_forms():
+	"""Unpublish UNPUBLISHED_WEB_FORMS. Idempotent; skips a form this site does not have."""
+	for name in UNPUBLISHED_WEB_FORMS:
+		if frappe.db.exists("Web Form", name) and frappe.db.get_value("Web Form", name, "published"):
+			frappe.db.set_value("Web Form", name, "published", 0, update_modified=False)
 
 
 def effective_all_guest_grants(doctype):

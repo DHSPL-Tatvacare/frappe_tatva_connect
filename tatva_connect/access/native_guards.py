@@ -309,9 +309,7 @@ def get_revisions(wiki_page_name):
 
 
 # --- Insights (queries the SITE DB, so a leak here is a leak of every table) ---------------------
-# Replaying a query at an EARLIER pipeline step returns the source table before the query's own
-# filters ran. Harmless for a caller who may read the query; on the public path it is the raw table.
-_INSIGHTS_REWIND_ARGS = ("active_operation_idx",)
+_INSIGHTS_REWIND_ARGS = ("active_operation_idx",)  # replays a query BEFORE its own filters — the raw source table on the public path
 
 
 def _insights_privileged(doctype, name):
@@ -339,9 +337,9 @@ def run_doc_method(method: str, docs, args=None):
 	hole is that `active_operation_idx` then rewinds the query past its own filters to the unfiltered
 	source table. Strip it exactly on that path; a caller who may read the doc keeps the full contract."""
 	parsed = frappe.parse_json(docs) if isinstance(docs, str) else docs
-	doctype = (parsed or {}).get("doctype")
-	name = (parsed or {}).get("name")
-	if not _insights_privileged(doctype, name):
+	if not isinstance(parsed, dict):
+		parsed = {}  # valid JSON that is not an object: fail closed here, let native raise its own error
+	if not _insights_privileged(parsed.get("doctype"), parsed.get("name")):
 		args = _strip_rewind_args(args)
 	from insights.api import run_doc_method as _native
 

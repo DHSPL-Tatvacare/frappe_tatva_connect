@@ -54,6 +54,8 @@ DENYLIST = [
 	# lms — features of the LMS we do not run (the rest of its jobs stay on).
 	("lms.job.doctype.job_opportunity.job_opportunity.update_job_openings", "LMS job board — not a feature we run"),
 	("lms.lms.doctype.lms_payment.lms_payment.send_payment_reminder", "LMS paid-course reminders — no paid courses"),
+	# insights — the alert mailer only; its three sibling jobs stay ON. Reverses the audit's "left ON" call, which was wrong.
+	("insights.insights.doctype.insights_alert.insights_alert.send_alerts", "Insights Alert mailer — validate() checks read at SAVE, then this runs the query from the scheduler as Administrator and mails the rows to free-text recipients; zero rows, not a CRM feature"),
 ]
 
 DENYLISTED_METHODS = frozenset(method for method, _reason in DENYLIST)
