@@ -63,6 +63,8 @@ from frappe.model import default_fields, std_fields
 from frappe.utils import add_days, add_to_date, get_datetime, now, nowdate
 from frappe.utils.data import evaluate_filters
 
+from tatva_connect import tokens
+
 # A declaration holds a token, never a timestamp; it is resolved per request in SITE time.
 NOW = "__NOW__"
 TOMORROW_START = "__TOMORROW_START__"
@@ -80,6 +82,10 @@ _IS_MODES = frozenset({"set", "not set"})
 
 # A corpus is a product across the declared columns; this bounds it, and `verify` reports when it bites.
 CORPUS_LIMIT = 400
+
+# A Link's option set is a whole table. This bounds what the corpus reads from it; the declaration's own
+# operands are probed regardless, so a bucket is never left unproven because its value sorted late.
+LINK_OPTION_CAP = 200
 
 # The probe rows never outlive their check, and never reach a delete queue or a doc_event.
 _SAVEPOINT = "derived_field_verify"
@@ -499,24 +505,38 @@ def names(doctype):
 
 
 def snapshot():
-	"""The clock, read ONCE. Thread it through everything serving one request so a row cannot be filtered
-	against one instant and displayed against another."""
-	return {token: read for token, read in ((t, fn()) for t, fn in _TOKENS.items())}
+	"""This surface's tokens, read ONCE. The walker is shared with the dashboard (tokens.py)."""
+	return tokens.snapshot(_TOKENS)
 
 
-def _substitute(value, snap):
-	if isinstance(value, str):
-		return snap.get(value, value)
-	if isinstance(value, list | tuple):
-		return [_substitute(v, snap) for v in value]
-	return value
+# The walker lives in tokens.py; the name stays because callers here and in the oracle already use it.
+_substitute = tokens.substitute
 
 
 def resolve(field, bucket, snap=None):
 	"""A bucket's declared tuples as frappe filters: the doctype prepended, tokens substituted from the
 	snapshot. The SAME list is handed to `evaluate_filters` and to `get_list`."""
 	snap = snapshot() if snap is None else snap
-	return [[field.doctype, f[0], f[1], _substitute(f[2], snap)] for f in bucket.filters]
+	return [
+		[field.doctype, f[0], f[1], _typed(field.doctype, f[0], _substitute(f[2], snap))]
+		for f in bucket.filters
+	]
+
+
+def _typed(doctype, fieldname, value):
+	"""An operand carrying its COLUMN's type, so both readers compare like with like.
+
+	`frappe.utils.data.compare` casts only when it can name the fieldtype, and it asks `get_meta` — which
+	does not answer for a STANDARD column. So `creation >= "2026-08-01 14:29"` reached Python as a datetime
+	against a str and raised, while the same tuple on `due_date` was cast and passed. `domain_of` already
+	knows to fall back to `std_fields`, so the type is taken from there and neither reader has to guess.
+	A mode word (`set`, `not set`) is not a date and converts to nothing, so it is handed back untouched."""
+	if not isinstance(value, str):
+		return value
+	fieldtype, _options = domain_of(doctype, fieldname)
+	if fieldtype in _DATE_FIELDTYPES:
+		return _as_datetime(value) or value
+	return value
 
 
 def group(field, bucket, snap=None):
@@ -586,12 +606,24 @@ def domain_of(doctype, fieldname):
 	honest: an operand the declaration mentions is only a boundary if the COLUMN could ever hold it."""
 	df = frappe.get_meta(doctype).get_field(fieldname)
 	if df:
-		options = df.options.split("\n") if df.fieldtype == "Select" and df.options else None
-		return df.fieldtype, options
+		return df.fieldtype, _closed_set(df)
 	for std in std_fields:
 		if std["fieldname"] == fieldname:
 			return std["fieldtype"], None
 	return None, None
+
+
+def _closed_set(df):
+	"""The values a column may hold, when its set is closed.
+
+	A Select carries its own; a LINK's set is the names in the doctype it points at — the same question
+	asked of a different table. Answering it is what lets a Link column be probed with a value it can
+	really hold, instead of the `__unmentioned__` sentinel its own link validation refuses."""
+	if df.fieldtype == "Select":
+		return df.options.split("\n") if df.options else None
+	if df.fieldtype == "Link" and df.options:
+		return frappe.get_all(df.options, pluck="name", limit=LINK_OPTION_CAP) or None
+	return None
 
 
 def fieldtype_of(doctype, fieldname):

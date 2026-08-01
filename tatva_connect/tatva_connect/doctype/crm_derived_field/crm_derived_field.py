@@ -62,8 +62,8 @@ _KINDS = {
 	"reader-disagreement": (
 		"The records this bucket shows are not the records it returns",
 		"The list and a filter on this bucket name different records. This is the silent failure the check "
-		"exists to catch. An inclusive datetime bound (<b>&lt;=</b>) is the usual cause — a record stored at "
-		"exactly the bound is displayed but never returned; write the bound as a half-open range instead.",
+		"exists to catch. Look for a bound two buckets can both claim, or a comparison the column and the "
+		"list read differently; the bucket named above is the one whose records do not match.",
 	),
 	"reader-error": (
 		"This bucket's filters could not be read",
@@ -101,13 +101,19 @@ class CRMDerivedField(Document):
 		self._assert_buckets_shape()
 		field = self._declaration()
 		self._assert_free(field)
-		# RETIRING IS ALWAYS ALLOWED. The proof reads the columns the buckets name, so a declaration whose
-		# column has since changed would fail it — and the operator could not even switch the field off.
-		if self.enabled:
+		# RETIRING is the ONE save the proof does not gate: a declaration whose column has since changed
+		# would fail it, and the operator could not even switch the field off. Every other save is proved,
+		# disabled rows included — "refused at Save" is the whole safety story and a draft is still a save.
+		if not self._being_retired():
 			self._prove(field)
 
-	# The registry is loaded lazily and keyed by nothing but the rows, so dropping the cache IS publishing
-	# the edit — and `declaration_version()` moves with it, which is what reaches a rep's stale menu cache.
+	def _being_retired(self):
+		"""Whether THIS save is the enabled switch going off. Not "is off" — a row that was already off and
+		is being edited is a draft, and a draft that cannot be served must still be refused."""
+		before = self.get_doc_before_save()
+		return bool(before and before.enabled and not self.enabled)
+
+	# Dropping the cache IS publishing the edit; `declaration_version()` moves with it.
 	def on_update(self):
 		derived.reload()
 

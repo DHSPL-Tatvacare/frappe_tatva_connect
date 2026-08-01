@@ -215,11 +215,15 @@ class TestTheRefusalIsUsable(AuthoringCase):
 		self.assertIn("Any Status", message, "the refusal does not name the second colliding bucket")
 		self.assertIn("status", message, "the refusal never names the column the collision is on")
 
-	def test_an_inclusive_datetime_bound_is_refused_and_the_bucket_is_named(self):
-		"""The measured disagreement — the silent class this whole layer exists to prevent."""
-		with self.assertRaises(frappe.ValidationError) as refused:
-			_row(buckets=INCLUSIVE).insert()
-		self.assertIn("Through Today", str(refused.exception))
+	def test_an_inclusive_datetime_bound_saves(self):
+		"""It was refused until 2026-08-01, and the refusal was this layer reporting its own bug.
+
+		Measured against rows at bound-1s, bound and bound+1s: with the operand left as a bare string SQL
+		returned one row and Python two — SQL dropped the record sitting exactly on the bound, and two is
+		the right answer. Typed from the column, both readers return two, so there is nothing to refuse.
+		Refusing it now would need a second arbiter beside `verify()`, which is the thing this doctype
+		does not have."""
+		_row(buckets=INCLUSIVE, fieldname="_probe_inclusive_ok").insert()
 
 
 class TestAuthoringLeavesNothingBehind(AuthoringCase):

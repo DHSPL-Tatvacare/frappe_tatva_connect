@@ -10,9 +10,10 @@ That disagreement space cannot be enumerated by reasoning; it was tried, and it 
 and two false ones. So there is no operator allowlist to test here. There is one mechanism, and these
 are the properties it must have:
 
-  * it CATCHES a real disagreement — `test_the_verifier_catches_an_inclusive_datetime_bound` declares
-    the exact `<=` bound measured on frappe 16.22.0 and requires the verifier to report it;
   * it CATCHES an overlap, because SQL has no first-match ordering to save one;
+  * it PASSES an inclusive `<=` bound, which is NOT a hazard once the operand carries its column's type —
+    the disagreement this file used to require there was measured on 2026-08-01 to be our own untyped
+    operand, and `MUT-operand-untyped` plants it back so the fix cannot be silently removed;
   * it PASSES a sound declaration, so it is not merely paranoid;
   * and it runs over the REGISTRY, so every field ever declared is proven without anyone remembering.
 
@@ -87,8 +88,17 @@ class TestDerivedFieldVerifier(FrappeTestCase):
 	def test_a_sound_declaration_verifies_clean(self):
 		self.assertEqual(derived.verify(_sound_field(), defaults=_defaults_for(TASK)), [])
 
-	def test_the_verifier_catches_an_inclusive_datetime_bound(self):
-		# The measured trap: SQL excludes the row equal to the bound, Python includes it, silently.
+	def test_an_inclusive_datetime_bound_no_longer_splits_the_readers(self):
+		"""An inclusive bound was never the hazard — an UNTYPED operand was.
+
+		Measured on 2026-08-01 against three rows at bound-1s, bound and bound+1s: with the operand left as
+		the substituted STRING, `<=` returned 1 row in SQL and 2 in Python — SQL silently dropped the row
+		sitting exactly on the bound, and 2 is the right answer. With the operand carrying the column's own
+		type (`derived._typed`) both readers return 2. So the bound is admissible, and what used to be
+		reported as a `reader-disagreement` here was this layer reporting its own type bug.
+
+		`MUT-operand-untyped` plants that bug back and expects this module to go red, so the fix cannot be
+		removed without the suite saying so."""
 		field = derived.DerivedField(
 			doctype=TASK,
 			fieldname="_probe_inclusive",
@@ -98,11 +108,7 @@ class TestDerivedFieldVerifier(FrappeTestCase):
 				derived.Bucket("After Today", [("due_date", ">", derived.TOMORROW_START)]),
 			],
 		)
-		problems = derived.verify(field, defaults=_defaults_for(TASK))
-		self.assertTrue(
-			any(p.kind == "reader-disagreement" for p in problems),
-			f"the verifier missed the inclusive bound: {problems}",
-		)
+		self.assertEqual(derived.verify(field, defaults=_defaults_for(TASK)), [])
 
 	def test_the_verifier_catches_overlapping_buckets(self):
 		# SQL has no first-match ordering, so an overlap makes display and query name different rows.
@@ -251,7 +257,8 @@ class TestDerivedFieldDeclaration(FrappeTestCase):
 		snap = derived.snapshot()
 		terms = derived.predicate(field, "Overdue", snap)
 		row = frappe._dict({"status": "Todo", "due_date": snap[derived.NOW]})
-		self.assertEqual(next(t[3] for t in terms if t[2] == "<"), snap[derived.NOW])
+		# The operand carries its column's type, so what must match is the INSTANT, never its spelling.
+		self.assertEqual(next(t[3] for t in terms if t[2] == "<"), get_datetime(snap[derived.NOW]))
 		self.assertEqual(derived.value_of(field, row, snap), "Due Today")
 
 	def test_the_standard_datetime_columns_have_a_fieldtype(self):
