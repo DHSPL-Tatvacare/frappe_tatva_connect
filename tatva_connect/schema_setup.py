@@ -31,6 +31,7 @@ from tatva_connect.patches import (
 	add_lead_dedup_unique_index,
 	add_lead_timeline_indexes,
 	add_observability_indexes,
+	add_step_log_contact_index,
 	add_task_answer_fieldname_index,
 	add_task_answer_question_index,
 	add_task_document_kind_index,
@@ -69,6 +70,8 @@ _STEPS = (
 	# that pair; the existing indexes lead with reference_docname and cannot serve it. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_task_due_state_index,
+	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_step_log_contact_index,
 	# (creation, status) and (status, modified) on CRM Task — the dashboard's activity cards group on a low-cardinality column over a date range, so the range seeks and the group column rides in the leaf to make the index covering. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_dashboard_card_indexes,
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.

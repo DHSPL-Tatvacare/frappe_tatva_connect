@@ -94,6 +94,10 @@ TOKEN = f"{ENGINE}{SEP}token"
 EMITTED = f"{ENGINE}{SEP}emitted"
 CORRELATION = f"{ENGINE}{SEP}correlation"
 OUTPUT = f"{ENGINE}{SEP}output"
+# W12 — WHO a send verb reached and HOW, carried to the step log the same way `output` carries the edge:
+# the verb writes it, the interpreter pops it, and no signature changes to thread it through.
+CHANNEL = f"{ENGINE}{SEP}channel"
+CONTACT = f"{ENGINE}{SEP}contact"
 
 
 class UnknownReference(KeyError):

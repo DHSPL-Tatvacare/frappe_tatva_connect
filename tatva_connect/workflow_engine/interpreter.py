@@ -209,7 +209,11 @@ def advance(journey):
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 
-			_step_log(journey, node, outcome, detail, int((time.monotonic() - started) * 1000))
+			# W12 — WHO this step reached, popped exactly as the output edge above is: a send verb writes it
+			# into the engine namespace, and consuming it here stops the next node inheriting a recipient
+			# that was never its own.
+			_step_log(journey, node, outcome, detail, int((time.monotonic() - started) * 1000),
+			          channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None))
 			journey.current_node = nxt
 	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):  # real lock-wait / deadlock — TRANSIENT (F4)
 		frappe.db.rollback()  # back to the last durable suspend
@@ -682,9 +686,14 @@ def _persist(journey, values):
 		journey.set(k, v)
 
 
-def _step_log(journey, node, outcome, detail="", duration_ms=0):
+def _step_log(journey, node, outcome, detail="", duration_ms=0, channel=None, contact=None):
 	"""One audit row per node execution. Written in the interpreter's transaction and committed at the
-	boundary with everything else (a rolled-back segment writes no log)."""
+	boundary with everything else (a rolled-back segment writes no log).
+
+	W12 — `channel`/`contact` are blank for every node that reaches nobody, and for a send they are the
+	CANONICAL address (`sends._canonical_contact`), never what the provider was handed. That is what makes
+	one patient one row-identity across WhatsApp and voice, which is the whole basis of the contact cap.
+	"""
 	frappe.get_doc({
 		"doctype": STEP_LOG_DT,
 		"journey": journey.name,
@@ -692,6 +701,8 @@ def _step_log(journey, node, outcome, detail="", duration_ms=0):
 		"node_id": node.node_id,
 		"node_type": node.node_type,
 		"outcome": outcome,
+		"channel": channel or "",
+		"contact": contact or "",
 		"detail": detail,
 		"duration_ms": duration_ms,
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context

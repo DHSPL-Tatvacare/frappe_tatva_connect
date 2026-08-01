@@ -81,11 +81,55 @@ _RECORD_SAVEPOINT = "automation_whatsapp_record"
 SENT = "sent"
 FAILED = "failed"
 
+# W12 — the channel words the step log records. One vocabulary, used by the logger and by the cap that
+# counts mobile channels; `email` is recorded and deliberately NOT counted (a cap on a number cannot
+# have an address folded into it).
+WHATSAPP, VOICE, EMAIL = "whatsapp", "voice", "email"
+MOBILE_CHANNELS = (WHATSAPP, VOICE)
+
 # Voice's synchronous "handed to the provider for dialling" output — never "answered", which is a later
 # channel-reported outcome. Named beside SENT so the messaging and voice send verbs read one vocabulary.
 PLACED = "placed"
 
 DORMANT_MARKER = "suppressed: sends dormant"
+
+
+def _canonical_contact(number):
+	"""W12 — the identity this number is COUNTED and LOGGED under, or blank. Never the conformed form.
+
+	`to_e164` is the ONE store brain (`phone.py`'s three jobs), and it is deliberately not
+	`Declaration.conform_number`: WATI is handed `91…` and Bolna `+91…`, so logging what actually went on
+	the wire would write one patient as two rows and the cap would count them as two people and silently
+	never fire.
+
+	A refusal comes back BLANK, and that differs on purpose from `api._base._norm_phone`, which passes the
+	unshapeable value through because it is building a search filter that should simply match nothing.
+	Here the value becomes an IDENTITY, so a raw string would be a second identity for the same person —
+	the exact defect above. A number that is not real anywhere therefore has no cap identity, which is the
+	ruled behaviour: such a lead cannot be messaged today either, so it never reaches the cap.
+	"""
+	from tatva_connect.whatsapp.phone import to_e164
+
+	try:
+		return to_e164(number)
+	except frappe.ValidationError:
+		frappe.clear_last_message()  # the refusal is not this caller's error to surface
+		return ""
+
+
+def _record_contact(context, channel, address):
+	"""Tell the interpreter WHO this verb reached and HOW, through the engine namespace `_engine.output`
+	already travels on — the verb writes, the interpreter pops, and no signature carries it.
+
+	Recorded as soon as the address resolves, so a suppressed or refused step still says who it was for:
+	"which number did this journey message?" is asked of the failures more often than of the successes.
+	"""
+	from tatva_connect.workflow_engine import refs
+
+	if context is None:
+		return
+	context[refs.CHANNEL] = channel
+	context[refs.CONTACT] = _canonical_contact(address) if channel in MOBILE_CHANNELS else (address or "")
 
 
 def sends_enabled() -> bool:
@@ -166,6 +210,7 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 	recipient = (context or {}).get(contact_number) if contact_number else None
 	if not recipient:
 		return FAILED, f"failed: {contact_number or 'no contact number'} resolved to no number for lead {subject_lead}"
+	_record_contact(context, WHATSAPP, recipient)
 
 	if not sends_enabled():
 		return SENT, DORMANT_MARKER
@@ -631,6 +676,7 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 	number = (context or {}).get(contact_number) if contact_number else None
 	if not number:
 		return FAILED, f"failed: {contact_number or 'no recipient'} resolved to no number for lead {subject_lead}"
+	_record_contact(context, VOICE, number)
 
 	# Wrong-country prevention, voice form. `conform_number` is the ONE brain (the provider's declared
 	# `number_format`); a number with no country code cannot be known correct and is refused before any gate.

@@ -13,6 +13,8 @@
   "node_id",
   "node_type",
   "outcome",
+  "channel",
+  "contact",
   "detail",
   "duration_ms"
  ],
@@ -59,6 +61,21 @@
    "description": "What happened at this node. For a node that runs a verb this is the verb's own DECLARED output - sent, failed, succeeded, assigned, nobody - so the audit says whether the thing actually happened. For a control node it is ok, parked, resumed, done, or failed."
   },
   {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel",
+   "read_only": 1,
+   "description": "How the person was reached at this step - whatsapp, voice, email. Blank for a node that contacts nobody."
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Data",
+   "label": "Contact",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "The address actually used, in the CANONICAL stored form (whatsapp.phone.to_e164, +91...) - never the conformed form a provider takes on the wire. WATI is given 91... and Bolna +91...; logging what went out would write one patient as two people and the contact cap would count them separately and silently never fire."
+  },
+  {
    "fieldname": "detail",
    "fieldtype": "Small Text",
    "label": "Detail",
@@ -76,7 +93,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-07-15 00:00:00.000000",
+ "modified": "2026-08-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Step Log",
