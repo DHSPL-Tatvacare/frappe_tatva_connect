@@ -23,6 +23,8 @@ STRUCTURAL = (
 	"aggregate",
 	"aggregate_field",
 	"group_by_field",
+	"split_by",
+	"time_bucket",
 	"label_field",
 	"date_field",
 	"honours_date_range",
@@ -38,6 +40,26 @@ READ = PRESENTATION + STRUCTURAL
 LAYOUT_FIELDS = ("name", "role", "title", "priority", "exposed_filters")
 
 PLACEMENT = ("chart", "x", "y", "w", "h")
+
+# Which of the schema's chart types the executor draws an axis for; `number` is the figure alone.
+GROUPED = ("donut", "bar", "line", "stacked_bar", "heatmap")
+
+# A heatmap is two dimensions crossed, so it is the one type that cannot be drawn from a single column.
+CROSSED = "heatmap"
+
+# The time bucket's vocabulary: what a card asks for, and the alias the bucketed column is grouped on.
+NO_BUCKET = "none"
+MONTH = "month"
+BUCKET = "bucket"
+
+# How many different values a column holds: frappe has no COUNT DISTINCT, so it is a NUMBER OF GROUPS.
+DISTINCT = "DISTINCT"
+
+# A split with two hundred values is a legend, not a chart; both the query bound and the pivot read this.
+SERIES_LIMIT = 8
+
+# The ceiling on a distinct count, so a high-cardinality column cannot pull every group into Python.
+DISTINCT_LIMIT = 10000
 
 CACHE_PREFIX = "tatva_connect:dashboard:"
 

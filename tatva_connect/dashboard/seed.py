@@ -26,7 +26,7 @@ from frappe.utils import cstr
 from tatva_connect.dashboard import declaration, executor
 from tatva_connect.taxonomy import grain
 
-# The three activity statuses that mean "still to do", named once and meant the same way in three cards.
+# The three task statuses that mean "still to do", named once and meant the same way in three cards.
 _OPEN = ["in", ["Backlog", "Todo", "In Progress"]]
 
 # What the Leads list itself shows: a card counting converted leads would open a list that excludes them, so the card says it too.
@@ -44,6 +44,8 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 		"aggregate": "COUNT",
 		"aggregate_field": "",
 		"group_by_field": "",
+		"split_by": "",
+		"time_bucket": declaration.NO_BUCKET,
 		"label_field": "",
 		"date_field": "",
 		"honours_date_range": 0,
@@ -58,20 +60,20 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 
 _CHARTS = [
 	_card("total_leads", "Leads", "Created in the selected range", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
-	_card("total_tasks", "Activities", "Created in the selected range", "number", "CRM Task", date_field="creation", honours_date_range=1),
+	_card("total_tasks", "Tasks", "Created in the selected range", "number", "CRM Task", date_field="creation", honours_date_range=1),
 	# A snapshot, not a range: "still open" is a fact about now, and dating it by creation answers something else.
-	_card("pending_tasks", "Pending Activities", "Open right now", "number", "CRM Task", base_filters={"status": _OPEN}),
-	# `between` and not `<`: frappe compares as ifnull(due_date, ''), so `<` counts every activity that has NO due date as overdue.
-	_card("overdue_tasks", "Overdue Activities", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
+	_card("pending_tasks", "Open Tasks", "Open right now", "number", "CRM Task", base_filters={"status": _OPEN}),
+	# `between` and not `<`: frappe compares as ifnull(due_date, ''), so `<` counts every task that has NO due date as overdue.
+	_card("overdue_tasks", "Overdue Tasks", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
 	# CRM Task carries no completion date, so `modified` is the closest honest stamp for when it was closed.
-	_card("completed_tasks", "Completed Activities", "Closed in the selected range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
+	_card("completed_tasks", "Completed Tasks", "Closed in the selected range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
 	# `timespan` is frappe's own relative-date operator (query.py:576 -> utils/data.py get_timespan_date_range).
 	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
 	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
 	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
 	# Grouped on the owner column and LABELLED with the person's name: the name is display, the column filters.
 	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", label_field="lead_owner.full_name", date_field="creation", honours_date_range=1),
-	_card("tasks_by_status", "Activities by Status", "Created in the selected range", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
+	_card("tasks_by_status", "Tasks by Status", "Created in the selected range", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
 ]
 
 

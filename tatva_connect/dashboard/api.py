@@ -5,6 +5,10 @@
 
 The caller sends a date range and the filters their layout offered them; it cannot name a chart, a list or
 a column. A role with no layout is an expected state, so `configured: false` is a 200 and not an error.
+
+Every chart query in the app runs inside this ONE call, so one `read_only` here covers all of them. It
+costs nothing until a replica is configured (`frappe/__init__.py:489`) and goes live by one site_config
+key with no code change. The only WRITE left under it is the failed-card Error Log, pinned to the primary.
 """
 
 import hashlib
@@ -20,6 +24,7 @@ _CACHE_TTL = 300
 
 
 @frappe.whitelist()
+@frappe.read_only()
 def get_dashboard(from_date=None, to_date=None, filters=None, user=None, vertical=None, program=None):
 	"""`user`/`vertical`/`program` are accepted and unused, as the endpoint this overrides already accepts
 	them: an override that narrows a signature is what tests/authz/test_app_load_guards exists to refuse."""
@@ -86,6 +91,9 @@ def _card(placement, chart, window, chosen):
 	try:
 		card.update(executor.run(chart, window, chosen))
 	except Exception:
-		frappe.log_error(title=f"Dashboard chart failed: {chart['chart_name']}", message=frappe.get_traceback())
+		# On the PRIMARY, always: this whole endpoint reads the replica, and an Error Log is an INSERT.
+		frappe.write_only()(frappe.log_error)(
+			title=f"Dashboard chart failed: {chart['chart_name']}", message=frappe.get_traceback()
+		)
 		card.update(executor.envelope(chart, error=True))
 	return card

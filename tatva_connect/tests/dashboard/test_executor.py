@@ -18,7 +18,7 @@ diverge:
     drill has to carry their login or it returns nothing.
   * A CARD THAT IS NOT DRILLABLE CARRIES NO DRILL AT ALL, rather than one nobody should follow.
 
-Activities are the fixture list because a task is creatable from three columns; the property under test is
+Tasks are the fixture list because a task is creatable from three columns; the property under test is
 the executor's and is not about which list it ran over.
 
 Run:
@@ -63,7 +63,7 @@ def _chart(**overrides):
 
 
 class ExecutorCase(FrappeTestCase):
-	"""Seven activities with a known distribution, scoped by title so every count is deterministic."""
+	"""Seven tasks with a known distribution, scoped by title so every count is deterministic."""
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -226,7 +226,7 @@ class TestAnUngatedListNeverReachesAPlainRole(ExecutorCase):
 	"""The gate is asked on EVERY read, not once when a layout was saved.
 
 	CRM Task's row gate is an automation switch, so it can be turned off long after somebody wrote a rep's
-	dashboard. Checking at save time would leave that layout in place, counting every activity in the
+	dashboard. Checking at save time would leave that layout in place, counting every task in the
 	business, with nothing to re-check it. So the question is asked here, on the way out."""
 
 	def test_a_card_over_a_switched_off_gate_is_not_offered_to_a_plain_role(self):
