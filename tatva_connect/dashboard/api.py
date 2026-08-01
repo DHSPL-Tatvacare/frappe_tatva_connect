@@ -20,7 +20,9 @@ _CACHE_TTL = 300
 
 
 @frappe.whitelist()
-def get_dashboard(from_date=None, to_date=None, filters=None):
+def get_dashboard(from_date=None, to_date=None, filters=None, user=None, vertical=None, program=None):
+	"""`user`/`vertical`/`program` are accepted and unused, as the endpoint this overrides already accepts
+	them: an override that narrows a signature is what tests/authz/test_app_load_guards exists to refuse."""
 	layout = resolver.layout_for()
 	if not layout:
 		return {"configured": False, "charts": [], "filters": []}
