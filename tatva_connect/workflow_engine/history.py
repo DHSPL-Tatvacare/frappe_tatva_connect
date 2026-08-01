@@ -63,7 +63,7 @@ _JOURNEY_FIELDS = [
 	"subject_doctype", "subject_name", "trigger_doctype", "trigger_name",
 	"creation", "modified",
 ]
-_STEP_FIELDS = ["name", "node_id", "node_type", "outcome", "detail", "duration_ms", "creation"]
+_STEP_FIELDS = ["name", "node_id", "node_type", "outcome", "channel", "contact", "detail", "duration_ms", "creation"]
 
 
 @frappe.whitelist()
