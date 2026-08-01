@@ -49,6 +49,10 @@ _CRM_CORE = {
 		"Website Manager": (1, 1, 1, 1),  # preserve the stock grant (Custom DocPerm overrides stock)
 		"All": (0, 1, 0, 1, 1),  # anyone may edit/delete ONLY their own comment (if_owner)
 	},
+	# Transcript + recording pointer. media_for gates on the CALL LOG then reads it with db.get_value, so the modal needs no role grant here — the Sales reads fed only /api/resource and Desk, unscoped.
+	"CRM Call Media": {
+		"System Manager": (1, 1, 1, 1),
+	},
 }
 
 # --- Helpdesk (agent-only internal; NO customer portal — product-owner decision 2026-07-09) --------

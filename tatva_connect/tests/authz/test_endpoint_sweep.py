@@ -20,6 +20,7 @@ import os
 import time
 
 import frappe
+from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.tests.authz import generator, http_engine, oracle, roster
 from tatva_connect.tests.authz.comms import assert_comms_off
@@ -172,12 +173,12 @@ def run(base=None, host="dev.localhost"):
 	eng = http_engine.HttpEngine(http_engine.load_creds(generator.creds_path()), base, host)
 	generated = cases.generate_http_cases()
 
-	escalations, skipped, results = [], 0, []
+	escalations, skipped, results = [], [], []
 	for c in generated:
 		spec = _ENDPOINT_BY_KEY[c.endpoint_key]
 		obj_id = foreign.get(c.doctype) if c.doctype else None
 		if c.action in ("read", "write", "delete") and c.doctype and not obj_id:
-			skipped += 1
+			skipped.append(c.id)  # keep the id: a count alone cannot say WHICH endpoint proved nothing
 			continue
 		params = endpoints.build_params(spec, c.doctype, obj_id or "MISSING")
 		code, body = eng.call(c.principal, spec.method, spec.http, params)
@@ -197,12 +198,16 @@ def run(base=None, host="dev.localhost"):
 	          "escalations": real, "benign_residuals": benign, "vapt_uncovered": uncovered}
 	# Print the verdict BEFORE teardown — teardown races the gunicorn connection and can throw, and the
 	# escalation list is the whole point of the run; it must never be lost to a cleanup flake.
-	print(f"[endpoint-sweep] cases={len(generated)} skipped={skipped} "
+	print(f"[endpoint-sweep] cases={len(generated)} skipped={len(skipped)} "
 	      f"escalations={len(real)} benign_residuals={len(benign)} vapt_uncovered={len(uncovered)}")
 	for e in real:
 		print(f"  ESCALATION {e['case']} (HTTP {e['code']}) {e['method']}")
 	for e in benign:
 		print(f"  benign-residual {e['case']} ({e['endpoint_key']}/{e['doctype']}) — allowlisted")
+	# A skipped case PROVED NOTHING; naming it is the difference between coverage and the look of coverage.
+	for doctype in sorted({i.rsplit("-", 1)[-1] for i in skipped}):
+		ids = [i for i in skipped if i.endswith(doctype)]
+		print(f"  skip-no-target {doctype}: {len(ids)} case(s) — no foreign-owned row was seeded")
 	if uncovered:
 		print(f"  VAPT COVERAGE GAP: {uncovered}")
 	assert_residuals_benign(eng)  # re-prove the allowlist is still non-sensitive (trap check)
@@ -255,3 +260,30 @@ def gate(base="http://localhost:8000", host="dev.localhost"):
 	if problems:
 		raise AssertionError("endpoint-sweep gate FAILED — " + "; ".join(problems))
 	return report
+
+
+class TestEndpointSweepIsNotSilent(FrappeTestCase):
+	"""`run-tests --module` on this file used to collect ZERO tests and exit 0 — indistinguishable from a
+	pass in a runbook of a dozen commands, so a reader believed 560 cases ran when none did. This class
+	exists so the documented invocation cannot lie. It does NOT run the sweep: the sweep needs the
+	committed HTTP lifecycle (seeded personas + tokens over real gunicorn) and belongs to `gate`."""
+
+	def test_the_sweep_runs_through_gate_not_through_run_tests(self):
+		self.assertTrue(
+			callable(gate),
+			"the sweep's entry point is `bench execute tatva_connect.tests.authz.test_endpoint_sweep.gate` "
+			"— `run-tests --module` collects nothing here and exits 0",
+		)
+
+	def test_every_generated_case_maps_to_a_known_endpoint(self):
+		"""A case whose endpoint_key is not in the registry dies with a KeyError deep inside the run, after
+		seeding and minutes of HTTP. Catch the typo here, where it costs nothing."""
+		unknown = sorted({c.endpoint_key for c in cases.generate_http_cases()} - set(_ENDPOINT_BY_KEY))
+		self.assertFalse(unknown, f"generated cases reference unknown endpoint keys: {unknown}")
+
+	def test_every_seedable_doctype_is_a_sensitive_doctype(self):
+		"""A _FOREIGN_SEED entry for a doctype nobody sweeps plants a row every run and proves nothing."""
+		sensitive = {d["doctype"] for d in endpoints.SENSITIVE_DOCTYPES}
+		prerequisites = {"CRM Organization", "Insights Workbook"}  # seeded only so a Link below resolves
+		stray = sorted(set(_FOREIGN_SEED) - sensitive - prerequisites)
+		self.assertFalse(stray, f"seeded but never swept: {stray}")
