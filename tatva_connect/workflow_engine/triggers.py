@@ -250,10 +250,53 @@ def _enqueue_start(workflow_name, version_name, lead_name, seed_context, trigger
 def start_journey(workflow_name, version_name, lead_name, seed_context=None, trigger_ref=None):
 	"""The queued entry point. Re-checks the gate, because the switch may have been turned off between
 	the save and the job running, and a job that starts a journey the operator has disarmed is exactly the
-	kind of thing dormant-by-default exists to prevent."""
+	kind of thing dormant-by-default exists to prevent.
+
+	Returns the run-once REFUSAL when there is one, and None when the journey was started — so a caller
+	that wants to say why a patient was skipped has the reason rather than a silent absence.
+	"""
 	if not automation.is_enabled(ENGINE_SWITCH):
-		return
+		return None
+	refusal = _already_ran(workflow_name, version_name, lead_name)
+	if refusal:
+		return refusal
 	_start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref)
+	return None
+
+
+def _already_ran(workflow_name, version_name, lead_name):
+	"""W8.4 — has this workflow already completed for this lead? The reason if so, None if not.
+
+	ONE CHECK, AT THE ONE DOOR. Both lanes arrive here — a save through `_enqueue_start`, a cohort through
+	`drain._start_one` — so the question is asked once and cannot drift between them. The cohort is where
+	it matters: it re-selects everyone its criteria match on every tick.
+
+	ANY VERSION COUNTS, so the filter names the WORKFLOW and never `workflow_version`. A version is an
+	edit and a workflow is an identity; keying on the version would let a typo fix re-admit every lead who
+	ever finished.
+
+	`Done` ONLY. `Failed` is the engine breaking and must not cost the patient their journey; `Stopped` is
+	an operator suspending the workflow, and barring everyone who was in flight because of one button is
+	not what that button means.
+
+	IT DOES NOT READ `active_key`. That key is cleared on every terminal transition — that is precisely how
+	W10's kill frees a lead to enter again — so a check built on it would answer "never ran" for every
+	completed lead. Two different questions, and conflating them breaks Suspend.
+	"""
+	config = _trigger_config(versions.load(version_name)) or {}
+	if not config.get("once_per_subject"):
+		return None
+	# `creation` is when the journey began, which is what "already completed" is dated by for a reader.
+	done = frappe.db.get_value(
+		JOURNEY_DT,
+		{"workflow": workflow_name, "subject_doctype": "CRM Lead", "subject_name": lead_name,
+		 "status": interpreter.DONE},
+		"creation",
+		order_by="creation desc",
+	)
+	if not done:
+		return None
+	return f"Already completed on {frappe.utils.formatdate(done)}"
 
 
 def _run_seed(context):

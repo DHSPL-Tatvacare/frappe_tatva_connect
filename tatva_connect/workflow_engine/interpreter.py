@@ -37,6 +37,9 @@ PENDING, CONSUMED, EXPIRED = "Pending", "Consumed", "Expired"
 TERMINAL_SIGNAL_STATES = (CONSUMED, EXPIRED)
 
 # A journey is LIVE until it reaches a terminal status; STOPPED is the deliberate one (the subject left).
+# DONE is the one that means the patient RECEIVED the journey, which is why W8.4's run-once reads it and
+# neither of the other two terminals: Failed is the engine breaking, Stopped is an operator's Suspend.
+DONE = "Done"
 STOPPED = "Stopped"
 LIVE_STATES = ("Running", "Parked")
 
@@ -146,7 +149,7 @@ def advance(journey):
 				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 
 			if node.node_type == "Terminal":
-				_persist(journey, {"status": "Done", "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
+				_persist(journey, {"status": DONE, "current_node": node.node_id, "state_json": _storable(state), "active_key": None, "resume_at": None, "awaiting_signal": None})
 				_step_log(journey, node, "done")
 				frappe.db.commit()
 				_run_deferred(deferred)

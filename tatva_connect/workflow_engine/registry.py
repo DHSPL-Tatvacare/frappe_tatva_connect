@@ -99,6 +99,11 @@ NODE_TYPES = {
 			_field("working_set", "Fields used", "Field Set",
 			       placeholder="Every field on the subject"),
 			_field("predicate", "Only when", "Predicate"),
+			# W8.4. Declared in EVERY mode — a save lane can re-enrol too — but it is the SCHEDULE that
+			# makes it necessary: a cohort re-selects everyone its criteria match, every tick, so a monthly
+			# welcome journey sends the welcome every month for ever. Last, because it qualifies the whole
+			# Trigger rather than any one field above it.
+			_field("once_per_subject", "Only once per patient", "Check"),
 		],
 	},
 	"Route": {
@@ -737,6 +742,9 @@ FIELD_TYPES = {
 	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Select": {"control": "select", "check": _option_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	# A boolean goes through frappe-ui's own FormControl, which the inspector already falls through to for
+	# every primitive — so a tick needs no branch of its own in the inspector and no bespoke widget.
+	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},

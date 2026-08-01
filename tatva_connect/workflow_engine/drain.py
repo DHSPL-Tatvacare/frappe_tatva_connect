@@ -187,8 +187,7 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 				# of the cursor so the next tick picks it up, or the cohort silently loses people.
 				paced_out = True
 				break
-			_start_one(workflow_name, version, lead)
-			started += 1
+			started += 1 if _start_one(workflow_name, version, lead) else 0
 			# The cursor stops AT the last lead actually started, never at the scan frontier — a pause must
 			# not carry the cursor past someone who was never begun.
 			frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_cursor", lead,
@@ -208,22 +207,28 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 
 
 def _start_one(workflow_name, version, lead):
-	"""One ordinary journey for one lead, through the entry a save uses.
+	"""One ordinary journey for one lead, through the entry a save uses. True iff one was really started.
 
 	Called INLINE, never enqueued: N enqueues is the shape this whole chunk exists to avoid. A lead that
 	is already running is not an error — `_start_one`'s `active_key` UNIQUE index makes the second attempt
 	a no-op, which is the second line of defence behind the cursor.
+
+	W8.4 gave `start_journey` a REFUSAL to return, and the count has to respect it: a cohort of leads who
+	have all already completed the workflow would otherwise report every one of them as started, which is
+	the receipt saying the opposite of what happened. The cursor still advances past a refused lead — the
+	answer will not change on the next tick.
 	"""
 	from tatva_connect.workflow_engine import triggers
 
 	try:
-		triggers.start_journey(workflow_name, version, lead)
+		return not triggers.start_journey(workflow_name, version, lead)
 	except Exception:
 		# One lead's failure is not the cohort's. It is recorded and the walk goes on, exactly as a
 		# per-record failure does in `partner_bulk_worker._drain`.
 		frappe.db.rollback()
 		frappe.log_error(title="cohort drain: a lead failed to start",
 		                 message=f"workflow={workflow_name} lead={lead}\n{frappe.get_traceback()}")
+		return False
 
 
 def _release(workflow_name, clear_cursor=False):
