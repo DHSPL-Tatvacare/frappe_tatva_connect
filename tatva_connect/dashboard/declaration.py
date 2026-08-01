@@ -25,7 +25,6 @@ STRUCTURAL = (
 	"group_by_field",
 	"split_by",
 	"time_bucket",
-	"label_field",
 	"date_field",
 	"honours_date_range",
 	"base_filters",
@@ -57,6 +56,9 @@ DISTINCT = "DISTINCT"
 
 # A split with two hundred values is a legend, not a chart; both the query bound and the pivot read this.
 SERIES_LIMIT = 8
+
+# What the kept series do not account for, so the bars always add up to the figure the card states.
+OTHER = "__other__"
 
 # The ceiling on a distinct count, so a high-cardinality column cannot pull every group into Python.
 DISTINCT_LIMIT = 10000

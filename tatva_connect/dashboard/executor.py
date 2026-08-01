@@ -22,12 +22,13 @@ import calendar
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, now, nowdate
+from frappe.utils import add_months, cint, flt, getdate, now, nowdate
 
 from tatva_connect import tokens
 from tatva_connect.access import visibility
 from tatva_connect.dashboard import declaration
 from tatva_connect.list_engine import derived
+from tatva_connect.taxonomy import labels
 
 _ROUTES = {"CRM Lead": "Leads", "CRM Task": "Tasks"}
 
@@ -87,7 +88,7 @@ def run(chart, window=None, filters=None):
 	query_filters = _filters(chart, window or {}, filters or {})
 	payload = envelope(chart)
 	if chart.chart_type in declaration.GROUPED:
-		payload.update(_breakdown(chart, query_filters))
+		payload.update(_breakdown(chart, query_filters, _calendar(chart, window or {})))
 	payload["value"] = _figure(chart, query_filters)
 	if cint(chart.drill_enabled):
 		payload["drill"] = _drill(chart, query_filters)
@@ -113,14 +114,14 @@ def _distinct(chart, filters):
 	                   chart.aggregate_field, declaration.DISTINCT_LIMIT))
 
 
-def _breakdown(chart, filters):
+def _breakdown(chart, filters, calendar_months):
 	"""What a grouped card is broken down into: always `points`, and `series` where a split was declared."""
 	field = derived.get(chart.source_doctype, chart.group_by_field) if chart.group_by_field else None
 	if field:
 		return {"points": _derived_points(chart, field, filters)}
 	if chart.split_by:
-		return _pivot(chart, filters)
-	return {"points": _points(chart, _query(chart, filters, True), filters)}
+		return _pivot(chart, filters, calendar_months)
+	return {"points": _points(chart, _query(chart, filters, True), filters, calendar_months)}
 
 
 def _derived_points(chart, field, filters):
@@ -146,32 +147,69 @@ def _derived_points(chart, field, filters):
 	return points
 
 
-def _pivot(chart, filters):
-	"""Two grouped columns turned into one series per split value, in TWO gated queries.
+def _pivot(chart, filters, calendar_months):
+	"""Two grouped columns turned into one series per split value, in THREE gated queries.
 
-	The series are chosen first, by their own totals, and the cross is then NARROWED to them — so its row
-	cap bounds what is actually drawn instead of guessing a product. A single query capped at an arithmetic
-	guess returned the first months and dropped the rest, and the card looked correct while it did it."""
+	The series are chosen first by their own totals; the AXIS is the card's own totals asked without the
+	split; the cross is then narrowed to the chosen series. The axis query is what makes the picture agree
+	with the number — read off the cross alone, an axis value whose rows all fall outside the kept series
+	has no row at all, so a whole month vanished from the chart while the card's figure still counted it.
+
+	What the kept series do not account for becomes ONE more series, `Other`, so the bars always add up to
+	the figure the card states. It is an ordinary series and travels the ordinary path."""
 	kept = _top_series(chart, filters)
 	if not kept:
 		return {"points": [], "series": []}
 	dimension = _dimension(chart)
+	axis_rows = _query(frappe._dict({**chart, "split_by": ""}), filters, True)
 	rows = _query(chart, filters, True, len(kept), _only_these_series(chart, kept))
-	titles = _labels(chart, rows, dimension)
-	axis, totals, cells = [], {}, {}
-	for row in rows:
-		split = _blank(row.get(chart.split_by))
+	titles = _labels(chart, [row.get(dimension) for row in axis_rows], dimension)
+	splits = _labels(chart, kept, chart.split_by)
+
+	axis, totals = [], {}
+	for row in axis_rows:
 		x = _blank(row.get(dimension))
 		if x not in totals:
 			axis.append(x)
 			totals[x] = 0
-		value = _measured(chart, row.get("value"))
-		totals[x] += value
-		cells[(split, x)] = cells.get((split, x), 0) + value
+		totals[x] += _measured(chart, row.get("value"))
+
+	cells = {}
+	for row in rows:
+		key = (_blank(row.get(chart.split_by)), _blank(row.get(dimension)))
+		cells[key] = cells.get(key, 0) + _measured(chart, row.get("value"))
+
+	axis = _ordered(axis, calendar_months)
+	drawn = kept + _other(cells, totals, axis, kept, splits)
 	return {
-		"points": [_point(chart, x, titles, totals[x], filters, _narrows(dimension, x)) for x in axis],
-		"series": [_series(chart, split, axis, cells, titles, filters, dimension) for split in kept],
+		"points": [
+			_point(chart, x, titles, totals[x], filters, _narrows(dimension, x), calendar_months) for x in axis
+		],
+		"series": [
+			_series(chart, split, splits, axis, cells, titles, filters, dimension, calendar_months)
+			for split in drawn
+		],
 	}
+
+
+def _other(cells, totals, axis, kept, splits):
+	"""Everything the kept series do not account for, as one more series — or nothing when they account for
+	it all. Written into `cells` so it draws exactly as any other series does."""
+	remainder = {x: totals[x] - sum(cells.get((one, x), 0) for one in kept) for x in axis}
+	if not any(value > 0 for value in remainder.values()):
+		return []
+	for x in axis:
+		cells[(declaration.OTHER, x)] = remainder[x]
+	splits[declaration.OTHER] = _("Other")
+	return [declaration.OTHER]
+
+
+def _ordered(axis, calendar_months):
+	"""A month axis reads in the window's order, not MONTH()'s 1-12 — a Sep-to-Aug window starts at Sep."""
+	if not calendar_months:
+		return axis
+	sequence = list(calendar_months)
+	return sorted(axis, key=lambda x: sequence.index(cint(x)) if cint(x) in sequence else len(sequence))
 
 
 def _blank(raw):
@@ -180,10 +218,22 @@ def _blank(raw):
 	return "" if raw in (None, "") else raw
 
 
-def _month_name(raw):
-	"""A month bucket is the only axis value no field can name, so it is named by the calendar's own words."""
-	month = cint(raw)
-	return calendar.month_abbr[month] if 1 <= month <= 12 else raw
+def _calendar(chart, window):
+	"""The months the window spans, oldest first, as {month_number: "Aug 2025"}.
+
+	MONTH() answers 1-12 with the year folded away, so a Sep-to-Aug window would sort as Jan..Dec and read
+	two different years as one axis. The window is what puts the year back, and it is the only thing that
+	can: the last twelve months of it are taken, because beyond that the month numbers repeat and no
+	mapping exists."""
+	if chart.time_bucket != declaration.MONTH or not (window.get("from_date") and window.get("to_date")):
+		return {}
+	end = getdate(window["to_date"]).replace(day=1)
+	months = {}
+	for back in range(11, -1, -1):
+		when = add_months(end, -back)
+		if getdate(when) >= getdate(window["from_date"]).replace(day=1):
+			months[when.month] = f"{calendar.month_abbr[when.month]} {when.year}"
+	return months
 
 
 def _only_these_series(chart, kept):
@@ -197,12 +247,13 @@ def _only_these_series(chart, kept):
 	return terms
 
 
-def _series(chart, split, axis, cells, titles, filters, dimension):
+def _series(chart, split, splits, axis, cells, titles, filters, dimension, calendar_months=None):
 	"""One series: a cell for EVERY axis value, so a hole in the data is a zero and never a missing bar."""
 	return {
-		"name": _("Not set") if split in (None, "") else split,
+		"name": _("Not set") if split in (None, "") else splits.get(split, split),
+		"raw": split,
 		"points": [
-			_point(chart, x, titles, cells.get((split, x), 0), filters, _crossed(chart, dimension, x, split))
+			_point(chart, x, titles, cells.get((split, x), 0), filters, _crossed(chart, dimension, x, split), calendar_months)
 			for x in axis
 		],
 	}
@@ -244,9 +295,12 @@ def _narrows(dimension, raw):
 
 
 def _crossed(chart, dimension, raw, split):
-	"""What a click on one CELL adds: both dimensions, or nothing where the axis cannot be filtered at all."""
+	"""What a click on one CELL adds: both dimensions. Nothing where the axis cannot be filtered, and
+	nothing for `Other` — "everything else" is not a value any filter can name."""
 	narrowing = _narrows(dimension, raw)
-	return None if narrowing is None else {**narrowing, chart.split_by: _term(split)}
+	if narrowing is None or split == declaration.OTHER:
+		return None
+	return {**narrowing, chart.split_by: _term(split)}
 
 
 def _conditions(chart, filters):
@@ -313,8 +367,11 @@ def _count(chart, conditions):
 
 
 def _measure(chart):
-	# Dict syntax always — a string aggregate is refused by frappe's own _validate_select_field.
-	return {chart.aggregate: chart.aggregate_field or "*", "as": "value"}
+	"""The card's figure as `get_list` selects it. Dict syntax always — a string aggregate is refused by
+	frappe's own _validate_select_field, and DISTINCT is this app's word for "how many groups" rather than a
+	function frappe has, so the measure underneath one is the count it is grouping."""
+	aggregate = "COUNT" if chart.aggregate == declaration.DISTINCT else chart.aggregate
+	return {aggregate: chart.aggregate_field or "*", "as": "value"}
 
 
 def _fields(chart, grouped):
@@ -329,32 +386,28 @@ def _fields(chart, grouped):
 	return [axis, *([chart.split_by] if chart.split_by else []), _measure(chart)]
 
 
-def _labels(chart, rows, column):
-	"""Display names as their own query, not through `lead_owner.full_name`.
+def _labels(chart, values, column):
+	"""What a Link column's values READ as, so a cell shows the display label and never the composite key.
 
-	A traversed field is permission-checked against the LINK TARGET (query.py check_filter_field_permission),
-	so a viewer without read on User loses the whole card rather than just the labels. Read separately, an
-	unreadable target costs labels only — the raw value is already on screen. Batched, because frappe's own
-	chart does this one row at a time (desk/doctype/dashboard_chart/dashboard_chart.py:289).
-
-	A bucket alias is no column, so it names no link and answers with no titles — which is the right answer."""
-	if not chart.label_field or chart.label_field == column:
-		return {}
+	`taxonomy.labels` owns the title_field read for this whole app — this asks it, so there is ONE
+	implementation of it and not two. Nothing is declared per card: frappe already knows a doctype's title
+	field, so a User reads as a full name and a task type as its type name."""
 	link = frappe.get_meta(chart.source_doctype).get_field(column)
-	values = [row[column] for row in rows if row.get(column)]
-	if not (link and link.options and values):
+	if not (link and link.fieldtype == "Link" and link.options):
 		return {}
-	titled = chart.label_field.split(".")[-1]
-	found = frappe.get_list(link.options, filters={"name": ["in", values]}, fields=["name", titled], limit=0)
-	return {row["name"]: row[titled] for row in found if row.get(titled)}
+	return {one: labels.label(one, link.options) for one in dict.fromkeys(values) if one}
 
 
-def _point(chart, raw, titles, value, filters, narrowing):
+def _point(chart, raw, titles, value, filters, narrowing, calendar_months=None):
 	"""One datapoint: what it reads as, what it really holds, its figure, and the list a click opens.
 
 	`narrowing` is what the click adds to the card's own filters, and `None` means this point cannot be
 	drilled at all — carried as no `drill` key, exactly as a card that declares itself undrillable is."""
-	label = _month_name(raw) if _dimension(chart) == declaration.BUCKET else titles.get(raw, raw)
+	if _dimension(chart) == declaration.BUCKET:
+		# The window names the year; without one there is still a month to name, and never a bare number.
+		label = (calendar_months or {}).get(cint(raw)) or calendar.month_abbr[cint(raw)]
+	else:
+		label = titles.get(raw, raw)
 	point = {
 		"label": _("Not set") if label in (None, "") else label,
 		"raw": raw,
@@ -366,10 +419,10 @@ def _point(chart, raw, titles, value, filters, narrowing):
 	return point
 
 
-def _points(chart, rows, filters):
+def _points(chart, rows, filters, calendar_months):
 	"""One axis, blanks folded together as they are on a split card: NULL and '' are one slice, not two."""
 	dimension = _dimension(chart)
-	titles = _labels(chart, rows, dimension)
+	titles = _labels(chart, [row.get(dimension) for row in rows], dimension)
 	totals, order = {}, []
 	for row in rows:
 		x = _blank(row.get(dimension))
@@ -377,12 +430,14 @@ def _points(chart, rows, filters):
 			order.append(x)
 			totals[x] = 0
 		totals[x] += _measured(chart, row.get("value"))
-	points = [_point(chart, x, titles, totals[x], filters, _narrows(dimension, x)) for x in order]
-	return points if _dimension(chart) == declaration.BUCKET else sorted(points, key=_by_value, reverse=True)
-
-
-def _by_value(point):
-	return point["value"]
+	# A month reads in the window's order; every other breakdown reads largest first, as it always has.
+	if dimension == declaration.BUCKET:
+		order = _ordered(order, calendar_months)
+	else:
+		order.sort(key=lambda x: totals[x], reverse=True)
+	return [
+		_point(chart, x, titles, totals[x], filters, _narrows(dimension, x), calendar_months) for x in order
+	]
 
 
 def _term(raw):

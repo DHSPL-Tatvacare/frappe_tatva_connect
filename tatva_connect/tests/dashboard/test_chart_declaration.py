@@ -103,13 +103,6 @@ class TestAChartIsProvedBeforeItExists(ChartDeclarationCase):
 		message = self._refused(group_by_field="no_such_column")
 		self.assertIn("no_such_column", message)
 
-	def test_a_label_column_may_reach_through_a_link(self):
-		"""Traversal is display only, and display is the one place it is safe."""
-		doc = _chart(group_by_field="lead_owner", label_field="lead_owner.full_name").insert(
-			ignore_permissions=True
-		)
-		self.assertEqual(doc.label_field, "lead_owner.full_name")
-
 	def test_a_date_column_the_list_does_not_have_is_refused(self):
 		self.assertTrue(self._refused(date_field="no_such_date"))
 

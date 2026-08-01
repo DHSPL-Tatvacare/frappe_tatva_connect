@@ -58,7 +58,6 @@ def _chart(**overrides):
 		"group_by_field": "status",
 		"split_by": "",
 		"time_bucket": declaration.NO_BUCKET,
-		"label_field": "",
 		"date_field": "creation",
 		"honours_date_range": 0,
 		"base_filters": '{"title": ["like", "' + PROBE + '%"]}',
@@ -118,8 +117,8 @@ class SplitCase(FrappeTestCase):
 	def _by_raw(self, points):
 		return {point["raw"]: point for point in points}
 
-	def _series(self, payload, name):
-		return next(one for one in payload["series"] if one["name"] == name)
+	def _series(self, payload, raw):
+		return next(one for one in payload["series"] if one["raw"] == raw)
 
 
 class TestASingleDimensionCardDidNotMove(SplitCase):
@@ -212,9 +211,7 @@ class TestTwoDimensionsComeOutOfOneQuery(SplitCase):
 
 	def test_there_is_one_series_per_split_value(self):
 		payload = self._split()
-		self.assertEqual(
-			{one["name"] for one in payload["series"]}, {USER_ONE, USER_TWO, "Not set"}
-		)
+		self.assertEqual({one["raw"] for one in payload["series"]}, {USER_ONE, USER_TWO, ""})
 
 	def test_a_cell_holds_the_figure_for_both_dimensions(self):
 		payload = self._split()
@@ -246,7 +243,7 @@ class TestTwoDimensionsComeOutOfOneQuery(SplitCase):
 	def test_a_blank_cell_drills_on_the_blank_it_really_had(self):
 		"""The words the reader saw must never reach the filter — `Not set` is not a value anything holds."""
 		payload = self._split()
-		cell = self._by_raw(self._series(payload, "Not set")["points"])["Done"]
+		cell = self._by_raw(self._series(payload, "")["points"])["Done"]
 		self.assertEqual(cell["drill"]["filters"]["assigned_to"], ["is", "not set"])
 
 	def test_a_split_over_a_month_axis_drills_nowhere(self):
@@ -264,30 +261,37 @@ class TestTheSeriesCountIsCapped(SplitCase):
 	"""The cap is proved on the picker rather than on eleven fixture users: what is under test is that a
 	DECLARED constant bounds the series and that the largest survive, and both are decided right here."""
 
-	def test_no_more_series_are_kept_than_the_declared_cap(self):
-		rows = [
-			{"assigned_to": f"probe{index}", "value": index}
-			for index in range(declaration.SERIES_LIMIT + 3)
-		]
-		kept = executor._top_series(frappe._dict(_chart(split_by="assigned_to")), rows)
-		self.assertEqual(len(kept), declaration.SERIES_LIMIT)
+	def test_the_declared_cap_really_bounds_the_query(self):
+		"""Catches a cap that is declared and never applied. The fixture holds fewer assignees than
+		SERIES_LIMIT, so asserting `<= 8` would pass with no cap at all — the bound is driven directly."""
+		chart = frappe._dict(_chart(split_by="assigned_to"))
+		scope = {"title": ["like", f"{PROBE}%"]}
+		self.assertGreater(len(executor._groups(chart, scope, "assigned_to", 10)), 1)
+		self.assertEqual(len(executor._groups(chart, scope, "assigned_to", 1)), 1)
 
-	def test_the_largest_series_are_the_ones_kept(self):
-		"""Catches a cap that keeps whatever SQL happened to return first, dropping the biggest stack."""
-		kept = executor._top_series(frappe._dict(_chart(split_by="assigned_to")), {})
-		self.assertLessEqual(len(kept), declaration.SERIES_LIMIT)
-		self.assertIn(USER_ONE, kept)
+	def test_the_series_are_ranked_largest_first(self):
+		"""Catches a cap that keeps whatever SQL returned first rather than the biggest stacks. Asserted as
+		an ordering and not a named winner: the two probe users hold two tasks each, so a tie has no
+		deterministic winner and naming one would be asserting the tie-break, not the ranking."""
+		chart = frappe._dict(_chart(split_by="assigned_to"))
+		scope = {"title": ["like", f"{PROBE}%"]}
+		rows = executor._groups(chart, scope, "assigned_to", 10)
+		values = [row["value"] for row in rows]
+		self.assertEqual(values, sorted(values, reverse=True), "series were not ranked by their own measure")
+		self.assertEqual(values[0], max(values))
 
 	def test_the_cross_is_narrowed_to_the_series_that_are_kept(self):
-		"""Catches the cross being capped by an arithmetic guess: a bound that is not the series drawn lets
-		SQL return the first months and silently drop the rest, and the card looks correct while it does."""
+		"""Catches the cross being bounded by an arithmetic guess instead of the series actually drawn: a
+		guess lets SQL return the first months and silently drop the rest, and the card looks correct."""
 		chart = frappe._dict(_chart(split_by="assigned_to"))
-		self.assertEqual(executor._kept_only(chart, [USER_ONE]), [["assigned_to", "in", [USER_ONE]]])
+		self.assertEqual(
+			executor._only_these_series(chart, [USER_ONE]), [["assigned_to", "in", [USER_ONE]]]
+		)
 
 	def test_a_blank_series_is_ored_in_because_in_cannot_match_null(self):
 		"""Catches `in ['']` being used for a blank series, which matches no NULL row and drops the stack."""
 		chart = frappe._dict(_chart(split_by="assigned_to"))
-		terms = executor._kept_only(chart, ["", USER_ONE])
+		terms = executor._only_these_series(chart, ["", USER_ONE])
 		self.assertIn(["assigned_to", "is", "not set"], terms)
 		self.assertIn(["assigned_to", "in", [USER_ONE]], terms)
 
@@ -371,7 +375,8 @@ class TestADerivedGroupIsOneCountPerBucket(SplitCase):
 
 class TestADistinctCountIsANumberOfGroups(SplitCase):
 	def test_it_counts_how_many_different_values_the_column_holds(self):
-		"""Catches a plain COUNT wearing the name: five rows, three different assignees including the blank."""
+		"""Catches a plain COUNT wearing the name. Blank is NOT a value — the axis, the series and this count
+		all read NULL and '' as one non-answer, so two assignees and an unassigned row is two, not three."""
 		payload = executor.run(
 			_chart(
 				chart_type="number",
@@ -380,10 +385,10 @@ class TestADistinctCountIsANumberOfGroups(SplitCase):
 				aggregate_field="assigned_to",
 			)
 		)
-		self.assertEqual(payload["value"], 3)
+		self.assertEqual(payload["value"], 2)
 
 	def test_which_rows_count_is_still_the_declarations_to_say(self):
-		"""The blank is a group like any other, so a card that must not count it narrows to what is set."""
+		"""Which ROWS count stays the declaration's; which VALUES are values does not — blank never is."""
 		payload = executor.run(
 			_chart(
 				chart_type="number",

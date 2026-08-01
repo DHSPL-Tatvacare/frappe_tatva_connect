@@ -17,7 +17,6 @@ the message. What is checked is exactly what the executor assumes and nothing mo
 
 The group-by column is checked hardest, because it is load-bearing twice: it is what the figure is broken
 down by AND what the drill-down filters on. A column reached through a link can be shown but cannot be
-filtered on, which is why traversal belongs to `label_field` alone.
 
 Plan: docs/plans/2026-07-31-dashboard-role-layouts-phase-1.md
 """
@@ -42,7 +41,6 @@ class CRMDashboardChart(Document):
 		self.chart_name = (self.chart_name or "").strip()
 		self.group_by_field = (self.group_by_field or "").strip()
 		self.split_by = (self.split_by or "").strip()
-		self.label_field = (self.label_field or "").strip()
 		self.date_field = (self.date_field or "").strip()
 		self.aggregate_field = (self.aggregate_field or "").strip()
 		# A blank reqd field and an out-of-options Select are frappe's messages to give, not ours to obscure.

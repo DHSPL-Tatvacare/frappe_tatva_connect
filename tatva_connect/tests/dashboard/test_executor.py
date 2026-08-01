@@ -51,7 +51,6 @@ def _chart(**overrides):
 		"aggregate": "COUNT",
 		"aggregate_field": "",
 		"group_by_field": "status",
-		"label_field": "",
 		"date_field": "creation",
 		"honours_date_range": 0,
 		"base_filters": '{"title": ["like", "' + PROBE + '%"]}',
@@ -192,13 +191,15 @@ class TestABlankGroupIsNamedNotFiltered(ExecutorCase):
 
 
 class TestTheLabelIsDisplayAndTheGroupIsTheFilter(ExecutorCase):
-	def test_a_label_column_may_reach_through_a_link(self):
-		payload = executor.run(_chart(group_by_field="assigned_to", label_field="assigned_to.full_name"))
+	def test_a_link_reads_as_its_targets_title_with_nothing_declared(self):
+		"""Catches a card showing the composite primary key. Nothing is declared: the target doctype's own
+		title_field answers it, through taxonomy.labels, which is where that read lives for the whole app."""
+		payload = executor.run(_chart(group_by_field="assigned_to"))
 		named = next(point for point in payload["points"] if point["raw"] == PROBE_USER)
 		self.assertEqual(named["label"], "Exec Probe")
 
 	def test_the_drill_carries_the_raw_value_and_not_the_label(self):
-		payload = executor.run(_chart(group_by_field="assigned_to", label_field="assigned_to.full_name"))
+		payload = executor.run(_chart(group_by_field="assigned_to"))
 		named = next(point for point in payload["points"] if point["raw"] == PROBE_USER)
 		self.assertEqual(named["drill"]["filters"]["assigned_to"], PROBE_USER)
 

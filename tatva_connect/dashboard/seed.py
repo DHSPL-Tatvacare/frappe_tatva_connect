@@ -46,7 +46,6 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 		"group_by_field": "",
 		"split_by": "",
 		"time_bucket": declaration.NO_BUCKET,
-		"label_field": "",
 		"date_field": "",
 		"honours_date_range": 0,
 		"base_filters": {},
@@ -71,8 +70,8 @@ _CHARTS = [
 	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
 	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
 	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
-	# Grouped on the owner column and LABELLED with the person's name: the name is display, the column filters.
-	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", label_field="lead_owner.full_name", date_field="creation", honours_date_range=1),
+	_card("leads_by_substage", "Leads by Stage", "Where they stand right now", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_substage"),
+	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
 	_card("tasks_by_status", "Tasks by Status", "Created in the selected range", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
 ]
 
@@ -88,7 +87,8 @@ _PLACED = (
 	("leads_by_source", 0, 2, 4, 6),
 	("leads_by_vertical", 4, 2, 4, 6),
 	("leads_by_owner", 8, 2, 4, 6),
-	("tasks_by_status", 0, 8, 12, 6),
+	("leads_by_substage", 0, 8, 6, 6),
+	("tasks_by_status", 6, 8, 6, 6),
 )
 
 

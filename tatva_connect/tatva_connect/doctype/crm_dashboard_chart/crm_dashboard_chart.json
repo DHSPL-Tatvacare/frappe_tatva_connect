@@ -20,7 +20,6 @@
   "aggregate_field",
   "group_by_field",
   "split_by",
-  "label_field",
   "row_limit",
   "window_section",
   "date_field",
@@ -128,13 +127,6 @@
    "fieldtype": "Data",
    "label": "Split By",
    "mandatory_depends_on": "eval:doc.chart_type == 'heatmap'"
-  },
-  {
-   "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "An optional column to SHOW instead of the grouped value, and it may reach through a link — lead_owner.full_name shows a person's name where the group is their login. It changes the words on the slice and nothing else; the drill-down always filters on the grouped value itself.",
-   "fieldname": "label_field",
-   "fieldtype": "Data",
-   "label": "Label Field"
   },
   {
    "default": "10",
