@@ -46,27 +46,17 @@ class CRMDashboardChart(Document):
 		self.label_field = (self.label_field or "").strip()
 		self.date_field = (self.date_field or "").strip()
 		self.aggregate_field = (self.aggregate_field or "").strip()
-		# A blank required field is the framework's own message to give; ours would only obscure it.
+		# A blank required field, and a Select outside its own options, are both frappe's message to give
+		# (_validate_selects runs the moment this returns); ours would only obscure them.
 		if not (self.chart_name and self.label and self.chart_type and self.source_doctype):
 			return
-		self._assert_source_is_runnable()
+		if not frappe.db.exists("DocType", self.source_doctype):
+			return
 		self._assert_shape_matches_type()
 		self._assert_group_by_is_a_real_column()
 		self._assert_date_field_is_a_real_column()
 		self._assert_aggregate_is_measurable()
 		self._assert_base_filters_shape()
-
-	def _assert_source_is_runnable(self):
-		"""The two lists the executor knows how to run, read off this doctype's own Select rather than
-		restated — the options ARE the declaration, and a second copy here would be the drift."""
-		allowed = source_doctypes()
-		if self.source_doctype not in allowed:
-			frappe.throw(
-				_("{0} is not a list a card can be built from. The lists that can are {1}.").format(
-					frappe.bold(escape_html(self.source_doctype)), frappe.bold(", ".join(allowed))
-				),
-				title=_("That list cannot be charted"),
-			)
 
 	def _assert_shape_matches_type(self):
 		"""A number card has nothing to break down, and a donut with nothing to break down is one slice."""
@@ -130,9 +120,3 @@ class CRMDashboardChart(Document):
 			),
 			title=_("That column does not exist"),
 		)
-
-
-def source_doctypes():
-	"""The lists a card may read, as the doctype's own Select declares them. One home, asked twice."""
-	options = frappe.get_meta("CRM Dashboard Chart").get_field("source_doctype").options or ""
-	return tuple(option.strip() for option in options.split("\n") if option.strip())

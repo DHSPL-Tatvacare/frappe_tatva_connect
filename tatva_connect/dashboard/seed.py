@@ -65,7 +65,8 @@ _CHARTS = [
 	_card("overdue_tasks", "Overdue Activities", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
 	# CRM Task carries no completion date, so `modified` is the closest honest stamp for when it was closed.
 	_card("completed_tasks", "Completed Activities", "Closed in the selected range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
-	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["__TODAY__", "__TODAY__"]]}),
+	# `timespan` is frappe's own relative-date operator (query.py:576 -> utils/data.py get_timespan_date_range).
+	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
 	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
 	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
 	# Grouped on the owner column and LABELLED with the person's name: the name is display, the column filters.
@@ -74,6 +75,9 @@ _CHARTS = [
 ]
 
 
+# h is in grid rows of `rowHeight` (60px). A chart tile must clear frappe-ui's own `min-h-[300px]` on its
+# ECharts container, so a chart is h=6 (360px) and never h=4 (240px) — at 240 the chart overflows its tile
+# and the ring is drawn into a box that is then clipped. A number card has no such minimum.
 _PLACED = (
 	("total_leads", 0, 0, 2, 2),
 	("total_tasks", 2, 0, 2, 2),
@@ -81,10 +85,10 @@ _PLACED = (
 	("overdue_tasks", 6, 0, 2, 2),
 	("tasks_due_today", 8, 0, 2, 2),
 	("completed_tasks", 10, 0, 2, 2),
-	("leads_by_source", 0, 2, 4, 4),
-	("leads_by_vertical", 4, 2, 4, 4),
-	("leads_by_owner", 8, 2, 4, 4),
-	("tasks_by_status", 0, 6, 12, 4),
+	("leads_by_source", 0, 2, 4, 6),
+	("leads_by_vertical", 4, 2, 4, 6),
+	("leads_by_owner", 8, 2, 4, 6),
+	("tasks_by_status", 0, 8, 12, 6),
 )
 
 # Exactly one layout ships. A role with no row here has no dashboard, which is the answer, not a gap.
@@ -94,7 +98,7 @@ _LAYOUTS = [
 		"title": "Dashboard",
 		"enabled": 1,
 		"priority": 100,
-		"layout": json.dumps([{"chart": name, "x": x, "y": y, "w": w, "h": h} for name, x, y, w, h in _PLACED]),
+		"charts": [{"chart": name, "x": x, "y": y, "w": w, "h": h} for name, x, y, w, h in _PLACED],
 		"exposed_filters": json.dumps(["date_range", "vertical", "program", "user"]),
 	}
 ]

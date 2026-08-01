@@ -13,6 +13,7 @@ from frappe.utils import escape_html
 
 CHART = "CRM Dashboard Chart"
 LAYOUT = "CRM Dashboard Layout"
+PLACEMENT_DOCTYPE = "CRM Dashboard Layout Chart"
 
 STRUCTURAL = (
 	"chart_type",
@@ -32,9 +33,9 @@ PRESENTATION = ("chart_name", "label", "subtitle")
 
 READ = PRESENTATION + STRUCTURAL
 
-LAYOUT_FIELDS = ("name", "role", "title", "priority", "layout", "exposed_filters")
+LAYOUT_FIELDS = ("name", "role", "title", "priority", "exposed_filters")
 
-PLACEMENT = ("x", "y", "w", "h")
+PLACEMENT = ("chart", "x", "y", "w", "h")
 
 CACHE_PREFIX = "tatva_connect:dashboard:"
 
@@ -42,7 +43,7 @@ CACHE_PREFIX = "tatva_connect:dashboard:"
 def retire_cache():
 	"""Every cached dashboard, dropped. Called when an operator edits a card or a layout, so a correction
 	is on screen on the next load rather than a TTL later."""
-	frappe.cache().delete_keys(CACHE_PREFIX)
+	frappe.cache.delete_keys(CACHE_PREFIX)
 
 
 def parsed(value, label, shape):

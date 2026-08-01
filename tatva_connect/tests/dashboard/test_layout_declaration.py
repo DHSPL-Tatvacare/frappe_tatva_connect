@@ -58,6 +58,7 @@ class LayoutDeclarationCase(FrappeTestCase):
 		self._clear()
 
 	def _clear(self):
+		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT, "parent": PROBE_ROLE})
 		frappe.db.delete(LAYOUT, {"role": PROBE_ROLE})
 		frappe.db.delete(CHART, {"chart_name": ["like", "probe_layout%"]})
 		frappe.db.delete("Role", {"name": PROBE_ROLE})
@@ -69,7 +70,7 @@ class LayoutDeclarationCase(FrappeTestCase):
 			"title": "Probe Dashboard",
 			"enabled": 1,
 			"priority": 0,
-			"layout": json.dumps([_placed()]),
+			"charts": [_placed()],
 			"exposed_filters": json.dumps(["date_range"]),
 		}
 		row.update(overrides)
@@ -87,22 +88,20 @@ class TestALayoutOnlyPointsAtCardsThatExist(LayoutDeclarationCase):
 		self.assertEqual(doc.name, PROBE_ROLE)
 
 	def test_a_card_that_does_not_exist_is_refused_by_name(self):
-		"""The pointer IS the relationship, so a pointer at nothing is the one way this shape breaks."""
-		message = self._refused(layout=json.dumps([_placed(chart="no_such_card")]))
-		self.assertIn("no_such_card", message)
-
-	def test_a_layout_that_is_not_a_list_is_refused(self):
-		self.assertTrue(self._refused(layout=json.dumps({"chart": PROBE_CHART})))
-
-	def test_a_layout_that_is_not_json_is_refused(self):
-		self.assertTrue(self._refused(layout="chart: total_leads"))
+		"""A placement is a Link, so this is frappe's own refusal — proved here because the whole shape
+		rests on it and nothing in this app would notice if the field stopped being a Link."""
+		with self.assertRaises(frappe.LinkValidationError):
+			self._layout(charts=[_placed(chart="no_such_card")]).insert(ignore_permissions=True)
 
 	def test_a_placement_missing_its_position_is_refused(self):
-		message = self._refused(layout=json.dumps([{"chart": PROBE_CHART, "x": 0, "y": 0}]))
+		"""`reqd` on the child field, again frappe's own — an Int left blank is not a placement."""
+		message = self._refused(charts=[{"chart": PROBE_CHART, "x": 0, "y": 0}])
 		self.assertIn("w", message)
+		self.assertIn("h", message)
 
 	def test_the_same_card_twice_is_refused_by_name(self):
-		message = self._refused(layout=json.dumps([_placed(), _placed(x=4)]))
+		"""The ONE rule frappe has no native form for: a Link may legally repeat in a child table."""
+		message = self._refused(charts=[_placed(), _placed(x=4)])
 		self.assertIn(PROBE_CHART, message)
 
 

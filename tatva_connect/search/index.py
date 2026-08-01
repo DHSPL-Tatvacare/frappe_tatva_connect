@@ -20,9 +20,9 @@ from frappe.utils.caching import redis_cache, request_cache
 from tatva_connect.access.visibility import parent_of
 from tatva_connect.api.partner_file import _file_lead
 from tatva_connect.automation.settings import is_enabled
-from tatva_connect.taxonomy import labels
 from tatva_connect.phone import match_digits
 from tatva_connect.propagate import fail_safe
+from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.picklist import _LEAD_AXES
 
 # The dormant operator toggle that gates the feature — a CRM Tatva Automation row, like every switch.

@@ -9,17 +9,17 @@ has no dashboard rather than somebody else's.
 """
 
 import frappe
+from frappe.utils.caching import request_cache
 
-from tatva_connect.access import request_cache
 from tatva_connect.dashboard import declaration
 
 
 def layout_for(user=None):
-	"""The one layout this person's roles grant, or None. Request-cached per user."""
-	user = user or frappe.session.user
-	return request_cache("tatva_connect:dashboard_layout", user, lambda: _resolve(user))
+	"""The one layout this person's roles grant, or None."""
+	return _resolve(user or frappe.session.user)
 
 
+@request_cache
 def _resolve(user):
 	roles = frappe.get_roles(user)
 	if not roles:
@@ -33,4 +33,13 @@ def _resolve(user):
 		limit=1,
 		ignore_permissions=True,  # authz-ok: tier-c — reads operator dashboard config for the session user's own roles
 	)
-	return dict(rows[0]) if rows else None
+	if not rows:
+		return None
+	# get_list settles WHICH layout wins; the placements are child rows, and loading the document is how
+	# frappe reads those. Cached, and an operator's save invalidates it — no second cache to keep in step.
+	doc = frappe.get_cached_doc(declaration.LAYOUT, rows[0]["name"])
+	layout = dict(rows[0])
+	layout["charts"] = [
+		{field: row.get(field) for field in declaration.PLACEMENT} for row in doc.charts
+	]
+	return layout

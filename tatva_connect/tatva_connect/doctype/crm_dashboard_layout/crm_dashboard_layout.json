@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "format:{role}",
  "creation": "2026-07-31 00:00:00.000000",
- "description": "What one role's dashboard is made of: which cards it shows, where each one sits and which filter controls it is given. One row per role, and a person holding several roles is shown the one with the highest Priority — so the answer is the same every time they open it. The cards are named, never copied: a card edited once changes on every dashboard that names it, and a card nobody names is simply not on this one. A role with no row here has no dashboard, which is a deliberate answer and not a fault — the dashboard says so and shows nothing.",
+ "description": "What one role's dashboard is made of: which cards it shows, where each one sits and which filter controls it is given. One row per role, and a person holding several roles is shown the one with the highest Priority \u2014 so the answer is the same every time they open it. The cards are named, never copied: a card edited once changes on every dashboard that names it, and a card nobody names is simply not on this one. A role with no row here has no dashboard, which is a deliberate answer and not a fault \u2014 the dashboard says so and shows nothing.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -13,17 +13,67 @@
   "enabled",
   "priority",
   "layout_section",
-  "layout",
+  "charts",
   "exposed_filters"
  ],
  "fields": [
-  {"fieldname": "role", "fieldtype": "Link", "options": "Role", "label": "Role", "reqd": 1, "unique": 1, "set_only_once": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "The role this dashboard belongs to. One row per role, and the row cannot be moved to another role once saved — a dashboard for a different role is a new row."},
-  {"fieldname": "title", "fieldtype": "Data", "label": "Title", "in_list_view": 1, "description": "The heading shown above the dashboard, in the words the people holding this role use."},
-  {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1", "in_list_view": 1, "in_standard_filter": 1, "description": "A row that is not ticked is never chosen. Untick it and everyone holding this role falls through to whichever other role they hold, or to no dashboard at all."},
-  {"fieldname": "priority", "fieldtype": "Int", "label": "Priority", "default": "0", "in_list_view": 1, "description": "Which dashboard wins when a person holds more than one role that has one — the highest number. Nearly everyone holds several roles, so without this the dashboard they get would depend on nothing anyone chose. Leave the broadest role at 0 and raise the more specific ones above it."},
-  {"fieldname": "layout_section", "fieldtype": "Section Break", "label": "The Dashboard", "description": "The cards and their positions, and the filter controls this role is given above them."},
-  {"fieldname": "layout", "fieldtype": "Code", "options": "JSON", "label": "Layout (JSON)", "default": "[]", "reqd": 1, "description": "The cards, in a list, each naming a Dashboard Chart and where it sits: [{\"chart\": \"total_leads\", \"x\": 0, \"y\": 0, \"w\": 3, \"h\": 2}]. The chart is named and never copied here, so editing that card changes it everywhere it appears. A name that is not a saved card is refused on save rather than showing as a dead tile."},
-  {"fieldname": "exposed_filters", "fieldtype": "Code", "options": "JSON", "label": "Exposed Filters (JSON)", "default": "[]", "description": "Which filter controls sit above this dashboard, as a list of names: [\"date_range\", \"vertical\", \"program\", \"user\"]. They only ever narrow what is already visible to the person looking — no filter here shows anybody a record they could not otherwise see. A filter naming something a card's list does not have is skipped by that card, which is what lets one row of controls serve cards over two different lists."}
+  {
+   "description": "The role this dashboard belongs to. One row per role, and the row cannot be moved to another role once saved \u2014 a dashboard for a different role is a new row.",
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Role",
+   "options": "Role",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "The heading shown above the dashboard, in the words the people holding this role use.",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title"
+  },
+  {
+   "default": "1",
+   "description": "A row that is not ticked is never chosen. Untick it and everyone holding this role falls through to whichever other role they hold, or to no dashboard at all.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Which dashboard wins when a person holds more than one role that has one \u2014 the highest number. Nearly everyone holds several roles, so without this the dashboard they get would depend on nothing anyone chose. Leave the broadest role at 0 and raise the more specific ones above it.",
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Priority"
+  },
+  {
+   "description": "The cards and their positions, and the filter controls this role is given above them.",
+   "fieldname": "layout_section",
+   "fieldtype": "Section Break",
+   "label": "The Dashboard"
+  },
+  {
+   "description": "The cards this role sees, and where each one sits. A card named here must exist; frappe refuses the row otherwise.",
+   "fieldname": "charts",
+   "fieldtype": "Table",
+   "label": "Cards",
+   "options": "CRM Dashboard Layout Chart",
+   "reqd": 1
+  },
+  {
+   "default": "[]",
+   "description": "Which filter controls sit above this dashboard, as a list of names: [\"date_range\", \"vertical\", \"program\", \"user\"]. They only ever narrow what is already visible to the person looking \u2014 no filter here shows anybody a record they could not otherwise see. A filter naming something a card's list does not have is skipped by that card, which is what lets one row of controls serve cards over two different lists.",
+   "fieldname": "exposed_filters",
+   "fieldtype": "Code",
+   "label": "Exposed Filters (JSON)",
+   "options": "JSON"
+  }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
@@ -33,7 +83,18 @@
  "name": "CRM Dashboard Layout",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
  ],
  "row_format": "Dynamic",
  "show_title_field_in_link": 1,

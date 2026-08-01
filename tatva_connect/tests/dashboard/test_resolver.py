@@ -63,6 +63,7 @@ class ResolverCase(FrappeTestCase):
 		self._clear()
 
 	def _clear(self):
+		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT})
 		frappe.db.delete(LAYOUT, {"role": ["in", [ALPHA, BETA]]})
 		frappe.db.delete("Has Role", {"role": ["in", [ALPHA, BETA]]})
 		frappe.db.delete("User", {"name": PROBE_USER})
@@ -82,7 +83,7 @@ class ResolverCase(FrappeTestCase):
 				"title": role,
 				"enabled": enabled,
 				"priority": priority,
-				"layout": json.dumps([{"chart": PROBE_CHART, "x": 0, "y": 0, "w": 4, "h": 3}]),
+				"charts": [{"chart": PROBE_CHART, "x": 0, "y": 0, "w": 4, "h": 3}],
 				"exposed_filters": json.dumps([]),
 			}
 		).insert(ignore_permissions=True)
@@ -112,4 +113,4 @@ class TestOneUserGetsOneDashboard(ResolverCase):
 	def test_the_answer_carries_what_the_dashboard_is_made_of(self):
 		self._seed_layout(BETA, priority=9)
 		layout = resolver.layout_for(PROBE_USER)
-		self.assertEqual(frappe.parse_json(layout["layout"])[0]["chart"], PROBE_CHART)
+		self.assertEqual(layout["charts"][0]["chart"], PROBE_CHART)

@@ -139,7 +139,7 @@ def apply_schema():
 		# COMMIT FIRST: this runs inside @atomic post_schema_updates, so without it a later throw rolls the whole migrate back — INCLUDING the Patch Log rows written earlier in the same run, which made every retry re-run all 52 patches from scratch and nothing ever record as done.
 		frappe.db.commit()
 		frappe.flags.tc_schema_failures = list(failures)
-		print("apply_schema: FAILED for {0} — the chain continues; assert_schema_applied will fail the run at the end.".format(", ".join(failures)))
+		print("apply_schema: FAILED for {} — the chain continues; assert_schema_applied will fail the run at the end.".format(", ".join(failures)))
 	else:
 		frappe.flags.tc_schema_failures = []
 

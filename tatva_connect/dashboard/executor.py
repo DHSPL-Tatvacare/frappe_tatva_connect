@@ -124,13 +124,17 @@ def _query(chart, filters, grouped):
 
 def _fields(chart, grouped):
 	# Dict syntax always — a string aggregate is refused by frappe's own _validate_select_field.
-	measure = {chart.aggregate: chart.aggregate_field or "name", "as": "value"}
+	measure = {chart.aggregate: chart.aggregate_field or "*", "as": "value"}
 	return [chart.group_by_field, measure] if grouped else [measure]
 
 
 def _labels(chart, rows):
-	"""Display names as their own query. Reaching through the link would JOIN, and the row gate names its
-	columns unqualified, so the join makes its `name IN (...)` ambiguous and MariaDB refuses (1052)."""
+	"""Display names as their own query, not through `lead_owner.full_name`.
+
+	A traversed field is permission-checked against the LINK TARGET (query.py check_filter_field_permission),
+	so a viewer without read on User loses the whole card rather than just the labels. Read separately, an
+	unreadable target costs labels only — the raw value is already on screen. Batched, because frappe's own
+	chart does this one row at a time (desk/doctype/dashboard_chart/dashboard_chart.py:289)."""
 	if not chart.label_field or chart.label_field == chart.group_by_field:
 		return {}
 	link = frappe.get_meta(chart.source_doctype).get_field(chart.group_by_field)

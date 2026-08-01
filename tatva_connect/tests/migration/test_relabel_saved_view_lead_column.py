@@ -82,7 +82,7 @@ class TestRelabelSavedViewLeadColumn(FrappeTestCase):
 		patch.execute()
 		for dt, name in names.items():
 			with self.subTest(doctype=dt):
-				lead = [c for c in self._columns(name) if c["key"] == "reference_docname"][0]
+				lead = next(c for c in self._columns(name) if c["key"] == "reference_docname")
 				self.assertEqual(lead["label"], "Lead")
 
 	def test_nothing_else_in_the_row_moves(self):
@@ -100,7 +100,7 @@ class TestRelabelSavedViewLeadColumn(FrappeTestCase):
 		patch.execute()
 		for name in (private, other):
 			with self.subTest(view=name):
-				lead = [c for c in self._columns(name) if c["key"] == "reference_docname"][0]
+				lead = next(c for c in self._columns(name) if c["key"] == "reference_docname")
 				self.assertEqual(lead["label"], "Lead ID")
 
 	def test_a_second_run_changes_nothing(self):

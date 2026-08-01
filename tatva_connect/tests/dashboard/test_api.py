@@ -80,6 +80,9 @@ class ApiCase(FrappeTestCase):
 		frappe.set_user("Administrator")
 
 	def _clear(self):
+		# db.delete does not cascade to child rows, and `format:{role}` remints the same parent name — so
+		# without this the next layout inherits the last one's placements.
+		frappe.db.delete("CRM Dashboard Layout Chart", {"parenttype": LAYOUT, "parent": PROBE_ROLE})
 		frappe.db.delete(LAYOUT, {"role": PROBE_ROLE})
 		frappe.db.delete("Has Role", {"role": PROBE_ROLE})
 		frappe.db.delete("User", {"name": PROBE_USER})
@@ -100,9 +103,7 @@ class ApiCase(FrappeTestCase):
 				"title": "Probe Dashboard",
 				"enabled": 1,
 				"priority": 500,
-				"layout": json.dumps(
-					[{"chart": name, "x": i * 2, "y": 0, "w": 2, "h": 2} for i, name in enumerate(charts)]
-				),
+				"charts": [{"chart": name, "x": i * 2, "y": 0, "w": 2, "h": 2} for i, name in enumerate(charts)],
 				"exposed_filters": json.dumps(["date_range"]),
 			}
 		).insert(ignore_permissions=True)

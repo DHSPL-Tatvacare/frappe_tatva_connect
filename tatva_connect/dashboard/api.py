@@ -11,7 +11,7 @@ import hashlib
 
 import frappe
 from frappe import _
-from frappe.utils import get_first_day, get_last_day, nowdate
+from frappe.utils import get_first_day, get_last_day, getdate, nowdate
 
 from tatva_connect.dashboard import declaration, executor, resolver
 
@@ -30,10 +30,10 @@ def get_dashboard(from_date=None, to_date=None, filters=None):
 	exposed = frappe.parse_json(layout["exposed_filters"])
 	chosen = _chosen(filters, exposed)
 	key = _cache_key(layout, window, chosen)
-	payload = frappe.cache().get_value(key)
+	payload = frappe.cache.get_value(key)
 	if payload is None:
 		payload = _build(layout, window, exposed, chosen)
-		frappe.cache().set_value(key, payload, expires_in_sec=_CACHE_TTL)
+		frappe.cache.set_value(key, payload, expires_in_sec=_CACHE_TTL)
 	return payload
 
 
@@ -48,7 +48,7 @@ def _cache_key(layout, window, chosen):
 
 
 def _build(layout, window, exposed, chosen):
-	placements = _placements(layout)
+	placements = layout["charts"]
 	declared = declaration.charts(placement["chart"] for placement in placements)
 	return {
 		"configured": True,
@@ -70,15 +70,15 @@ def _chosen(filters, exposed):
 	return {key: value for key, value in chosen.items() if key in exposed}
 
 
-def _placements(layout):
-	return frappe.parse_json(layout["layout"])
-
-
 def _window(from_date, to_date):
-	"""An unset range is the current month. Both or neither, so a half-given range cannot mix two months."""
+	"""An unset range is the current month. Both or neither, so a half-given range cannot mix two months.
+
+	`getdate` both refuses a date that is not one and normalises the spelling, which matters twice over: the
+	window reaches a query, and it is part of the cache key — an unnormalised string would let a caller mint
+	an unbounded number of Redis keys for the same question."""
 	if not (from_date and to_date):
 		from_date, to_date = get_first_day(nowdate()), get_last_day(nowdate())
-	return {"from_date": str(from_date), "to_date": str(to_date)}
+	return {"from_date": str(getdate(from_date)), "to_date": str(getdate(to_date))}
 
 
 def _card(placement, chart, window, chosen):

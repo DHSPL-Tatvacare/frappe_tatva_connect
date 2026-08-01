@@ -14,7 +14,6 @@ schema_setup._STEPS (mirrors add_task_due_state_index)."""
 
 import frappe
 
-_TABLE = "tabCRM Task"
 _INDEXES = (
 	("ix_task_creation_status", ("creation", "status")),
 	("ix_task_status_modified", ("status", "modified")),
@@ -24,10 +23,7 @@ _INDEXES = (
 def execute():
 	if not frappe.db.table_exists("CRM Task"):
 		return
+	# `add_index` checks has_index itself and emits ADD INDEX IF NOT EXISTS (mariadb/database.py:420),
+	# so it is idempotent twice over and a failure here is a real one worth surfacing.
 	for name, columns in _INDEXES:
-		if frappe.db.has_index(_TABLE, name):
-			continue
-		try:
-			frappe.db.add_index("CRM Task", list(columns), name)
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), f"dashboard: index {name} failed")
+		frappe.db.add_index("CRM Task", list(columns), name)

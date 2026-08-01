@@ -44,7 +44,7 @@ def assert_valid_graph(autos):
 		while parent:
 			if parent in chain:
 				raise ValueError(
-					f"Automation hierarchy is cyclic: {' -> '.join(chain + [parent])}. "
+					f"Automation hierarchy is cyclic: {' -> '.join([*chain, parent])}. "
 					"A `requires` chain must end at a row that requires nothing."
 				)
 			chain.append(parent)

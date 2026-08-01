@@ -69,7 +69,7 @@ class TestColumnDeclarationRehome(FrappeTestCase):
 	def test_a_note_carries_its_own_id_and_the_lead(self):
 		"""A2 — FCRM Note answered with no columns at all, so the browser kept a private copy."""
 		columns = _declared("FCRM Note")["columns"]
-		self.assertEqual([c["label"] for c in columns][0], "Note ID")
+		self.assertEqual(next(c["label"] for c in columns), "Note ID")
 		self.assertEqual(columns[0]["key"], "name")
 		self.assertIn(LEAD_REFERENCE_KEY, [c["key"] for c in columns])
 

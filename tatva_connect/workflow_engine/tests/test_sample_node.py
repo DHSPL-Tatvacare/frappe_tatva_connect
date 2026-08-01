@@ -22,6 +22,7 @@ like a Route.
 """
 import json
 import unittest
+from typing import ClassVar
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -102,7 +103,7 @@ class TestAssignmentIsAStableHashAndNeverADiceRoll(FrappeTestCase):
 	stability: a test that walked the graph once could not tell a stable hash from a lucky draw.
 	"""
 
-	ARMS = [_arm("a", "Treatment", 50), _arm("b", "Control", 50)]
+	ARMS: ClassVar = [_arm("a", "Treatment", 50), _arm("b", "Control", 50)]
 
 	def _node(self, node_id="sp"):
 		return frappe._dict(node_id=node_id, node_type="Sample")
