@@ -58,13 +58,14 @@ def export_query():
 	from frappe.desk import reportview
 	from frappe.desk.utils import pop_csv_params
 
-	if frappe.cint(frappe.form_dict.get("export_in_background")):
-		return reportview.export_query()
-
 	form_params = reportview.get_form_params()
 	form_params["limit_page_length"] = row_cap()
 	form_params["as_list"] = True
-	return reportview._export_query(form_params, pop_csv_params(form_params))
+	csv_params = pop_csv_params(form_params)
+	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
+	if frappe.cint(form_params.pop("export_in_background", 0)):
+		return reportview.export_query()
+	return reportview._export_query(form_params, csv_params)
 
 
 @frappe.whitelist()
