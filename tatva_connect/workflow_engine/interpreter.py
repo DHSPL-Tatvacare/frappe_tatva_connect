@@ -602,6 +602,47 @@ def stop_for_subject(subject_doctype, subject_name, reason):
 	ONE behaviour with two triggers (a lead deleted, a lead's grain changed), so it is written once here
 	and called twice from `triggers.py` — a second stop path is the defect this is shaped to avoid.
 
+	It runs INSIDE the caller's transaction and commits nothing: both triggers are `doc_events` on a save
+	the user is making, and a commit there would commit their whole pending write. The subject's live
+	journeys are at most one per workflow, so there is nothing to chunk.
+	"""
+	return _stop_matching({"subject_doctype": subject_doctype, "subject_name": subject_name}, reason)
+
+
+def stop_for_workflow(workflow_name, reason):
+	"""End every LIVE journey of this workflow. Returns how many were stopped. The QUEUED entry point.
+
+	W10 — the same behaviour as `stop_for_subject`, keyed on the workflow instead of the subject, so both
+	go through the one `_stop_matching` below and there is no second terminal transition to disagree with.
+
+	IT COMMITS, so it must never be called inside a request: `apply_transition` and `on_trash` enqueue it.
+	A workflow's live journeys are one per LEAD, so this set is the cohort's size — thousands — and one
+	transaction holding them all is a lock nobody else can get past.
+
+	CHUNKED, AND WITHOUT A CURSOR, which is where this parts company with `drain.run_cohort`. That walk
+	needs a keyset cursor because a lead it passes over still matches the criteria on the next pass; here
+	the filter is SELF-CONSUMING — a journey this pass stops is terminal, so the next `get_all` cannot
+	return it. Each pass therefore asks the same question and gets a strictly smaller answer, and the loop
+	ends when a pass finds nothing. A cursor would add a way to skip a row and no guarantee at all.
+
+	Nor is there a claim like `drain._claim`: the LIFECYCLE is the claim. `apply_transition` refuses
+	SUSPENDED → SUSPENDED, so a second suspend cannot start a second drain, and `job_id`/`deduplicate`
+	closes the rest.
+	"""
+	from tatva_connect.workflow_engine import thresholds
+
+	stopped = 0
+	while True:
+		claimed = _stop_matching({"workflow": workflow_name}, reason, limit=thresholds.STOP_CHUNK)
+		frappe.db.commit()
+		stopped += claimed
+		if not claimed:
+			return stopped
+
+
+def _stop_matching(filters, reason, limit=None):
+	"""THE terminal stop, however it was reached. Returns how many journeys it really ended.
+
 	It is the engine's OWN terminal transition, not a new one: the same `_persist` write that `Done` and
 	`Failed` use, clearing the columns that make a row re-drivable. `active_key` goes NULL so the unique
 	index frees the subject for a future start; `resume_at`/`awaiting_signal`/`awaiting_correlation` go
@@ -614,9 +655,7 @@ def stop_for_subject(subject_doctype, subject_name, reason):
 	"""
 	stopped = 0
 	for name in frappe.get_all(
-		JOURNEY_DT,
-		filters={"subject_doctype": subject_doctype, "subject_name": subject_name, "status": ["in", LIVE_STATES]},
-		pluck="name",
+		JOURNEY_DT, filters={**filters, "status": ["in", LIVE_STATES]}, pluck="name", limit=limit,
 	):
 		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": ["in", LIVE_STATES]}, "name", for_update=True):
 			continue  # already terminal, or another driver holds it — re-checked INSIDE the lock

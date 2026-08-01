@@ -27,6 +27,10 @@ SCHEDULE_TO_DRAIN_HANDOVER = 200
 # Leads per committed chunk — small enough that a killed worker loses little, large enough to amortise.
 DRAIN_CHUNK = 100
 
+# Journeys ended per committed chunk when a workflow is suspended or deleted. Larger than DRAIN_CHUNK
+# because ending a journey is one write, not a graph walk, and the set shrinks with every pass.
+STOP_CHUNK = 200
+
 # Drains one sweep will start; more than a handful due in one minute is a misconfiguration, not load.
 MAX_DUE_PER_SWEEP = 20
 

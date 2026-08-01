@@ -49,6 +49,15 @@ class CRMWorkflow(Document):
 	def validate(self):
 		self.sync_trigger_index()
 
+	def on_trash(self):
+		"""A workflow that is gone cannot serve its journeys, so they end with it.
+
+		Reachable only through a FORCED delete — frappe's own link check refuses an ordinary one, and it
+		runs AFTER this hook (`delete_doc.py:165` then `:172`), so stopping the journeys here does not and
+		must not make the unforced delete succeed.
+		"""
+		self.end_journeys_in_flight(f"Workflow deleted ({self.name})")
+
 	def sync_trigger_index(self):
 		"""Copy the Trigger node's dispatch axes onto the header, so the dispatcher can find us.
 
@@ -219,4 +228,41 @@ class CRMWorkflow(Document):
 			)
 		self.lifecycle_state = target
 		self.save(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own permission check
+		if target == SUSPENDED:
+			from tatva_connect.workflow_engine import drain
+
+			self.end_journeys_in_flight(f"Workflow suspended ({self.name})")
+			# A drain in flight is still MANUFACTURING journeys, so it stops too — and its commit is what
+			# fires the enqueue registered just above, landing the lifecycle, the flag and the job together.
+			drain.abort(self.name)
 		return self.lifecycle_state
+
+	def end_journeys_in_flight(self, reason):
+		"""W10 — SUSPENDING A WORKFLOW *IS* KILLING IT. One action, one outcome, no window in between.
+
+		A Suspended workflow whose journeys keep messaging patients is the dangerous state: the operator
+		believes it is stopped and it is not. So the same act that moves the lifecycle ends everything in
+		flight, and there is no soft pause and no un-kill.
+
+		THE KILL IS TRUE AT THE CALLER'S COMMIT, not when the job finishes. `wakeups.drive_journey` refuses
+		to claim a journey whose workflow is Suspended, so from the instant that transaction lands nothing
+		of this workflow can wake, whatever the drain has reached. The job behind it is bookkeeping.
+
+		ONE ENQUEUE however many journeys — `frappe.enqueue` THROWS above MAX_QUEUED_JOBS=500, so a kill
+		that scaled with its cohort would error partway and leave the rest alive, looking like it worked.
+		`stop_for_workflow` does the chunking and the committing.
+
+		Deliberately NOT gated on the engine switch: killing is cleanup, not engine activity. That is the
+		opposite of the lead-delete stop, which IS gated — a contradiction between two settled decisions
+		that is recorded in `docs/pending/`, not resolved here.
+		"""
+		frappe.enqueue(
+			"tatva_connect.workflow_engine.interpreter.stop_for_workflow",
+			queue="workflow",
+			job_id=f"workflow-stop::{self.name}",
+			deduplicate=True,
+			enqueue_after_commit=True,
+			now=bool(frappe.flags.get("in_test")),
+			workflow_name=self.name,
+			reason=reason,
+		)

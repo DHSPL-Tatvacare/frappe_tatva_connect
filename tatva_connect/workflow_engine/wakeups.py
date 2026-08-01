@@ -216,13 +216,33 @@ def drive_journey(name):
 	failures are logged, never raised, so one bad row never aborts a sweep."""
 	frappe.flags.in_workflow = True
 	try:
-		if not frappe.db.get_value(JOURNEY_DT, {"name": name, "status": "Parked"}, "name", for_update=True):
+		claimed = frappe.db.get_value(
+			JOURNEY_DT, {"name": name, "status": "Parked"}, ["name", "workflow"], as_dict=True, for_update=True,
+		)
+		if not claimed:
 			return  # already claimed/advanced by another driver, or no longer parked (idempotent)
+		if _workflow_suspended(claimed.workflow):
+			return  # W10 — suspended means nothing is in flight, from the instant the lifecycle commits
 		interpreter.advance(frappe.get_doc(JOURNEY_DT, name))
 	except Exception:
 		frappe.log_error(title="workflow: drive failed", message=f"journey={name} :: {frappe.get_traceback()}")
 	finally:
 		frappe.flags.in_workflow = False
+
+
+def _workflow_suspended(workflow):
+	"""W10 — is this journey's workflow suspended? Suspending IS killing, so nothing of it may be driven.
+
+	A SECOND READ, deliberately, and the join was rejected rather than overlooked. Folding the lifecycle
+	into the claim above means `SELECT ... FOR UPDATE` across a join, which locks the CRM Workflow row too
+	— every wake of every journey would then serialise on one header and contend with the operator's own
+	suspend save. `FOR UPDATE OF` would avoid that and is not something frappe's query builder exposes.
+	So it is one indexed primary-key read, taken only after a journey has already been claimed, next to a
+	`get_doc` of the whole journey that costs more.
+	"""
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import SUSPENDED
+
+	return frappe.db.get_value("CRM Workflow", workflow, "lifecycle_state") == SUSPENDED
 
 
 def _due_parked():

@@ -217,9 +217,45 @@ def activate(name):
 
 @frappe.whitelist()
 def suspend(name):
-	"""Active -> Suspended: disarm the trigger. No new Instances start; in-flight Instances keep running on
-	their pinned Version, untouched."""
-	return _transition(name, SUSPENDED)
+	"""Active -> Suspended: SUSPENDING IS KILLING. The trigger is disarmed AND every journey in flight ends.
+
+	One action, one outcome. There is no soft pause and no un-kill: re-activating starts FRESH journeys for
+	leads that qualify, it does not revive the dead ones.
+
+	`stopping` is the receipt — how many journeys were live at the moment of the decision, read before the
+	transition and therefore exact then. The rows are ended by a queued drain behind it, which is safe
+	because a suspended workflow's journeys cannot be woken from the instant this commits.
+	"""
+	stopping = live_journey_count(name)
+	return {**_transition(name, SUSPENDED), "stopping": stopping}
+
+
+@frappe.whitelist()
+def live_journey_count(name):
+	"""How many journeys of this workflow are still in flight — the number the Suspend confirm names.
+
+	`cohort.preview` cannot answer this and was the wrong seam: it counts LEADS a scheduled Trigger's
+	criteria would select, and returns None outright for a record-event workflow, which is most of them.
+	This is a different question about a different table.
+	"""
+	from tatva_connect.workflow_engine.interpreter import JOURNEY_DT, LIVE_STATES
+
+	frappe.get_doc(DOCTYPE, name).check_permission("read")
+	return frappe.db.count(JOURNEY_DT, {"workflow": name, "status": ["in", LIVE_STATES]})
+
+
+@frappe.whitelist()
+def abort_cohort(name):
+	"""Stop an in-flight cohort drain at its next chunk boundary. Journeys already started are left alone.
+
+	`drain.abort` was built and tested with no way to reach it — an operator watching a cohort go wrong had
+	the bench console and nothing else. Killing the journeys it already made is a different act: Suspend.
+	"""
+	from tatva_connect.workflow_engine import drain
+
+	frappe.get_doc(DOCTYPE, name).check_permission("write")
+	drain.abort(name)
+	return {"name": name, "cohort_state": frappe.db.get_value(DOCTYPE, name, "cohort_state")}
 
 
 @frappe.whitelist()
