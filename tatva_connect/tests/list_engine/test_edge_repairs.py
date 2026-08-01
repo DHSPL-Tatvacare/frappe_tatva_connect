@@ -188,6 +188,22 @@ class TestARetiredFieldDoesNotLockARepOut(EdgeCase):
 		self.assertEqual(repair.views_using(TASK, GONE)["views"], 1)
 		self.assertEqual(repair.views_using(TASK, "no_such_field_anywhere")["views"], 0)
 
+	def test_a_native_placeholder_is_never_mistaken_for_a_field(self):
+		"""`crm_view_settings.py` defaults `column_field` to "status" on EVERY view, so a list view on a
+		doctype with no status column carries a name that references nothing. Judging it told a Notes rep a
+		field had been removed from a view they never built.
+
+		RED before the surface rule: `status` is reported unserveable on a plain FCRM Note list."""
+		gone = repair.unserveable(
+			"FCRM Note", {"doctype": "FCRM Note", "column_field": "status"}, {"view_type": "list"}
+		)
+		self.assertEqual(gone, [], "native's own placeholder was judged a broken field reference")
+		# On a kanban the same key DOES name a column, and a name that is not one is still caught.
+		self.assertEqual(
+			repair.unserveable(TASK, {"column_field": "no_such_column"}, {"view_type": "kanban"}),
+			["no_such_column"],
+		)
+
 	def test_the_engine_and_the_janitor_read_the_same_payload_keys(self):
 		"""THE LOCK on the one enumeration. The engine asks which derived fields a payload names; the janitor
 		asks which names it cannot serve. Two walks of the payload would drift, and drift is silent in both
@@ -202,11 +218,13 @@ class TestARetiredFieldDoesNotLockARepOut(EdgeCase):
 			"kanban_fields": {"kanban_fields": [DUE_STATE]},
 			"columns": {"columns": [{"key": DUE_STATE, "label": "S"}]},
 			"order_by": {"order_by": f"modified desc, {DUE_STATE} asc"},
-			"column_field": {"column_field": DUE_STATE},
-			"group_by_field": {"group_by_field": DUE_STATE},
+			# A key is driven IN ITS SURFACE. `column_field` only names a column on a kanban — on a list it
+			# is native's placeholder, defaulted to "status" on doctypes that have no such column.
+			"column_field": {"column_field": DUE_STATE, "view": {"view_type": "kanban"}},
+			"group_by_field": {"group_by_field": DUE_STATE, "view": {"view_type": "group_by"}},
 			"title_field": {"title_field": DUE_STATE},
-			"view.column_field": {"view": {"column_field": DUE_STATE}},
-			"view.group_by_field": {"view": {"group_by_field": DUE_STATE}},
+			"view.column_field": {"view": {"view_type": "kanban", "column_field": DUE_STATE}},
+			"view.group_by_field": {"view": {"view_type": "group_by", "group_by_field": DUE_STATE}},
 			"view.title_field": {"view": {"title_field": DUE_STATE}},
 		}
 		declared = {*repair.DICT_KEYS, *repair.LIST_KEYS, *repair._SINGLE, "columns", "order_by"}
@@ -286,13 +304,20 @@ class TestBothDoorsCleanUpTheSameWay(EdgeCase):
 		self.assertEqual(frappe.parse_json(columns), [])
 		self.assertNotIn(GONE, filters)
 
-	def test_the_edit_is_on_the_record_so_it_is_attributable_and_reversible(self):
-		"""`CRM View Settings` is `track_changes: 1`, so repairing through the doctype writes a Version row.
-		A rep's own configuration is not edited invisibly — the change is on the record, with a history."""
+	def test_the_repair_goes_through_the_document_and_not_a_column_write(self):
+		"""OUR claim is that a rep's view is repaired through the doctype, so `modified` moves with it.
+
+		What frappe then does with that save — the Version row, given `track_changes: 1` — is frappe's own
+		behaviour and not this suite's to assert. It cannot be asserted here anyway: `document.py:556`
+		defaults `ignore_version` to `frappe.in_test`, so no test run ever writes one."""
 		board = self._board()
-		before = frappe.db.count("Version", {"ref_doctype": VIEWS, "docname": board.name})
+		before = frappe.db.get_value(VIEWS, board.name, "modified")
 		self.scoped(view={"custom_view_name": board.name, "view_type": "kanban"}, column_field=GONE)
-		self.assertGreater(frappe.db.count("Version", {"ref_doctype": VIEWS, "docname": board.name}), before)
+		self.assertGreater(
+			frappe.db.get_value(VIEWS, board.name, "modified"),
+			before,
+			"the view was repaired without going through the document layer",
+		)
 
 	def test_a_board_on_a_live_field_is_never_touched_by_either_door(self):
 		self.author(DUE_STATE)
@@ -397,8 +422,13 @@ class TestTheAnswerEchoesEveryKeyTheRequestNamed(EdgeCase):
 		RED before the fix: the header's descriptor carries no themes and the group reads gray."""
 		declared = {b["value"]: b["theme"] for b in BUCKETS}
 
-		listed = self.scoped(rows=["name", "title", DUE_STATE])
+		listed = self.scoped(
+			rows=["name", "title", DUE_STATE],
+			columns=[{"key": "title", "label": "Title"}, {"key": DUE_STATE, "label": "Task Status"}],
+		)
 		cell = next(f for f in listed["fields"] if f.get("fieldname") == DUE_STATE)
+		# THE COLUMN dict — `TasksListView.vue:44` renders a cell from it, and it drew grey on 2026-08-01.
+		column = next(c for c in listed["columns"] if c.get("key") == DUE_STATE)
 
 		grouped = self.scoped(
 			view={"view_type": "group_by", "group_by_field": DUE_STATE}, group_by_field=DUE_STATE
@@ -412,7 +442,12 @@ class TestTheAnswerEchoesEveryKeyTheRequestNamed(EdgeCase):
 		)
 		card = next(f for f in boarded["fields"] if f.get("fieldname") == DUE_STATE)
 
-		for surface, descriptor in (("list cell", cell), ("group header", header), ("card", card)):
+		for surface, descriptor in (
+			("field list", cell),
+			("list COLUMN", column),
+			("group header", header),
+			("card", card),
+		):
 			with self.subTest(surface):
 				self.assertEqual(descriptor.get("themes"), declared)
 
@@ -481,10 +516,16 @@ class TestAnExportShipsTheRowsThatWereOnTheScreen(EdgeCase):
 	def test_the_derived_column_is_not_asked_of_a_door_that_has_no_such_column(self):
 		self.assertNotIn(DUE_STATE, self._args()["fields"])
 
-	def test_exporting_everything_names_no_records_because_it_needs_none(self):
-		"""Every record is included whatever order they arrive in, and pinning thousands of ids into a query
-		string is how a URL reaches its length limit."""
-		self.assertNotIn("selected_items", self._args(export_all=1))
+	def test_exporting_everything_still_names_the_records(self):
+		"""Export-all used to name none, because thousands of ids in a query string is how a URL 414s — and
+		that is exactly why a derived filter travelled as a nested group instead and answered HTTP 500.
+
+		The ids are the only thing `reportview` can be given, so they are always given; the request is a
+		form POST rather than a URL, which is what removes the length ceiling (`derivedField.submitExport`,
+		the same mechanism as frappe's own `open_url_post`). Bounded by `max_report_rows`."""
+		names = self._args(export_all=1)["selected_items"]
+		self.assertTrue(names, "export-all named no records, so the derived narrowing was lost")
+		self.assertLessEqual(len(names), list_export.row_cap())
 
 	def test_a_sort_on_a_real_column_is_left_to_the_export_door(self):
 		args = self._args(order_by="due_date asc")

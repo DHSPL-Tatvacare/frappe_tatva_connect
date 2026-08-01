@@ -40,6 +40,32 @@ import frappe
 from tatva_connect.list_engine import derived
 from tatva_connect.list_engine.engine import ListRequest
 
+# What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
+DEFAULT_ROW_CAP = 100_000
+
+
+@frappe.whitelist()
+def export_query():
+	"""Frappe's export, bounded by the operator's `max_report_rows`.
+
+	Native sets `limit_page_length = None` and streams the whole result — that ONE assignment is all this
+	override changes. Everything else is frappe's own: `get_form_params`, `pop_csv_params` and
+	`_export_query` are called, never reimplemented, so a Desk report exports exactly as it always did.
+	The background branch is frappe's alone and is delegated untouched, because this endpoint is
+	site-wide — overriding it must not quietly remove a Desk feature the CRM happens not to use.
+
+	The cap CAPS. An export over the ceiling returns the ceiling; it is never refused."""
+	from frappe.desk import reportview
+	from frappe.desk.utils import pop_csv_params
+
+	if frappe.cint(frappe.form_dict.get("export_in_background")):
+		return reportview.export_query()
+
+	form_params = reportview.get_form_params()
+	form_params["limit_page_length"] = row_cap()
+	form_params["as_list"] = True
+	return reportview._export_query(form_params, pop_csv_params(form_params))
+
 
 @frappe.whitelist()
 def export_args(
@@ -62,11 +88,27 @@ def export_args(
 	if not request.named:
 		return args
 
-	args["filters"] = request.terms
+	# Flat, derived-free filters; the narrowing travels as ids instead — `ListRequest.names` says why.
+	args["filters"] = dict(request.plain)
 	args["order_by"] = request.for_native().get("order_by") or ""
-	# Exporting EVERYTHING needs no page, and thousands of ids in a query string is how a URL 414s.
-	if not frappe.cint(export_all) and frappe.cint(page_length):
-		names = request.page_names(frappe.cint(page_length))
-		if names is not None:
-			args["selected_items"] = names
+	args["selected_items"] = request.names(_wanted(page_length, export_all))
 	return args
+
+
+def _wanted(page_length, export_all):
+	"""How many rows the export may carry: the operator's ceiling, and the rep's own page when they asked
+	for a page rather than for everything."""
+	cap = row_cap()
+	if frappe.cint(export_all) or not frappe.cint(page_length):
+		return cap
+	return min(cap, frappe.cint(page_length))
+
+
+def row_cap():
+	"""The operator's ceiling on one export, read from frappe's OWN System Settings field.
+
+	`max_report_rows` is declared by frappe and enforced NOWHERE on the server — its only reader in the
+	whole framework is one line of report-viewer JavaScript (`query_report.js:1075`). The field already
+	exists, an operator already knows where it lives, and it already says what it means, so honouring it
+	here invents no setting and hardcodes no number. Its own default stands in when a site has never set it."""
+	return frappe.cint(frappe.get_system_settings("max_report_rows")) or DEFAULT_ROW_CAP

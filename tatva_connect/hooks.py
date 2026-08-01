@@ -31,6 +31,10 @@ override_doctype_class = {
 	"File": "tatva_connect.storage.file_override.FileOverride",
 	# Grain-gate CRM Lead assignment: a grain-tagged rule fires only on a matching-grain lead; stock otherwise.
 	"Assignment Rule": "tatva_connect.lead.assignment_rule.TatvaAssignmentRule",
+	# The crm SPA's own dashboard, carrying the role/cards custom fields — one dashboard doctype, not a second beside it.
+	"CRM Dashboard": "tatva_connect.dashboard.overrides.CRMDashboardOverride",
+	# An Insights invite may only reach an existing enabled login; upstream mints a User for ANY address and logs it in from the link.
+	"Insights User Invitation": "tatva_connect.access.insights_invitation.TatvaInsightsUserInvitation",
 	# Facebook discovery/crawl through our Graph layer: Meta's reason surfaces, no silent empty, no token in logs.
 	"Lead Sync Source": "tatva_connect.lead_sync.source.TatvaLeadSyncSource",
 	# A question maps to a catalog field_key, checked against the form's contract; upstream compares bare fieldnames and throws on every edit.
@@ -60,9 +64,13 @@ override_whitelisted_methods = {
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
+	# The dashboard a ROLE is shown, not the one a person authored: declared cards through one gated get_list door.
+	"crm.api.dashboard.get_dashboard": "tatva_connect.dashboard.api.get_dashboard",
 	# Attach the standard _link_titles map so list/Kanban cells show a Link's clean title (its
 	# doctype title_field) instead of the composite :: PK. Generic; delegates to native get_data.
 	"crm.api.doc.get_data": "tatva_connect.api.list_link_titles.get_data",
+	# Honour frappe's own `max_report_rows`, which frappe declares in System Settings and enforces nowhere on the server.
+	"frappe.desk.reportview.export_query": "tatva_connect.api.list_export.export_query",
 	# The CRM Task list lenses resolve through CRM Task.default_list_data() so no slot or operational column reaches a rep picker; every other doctype delegates to native untouched.
 	"crm.api.doc.get_filterable_fields": "tatva_connect.api.task_lenses.get_filterable_fields",
 	"crm.api.doc.get_group_by_fields": "tatva_connect.api.task_lenses.get_group_by_fields",
@@ -99,6 +107,10 @@ override_whitelisted_methods = {
 	# VAPT hardening — Insights (reads the site DB): the guest doc-method door runs with permissions off
 	# for a published dashboard; the wrapper strips the arg that rewinds a query to its unfiltered source.
 	"insights.api.run_doc_method": "tatva_connect.access.native_guards.run_doc_method",
+	# Insights spreadsheet import is off: client-named tables overwrite each other and the upload leaves a File nothing owns. The file layer is untouched.
+	"insights.api.import_csv_data": "tatva_connect.access.insights_uploads.import_csv_data",
+	"insights.api.data_sources.get_columns_from_uploaded_file": "tatva_connect.access.insights_uploads.get_columns_from_uploaded_file",
+	"insights.api.data_sources.import_csv": "tatva_connect.access.insights_uploads.import_csv",
 	# VAPT hardening — LMS (internal training, Mode 2): allow_guest + engine-bypass catalog reads; the
 	# wrapper NARROWS a non-privileged caller to published rows (courses/batches) and strips the
 	# creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
@@ -460,7 +472,7 @@ fixtures = [
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).
 		"filters": [
-			["dt", "in", ["CRM Lead", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File"]],
+			["dt", "in", ["CRM Lead", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File", "CRM Dashboard"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
@@ -496,6 +508,10 @@ fixtures = [
 		# uses MariaDB's own sequence, which releases immediately and does not deadlock. Masters and
 		# CRM Call Log (whose id is the telephony provider's) are untouched.
 		# See patches/hash_name_transactional_doctypes.py.
+		# A dashboard is a role's, arranged by an operator: upstream's personal-dashboard fields render nowhere and are hidden rather than left as a trap.
+		"CRM Dashboard-layout-hidden",
+		"CRM Dashboard-user-hidden",
+		"CRM Dashboard-private-hidden",
 		"CRM Lead-main-autoname",
 		"CRM Lead-main-naming_rule",
 		"CRM Deal-main-autoname",
