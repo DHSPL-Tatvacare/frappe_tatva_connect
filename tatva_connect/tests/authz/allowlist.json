@@ -1,6 +1,7 @@
 {
 	"_comment": "APPROVED permission surface for the cross-app drift guard (test_surface_audit.py). Baselined 2026-06-26 from the live dev DB via effective_grants(role) over the audited ROLES. The test fails on any (role, doctype) grant BEYOND this set (widening) — it does NOT fail on a grant being REMOVED. To re-bless after an intentional change, re-run the generator in effective_grants's docstring and review the diff. NONE of the sensitive CRM/patient doctypes (CRM Lead, CRM Deal, CRM Task, FCRM Note, CRM Call Log, Contact, WhatsApp Message) are open to All or Guest — verified at baseline.",
 	"_findings": [
+		"REVIEWED, ACCEPTED 2026-08-01 (VAPT batch 2): Sales Manager holds read+write+create on CRM AI Voice Account — the AI-voice provider account. Product owner's call: a manager configures voice calling. The secrets are NOT exposed by it — api_key, webhook_token and webhook_hmac_secret are Password fields, so frappe encrypts them and strips them from every read. What the grant really carries is an operational capability (create an account, change its base_url/key), not a data leak, and no delete. Residual noted, not fixed: the webhook token DIGESTS sit in plain fields at permlevel 0.",
 		"REVIEWED, ACCEPTED (framework defaults, not CRM/patient data): the following All/Guest write/create/delete grants are stock Frappe / Helpdesk / Wiki upstream defaults, present on a clean install and not introduced by tatva_connect. They are blessed into the baseline but flagged here for human visibility: All->Address(w,c), All->Communication(d), All->File(w,c,d), All->HD Article Feedback(w,c,d), All->HD Ticket(w,c), All->Notification Settings(w,c), All->Tag(w,c), All->Tag Link(w,c), All->ToDo(w,c,d), All->Token Cache(d), All->Wiki Page Patch(w,c,d), Guest->HD View(w,c,d). File(w,c,d) for All is the only patient-adjacent concern (attachments) but file PRIVACY is enforced by the fail-closed Azure layer (invariant 15), not the DocPerm; row access is gated separately.",
 		"Purchase Master Manager (a junk ERPNext role) has ZERO effective grants in the baseline — the VAPT lockdown removed its prior broad Contact read. Any future grant to it is therefore drift and will fail the audit.",
 		"RE-BLESSED 2026-07-13 (fresh-site parity). The baseline was taken from the dev DB on 2026-06-26 and four grants have appeared since, so the guard was RED on every site and nobody saw it — the suite refuses to run while a comms switch is on, which it has been. Each is read-only except Comment, and none touches patient data: (All, Comment) w+d with if_owner — OUR rule (access/lockdown.py): a user may edit or delete only their OWN comment; it is the fix for the cross-user comment IDOR, not a widening. (All, Event) read — stock Frappe calendar, no CRM data. (Sales Manager, CRM Automation Resume) read — our own doctype: a manager may see rule fires parked at a Wait step. (Sales Manager, CRM File Scan Log) read — our own doctype: a manager may see the file-screening verdicts.",
@@ -272,6 +273,14 @@
 			"w": 1,
 			"c": 1,
 			"d": 1
+		},
+		{
+			"role": "Sales Manager",
+			"doctype": "CRM AI Voice Account",
+			"r": 1,
+			"w": 1,
+			"c": 1,
+			"d": 0
 		},
 		{
 			"role": "Sales Manager",
