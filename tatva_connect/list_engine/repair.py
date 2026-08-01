@@ -42,8 +42,12 @@ VIEW_DOCTYPE = "CRM View Settings"
 DICT_KEYS = ("filters", "default_filters")
 LIST_KEYS = ("rows", "kanban_fields")
 
-# Keys holding ONE bare fieldname. Each arrives top-level, and the first two also inside the saved view.
+# Keys holding ONE bare fieldname, and the view type each one MEANS A COLUMN ON. `column_field` is the
+# case that matters: `crm_view_settings.py` defaults it to "status" on EVERY view, including doctypes with
+# no such column, so on a list it is native's placeholder and not a field reference at all. Judging it
+# everywhere told a Notes rep a field had been removed from a view they never built.
 _SINGLE = ("column_field", "group_by_field", "title_field")
+_MEANS_A_COLUMN_ON = {"column_field": ("kanban",), "group_by_field": ("group_by",)}
 
 # The saved-view columns that hold a fieldname, by the request key that carries the same thing.
 _VIEW_COLUMNS = ("filters", "order_by", "columns", "rows", "kanban_fields")
@@ -93,7 +97,10 @@ def named_in(kwargs, view):
 		if isinstance(c, dict)
 	)
 	said.update(_bare(t) for t in str(kwargs.get("order_by") or "").split(",") if t.strip())
+	surface = (view or {}).get("view_type") or "list"
 	for key in _SINGLE:
+		if surface not in _MEANS_A_COLUMN_ON.get(key, ()) and key in _MEANS_A_COLUMN_ON:
+			continue
 		said.add(kwargs.get(key))
 		said.add((view or {}).get(key))
 	return {name for name in said if isinstance(name, str) and name.isidentifier()}

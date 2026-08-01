@@ -48,14 +48,19 @@ class TestTheColumnCarriesTheDescriptor(ListEngineCase):
 		return self._get_data(columns=copy.deepcopy(ASKED), rows=_rows_arg("name", "title", FIELD))
 
 	def test_the_derived_column_dict_is_the_caller_s_dict_with_the_declaration_s_own_label(self):
-		"""Position, type, options, width and align are the caller's. The LABEL and the flag are the
-		declaration's: `CRM View Settings` stores the label a column had when the rep added it, so reading
-		it back would leave a renamed field showing its old name on the one surface a rep looks at most."""
+		"""Position, type, options, width and align are the caller's. Every PRESENTATION key is the
+		declaration's — label, the flag, and the bucket colours: `CRM View Settings` stores the label a
+		column had when the rep added it, so reading it back would leave a renamed field showing its old
+		name on the one surface a rep looks at most. The keys are taken from the descriptor rather than
+		listed here, so a new one cannot be added there and forgotten on this surface — which is exactly
+		how `themes` failed to reach a list cell and every badge drew grey on 2026-08-01."""
 		result = self._answer()
 		column = next(c for c in result["columns"] if c.get("key") == FIELD)
 		self.assertEqual(result["columns"].index(column), 1, "the column moved")
 		declared = derived.get(TASK, FIELD).descriptor()
-		self.assertEqual(column, {**ASKED[1], "label": declared["label"], "is_derived": 1})
+		presentation = {k: v for k, v in declared.items() if k not in ("fieldname", "fieldtype", "options")}
+		self.assertEqual(column, {**ASKED[1], **presentation})
+		self.assertIn("themes", column, "the column carries no colours, so its cells cannot be coloured")
 
 	def test_a_stale_saved_label_is_replaced_by_the_declaration_s(self):
 		"""What a rep's saved view holds is a snapshot, not a source. Renaming in `fields.py` moves the

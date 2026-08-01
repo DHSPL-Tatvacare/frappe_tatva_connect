@@ -80,38 +80,25 @@ def get_data(**kwargs):
 	return _announce_removed(ListRequest(kwargs).answer(), removed)
 
 
-def _anded(terms):
-	"""A list of conditions as frappe's nested form: `[c1, "and", c2, "and", c3]`.
+def as_filters(conditions):
+	"""A list of conditions as ONE frappe filters value. ONE shape out, always a list.
 
-	A bucket UNION is ONE condition that is itself `[gA, "or", gB]`, and a flat AND-list cannot carry that
-	— frappe reads a three-element list as `[field, operator, value]`. Every query this module builds goes
-	through here, so the two shapes can never be mixed by accident.
+	A bucket union is a single condition that is itself `[gA, "or", gB]`, and frappe cannot mix a group
+	with a plain condition in a flat list — the moment any element is a group the whole value must be
+	nested. So everything is nested, uniformly: `[c]` for one, `[c1, "and", c2]` for more. Frappe unwraps
+	the single-group case itself (`database/query.py:415`), which is why no special case is needed here.
 
-	A LONE group is returned bare rather than wrapped. A rep who filters by the derived field and nothing
-	else leaves exactly one term, and `[[gA, "or", gB]]` is a list whose only element is a list — which
-	frappe may read as a list of simple filters and hand `gA` in as a fieldname. Bare, its odd index is a
-	string, which is unambiguously the nested form."""
-	terms = [t for t in terms if t]
-	if not terms:
-		return terms
-	if len(terms) == 1:
-		return terms[0] if _is_group(terms[0]) else terms
-	joined = [terms[0]]
-	for term in terms[1:]:
-		joined += ["and", term]
+	THE RULE THIS FUNCTION CARRIES: its output goes to `frappe.get_list` and nowhere else. A native helper
+	that APPENDS to filters — `get_records_based_on_order` copies and appends — must be handed plain
+	conditions, never this. Returning two different shapes to satisfy both callers is what took every
+	derived kanban board down on 2026-08-01."""
+	conditions = [c for c in conditions if c]
+	if len(conditions) < 2:
+		return conditions
+	joined = [conditions[0]]
+	for condition in conditions[1:]:
+		joined += ["and", condition]
 	return joined
-
-
-def _is_group(term):
-	"""Whether a term is a nested `[cond, and|or, cond]` rather than a plain `[doctype, field, op, value]`.
-	A plain term's second element is a FIELDNAME and its first is the doctype string, never a list."""
-	return (
-		isinstance(term, list)
-		and len(term) >= 2
-		and isinstance(term[0], list | tuple)
-		and isinstance(term[1], str)
-		and term[1].lower() in ("and", "or")
-	)
 
 
 def _announce_removed(result, removed):
@@ -293,7 +280,7 @@ class ListRequest:
 				for row in frappe.get_list(
 					self.doctype,
 					fields=["name"],
-					filters=_anded([*scope, derived.group(field, field.bucket(bucket), self.snap)]),
+					filters=as_filters([*scope, derived.group(field, field.bucket(bucket), self.snap)]),
 					limit=UNION_ROW_CAP + 1 - len(names),
 				)
 			)
@@ -427,7 +414,7 @@ class ListRequest:
 			self.for_native(filters=self.plain, default_filters=None, page_length=1, page_length_count=1)
 		)
 		rows = shell.get("rows") or ["name"]
-		terms = _anded([*self.terms, *self._window()])
+		terms = as_filters([*self.terms, *self._window()])
 		data = frappe.get_list(
 			self.doctype,
 			fields=rows,
@@ -506,25 +493,40 @@ class ListRequest:
 				frappe.get_list(
 					self.doctype,
 					fields=rows,
-					filters=_anded([*self.terms, derived.group(field, field.bucket(value), self.snap)]),
+					filters=as_filters([*self.terms, derived.group(field, field.bucket(value), self.snap)]),
 					order_by=order_by,
 					limit=page_length - len(data),
 				)
 			)
 		return data
 
-	def page_names(self, page_length):
-		"""The record ids the LIST would show for this request, or None when nothing composes the page.
+	def names(self, limit):
+		"""The record ids this request selects, composed the way the LIST composes them.
 
-		Export is the one listing surface served by something outside this app, and `reportview` cannot be
-		told "order by bucket" — so an export of a bucket-sorted screen took the first N of a DIFFERENTLY
-		ordered set and shipped rows the rep never saw. The page is composed here, by the SAME walk the list
-		itself runs, and its ids are handed over as `selected_items`; the rows are then exactly the rows on
-		screen. Their ORDER is still `reportview`'s, which is the accepted limit."""
+		THIS IS WHY A CONVERTED FILTER NEVER LEAVES THIS MODULE. Export is the one listing surface served
+		from outside the app, and it runs on frappe's OLD query path: `reportview.validate_filters` reads
+		every condition as a flat 3- or 4-tuple, so a bucket predicate — which is a NESTED group — reaches
+		`get_parenttype_and_fieldname` as a list and dies (measured 2026-08-01: HTTP 500,
+		`'list' object has no attribute 'strip'`). The same filter runs clean through `frappe.get_list`.
+		So the narrowing travels as identifiers, which `reportview.export_query:437` turns into
+		`name in (…)`, and nothing nested is ever handed to a reader that cannot parse it.
+
+		When the sort LEADS with a derived field the page is composed bucket by bucket, because `reportview`
+		cannot be told "order by bucket" — otherwise an export of a bucket-sorted screen ships the first N
+		of a differently ordered set. Their ORDER is still `reportview`'s, which is the accepted limit."""
 		field, descending = self._sort_leads_with()
-		if not field:
-			return None
-		return [row["name"] for row in self._by_bucket(field, descending, ["name"], page_length)]
+		if field:
+			return [row["name"] for row in self._by_bucket(field, descending, ["name"], limit)]
+		return [
+			row.name
+			for row in frappe.get_list(
+				self.doctype,
+				fields=["name"],
+				filters=as_filters(self.terms),
+				order_by=self.for_native().get("order_by") or None,
+				limit=limit,
+			)
+		]
 
 	def _fill_list(self, shell):
 		from crm.api.doc import parse_list_data
@@ -538,13 +540,13 @@ class ListRequest:
 			else frappe.get_list(
 				self.doctype,
 				fields=rows,
-				filters=_anded(self.terms),
+				filters=as_filters(self.terms),
 				order_by=self.for_native().get("order_by"),
 				limit=page_length,
 			)
 		)
 		shell["data"] = parse_list_data(data, self.doctype)
-		shell["total_count"] = self._count(_anded(self.terms))
+		shell["total_count"] = self._count(as_filters(self.terms))
 		shell["row_count"] = len(shell["data"])
 		shell["page_length"] = page_length
 		shell["page_length_count"] = frappe.cint(self.raw.get("page_length_count") or page_length)
@@ -554,7 +556,7 @@ class ListRequest:
 
 		The caller's `kanban_columns` carry each column's own state — `page_length` is what Load More
 		grows, `order` is a persisted drag, `delete` hides it — exactly as native's own loop honours them."""
-		from crm.api.doc import get_records_based_on_order, getCounts, parse_list_data
+		from crm.api.doc import getCounts, parse_list_data
 
 		rows = shell.get("rows") or ["name"]
 		order_by = self.for_native().get("order_by")
@@ -563,26 +565,29 @@ class ListRequest:
 
 		for value in self.board.options:
 			column = {**given.get(value, {}), "name": value}
-			terms = _anded([*self.terms, derived.group(self.board, self.board.bucket(value), self.snap)])
+			# CONDITIONS, not filters. Converting here and passing the result on is what double-wrapped the
+			# group and took the board down twice — `as_filters` is called at each query and nowhere else.
+			conditions = [*self.terms, derived.group(self.board, self.board.bucket(value), self.snap)]
 			page_length = frappe.cint(column.get("page_length") or KANBAN_PAGE_LENGTH)
 			order = column.get("order")
 
 			if column.get("delete"):
 				page = []
 			elif order:
-				page = get_records_based_on_order(self.doctype, rows, list(terms), page_length, order)
-				page = sorted(
-					page, key=lambda r: order.index(r["name"]) if r["name"] in order else len(order)
-				)
+				page = self._in_dragged_order(rows, conditions, page_length, order)
 			else:
 				page = frappe.get_list(
-					self.doctype, fields=rows, filters=terms, order_by=order_by, limit=page_length
+					self.doctype,
+					fields=rows,
+					filters=as_filters(conditions),
+					order_by=order_by,
+					limit=page_length,
 				)
 			page = parse_list_data(page, self.doctype)
 			for row in page:
 				getCounts(row, self.doctype)
 
-			column["all_count"] = self._count(terms)
+			column["all_count"] = self._count(as_filters(conditions))
 			column["count"] = len(page)
 			columns.append(column)
 			data.append({"column": column, "fields": shell.get("kanban_fields") or ["name"], "data": page})
@@ -596,6 +601,31 @@ class ListRequest:
 		shell["row_count"] = sum(column["count"] for column in columns)
 		shell["page_length"] = asked
 		shell["page_length_count"] = frappe.cint(self.raw.get("page_length_count") or asked)
+
+	def _in_dragged_order(self, rows, conditions, page_length, order):
+		"""One board column in the order a rep dragged it into, then whatever else the column holds.
+
+		Native's `get_records_based_on_order` cannot serve this: it COPIES the filters list and APPENDS a
+		`name in (…)` condition to it, which a nested value can never survive — frappe reads a group with a
+		condition appended as `[field, operator, value]` and refuses the query. So the same two passes are
+		made here, against filters this module converted, and the rule holds that a converted value only
+		ever reaches `frappe.get_list`."""
+		dragged = frappe.get_list(
+			self.doctype,
+			fields=rows,
+			filters=as_filters([*conditions, [self.doctype, "name", "in", order[:page_length]]]),
+			order_by="creation desc",
+			limit=page_length,
+		)
+		if len(dragged) < page_length:
+			dragged += frappe.get_list(
+				self.doctype,
+				fields=rows,
+				filters=as_filters([*conditions, [self.doctype, "name", "not in", order]]),
+				order_by="creation desc",
+				limit=page_length - len(dragged),
+			)
+		return sorted(dragged, key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
 
 	def _count(self, terms):
 		from crm.api.doc import COUNT_NAME
@@ -682,10 +712,11 @@ class ListRequest:
 			# Label and stamp are the DECLARATION's, never the saved view's snapshot — `CRM View Settings`
 			# stores the label a rep's column had when they added it, so renaming in `fields.py` would move
 			# four menus and leave the fifth surface reading the old name.
+			# EVERY presentation key, never a hand-listed few — listing them is why `themes` never reached a cell.
+			renamed = ("fieldname", "fieldtype", "options")
 			for column in columns:
 				if isinstance(column, dict) and column.get("key") == field.fieldname:
-					column["label"] = descriptor["label"]
-					column["is_derived"] = descriptor["is_derived"]
+					column.update({k: v for k, v in descriptor.items() if k not in renamed})
 
 		# The card title was withheld from the request for the same reason the column was, so it goes back
 		# into the answer. `ViewControls.vue:549` reads `data.title_field` into the params it re-sends, so

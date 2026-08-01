@@ -26,7 +26,7 @@ import typing
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_to_date, now_datetime, nowdate
+from frappe.utils import add_days, add_to_date, now_datetime, nowdate
 
 from tatva_connect.api import list_link_titles, task_lenses
 from tatva_connect.list_engine import derived
@@ -52,6 +52,11 @@ class ListEngineCase(FrappeTestCase):
 			"overdue_month": ("In Progress", add_to_date(now, days=-30), "Overdue"),
 			"due_end_of_today": ("Backlog", f"{nowdate()} 23:59:59", "Due Today"),
 			"due_tomorrow": ("Todo", add_to_date(now, days=1), "Upcoming"),
+			# THE BOUNDARY ITSELF. Upcoming opens at `>= tomorrow 00:00:00`, so a task due at exactly that
+			# instant belongs to it — and to nothing else, because Due Today closes at `< tomorrow 00:00:00`.
+			# Read the bound as `>` and this record falls out of EVERY bucket and off the list in silence.
+			# The mutation harness planted that exact off-by-one and nothing here noticed until this fixture.
+			"due_at_the_bound": ("Todo", f"{add_days(nowdate(), 1)} 00:00:00", "Upcoming"),
 			"no_due_date": ("Todo", None, "No Due Date"),
 			"done_past_due": ("Done", add_to_date(now, days=-3), "History"),
 			"canceled_past_due": ("Canceled", add_to_date(now, days=-3), "History"),
