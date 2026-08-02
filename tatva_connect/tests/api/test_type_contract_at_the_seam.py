@@ -18,6 +18,7 @@ Run:
 """
 import datetime
 import unittest
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -174,9 +175,11 @@ class TestTheActivitySeam(SeamCase):
 	"""An activity's answers are typed by `CRM Task Type Field` — the type `activity_schema` publishes.
 	The partner surface holds a caller to that same declaration before the brain is handed anything."""
 
-	_CFG = {"fields": [frappe._dict({"fieldname": "weight", "fieldtype": "Float", "label": "Weight"}),
-	                   frappe._dict({"fieldname": "seen_on", "fieldtype": "Date", "label": "Seen On"}),
-	                   frappe._dict({"fieldname": "notes", "fieldtype": "Data", "label": "Notes"})]}
+	_CFG: ClassVar[dict] = {
+		"fields": [frappe._dict({"fieldname": "weight", "fieldtype": "Float", "label": "Weight"}),
+		           frappe._dict({"fieldname": "seen_on", "fieldtype": "Date", "label": "Seen On"}),
+		           frappe._dict({"fieldname": "notes", "fieldtype": "Data", "label": "Notes"})]
+	}
 
 	def test_an_answer_that_cannot_be_its_declared_type_is_refused(self):
 		with patch.object(activity_brain, "_type_config", return_value=self._CFG):

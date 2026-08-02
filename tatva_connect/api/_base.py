@@ -313,7 +313,7 @@ def _echo(value):
 	is copied into the response, the request log and a bulk `results` array, so mirroring a megabyte of
 	payload is how one bad record becomes three large writes."""
 	text = cstr(value)
-	return '"{0}"'.format(text[:_ECHO_MAX] + "…" if len(text) > _ECHO_MAX else text)
+	return '"{}"'.format(text[:_ECHO_MAX] + "…" if len(text) > _ECHO_MAX else text)
 
 
 def cast_declared(doctype, fieldname, value, fieldtype=None):
