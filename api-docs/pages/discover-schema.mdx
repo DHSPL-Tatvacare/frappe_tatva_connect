@@ -92,6 +92,11 @@ Every entry in `fields[]` (and in a child table's `fields[]`) describes one fiel
 | `required` | `true` means the field must be present when the lead is created. There is no `reqd` |
 | `options` | for Link and Select fields, the allowed target or values, otherwise `null` |
 
+Two of these govern every write:
+
+- **`behavior`** decides whether a field may be sent at all. A field the server assigns or the key stamps is published as `OUTPUT_ONLY`: it is read back, and a value sent for it is **accepted and ignored rather than refused**. A `200` is therefore not confirmation that such a field was applied.
+- **`type`** is enforced. A value that cannot be held as its declared type is refused with `400` naming the field, and a constrained type answers with the values it permits. Values are sent in the type the schema declares — numbers as numbers, dates in ISO form.
+
 ## Required fields
 
 A field with `"required": true` must be present on a create. This is read straight from the schema rather than assumed, because the required set is whatever the key is granted and can differ between keys.

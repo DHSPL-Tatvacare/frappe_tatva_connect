@@ -108,6 +108,12 @@ if (body.status === "success") {
 
 </CodeTabs>
 
+:::note{title="What a write returns"}
+
+The response carries the fields the schema declares, as they were accepted. A field the schema does not declare is discarded, so its **absence from the response**, rather than an error, is the signal that it was never applied. Where the stored state matters, the record is read back.
+
+:::
+
 ## Reading a bulk reply
 
 Bulk replies place per-record outcomes in `results[]`, in the order sent. Each row's own `status` is read:

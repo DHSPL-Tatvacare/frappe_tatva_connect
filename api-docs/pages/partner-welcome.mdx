@@ -25,6 +25,10 @@ Each call is a single HTTPS request carrying a token header. A live console for 
 
 Lead identity is described in full on [Lead identity](/concepts).
 
+## Changes
+
+**2026-08-03 — declared types are enforced.** A value that cannot be held as the `type` its field declares is refused with `400` naming the field, where it was previously accepted and stored in a coerced form. `lead_schema` has always published the type of every field; payloads are built from it. This is a change in behaviour, not a defect fix, and an integration that sends values untyped is affected.
+
 ## Further reading
 
 - [Quickstart](/partner-quickstart) covers the path from key to first lead in four steps.

@@ -146,6 +146,8 @@ not generalise to any other failure.
 - A **nightly re-sync of leads** is safe: they deduplicate on phone.
 - A **nightly re-sync of activities, files or calls** is **not** safe: it duplicates. Either the
   `name`s already handed back are kept, or an `Idempotency-Key` that is stable per record is sent.
+- A field the schema does not declare is **dropped without an error**. A payload is validated against
+  [`lead_schema`](/discover-schema), never against the fact that a call returned `200`.
 - A **backfill** is sent through `lead_create_bulk`, **one call at a time** — a bulk call is limited to
   one in flight, and a second sent in parallel is refused with a `503` (`server_busy`) — the shared
   capacity, not the key's own budget. See [Rate limits](/rate-limits).

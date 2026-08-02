@@ -59,8 +59,8 @@ Every response reports the current state of the request budget, so a client can 
 
 | Header | Meaning |
 |---|---|
-| `X-RateLimit-Limit` | the request budget for the window |
-| `X-RateLimit-Remaining` | requests left in the current window |
+| `X-RateLimit-Limit` | the **sustained** request rate for the window, not the ceiling. A short burst above it is admitted by design |
+| `X-RateLimit-Remaining` | requests left against the sustained rate. It is clamped at zero, so calls can still succeed while it reads zero |
 | `X-RateLimit-Reset` | seconds until the window resets |
 | `Retry-After` | on a 429 or 503 only, seconds to wait before retrying |
 
@@ -78,6 +78,8 @@ All three carry `error.retry_after`, and it is a real number: the exact seconds 
 
 All three mean the request never took effect, so retrying is safe with or without an `Idempotency-Key`. Any *other* failed write is only replay-safe if it carried one — see [Writes and retries](/writes-and-retries).
 
+**A small random delay is added to every wait.** Blocked callers are given the same `retry_after`, so an unjittered wait returns all of them at the same instant and the collision repeats. A fraction of a second of jitter is enough to spread them.
+
 <Mermaid chart={`
 flowchart TD
   A["send a request"] --> B{"429 or 503?"}
@@ -90,6 +92,7 @@ flowchart TD
 <CodeTabs>
 
 ```python title="Python"
+import random
 import time
 
 RETRYABLE = (429, 503)   # rate_limited, server_busy, write_conflict — none ever saved anything
@@ -101,7 +104,7 @@ def call_with_retry(do_request, max_attempts=6):
             return r
         body = r.json()
         wait = body.get("error", {}).get("retry_after") or (2 ** attempt)
-        time.sleep(wait)
+        time.sleep(wait + random.random())   # jitter, so blocked callers do not return together
     return r
 ```
 
@@ -115,7 +118,8 @@ async function callWithRetry(doRequest, maxAttempts = 6) {
     if (!RETRYABLE.includes(res.status)) return res;
     const body = await res.clone().json();
     const wait = body?.error?.retry_after ?? 2 ** attempt;
-    await new Promise((r) => setTimeout(r, wait * 1000));
+    // jitter, so blocked callers do not return together
+    await new Promise((r) => setTimeout(r, (wait + Math.random()) * 1000));
   }
   return res;
 }

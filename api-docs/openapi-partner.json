@@ -1932,7 +1932,7 @@
                 "fieldname": "custom_substage",
                 "label": "Sub-stage",
                 "type": "Link",
-                "behavior": "OPTIONAL",
+                "behavior": "OUTPUT_ONLY",
                 "required": false,
                 "options": "CRM Lead Stage"
               },
