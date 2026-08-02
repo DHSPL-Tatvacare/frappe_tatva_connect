@@ -4,8 +4,8 @@
   { "url": "https://github.com/frappe/telephony", "branch": "develop" },
   { "url": "https://github.com/frappe/helpdesk", "branch": "v1.28.1" },
   { "url": "https://github.com/frappe/payments", "branch": "version-16" },
-  { "url": "https://github.com/frappe/lms", "branch": "v2.59.0" },
-  { "url": "https://github.com/frappe/wiki", "branch": "v3.0.0-rc.5" },
-  { "url": "https://github.com/frappe/insights", "branch": "v3.12.2" },
+  { "url": "https://github.com/frappe/lms", "branch": "v2.61.0" },
+  { "url": "https://github.com/frappe/wiki", "branch": "v3.0.0" },
+  { "url": "https://github.com/frappe/insights", "branch": "v3.12.4" },
   { "url": "https://github.com/DHSPL-Tatvacare/frappe_tatva_connect", "branch": "develop" }
 ]
