@@ -114,14 +114,130 @@ class TestTheSweepCadenceIsDeclaredOnce(FrappeTestCase):
 		self.assertIn("tatva_connect.workflow_engine.drain.sweep", cron[thresholds.SWEEP_CRON])
 
 
-class TestTheHandoverIsUnderFrappesOwnCeiling(FrappeTestCase):
-	"""§10.2: a threshold at or near MAX_QUEUED_JOBS fails by erroring partway through the very burst it
-	was meant to survive. This is the reasoning, kept executable."""
+_THRESHOLDS_PKG = "tatva_connect.workflow_engine"
+_THRESHOLDS_MOD = f"{_THRESHOLDS_PKG}.thresholds"
 
-	def test_it_leaves_headroom_below_max_queued_jobs(self):
-		from frappe.utils.background_jobs import MAX_QUEUED_JOBS
 
-		self.assertLess(thresholds.SCHEDULE_TO_DRAIN_HANDOVER, MAX_QUEUED_JOBS / 2)
+def _bindings_of_thresholds(tree):
+	"""How THIS module named the thresholds module: (aliases bound to it, names imported straight out)."""
+	aliases, direct = set(), set()
+	for node in ast.walk(tree):
+		if isinstance(node, (ast.Import, ast.ImportFrom)):
+			bound, imported = _binding_of(node)
+			aliases |= bound
+			direct |= imported
+	return aliases, direct
+
+
+def _binding_of(node):
+	"""One import statement, in the three spellings the language allows for reaching a constant here."""
+	if isinstance(node, ast.Import):                       # import <mod> [as x]
+		return {a.asname or a.name for a in node.names if a.name == _THRESHOLDS_MOD}, set()
+	if node.module == _THRESHOLDS_MOD:                     # from <mod> import NAME
+		return set(), {a.name for a in node.names}
+	if node.module == _THRESHOLDS_PKG:                     # from <pkg> import thresholds [as x]
+		return {a.asname or a.name for a in node.names if a.name == "thresholds"}, set()
+	return set(), set()
+
+
+class TestEveryDeclaredThresholdHasAReader(FrappeTestCase):
+	"""A declaration with no reader is a decision nobody is enforcing.
+
+	`SCHEDULE_TO_DRAIN_HANDOVER` sat unread for the whole of W4 while its comment described behaviour the
+	engine did not have, and it was found by hand. So was `RUN_RETENTION_DAYS`. Two by hand is the signal
+	that the class needs a lock rather than more looking.
+
+	AST on both sides, never a grep: `thresholds.X` inside a comment or a docstring is not a reader, and a
+	name assembled at runtime is not one either — which is why `_ALLOWED_UNREAD` is a list of names with
+	written reasons instead of a `getattr` escape hatch.
+	"""
+
+	# A declared threshold nothing reads yet, each with the file that owns getting it read. Adding a name
+	# here is a deliberate act with a paper trail; it is not a way to make this test go quiet.
+	_ALLOWED_UNREAD = {
+		"RUN_RETENTION_DAYS": "docs/pending/2026-08-02-run-retention-has-no-reaper.md",
+	}
+
+	def _declared(self):
+		"""Every module-level constant in thresholds.py, whatever its type — the cron is a string."""
+		tree = ast.parse((_ENGINE / "thresholds.py").read_text())
+		return {
+			target.id
+			for node in tree.body if isinstance(node, ast.Assign)
+			for target in node.targets if isinstance(target, ast.Name)
+		}
+
+	def _read_by_production(self):
+		"""Every threshold an app module really evaluates. Tests are excluded on purpose: a constant only
+		its own test reads is exactly the defect this locks.
+
+		THE ALIAS IS RESOLVED PER MODULE, never assumed to be `thresholds`. Matching that one spelling
+		reported `SWEEP_CRON` unread while `hooks.py` was reading it as `workflow_thresholds.SWEEP_CRON` —
+		a lock with a narrower idea of a reader than the language has is a lock that accuses working code.
+		"""
+		app = _ENGINE.parent
+		names = set()
+		for path in app.rglob("*.py"):
+			if "tests" in path.relative_to(app).parts or path.name == "thresholds.py":
+				continue
+			tree = ast.parse(path.read_text())
+			aliases, direct = _bindings_of_thresholds(tree)
+			names |= direct
+			names |= {
+				node.attr for node in ast.walk(tree)
+				if isinstance(node, ast.Attribute)
+				and isinstance(node.value, ast.Name)
+				and node.value.id in aliases
+			}
+		return names
+
+	def test_every_threshold_is_read_by_production_code(self):
+		unread = self._declared() - self._read_by_production() - set(self._ALLOWED_UNREAD)
+
+		self.assertEqual(
+			unread, set(),
+			f"declared and read by nothing: {sorted(unread)} — give each one a consumer, or name it in "
+			"_ALLOWED_UNREAD with the pending file that owns getting it read",
+		)
+
+	def test_the_allowed_list_does_not_outlive_its_reason(self):
+		"""The other half. A name excused here and then WIRED UP must lose its excuse, or the next unread
+		constant inherits a stale exemption and the lock quietly stops covering it."""
+		wired = self._read_by_production() & set(self._ALLOWED_UNREAD)
+
+		self.assertEqual(
+			wired, set(),
+			f"{sorted(wired)} now has a reader and must come out of _ALLOWED_UNREAD",
+		)
+
+	def test_a_threshold_losing_its_last_reader_goes_red(self):
+		"""The lock's own proof. Take away every reader of a live constant and this must fail — otherwise
+		it passes because the app happens to be tidy, not because it is checking anything."""
+		live = self._read_by_production()
+		self.assertIn("SWEEP_PAGE", live, "the fixture must pick a constant that IS read")
+
+		with patch.object(type(self), "_read_by_production", lambda _self: live - {"SWEEP_PAGE"}):
+			with self.assertRaises(AssertionError) as caught:
+				self.test_every_threshold_is_read_by_production_code()
+
+		self.assertIn("SWEEP_PAGE", str(caught.exception))
+
+
+class TestTheHandoverLandsWhereTheSweepCanCarryIt(FrappeTestCase):
+	"""The handover's reasoning, kept executable — and it is NOT the one this class used to hold.
+
+	It asserted `SCHEDULE_TO_DRAIN_HANDOVER < MAX_QUEUED_JOBS / 2`, on the belief that a burst past
+	frappe's ceiling would throw partway through. It cannot: `schedule_wake` uses the raw RQ
+	`queue.enqueue_at` and never enters `frappe.enqueue`, and `_check_queue_size` reads the READY queue,
+	not the scheduled registry. Measured at 600 alarms — `q.count=0`, `registry.count=600`, no throw. A
+	frappe constant is now irrelevant to this number and asserting against it encoded a false fact.
+
+	What does hold: the handover is a declared operating choice sized at one sweep page, so at the moment
+	alarms stop being set, one pass of the sweep can already carry the entire parked population.
+	"""
+
+	def test_the_handover_is_no_larger_than_one_sweep_page(self):
+		self.assertLessEqual(thresholds.SCHEDULE_TO_DRAIN_HANDOVER, thresholds.SWEEP_PAGE)
 
 
 class TestTheLaneIsADeployContractNotOneMachinesComposeFile(FrappeTestCase):

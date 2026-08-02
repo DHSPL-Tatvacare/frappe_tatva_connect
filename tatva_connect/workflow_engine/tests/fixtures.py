@@ -179,9 +179,25 @@ def purge(*workflow_names):
 	frappe.db.commit()
 
 
-def _set_engine(enabled):
-	frappe.db.set_value("CRM Tatva Automation", ENGINE_SWITCH, "enabled", 1 if enabled else 0)
+def _set_switch(key, enabled):
+	frappe.db.set_value("CRM Tatva Automation", key, "enabled", 1 if enabled else 0)
 	frappe.db.commit()
+
+
+def _set_engine(enabled):
+	_set_switch(ENGINE_SWITCH, enabled)
+
+
+def arm_sweep(cls):
+	"""The sweep switch, armed for this class and registered OFF again — `arm_engine`'s reasoning verbatim.
+
+	Registered BEFORE the write, so an abort between the two still disarms, and the restore goes to OFF
+	rather than to whatever it was, because that is what stops a poisoned baseline propagating.
+	"""
+	from tatva_connect.workflow_engine import SWEEP_SWITCH
+
+	cls.addClassCleanup(_set_switch, SWEEP_SWITCH, False)
+	_set_switch(SWEEP_SWITCH, True)
 
 
 def arm_engine(enabled=True, cls=None):

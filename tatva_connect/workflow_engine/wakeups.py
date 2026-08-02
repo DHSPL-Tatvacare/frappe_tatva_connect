@@ -83,6 +83,12 @@ def schedule_wake(name, resume_at):
 	AFTER COMMIT, always: the alarm must not exist for a segment that rolled back. Deduplicated on the journey
 	name so a re-park cannot stack alarms. The payload is the NAME — `drive_journey` re-reads the row and
 	re-claims it, so a stale or duplicated job is a no-op and a lost one is caught by the sweep.
+
+	ABOVE `SCHEDULE_TO_DRAIN_HANDOVER` NO ALARM IS SET, and returns False so the park can say so. An alarm
+	is a COPY of `resume_at`, which is already the truth, held in Redis for the whole wait — §6.2's rule is
+	that a workflow entry in Redis is a pointer or a copy and never a fact, and §5.4 declares the sweep the
+	volume path. Below the ceiling the copy buys punctuality cheaply; above it the sweep is already doing
+	the work, so the journey goes LATE, NEVER WRONG.
 	"""
 	from frappe.utils.background_jobs import create_job_id, get_queue
 
@@ -97,19 +103,36 @@ def schedule_wake(name, resume_at):
 	}
 	job_id = create_job_id(f"workflow-wake::{name}")
 	due = frappe.utils.get_datetime(resume_at)
+	queue = get_queue(WAKE_QUEUE)
+	punctual = alarms_pending(queue) < thresholds.SCHEDULE_TO_DRAIN_HANDOVER
 
 	def alarm():
-		queue = get_queue(WAKE_QUEUE)
+		# Dropped FIRST and unconditionally: `drive_journey` claims on status alone and never re-reads the
+		# clock, so an alarm left from an earlier park does not go stale — it wakes the journey EARLY.
 		_forget_wake(queue, job_id)
-		queue.enqueue_at(
-			_as_utc(due),
-			"frappe.utils.background_jobs.execute_job",
-			kwargs=queue_args,
-			job_timeout=thresholds.WAKE_JOB_TIMEOUT,
-			job_id=job_id,
-		)
+		if punctual:
+			queue.enqueue_at(
+				_as_utc(due),
+				"frappe.utils.background_jobs.execute_job",
+				kwargs=queue_args,
+				job_timeout=thresholds.WAKE_JOB_TIMEOUT,
+				job_id=job_id,
+			)
 
 	frappe.db.after_commit.add(alarm)
+	return punctual
+
+
+def alarms_pending(queue=None):
+	"""How many alarms this lane is already holding — RQ's own registry, asked, never modelled.
+
+	A ZCARD on the scheduled set. Keeping our own counter or cache key would be a second brain about a
+	number Redis already holds, and it would drift the moment an alarm fired, was forgotten or expired.
+	"""
+	from frappe.utils.background_jobs import get_queue
+	from rq.registry import ScheduledJobRegistry
+
+	return ScheduledJobRegistry(queue=queue or get_queue(WAKE_QUEUE)).count
 
 
 def _as_utc(due):
@@ -142,11 +165,15 @@ def run_wake_scheduler(interval=1):
 
 
 def _forget_wake(queue, job_id):
-	"""Drop any alarm already set for this journey, so a re-park replaces rather than stacks."""
+	"""Drop any alarm already set for this journey, so a re-park replaces rather than stacks.
+
+	`in registry` is RQ's own ZSCORE. `in registry.get_job_ids()` pulled EVERY scheduled id across the wire
+	to test one membership, on every park — 45.16 ms against 1.25 ms at 20,000 pending.
+	"""
 	from rq.registry import ScheduledJobRegistry
 
 	registry = ScheduledJobRegistry(queue=queue)
-	if job_id in registry.get_job_ids():
+	if job_id in registry:
 		registry.remove(job_id, delete_job=True)
 
 

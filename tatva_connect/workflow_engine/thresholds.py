@@ -20,8 +20,12 @@ SWEEP_PAGE = 200
 # Seconds a wake job may run; a segment unfinished in 25 minutes is stuck, not slow.
 WAKE_JOB_TIMEOUT = 1500
 
-# §10.2, decided: individual scheduling gives way to draining here, under `MAX_QUEUED_JOBS = 500`.
-# NOTHING READS IT YET — the timer path has no volume ceiling; that is the open half of W4.1 at volume.
+# Pending alarms above which a park stops setting one and leaves the wake to the sweep. An alarm is a COPY
+# of `resume_at` held in Redis for the whole wait, and §6.2 is that a workflow entry in Redis is a pointer
+# or a copy, never a fact; §5.4 declares the sweep the volume path, which it only becomes above this line.
+# A DECLARED OPERATING CHOICE, not an arithmetic result — the footprint is linear and the sweep covers every
+# row either side, so nothing breaks just above or below. It is set at one `SWEEP_PAGE` so the handover
+# lands where a single sweep pass can already carry the whole parked population.
 SCHEDULE_TO_DRAIN_HANDOVER = 200
 
 # Leads per committed chunk — small enough that a killed worker loses little, large enough to amortise.

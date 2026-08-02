@@ -521,11 +521,15 @@ def _park(journey, node, state):
 	_persist(journey, values)
 	# The diary row is written; set the alarm so the clock is kept to the minute rather than to the */15
 	# sweep. After-commit and losable by design — the sweep still finds this row if the alarm never fires.
+	punctual = True
 	if values.get("resume_at"):
 		from tatva_connect.workflow_engine import wakeups
 
-		wakeups.schedule_wake(journey.name, values["resume_at"])
-	_step_log(journey, node, "parked", "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal")))
+		punctual = wakeups.schedule_wake(journey.name, values["resume_at"])
+	# Above the volume ceiling no alarm was set, and THIS row is where an operator asks why one journey
+	# waited longer than its node said — a log line per park would answer about the fleet, not the patient.
+	detail = "resume_at={} awaiting={}".format(values.get("resume_at"), values.get("awaiting_signal"))
+	_step_log(journey, node, "parked", detail if punctual else f"{detail} wake=sweep (alarm ceiling reached)")
 
 
 def _verb_output(node, state):
