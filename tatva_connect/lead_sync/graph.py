@@ -1,4 +1,8 @@
-"""Graph API calls that surface Meta's reason and never leak the token."""
+"""Graph API calls that surface Meta's reason and never leak the token.
+
+Transport only. Which app a call is made on behalf of — and so which Graph version its URL carries — is
+the `CRM Facebook App` row's own answer (`app.api_url`), because a token belongs to exactly one app.
+"""
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import frappe
@@ -6,17 +10,6 @@ from frappe.integrations.utils import make_get_request, make_post_request
 from frappe.utils import cint
 
 from tatva_connect.utils import mask_secrets
-
-_BASE = "https://graph.facebook.com"
-
-
-def api_url(endpoint: str) -> str:
-	"""Build the Graph URL at the operator's chosen version, not the fork's pinned constant."""
-	return f"{_BASE}/{settings().graph_api_version}/{endpoint.lstrip('/')}"
-
-
-def settings():
-	return frappe.get_cached_doc("CRM Facebook Settings")
 
 
 def redact_tokens(text: str) -> str:

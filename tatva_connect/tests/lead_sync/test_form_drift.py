@@ -19,6 +19,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.lead_sync import drift
+from tatva_connect.tests.lead_sync import ensure_app
 
 
 class TestFormDrift(FrappeTestCase):
@@ -49,7 +50,7 @@ class TestFormDrift(FrappeTestCase):
 				name = f"zz-src-{form_id}"
 				if not frappe.db.exists("Lead Sync Source", name):
 					frappe.get_doc({
-						"doctype": "Lead Sync Source", "name": name, "type": "Facebook",
+						"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": name, "type": "Facebook",
 						"access_token": "zz-token", "facebook_lead_form": form_id,
 						"background_sync_frequency": "Daily", "enabled": 0,
 					}).insert(ignore_permissions=True)

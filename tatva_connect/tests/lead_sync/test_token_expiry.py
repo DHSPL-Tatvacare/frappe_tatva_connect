@@ -25,11 +25,26 @@ def _epoch_in_days(days):
 	return int(frappe.utils.get_datetime(frappe.utils.add_days(frappe.utils.nowdate(), days)).timestamp())
 
 
+APP = "700000000000001"
+
+
+def _app(app_id=APP, secret="zz-app-secret"):
+	"""A real CRM Facebook App row, because token.py asks it for the Graph URL and the inspector — a
+	stand-in would be a second copy of both. FrappeTestCase rolls it back."""
+	if not frappe.db.exists("CRM Facebook App", app_id):
+		frappe.get_doc({
+			"doctype": "CRM Facebook App", "app_id": app_id, "app_name": f"Probe {app_id}",
+			"app_secret": secret, "graph_api_version": "v23.0", "lead_page_size": 100,
+		}).insert(ignore_permissions=True)
+	return frappe.get_doc("CRM Facebook App", app_id)
+
+
 def _source(access_token):
 	"""A stand-in source carrying only what refresh_credential reads and writes."""
+	_app()
 	return frappe._dict(
 		name="zz-tok-src", type="Facebook", access_token=access_token, token_expires_on=None,
-		meta=frappe.get_meta("Lead Sync Source"),
+		facebook_app=APP, meta=frappe.get_meta("Lead Sync Source"),
 		get_password=lambda *args, **kwargs: access_token,
 	)
 
@@ -38,16 +53,16 @@ class TestTokenExpiry(FrappeTestCase):
 	def test_graph_expiry_becomes_a_date(self):
 		# 2026-09-17T00:00:00Z as a unix timestamp, the shape Graph returns.
 		with patch.object(token, "graph_get", return_value={"data": {"expires_at": 1789603200}}):
-			self.assertEqual(str(token.expiry_date(token.token_info("zz-token"))), "2026-09-17")
+			self.assertEqual(str(token.expiry_date(token.token_info("zz-token", _app()))), "2026-09-17")
 
 	def test_a_never_expiring_token_stamps_nothing(self):
 		"""Graph reports 0 for a derived Page token or a System User token, not an expiry of 1970."""
 		with patch.object(token, "graph_get", return_value={"data": {"expires_at": 0}}):
-			self.assertIsNone(token.expiry_date(token.token_info("zz-token")))
+			self.assertIsNone(token.expiry_date(token.token_info("zz-token", _app())))
 
 	def test_no_token_is_not_asked_about(self):
 		with patch.object(token, "graph_get", side_effect=AssertionError("Graph must not be called")):
-			self.assertEqual(token.token_info(""), {})
+			self.assertEqual(token.token_info("", _app()), {})
 
 	def test_an_unaskable_token_never_blocks_the_save(self):
 		"""The stamp is a convenience; a Graph outage must not stop an operator saving a source."""
@@ -103,9 +118,8 @@ class TestLongLivedExchange(FrappeTestCase):
 		self.assertEqual(info.call_count, 1)
 
 	def test_no_app_secret_means_no_exchange_attempt(self):
-		"""Without the app credentials the exchange cannot be made, and "" is returned rather than a throw."""
-		with patch.object(token, "app_credentials", return_value=("", "")):
-			self.assertEqual(token.exchange_for_long_lived("zz-short"), "")
+		"""Without the app secret the exchange cannot be made, and "" is returned rather than a throw."""
+		self.assertEqual(token.exchange_for_long_lived("zz-short", _app("700000000000002", secret="")), "")
 
 
 class TestExpiryNotification(FrappeTestCase):

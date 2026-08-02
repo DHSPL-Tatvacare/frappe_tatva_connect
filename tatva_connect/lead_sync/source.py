@@ -21,8 +21,8 @@ from tatva_connect.lead_sync.contract import (
 )
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift
-from tatva_connect.lead_sync.graph import api_url, graph_get, redact_tokens, settings
-from tatva_connect.lead_sync.token import page_of_form, refresh_credential
+from tatva_connect.lead_sync.graph import graph_get, redact_tokens
+from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credential
 
 # A checkbox question answers with several values and every one of them is the record; the joined string
 # is what a person reading the answer would write down.
@@ -224,14 +224,24 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			}
 		return self._question_labels
 
+	@property
+	def app(self):
+		"""The app this crawl runs on behalf of: the SOURCE's, because the source drives the pass.
+
+		Resolved lazily and cached like the form name and the question labels — a fold that never calls
+		Graph (a retry of a stored payload, most of the test suite) must not need a credential to run."""
+		if getattr(self, "_app", None) is None:
+			self._app = app_for(frappe.get_cached_doc("Lead Sync Source", self.get_source_name()))
+		return self._app
+
 	def get_api_url(self, endpoint: str) -> str:
-		return api_url(endpoint)
+		return self.app.api_url(endpoint)
 
 	def fetch_leads(self):
 		"""Follow Graph's paging cursors; upstream asked for limit=100000 in one shot and silently truncated."""
 		params = {
 			"fields": "id,created_time,field_data",
-			"limit": settings().lead_page_size or 100,
+			"limit": self.app.lead_page_size or 100,
 		}
 		if self.last_synced_at:
 			params["filtering"] = frappe.as_json(
@@ -267,10 +277,18 @@ class TatvaLeadSyncSource(LeadSyncSource):
 				frappe._("Select a Contract before enabling — it is what gives every lead from this form its grain."),
 				title=frappe._("Contract required"),
 			)
+		if self.type == "Facebook" and not self.get("facebook_app"):
+			frappe.throw(
+				frappe._("Select the Facebook App this token came from — it is what exchanges the token and "
+				         "what every Graph call is made on behalf of."),
+				title=frappe._("Facebook App required"),
+			)
 		if self.enabled and self.type == "Facebook":
 			self._identity_question_must_be_mapped()
-		# Graph is asked only when the token is new or changed, never on every save.
-		if self.type == "Facebook" and (self.is_new() or self.has_value_changed("access_token")):
+		# Graph is asked when the credential is new or has moved — never on every save.
+		if self.type == "Facebook" and (
+			self.is_new() or self.has_value_changed("access_token") or self.has_value_changed("facebook_app")
+		):
 			refresh_credential(self)
 
 	def _identity_question_must_be_mapped(self):
@@ -309,7 +327,7 @@ class TatvaLeadSyncSource(LeadSyncSource):
 	def before_insert(self):
 		if self.type == "Facebook" and self.access_token:
 			try:
-				fetch_and_store_pages(self.access_token)
+				fetch_and_store_pages(self.access_token, app_for(self))
 			except Exception:
 				# frappe.throw is a 417 and app.py:412 only snapshots >=500, so this would leave no Error Log row.
 				# Roll back first: a plain log_error dies with the transaction the raise is about to discard.

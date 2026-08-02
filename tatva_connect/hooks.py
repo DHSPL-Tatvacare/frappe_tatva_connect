@@ -500,6 +500,10 @@ fixtures = [
 		"Lead Sync Source-api_mapping",
 		# Stamped from Graph when the token is saved; a 60-day lapse otherwise stops the crawl in silence.
 		"Lead Sync Source-token_expires_on",
+		# The app that issued the source's token — a token belongs to exactly one, and only it can exchange it.
+		"Lead Sync Source-facebook_app",
+		# Provenance of the stored Page token, not ownership: a Business owns Pages and apps alike.
+		"Facebook Page-facebook_app",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [

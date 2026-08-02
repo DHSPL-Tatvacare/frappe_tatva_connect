@@ -11,7 +11,7 @@ from frappe.rate_limiter import rate_limit
 from tatva_connect.lead import mapping
 from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.form import contract_for_form
-from tatva_connect.lead_sync.token import app_credentials, expiry_date, page_of_form, token_info
+from tatva_connect.lead_sync.token import app_for, expiry_date, page_of_form, token_info
 
 # The scopes a crawl cannot run without; reported one by one so a missing grant names itself.
 REQUIRED_SCOPES = (
@@ -53,7 +53,8 @@ def validate_token(doctype: str, name: str) -> dict:
 		frappe.throw(_("{0} carries no Facebook token.").format(doctype))
 	frappe.has_permission(doctype, "write", doc=name, throw=True)
 
-	token = frappe.get_doc(doctype, name).get_password("access_token", raise_exception=False)
+	doc = frappe.get_doc(doctype, name)
+	token = doc.get_password("access_token", raise_exception=False)
 	report = {"ok": False, "checks": []}
 
 	def check(label, passed, detail=""):
@@ -63,7 +64,16 @@ def validate_token(doctype: str, name: str) -> dict:
 	if not check("Token stored", bool(token), "yes" if token else "nothing is stored on this record"):
 		return report
 
-	info = token_info(token)
+	# Reported as a check rather than raised: a record saved before an app was named must still be readable.
+	if not check(
+		"Facebook App named",
+		bool(doc.get("facebook_app")),
+		doc.get("facebook_app") or "no app on this record, so Facebook cannot be asked about the token",
+	):
+		return report
+
+	app = app_for(doc)
+	info = token_info(token, app)
 	if not check(
 		"Accepted by Facebook",
 		info.get("is_valid"),
@@ -72,12 +82,20 @@ def validate_token(doctype: str, name: str) -> dict:
 		return report
 
 	check("Token kind", True, _token_kind(info))
-	check("App", bool(info.get("app_id")), f"{info.get('application') or 'unknown'} ({info.get('app_id') or '?'})")
+	# A token issued by a DIFFERENT app cannot be exchanged or renewed here, and that is silent otherwise.
+	issued_by = str(info.get("app_id") or "")
+	check(
+		"App",
+		issued_by == str(app.app_id),
+		f"{info.get('application') or 'unknown'} ({issued_by or '?'})"
+		if issued_by == str(app.app_id)
+		else f"issued by {info.get('application') or 'unknown'} ({issued_by or '?'}), but this record names {app.app_name} ({app.app_id})",
+	)
 
 	expiry = expiry_date(info)
 	if expiry:
 		days = frappe.utils.date_diff(expiry, frappe.utils.nowdate())
-		check("Token expires", days > 1, f"{expiry} ({days} days left)" if days > 1 else _short_token_reason())
+		check("Token expires", days > 1, f"{expiry} ({days} days left)" if days > 1 else _short_token_reason(app))
 	else:
 		check("Token expires", True, "never")
 
@@ -97,21 +115,20 @@ def validate_token(doctype: str, name: str) -> dict:
 	)
 
 	if doctype == "Lead Sync Source":
-		_check_crawl_credential(frappe.get_doc(doctype, name), check)
+		_check_crawl_credential(doc, check)
 
 	report["ok"] = all(c["passed"] for c in report["checks"])
 	return report
 
 
-def _short_token_reason() -> str:
+def _short_token_reason(app) -> str:
 	"""Why a token is still short-lived, which is a different instruction depending on the app credentials.
 	Reporting "set the App Secret" when it is already set sends an operator to look at the wrong thing."""
-	app_id, app_secret = app_credentials()
-	if not (app_id and app_secret):
-		return "Short-lived. Set App ID and App Secret in Facebook Settings, then save this source again."
+	if not app.secret():
+		return f"Short-lived. Set the App Secret on {app.app_name}, then save this source again."
 	return (
-		"Short-lived, and the exchange did not replace it. The App Secret is set, so it is likely wrong "
-		"or belongs to a different app. Check the Error Log for the exchange failure."
+		f"Short-lived, and the exchange did not replace it. {app.app_name} has an App Secret, so it is "
+		"likely wrong. Check the Error Log for the exchange failure."
 	)
 
 
@@ -145,5 +162,7 @@ def refresh_from_facebook(name: str) -> dict:
 	frappe.has_permission("Lead Sync Source", "write", doc=name, throw=True)
 
 	source = frappe.get_doc("Lead Sync Source", name)
-	pages = fetch_and_store_pages(source.get_password("access_token", raise_exception=False))
+	pages = fetch_and_store_pages(
+		source.get_password("access_token", raise_exception=False), app_for(source)
+	)
 	return {"pages": len(pages), "forms": sum(len(p.get("forms") or []) for p in pages)}

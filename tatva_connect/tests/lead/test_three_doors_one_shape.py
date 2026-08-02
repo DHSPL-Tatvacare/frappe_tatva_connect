@@ -29,6 +29,7 @@ from tatva_connect.intake import builder, intake
 from tatva_connect.lead_sync.form import IDENTITY_KEY
 from tatva_connect.lead_sync.source import TatvaFacebookSyncSource
 from tatva_connect.tests.api import partner_fixture
+from tatva_connect.tests.lead_sync import ensure_app
 
 PATIENT = "Asha Threedoors"
 PHONE_PARTNER = "+916100040001"
@@ -99,7 +100,7 @@ class TestThreeDoorsOneShape(FrappeTestCase):
 		with patch("tatva_connect.lead_sync.source.fetch_and_store_pages", return_value=[]), \
 		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
 			frappe.get_doc({
-				"doctype": "Lead Sync Source", "name": cls.SOURCE, "type": "Facebook",
+				"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
 				"access_token": "zz-token", "facebook_lead_form": cls.FB_FORM,
 				"api_mapping": cls.fb_contract, "background_sync_frequency": "Daily", "enabled": 0,
 			}).insert(ignore_permissions=True)

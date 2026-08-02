@@ -13,6 +13,8 @@ import frappe
 _RETIRED = [
 	"WhatsApp Account WATI Helpers",
 	"WhatsApp Notification WATI Helpers",
+	# CRM Facebook Settings is gone: one app was a Single, several apps are rows.
+	"CRM Facebook Settings Helpers",
 ]
 
 # (Client Script name, dt, view, app-relative js path)
@@ -30,7 +32,7 @@ SCRIPTS = [
 	("Facebook Lead Form Mapping", "Facebook Lead Form", "Form", "lead_sync/client_scripts/facebook_lead_form.js"),
 	("Lead Sync Source Token Helpers", "Lead Sync Source", "Form", "lead_sync/client_scripts/lead_sync_source.js"),
 	("Facebook Page Token Helpers", "Facebook Page", "Form", "lead_sync/client_scripts/facebook_page.js"),
-	("CRM Facebook Settings Helpers", "CRM Facebook Settings", "Form", "lead_sync/client_scripts/crm_facebook_settings.js"),
+	("CRM Facebook App Helpers", "CRM Facebook App", "Form", "lead_sync/client_scripts/crm_facebook_app.js"),
 	("CRM Tatva Automation Description", "CRM Tatva Automation", "Form", "automation/client_scripts/crm_tatva_automation.js"),
 	("CRM Lead Import Helpers", "CRM Lead Import", "Form", "lead_import/client_scripts/crm_lead_import.js"),
 	("Webhook Delivery Replay", "Integration Request", "Form", "webhooks/client_scripts/integration_request.js"),

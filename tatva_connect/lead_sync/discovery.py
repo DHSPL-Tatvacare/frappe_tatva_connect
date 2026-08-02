@@ -1,26 +1,30 @@
 """Page + lead-form discovery: one unreadable Page never kills the readable ones.
 
-Discovery REFRESHES. It is re-runnable from the source's button and from the nightly job, and every write
-below is an upsert, because a Page holds the token minted from whichever user token was current and a form
-holds questions marketing edits without warning."""
+Two different things, two different rules. A PAGE is refreshed on every pass, because it holds the token
+minted from whichever user token was current and a re-pasted credential has to reach the crawl. A FORM is
+written once and never again: Meta's API has no update operation for a leadgen form, and a published form
+cannot be edited in Ads Manager either — an edit is a duplicate, and a duplicate is a new id."""
 import frappe
 
 from tatva_connect.lead_sync.form import DISCOVERY_FLAG
-from tatva_connect.lead_sync.graph import api_url, graph_get, redact_tokens
+from tatva_connect.lead_sync.graph import graph_get, redact_tokens
 
 SWITCH_FORM_REFRESH = "Lead::Facebook::form-refresh"
 
 
-def fetch_and_store_pages(access_token: str) -> list[dict]:
-	"""Replaces the upstream discovery; called from TatvaLeadSyncSource.before_insert."""
+def fetch_and_store_pages(access_token: str, app) -> list[dict]:
+	"""Replaces the upstream discovery; called from TatvaLeadSyncSource.before_insert.
+
+	`app` is the app that issued this token — it decides the Graph version every call here is made at,
+	and it is stamped onto each Page as the provenance of the page token being stored."""
 	if not access_token:
 		frappe.throw(frappe._("Access token is required"))
 
-	account_details = graph_get("token check (/me)", api_url("me"), {}, access_token)
+	account_details = graph_get("token check (/me)", app.api_url("me"), {}, access_token)
 	if not account_details.get("id"):
 		frappe.throw(frappe._("Invalid access token provided for Facebook."))
 
-	pages = graph_get("page listing (/me/accounts)", api_url("/me/accounts"), {}, access_token).get("data", [])
+	pages = graph_get("page listing (/me/accounts)", app.api_url("/me/accounts"), {}, access_token).get("data", [])
 
 	if not pages:
 		# Upstream treats an empty list as success: green toast, blank dropdown, no reason given.
@@ -35,9 +39,9 @@ def fetch_and_store_pages(access_token: str) -> list[dict]:
 	failures = []
 	for page in pages:
 		page_id = page["id"]
-		_upsert_page(page, account_details)
+		_upsert_page(page, account_details, app)
 		try:
-			page["forms"] = _fetch_and_store_forms(page_id, page["access_token"])
+			page["forms"] = _fetch_and_store_forms(page_id, page["access_token"], app)
 		except Exception as exc:
 			# A Page without MANAGE_LEADS must not kill the Pages that have it.
 			page["forms"] = []
@@ -64,14 +68,19 @@ def fetch_and_store_pages(access_token: str) -> list[dict]:
 	return pages
 
 
-def _upsert_page(page: dict, account_details: dict) -> None:
+def _upsert_page(page: dict, account_details: dict, app) -> None:
 	"""Refresh, never skip: a Page that already exists still holds the token minted from the PREVIOUS user
-	token, so a re-pasted credential would never reach the crawl."""
+	token, so a re-pasted credential would never reach the crawl.
+
+	`facebook_app` is the provenance of the token being stored, not a claim that the app owns the Page —
+	a Business owns Pages and Apps alike, and several apps may reach the same Page. It moves with the
+	token: whichever app last minted this page token is the one that can describe or replace it."""
 	values = {
 		"page_name": page["name"],
 		"category": page["category"],
 		"access_token": page["access_token"],
 		"account_id": account_details["id"],
+		"facebook_app": app.name,
 	}
 	if frappe.db.exists("Facebook Page", page["id"]):
 		doc = frappe.get_doc("Facebook Page", page["id"])
@@ -81,49 +90,40 @@ def _upsert_page(page: dict, account_details: dict) -> None:
 	frappe.get_doc({"doctype": "Facebook Page", "id": page["id"], **values}).insert(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own Pages
 
 
-def list_forms(page_id: str, page_access_token: str) -> list[dict]:
+def list_forms(page_id: str, page_access_token: str, app) -> list[dict]:
 	"""The live lead forms Facebook reports for a Page — READ ONLY, stores nothing. One lister, two callers: discovery (which then stores) and the crawl's drift check.
 	`questions` already carries each question's `options`; the choice list is Facebook's own and is never retyped."""
 	return graph_get(
 		f"lead form listing for page {page_id}",
-		api_url(f"/{page_id}/leadgen_forms"),
+		app.api_url(f"/{page_id}/leadgen_forms"),
 		{"fields": "id,name,questions{id,key,label,type,options}", "limit": 15000},
 		page_access_token,
 	).get("data", [])
 
 
-def _fetch_and_store_forms(page_id: str, page_access_token: str) -> list[dict]:
-	forms = list_forms(page_id, page_access_token)
+def _fetch_and_store_forms(page_id: str, page_access_token: str, app) -> list[dict]:
+	forms = list_forms(page_id, page_access_token, app)
 	for form in forms:
 		upsert_lead_form(form, page_id)
 	return forms
 
 
 def upsert_lead_form(form: dict, page_id: str) -> None:
-	"""Store a form and its questions, refreshing an existing one. THE form writer: it lives here rather
-	than in the fork because it decides what a question row holds, and that is a rule this app owns.
+	"""Store a form we have not seen. THE form writer: it lives here rather than in the fork because it
+	decides what a question row holds, and that is a rule this app owns.
 
-	An existing form is refreshed rather than skipped, which is what hid a changed question set: a question
-	is addressed by its key, so a changed one arrives as a key nothing is mapped to, and a skipped form
-	never surfaced it at all.
-
-	An ABSENT (or null) `questions` key means Graph was not asked, which is not the same as a form
-	carrying none: the stored questions and every operator mapping on them are left exactly as they are.
-	The read path holds this same rule in `drift._report_question_drift`, and the writer holds it here.
-	An explicitly EMPTY list is Facebook's own answer that the form has no questions, and does clear them."""
-	questions = _question_rows(form)
+	A form ALREADY held is left exactly as it is, because a Facebook form cannot change. Meta's Marketing
+	API offers no update operation on a leadgen form — create, read, and a status POST to archive or
+	reactivate, nothing else — and a published form is locked in Ads Manager too: an edit is a duplicate,
+	and a duplicate is a new form id. So a stored form's questions can never have gone stale, and
+	rewriting all of them on every pass was a save per form per discovery for a change that cannot happen.
+	The duplicate — the one way a form really does change — arrives here as a new id and is inserted
+	below, with `_carry_mappings_from_page` bringing its siblings' mappings across."""
 	if frappe.db.exists("Facebook Lead Form", form["id"]):
-		doc = frappe.get_doc("Facebook Lead Form", form["id"])
-		doc.form_name = form["name"]
-		if questions is not None:
-			_carry_mappings(doc.questions, questions)
-			doc.set("questions", questions)
-		doc.flags[DISCOVERY_FLAG] = True
-		doc.save(ignore_permissions=True)  # authz-ok: tier-c — operator-driven discovery of their own forms
 		return
 	doc = frappe.get_doc(
 		{"doctype": "Facebook Lead Form", "form_name": form["name"], "id": form["id"],
-		 "page": page_id, "questions": questions or []}
+		 "page": page_id, "questions": _question_rows(form) or []}
 	)
 	_carry_mappings_from_page(doc, page_id)
 	doc.flags[DISCOVERY_FLAG] = True
@@ -148,8 +148,8 @@ def _question_rows(form: dict):
 
 
 def refresh_all_sources() -> None:
-	"""Nightly pass: every enabled Facebook source re-runs discovery, so a form published today, and a
-	change to the questions on a form already held, are both visible tomorrow without a button press.
+	"""Nightly pass: every enabled Facebook source re-runs discovery, so a form published today — including
+	the duplicate that a form "edit" really is — is visible tomorrow without a button press.
 
 	Gated on its own operator switch like every other automation in this app: off, which is how it ships,
 	the nightly pass does nothing and the forms stay as the last refresh left them.
@@ -157,6 +157,7 @@ def refresh_all_sources() -> None:
 	One unreadable source never stops the rest, and a source is skipped rather than repeated when its
 	token has already been refreshed on this pass by a source that shares it."""
 	from tatva_connect import automation
+	from tatva_connect.lead_sync.token import app_for
 
 	if not automation.is_enabled(SWITCH_FORM_REFRESH):
 		return
@@ -166,11 +167,12 @@ def refresh_all_sources() -> None:
 	):
 		source = frappe.get_doc("Lead Sync Source", name)
 		token = source.get_password("access_token", raise_exception=False)
+		# One token is one app's, so skipping a token already refreshed cannot skip a different app.
 		if not token or token in done_tokens:
 			continue
 		done_tokens.add(token)
 		try:
-			fetch_and_store_pages(token)
+			fetch_and_store_pages(token, app_for(source))
 			frappe.db.commit()
 		except Exception:
 			frappe.db.rollback()
@@ -184,14 +186,14 @@ def refresh_all_sources() -> None:
 def _carry_mappings_from_page(doc, page_id: str) -> None:
 	"""A form we have never seen inherits the mappings its siblings on the same Page already carry.
 
-	Duplicating is how a published form gets edited, and the copy arrives with a new id and EVERY question
-	unmapped — including the one holding the phone number, without which every lead from that form fails
-	to upsert and is logged rather than stored. `_carry_mappings` cannot help: it carries within one form
-	document, and a duplicate is a different one.
+	Duplicating is the ONLY way a published form gets edited, and the copy arrives with a new id and EVERY
+	question unmapped — including the one holding the phone number, without which every lead from that form
+	fails to upsert and is logged rather than stored. So this is the whole of the mapping-carry story: there
+	is no within-a-form carry, because a form's questions never change under its own id.
 
 	Matched on `key`, which Facebook derives from the question text, so the same question carries the same
-	key into the copy. A key mapped DIFFERENTLY on two siblings identifies nothing and carries nothing —
-	the same rule `_carry_mappings` holds, for the same reason."""
+	key into the copy. A key mapped DIFFERENTLY on two siblings identifies nothing and carries nothing,
+	rather than applying one operator decision to a question it was never made for."""
 	if not doc.questions:
 		return
 	siblings = frappe.get_all("Facebook Lead Form", filters={"page": page_id}, pluck="name")
@@ -212,29 +214,3 @@ def _carry_mappings_from_page(doc, page_id: str) -> None:
 			continue
 		if seen.get(q.key):
 			q.mapped_to_crm_field = seen[q.key]
-
-
-def _carry_mappings(existing_rows, questions: list[dict]) -> None:
-	"""A refresh replaces the question rows, so the operator's mapping is carried across onto the question
-	it was made against. Without this every refresh would silently unmap every form that had been mapped.
-
-	Facebook's question `id` is the identifier that survives a change of wording, so it is matched on first and
-	`key` is the fallback for a row stored before an id was kept. A key that appears on more than one
-	stored row with DIFFERENT mappings identifies nothing, so it carries NOTHING rather than applying one
-	operator decision to a question it was never made for: the form shows both questions unmapped, which
-	is the state the operator can see and correct. Duplicate rows that agree still carry."""
-	by_id, by_key, ambiguous = {}, {}, set()
-	for row in existing_rows:
-		if not row.mapped_to_crm_field:
-			continue
-		if row.id:
-			by_id[row.id] = row.mapped_to_crm_field
-		if not row.key:
-			continue
-		if row.key in by_key and by_key[row.key] != row.mapped_to_crm_field:
-			ambiguous.add(row.key)
-		by_key[row.key] = row.mapped_to_crm_field
-	for q in questions:
-		mapping = by_id.get(q["id"]) or (by_key.get(q["key"]) if q["key"] not in ambiguous else None)
-		if mapping:
-			q["mapped_to_crm_field"] = mapping

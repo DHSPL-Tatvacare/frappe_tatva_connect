@@ -22,7 +22,7 @@ REVEALABLE = {
 	},
 	"CRM Push Settings": {"service_account_json", "web_api_key", "vapid_key"},
 	"CRM Maps Settings": {"google_maps_api_key", "google_maps_browser_key"},
-	"CRM Facebook Settings": {"app_secret"},
+	"CRM Facebook App": {"app_secret"},
 	"Lead Sync Source": {"access_token"},
 	"Facebook Page": {"access_token"},
 }

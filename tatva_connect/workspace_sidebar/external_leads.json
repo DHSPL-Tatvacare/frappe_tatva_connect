@@ -200,8 +200,8 @@
    "icon": "settings",
    "indent": 0,
    "keep_closed": 0,
-   "label": "Facebook Settings",
-   "link_to": "CRM Facebook Settings",
+   "label": "Facebook Apps",
+   "link_to": "CRM Facebook App",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -219,7 +219,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-21 12:00:00.000000",
+ "modified": "2026-08-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "External Leads",

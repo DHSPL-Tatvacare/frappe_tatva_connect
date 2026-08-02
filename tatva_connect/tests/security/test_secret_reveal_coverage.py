@@ -23,15 +23,31 @@ OWNED = (
 	"CRM Telephony Account",
 	"CRM Push Settings",
 	"CRM Maps Settings",
-	"CRM Facebook Settings",
+	"CRM Facebook App",
 	"Lead Sync Source",
 	"Facebook Page",
 )
 
 
+PROBE_APP = "700000000000009"
+
+
+def _probe_app():
+	"""A real app row to reveal a secret from. `CRM Facebook App` is a table, not a Single, so unlike the
+	retired Facebook Settings there is no row that simply exists."""
+	if not frappe.db.exists("CRM Facebook App", PROBE_APP):
+		frappe.get_doc({
+			"doctype": "CRM Facebook App", "app_id": PROBE_APP, "app_name": "Reveal Probe",
+			"app_secret": "zz-probe-secret", "graph_api_version": "v23.0", "lead_page_size": 100,
+		}).insert(ignore_permissions=True)
+	return PROBE_APP
+
+
 def _drop_probe_rows():
-	"""The reveal audit commits by design, so these rows outlive the test-case rollback and are removed here."""
-	frappe.db.delete("Access Log", {"export_from": "CRM Facebook Settings", "method": "reveal:app_secret"})
+	"""The reveal audit commits by design, so these rows outlive the test-case rollback and are removed here.
+	The app row goes with them: that same commit makes it durable too."""
+	frappe.db.delete("Access Log", {"export_from": "CRM Facebook App", "method": "reveal:app_secret"})
+	frappe.delete_doc("CRM Facebook App", PROBE_APP, force=True, ignore_missing=True, ignore_permissions=True)
 	frappe.db.commit()
 
 
@@ -93,9 +109,10 @@ class TestSecretRevealCoverage(FrappeTestCase):
 		from tatva_connect.api.account_secrets import reveal
 
 		# The stored secret is never written to: the reveal now commits, and a probe value would stick.
-		before = frappe.db.count("Access Log", {"export_from": "CRM Facebook Settings"})
-		reveal("CRM Facebook Settings", "CRM Facebook Settings", "app_secret")
-		after = frappe.db.count("Access Log", {"export_from": "CRM Facebook Settings"})
+		app = _probe_app()
+		before = frappe.db.count("Access Log", {"export_from": "CRM Facebook App"})
+		reveal("CRM Facebook App", app, "app_secret")
+		after = frappe.db.count("Access Log", {"export_from": "CRM Facebook App"})
 		self.assertEqual(after, before + 1, "A reveal left no Access Log row.")
 		self.addCleanup(_drop_probe_rows)
 
@@ -108,19 +125,20 @@ class TestSecretRevealCoverage(FrappeTestCase):
 		A row that only existed because `frappe.in_test` chose the other branch would not survive."""
 		from tatva_connect.api.account_secrets import reveal
 
-		reveal("CRM Facebook Settings", "CRM Facebook Settings", "app_secret")
+		app = _probe_app()
+		reveal("CRM Facebook App", app, "app_secret")
 		# Anything not committed dies here; a row that survives is really in the table.
 		frappe.db.rollback()
 		self.addCleanup(_drop_probe_rows)
 
 		rows = frappe.get_all(
 			"Access Log",
-			filters={"export_from": "CRM Facebook Settings", "method": "reveal:app_secret"},
+			filters={"export_from": "CRM Facebook App", "method": "reveal:app_secret"},
 			fields=["user", "reference_document"],
 		)
 		self.assertTrue(rows, "the reveal audit row did not survive a rollback, so it is not durable")
 		self.assertEqual(rows[-1].user, frappe.session.user, "the row must name the caller, not the flusher")
-		self.assertEqual(rows[-1].reference_document, "CRM Facebook Settings")
+		self.assertEqual(rows[-1].reference_document, PROBE_APP)
 
 	def test_a_field_outside_the_allowlist_is_refused(self):
 		from tatva_connect.api.account_secrets import reveal

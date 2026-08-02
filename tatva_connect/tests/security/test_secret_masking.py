@@ -148,9 +148,13 @@ class TestCredentialsStayOutOfTheUrl(FrappeTestCase):
 			seen["url"], seen["data"] = url, data
 			return {"access_token": "EAAlonglived000000000000"}
 
-		with patch.object(graph, "make_post_request", _capture), \
-			patch.object(token_module, "app_credentials", return_value=("app-id", APP_SECRET)):
-			result = token_module.exchange_for_long_lived("EAAshort0000000000000000")
+		app = frappe.get_doc({
+			"doctype": "CRM Facebook App", "app_id": "700000000000003", "app_name": "Masking Probe",
+			"app_secret": APP_SECRET, "graph_api_version": "v23.0", "lead_page_size": 100,
+		}).insert(ignore_permissions=True)
+
+		with patch.object(graph, "make_post_request", _capture):
+			result = token_module.exchange_for_long_lived("EAAshort0000000000000000", app)
 
 		self.assertEqual(result, "EAAlonglived000000000000")
 		self.assertNotIn(APP_SECRET, seen["url"], "the App Secret must not travel in the URL")

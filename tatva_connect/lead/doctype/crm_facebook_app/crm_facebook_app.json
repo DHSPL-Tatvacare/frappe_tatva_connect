@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "autoname": "field:app_id",
+ "creation": "2026-08-02 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_app",
+  "app_name",
+  "app_id",
+  "column_break_app",
+  "app_secret",
+  "section_break_api",
+  "graph_api_version",
+  "column_break_api",
+  "lead_page_size"
+ ],
+ "fields": [
+  {
+   "description": "One Meta app, as it appears on the Meta app dashboard under Settings, Basic. A Facebook access token is issued by exactly one app, so every source pasting a token names the app it came from. An app is not the owner of a Page: a Business owns both, and an app is granted access to a Page. Several apps under one Business is normal and expected.",
+   "fieldname": "section_break_app",
+   "fieldtype": "Section Break",
+   "label": "Meta App"
+  },
+  {
+   "description": "The name shown on the Meta app dashboard, used only so the app can be recognised in a list.",
+   "fieldname": "app_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "App Name",
+   "reqd": 1
+  },
+  {
+   "description": "The numeric App ID shown on the Meta app dashboard. It identifies the app, is not a secret, and names this record. A token that Facebook reports as belonging to a different App ID is refused when the source is saved.",
+   "fieldname": "app_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "App ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_app",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The App Secret from the same dashboard, held encrypted and never returned to the browser. It is what a short-lived access token is exchanged against for the sixty-day one, and what allows a lapsed token to be described rather than merely rejected. Until it is set, a pasted token stays short-lived and the crawl stops within the hour.",
+   "fieldname": "app_secret",
+   "fieldtype": "Password",
+   "label": "App Secret"
+  },
+  {
+   "description": "How Facebook is called on behalf of this app. These are per app rather than site-wide, so one app can be moved to a newer Graph version and watched while the others stay where they are.",
+   "fieldname": "section_break_api",
+   "fieldtype": "Section Break",
+   "label": "Facebook Graph API"
+  },
+  {
+   "default": "v23.0",
+   "description": "The numbered version of Facebook's Graph API that every call for this app is made against. A new version is published roughly every three months and each is retired after about two years; once a version is retired it stops answering, and crawls stop bringing in leads with no error raised. v25.0 is the newest, released February 2026. For lead forms, v23.0, v24.0 and v25.0 behave identically, so moving forward is safe and is how the retirement clock is kept at bay. One app is expected to be moved at a time and its next crawl observed, so that a regression is unambiguous.",
+   "fieldname": "graph_api_version",
+   "fieldtype": "Select",
+   "label": "Graph API Version",
+   "options": "v23.0\nv24.0\nv25.0",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_api",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "description": "The number of leads requested from Facebook in a single call while a crawl is fetching. The total collected is not limited by this value: Facebook's paging cursors are followed until every new lead has been retrieved. Only the number of round-trips is affected. Fewer than requested may be returned, and Facebook's own ceiling is applied regardless of what is set here. A lower value is expected only where a crawl on a busy form times out; otherwise the default is left as it is.",
+   "fieldname": "lead_page_size",
+   "fieldtype": "Int",
+   "label": "Leads Fetched Per Request",
+   "non_negative": 1,
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "link_doctype": "Lead Sync Source",
+   "link_fieldname": "facebook_app"
+  },
+  {
+   "link_doctype": "Facebook Page",
+   "link_fieldname": "facebook_app"
+  }
+ ],
+ "modified": "2026-08-02 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Facebook App",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "app_name",
+ "track_changes": 1
+}

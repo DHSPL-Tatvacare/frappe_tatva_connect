@@ -33,6 +33,7 @@ from tatva_connect.lead_sync.form import IDENTITY_KEY
 from tatva_connect.lead_sync.source import TatvaFacebookSyncSource
 from tatva_connect.smartview import api as smartview
 from tatva_connect.tests.api import partner_fixture
+from tatva_connect.tests.lead_sync import ensure_app
 
 ANSWERS_TABLE = "custom_screening_answers"
 PHONE = "+916100020001"
@@ -116,7 +117,7 @@ class TestScreeningAnswers(FrappeTestCase):
 		     patch("tatva_connect.lead_sync.source.refresh_credential", return_value=None):
 			if not frappe.db.exists("Lead Sync Source", cls.SOURCE):
 				frappe.get_doc({
-					"doctype": "Lead Sync Source", "name": cls.SOURCE, "type": "Facebook",
+					"doctype": "Lead Sync Source", "facebook_app": ensure_app(), "name": cls.SOURCE, "type": "Facebook",
 					"access_token": "zz-token", "facebook_lead_form": cls.FORM,
 					"api_mapping": cls.contract, "background_sync_frequency": "Daily", "enabled": 0,
 				}).insert(ignore_permissions=True)
