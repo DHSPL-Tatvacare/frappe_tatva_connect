@@ -21,7 +21,7 @@ THE THREE SHAPES (frappe/desk/doctype/desktop_icon/desktop_icon.py::get_desktop_
     app)` matches on `app == a` and then calls THAT app's `add_to_apps_screen.has_permission`. Our
     tiles carry app "tatva_connect", whose gate (`tatva_connect.api.apps.check_app_permission`) is
     System/Sales Manager. So ANY tatva_connect tile made an App becomes admin-only, whatever it is.
-    Correct for "Tatva Connect" and "Tatva Titan". Fatal for anything a rep must see.
+    Correct for "Tatva Connect". Fatal for anything a rep must see.
 
   Link — DRAWS, and the permission is the tile's own. A Link is permitted when a Workspace Sidebar
     TITLED THE SAME AS THE TILE holds an item the user may see (`boot.get_sidebar_items` ->
