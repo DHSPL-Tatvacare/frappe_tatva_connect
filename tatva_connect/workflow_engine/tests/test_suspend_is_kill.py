@@ -6,6 +6,12 @@ The dangerous state this deletes is a "Suspended" workflow whose journeys keep m
 operator believes it is stopped, and it is not. So Suspended means NOTHING IS IN FLIGHT, always, with no
 window in between — and this suite is shaped around that sentence rather than around the code under it.
 
+THE RULE IS ABOUT AVAILABILITY, NOT ABOUT ONE VERB. A workflow that stops being available kills its
+journeys; a workflow being EDITED does not. Suspend, Archive and a forced delete are three ways to become
+unavailable and they share one kill, which is why they are one suite: `TestRetiringAWorkflowKillsItTheSameWay`
+and `TestRevisingLeavesJourneysRunning` are the two halves of that sentence, and a second kill path is the
+defect they exist to catch.
+
 TWO GUARANTEES, AND THEY ARE NOT THE SAME ONE. The rows are stopped (a drain, chunked, behind the
 lifecycle), and no journey of a Suspended workflow is CLAIMABLE (one condition at the one wake door, true
 the instant the lifecycle commits). The second is what makes the first bookkeeping rather than a race —
@@ -30,7 +36,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ACTIVE, SUSPENDED
+from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ACTIVE, ARCHIVED, SUSPENDED
 from tatva_connect.workflow_engine import SWEEP_SWITCH, drain, interpreter, signals, thresholds, wakeups
 from tatva_connect.workflow_engine.tests import fixtures
 from tatva_connect.workflows import api as workflows_api
@@ -40,6 +46,8 @@ WORKFLOW_DT = fixtures.WORKFLOW_DT
 _WF = "ZZ Suspend Is Kill"
 _BYSTANDER = "ZZ Suspend Bystander"
 _DOOMED = "ZZ Suspend Doomed"
+_RETIRED = "ZZ Suspend Archived"
+_REVISED = "ZZ Suspend Revised"
 _SIGNAL = "document.uploaded"
 
 
@@ -392,4 +400,111 @@ class TestDeletingAWorkflowEndsItsJourneys(_KillCase):
 		self.assertEqual(
 			fixtures.logs(self.journey.name), [],
 			"the sweep executed a node for a workflow that no longer exists",
+		)
+
+
+class TestRetiringAWorkflowKillsItTheSameWay(_KillCase):
+	"""ARCHIVED is the more final state, so it cannot be softer than Suspended.
+
+	After W10 "Suspended means nothing is in flight" was true and "Archived means nothing is in flight" was
+	not — the same lie in a different state name. Both reach the one `end_journeys_in_flight`, never two.
+
+	Rejected, so nobody rebuilds it: making Archive reachable only from Suspended. One line, but it forces
+	a two-step retirement for no gain and hides a cleanup rule inside the transition table.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		fixtures.purge(_RETIRED)
+		cls.addClassCleanup(fixtures.purge, _RETIRED)
+		fixtures.arm_engine(True, cls=cls)
+		_arm_sweep(cls)
+
+	def setUp(self):
+		self.addCleanup(fixtures.purge, _RETIRED)
+		self.workflow = fixtures.make_workflow(_RETIRED, _graph())
+		self.journey = self._park(self.workflow, self._lead().name)
+
+	def test_archiving_an_active_workflow_ends_every_journey(self):
+		workflows_api.archive(_RETIRED)
+
+		self._assert_stopped(self.journey.name, "archived")
+
+	def test_nothing_wakes_an_archived_workflows_journeys(self):
+		"""The zombie test again, for the other verb. A status column proves the killer wrote a column;
+		this proves the two real wake paths find nothing."""
+		workflows_api.archive(_RETIRED)
+
+		wakeups.sweep()
+		signals.deliver_signal("CRM Lead", self.journey.subject_name, _SIGNAL,
+		                      correlation=f"{self.journey.name}::n1")
+
+		self._assert_stopped(self.journey.name, "archived")
+		self.assertEqual(fixtures.logs(self.journey.name), [], "a retired workflow executed a node")
+
+	def test_an_archived_workflows_journey_is_not_claimable_even_while_still_parked(self):
+		"""The guarantee that makes the kill true at the LIFECYCLE COMMIT rather than when the drain
+		finishes — tested without the drain, by archiving the header directly and leaving the row parked."""
+		frappe.db.set_value(WORKFLOW_DT, _RETIRED, "lifecycle_state", ARCHIVED, update_modified=False)
+		frappe.db.commit()
+
+		wakeups.drive_journey(self.journey.name)
+
+		self.assertEqual(self._state(self.journey.name).status, "Parked", "an archived journey was driven")
+		self.assertEqual(fixtures.logs(self.journey.name), [], "an archived workflow executed a node")
+
+	def test_archiving_a_suspended_workflow_is_a_no_op(self):
+		"""The journeys are already dead, so the second retirement must find nothing rather than transition
+		an already-terminal row a second time — and the first reason must survive it."""
+		workflows_api.suspend(_RETIRED)
+		self._assert_stopped(self.journey.name, "suspended")
+
+		workflows_api.archive(_RETIRED)
+
+		state = self._state(self.journey.name)
+		self.assertEqual(state.status, interpreter.STOPPED)
+		self.assertIn("suspended", state.stop_reason, "archiving overwrote the reason the journey ended")
+
+	def test_the_receipt_says_how_many_archiving_stopped(self):
+		"""An operator told nothing cannot tell a retirement that worked from one that found no rows."""
+		self.assertEqual(workflows_api.archive(_RETIRED)["stopping"], 1)
+
+
+class TestRevisingLeavesJourneysRunning(_KillCase):
+	"""ACTIVE -> DRAFT is an author fixing a typo, not a retirement — and `revise` promises it in its own
+	docstring. Journeys run a FROZEN version an edit cannot reach, which is what versions are frozen for."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		fixtures.purge(_REVISED)
+		cls.addClassCleanup(fixtures.purge, _REVISED)
+		fixtures.arm_engine(True, cls=cls)
+		_arm_sweep(cls)
+
+	def setUp(self):
+		self.addCleanup(fixtures.purge, _REVISED)
+		self.workflow = fixtures.make_workflow(_REVISED, _graph())
+		self.journey = self._park(self.workflow, self._lead().name)
+
+	def test_revising_leaves_every_journey_in_flight(self):
+		workflows_api.revise(_REVISED)
+
+		state = self._state(self.journey.name)
+		self.assertEqual(state.status, "Parked", "reopening the canvas killed a journey")
+		self.assertFalse(state.stop_reason, "a running journey was given a stop reason")
+
+	def test_the_frozen_version_still_serves_them(self):
+		"""Left alive is only half the promise: the journey has to still be RUNNABLE. Its version is
+		asserted to survive and the wake door is asserted to still claim it."""
+		version = frappe.db.get_value(JOURNEY_DT, self.journey.name, "workflow_version")
+
+		workflows_api.revise(_REVISED)
+
+		self.assertTrue(frappe.db.exists(fixtures.VERSION_DT, version), "the frozen version went with the revise")
+		wakeups.drive_journey(self.journey.name)
+		self.assertNotEqual(
+			self._state(self.journey.name).status, "Parked",
+			"a revised workflow's journey is no longer claimable, so revise has become a soft kill",
 		)

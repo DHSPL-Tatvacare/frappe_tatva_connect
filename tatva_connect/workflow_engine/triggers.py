@@ -25,23 +25,29 @@ JOURNEY_DT = interpreter.JOURNEY_DT
 _WORKFLOW_DT = "CRM Workflow"
 
 
-def _engine_may_run() -> bool:
-	"""May the engine act on this save at all?
-
-	THREE gates, and each closes a different door:
+def _may_touch_journeys() -> bool:
+	"""Is it structurally safe for this lane to act on this save? Two gates, each closing a door:
 
 	  in_workflow  — re-entrancy. A write the engine itself made must not re-enter its own lane.
 	  in_migrate / in_install / in_patch — the schema is being CHANGED underneath us. A patch that saves
 	      a document would otherwise fire the dispatcher against a half-migrated table, and the journey
 	      would either crash the migration or, worse, fire real automation at a customer mid-upgrade.
 	      Frappe sets these flags itself; this is its own signal, not a bench workaround.
-	  the engine switch — dormant by default. An operator arms it, and until they do nothing runs.
+
+	Neither is a dormancy setting, which is why ENDING a journey passes this and not the switch below.
 	"""
 	if frappe.flags.get("in_workflow"):
 		return False
-	if frappe.flags.get("in_migrate") or frappe.flags.get("in_install") or frappe.flags.get("in_patch"):
-		return False
-	return automation.is_enabled(ENGINE_SWITCH)
+	return not (frappe.flags.get("in_migrate") or frappe.flags.get("in_install") or frappe.flags.get("in_patch"))
+
+
+def _engine_may_run() -> bool:
+	"""May the engine ADVANCE anything on this save? The gates above, plus the switch.
+
+	THE RULE: the engine switch gates what makes a journey advance. It never gates ending one. Dormant by
+	default — an operator arms the switch, and until they do nothing starts, resumes or steps forward.
+	"""
+	return _may_touch_journeys() and automation.is_enabled(ENGINE_SWITCH)
 
 
 # PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_journey` the cohort drain uses, and `active_key` stops a double-run.
@@ -66,8 +72,11 @@ def on_lead_deleted(doc, method=None):
 
 	Runs BEFORE the wildcard `on_trash` above (frappe composes `doc_events[doctype] + doc_events["*"]`,
 	`document.py:1598`), so a Deleted-entry workflow starting on this same delete is not stopped by it.
+
+	NOT gated on the engine switch — ending a journey is cleanup, and one parked on a lead the database
+	has forgotten is neither stopped nor gone whether or not an operator has armed anything.
 	"""
-	if _engine_may_run():
+	if _may_touch_journeys():
 		interpreter.stop_for_subject(doc.doctype, doc.name, f"Lead deleted ({doc.name})")
 
 
@@ -83,9 +92,11 @@ def on_lead_grain_changed(doc, method=None):
 	by the time `on_update` runs inside an insert — so that pair reads a lead's CREATION as a grain change
 	and stopped the journey the same save had just started. Caught by `test_entry_isolation`, not by
 	reasoning about it.
+
+	Not gated on the engine switch either — one behaviour, one answer about the switch.
 	"""
 	before = doc.get_doc_before_save()
-	if not before or not _engine_may_run():
+	if not before or not _may_touch_journeys():
 		return
 	moved = [axis for axis in grain.columns("CRM Lead") if axis and before.get(axis) != doc.get(axis)]
 	if moved:

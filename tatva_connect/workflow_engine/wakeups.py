@@ -221,8 +221,8 @@ def drive_journey(name):
 		)
 		if not claimed:
 			return  # already claimed/advanced by another driver, or no longer parked (idempotent)
-		if _workflow_suspended(claimed.workflow):
-			return  # W10 — suspended means nothing is in flight, from the instant the lifecycle commits
+		if _workflow_retired(claimed.workflow):
+			return  # W10 — retired means nothing is in flight, from the instant the lifecycle commits
 		interpreter.advance(frappe.get_doc(JOURNEY_DT, name))
 	except Exception:
 		frappe.log_error(title="workflow: drive failed", message=f"journey={name} :: {frappe.get_traceback()}")
@@ -230,8 +230,10 @@ def drive_journey(name):
 		frappe.flags.in_workflow = False
 
 
-def _workflow_suspended(workflow):
-	"""W10 — is this journey's workflow suspended? Suspending IS killing, so nothing of it may be driven.
+def _workflow_retired(workflow):
+	"""W10 — has this journey's workflow stopped being AVAILABLE? Retiring IS killing, so nothing may run.
+
+	Suspended and Archived, from `RETIRED_STATES`, so this door and the transition that kills cannot disagree.
 
 	A SECOND READ, deliberately, and the join was rejected rather than overlooked. Folding the lifecycle
 	into the claim above means `SELECT ... FOR UPDATE` across a join, which locks the CRM Workflow row too
@@ -240,9 +242,9 @@ def _workflow_suspended(workflow):
 	So it is one indexed primary-key read, taken only after a journey has already been claimed, next to a
 	`get_doc` of the whole journey that costs more.
 	"""
-	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import SUSPENDED
+	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import RETIRED_STATES
 
-	return frappe.db.get_value("CRM Workflow", workflow, "lifecycle_state") == SUSPENDED
+	return frappe.db.get_value("CRM Workflow", workflow, "lifecycle_state") in RETIRED_STATES
 
 
 def _due_parked():

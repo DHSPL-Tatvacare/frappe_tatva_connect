@@ -12,6 +12,10 @@ So it is ONE function, `interpreter.stop_for_subject`, with two triggers. Buildi
 defect this suite is shaped to catch, which is why every test below asserts the same end state however
 it was reached.
 
+THE ENGINE SWITCH DOES NOT REACH EITHER TRIGGER. It gates what makes a journey ADVANCE; it never gates
+ending one, because ending is cleanup. The re-entrancy and mid-migration guards do still apply — those
+close different doors, and neither is a dormancy setting.
+
 STOPPED IS A TERMINAL STATE, NOT A DELETION. The row stays readable and says why it ended; what goes is
 its ability to act — `active_key` (so the subject is free to start again), `resume_at` (so no timer wakes
 it) and `awaiting_signal`/`awaiting_correlation` (so no delivered signal does either). A test that only
@@ -174,15 +178,41 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		self.assertEqual(second, 0, "a second pass re-stopped an already-terminal journey")
 		self.assertIn("first pass", self._state(self.runs[0].name).stop_reason)
 
-	def test_the_engine_switch_still_gates_the_stop(self):
-		"""Dormant by default: with the engine off nothing the engine owns acts, stopping included."""
+	# ---- the engine switch does not reach a stop ----------------------------------------------
+	def test_a_dormant_engine_does_not_keep_a_deleted_leads_journeys_alive(self):
+		"""INVERTED, and the module docstring above — "stopped and gone" — was always the decision. A journey
+		parked on a lead that no longer exists is neither, however the switch happens to be set."""
 		fixtures.arm_engine(False)
 		try:
 			frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
 		finally:
 			fixtures.arm_engine(True)
 		for run in self.runs:
-			self.assertEqual(self._state(run.name).status, "Parked", "a dormant engine stopped a journey")
+			self._assert_stopped(run.name, "Lead deleted")
+
+	def test_a_dormant_engine_does_not_keep_a_regrained_leads_journeys_alive(self):
+		"""The same rule through the other trigger — one behaviour, so one answer about the switch."""
+		fixtures.arm_engine(False)
+		try:
+			lead = frappe.get_doc("CRM Lead", self.lead.name)
+			lead.custom_vertical = _other_vertical(lead.custom_vertical)
+			lead.save(ignore_permissions=True)  # authz-ok: tier-a — test drives the rep's own save path
+		finally:
+			fixtures.arm_engine(True)
+		for run in self.runs:
+			self._assert_stopped(run.name, "Lead grain changed")
+
+	def test_re_arming_the_engine_wakes_none_of_them(self):
+		"""What the gate really cost: not merely parked, but left DUE — so the sweep is asked for real."""
+		fixtures.arm_engine(False)
+		try:
+			frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+		finally:
+			fixtures.arm_engine(True)
+
+		due = set(wakeups._due_parked())
+		for run in self.runs:
+			self.assertNotIn(run.name, due, f"{run.name} woke on a lead the database has forgotten")
 
 
 def _other_vertical(current):

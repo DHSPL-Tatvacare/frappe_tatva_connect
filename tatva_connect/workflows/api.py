@@ -268,5 +268,10 @@ def revise(name):
 @frappe.whitelist()
 def archive(name):
 	"""-> Archived (terminal): retire the workflow. No new Instances ever; the frozen Versions are retained
-	for audit and for any Instance still bound to them."""
-	return _transition(name, ARCHIVED)
+	for audit and for any Instance still bound to them.
+
+	ARCHIVING KILLS, through the same seam as Suspend — the more final state cannot be the softer one — so
+	it carries the same `stopping` receipt, read before the transition and therefore exact then.
+	"""
+	stopping = live_journey_count(name)
+	return {**_transition(name, ARCHIVED), "stopping": stopping}

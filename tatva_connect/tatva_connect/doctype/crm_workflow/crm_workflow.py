@@ -24,6 +24,10 @@ DRAFT, PUBLISHED, ACTIVE, SUSPENDED, ARCHIVED = LIFECYCLE_STATES
 # Only an Active workflow fires. Save is not publish, and publish is not activate.
 ARMED_STATE = ACTIVE
 
+# A workflow that has STOPPED BEING AVAILABLE, and therefore kills its journeys. Read by the transition
+# that kills and by the wake door that refuses to claim; Draft is absent because an edit is not a retirement.
+RETIRED_STATES = (SUSPENDED, ARCHIVED)
+
 _TRANSITIONS = {
 	DRAFT: {PUBLISHED, ARCHIVED},
 	PUBLISHED: {ACTIVE, DRAFT, ARCHIVED},
@@ -228,21 +232,25 @@ class CRMWorkflow(Document):
 			)
 		self.lifecycle_state = target
 		self.save(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own permission check
-		if target == SUSPENDED:
+		if target in RETIRED_STATES:
 			from tatva_connect.workflow_engine import drain
 
-			self.end_journeys_in_flight(f"Workflow suspended ({self.name})")
+			self.end_journeys_in_flight(f"Workflow {target.lower()} ({self.name})")
 			# A drain in flight is still MANUFACTURING journeys, so it stops too — and its commit is what
 			# fires the enqueue registered just above, landing the lifecycle, the flag and the job together.
 			drain.abort(self.name)
 		return self.lifecycle_state
 
 	def end_journeys_in_flight(self, reason):
-		"""W10 — SUSPENDING A WORKFLOW *IS* KILLING IT. One action, one outcome, no window in between.
+		"""RETIRING A WORKFLOW *IS* KILLING IT. One action, one outcome, no window in between.
 
 		A Suspended workflow whose journeys keep messaging patients is the dangerous state: the operator
 		believes it is stopped and it is not. So the same act that moves the lifecycle ends everything in
 		flight, and there is no soft pause and no un-kill.
+
+		THE RULE IS ABOUT AVAILABILITY, NOT ONE VERB (`RETIRED_STATES`): Suspend, Archive and a forced
+		delete all arrive here, because Archive cannot be softer than Suspend. Revise does not — an author
+		reopening the canvas is not a retirement, and the journeys run a frozen version an edit cannot reach.
 
 		THE KILL IS TRUE AT THE CALLER'S COMMIT, not when the job finishes. `wakeups.drive_journey` refuses
 		to claim a journey whose workflow is Suspended, so from the instant that transaction lands nothing
@@ -252,9 +260,8 @@ class CRMWorkflow(Document):
 		that scaled with its cohort would error partway and leave the rest alive, looking like it worked.
 		`stop_for_workflow` does the chunking and the committing.
 
-		Deliberately NOT gated on the engine switch: killing is cleanup, not engine activity. That is the
-		opposite of the lead-delete stop, which IS gated — a contradiction between two settled decisions
-		that is recorded in `docs/pending/`, not resolved here.
+		Deliberately NOT gated on the engine switch, and that is now the ONE rule everywhere: the switch
+		gates what makes a journey ADVANCE, never what ends one. The lead-delete stop reads the same way.
 		"""
 		frappe.enqueue(
 			"tatva_connect.workflow_engine.interpreter.stop_for_workflow",
