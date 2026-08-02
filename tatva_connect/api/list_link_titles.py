@@ -17,6 +17,7 @@ itself lives once, in `taxonomy.labels.title_of`.
 
 import frappe
 
+from tatva_connect.storage import file_names
 from tatva_connect.taxonomy import labels
 
 
@@ -129,4 +130,34 @@ def get_doc_link_titles(doctype, name):
 		title = _resolve_title(target, value)
 		if title is not None:
 			titles[f"{target}::{value}"] = title
+	_add_attach_labels(doc, doctype, titles)
 	return titles
+
+
+ATTACH_FIELDTYPES = ("Attach", "Attach Image")
+
+
+def _add_attach_labels(doc, doctype, titles):
+	"""An Attach value IS a file_url, and the storage key inside it is slugged, so a control rendering the
+	value raw shows `urmila_doc.jpeg` for a file the user named `URMILA DOC.jpeg`. The real name rides in
+	the same map under `File::<url>`, resolved by the one utility, so the control reads and never derives.
+
+	Child rows are walked too: a grid cell is an Attach control like any other, and its value never
+	appears on the parent's own fields."""
+	urls = []
+	for df in frappe.get_meta(doctype).fields:
+		if df.fieldtype in ATTACH_FIELDTYPES:
+			urls.append(doc.get(df.fieldname))
+		elif df.fieldtype == "Table" and df.options:
+			urls.extend(_child_attach_urls(doc, df))
+	for url, label in file_names.display_names(urls).items():
+		titles[f"File::{url}"] = label
+
+
+def _child_attach_urls(doc, df):
+	"""Every Attach value held by one Table field's rows."""
+	fieldnames = [c.fieldname for c in frappe.get_meta(df.options).fields
+				  if c.fieldtype in ATTACH_FIELDTYPES]
+	if not fieldnames:
+		return []
+	return [row.get(f) for row in (doc.get(df.fieldname) or []) for f in fieldnames]

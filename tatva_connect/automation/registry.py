@@ -401,7 +401,7 @@ AUTOMATIONS = [
 		),
 		requires="Notify::Task::assigned",
 		backs=[
-			"tatva_connect.notifications.events.sweep_task_due",
+			"tatva_connect.notifications.events.sweep_due_soon",
 		],
 	),
 	Auto(
@@ -417,7 +417,7 @@ AUTOMATIONS = [
 		),
 		requires="Notify::Task::assigned",
 		backs=[
-			"tatva_connect.notifications.events.sweep_task_due",
+			"tatva_connect.notifications.events.sweep_overdue",
 		],
 	),
 	Auto(
@@ -993,7 +993,8 @@ AUTOMATIONS = [
 			"Example: a course author pastes a SharePoint link to a training deck into a lesson, and "
 			"learners see the deck laid out in the lesson itself."
 		),
-		backs=["tatva_connect.learning.embeds.get_lesson"],
+		# An OVERRIDE target, not a doc_event or a scheduled job, so `backs` is empty — the shape the AI Voice and Transcription channel rows already have.
+		backs=[],
 	),
 	Auto(
 		key="Search::Index::indexing",

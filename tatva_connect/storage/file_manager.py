@@ -81,8 +81,9 @@ def by_blob_key(blob_key):
 	exact = frappe.db.exists("File", {"file_url": blob_store.download_url(blob_key)})
 	if exact:
 		return exact
-	esc = blob_key.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-	return frappe.db.exists("File", {"file_url": ["like", f"%?file_name={esc}"]})
+	# The query comes from the ONE builder; escaping matters because an encoded key contains `%`, a LIKE wildcard.
+	esc = blob_store.download_query(blob_key).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+	return frappe.db.exists("File", {"file_url": ["like", f"%?{esc}"]})
 
 
 def rehome(file, attached_to_doctype, attached_to_name, *, meta=None):

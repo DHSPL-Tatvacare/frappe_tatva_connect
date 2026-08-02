@@ -11,6 +11,7 @@ AST, not a grep: a comment mentioning 100 is not a second brain and must not go 
 """
 import ast
 import pathlib
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -154,7 +155,7 @@ class TestEveryDeclaredThresholdHasAReader(FrappeTestCase):
 
 	# A declared threshold nothing reads yet, each with the file that owns getting it read. Adding a name
 	# here is a deliberate act with a paper trail; it is not a way to make this test go quiet.
-	_ALLOWED_UNREAD = {
+	_ALLOWED_UNREAD: ClassVar[dict] = {
 		"RUN_RETENTION_DAYS": "docs/pending/2026-08-02-run-retention-has-no-reaper.md",
 	}
 

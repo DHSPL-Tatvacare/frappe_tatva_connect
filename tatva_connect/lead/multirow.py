@@ -8,17 +8,29 @@ own way (three different tiebreaks), so two rows sharing one date resolved to a 
 The rule, expressed here for Python consumers and mirrored bit-for-bit in `smartview/api.py`'s SQL:
 newest by the section's `row_key_field`, ties broken by `creation`, then by `name` — fully deterministic
 and identical whether resolved in Python or by SQL `ROW_NUMBER() OVER (... ORDER BY row_key DESC,
-creation DESC, name DESC)`. The UI "More" modal is a different LAYER but not a different rule: it reads
-`sorted_child_rows` and the flattened consumers read its head, so history opens on the row the panel is
-already showing.
+creation DESC, name DESC)`. The rows modal is a different LAYER but not a different rule: it asks the
+DB for the same order through `order_by()` below, and the flattened consumers read the head of
+`sorted_child_rows`, so the table opens on the row the panel is already showing.
 """
 from frappe.utils import cstr
 
 
+def order_keys(row_key_field):
+	"""THE ordering, declared ONCE as field names, newest-first on each: row key, then creation, then
+	name. Every rendering below is built from this tuple, so a Python sorter and a DB `order_by` cannot
+	drift — there is nothing to keep in step. A section with no row key falls to creation, then name."""
+	return tuple(f for f in (cstr(row_key_field), "creation", "name") if f)
+
+
+def order_by(row_key_field):
+	"""The same ordering as an `order_by` clause, for a reader that asks the DB instead of sorting in
+	Python. No backticks: frappe rejects them (`db_query` order-by validation) and quotes the field itself."""
+	return ", ".join(f"{field} desc" for field in order_keys(row_key_field))
+
+
 def _rank(row, row_key_field):
-	"""THE ordering key, written once: row_key, then creation, then name — the same three the smartview
-	ROW_NUMBER orders by, so a Python reader and the SQL never disagree about which row is newer."""
-	return (cstr(row.get(row_key_field)), cstr(row.get("creation")), cstr(row.get("name")))
+	"""THE ordering key for an in-memory sorter — the same fields `order_by` names, in the same order."""
+	return tuple(cstr(row.get(field)) for field in order_keys(row_key_field))
 
 
 def sorted_child_rows(rows, row_key_field):

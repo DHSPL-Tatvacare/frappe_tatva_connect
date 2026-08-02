@@ -18,6 +18,7 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.storage import file_manager
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
 
 _REAL_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x08\x00\x00\x00\x08\x08\x02\x00\x00\x00Km)\xdc\x00\x00\x00&IDATx\x9cc`\x90\xb3\x89\xaa\x98\xb6\xe5\xd2\x07>\x1d\xaf\x8c\xb6%\x87\x1e\xfc\x93\xb1\x8a(\x9b\xb2\x89ahI\x00\x00\x0b\xb5Z\xc1\xce\x87\xae\xdd\x00\x00\x00\x00IEND\xaeB`\x82'
@@ -699,3 +700,115 @@ class TestOverrideCoversCore(FileLayerCase):
 		# hooks.py must still bind it, or every override above is inert.
 		doc = frappe.get_doc("File", {"custom_uploaded_to_azure": 1, "is_folder": 0})
 		self.assertEqual(type(doc).__name__, "FileOverride", "hooks.py no longer binds our File class")
+
+
+class TestHostileFileNames(FileLayerCase):
+	"""A filename is user data, and it travels inside the blob key, which travels inside a URL.
+
+	`new_key` slugs it for exactly that reason: frappe core unquotes `file_url` on every insert
+	(file.py:108) while `db_set` does not, so an ENCODED key would give one blob two different URL
+	strings depending on the write path — and `File.on_trash` counts references by exact URL match.
+	A key that needs no encoding is the only key that survives both. Found live: a migrated document
+	named 'Vivitra & Sigrima invoice.pdf' was stored intact and was unservable.
+
+	One name, every surface that lets a user choose one, plus the lifecycle each file must survive.
+	"""
+
+	HOSTILE = "A & B #1 + C? 100% report,v2.png"
+	UNSAFE = "&#?+%,"
+
+	def _lead(self):
+		existing = frappe.db.exists("CRM Lead", {"mobile_no": "+919000000123"})
+		if existing:
+			return existing
+		return frappe.get_doc({
+			"doctype": "CRM Lead", "first_name": "Roundtrip", "last_name": "Probe",
+			"mobile_no": "+919000000123",
+		}).insert(ignore_permissions=True).name
+
+	def assert_lifecycle(self, doc, *, private=True):
+		"""The questions every file must answer, whatever surface made it."""
+		key = blob_key_from_url(doc.file_url)
+		self.assertTrue(key, "file_url carries no blob key")
+		self.assertFalse([c for c in self.UNSAFE if c in key], f"key is not URL-safe: {key}")
+		self.assertTrue(self.store.exists(key), f"blob missing from the container: {key}")
+		self.assertEqual(doc.get_content(), _PNG, "bytes did not come back")
+		self.assertEqual(file_manager.by_blob_key(key), doc.name, "download path cannot resolve the row")
+		self.assertEqual(file_manager.proxy_url(doc), doc.file_url, "url does not rebuild identically")
+		self.assertEqual(doc.file_name, self.HOSTILE, "the real name must survive on the row")
+		self.assertEqual(bool(doc.is_private), private, "privacy floor moved")
+		self._keys.append(key)
+
+	def test_desk_upload(self):
+		doc, _ = self.upload(file_name=self.HOSTILE, attached_to_doctype="CRM Lead",
+		                     attached_to_name=self._lead())
+		self.assert_lifecycle(doc)
+
+	def test_partner_api_attach(self):
+		import base64
+
+		from tatva_connect.api.partner_file import _create_one
+
+		view, _action = _create_one({
+			"lead": self._lead(), "filename": self.HOSTILE, "file_type": "note",
+			"content_base64": base64.b64encode(_PNG).decode(),
+		}, None, True)
+		self.assert_lifecycle(frappe.get_doc("File", view["name"]))
+
+	def test_whatsapp_inbound_media(self):
+		from tatva_connect.whatsapp.media import ensure_lead_media
+
+		self.assert_lifecycle(ensure_lead_media(self._lead(), "wamid.HOSTILE.1", self.HOSTILE, _PNG))
+
+	def test_avatar_stays_public(self):
+		# The allowlist path: a hostile name must not knock a file off the public exception.
+		user = frappe.db.exists("User", {"enabled": 1, "name": ["not in", ["Administrator", "Guest"]]})
+		doc, _ = self.upload(file_name=self.HOSTILE, attached_to_doctype="User", attached_to_name=user)
+		self.assert_lifecycle(doc, private=False)
+
+	def test_thumbnail_mints_a_safe_second_key(self):
+		doc, _ = self.upload(file_name=self.HOSTILE, attached_to_doctype="CRM Lead",
+		                     attached_to_name=self._lead())
+		doc.make_thumbnail()
+		key = blob_key_from_url(doc.thumbnail_url or "")
+		self.assertTrue(key, "no thumbnail key was minted")
+		self.assertFalse([c for c in self.UNSAFE if c in key], f"thumbnail key is not URL-safe: {key}")
+		self.assertTrue(self.store.exists(key), "thumbnail blob missing from the container")
+		self._keys.append(key)
+
+	def test_a_copy_shares_one_blob_and_reclaims_on_the_last_row(self):
+		"""Core copies a File by URL for sent-mail and comments. That is why the key lives in the URL,
+		and why it must survive a save path that unquotes."""
+		doc, key = self.upload(file_name=self.HOSTILE, attached_to_doctype="CRM Lead",
+		                       attached_to_name=self._lead())
+		copy = frappe.get_doc({
+			"doctype": "File", "file_name": self.HOSTILE, "file_url": doc.file_url,
+			"attached_to_doctype": "CRM Lead", "attached_to_name": doc.attached_to_name,
+		}).insert(ignore_permissions=True)
+		self.assertEqual(blob_key_from_url(copy.file_url), key, "the copy points at a different blob")
+		self.assertEqual(copy.get_content(), _PNG, "the copy cannot read the shared blob")
+		frappe.delete_doc("File", copy.name, ignore_permissions=True, delete_permanently=True)
+		self.assertTrue(self.store.exists(key), "deleting a copy reclaimed the original's bytes")
+		frappe.delete_doc("File", doc.name, ignore_permissions=True, delete_permanently=True)
+		self.assertFalse(self.store.exists(key), "the last reference went and the blob was left orphaned")
+
+	def test_rehome_rekeys_and_stays_readable(self):
+		lead2 = frappe.db.exists("CRM Lead", {"mobile_no": "+919000000998"}) or frappe.get_doc({
+			"doctype": "CRM Lead", "first_name": "Rehome", "last_name": "Probe",
+			"mobile_no": "+919000000998"}).insert(ignore_permissions=True).name
+		doc, old_key = self.upload(file_name=self.HOSTILE, attached_to_doctype="CRM Lead",
+		                           attached_to_name=self._lead())
+		file_manager.rehome(doc, "CRM Lead", lead2)
+		new_key = blob_key_from_url(doc.file_url)
+		self._keys.append(new_key)
+		self.assertNotEqual(new_key, old_key, "rehome did not re-key the blob")
+		self.assertTrue(self.store.exists(new_key), "the re-keyed blob is not in the container")
+		self.assertFalse(self.store.exists(old_key), "the old blob was left behind")
+		self.assertEqual(frappe.get_doc("File", doc.name).get_content(), _PNG, "unreadable after rehome")
+
+	def test_a_generated_recording_name_is_already_safe(self):
+		"""Not every filename is user data — a recording's is built by us, and must stay that way."""
+		from tatva_connect.storage.call_media import recording_file_name
+
+		name = recording_file_name("acefone", "CALL-0001", "audio/mpeg")
+		self.assertFalse([c for c in self.UNSAFE + " " if c in name], f"generated name is unsafe: {name}")

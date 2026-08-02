@@ -237,24 +237,28 @@ def _notify_due(task, event_key, stamp_field, title, phrase) -> bool:
 	return True
 
 
-def sweep_task_due():
-	"""Every 5 minutes: warn about a task about to fall due, and tell a rep about one that already has.
+# Two scheduled seams, not one function reading two switches: as one hooked path both registry rows claimed to back it, and an entry point with two owners cannot answer "is this seam armed".
 
-	Each switch is read per pass, so either can be off without the other paying for it. The query is
-	narrowed to reps who have opted in, so a task nobody can be told about is never selected, never
-	capped and never stamped — and it is told the day its rep opts in. A pass tells at most `_SWEEP_CAP`
-	reps and logs what it left; the rest are told five minutes later, so no backlog is silently dropped.
-	"""
+
+def sweep_due_soon():
+	"""Every 5 min: warn a rep about a task falling due inside the operator's lead time. Opted-in reps only, capped per pass."""
 	from tatva_connect import automation
 
+	if not automation.is_enabled("Notify::Task::due-soon"):
+		return
 	now = now_datetime()
+	horizon = add_to_date(now, minutes=_lead_minutes())
+	_run_pass("Task::Due::soon", "custom_due_soon_notified_for", "Task due soon", "Due soon:", before=horizon, after=now)
 
-	if automation.is_enabled("Notify::Task::due-soon"):
-		horizon = add_to_date(now, minutes=_lead_minutes())
-		_run_pass("Task::Due::soon", "custom_due_soon_notified_for", "Task due soon", "Due soon:", before=horizon, after=now)
 
-	if automation.is_enabled("Notify::Task::overdue"):
-		_run_pass("Task::Due::overdue", "custom_overdue_notified_for", "Task overdue", "Overdue:", before=now, after=_overdue_floor(now))
+def sweep_overdue():
+	"""Every 5 min: tell a rep about a task past its due date and not done. Floored, so arming the switch does not announce the backlog."""
+	from tatva_connect import automation
+
+	if not automation.is_enabled("Notify::Task::overdue"):
+		return
+	now = now_datetime()
+	_run_pass("Task::Due::overdue", "custom_overdue_notified_for", "Task overdue", "Overdue:", before=now, after=_overdue_floor(now))
 
 
 def _run_pass(event_key, stamp_field, title, phrase, before, after):

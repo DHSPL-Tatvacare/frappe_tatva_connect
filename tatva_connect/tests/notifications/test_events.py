@@ -79,6 +79,12 @@ def _gates(**enabled):
 	return orig
 
 
+def _sweep():
+	"""One 5-minute tick. Both seams, each still reading its own switch — the exact semantics these tests had when it was one function."""
+	events.sweep_due_soon()
+	events.sweep_overdue()
+
+
 def _optin(user, *event_keys):
 	doc = frappe.new_doc("CRM Notification Preference")
 	name = frappe.db.exists("CRM Notification Preference", {"user": user})
@@ -319,9 +325,9 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		_gates(**{"Notify::Task::due-soon": True})
 		task = self._task(add_to_date(now_datetime(), minutes=10))
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 			first = len(spy.bells)
-			events.sweep_task_due()  # the very next sweep, 5 minutes later
+			_sweep()  # the very next sweep, 5 minutes later
 			second = len(spy.bells)
 		self.assertEqual(first, 1)
 		self.assertEqual(second, 1, "a second sweep must not tell the rep again")
@@ -334,9 +340,9 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		_gates(**{"Notify::Task::due-soon": True})
 		task = self._task(add_to_date(now_datetime(), minutes=10))
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 			frappe.db.set_value("CRM Task", task.name, "due_date", add_to_date(now_datetime(), minutes=20))
-			events.sweep_task_due()
+			_sweep()
 			self.assertEqual(len(spy.bells), 2, "a new due date is a new warning")
 
 	def test_a_done_task_is_never_swept(self):
@@ -344,7 +350,7 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		task = self._task(add_to_date(now_datetime(), minutes=-60))
 		frappe.db.set_value("CRM Task", task.name, "status", "Done")
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [])
 
 	def test_a_canceled_task_is_never_swept(self):
@@ -354,7 +360,7 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		task = self._task(add_to_date(now_datetime(), minutes=-60))
 		frappe.db.set_value("CRM Task", task.name, "status", "Canceled")
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [], "a cancelled task must never be called overdue")
 		self.assertEqual(spy.toasts + spy.pushes, [])
 
@@ -363,7 +369,7 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		_gates(**{"Notify::Task::overdue": True})
 		self._task(add_to_date(now_datetime(), days=-90))  # older than the 7-day default floor
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [])
 
 	def test_a_task_whose_rep_has_not_opted_in_is_never_stamped(self):
@@ -373,13 +379,13 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		frappe.db.delete("CRM Notification Subscription", {"parent": self.user})  # opted out of everything
 		task = self._task(add_to_date(now_datetime(), minutes=-60))
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [])
 		self.assertIsNone(frappe.db.get_value("CRM Task", task.name, "custom_overdue_notified_for"))
 
 		_optin(self.user, "Task::Due::overdue")  # the rep changes their mind
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(len(spy.bells), 1, "opting in must not cost the rep the tasks already swept")
 
 	def test_a_task_with_no_lead_gets_no_tray_row(self):
@@ -395,7 +401,7 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 			}
 		).insert(ignore_permissions=True)
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [], "no reference -> no tray row")
 		self.assertEqual(len(spy.toasts) + len(spy.pushes), 1, "the rep is still told")
 
@@ -403,7 +409,7 @@ class TestTaskDueSweepFiresOnce(FrappeTestCase):
 		_gates()  # both off
 		self._task(add_to_date(now_datetime(), minutes=-60))
 		with _Spy() as spy:
-			events.sweep_task_due()
+			_sweep()
 		self.assertEqual(spy.bells, [])
 		self.assertEqual(spy.toasts, [])
 		self.assertEqual(spy.pushes, [])

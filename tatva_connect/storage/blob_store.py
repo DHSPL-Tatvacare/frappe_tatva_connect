@@ -27,6 +27,8 @@ from tatva_connect.storage import location
 
 SETTINGS = "CRM Azure Storage Settings"
 DOWNLOAD_METHOD = "tatva_connect.storage.api.download_file"
+# The query parameter carrying the blob key — spelled here, read back in blob_key_from_url, nowhere else.
+QUERY_KEY = "file_name"
 LOCAL_PREFIXES = ("/files/", "/private/files/")
 _SAS_CACHE_PREFIX = "azure_blob_sas::"
 _SAS_CACHE_SKEW = 30  # refresh the cached link this many seconds before it expires
@@ -42,19 +44,31 @@ def is_local_url(file_url: str | None) -> bool:
 	return bool(file_url) and file_url.startswith(LOCAL_PREFIXES)
 
 
+def download_query(blob_key: str) -> str:
+	"""The query half of a proxy URL — the ONE place `file_name=` is spelled, so a builder and a
+	matcher can never disagree. No encoding: `new_key` makes the key URL-safe at mint, which is what
+	lets the same blob produce the same URL whether it was written by `insert` or by `db_set`."""
+	return f"{QUERY_KEY}={blob_key}"
+
+
 def download_url(blob_key: str) -> str:
 	"""The permission-gated proxy URL stored on offloaded File rows. ROOT-RELATIVE (like Frappe's
 	native /private/files URLs) so it always resolves to the host the user is browsing on. An absolute
 	URL froze the upload-time host, so a private file uploaded under one host (e.g. localhost) 403'd
-	as Guest when viewed under another (the site domain) — the session cookie is per-host."""
-	return f"/api/method/{DOWNLOAD_METHOD}?file_name={blob_key}"
+	as Guest when viewed under another (the site domain) — the session cookie is per-host.
+
+	The key needs no encoding because `new_key` slugs it — see there for why encoding is the wrong
+	tool for a value frappe core unquotes on every insert."""
+	return f"/api/method/{DOWNLOAD_METHOD}?{download_query(blob_key)}"
 
 
 def blob_key_from_url(file_url: str | None) -> str | None:
-	"""Inverse of `download_url`: pull the blob key out of a proxy URL."""
+	"""Inverse of `download_url` — THE parser. Nothing else may read a key out of a URL: a hand-rolled
+	split gets a different character wrong each time, and `parse_qs` also decodes any legacy key that
+	was written percent-encoded."""
 	if not file_url:
 		return None
-	return parse_qs(urlparse(file_url).query).get("file_name", [None])[0]
+	return parse_qs(urlparse(file_url).query).get(QUERY_KEY, [None])[0]
 
 
 def _slug(value) -> str:
@@ -103,8 +117,15 @@ class BlobStore:
 		"""Collision-proof blob key, grouped so the container browses sensibly:
 		`<app>/<owner_doctype>/<owner_id>/<hash>_<name>`, where app + owner come from the
 		walk-up resolver (an email attachment lands in its lead's folder). Unresolvable ->
-		`platform/_unattached/<hash>_<name>`. The short hash keeps same-named files apart."""
-		name = frappe.scrub(file_name) or "file"
+		`platform/_unattached/<hash>_<name>`. The short hash keeps same-named files apart.
+
+		THE NAME IS SLUGGED, exactly as the owner segment already is. A key travels inside a URL, and
+		frappe core unquotes `file_url` on every insert (file.py:108) while `db_set` does not — so an
+		encoded key yields two different URL strings for one blob depending on the write path, and
+		`File.on_trash` counts references by exact URL match. A key that needs no encoding is the only
+		key that survives both paths. The real display name is not lost: it lives on `File.file_name`,
+		which is where M3 says to read it from."""
+		name = _slug(frappe.scrub(file_name)) or "file"
 		tag = frappe.generate_hash(length=10)
 		owner_dt, owner_nm, app = location.resolve_owner(attached_to_doctype, attached_to_name)
 		if owner_dt and owner_nm:

@@ -367,7 +367,10 @@ scheduler_events = {
 			"tatva_connect.storage.call_media.sweep",
 		],
 		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
-		"*/5 * * * *": ["tatva_connect.notifications.events.sweep_task_due"],
+		"*/5 * * * *": [
+			"tatva_connect.notifications.events.sweep_due_soon",
+			"tatva_connect.notifications.events.sweep_overdue",
+		],
 		# Nightly: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
 		"0 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	},
@@ -792,6 +795,8 @@ before_request = [
 	"tatva_connect.observability.capture.stamp_start",
 	# Stricter per-IP/per-phone rate limit on the enrolment web-form submit (scoped + gated inside).
 	"tatva_connect.intake.guards.throttle_intake",
+	# frappe_whatsapp rebuilds its notification map on each of its ELEVEN wildcard doc_events; memoise it for the request.
+	"tatva_connect.whatsapp.notification_map.install",
 ]
 # Rewrite framework-layer errors on partner-API paths into the unified error contract, then log one raw row per partner-API/webhook hit (runs last); both no-op for other endpoints.
 after_request = [
@@ -803,6 +808,11 @@ after_request = [
 
 # Job Events
 # ----------
+# A worker saves documents too, so it pays the same per-event map rebuild a request does.
+before_job = [
+	"tatva_connect.whatsapp.notification_map.install",
+]
+
 # M2: a worker hydrates too (offload, imports, exports) — the same cleanup, or the bytes outlive the job.
 after_job = [
 	"tatva_connect.storage.file_override.discard_hydrated",

@@ -1,22 +1,25 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The More button opens the history of ANY multi-row section, not only screening.
+"""A multi-row section opens its ROWS; a key-value question opens its answers.
 
-Three defects are locked here, all of them proven RED before the fix:
+Four defects are locked here, all of them proven RED before the fix:
 
   1. `section_history` split the key on `#` only. A catalogued key is `section:fieldname`, so
      `acq:utm_campaign` was read as a section named "acq:utm_campaign" and `get_cached_doc` raised —
      the endpoint 500ed instead of answering or refusing. There is now ONE parse, and the SECTION's own
-     shape (`is_key_value` vs `is_multi_row`) decides which history it is; the separator decides nothing.
-  2. `has_more` was set only for a key-value section, so a lab/drug/acquisition field never offered its
-     history at all. It is now set in the main loop, off the section brain.
-  3. `hideEmpty` is ON by default and drops a field the server calls empty, taking its More button with
-     it — so a field blank on the LATEST row but filled on an earlier one had its history made
-     unreachable. `empty` now means empty in EVERY row the field is kept in.
+     shape decides what its detail is; the separator decides nothing.
+  2. `has_more` — a fact about the SECTION ("this child table keeps three rows") — was attached to every
+     FIELD, so all 17 lab measurements grew a More button and each opened one column of the same three
+     rows. A section is a child table, so `multi_row`/`row_count` are served once per section and the
+     detail behind them is the TABLE (`lead_detail_rows`): every column, one line per row.
+  3. `hideEmpty` is ON by default and drops a field the server calls empty. `empty` now means empty in
+     EVERY row the field is kept in, so a field blank on the latest row but filled earlier still shows.
+  4. The rows reader must not grow a second column brain: columns are derived from the child doctype's
+     own meta, so a section that grows a field grows a column and `in_list_view` decides nothing.
 
-The multi-row branch is gated by `_select` — the panel's own field gate — so the modal can never answer
-a field the panel declined to show, and it does NOT invent an ordering: `multirow.sorted_child_rows` is
-the same rule whose head the panel already displays.
+Both readers are gated by the panel's own gates — `_select` for a field, the section set it yields for a
+table — so neither can answer something the panel declined to show, and neither invents an ordering:
+`multirow.sorted_child_rows` is the same rule whose head the panel already displays.
 
 The `acq` section is the vehicle: it is multi-row on `touch_at` and `acq:utm_campaign` is a catalog row
 `lead_sync/catalog_seed.py` guarantees, so nothing here asserts an operator's seed.
@@ -26,6 +29,7 @@ Run:
         --module tatva_connect.tests.lead.test_section_history
 """
 import frappe
+from frappe.model import NO_VALUE_FIELDS
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.lead import detail, multirow
@@ -73,6 +77,17 @@ class TestSortedChildRows(FrappeTestCase):
 				self.assertIs(multirow.latest_child_row(shuffled, "report_date"),
 				              multirow.sorted_child_rows(shuffled, "report_date")[0])
 
+	def test_the_python_sorter_and_the_db_order_by_name_the_same_fields_in_the_same_order(self):
+		"""The divergence lock: `order_keys` is the ONE declaration and both renderings are built from
+		it, so a Python reader and a DB reader cannot disagree about which row is newer."""
+		self.assertEqual(multirow.order_keys("report_date"), ("report_date", "creation", "name"))
+		self.assertEqual(multirow.order_by("report_date"),
+		                 ", ".join(f"{f} desc" for f in multirow.order_keys("report_date")))
+
+	def test_a_section_with_no_row_key_falls_to_creation_then_name(self):
+		self.assertEqual(multirow.order_keys(""), ("creation", "name"))
+		self.assertNotIn("`", multirow.order_by("report_date"), "frappe rejects backticked order_by")
+
 	def test_no_rows_is_an_empty_list_and_no_latest(self):
 		self.assertEqual(multirow.sorted_child_rows([], "report_date"), [])
 		self.assertEqual(multirow.sorted_child_rows(None, "report_date"), [])
@@ -103,8 +118,8 @@ class TestEmptyEverywhere(FrappeTestCase):
 		self.assertFalse(detail.empty_everywhere([0]))
 
 
-class TestMultiRowHistoryEndpoint(FrappeTestCase):
-	"""The endpoint, driven exactly as the More button drives it: (lead, the key the panel served)."""
+class TestSectionRowsEndpoint(FrappeTestCase):
+	"""The endpoint, driven exactly as `View more` drives it: (lead, the section key the panel served)."""
 
 	@classmethod
 	def setUpClass(cls):
@@ -162,56 +177,141 @@ class TestMultiRowHistoryEndpoint(FrappeTestCase):
 		flat = {f["field_key"]: f for sec in out["sections"] for f in sec["fields"]}
 		return flat.get(field_key)
 
-	# -- the 500 ---------------------------------------------------------------
+	def _panel_section(self, key):
+		return {s["key"]: s for s in detail.lead_detail(self.lead.name)["sections"]}.get(key)
 
-	def test_a_catalogued_multi_row_field_answers_its_history(self):
-		"""RED before the fix: `partition('#')` made the section key the WHOLE `acq:utm_campaign`, so
-		`get_cached_doc` raised DoesNotExistError and the More button 500ed."""
-		out = detail.section_history(self.lead.name, FIELD_KEY)
-		self.assertEqual({"label", "entries"}, set(out))
-		self.assertEqual(len(out["entries"]), 3)
+	# -- the rows are the detail -----------------------------------------------
 
-	def test_history_is_newest_first_and_opens_on_the_value_the_panel_shows(self):
-		out = detail.section_history(self.lead.name, FIELD_KEY)
-		self.assertEqual([e["value"] for e in out["entries"]],
-		                 ["summer-push", "spring-push", "winter-push"])
-		self.assertEqual(out["entries"][0]["value"], self._panel_field(FIELD_KEY)["value"])
+	def test_a_multi_row_section_answers_its_whole_table(self):
+		out = detail.lead_detail_rows(self.lead.name, SECTION)
+		self.assertEqual({"label", "row_key", "columns", "data", "page_length", "page_length_count",
+		                  "row_count", "total_count"}, set(out),
+		                 "the Leads list envelope, copied not adapted (C2)")
+		self.assertEqual(out["total_count"], 3)
+		self.assertEqual(out["row_count"], 3)
+		self.assertEqual(out["row_key"], self.section.row_key_field)
 
-	def test_every_entry_carries_the_one_shape(self):
-		"""Both branches answer in the same five keys, so the modal renders one thing either way."""
-		for entry in detail.section_history(self.lead.name, FIELD_KEY)["entries"]:
-			self.assertEqual({"value", "display", "empty", "on", "source"}, set(entry))
-		first = detail.section_history(self.lead.name, FIELD_KEY)["entries"][0]
-		self.assertIsNone(first["source"], "a multi-row row is our own record and names no form")
-		self.assertTrue(first["on"], "`on` is the row key — what dates this entry")
+	def test_rows_are_newest_first_and_open_on_the_row_the_panel_shows(self):
+		"""One ordering: the first line of the table IS the line the panel flattened to."""
+		rows = detail.lead_detail_rows(self.lead.name, SECTION)["data"]
+		self.assertEqual([r[FIELDNAME] for r in rows], ["summer-push", "spring-push", "winter-push"])
+		self.assertEqual(rows[0][FIELDNAME], self._panel_field(FIELD_KEY)["value"])
 
-	def test_on_is_the_sections_row_key_not_the_row_creation(self):
-		"""Rows written in one save share a `creation` to the second; the report/cycle/touch date is the
-		fact the reader is dating the entry by, and it is read off the section brain."""
-		ons = [str(e["on"]) for e in detail.section_history(self.lead.name, FIELD_KEY)["entries"]]
-		self.assertTrue(ons[0].startswith("2026-06-01"))
-		self.assertTrue(ons[-1].startswith("2026-01-10"))
+	def test_every_column_of_the_child_doctype_is_a_column(self):
+		"""The column lock: derived from the child doctype's meta, never `in_list_view` (4 of 26) and
+		never a list kept in code. A section that grows a field grows a column."""
+		out = detail.lead_detail_rows(self.lead.name, SECTION)
+		served = {c["key"] for c in out["columns"]}
+		meta = frappe.get_meta(self.section.target_doctype)
+		expected = {df.fieldname for df in meta.fields
+		            if df.fieldtype not in NO_VALUE_FIELDS and not df.hidden}
+		self.assertEqual(served, expected)
+		in_list_view = {df.fieldname for df in meta.fields if df.in_list_view}
+		self.assertGreater(len(served), len(in_list_view), "the reader is not the in_list_view subset")
 
-	# -- has_more --------------------------------------------------------------
+	def test_the_row_key_is_the_first_column(self):
+		"""It is what a reader scans down, so it leads — never buried at the doctype's own idx."""
+		out = detail.lead_detail_rows(self.lead.name, SECTION)
+		self.assertEqual(out["columns"][0]["key"], self.section.row_key_field)
 
-	def test_the_panel_offers_more_on_a_multi_row_field_with_a_second_row(self):
-		"""RED before the fix: `has_more` was set ONLY inside `_screening_answers`, so the key was absent
-		from every catalogued field and the More button never rendered for lab/drug/acq."""
-		field = self._panel_field(FIELD_KEY)
-		self.assertIsNotNone(field, "acq:utm_campaign must be in the panel for an entitled viewer")
-		self.assertIn("has_more", field)
-		self.assertTrue(field["has_more"])
+	def test_a_column_carries_only_what_it_takes_to_render_and_sort_it(self):
+		"""The server sends the table and nothing about which of it to SHOW: narrowing is the column
+		picker's, exactly as on a listing page. `sortable` is not that decision — it is a fact about the
+		data (D5), and it gates the sort control only."""
+		for column in detail.lead_detail_rows(self.lead.name, SECTION)["columns"]:
+			self.assertEqual({"key", "label", "fieldtype", "options", "sortable"}, set(column))
 
-	def test_a_parent_section_field_never_offers_more(self):
-		field = self._panel_field("lead:status")
-		self.assertIsNotNone(field)
-		self.assertFalse(field["has_more"], "the lead row holds one value; More would open on itself")
+	def test_a_column_null_on_every_row_is_not_offered_as_a_sort(self):
+		"""RED before the fix: SortBy was fed all 31 columns, so sorting by one that is null everywhere
+		ordered by the tiebreaker while looking authoritative. It stays a column and stays filterable."""
+		columns = {c["key"]: c for c in detail.lead_detail_rows(self.lead.name, SECTION)["columns"]}
+		self.assertTrue(columns[FIELDNAME]["sortable"], "filled on every row of this lead")
+		self.assertFalse(columns["utm_source"]["sortable"], "null on every row of this lead")
+		self.assertIn("utm_source", columns, "still a column, and still filterable")
 
-	def test_a_single_row_of_a_multi_row_section_offers_no_more(self):
+	def test_a_stored_zero_counts_as_filled(self):
+		"""One answer about emptiness: `_is_empty` calls 0 a real value, and COUNT(col) counts non-NULL,
+		so a measurement recorded as 0 stays sortable. The two cannot drift because neither is a copy."""
+		self.assertFalse(detail._is_empty(0))
+
+	def test_search_does_not_match_a_measurement_by_coincidence_of_digits(self):
+		"""RED before the fix: a leading-wildcard LIKE ran on every column, so `%7%` hit a triglyceride
+		of 178. Search covers the text fieldtypes; a Float, an Int and a Date are not text."""
+		columns = detail.lead_detail_rows(self.lead.name, SECTION)["columns"]
+		searched = detail._row_search(columns, "7")
+		for key in searched:
+			fieldtype = next(c["fieldtype"] for c in columns if c["key"] == key)
+			self.assertIn(fieldtype, detail._SEARCHABLE_FIELDTYPES)
+		self.assertTrue(searched, "the text columns are still searched")
+
+	def test_a_column_carries_its_real_fieldtype(self):
+		"""The client formats a Date as a date and sizes a column by its type; it is told, never guesses."""
+		by_key = {c["key"]: c for c in detail.lead_detail_rows(self.lead.name, SECTION)["columns"]}
+		df = frappe.get_meta(self.section.target_doctype).get_field(self.section.row_key_field)
+		self.assertEqual(by_key[self.section.row_key_field]["fieldtype"], df.fieldtype)
+
+	# -- search and paging -----------------------------------------------------
+
+	def test_search_narrows_the_rows_and_the_total_with_them(self):
+		"""C7: the count carries the SAME narrowing as the page, or '1 of 3' contradicts the screen."""
+		out = detail.lead_detail_rows(self.lead.name, SECTION, search="spring")
+		self.assertEqual(out["total_count"], 1)
+		self.assertEqual([r[FIELDNAME] for r in out["data"]], ["spring-push"])
+
+	def test_search_that_matches_nothing_is_empty_not_everything(self):
+		out = detail.lead_detail_rows(self.lead.name, SECTION, search="no-such-campaign")
+		self.assertEqual(out["data"], [])
+		self.assertEqual(out["total_count"], 0)
+
+	def test_sorting_is_an_allowlist_over_the_served_columns(self):
+		"""D3: a caller's order_by is never a passthrough. A served column sorts; anything else refuses."""
+		asc = detail.lead_detail_rows(self.lead.name, SECTION, order_by=f"{FIELDNAME} asc")
+		self.assertEqual([r[FIELDNAME] for r in asc["data"]],
+		                 ["spring-push", "summer-push", "winter-push"])
+		for bad in ("parent desc", "utm_campaign; drop", f"{FIELDNAME} sideways"):
+			with self.subTest(order_by=bad), self.assertRaises(frappe.exceptions.ValidationError):
+				detail.lead_detail_rows(self.lead.name, SECTION, order_by=bad)
+
+	def test_filtering_is_an_allowlist_over_the_served_columns(self):
+		"""The filter dict is frappe's own and goes to the query untouched — but only for a column the
+		caller was served, so `parent` cannot be used to read another lead's rows."""
+		hit = detail.lead_detail_rows(self.lead.name, SECTION, filters={FIELDNAME: "spring-push"})
+		self.assertEqual(hit["total_count"], 1)
+		with self.assertRaises(frappe.exceptions.ValidationError):
+			detail.lead_detail_rows(self.lead.name, SECTION, filters={"parent": "some-other-lead"})
+
+	def test_a_window_smaller_than_the_table_still_reports_the_whole_total(self):
+		"""The footer reads 'rows of total'; the total is the answer to the question, not the window."""
+		out = detail.lead_detail_rows(self.lead.name, SECTION, page_length=2)
+		self.assertEqual(len(out["data"]), 2)
+		self.assertEqual(out["row_count"], 2, "row_count is this page (C2)")
+		self.assertEqual(out["total_count"], 3, "total_count is the whole answer (C2)")
+		self.assertEqual(out["page_length"], 2, "the window is echoed back, so the client holds no copy")
+		self.assertEqual(out["data"][0][FIELDNAME], "summer-push", "the window is still newest-first")
+
+	# -- the section, not the field, carries `more` ----------------------------
+
+	def test_the_panel_offers_more_once_per_section_not_once_per_field(self):
+		"""RED before the fix: `has_more` was on every FIELD, so all 17 lab measurements grew a More
+		button. It is a fact about the child table, so it is served once, on the section."""
+		section = self._panel_section(SECTION)
+		self.assertIsNotNone(section, "acq must be in the panel for an entitled viewer")
+		self.assertTrue(section["multi_row"])
+		self.assertEqual(section["row_count"], 3)
+		for field in section["fields"]:
+			self.assertNotIn("has_more", field, "a multi-row field opens nothing of its own")
+
+	def test_a_parent_section_is_never_multi_row(self):
+		section = self._panel_section("lead")
+		self.assertIsNotNone(section)
+		self.assertFalse(section["multi_row"], "the lead row holds one value; More would open on itself")
+		self.assertEqual(section["row_count"], 0)
+
+	def test_a_single_row_of_a_multi_row_section_reports_that_one_row(self):
 		lead = frappe.get_doc("CRM Lead", self.lead.name)
 		lead.set(self.section.child_table_field, lead.get(self.section.child_table_field)[:1])
 		lead.save(ignore_permissions=True)
-		self.assertFalse(self._panel_field(FIELD_KEY)["has_more"])
+		self.assertEqual(self._panel_section(SECTION)["row_count"], 1)
 
 	# -- hideEmpty -------------------------------------------------------------
 
@@ -225,7 +325,6 @@ class TestMultiRowHistoryEndpoint(FrappeTestCase):
 		field = self._panel_field(FIELD_KEY)
 		self.assertTrue(detail._is_empty(field["value"]), "the displayed value really is blank")
 		self.assertFalse(field["empty"], "blank on the latest row but filled earlier is not 'nothing to show'")
-		self.assertTrue(field["has_more"])
 
 	def test_a_field_blank_in_every_row_stays_empty(self):
 		"""The tidiness half: widening `empty` must not drag every never-filled field onto the panel."""
@@ -237,27 +336,36 @@ class TestMultiRowHistoryEndpoint(FrappeTestCase):
 
 	# -- the gate --------------------------------------------------------------
 
-	def test_history_refuses_a_field_the_panel_never_showed(self):
-		"""Gated by `_select`, the panel's own field gate — an undeclared column of a real multi-row
-		section is not a field this viewer was shown, so its history is refused, not answered."""
+	def test_rows_refuse_a_section_the_panel_never_opened(self):
+		"""Gated on the section set `_select` yields — a section this viewer was shown no field of is
+		refused, not answered, so the table cannot be read around the panel that hides it."""
 		with self.assertRaises(frappe.exceptions.PermissionError):
-			detail.section_history(self.lead.name, f"{SECTION}:utm_term_not_catalogued")
+			detail.lead_detail_rows(self.lead.name, "plan")
 
-	def test_history_is_refused_on_a_lead_the_caller_cannot_read(self):
+	def test_rows_refuse_a_section_that_does_not_exist(self):
+		with self.assertRaises(frappe.exceptions.PermissionError):
+			detail.lead_detail_rows(self.lead.name, "no_such_section")
+
+	def test_rows_are_refused_on_a_lead_the_caller_cannot_read(self):
 		victim = _ensure_plain_user()
 		frappe.set_user(victim)
 		try:
 			with self.assertRaises(frappe.exceptions.PermissionError):
-				detail.section_history(self.lead.name, FIELD_KEY)
+				detail.lead_detail_rows(self.lead.name, SECTION)
 		finally:
 			frappe.set_user("Administrator")
 
-	# -- the sections that keep none ------------------------------------------
+	# -- the reader that keeps none -------------------------------------------
+
+	def test_a_multi_row_field_is_refused_its_own_history(self):
+		"""RED before the fix: a multi-row field answered one COLUMN of its table, which is the defect —
+		a table's detail is its rows. The refusal must be DELIBERATE, which is what excluding
+		DoesNotExistError asserts (a 500 dressed as a validation error reads the same to a caller)."""
+		with self.assertRaises(frappe.exceptions.ValidationError) as caught:
+			detail.section_history(self.lead.name, FIELD_KEY)
+		self.assertNotIsInstance(caught.exception, frappe.DoesNotExistError)
 
 	def test_a_single_row_section_says_it_keeps_no_history(self):
-		"""RED before the fix: `plan:plan_name` partitioned to a section named "plan:plan_name" and the
-		lookup raised DoesNotExistError — a 500 dressed as a validation error, with no readable message.
-		The refusal must be a DELIBERATE one, which is what excluding DoesNotExistError asserts."""
 		with self.assertRaises(frappe.exceptions.ValidationError) as caught:
 			detail.section_history(self.lead.name, "plan:plan_name")
 		self.assertNotIsInstance(caught.exception, frappe.DoesNotExistError)
