@@ -101,11 +101,13 @@ class CRMDerivedField(Document):
 		self._assert_buckets_shape()
 		field = self._declaration()
 		self._assert_free(field)
-		# RETIRING is the ONE save the proof does not gate: a declaration whose column has since changed
-		# would fail it, and the operator could not even switch the field off. Every other save is proved,
-		# disabled rows included — "refused at Save" is the whole safety story and a draft is still a save.
-		if not self._being_retired():
-			self._prove(field)
+		# NO PROOF RUNS HERE. `verify()` used to insert a boundary corpus of real records on every save to
+		# prove the two readers agree. That is a DEVELOPER's check and it belongs in tests/list_engine,
+		# where it still runs against a controlled fixture — not in a controller, where it wrote sixty
+		# trial rows into whatever database the save landed in and could refuse a deployment for a reason
+		# that has nothing to do with the declaration: on UAT it borrowed a `Lost` CRM Lead Status, crm's
+		# own validate_lost_reason demanded `lost_reason`, and seed 49 died. Everything above is metadata
+		# only — it reads `get_meta` and writes nothing.
 
 	def _being_retired(self):
 		"""Whether THIS save is the enabled switch going off. Not "is off" — a row that was already off and
@@ -290,16 +292,23 @@ def usage(dt: str, fieldname: str):
 def _probe_defaults(doctype):
 	"""A value for every mandatory column of the list, so `verify()` can insert its probe rows.
 
-	Generic by fieldtype rather than a per-doctype table, because the operator chooses the list and no list
-	of ours can be enumerated here. A mandatory Link BORROWS a record that already exists rather than
-	inventing one — a probe row never leaves the savepoint, so nothing it points at is touched. A column
-	this cannot fill is left out, and `verify()` then reports the trial rows it could not create rather
-	than passing over them in silence."""
+	A value is COPIED off a record the list already holds, because a stored record has by definition passed
+	every rule the doctype enforces — including the conditional ones no meta can describe. Inventing one
+	instead is what broke a UAT seed: the probe borrowed the first `CRM Lead Status` it found, that site's
+	happened to be a `Lost` one, and crm's own `validate_lost_reason` then demanded `lost_reason` — a column
+	that is not `reqd`, carries no `mandatory_depends_on`, and is enforced in Python where nothing generic
+	can see it. Every one of the sixty trial rows failed and the declaration was refused.
+
+	Falling back to a fieldtype guess only when the list is EMPTY, where there is no rule to trip over.
+	A column neither route can fill is left out, and `verify()` then reports the trial rows it could not
+	create rather than passing over them in silence."""
 	defaults = {}
 	for df in frappe.get_meta(doctype).fields:
 		if not df.reqd or df.default:
 			continue
-		value = _probe_value(df)
+		value = frappe.db.get_value(doctype, {df.fieldname: ["is", "set"]}, df.fieldname)
+		if value is None:
+			value = _probe_value(df)
 		if value is not None:
 			defaults[df.fieldname] = value
 	return defaults
