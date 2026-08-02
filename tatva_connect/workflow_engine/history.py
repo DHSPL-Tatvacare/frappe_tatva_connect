@@ -58,7 +58,7 @@ MAX_JOURNEYS = 100
 MAX_STEPS = 500
 
 _JOURNEY_FIELDS = [
-	"name", "workflow", "workflow_version", "status", "current_node",
+	"name", "workflow", "workflow_version", "status", "current_node", "stop_reason",
 	"resume_at", "awaiting_signal", "awaiting_correlation", "retry_count",
 	"subject_doctype", "subject_name", "trigger_doctype", "trigger_name",
 	"creation", "modified",
@@ -210,6 +210,8 @@ def _summary(row):
 		"workflow_version": row.workflow_version,
 		"status": row.status,
 		"current_node": row.current_node,
+		# Without it the screen reads a killed journey as "currently at n3" — where it died, not where it is.
+		"stop_reason": row.stop_reason,
 		"subject_doctype": row.subject_doctype,
 		"subject_name": row.subject_name,
 		"trigger_doctype": row.trigger_doctype,

@@ -48,6 +48,19 @@
   {
    "child": 1,
    "collapsible": 1,
+   "icon": "gauge",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Contact Limit",
+   "link_to": "CRM Contact Cap Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link",
+   "idx": 4
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
    "icon": "list-checks",
    "indent": 0,
    "keep_closed": 0,
@@ -56,7 +69,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 4
+   "idx": 5
   },
   {
    "child": 1,
@@ -69,7 +82,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 5
+   "idx": 6
   },
   {
    "child": 1,
@@ -82,7 +95,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 6
+   "idx": 7
   },
   {
    "child": 0,
@@ -95,7 +108,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break",
-   "idx": 7
+   "idx": 8
   },
   {
    "child": 1,
@@ -108,7 +121,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 8
+   "idx": 9
   },
   {
    "child": 1,
@@ -121,7 +134,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 9
+   "idx": 10
   },
   {
    "child": 0,
@@ -134,7 +147,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Section Break",
-   "idx": 10
+   "idx": 11
   },
   {
    "child": 1,
@@ -147,7 +160,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 11
+   "idx": 12
   },
   {
    "child": 1,
@@ -160,7 +173,7 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 12
+   "idx": 13
   },
   {
    "child": 1,
@@ -173,10 +186,10 @@
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link",
-   "idx": 13
+   "idx": 14
   }
  ],
- "modified": "2026-07-30 12:00:00.000000",
+ "modified": "2026-08-02 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",

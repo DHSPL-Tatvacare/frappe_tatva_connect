@@ -78,11 +78,16 @@ class TestJourneyHistory(FrappeTestCase):
 			frappe.db.commit()
 		return frappe.db.get_value(fixtures.JOURNEY_DT, run.name, "name")
 
-	def _step(self, run, node_id, outcome, detail="", duration_ms=0):
+	def _row(self, run):
+		"""One journey as the tab receives it — through the reader, so a column the summary drops fails here."""
+		listed = history.journeys_for_subject(self.lead.doctype, self.lead.name)["journeys"]
+		return next(r for r in listed if r["journey"] == run)
+
+	def _step(self, run, node_id, outcome, detail="", duration_ms=0, **columns):
 		return frappe.get_doc({
 			"doctype": fixtures.STEP_LOG_DT, "journey": run, "subject_name": self.lead.name,
 			"node_id": node_id, "node_type": "Route", "outcome": outcome,
-			"detail": detail, "duration_ms": duration_ms,
+			"detail": detail, "duration_ms": duration_ms, **columns,
 		}).insert(ignore_permissions=True).name
 
 	# ---------------------------------------------------------------- scoping
@@ -213,7 +218,7 @@ class TestJourneyHistory(FrappeTestCase):
 		run = self._run(status="Failed")
 		self._step(run, "n2", "failed", detail="template rejected by the provider")
 		frappe.db.commit()
-		row = next(r for r in history.journeys_for_subject(self.lead.doctype, self.lead.name)["journeys"] if r["journey"] == run)
+		row = self._row(run)
 		self.assertEqual(row["failure"]["detail"], "template rejected by the provider")
 		self.assertEqual(row["failure"]["node_id"], "n2")
 
@@ -222,8 +227,30 @@ class TestJourneyHistory(FrappeTestCase):
 		run = self._run(status="Done")
 		self._step(run, "n1", "done")
 		frappe.db.commit()
-		row = next(r for r in history.journeys_for_subject(self.lead.doctype, self.lead.name)["journeys"] if r["journey"] == run)
+		row = self._row(run)
 		self.assertIsNone(row["failure"])
+
+	def test_a_stopped_journey_carries_the_reason_it_was_ended(self):
+		"""Without it the screen reads a killed journey as "currently at n1" — where it died, not where it is."""
+		run = self._run(status="Stopped", stop_reason="Workflow archived (ZZ)")
+
+		row = self._row(run)
+
+		self.assertEqual(row["stop_reason"], "Workflow archived (ZZ)")
+		self.assertFalse(row["stuck"], "a journey ended on purpose is not one nobody came back to")
+
+	# ------------------------------------------------------ who was reached
+
+	def test_a_step_hands_over_the_channel_and_the_number_it_really_used(self):
+		"""W12 — the log records the address ACTUALLY used, and the screen reads it here, not off the lead."""
+		run = self._run()
+		self._step(run, "n1", "sent", channel="whatsapp", contact="+919876543210")
+		frappe.db.commit()
+
+		step = history.journey_steps(run)["steps"][0]
+
+		self.assertEqual(step.channel, "whatsapp")
+		self.assertEqual(step.contact, "+919876543210")
 
 	# ------------------------------------------------------ counts on the canvas
 
