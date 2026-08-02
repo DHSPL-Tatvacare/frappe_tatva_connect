@@ -178,8 +178,8 @@
             "enum": [
               "Product Line B",
               "Product Line A",
-              "Pill Up",
-              "TatvaPractice"
+              "Product Line C",
+              "Product Line D"
             ],
             "description": "The product line. Fixed to the key and stamped server-side, so it is never sent by the caller."
           },
@@ -2408,7 +2408,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_address",
-                    "label": "Nivolumab Address",
+                    "label": "Program Address",
                     "type": "Long Text",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2416,7 +2416,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_chemo_cycle",
-                    "label": "Nivolumab Chemo Cycle",
+                    "label": "Program Cycle",
                     "type": "Int",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2424,7 +2424,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_chemo_date",
-                    "label": "Nivolumab Chemo Date",
+                    "label": "Program Cycle Date",
                     "type": "Date",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2432,7 +2432,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_dosage",
-                    "label": "Nivolumab Dosage",
+                    "label": "Program Dosage",
                     "type": "Small Text",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2440,7 +2440,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_indication",
-                    "label": "Nivolumab Indication",
+                    "label": "Program Indication",
                     "type": "Link",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2465,7 +2465,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_order_number",
-                    "label": "Nivolumab Order Number",
+                    "label": "Program Order Number",
                     "type": "Int",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2473,7 +2473,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_pap_category",
-                    "label": "Nivolumab PAP Category",
+                    "label": "Program Support Category",
                     "type": "Link",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2491,7 +2491,7 @@
                   },
                   {
                     "fieldname": "custom_nivo_side_effects",
-                    "label": "Nivolumab Side Effects",
+                    "label": "Program Side Effects",
                     "type": "Long Text",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2499,7 +2499,7 @@
                   },
                   {
                     "fieldname": "custom_nivolumab_approval",
-                    "label": "Nivolumab Approval",
+                    "label": "Program Approval",
                     "type": "Data",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2507,7 +2507,7 @@
                   },
                   {
                     "fieldname": "custom_nivolumab_approved_indication_as_per_cancer",
-                    "label": "Nivolumab Approved Indication As Per Cancer",
+                    "label": "Program Approved Indication",
                     "type": "Data",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2515,7 +2515,7 @@
                   },
                   {
                     "fieldname": "custom_nivolumab_order_placed_date",
-                    "label": "Nivolumab Order Placed Date",
+                    "label": "Program Order Placed Date",
                     "type": "Date",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2523,7 +2523,7 @@
                   },
                   {
                     "fieldname": "custom_nivolumab_others_cancer_type",
-                    "label": "Nivolumab Other Cancer Type",
+                    "label": "Program Other Category",
                     "type": "Data",
                     "behavior": "OPTIONAL",
                     "required": false,
@@ -2579,7 +2579,7 @@
                       "Sigrima",
                       "Tukavo",
                       "Ujvira",
-                      "Nivolumab"
+                      "Program A"
                     ]
                   },
                   {
@@ -3503,8 +3503,8 @@
             "routing": {
               "mode": "none",
               "source": null,
-              "vertical": "GoodFlip Care",
-              "group": "Anaya",
+              "vertical": "Product Line A",
+              "group": "Group A",
               "program": null,
               "allowed_programs": [],
               "program_required": false,
@@ -3620,8 +3620,8 @@
             "name": "a7f3c9e12b",
             "external_id": "V-1",
             "source": null,
-            "custom_vertical": "GoodFlip Care",
-            "custom_group": "Anaya",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
             "custom_current_program": null,
             "custom_acquisition_profile": [],
             "custom_care_providers_profile": [],
@@ -3824,8 +3824,8 @@
                 "website": null,
                 "name": "a7f3c9e12b",
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "external_id": "V-1"
               },
@@ -3877,8 +3877,8 @@
                 "website": null,
                 "name": "a7f3c9e12b",
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "external_id": "HTTPC-LEAD-2-DIFFERENT"
               },
@@ -3930,8 +3930,8 @@
                 "website": null,
                 "name": "a7f3c9e12b",
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "external_id": null
               },
@@ -3983,8 +3983,8 @@
                 "website": null,
                 "name": "a7f3c9e12b",
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "external_id": null
               },
@@ -4036,8 +4036,8 @@
                 "website": null,
                 "name": "a7f3c9e12b",
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "external_id": null
               }
@@ -4071,7 +4071,7 @@
             "lead": "a7f3c9e12b",
             "task_types": [
               {
-                "name": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "name": "Product Line A::Group A::::Readiness Check",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4133,7 +4133,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Document Upload",
+                "name": "Product Line A::Group A::::Document Upload",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4203,7 +4203,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Document Verification Status",
+                "name": "Product Line A::Group A::::Document Verification",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4265,7 +4265,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Identify PSP Category",
+                "name": "Product Line A::Group A::::Category Check",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4295,7 +4295,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Order Punch Reminder",
+                "name": "Product Line A::Group A::::Order Reminder",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4325,7 +4325,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Order Punch Status",
+                "name": "Product Line A::Group A::::Order Status",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4483,7 +4483,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Order Status Update",
+                "name": "Product Line A::Group A::::Order Update",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4577,7 +4577,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Physio or Dietician",
+                "name": "Product Line A::Group A::::Specialist Referral",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4607,7 +4607,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Post Chemo Health Check",
+                "name": "Product Line A::Group A::::Health Check",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4685,7 +4685,7 @@
                 ]
               },
               {
-                "name": "GoodFlip Care::Anaya::::Welcome Call",
+                "name": "Product Line A::Group A::::Welcome Call",
                 "is_logged_complete": 1,
                 "fields": [
                   {
@@ -4858,7 +4858,7 @@
               {
                 "name": "9390",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4871,7 +4871,7 @@
               {
                 "name": "9378",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4884,7 +4884,7 @@
               {
                 "name": "9377",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4897,7 +4897,7 @@
               {
                 "name": "9376",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4910,7 +4910,7 @@
               {
                 "name": "9146",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4923,7 +4923,7 @@
               {
                 "name": "9145",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4936,7 +4936,7 @@
               {
                 "name": "9144",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4949,7 +4949,7 @@
               {
                 "name": "9143",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4962,7 +4962,7 @@
               {
                 "name": "9142",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4975,7 +4975,7 @@
               {
                 "name": "9141",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -5508,7 +5508,7 @@
           "data": {
             "name": "9390",
             "lead": "a7f3c9e12b",
-            "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+            "task_type": "Product Line A::Group A::::Readiness Check",
             "status": "Done",
             "external_id": "V-A1",
             "values": {
@@ -5575,8 +5575,8 @@
             "name": "a7f3c9e12b",
             "external_id": null,
             "source": null,
-            "custom_vertical": "GoodFlip Care",
-            "custom_group": "Anaya",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
             "custom_current_program": null,
             "custom_acquisition_profile": [],
             "custom_care_providers_profile": [],
@@ -5642,8 +5642,8 @@
             "name": "a7f3c9e12b",
             "external_id": "V-1",
             "source": null,
-            "custom_vertical": "GoodFlip Care",
-            "custom_group": "Anaya",
+            "custom_vertical": "Product Line A",
+            "custom_group": "Group A",
             "custom_current_program": null,
             "custom_acquisition_profile": [],
             "custom_care_providers_profile": [],
@@ -5718,8 +5718,8 @@
                 "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "custom_acquisition_profile": [],
                 "custom_care_providers_profile": [],
@@ -5783,8 +5783,8 @@
                 "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "custom_acquisition_profile": [],
                 "custom_care_providers_profile": [],
@@ -5861,8 +5861,8 @@
                 "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "custom_acquisition_profile": [],
                 "custom_care_providers_profile": [],
@@ -5950,8 +5950,8 @@
                 "name": "a7f3c9e12b",
                 "external_id": null,
                 "source": null,
-                "custom_vertical": "GoodFlip Care",
-                "custom_group": "Anaya",
+                "custom_vertical": "Product Line A",
+                "custom_group": "Group A",
                 "custom_current_program": null,
                 "custom_acquisition_profile": [],
                 "custom_care_providers_profile": [],
@@ -5993,7 +5993,7 @@
           "data": {
             "name": "9390",
             "lead": "a7f3c9e12b",
-            "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+            "task_type": "Product Line A::Group A::::Readiness Check",
             "status": "Done",
             "external_id": "V-A1",
             "values": {
@@ -6013,7 +6013,7 @@
           "data": {
             "name": "9390",
             "lead": "a7f3c9e12b",
-            "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+            "task_type": "Product Line A::Group A::::Readiness Check",
             "status": "Done",
             "external_id": "V-A1",
             "values": {
@@ -6042,7 +6042,7 @@
               "data": {
                 "name": "9391",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -6060,7 +6060,7 @@
               "data": {
                 "name": "9392",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -6091,7 +6091,7 @@
               "data": {
                 "name": "9391",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -6133,7 +6133,7 @@
               "data": {
                 "name": "9391",
                 "lead": "a7f3c9e12b",
-                "task_type": "GoodFlip Care::Anaya::::Chemo Readiness",
+                "task_type": "Product Line A::Group A::::Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -6782,7 +6782,7 @@
             {
               "mobile_no": "9000000001",
               "first_name": "Asha",
-              "custom_current_program": "Nivolumab"
+              "custom_current_program": "Program A"
             }
           ]
         }
