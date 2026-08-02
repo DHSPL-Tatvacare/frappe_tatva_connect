@@ -210,7 +210,9 @@ class TestNoTypeSwitchReturnsToTheValidator(unittest.TestCase):
 class TestEveryRowIsDeliberate(unittest.TestCase):
 	"""A row with no check must be a decision, not an oversight."""
 
-	_MUST_CHECK = ("Predicate", "Mapping", "Requirements", "Select")
+	# `Requirements` was retired with the slot columns in `dff2f5d` — a workflow no longer blocks a rep's
+	# save, so the type is gone from FIELD_TYPES and naming it here only raised KeyError.
+	_MUST_CHECK = ("Predicate", "Mapping", "Select")
 
 	def test_the_types_that_can_be_wrong_on_their_own_carry_a_check(self):
 		for name in self._MUST_CHECK:

@@ -23,6 +23,7 @@ Run:
 from unittest.mock import patch
 
 import frappe
+from frappe.model import no_value_fields
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import contact_cap, sends
@@ -33,6 +34,24 @@ STEP_LOG_DT = fx.STEP_LOG_DT
 _NUMBER = "+919876543210"
 _OTHER = "+919876543211"
 _WF = "ZZ Contact Cap"
+
+
+def _reset_settings():
+	"""Put the Single back to the row that SHIPPED — every value field, not just the switch.
+
+	Never "whatever it was": restoring the previous value is what propagates a poisoned baseline. And never
+	a list typed here either — `frappe.new_doc` applies the doctype's own defaults and casts them, so the
+	JSON stays the one statement of what shipped. Restoring only `enabled` is what left this bench carrying
+	a maximum of 1 that no operator chose, with a dormant switch hiding it.
+	"""
+	shipped = frappe.new_doc(SETTINGS_DT)
+	settings = frappe.get_doc(SETTINGS_DT)
+	for field in shipped.meta.fields:
+		if field.fieldtype not in no_value_fields:
+			settings.set(field.fieldname, shipped.get(field.fieldname))
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.clear_cache(doctype=SETTINGS_DT)
 
 
 class _CapCase(FrappeTestCase):
@@ -46,7 +65,7 @@ class _CapCase(FrappeTestCase):
 	def setUp(self):
 		# Registered BEFORE anything is armed, so an abort mid-setUp still disarms — the shape
 		# `fixtures.arm_engine` was rewritten into after a suite left the engine on.
-		self.addCleanup(self._disarm)
+		self.addCleanup(_reset_settings)
 		self.addCleanup(self._purge_steps)
 		self.lead = fx.make_lead()
 		self.addCleanup(self._drop_lead, self.lead.name)
@@ -62,15 +81,6 @@ class _CapCase(FrappeTestCase):
 			frappe.db.delete(STEP_LOG_DT, {"journey": journey})
 		frappe.db.delete(fx.JOURNEY_DT, {"workflow": _WF})
 		frappe.db.commit()
-
-	def _disarm(self):
-		"""OFF is the resting state of every switch in this app, so the restore goes to OFF and never to
-		"whatever it was" — restoring the previous value is what propagates a poisoned baseline."""
-		settings = frappe.get_doc(SETTINGS_DT)
-		settings.enabled = 0
-		settings.save(ignore_permissions=True)
-		frappe.db.commit()
-		frappe.clear_cache(doctype=SETTINGS_DT)
 
 	def _arm(self, most=2, count=30, unit="Days"):
 		settings = frappe.get_doc(SETTINGS_DT)
@@ -236,15 +246,7 @@ class TestTheOperatorCannotSetANumberThatMeansNothing(FrappeTestCase):
 	operator who believes they set something they did not."""
 
 	def setUp(self):
-		self.addCleanup(self._restore)
-		self.settings = frappe.get_doc(SETTINGS_DT)
-		self.was = (self.settings.max_contacts, self.settings.enabled)
-
-	def _restore(self):
-		settings = frappe.get_doc(SETTINGS_DT)
-		settings.max_contacts, settings.enabled = self.was[0], 0
-		settings.save(ignore_permissions=True)
-		frappe.db.commit()
+		self.addCleanup(_reset_settings)
 
 	def _save(self, most):
 		settings = frappe.get_doc(SETTINGS_DT)

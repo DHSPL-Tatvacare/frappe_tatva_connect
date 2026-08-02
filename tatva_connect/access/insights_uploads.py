@@ -34,7 +34,7 @@ def _reap(filename):
 	if not f or f.owner != frappe.session.user or f.attached_to_doctype:
 		return
 	try:
-		frappe.delete_doc("File", filename, ignore_permissions=True)  # authz-ok: tier-b — owner + unattached, both re-checked above
+		frappe.delete_doc("File", filename, ignore_permissions=True)  # authz-ok: tier-b — the gate is owner == session user AND unattached, both re-checked above
 	except Exception:  # authz-ok: cleanup-only; a reap that fails must not mask the refusal below
 		frappe.log_error(title="Insights upload reap failed")
 
