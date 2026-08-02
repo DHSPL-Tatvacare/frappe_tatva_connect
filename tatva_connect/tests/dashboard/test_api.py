@@ -117,6 +117,12 @@ class ApiCase(FrappeTestCase):
 
 class TestAnUnconfiguredRoleIsAnAnswer(ApiCase):
 	def test_a_user_with_no_layout_is_told_so_without_an_error(self):
+		"""The probe holds ONLY its own role here. setUp lends it Sales User for the read permission the
+		other cases need, but that role now carries a seeded rep board — and a user who matches ANY layout
+		is not the subject of this test. No permission is lent back: the endpoint answers off the resolver
+		and returns before it reads a single chart."""
+		frappe.db.delete("Has Role", {"parent": PROBE_USER, "role": "Sales User"})
+		frappe.clear_cache(user=PROBE_USER)
 		self._as_probe()
 		payload = api.get_dashboard()
 		self.assertFalse(payload["configured"])

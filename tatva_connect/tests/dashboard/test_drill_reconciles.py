@@ -20,10 +20,13 @@ Run:
 """
 
 import frappe
-from crm.api.doc import get_data
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, nowdate
 
+# The OVERRIDE, not `crm.api.doc.get_data`: hooks.py re-points that whitelisted name here, so the direct
+# import is a function no browser ever reaches — it skips the list engine, and a drill naming a DERIVED
+# field then dies on native's field check instead of being translated into the bucket's own tuples.
+from tatva_connect.api.list_link_titles import get_data
 from tatva_connect.dashboard import api, declaration, executor, seed
 
 CHART = "CRM Dashboard Chart"
@@ -122,7 +125,7 @@ class ReconcileCase(FrappeTestCase):
 			).insert(ignore_permissions=True)
 
 	def _rows_behind(self, drill):
-		"""The drill filter through `crm.api.doc.get_data` — the endpoint the drilled LIST calls, not
+		"""The drill filter through the `crm.api.doc.get_data` OVERRIDE — the endpoint the drilled LIST calls, not
 		`frappe.get_list`. They are different code paths, and everything that has ever broken this drill broke
 		in between them: the page's own default_filters, which get_data lets override the drill.
 

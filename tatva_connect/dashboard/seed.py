@@ -58,21 +58,24 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 
 
 _CHARTS = [
-	_card("total_leads", "Leads", "Created in the selected range", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
-	_card("total_tasks", "Tasks", "Created in the selected range", "number", "CRM Task", date_field="creation", honours_date_range=1),
+	_card("total_leads", "Leads", "Created in range", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
+	_card("total_tasks", "Tasks", "Created in range", "number", "CRM Task", date_field="creation", honours_date_range=1),
 	# A snapshot, not a range: "still open" is a fact about now, and dating it by creation answers something else.
 	_card("pending_tasks", "Open Tasks", "Open right now", "number", "CRM Task", base_filters={"status": _OPEN}),
 	# `between` and not `<`: frappe compares as ifnull(due_date, ''), so `<` counts every task that has NO due date as overdue.
-	_card("overdue_tasks", "Overdue Tasks", "Open and past their due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
+	_card("overdue_tasks", "Overdue Tasks", "Past due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
 	# CRM Task carries no completion date, so `modified` is the closest honest stamp for when it was closed.
-	_card("completed_tasks", "Completed Tasks", "Closed in the selected range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
+	_card("completed_tasks", "Completed Tasks", "Closed in range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
 	# `timespan` is frappe's own relative-date operator (query.py:576 -> utils/data.py get_timespan_date_range).
-	_card("tasks_due_today", "Due Today", "Open and due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
-	_card("leads_by_source", "Leads by Source", "Where they came from", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
-	_card("leads_by_vertical", "Leads by Product Line", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
-	_card("leads_by_substage", "Leads by Stage", "Where they stand right now", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_substage"),
-	_card("leads_by_owner", "Leads by Owner", "Created in the selected range", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
-	_card("tasks_by_status", "Tasks by Status", "Created in the selected range", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
+	_card("tasks_due_today", "Due Today", "Due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
+	_card("leads_by_source", "Leads by Source", "Acquisition channel", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
+	_card("leads_by_vertical", "Leads by Product Line", "Product line split", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
+	_card("leads_by_substage", "Leads by Stage", "Current stage", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_substage", date_field="creation", honours_date_range=1),
+	_card("leads_by_owner", "Leads by Owner", "Ownership split", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
+	# The two task bars are the same records cut two ways, so each names its own cut and neither says "status".
+	_card("tasks_by_status", "Task Progress", "Workflow state", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
+	# A snapshot, like the two open-task cards: who is carrying what RIGHT NOW, not who was given work in a window.
+	_card("tasks_by_owner_and_status", "Workload by Owner", "Open tasks now", "heatmap", "CRM Task", group_by_field="assigned_to", split_by="status", base_filters={"status": _OPEN}),
 ]
 
 
@@ -84,11 +87,12 @@ _PLACED = (
 	("overdue_tasks", 6, 0, 2, 2),
 	("tasks_due_today", 8, 0, 2, 2),
 	("completed_tasks", 10, 0, 2, 2),
-	("leads_by_source", 0, 2, 4, 6),
-	("leads_by_vertical", 4, 2, 4, 6),
-	("leads_by_owner", 8, 2, 4, 6),
-	("leads_by_substage", 0, 8, 6, 6),
-	("tasks_by_status", 6, 8, 6, 6),
+	("leads_by_source", 0, 2, 6, 6),
+	("leads_by_vertical", 6, 2, 6, 6),
+	("leads_by_owner", 0, 8, 6, 6),
+	("leads_by_substage", 6, 8, 6, 6),
+	("tasks_by_status", 0, 14, 6, 6),
+	("tasks_by_owner_and_status", 0, 20, 12, 6),
 )
 
 
