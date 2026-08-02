@@ -15,13 +15,8 @@
 #   Perf  — the response pane shows the round-trip time for every call. Watch lead_list and
 #           activity_list in particular; those are the ones that page.
 #
-# MINTING A LOCAL KEY (bench console, dev only)
-#   u = frappe.get_doc("User", "partner.httpclient@example.test")
-#   u.api_key = frappe.generate_hash(length=15); u.api_secret = frappe.generate_hash(length=15)
-#   u.append("roles", {"role": "Partner API User"}); u.save(ignore_permissions=True)
-#   frappe.get_doc({"doctype": "CRM Lead API Mapping", "partner_user": u.name, "enabled": 1,
-#                   "vertical": "GoodFlip Care", "crm_group": "Anaya"}).insert(ignore_permissions=True)
-#   frappe.db.commit()
+# GETTING A KEY
+#   A key and secret are issued by TatvaCare Ops for the environment being tested.
 #
 # THE CONTRACT, IN FOUR LINES
 #   Every record is addressed by `name`, returned when it was created. That is the only address.

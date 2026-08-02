@@ -14,3 +14,4 @@ public/tatvacare-partner-api.openapi.json
 _retired/
 nav.json
 **/.DS_Store
+http-client.env.json
