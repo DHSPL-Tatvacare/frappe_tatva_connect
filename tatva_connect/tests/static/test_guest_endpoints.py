@@ -87,6 +87,9 @@ GUEST_GATE_TOKENS = (
 	"_lms_privileged",
 	"_insights_privileged",
 	"_published_course_from_referer",
+	# LMS's own guest switch (utils.guest_access_allowed) — an override that delegates to a native LMS
+	# endpoint mirrors it before delegating, so our door is never softer than the one it fronts.
+	"guest_access_allowed",
 )
 
 

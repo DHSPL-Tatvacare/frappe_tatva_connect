@@ -980,19 +980,20 @@ AUTOMATIONS = [
 	),
 	Auto(
 		key="Learning::Course Lesson::office-embeds",
-		fires_on="Doc Event",
-		trigger_detail="Course Lesson · before_save",
+		fires_on="Provider call",
+		trigger_detail="lms.lms.utils.get_lesson · read time",
 		purpose=(
-			"A Word, Excel or PowerPoint file shared from SharePoint or OneDrive is turned into a "
+			"A Word, Excel or PowerPoint file shared from SharePoint or OneDrive is shown as a "
 			"readable panel inside the training lesson, the way a Google Doc or Slides link already "
 			"is, so training material need not be converted or re-uploaded to be used in a course. "
-			"The document is shown read-only and must be shared so that anyone holding the link can "
-			"open it. Off, the pasted link is left as it was typed and the lesson shows nothing "
-			"where the document would be.\n"
+			"The lesson stores the link exactly as the author typed it and the panel is built each "
+			"time the lesson is opened, so nothing an author saves can undo it. The document is "
+			"shown read-only and must be shared so that anyone holding the link can open it. Off, "
+			"the reader sees the plain link.\n"
 			"Example: a course author pastes a SharePoint link to a training deck into a lesson, and "
 			"learners see the deck laid out in the lesson itself."
 		),
-		backs=["tatva_connect.learning.embeds.rewrite_office_links"],
+		backs=["tatva_connect.learning.embeds.get_lesson"],
 	),
 	Auto(
 		key="Search::Index::indexing",

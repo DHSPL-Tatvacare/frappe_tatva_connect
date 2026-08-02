@@ -120,6 +120,8 @@ override_whitelisted_methods = {
 	# Upstream LMS race (2.55.0, unfixed on develop): CourseOverview calls this with no course, so a
 	# student sees "Course Content coming soon!" on every course. Shim recovers it from the Referer.
 	"lms.lms.utils.get_course_outline": "tatva_connect.learning.outline.get_course_outline",
+	# The lesson editor drops any block type it cannot represent, so an embed must never be STORED — the reader is served one instead, the way get_lesson already rewrites private media URLs.
+	"lms.lms.utils.get_lesson": "tatva_connect.learning.embeds.get_lesson",
 	# VAPT Jul — quiz assessment integrity: submit_quiz gets an atomic single-attempt guard (N2 race) +
 	# a best-effort server-side timer (N6); get_quiz_with_questions stamps the open time the timer reads.
 	"lms.lms.doctype.lms_quiz.lms_quiz.submit_quiz": "tatva_connect.access.native_guards.submit_quiz",
@@ -238,10 +240,6 @@ doc_events = {
 		# The inbound follow-up task is RETIRED here — WhatsApp Message is now an automation subject, so
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
-	},
-	# LMS resolves an embed once, at paste time in the author's browser, and stores the iframe src in the block — so a Microsoft share link is claimable server-side, with no fork of the LMS frontend.
-	"Course Lesson": {
-		"before_save": "tatva_connect.learning.embeds.rewrite_office_links",
 	},
 	# the partner-API catalog is data-driven (cached read of CRM Lead API Field); drop the cache on any catalog row change so the API picks it up at once.
 	"CRM Lead API Field": {
