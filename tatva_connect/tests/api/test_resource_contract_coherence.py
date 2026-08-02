@@ -8,7 +8,7 @@ Files, Notes and Calls each declared their contract twice — a tuple `*_schema`
 and never advertised, and nothing would say so. These tests assert the two sides against each other
 rather than against a list written here: a list written here would be a THIRD brain.
 
-`collect(SPECS, {fn: fn})` is the probe. It answers what the write path would take from a payload
+`collect(SPECS, {fn: a value of its declared type}, DOCTYPE)` is the probe. It answers what the write path would take from a payload
 naming every declared field, without writing a row — so ingestion is read from the same specs the write
 path runs on, never re-implemented.
 
@@ -51,13 +51,29 @@ def _advertised(specs, doctype):
 	return {d["fieldname"] for d in describe(specs, doctype) if d["behavior"] != BEHAVIOR_OUTPUT_ONLY}
 
 
-def _accepted(specs):
+# A value OF each declared type, for the probe below. `collect` now holds every value to the type the
+# schema publishes, so a probe sending the fieldname as the value of a Date would (rightly) be refused.
+_PROBE_VALUE = {
+	"Int": 1, "Long Int": 1, "Duration": 1,
+	"Float": 1.0, "Currency": 1.0, "Percent": 1.0, "Rating": 1.0,
+	"Check": 1, "Date": "2026-01-01", "Datetime": "2026-01-01 00:00:00", "Time": "00:00:00",
+}
+
+
+def _accepted(specs, doctype):
 	"""What the write path takes from a payload naming every declared field.
 
 	A non-column spec (`target=None`) is resolved by the resource itself — `mobile_no` finds a lead,
 	`created_at` backdates creation — so it is part of the contract even though `collect` maps it to no
-	column. It is accepted iff it is declared and not read-only, which is what this reproduces."""
-	taken = collect(specs, {s.fieldname: s.fieldname for s in specs})
+	column. It is accepted iff it is declared and not read-only, which is what this reproduces.
+
+	The probe value is read from `describe`'s own published type, never from a list written here."""
+	types = {d["fieldname"]: d["type"] for d in describe(specs, doctype)}
+	taken = collect(
+		specs,
+		{s.fieldname: _PROBE_VALUE.get(types[s.fieldname], s.fieldname) for s in specs},
+		doctype,
+	)
 	by_target = {s.target: s.fieldname for s in specs if s.target}
 	return {by_target[t] for t in taken} | {s.fieldname for s in specs if not s.target and not s.read_only}
 
@@ -67,13 +83,13 @@ class TestResourceContractCoherence(FrappeTestCase):
 		"""2.1 — discovery ⊆ ingestion. A field a caller is told to send that is silently dropped is a lie."""
 		for name, _module, specs, doctype in RESOURCES:
 			with self.subTest(resource=name):
-				self.assertEqual(_advertised(specs, doctype) - _accepted(specs), set())
+				self.assertEqual(_advertised(specs, doctype) - _accepted(specs, doctype), set())
 
 	def test_every_accepted_field_is_advertised(self):
 		"""2.2 — ingestion ⊆ discovery. A field the write path takes that no schema names is a back door."""
 		for name, _module, specs, doctype in RESOURCES:
 			with self.subTest(resource=name):
-				self.assertEqual(_accepted(specs) - _advertised(specs, doctype), set())
+				self.assertEqual(_accepted(specs, doctype) - _advertised(specs, doctype), set())
 
 	def test_every_target_resolves_on_live_meta(self):
 		"""2.3 — a spec's target is a real column of the doctype it claims, checked against live meta."""

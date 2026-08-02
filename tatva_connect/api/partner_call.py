@@ -175,7 +175,7 @@ def _apply_fields(doc, data, lead_name):
 	restates the mapping. Two targets are never taken from the caller: `type` carries the partner's
 	vocabulary and is translated below, and `reference_docname` is resolved by `_attribute_lead` (writing
 	the raw value would attach the call to a lead off the caller's line)."""
-	fields = collect(CALL_FIELDS, data)
+	fields = collect(CALL_FIELDS, data, "CRM Call Log")
 	direction = data.get("direction")
 	if direction and direction not in _DIRECTION_TYPE:
 		throw_field(_(

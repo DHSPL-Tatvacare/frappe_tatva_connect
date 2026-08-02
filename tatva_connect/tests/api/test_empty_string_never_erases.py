@@ -20,6 +20,7 @@ Run:
 """
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import getdate
 
 from tatva_connect.api import partner
 
@@ -54,16 +55,20 @@ class TestEmptyStringNeverErases(FrappeTestCase):
 		)
 
 	def test_a_multi_row_child_keeps_its_key_even_though_the_key_is_blank_elsewhere(self):
-		"""The row key is an address, not a value: dropping it would orphan the row from its upsert."""
+		"""The row key is an address, not a value: dropping it would orphan the row from its upsert.
+
+		It arrives in the type the column DECLARES (a Date row key is a date), because the seam holds every
+		value to its declared type. The upsert matches on `cstr` of the key either way."""
 		rows = self._collect_child(
 			MULTI_ROW_TABLE, ["report_date"], [{"report_date": "2026-07-20", "custom_hba1c": ""}]
 		)
-		self.assertEqual(rows, [{"report_date": "2026-07-20"}])
+		self.assertEqual(rows, [{"report_date": getdate("2026-07-20")}])
 
 	def test_the_delete_flag_survives_whatever_it_holds(self):
-		"""_delete is an instruction, not a value, and the upsert engine reads it to drop a keyed row."""
+		"""_delete is an instruction, not a value, and the upsert engine reads it to drop a keyed row.
+		The doctype declares no such column, so the type layer passes it through untouched."""
 		rows = self._collect_child(MULTI_ROW_TABLE, ["report_date"], [{"report_date": "2026-07-20", "_delete": True}])
-		self.assertEqual(rows, [{"report_date": "2026-07-20", "_delete": True}])
+		self.assertEqual(rows, [{"report_date": getdate("2026-07-20"), "_delete": True}])
 
 	def test_a_blank_sub_entity_field_is_not_sent(self):
 		"""The leg where the defect actually bit: notes, files and calls collect through `field_spec.collect`,
@@ -73,7 +78,7 @@ class TestEmptyStringNeverErases(FrappeTestCase):
 		from tatva_connect.api import partner_note
 		from tatva_connect.api.field_spec import collect
 
-		fields = collect(partner_note.NOTE_FIELDS, {"content": "", "title": "Kept"})
+		fields = collect(partner_note.NOTE_FIELDS, {"content": "", "title": "Kept"}, "FCRM Note")
 		self.assertNotIn("content", fields, "a blank sub-entity field must not reach the doc")
 		self.assertEqual(fields.get("title"), "Kept", "a field that was sent still lands")
 
@@ -82,7 +87,7 @@ class TestEmptyStringNeverErases(FrappeTestCase):
 		from tatva_connect.api import partner_note
 		from tatva_connect.api.field_spec import collect
 
-		self.assertEqual(collect(partner_note.NOTE_FIELDS, {"content": "x"}).get("content"), "x")
+		self.assertEqual(collect(partner_note.NOTE_FIELDS, {"content": "x"}, "FCRM Note").get("content"), "x")
 
 	def test_a_key_value_row_may_carry_a_blank_answer(self):
 		"""A question asked and answered blank is a fact about the patient, and its row erases nothing."""

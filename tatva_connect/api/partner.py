@@ -57,6 +57,8 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	cast_declared,
+	cast_declared_row,
 	field_descriptor,
 	is_writable,
 	resolve_lead,
@@ -327,8 +329,17 @@ def _caller_fields():
 
 
 def _collect(data, parent_fields, child_allow, allow_routing):
-	"""Pull ONLY this caller's allowed parent fields + child arrays from a payload.
-	Routing is included only for a trusted caller (allow_routing)."""
+	"""Pull ONLY this caller's allowed parent fields + child arrays from a payload, every value held to
+	the type its schema DECLARES.
+
+	Routing is included only for a trusted caller (allow_routing).
+
+	The type rule and its wording live once, in `_base.cast_declared` — the same rule `field_spec.collect`
+	holds a note, a call and a file to, and the same one the activity surface holds an answer to. Here it
+	is reached at the lead's ONE ingestion seam, so every create, update, bulk record and Desk import row
+	passes through it, and `lead_schema`'s published `type` is finally something a caller is held to.
+	A child ARRAY is itself a declared Table, so the shape of the section is cast by the same call — that
+	is where the hand-rolled parse (and orjson's own leaked sentence) used to live."""
 	parent = {}
 	for fn in parent_fields:
 		val = data.get(fn)
@@ -340,19 +351,19 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 				parent[fn] = data.get(fn)
 	if parent.get("mobile_no"):
 		parent["mobile_no"] = _norm_phone(parent["mobile_no"])
+	parent = cast_declared_row("CRM Lead", parent)
 
+	lead_meta = frappe.get_meta("CRM Lead")
 	children = {}
 	for cf, allowed in child_allow.items():
 		rows = data.get(cf)
 		if not rows or not allowed:
 			continue
-		if isinstance(rows, str):
-			rows = frappe.parse_json(rows)
-		if not isinstance(rows, list):
-			rows = [rows]
+		rows = cast_declared("CRM Lead", cf, rows)
+		child_doctype = lead_meta.get_field(cf).options
 		if _child_key_value(cf):
 			# The section is the unit of grant: a key-value answer is identified by the question itself.
-			children[cf] = [r for r in rows if r]
+			children[cf] = [cast_declared_row(child_doctype, r) for r in rows if r]
 			continue
 		# The key_field of a multi-row child is the row's address: always keep it
 		# (even if the partner's grid didn't tick it) plus the explicit _delete flag,
@@ -367,8 +378,10 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 		# blank overwriting a stored value is data loss; `_merge_row` sets whatever reaches it. The key
 		# field and the delete flag are addresses rather than values and are kept whatever they hold.
 		children[cf] = [
-			{k: v for k, v in (r or {}).items()
-			 if k in keep and (v not in (None, "") or k in (key_field, "_delete"))}
+			cast_declared_row(child_doctype, {
+				k: v for k, v in (r or {}).items()
+				if k in keep and (v not in (None, "") or k in (key_field, "_delete"))
+			})
 			for r in rows
 		]
 	return parent, children
@@ -571,11 +584,32 @@ def _catalogued_answers(doc, cf, section):
 	]
 
 
+def _audit_fieldnames():
+	"""The reserved OUTPUT_ONLY lead fieldnames, deduped in catalog order — read once, projected by the
+	response and selected by the list, so a field `lead_schema` advertises is a field a response carries.
+
+	Deduped because a duplicate `CRM Lead API Field` row is OPERATOR data: two rows may name one field,
+	and what seeds decide code does not re-decide — it just must not answer twice for one key."""
+	return list(dict.fromkeys(a["fieldname"] for a in _catalog()["audit"]))
+
+
 def _curate(doc, parent_fields, child_allow):
-	"""A lead as only the caller's allowed fields (+ name, the caller's own external_id label,
-	and read-only routing). The ONE lead projection: every read AND every write returns this, so a
-	create, an update and a get can never hand back different shapes."""
-	out = {fn: doc.get(fn) for fn in parent_fields}
+	"""A lead as only the caller's allowed fields (+ name, the caller's own external_id label, the
+	OUTPUT_ONLY audit fields and read-only routing). The ONE lead projection: every read AND every write
+	returns this, so a create, an update and a get can never hand back different shapes.
+
+	The VALUES a create returned once disagreed with the ones a get returned, because a create projected
+	the in-memory doc where a coerced value had not round-tripped: `"hba1c": "high"` was handed back while
+	the row held 0.0. `cast_declared` closes that at the seam instead — a value the caller SENT now reaches
+	the doc already in its declared type, so memory and row agree and no re-read is needed. Measured, the
+	only residue is an UNSET numeric reading None here and 0.0 once stored, which is the accepted
+	NOT NULL DEFAULT 0 behaviour of the column and not worth a full doc read on every write.
+
+	The audit fields are projected but never writable — `_build_catalog` routes a reserved field into
+	`audit` and out of `keys`, so read-only cannot become invisible. `lead_schema` has advertised
+	`owner`, `creation`, `modified` and `lead_owner` as OUTPUT_ONLY since it was written, and until this
+	no response carried one of them."""
+	out = {fn: doc.get(fn) for fn in [*parent_fields, *_audit_fieldnames()]}
 	out.update({
 		"name": doc.name, "external_id": doc.get(EXTERNAL_ID_FIELD),
 		"source": doc.source, "custom_vertical": doc.custom_vertical,
@@ -699,8 +733,8 @@ def _merge_onto(name, parent, children, mp, program, open_program, item):
 
 
 def _stamp_label(doc, item):
-	"""Store the caller's label, when one was sent, and mirror it onto the in-memory doc so the
-	response echoes it without a re-read. A label is never identity."""
+	"""Store the caller's label, when one was sent, and mirror it onto the in-memory doc so a caller
+	holding that doc reads what the row now holds. A label is never identity."""
 	external_id = item.get("external_id")
 	if external_id is None:
 		return
@@ -904,7 +938,7 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 			"No lead on this API key's line matches `{0}`. Check the value against a lead_list "
 			"response, or create the lead with lead_create first."
 		).format(by), [by], frappe.DoesNotExistError)
-	return _curate(frappe.get_doc("CRM Lead", cstr(lead_name)), parent_fields, child_allow)
+	return _curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -1052,8 +1086,11 @@ def lead_list(**_kwargs):
 
 	# SELECT only real CRM Lead columns: a catalog fieldname that is a Smart-View-only alias (no column)
 	# would otherwise break the SQL. lead_schema/_curate already filter defensively via meta.get_field.
+	# The audit fields ride the SAME list _curate projects, so a field a partner reads on lead_get does
+	# not disappear on lead_list; a framework standard field (owner, creation) is not a docfield and is
+	# dropped here exactly as it always was.
 	m = frappe.get_meta("CRM Lead")
-	safe_fields = [f for f in parent_fields if m.has_field(f)]
+	safe_fields = [f for f in [*parent_fields, *_audit_fieldnames()] if m.has_field(f)]
 	fields = list(dict.fromkeys(
 		[*safe_fields, "name", EXTERNAL_ID_FIELD, "source", "custom_vertical", "custom_group",
 		 "custom_current_program"]

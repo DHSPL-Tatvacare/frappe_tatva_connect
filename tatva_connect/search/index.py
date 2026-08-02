@@ -584,35 +584,85 @@ def reindex_lead(lead):
 	A save of the lead DOCUMENT needs none of this — every field the context reads is declared, so the
 	framework reindexes that row on its own. Runs in a background job; see `_enqueue_reindex`.
 	"""
+	reindex_leads([lead])
+
+
+def reindex_leads(leads):
+	"""Restamp several leads in ONE job — the batch form of `reindex_lead`, same work per lead.
+
+	The engine and its two readiness checks are built once for the whole batch rather than once per lead,
+	which is the only difference: a job that restamps fifty leads costs one engine, not fifty.
+	"""
 	engine = CRMLeadSearch()
 	if not (engine.is_search_enabled() and engine.index_exists()):
 		return
-	rows = engine.sql("SELECT doc_id FROM search_fts WHERE lead = ?", [lead], read_only=True) or []
-	targets = {("CRM Lead", lead)}
-	for row in rows:
-		doctype, _, name = row["doc_id"].partition(":")
-		if doctype in engine.doc_configs and name:
-			targets.add((doctype, name))
-	for doctype, name in sorted(targets):
-		# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
-		engine.index_doc(doctype, name)
+	for lead in leads:
+		rows = engine.sql("SELECT doc_id FROM search_fts WHERE lead = ?", [lead], read_only=True) or []
+		targets = {("CRM Lead", lead)}
+		for row in rows:
+			doctype, _, name = row["doc_id"].partition(":")
+			if doctype in engine.doc_configs and name:
+				targets.add((doctype, name))
+		for doctype, name in sorted(targets):
+			# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
+			engine.index_doc(doctype, name)
+
+
+# The transaction's collected leads; the attribute's ABSENCE is also the "nothing registered yet" marker.
+_PENDING = "_search_reindex_pending"
 
 
 def _enqueue_reindex(lead):
-	# ONE job per lead, off the request path, with the three guards that stop a runaway: `deduplicate` + a
-	# per-lead `job_id` collapse the several triggers one assignment fires (ToDo insert AND update, DocShare
-	# insert AND update, the lead's own save) into a single run; `enqueue_after_commit` means a rolled-back
-	# save never reindexes; and a bulk import or a migrate enqueues nothing at all.
+	"""Collect the lead; one job is enqueued per TRANSACTION, not per lead.
+
+	A single save enqueues exactly what it always did. A transaction that writes many leads — a bulk-job
+	chunk, a Desk bulk edit, an assignment storm — collapses into ONE batch job instead of one per record,
+	which is what kept blowing frappe's MAX_QUEUED_JOBS ceiling (`background_jobs._check_queue_size`, and
+	the check is eager even when the enqueue is deferred) and answering a partner `forbidden` with no
+	reason. Every guard is unchanged: a bulk import or a migrate still enqueues nothing, and the flush
+	rides `before_commit` so `enqueue_after_commit` still means a rolled-back save never reindexes.
+	"""
 	if not lead or frappe.flags.in_import or frappe.flags.in_migrate or frappe.flags.in_install:
 		return
+	pending = getattr(frappe.local, _PENDING, None)
+	if pending is None:
+		pending = set()
+		setattr(frappe.local, _PENDING, pending)
+		# commit() drains before_commit then runs after_commit; rollback() resets both and runs before_rollback.
+		frappe.db.before_commit.add(_flush_reindex)
+		frappe.db.before_rollback.add(_discard_reindex)
+	pending.add(lead)
+
+
+def _flush_reindex():
+	"""Enqueue the transaction's collected leads as one job. Registered on `frappe.db.before_commit`."""
+	leads = sorted(getattr(frappe.local, _PENDING, None) or ())
+	_discard_reindex()
+	if not leads:
+		return
+	if len(leads) == 1:
+		# Byte-for-byte the old single-lead path, so the dedup collapsing one assignment's triggers is untouched.
+		frappe.enqueue(
+			"tatva_connect.search.index.reindex_lead",
+			queue="short",
+			lead=leads[0],
+			enqueue_after_commit=True,
+			deduplicate=True,
+			job_id=f"search-reindex-{leads[0]}",
+		)
+		return
 	frappe.enqueue(
-		"tatva_connect.search.index.reindex_lead",
+		"tatva_connect.search.index.reindex_leads",
 		queue="short",
-		lead=lead,
+		leads=leads,
 		enqueue_after_commit=True,
-		deduplicate=True,
-		job_id=f"search-reindex-{lead}",
 	)
+
+
+def _discard_reindex():
+	"""Drop the transaction's collected leads. Registered on `frappe.db.before_rollback`."""
+	if hasattr(frappe.local, _PENDING):
+		delattr(frappe.local, _PENDING)
 
 
 # PROPAGATE (@fail_safe): the index is derived, and `build_index()` rebuilds it from the records at will —

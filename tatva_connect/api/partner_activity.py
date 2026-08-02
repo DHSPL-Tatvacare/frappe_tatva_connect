@@ -55,6 +55,7 @@ from tatva_connect.api._base import (
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	cast_declared_row,
 	field_descriptor,
 	resolve_lead,
 	scoped_by_lead,
@@ -143,6 +144,24 @@ def _resolve_task_type(lead, task_type):
 	return resolved
 
 
+def _declared_values(task_type, values):
+	"""The caller's answers, each held to the type `activity_schema` PUBLISHES for it.
+
+	An activity's fields are declared by its type (`CRM Task Type Field`), so the types come from the
+	same config the schema endpoint is rendered from — discovery and ingestion cannot describe different
+	types. The rule and its wording are `_base.cast_declared`, the SAME one a lead's `_collect` and a
+	note/call/file's `field_spec.collect` resolve through; only the declaration differs, because only the
+	declaration differs.
+
+	An answer the type does not declare is passed through for the brain to judge: WHAT may be sent is
+	`compute_activity`'s business, and this layer only enforces a type that was published."""
+	if not isinstance(values, dict):
+		return values
+	cfg = activity_brain._type_config(task_type) or {}
+	types = {f.fieldname: f.fieldtype for f in cfg.get("fields") or []}
+	return cast_declared_row("CRM Task", values, types=types)
+
+
 def _backdate(name, created_at):
 	"""Backdate the task's `creation` from a partner-supplied timestamp (historical load).
 	No-op on a blank/unparseable value, so live creates keep `now`."""
@@ -166,9 +185,9 @@ def _create_one(item, mp, is_sysmgr):
 			"the types its grain runs and the fields each one takes."
 		), ["task_type"])
 	validate_external_id("CRM Task", item.get("external_id"))
-	values = item.get("values") or {}
 
 	resolved = _resolve_task_type(lead, task_type)
+	values = _declared_values(resolved, item.get("values") or {})
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		name = activity_brain.save_activity(lead, resolved, values, task=None)
 
@@ -188,9 +207,9 @@ def _update_one(name, item, mp, is_sysmgr):
 			"the types its grain runs and the fields each one takes."
 		), ["task_type"])
 	validate_external_id("CRM Task", item.get("external_id"))
-	values = item.get("values") or {}
 
 	resolved = _resolve_task_type(row.reference_docname, task_type)
+	values = _declared_values(resolved, item.get("values") or {})
 	with trusted_permissions():  # authz-ok: caller pre-gated by _resolve_caller + resolve_lead (mapping+grain)
 		activity_brain.save_activity(row.reference_docname, resolved, values, task=name)
 	if item.get("external_id") is not None:

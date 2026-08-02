@@ -6,21 +6,29 @@ through `field_target` — the retained common columns, or a section child row. 
 the SPA Activity timeline and the Desk Lead timeline. Availability is grain-scoped through
 the single brain `taxonomy.grain.resolve_scoped` — nothing here hardcodes a type or grain.
 Ships dormant: a CRM Task Type with an all-blank grain never surfaces as an activity.
+
+Every permission question this module asks goes through `access.posture.require` — the ONE checkpoint
+that knows whether the request is an ordinary Desk one (ask the engine) or a server-opened trusted block
+(the partner API, already gated by its mapping and grain). A bare `frappe.has_permission` here is a
+second answer to that question and is locked out by tests/architecture/test_permission_checks_one_seam.py.
 """
 import json
 from collections import Counter
-from urllib.parse import parse_qs, urlparse
 
 import frappe
+
+from tatva_connect.storage import blob_store, file_names
 from frappe import _
 from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
+from tatva_connect.access import posture
 from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
 
 _TASK_COLUMNS_CACHE = "tatva_connect:task_settable_columns"
+_KEY_VALUE_CACHE = "tatva_connect:key_value_section"
 
 
 def task_columns():
@@ -83,11 +91,25 @@ def _key_value_section():
 	None when the declaration has not been seeded yet. `CRM Task Section` rows are written by
 	`section_seed.ensure_rows` on **after_migrate**, which runs AFTER post-model-sync patches — so a patch
 	asking this question on a site mid-upgrade has to be able to hear "not yet" instead of an IndexError
-	that aborts the whole migrate. It did abort one, on 2026-07-27."""
-	rows = frappe.get_all(
-		"CRM Task Section", filters={"is_key_value": 1}, order_by="display_order", limit=1, pluck="name"
-	)
-	return rows[0] if rows else None
+	that aborts the whole migrate. It did abort one, on 2026-07-27.
+
+	Memoised per request exactly as `task_columns` above is, and for the same reason: `field_target`
+	asks this once per declared FIELD, so an activity with nine fields ran nine identical queries —
+	measured at 8.7 per activity and ~5% of the load. A NEGATIVE answer is deliberately not kept: the
+	rows appear during `after_migrate`, and pinning "not yet" for the rest of that process is the bug
+	the paragraph above is about."""
+	from tatva_connect.access import request_cache
+
+	def build():
+		rows = frappe.get_all(
+			"CRM Task Section", filters={"is_key_value": 1}, order_by="display_order", limit=1, pluck="name"
+		)
+		return rows[0] if rows else None
+
+	found = request_cache(_KEY_VALUE_CACHE, "all", build)
+	if found is None:
+		getattr(frappe.local, _KEY_VALUE_CACHE, {}).pop("all", None)
+	return found
 
 
 def sections_ready():
@@ -190,7 +212,7 @@ def set_schema_field(task, task_type, fieldname, value):
 
 	Phase 7: the slot columns and the JSON payload are gone, so a field the task row does not keep has
 	exactly ONE home and `_put_section_value` is the whole of the write."""
-	f = next((x for x in frappe.get_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
+	f = next((x for x in frappe.get_cached_doc("CRM Task Type", task_type).schema if x.fieldname == fieldname), None)
 	if not f:
 		frappe.throw(_("{0} is not a declared field of activity type {1}.").format(fieldname, task_type))
 	changed = _put_section_value(task, f, value)
@@ -303,7 +325,7 @@ def activity_is_unlogged(doc):
 		return False
 	if not _type_has_schema(doc.custom_task_type):
 		return False
-	schema = compiled_fields(frappe.get_doc("CRM Task Type", doc.custom_task_type))
+	schema = compiled_fields(frappe.get_cached_doc("CRM Task Type", doc.custom_task_type))
 	values = _stored_answers(doc, schema)
 	# The FORM's own question, on the same fixpoint `compute_activity` refuses a submission by: a field the
 	# form shows and demands, carrying nothing, means this activity was not logged. The guard used to answer
@@ -321,7 +343,7 @@ def activity_is_unlogged(doc):
 def open_activity_tasks(lead):
 	"""Open (not Done/Canceled) activity tasks on a lead — lets the client map a Tasks-tab row to
 	the activity type/name so completing it opens the activity form instead of an empty status flip."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	posture.require("CRM Lead", "read", doc=lead)
 	types = _activity_type_names()
 	if not types:
 		return []
@@ -348,8 +370,7 @@ def list_types_for_lead(lead):
 	gate uses) — a set axis equals the lead's, a blank axis is a wildcard, an all-blank grain is dormant.
 	Native `frappe.get_all` pre-filters to candidate grains (no raw SQL), then the predicate decides.
 	Value = the composite PK (`name`); label = the clean `type_name`."""
-	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
-		frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	posture.require("CRM Lead", "read", doc=lead)
 	vertical, group, program = _lead_axes(lead)
 	rows = frappe.get_all(
 		"CRM Task Type",
@@ -593,9 +614,8 @@ def compiled_fields(tt):
 @frappe.whitelist()
 def get_schema(task_type):
 	"""The activity type's per-field schema, in order, with its rules compiled in — for the client form."""
-	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
-		frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
-	return compiled_fields(frappe.get_doc("CRM Task Type", task_type))
+	posture.require("CRM Task Type", "read", doc=task_type)
+	return compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
 
 
 def _validate_asm(asm):
@@ -710,7 +730,7 @@ def compute_activity(lead, task_type, values, task=None):
 	if not _scope_applies(task_type, vertical, group, program):
 		frappe.throw(_("This activity is not available for this lead."), title=_("Out of scope"))
 
-	tt = frappe.get_doc("CRM Task Type", task_type)
+	tt = frappe.get_cached_doc("CRM Task Type", task_type)
 	# The rules compiled in — the SAME projection the form rendered from, so the save cannot demand or accept
 	# anything the rep was not shown (§17.3).
 	schema = compiled_fields(tt)
@@ -813,9 +833,14 @@ def lead_field_values(lead, task_type):
 	call however many lead fields it declares. Read through the lead detail brain (`lead.detail.lead_detail`),
 	so a field this viewer is not entitled to see is not in the answer at all and nothing here re-decides who
 	may read what. Empty for a type that declares no lead field, which is every type until an admin declares
-	one."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
-	wanted = {f.fieldname for f in compiled_fields(frappe.get_doc("CRM Task Type", task_type))
+	one.
+
+	Reached from `compute_activity` on every save of a type that declares such a field, so it is on the
+	partner's write path as well as the form's read path — which is why the checkpoint here is the posture
+	seam and not a bare engine call. A trusted caller skips the ROLE check only; the entitlement gate
+	inside `lead_detail` still decides which fields it may see, and a partner's grain is its own."""
+	posture.require("CRM Lead", "read", doc=lead)
+	wanted = {f.fieldname for f in compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
 			  if (f.source or "") == LEAD_SOURCE}
 	if not wanted:
 		return {}
@@ -833,7 +858,7 @@ def lead_field_values(lead, task_type):
 def compute_activity_fields(lead, task_type, values):
 	"""Whitelisted compute for the native new-task path: the CRM Task form script stamps the result
 	onto the doc, then lets the native create save it ONCE (no double insert, no lingering popup)."""
-	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+	posture.require("CRM Lead", "write", doc=lead)
 	return compute_activity(lead, task_type, values)
 
 
@@ -882,9 +907,9 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 	shell back with everything else, so a blocked visit never leaves an orphan task."""
 	from tatva_connect.location.api import is_location_tracked
 
-	if not frappe.flags.ignore_permissions:  # partner API runs trusted (gated by mapping + grain)
-		frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+	posture.require("CRM Lead", "write", doc=lead)
 
+	trusted = posture.is_trusted()
 	own = _own_columns(task_fields)
 
 	if task:
@@ -892,7 +917,7 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		doc = frappe.get_doc("CRM Task", task)
 		doc.update(own)
 		doc.update(fields)
-		doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+		doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 		return doc.name
 
 	# title = the clean type_name (display), never the composite PK.
@@ -902,7 +927,7 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		"doctype": "CRM Task",
 		"title": title,
 		"custom_task_type": task_type,
-		"assigned_to": None if frappe.flags.ignore_permissions else frappe.session.user,
+		"assigned_to": None if trusted else frappe.session.user,
 		"reference_doctype": "CRM Lead",
 		"reference_docname": lead,
 	})
@@ -912,14 +937,14 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		# No audit will be written, so nothing needs the task's id before it exists: compute first,
 		# then insert once, fully formed.
 		shell.update(compute_activity(lead, task_type, values, task=None))
-		shell.insert(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+		shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 		return shell.name
 
-	shell.insert(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+	shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 	fields = compute_activity(lead, task_type, values, task=shell.name)
 	doc = frappe.get_doc("CRM Task", shell.name)
 	doc.update(fields)
-	doc.save(ignore_permissions=frappe.flags.ignore_permissions)  # authz-ok: honors caller flag; UI passes False, partner is pre-gated
+	doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 	return doc.name
 
 
@@ -934,7 +959,7 @@ def _type_config(task_type):
 	one descriptor list, projected twice — see `compiled_layout`."""
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	doc = frappe.get_doc("CRM Task Type", task_type)
+	doc = frappe.get_cached_doc("CRM Task Type", task_type)
 	from tatva_connect.location.api import captures_location
 
 	fields, tabs = compiled_layout(doc)
@@ -952,7 +977,7 @@ def task_detail(task):
 	from this (a task row + its type config). `config` is null for a plain
 	(non-activity) task, so the client falls back to the native doctype modal. One brain reused
 	(_type_config / _task_values / _task_location)."""
-	frappe.has_permission("CRM Task", "read", doc=task, throw=True)
+	posture.require("CRM Task", "read", doc=task)
 	r = frappe.db.get_value(
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date", "start_date",
@@ -967,6 +992,7 @@ def task_detail(task):
 		frappe.throw(_("Task {0} not found").format(task))
 	cfg = _type_config(r.custom_task_type) if r.custom_task_type else None
 	who = r.assigned_to or r.owner
+	values = _task_values(r, cfg)
 	return {
 		"lead": r.reference_docname if r.reference_doctype == "CRM Lead" else None,
 		"config": cfg,
@@ -987,7 +1013,9 @@ def task_detail(task):
 			"rep_name": (who and frappe.db.get_value("User", who, "full_name")) or who,
 			"creation": str(r.creation),
 			"datetime": format_datetime(r.creation, "d MMM, h:mm a"),
-			"values": _task_values(r, cfg),
+			"values": values,
+			# The name behind each Attach answer, so the form's control reads it instead of the slugged key.
+			"file_names": _attach_labels(values, cfg),
 			"location": _task_location(r),
 		},
 	}
@@ -1037,7 +1065,7 @@ def type_config(task_type, lead=None):
 	also carries that lead's current values for the type's `source=Lead` fields (D31 prefill). It rides HERE
 	rather than on a call of its own so opening a form is ONE round trip whatever the type declares — and the
 	client's resource cache keys on the pair, because these values are the LEAD's and not the type's."""
-	frappe.has_permission("CRM Task Type", "read", doc=task_type, throw=True)
+	posture.require("CRM Task Type", "read", doc=task_type)
 	cfg = _type_config(task_type)
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
@@ -1146,12 +1174,11 @@ def _task_location(r):
 
 
 def _blob_key(url):
-	"""The host-independent storage key inside a proxy URL (?file_name=<key>) — stable across the
-	root-relative and absolute URL forms. Lets us match a payload Attach value to its lead File."""
-	if not url:
-		return ""
+	"""The storage key inside a proxy URL, via the ONE parser in blob_store. A thin alias because callers
+	key a dict on it and want "" rather than None — and because a malformed url must degrade to "" here,
+	never raise into `_lead_files` or the activity feed."""
 	try:
-		return (parse_qs(urlparse(url).query).get("file_name") or [""])[0]
+		return blob_store.blob_key_from_url(url) or ""
 	except Exception:
 		return ""
 
@@ -1183,8 +1210,19 @@ def _activity_documents(values, cfg, files_by_key):
 		if not url:
 			continue
 		key = _blob_key(url)
-		docs.append(files_by_key.get(key) or {"file_url": url, "file_name": key.rsplit("/", 1)[-1] or url})
+		docs.append(files_by_key.get(key) or {"file_url": url, "file_name": file_names.display_name(url)})
 	return docs
+
+
+def _attach_labels(values, cfg):
+	"""{file_url -> real name} for an activity's Attach answers — the form's counterpart of the map
+	`get_doc_link_titles` ships for a document. Same one utility, so a file reads the same in the modal
+	as it does on the timeline card."""
+	if not cfg:
+		return {}
+	urls = [values.get(f["fieldname"]) for f in cfg["fields"]
+			if f.get("fieldtype") in ("Attach", "Attach Image")]
+	return file_names.display_names(urls)
 
 
 @frappe.whitelist()
@@ -1192,7 +1230,7 @@ def lead_timeline(lead):
 	"""The single activity projection for a lead — used by BOTH the SPA timeline and the Desk Activity
 	Timeline. Newest first; ONE rich entry per activity task: its status, captured location, and the
 	documents it attached — so the timeline renders the whole action as one chained line."""
-	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	posture.require("CRM Lead", "read", doc=lead)
 	activity_types = _activity_type_names()
 	if not activity_types:
 		return []

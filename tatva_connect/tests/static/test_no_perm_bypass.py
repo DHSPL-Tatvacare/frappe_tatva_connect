@@ -40,7 +40,11 @@ from tatva_connect.tests.static._lock_helpers import app_root, guard_text, is_wh
 #   _is_operator / PermissionError     — operator-only / throw-based owner gates (smartview writes)
 #   get_list                           — the permission-aware list (the get_all replacement)
 #   rate_limit                         — the public-lookup throttle marker
+#   posture.require                    — access/posture.py, the seam that IS the has_permission call for
+#                                        modules on it (it asks the engine unless the server opened a
+#                                        pre-gated trusted block); see tests/architecture/test_permission_checks_one_seam.py
 GUARD_TOKENS = (
+	"posture.require",
 	"has_permission",
 	"check_permission",
 	"validate_access",

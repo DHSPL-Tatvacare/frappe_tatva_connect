@@ -14,6 +14,9 @@ The three rules:
     never writable, no matter what the caller sends.
   * `describe` reads LIVE meta. A `target` that is not a real column throws. Degrading to "Data" is how
     a schema starts advertising a column that no longer exists.
+  * `collect` holds every value to the type `describe` PUBLISHES for it (`_base.cast_declared`), so the
+    declaration is the enforcement for the type too and not only for the field list. What a value of
+    that type MEANS is still the column's business — see `_base.TYPE_VALUE_DECIDED_ELSEWHERE`.
 
 `target=None` means the field is not a column: the resource resolves it itself. `mobile_no` finds a
 lead; `created_at` backdates `creation`, which is a framework default field (not a docfield) and is in
@@ -33,7 +36,7 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
-from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, field_descriptor
+from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, cast_declared, field_descriptor
 
 
 class FieldSpec(NamedTuple):
@@ -65,6 +68,12 @@ def _docfield(spec, doctype):
 	return field
 
 
+def _published_type(spec, field):
+	"""The ONE type this spec publishes: live meta for a column, the spec's own for a non-column, Data
+	for a non-column nobody typed. `describe` advertises it and `collect` enforces it, from here."""
+	return field.fieldtype if field else (spec.fieldtype or "Data")
+
+
 def _vocabulary(spec, field):
 	"""A field's allowed values: declared wins, else a Select's own options. Nothing else has any."""
 	if spec.allowed_values:
@@ -92,7 +101,7 @@ def describe(specs, doctype=None):
 		d = field_descriptor(
 			spec.fieldname,
 			spec.label,
-			field.fieldtype if field else (spec.fieldtype or "Data"),
+			_published_type(spec, field),
 			spec.required and not spec.read_only,
 			None if spec.allowed_values else (field.options if field else None),
 			_vocabulary(spec, field),
@@ -103,20 +112,32 @@ def describe(specs, doctype=None):
 	return out
 
 
-def collect(specs, data):
-	"""The caller's payload as `{target: value}` — what a write path may apply.
+def collect(specs, data, doctype):
+	"""The caller's payload as `{target: value}`, every value in the type this contract PUBLISHES —
+	what a write path may apply.
 
 	Iterates SPECS, so an undeclared key is dropped and a caller can never inject. A read-only spec is
-	skipped however hard the caller pushes, and a spec with no target is the resource's own business."""
+	skipped however hard the caller pushes, and a spec with no target is the resource's own business.
+
+	The type is `describe`'s own answer, read through `_published_type`, so discovery and ingestion agree
+	about the TYPE and not merely about the field list — the rule and its wording live once, in
+	`_base.cast_declared`. A target-less spec is still held to its declared type here even though nothing
+	is routed for it: the enforcement is the refusal, not the routing, and `created_at` publishes a
+	Datetime whoever applies it.
+
+	A refusal names the PUBLIC fieldname. `started_at` lands on `start_time`, and a caller has never
+	heard of `start_time`."""
 	out = {}
 	for spec in specs:
-		if spec.read_only or not spec.target:
-			continue
-		if spec.fieldname not in data:
+		if spec.read_only or spec.fieldname not in data:
 			continue
 		value = data[spec.fieldname]
 		# An empty string is "not sent", never "erase this" — the rule `partner._collect` holds for a lead.
 		if isinstance(value, str) and not value.strip():
+			continue
+		value = cast_declared(doctype, spec.fieldname, value,
+		                      fieldtype=_published_type(spec, _docfield(spec, doctype)))
+		if not spec.target:
 			continue
 		out[spec.target] = value
 	return out

@@ -71,13 +71,13 @@ class TestFieldSpec(FrappeTestCase):
 	def test_collect_iterates_specs_not_data(self):
 		"""1.3 — an undeclared key is DROPPED, silently. This is why a caller cannot inject."""
 		specs = (FieldSpec("content", "Content", "content"),)
-		got = collect(specs, {"content": "hi", "lead_owner": "attacker@evil.com", "bogus": 1})
+		got = collect(specs, {"content": "hi", "lead_owner": "attacker@evil.com", "bogus": 1}, NOTE)
 		self.assertEqual(got, {"content": "hi"})
 
 	def test_collect_skips_a_read_only_spec(self):
 		"""1.4 — a computed field is not writable, however hard the caller pushes."""
 		specs = (FieldSpec("count", "Count", "custom_rnr_count", read_only=True),)
-		self.assertEqual(collect(specs, {"count": 5}), {})
+		self.assertEqual(collect(specs, {"count": 5}, NOTE), {})
 
 	def test_describe_marks_a_read_only_spec_output_only(self):
 		"""1.5 — discoverable, never required, never accepted."""
@@ -89,7 +89,7 @@ class TestFieldSpec(FrappeTestCase):
 	def test_collect_maps_fieldname_to_target(self):
 		"""1.6 — the public name is not the column name."""
 		specs = (FieldSpec("lead", "Lead", "reference_docname"),)
-		self.assertEqual(collect(specs, {"lead": "CRM-LEAD-1"}), {"reference_docname": "CRM-LEAD-1"})
+		self.assertEqual(collect(specs, {"lead": "CRM-LEAD-1"}, NOTE), {"reference_docname": "CRM-LEAD-1"})
 
 	def test_describe_throws_on_a_target_that_is_not_a_column(self):
 		"""1.7 — live meta, fail loud. A silent degrade to Data is how a schema starts lying."""

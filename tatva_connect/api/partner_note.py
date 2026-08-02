@@ -160,7 +160,7 @@ def _apply_fields(doc, data, lead_name):
 	Returns `fields` (the collected dict) so a caller building a NEW doc (create) can reuse it for the
 	mandatory-title fallback without recomputing collect().
 	"""
-	fields = collect(NOTE_FIELDS, data)
+	fields = collect(NOTE_FIELDS, data, "FCRM Note")
 	if fields.get("title"):
 		doc.title = _derive_title(fields, data)
 	# Presence, not truthiness: `collect` already drops a blank string, so this only states that rule.

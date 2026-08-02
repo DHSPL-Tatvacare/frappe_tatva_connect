@@ -13,6 +13,8 @@ Holds:
   * `_ok` / `_fail`    — unified success / failure response writers
   * `checked_code`     — the closed-vocabulary gate every `error.code` writer passes through
   * `throw_field`      — the ONE refusal that names the offending input in `error.fields`
+  * `cast_declared` + `cast_declared_row` + `DECLARED_TYPES` — the ONE type contract: a value must be
+    a value OF the type the schema already publishes for its field, or the call is refused by name
   * `_classify` + `_ERROR_MAP` — exception -> (code, http, message, fields, detail)
   * `request_error`    — the ONE error verdict for this request, for observability to read
   * `_api`             — endpoint decorator (rate limit + unified-error wrapper)
@@ -36,8 +38,14 @@ from collections import Counter
 
 import frappe
 from frappe import _
-from frappe.model import child_table_fields, default_fields, optional_fields
-from frappe.utils import add_to_date, cint, get_datetime, now_datetime
+from frappe.model import (
+	child_table_fields,
+	data_fieldtypes,
+	default_fields,
+	optional_fields,
+	table_fields,
+)
+from frappe.utils import add_to_date, cint, cstr, get_datetime, get_time, getdate, now_datetime, sbool
 
 from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
@@ -142,9 +150,10 @@ def stamp_external_id(doctype, name, external_id):
 # may never send these (Frappe sets the audit and identity stamps, the Assignment Rule sets the
 # owner). OUTPUT_ONLY means discoverable in a schema but ignored on write. Sourced from Frappe's
 # own field lists so new standard fields are covered automatically, plus the domain field lead_owner.
+# custom_substage joins lead_owner on the same grounds: a rep in the CRM decides stage, and this stays API-layer only — no permlevel, no Property Setter, no docfield flag, so nothing a rep does changes.
 RESERVED_FIELDS = frozenset(default_fields) | frozenset(optional_fields) | frozenset(
 	child_table_fields
-) | {"lead_owner"}
+) | {"lead_owner", "custom_substage"}
 
 BEHAVIOR_REQUIRED = "REQUIRED"
 BEHAVIOR_OPTIONAL = "OPTIONAL"
@@ -184,6 +193,195 @@ def field_descriptor(fieldname, label, fieldtype, required=False, options=None, 
 	if allowed_values:
 		d["allowed_values"] = allowed_values
 	return d
+
+
+# -- the declared type, enforced ---------------------------------------------
+# The rule, its measurements and where it stops: `cast_declared`. Each caster is frappe's OWN parse for that family with the silent default removed.
+
+def _not_none(read, value):
+	"""A frappe parser that answers None rather than throwing still said "not a value of this type"."""
+	if read is None:
+		raise ValueError(value)
+	return read
+
+
+def _as_float(value):
+	"""flt's parse — commas stripped — but it RAISES on a value that is not a number."""
+	return float(value.replace(",", "") if isinstance(value, str) else value)
+
+
+def _as_int(value):
+	"""cint's parse — int(), then int(float()) — but it RAISES rather than returning 0."""
+	try:
+		return int(value)
+	except (TypeError, ValueError):
+		return int(_as_float(value))
+
+
+def _as_check(value):
+	"""A Check holds 0 or 1. `sbool` is frappe's own true/false vocabulary; `cint(sbool(x))` is what
+	silently turned "yes" into false and 7 into 7, so a word outside that vocabulary is refused."""
+	if isinstance(value, bool):
+		return int(value)
+	read = sbool(value)
+	if isinstance(read, bool):
+		return int(read)
+	read = _as_int(value)  # a JSON 0/1 never reaches sbool: an int has no .lower()
+	if read not in (0, 1):
+		raise ValueError(value)
+	return read
+
+
+def _as_date(value):
+	"""getdate, which throws on an unparseable string but answers None for the zero dates — and a
+	value that is not a date must be refused however frappe chose to say so."""
+	return _not_none(getdate(value), value)
+
+
+def _as_datetime(value):
+	return _not_none(get_datetime(value), value)
+
+
+def _as_time(value):
+	"""get_time (dateutil), NOT get_timedelta: the latter answers timedelta(0) for "nope"."""
+	return _not_none(get_time(value), value)
+
+
+def _as_table(value):
+	"""A child section is an array of row objects. A single object is accepted and wrapped, because
+	that convenience predates this contract and is not being taken away; a scalar is not a row."""
+	if isinstance(value, str):
+		value = frappe.parse_json(value)  # orjson raises ValueError -> a named refusal, not its text
+	if isinstance(value, dict):
+		return [value]
+	if not isinstance(value, list):
+		raise ValueError(value)
+	return value
+
+
+def _as_structured(value):
+	"""A JSON / Geolocation column legitimately holds an object or an array."""
+	return frappe.parse_json(value) if isinstance(value, str) else value
+
+
+def _as_text(value):
+	"""Everything else holds ONE text value. Left exactly as it arrived — the stored form is the
+	column's business and a Link's human value is resolved downstream by `taxonomy.picklist`, which
+	must see what the caller sent. `cstr` would turn a JSON object into a Python repr, so a container
+	is refused rather than stringified."""
+	if isinstance(value, list | dict | tuple | set):
+		raise ValueError(value)
+	return value
+
+
+# The matrix: these fieldtypes, recognised by this caster, described to the caller as this.
+_TYPE_CONTRACT = (
+	(("Int", "Long Int", "Duration"), _as_int, "a whole number (for example 42)"),
+	(("Float", "Currency", "Percent", "Rating"), _as_float, "a number (for example 6.4)"),
+	(("Check",), _as_check, "true or false"),
+	(("Date",), _as_date, "a date as YYYY-MM-DD"),
+	(("Datetime",), _as_datetime, "a date and time as YYYY-MM-DD HH:MM:SS"),
+	(("Time",), _as_time, "a time of day as HH:MM:SS"),
+	(table_fields, _as_table, "a JSON array with one object per row"),
+	(("JSON", "Geolocation"), _as_structured, "a JSON object or array"),
+)
+# Everything frappe declares and the matrix does not claim is text — a new fieldtype lands in the strictest family, never in no family at all.
+_TEXT_TYPES = tuple(
+	sorted(set(data_fieldtypes) - {ft for fts, _c, _s in _TYPE_CONTRACT for ft in fts})
+)
+
+# {fieldtype: (caster, the shape a caller is told to send)} — the ONE lookup every consumer resolves through.
+DECLARED_TYPES = {
+	ft: (caster, shape)
+	for fts, caster, shape in (*_TYPE_CONTRACT, (_TEXT_TYPES, _as_text, "a single text value"))
+	for ft in fts
+}
+
+# The types whose VALUE this layer does not decide, and what does — a stated boundary, not one discovered in production. Here they are held to their SHAPE and to nothing more.
+TYPE_VALUE_DECIDED_ELSEWHERE = {
+	"Select": "the field's own options — frappe validates on save and lists the legal values",
+	"Link": "the target row must exist: frappe's _validate_links on save, and taxonomy.picklist for "
+	        "a grain-scoped composite PK (which DROPS an unmatched value rather than refusing it)",
+	"Dynamic Link": "as Link, against the doctype its companion field names",
+}
+
+_ECHO_MAX = 60
+
+
+def _echo(value):
+	"""The caller's own value, quoted back so they can find it in their payload, and CAPPED. A refusal
+	is copied into the response, the request log and a bulk `results` array, so mirroring a megabyte of
+	payload is how one bad record becomes three large writes."""
+	text = cstr(value)
+	return '"{0}"'.format(text[:_ECHO_MAX] + "…" if len(text) > _ECHO_MAX else text)
+
+
+def cast_declared(doctype, fieldname, value, fieldtype=None):
+	"""ONE value, held to the ONE type its schema declares. Returns it in that type, or refuses and
+	names the field in `error.fields`.
+
+	THE RULE, and there is only one: `field_descriptor` PUBLISHES a `type` for every field on every
+	schema this API serves, so a value that cannot be a value of that type is refused. Not per-field
+	validation, not range checking — the type is already published; this is where it is honoured, and
+	the declaration is therefore the enforcement.
+
+	Nothing used to hold a caller to it, and what looked like enforcement was three unrelated
+	mechanisms each catching their own case (a Select's own options, the picklist resolver's grain
+	check, an email regex). Measured across six fields, one class of mistake had five outcomes: a
+	Float took "high" and stored 0.0, a Date took "not-a-date" and answered 500 from the database
+	driver, a Link that named nothing was dropped in silence under a 200, a child section sent as a
+	string leaked orjson's own text.
+
+	Frappe's own coercions are the hole rather than the fix — `flt` documents "Return 0 if input can
+	not be converted", `cint` returns 0, `get_timedelta` returns timedelta(0) — so each caster is
+	frappe's parse for that family with the silent default removed, and the contract is never
+	narrower than what already works (flt strips commas, so "1,234.5" is still a Float).
+
+	WHERE IT STOPS: this decides the TYPE. Whether a Link's value names a real row is decided
+	downstream and is declared in TYPE_VALUE_DECIDED_ELSEWHERE.
+
+	`fieldtype` overrides the meta lookup, for a field that is declared but is not a column — a
+	`FieldSpec` with `target=None` (partner_note's `created_at`), or an activity answer typed by
+	`CRM Task Type Field`. A field neither meta nor the caller types is passed through: this layer
+	enforces a declaration, it does not invent one.
+
+	A blank is never a type error. An empty string is "not sent" everywhere in this API, and a
+	refusal here would turn every client that serialises an absent field as "" into a 400."""
+	if value is None or value == "":
+		return value
+	if fieldtype is None:
+		df = frappe.get_meta(doctype).get_field(fieldname)
+		if not df:
+			return value
+		fieldtype = df.fieldtype
+	rule = DECLARED_TYPES.get(fieldtype)
+	if rule is None:
+		return value  # a layout fieldtype (Section Break, ...) — no schema publishes one
+	caster, shape = rule
+	try:
+		return caster(value)
+	# What a PARSE fails with (getdate throws through frappe.throw, orjson raises ValueError); anything else is a fault in US and goes up to _classify rather than being blamed on the caller.
+	except (frappe.ValidationError, ValueError, TypeError, OverflowError):
+		frappe.clear_last_message()  # a caster that threw left its own Desk sentence in message_log
+		throw_field(
+			_("`{0}` is declared as {1} and the value sent, {2}, is not one. Send `{0}` as {3}, or "
+			  "leave it out.").format(fieldname, fieldtype, _echo(value), shape),
+			[fieldname],
+		)
+
+
+def cast_declared_row(doctype, values, types=None):
+	"""One payload, every value held to the type `doctype` declares for it — the ONE call an ingestion
+	seam makes, whatever the resource. Returns a NEW dict; the caller's is untouched.
+
+	`types` ({fieldname: fieldtype}) overrides the meta lookup per key, for the non-column fields a
+	resource declares itself. A key the doctype does not declare is passed through: WHAT a caller may
+	send is the contract's business (`is_writable`, the field grid), never this layer's."""
+	types = types or {}
+	return {
+		fieldname: cast_declared(doctype, fieldname, value, fieldtype=types.get(fieldname))
+		for fieldname, value in (values or {}).items()
+	}
 
 
 @contextlib.contextmanager
@@ -646,12 +844,17 @@ ERROR_CODES = frozenset({
 def _classify(e, fn_name):
 	"""(code, http, message, fields, detail) for an exception. Authored throws keep their
 	text; a child-write validation error carries the offending `fields` (else None); a check that
-	reached a structured verdict carries `detail` (else None); anything unexpected is logged and
-	returned generically as a 500.
+	reached a structured verdict carries `detail` (else None); anything unexpected — including a
+	MAPPED exception carrying no sentence — is logged and returned generically as a 500.
 
 	`fields` and `detail` are both read off the exception because frappe.throw() has no seam for
 	either — its parameters are Desk-dialog hints. The thrower attaches them; this is the one place
-	they are lifted onto the contract."""
+	they are lifted onto the contract.
+
+	Why a blank sentence is not a verdict: 1,225 async bulk failures came back `forbidden`, pointing
+	the partner at their credentials — the one thing that was fine — while the cause was an internal
+	queue overflow raising a bare PermissionError, and only the UNMAPPED branch logged, so the Error
+	Log held zero rows for the lot. A specific code we cannot justify is worse than admitting ours."""
 	# A delete blocked by a linked record (LinkExistsError) -> a 409 conflict with a GENERIC message:
 	# the native text names the linking doctypes and docs, which would enumerate what exists on the
 	# line, so we replace it (never leak the link list). "record", not "lead": _classify is the one
@@ -664,12 +867,11 @@ def _classify(e, fn_name):
 	# The MRO is already ordered most-derived-first, so walking it asks the questions in the TYPE's order rather than the map's — the scan it replaces asked them in the map's.
 	for exc_type in type(e).__mro__:
 		if exc_type in _ERROR_MAP:
+			# A code is a CLAIM: an exception carrying no sentence was raised by code that never meant to answer a partner, so its class is a coincidence and not a verdict — fall through, log it, and answer as ours.
+			if not str(e):
+				break
 			code, http = _ERROR_MAP[exc_type]
-			# A mapped exception that carries no text still owes the caller a sentence: a real code paired with a blank body is a dead end.
-			return (code, http, (str(e) or _(
-				"The request was refused and no reason was recorded. Retry the call; if it repeats, "
-				"contact support with the value of `error.code` and the time of the call."
-			)), getattr(e, "fields", None), getattr(e, "detail", None))
+			return code, http, str(e), getattr(e, "fields", None), getattr(e, "detail", None)
 	# The caller rolls back before classifying, then commits this row on its own; deferring it to redis instead would lose it on an eviction and re-stamp its creation at flush time.
 	frappe.log_error(title=f"Partner API error: {fn_name}")
 	return "server_error", 500, _(
@@ -1352,6 +1554,9 @@ _PARTNER_PATH = "/api/method/tatva_connect.api.partner"
 # any status is set. Mapping it to a status here means the sentences below are written once, by status.
 _GATEWAY_STATUS = {"AuthenticationError": 401, "PermissionError": 403}
 
+# Frappe's own ValidationError status, read off the class so it follows the framework rather than being typed here.
+_FRAPPE_VALIDATION_STATUS = frappe.ValidationError.http_status_code
+
 
 def _normalise_partner_error(request, status_code, exc_type):
 	"""(code, http, message) for a framework-layer error on a partner path. Every branch names its own
@@ -1362,8 +1567,21 @@ def _normalise_partner_error(request, status_code, exc_type):
 	covers a key without permission, a method that is not whitelisted and a refused guest call alike, so a
 	branch here may list what is worth checking but may never assert one cause — a confident wrong remedy
 	sends a developer to a second wrong turn, which is worse than the vague `Not permitted.` it replaced.
-	An endpoint that DOES know its cause answers through _fail and never reaches this function."""
+	An endpoint that DOES know its cause answers through _fail and never reaches this function.
+
+	The ValidationError branch: that status reaching this hook means the FRAMEWORK refused the request
+	before any endpoint ran, so it is a statement about the request and never `server_error`. Measured —
+	a malformed body AND a plain GET carrying `Content-Type: application/json` both landed here, and most
+	HTTP clients set that header by default, so a partner hit it on a perfectly valid read. Which check
+	said no is not recorded, so the sentence lists what is worth checking and asserts no single cause."""
 	status = _GATEWAY_STATUS.get(exc_type) or status_code
+	if status == _FRAPPE_VALIDATION_STATUS:
+		return "bad_request", 400, _(
+			"This request was refused before it reached an endpoint, as malformed. Three things carry "
+			"this outcome: check that the body is valid JSON, that `Content-Type: application/json` is "
+			"set only when a JSON body is actually being sent (a GET carrying it with no body lands "
+			"here), and that the method name matches an endpoint in the partner API reference."
+		)
 	if "JSONDecode" in (exc_type or "") or status == 400:
 		return "bad_request", 400, _(
 			"The request body could not be read as JSON. Send a JSON body and set `Content-Type: "
