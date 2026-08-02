@@ -624,6 +624,9 @@ def _enqueue_reindex(lead):
 	"""
 	if not lead or frappe.flags.in_import or frappe.flags.in_migrate or frappe.flags.in_install:
 		return
+	# The switch gates the SCHEDULING, not just the work: off, this used to enqueue anyway and only no-op inside the job — 2 workers at 100% CPU and ~450 QueueOverloaded error rows a minute. Cached read, so no query per save.
+	if not is_enabled(TOGGLE):
+		return
 	pending = getattr(frappe.local, _PENDING, None)
 	if pending is None:
 		pending = set()
