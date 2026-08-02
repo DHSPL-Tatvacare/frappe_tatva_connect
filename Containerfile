@@ -4,7 +4,7 @@
 #   export APPS_JSON_BASE64=$(base64 < "$APPS_FILE" | tr -d '\n')
 #   docker build \
 #     --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-#     --build-arg=FRAPPE_BRANCH=version-16 --build-arg=FRAPPE_CORE_REF=v16.22.0 \
+#     --build-arg=FRAPPE_BRANCH=version-16 --build-arg=FRAPPE_CORE_REF=v16.23.0 \
 #     --build-arg=APPS_JSON_BASE64="$APPS_JSON_BASE64" \
 #     --tag=<registry>/tatva-frappe:v16-1 --file=Containerfile .
 
@@ -13,10 +13,10 @@ ARG FRAPPE_BRANCH=version-16
 FROM frappe/build:${FRAPPE_BRANCH} AS builder
 
 ARG FRAPPE_BRANCH=version-16
-# Frappe CORE pinned to the exact GA tag local proved (v16.22.0). NOT the version-16
+# Frappe CORE pinned to the exact GA tag local proved (v16.23.0). NOT the version-16
 # branch tip: tip drifted ahead and dropped frappe/public/js/lib/posthog.js, which
 # breaks helpdesk's vite asset build. Base image stays :version-16 (no tagged base img).
-ARG FRAPPE_CORE_REF=v16.22.0
+ARG FRAPPE_CORE_REF=v16.23.0
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG APPS_JSON_BASE64
 
