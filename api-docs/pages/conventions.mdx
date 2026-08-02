@@ -53,13 +53,12 @@ Because the contract is whatever [`lead_schema`](/discover-schema) returns, code
 
 ## Environment
 
-The API runs on three environments. A base URL is set for the target environment and used in every request. Examples in these docs use `$BASE_URL` in place of a fixed host.
+The API runs on two environments. A base URL is set for the target environment and used in every request. Examples in these docs use `$BASE_URL` in place of a fixed host.
 
 | Environment | Base URL |
 |---|---|
 | Production | `https://one.tatvacare.in` |
-| UAT | `https://one-uat.tatvacare.in` |
-| Local | `http://localhost:8080` |
+| UAT (sandbox) | `https://one-uat.tatvacare.in` |
 
 ```bash
 export BASE_URL=https://one.tatvacare.in

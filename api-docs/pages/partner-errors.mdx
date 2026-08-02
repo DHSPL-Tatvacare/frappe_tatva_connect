@@ -43,7 +43,7 @@ flowchart TD
 | `bad_request` | 400 | The body was malformed, for example invalid JSON. | Correct the JSON and the `Content-Type: application/json` header. |
 | `unauthorized` | 401 | Missing or invalid API key. | The header must be exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. |
 | `forbidden` | 403 | The key is not permitted to make this call. | The `partner.*` methods must be used. Broader access is requested from Ops. |
-| `not_found` | 404 | The lead does not exist, or is outside the caller's business line. | The two cases are identical by design. The unique ID should be re-checked. Only leads on the caller's own business line are visible. |
+| `not_found` | 404 | The lead does not exist, or is not reachable by this key. | The two cases are identical by design. The unique ID should be re-checked. A key reaches only its own records. |
 | `conflict` | 409 / 422 | An `Idempotency-Key` collided. **409**: a request with that key is still in flight. **422**: that key was reused with a *different* body. | On 409, wait and retry the same call. On 422, a new key is used for a new body — a key belongs to exactly one request. See [Writes and retries](/writes-and-retries). |
 | `duplicate` | 409 | A concurrent write hit the same unique key. | Retry the call. `lead_create` deduplicates on phone, product line and group, so a plain re-send updates the existing lead and never creates a second one. |
 | `cannot_delete` | 409 | The lead has linked activity such as calls, tasks, or notes. | A worked lead cannot be silently removed. The message is generic by design. |
@@ -54,7 +54,7 @@ flowchart TD
 
 :::caution{title="Not-found is intentionally vague"}
 
-A lead that does not exist and a lead on another business line both return the same `404 not_found`, "Lead not found". There is no ID hint and no out-of-scope signal, so what exists elsewhere cannot be probed. Code must not attempt to distinguish the two.
+A lead that does not exist and a lead this key cannot reach both return the same `404 not_found`, "Lead not found". The response carries no hint as to which it was, by design. Code must not attempt to distinguish the two.
 
 :::
 
