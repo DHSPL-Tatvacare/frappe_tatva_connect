@@ -68,8 +68,8 @@ When a write fails validation, `error.fields` names the offending field:
   "status": "error",
   "error": {
     "code": "validation_error",
-    "message": "report_date is required to identify a Lab row",
-    "fields": ["report_date"]
+    "message": "Required and not sent: `from_number`, `to_number`. Read `required` from the schema response and send every field it marks true.",
+    "fields": ["from_number", "to_number"]
   }
 }
 ```

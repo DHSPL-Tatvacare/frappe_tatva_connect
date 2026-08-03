@@ -17,7 +17,7 @@ A field lives at a dotted path from the body. Child rows are arrays and are inde
 | The latest lab's HbA1c | `data.custom_lab_profile[0].hba1c` |
 | A specific lab row's date | `data.custom_lab_profile[1].report_date` |
 | An error code | `error.code` |
-| The third item in a bulk reply | `results[2].status`, `results[2].data.name` |
+| The third item in a **synchronous** bulk reply | `results[2].status`, `results[2].data.name` |
 
 Child arrays are returned newest first, so `[0]` is the most recent row. Bulk `results[]` is input-ordered, so `results[2]` is the outcome of the third item sent; a successful row's record sits at `results[2].data.name`, never `results[2].name`.
 
@@ -114,9 +114,9 @@ The response carries the fields the schema declares, as they were accepted. A fi
 
 :::
 
-## Reading a bulk reply
+## Reading a synchronous bulk reply
 
-Bulk replies place per-record outcomes in `results[]`, in the order sent. Each row's own `status` is read:
+A synchronous bulk call places per-record outcomes in `results[]`, in the order sent. Each row's own `status` is read:
 
 ```python title="Python"
 body = r.json()
@@ -127,6 +127,12 @@ for row in body["results"]:                    # results[i] is the i-th input
     else:
         print(row["index"], row["error"]["code"])  # results[i].error.code
 ```
+
+:::caution{title="An async job answers in a different shape"}
+
+The paths above are the **synchronous** bulk shape. A job's `results` array carries the same facts under different keys — `record_index`, `record_name`, `error_code`, `error_message` — with no nested `data` or `error` object, so `row["status"]` and `row["data"]["name"]` read nothing there. See [Async bulk jobs](/async-bulk#reading-the-results).
+
+:::
 
 :::note{title="Partner responses are top-level"}
 

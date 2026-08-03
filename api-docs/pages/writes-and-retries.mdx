@@ -35,6 +35,10 @@ A `name` carries no meaning and follows no pattern. It is never parsed, incremen
 a caller — it is echoed back and sent back, and nothing more. It is always a **string**, on every
 entity.
 
+An async **job** is the one thing this rule does not cover, because a job is not a record: it is
+addressed by the `job_id` its submission returns, and every job endpoint takes that. See
+[Async bulk jobs](/async-bulk).
+
 In a **bulk** reply the address sits one level deeper, at `results[i].data.name` — never
 `results[i].name`:
 
