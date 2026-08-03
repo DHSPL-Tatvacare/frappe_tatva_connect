@@ -30,10 +30,10 @@ drive everything through the brain; nothing is hardcoded per type.
   POST   activity_create       -> create an activity; returns its `name`
   PUT    activity_update       -> re-run compute on an existing activity by `name`
   DELETE activity_delete       -> delete one activity by `name`, scope-checked
-  POST   activity_get_bulk     -> {"names":[...]} (<= 100), partial success
-  POST   activity_create_bulk  -> {"activities":[...]} (<= 100), partial success
-  PUT    activity_update_bulk  -> {"updates":[{"name":..,..}]} (<= 100), partial success
-  DELETE activity_delete_bulk  -> {"names":[...]} (<= 100), partial success
+  POST   activity_get_bulk     -> {"names":[...]} (up to `bulk.max_per_call`), partial success
+  POST   activity_create_bulk  -> {"activities":[...]} (up to `bulk.max_per_call`), partial success
+  PUT    activity_update_bulk  -> {"updates":[{"name":..,..}]} (up to `bulk.max_per_call`), partial success
+  DELETE activity_delete_bulk  -> {"names":[...]} (up to `bulk.max_per_call`), partial success
 """
 import frappe
 from frappe import _
@@ -41,22 +41,23 @@ from frappe.utils import get_datetime
 
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.api._base import (
-	ACTION_CREATED,
-	ACTION_DELETED,
-	ACTION_FETCHED,
-	ACTION_UPDATED,
-	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
 	_list_ok,
 	_ok,
 	_page,
-	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	ACTION_CREATED,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	ACTION_UPDATED,
+	EXTERNAL_ID_FIELD,
 	cast_declared_row,
 	field_descriptor,
+	not_found_message,
+	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
@@ -88,10 +89,9 @@ def _scoped_task(name, mp, is_sysmgr):
 		as_dict=True,
 	)
 	if not row or row.reference_doctype != "CRM Lead":
-		throw_field(_(
-			"No activity on this API key's line has the id `{0}`. Check the value against an "
-			"activity_list response for the lead it was created on."
-		).format(name), ["name"], frappe.DoesNotExistError)
+		throw_field(not_found_message("activity", hint=_(
+			"Check the value against an activity_list response for the lead it was created on."
+		)), ["name"], frappe.DoesNotExistError)
 	scoped_by_lead(row.reference_docname, mp, is_sysmgr, "Activity")
 	return row
 
@@ -315,10 +315,10 @@ def activity_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def activity_get_bulk(**_kwargs):
-	"""Read many activities by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
+	"""Read many activities by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("activity", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
@@ -333,19 +333,19 @@ def bulk_creator(mp, is_sysmgr):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def activity_create_bulk(**_kwargs):
-	"""Create many activities. Body: {"activities":[{...}, ...]} (<= 100).
+	"""Create many activities. Body: {"activities":[{...}, ...]} (up to `bulk.max_per_call`).
 	Each record is enforced in its own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	activities = _read_required_list(frappe.form_dict, "activities")
+	activities = read_bulk_list("activity", "create")
 	return _run_bulk(activities, bulk_creator(mp, is_sysmgr))
 
 
 @frappe.whitelist(methods=["PUT"])
 @_api(bulk=True)
 def activity_update_bulk(**_kwargs):
-	"""Update many activities. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
+	"""Update many activities. Body: {"updates":[{"name":.., ...}, ...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	updates = _read_required_list(frappe.form_dict, "updates")
+	updates = read_bulk_list("activity", "update")
 
 	def one(i, item):
 		return {"index": i, "status": "success", "action": ACTION_UPDATED,
@@ -357,9 +357,9 @@ def activity_update_bulk(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def activity_delete_bulk(**_kwargs):
-	"""Delete many activities. Body: {"names":[...]} (<= 100). Partial success."""
+	"""Delete many activities. Body: {"names":[...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("activity", "delete")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)

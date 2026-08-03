@@ -30,10 +30,10 @@ Singular:
   DELETE lead_delete  delete a lead by CRM `name`, scoped to the line
 
 Bulk and query (each record enforced individually; partial success):
-  POST   lead_create_bulk  {"leads": [...]}                          (max 100)
-  PUT    lead_update_bulk  {"updates": [{"name": ..., ...}]}         (max 100)
-  DELETE lead_delete_bulk  {"names": [...]}                          (max 100)
-  POST   lead_get_bulk     {"names": [...]} or {"mobile_nos": [...]} (max 100)
+  POST   lead_create_bulk  {"leads": [...]}  (up to `bulk.max_per_call`)
+  PUT    lead_update_bulk  {"updates": [{"name": ..., ...}]}  (up to `bulk.max_per_call`)
+  DELETE lead_delete_bulk  {"names": [...]}  (up to `bulk.max_per_call`)
+  POST   lead_get_bulk     {"names": [...]} or {"mobile_nos": [...]}  (up to `bulk.max_per_call`)
   GET    lead_list         curated filters and pagination, line-scoped
 """
 import frappe
@@ -42,10 +42,6 @@ from frappe.utils import cstr, now_datetime, today
 
 from tatva_connect import automation
 from tatva_connect.api._base import (
-	ACTION_DELETED,
-	ACTION_FETCHED,
-	BEHAVIOR_OUTPUT_ONLY,
-	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
 	_list_ok,
@@ -53,14 +49,19 @@ from tatva_connect.api._base import (
 	_ok,
 	_page,
 	_read_list,
-	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	BEHAVIOR_OUTPUT_ONLY,
+	EXTERNAL_ID_FIELD,
 	cast_declared,
 	cast_declared_row,
 	field_descriptor,
 	is_writable,
+	not_found_message,
+	read_bulk_list,
 	resolve_lead,
 	stamp_external_id,
 	throw_field,
@@ -934,10 +935,9 @@ def _read_one(ident, by, mp, parent_fields, child_allow):
 	lead_name = frappe.db.get_value("CRM Lead", filters, "name")
 	if not lead_name:
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
-		throw_field(_(
-			"No lead on this API key's line matches `{0}`. Check the value against a lead_list "
-			"response, or create the lead with lead_create first."
-		).format(by), [by], frappe.DoesNotExistError)
+		throw_field(not_found_message("lead", by, hint=_(
+			"Check the value against a lead_list response, or create the lead with lead_create first."
+		)), [by], frappe.DoesNotExistError)
 	return _curate(frappe.get_doc("CRM Lead", lead_name), parent_fields, child_allow)
 
 
@@ -996,10 +996,10 @@ def lead_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def lead_create_bulk(**_kwargs):
-	"""Create-or-update many leads. Body: {"leads":[{...}, ...]} (<= 100). Partial success."""
+	"""Create-or-update many leads. Body: {"leads":[{...}, ...]} (up to `bulk.max_per_call`). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
-	leads = _read_required_list(frappe.form_dict, "leads")
+	leads = read_bulk_list("lead", "create")
 	return _run_bulk(leads, bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow, allowed_programs))
 
 
@@ -1015,10 +1015,10 @@ def bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow, allowed_progra
 @frappe.whitelist(methods=["PUT"])
 @_api(bulk=True)
 def lead_update_bulk(**_kwargs):
-	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (<= 100). Partial success."""
+	"""Update many leads. Body: {"updates":[{"name":..,..fields}, ...]} (up to `bulk.max_per_call`). Partial success."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
-	updates = _read_required_list(frappe.form_dict, "updates")
+	updates = read_bulk_list("lead", "update")
 
 	def one(i, item):
 		doc, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr, parent_fields,
@@ -1032,9 +1032,9 @@ def lead_update_bulk(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def lead_delete_bulk(**_kwargs):
-	"""Delete many leads. Body: {"names":[...]} (<= 100). Partial success."""
+	"""Delete many leads. Body: {"names":[...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr, _parent_fields, _child_allow = _caller_fields()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("lead", "delete")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)
@@ -1046,7 +1046,7 @@ def lead_delete_bulk(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def lead_get_bulk(**_kwargs):
-	"""Read many leads by `names` OR `mobile_nos` (<= 100). Input-ordered; out-of-scope/unknown ids
+	"""Read many leads by `names` OR `mobile_nos` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown ids
 	are reported not_found in place."""
 	_user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 	data = frappe.form_dict

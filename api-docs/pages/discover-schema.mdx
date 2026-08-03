@@ -48,7 +48,11 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
       }
     },
     "dedup": "A lead is unique per (mobile_no, product line, group). Re-sending the same phone updates that lead. Program is not part of identity: sending the same phone with a different program transitions the same lead, never a new one.",
-    "bulk": { "max_per_call": 25, "list_page_max": 200, "list_page_default": 20 },
+    "bulk": {
+      "max_per_call": 50,
+      "payload_key": { "get": "names", "create": "leads", "update": "updates", "delete": "names" },
+      "list_page_max": 200, "list_page_default": 20
+    },
     "list_filters": ["status","created_after","created_before","updated_after","updated_before","mobile_no"],
     "routing": {
       "mode": "list",
@@ -76,7 +80,8 @@ The response is top-level `status` and `data`. The following is a trimmed exampl
 | `data.routing.mode` | `forced` (one program stamped by the key), `list` (`custom_current_program` is sent, one of `allowed_programs`), or `none` (no program). Product line and group are always assigned from the key. |
 | `data.routing.allowed_programs` | List mode only. The programs that may be set per lead. `program_required: true` means a create must carry `custom_current_program`. |
 | `data.dedup` | The rule that makes a lead unique: phone, product line, and group. Program is an attribute, not identity. |
-| `data.bulk` | The per-call bulk ceiling (`max_per_call`) and list paging (`list_page_max`, `list_page_default`). |
+| `data.bulk` | The per-call ceiling (`max_per_call`), the body key each bulk lane reads (`payload_key`), and list paging (`list_page_max`, `list_page_default`). |
+| `data.bulk.payload_key` | The key the JSON array is sent under, per lane. A lane taking ids reads `names`; a lane taking new records reads the entity's own plural; a lane taking edits reads `updates`. Read rather than assumed — a bulk body under the wrong key is refused. |
 | `data.list_filters` | The filter fields `lead_list` accepts. |
 
 ### Field attributes

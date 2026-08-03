@@ -26,31 +26,32 @@ Lead attribution (Invariant #16 — NO best-guess):
   POST   call_create       -> create a call log; returns its `name`
   PUT    call_update       -> update a call by `name`, scope-checked
   DELETE call_delete       -> delete a call by `name`, scope-checked
-  POST   call_get_bulk     -> {"names":[...]} (<= 100), partial success
-  POST   call_create_bulk  -> {"calls":[...]} (<= 100), partial success
-  PUT    call_update_bulk  -> {"updates":[{"name":..,..}]} (<= 100), partial success
-  DELETE call_delete_bulk  -> {"names":[...]} (<= 100), partial success
+  POST   call_get_bulk     -> {"names":[...]} (up to `bulk.max_per_call`), partial success
+  POST   call_create_bulk  -> {"calls":[...]} (up to `bulk.max_per_call`), partial success
+  PUT    call_update_bulk  -> {"updates":[{"name":..,..}]} (up to `bulk.max_per_call`), partial success
+  DELETE call_delete_bulk  -> {"names":[...]} (up to `bulk.max_per_call`), partial success
 """
 import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime
 
 from tatva_connect.api._base import (
-	ACTION_CREATED,
-	ACTION_DELETED,
-	ACTION_FETCHED,
-	ACTION_UPDATED,
-	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
 	_list_ok,
 	_ok,
 	_page,
 	_read_list,
-	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	ACTION_CREATED,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	ACTION_UPDATED,
+	EXTERNAL_ID_FIELD,
+	not_found_message,
+	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
@@ -157,10 +158,9 @@ def _scoped_call(name, mp, is_sysmgr):
 		), ["name"])
 	doc = frappe.db.exists("CRM Call Log", name) and frappe.get_doc("CRM Call Log", name)
 	if not doc:
-		throw_field(_(
-			"No call on this API key's line has the id `{0}`. Check the value against a call_list "
-			"response; a call that matched no lead is not readable by a partner key."
-		).format(name), ["name"], frappe.DoesNotExistError)
+		throw_field(not_found_message("call", hint=_(
+			"Check the value against a call_list response; a call that matched no lead is not readable by a partner key."
+		)), ["name"], frappe.DoesNotExistError)
 	# An UNLINKED call is never visible to a partner; a trusted sysmgr (no mapping) still sees it.
 	if mp:
 		lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
@@ -342,20 +342,20 @@ def call_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def call_get_bulk(**_kwargs):
-	"""Read many calls by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
+	"""Read many calls by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("call", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def call_create_bulk(**_kwargs):
-	"""Create many call logs. Body: {"calls":[{...}, ...]} (<= 100). Each record is enforced in its
+	"""Create many call logs. Body: {"calls":[{...}, ...]} (up to `bulk.max_per_call`). Each record is enforced in its
 	own savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	calls = _read_required_list(frappe.form_dict, "calls")
+	calls = read_bulk_list("call", "create")
 
 	def one(i, item):
 		view, action = _create_one(item, mp, is_sysmgr)
@@ -367,9 +367,9 @@ def call_create_bulk(**_kwargs):
 @frappe.whitelist(methods=["PUT"])
 @_api(bulk=True)
 def call_update_bulk(**_kwargs):
-	"""Update many calls. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
+	"""Update many calls. Body: {"updates":[{"name":.., ...}, ...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	updates = _read_required_list(frappe.form_dict, "updates")
+	updates = read_bulk_list("call", "update")
 
 	def one(i, item):
 		view, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr)
@@ -381,9 +381,9 @@ def call_update_bulk(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def call_delete_bulk(**_kwargs):
-	"""Delete many calls. Body: {"names":[...]} (<= 100). Partial success."""
+	"""Delete many calls. Body: {"names":[...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("call", "delete")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)

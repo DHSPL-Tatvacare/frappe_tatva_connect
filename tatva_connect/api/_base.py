@@ -645,11 +645,23 @@ def resolve_lead(mp, is_sysmgr, data):
 		# ONE answer for missing and for out-of-scope: a refusal must never confirm that an id exists.
 		key = "lead" if data.get("lead") else "mobile_no"
 		throw_field(
-			_("No lead on this API key's line matches `{0}`. Check the value against a lead_list "
-			  "response, or create the lead with lead_create before attaching to it.").format(key),
+			not_found_message("lead", key, hint=_(
+				"Check the value against a lead_list response, or create the lead with lead_create "
+				"before attaching to it.")),
 			[key], frappe.DoesNotExistError,
 		)
 	return lead_name
+
+
+def not_found_message(label, key="name", hint=None):
+	"""The ONE sentence for a record this key cannot reach.
+
+	Missing and out-of-scope answer identically, so a refusal never confirms that an id exists somewhere
+	a caller cannot see. It was written out once per resource, which is how the same decision came to be
+	phrased seven different ways; `hint` carries the only part that genuinely differs — where the caller
+	looks the value up."""
+	base = _("No {0} matching `{1}` is reachable with this API key.").format(label.lower(), key)
+	return f"{base} {hint}" if hint else base
 
 
 def scoped_by_lead(lead_name, mp, is_sysmgr, label):
@@ -662,10 +674,8 @@ def scoped_by_lead(lead_name, mp, is_sysmgr, label):
 	hangs off). What must NOT differ, and used to be written out once per resource, is this decision.
 	Returns the lead name so a caller can reuse it.
 	"""
-	message = _(
-		"No {0} on this API key's line matches `name`. Check the id against the matching list endpoint "
-		"for the lead this record hangs off."
-	).format(label.lower())
+	message = not_found_message(label, hint=_(
+		"Check the id against the matching list endpoint for the lead this record hangs off."))
 	if not lead_name:
 		throw_field(message, ["name"], frappe.DoesNotExistError)
 	try:
@@ -762,12 +772,22 @@ def checked_code(code):
 	return "server_error"
 
 
+def error_object(code, message, **extra):
+	"""The ONE error object every lane emits — the endpoint lane, the bulk lane and the gateway lane.
+
+	Whitespace is collapsed HERE because a framework message is assembled from parts we do not own: a
+	Select refusal is built as `{label} {fieldname} cannot be ...` and a blank label leaves the sentence
+	starting with a space. Trimming the one field it was noticed on would leave every other doctype and
+	every future message carrying the same seam, so the whole class is closed at the point the message
+	becomes partner-facing. No partner message carries a deliberate newline."""
+	return {"code": code, "message": " ".join((message or "").split()), **extra}
+
+
 def _fail(code, message, http, **extra):
 	code = checked_code(code)
 	frappe.clear_messages()
 	frappe.local.error_log = []
-	err = {"code": code, "message": message}
-	err.update(extra)
+	err = error_object(code, message, **extra)
 	frappe.local.response.update({"status": "error", "error": err})
 	frappe.local.response["http_status_code"] = http
 	return True  # denial sentinel for throttle guards; body already set, so guards bare-`return`
@@ -1343,7 +1363,7 @@ def _bulk_error(i, e, fn_name):
 	# the throw populated message_log -> clear it so build_response doesn't leak `_server_messages` into the (otherwise clean) bulk envelope.
 	frappe.clear_messages()
 	frappe.local.message_log = []
-	err = {"code": code, "message": message}
+	err = error_object(code, message)
 	if fields:
 		err["fields"] = fields
 	if detail:
@@ -1356,6 +1376,30 @@ def bulk_max(entity=None):
 	read THIS, so the number advertised is always the number enforced."""
 	cfg = _cfg()
 	return cfg["file_bulk_max_records"] if entity == "file" else cfg["bulk_max_records"]
+
+
+# An entity's own plural — the only part of the bulk vocabulary that varies by resource.
+_BULK_COLLECTION = {"lead": "leads", "activity": "activities", "note": "notes",
+                    "call": "calls", "file": "files"}
+
+
+def bulk_keys(entity):
+	"""The body key each bulk lane reads, per entity — `bulk_max`'s rule applied to the vocabulary.
+
+	The lanes DO differ, and deliberately: a lane that takes ids reads `names`, a lane that takes new
+	records reads the entity's own plural, and a lane that takes edits reads `updates`. That was already
+	true of all five resources, but it was hand-typed at eighteen call sites and published nowhere, so a
+	caller had to discover it by being refused. The endpoints read THIS and `_schema_ok` publishes it,
+	so the key advertised is always the key read.
+
+	The names themselves are the live contract and do not change: renaming a lane's key would break
+	every integration already sending it."""
+	return {"get": "names", "create": _BULK_COLLECTION[entity], "update": "updates", "delete": "names"}
+
+
+def read_bulk_list(entity, lane):
+	"""A bulk body's array, read through the ONE declared key for that entity and lane."""
+	return _read_required_list(frappe.form_dict, bulk_keys(entity)[lane])
 
 
 def _bulk_guard(items, direction, entity=None):
@@ -1529,6 +1573,7 @@ def _schema_ok(entity, dedup, fields=None, **extra):
 		"identity": {"addressed_by": "name", "note": _ADDRESSING},
 		"dedup": dedup,
 		"bulk": {"max_per_call": bulk_max(entity),
+		         "payload_key": bulk_keys(entity),
 		         "list_page_max": cfg["list_max_page"],
 		         "list_page_default": cfg["list_default_page"]},
 	}
@@ -1647,7 +1692,7 @@ def normalise_partner_response(response=None, request=None):
 		code, http, message = _normalise_partner_error(
 			request, response.status_code, (body or {}).get("exc_type")
 		)
-		error = {"code": code, "message": message}
+		error = error_object(code, message)
 		response.status_code = http
 		response.set_data(frappe.as_json({"status": "error", "error": error}))
 		response.headers["Content-Type"] = "application/json"

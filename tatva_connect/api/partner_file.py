@@ -24,9 +24,9 @@ deleting the old. The document category is stored in `File.custom_file_type`.
   GET    file_list         -> a lead's files, filtered + paginated
   POST   file_attach       -> download/decode bytes, attach to a lead (or a scoped task/note)
   DELETE file_delete       -> delete a file by `name`, scope-checked
-  POST   file_get_bulk     -> {"names":[...]} (<= 100), partial success
-  POST   file_attach_bulk  -> {"files":[...]} (<= 100), partial success
-  DELETE file_delete_bulk  -> {"names":[...]} (<= 100), partial success
+  POST   file_get_bulk     -> {"names":[...]} (up to `bulk.max_per_call`), partial success
+  POST   file_attach_bulk  -> {"files":[...]} (up to `bulk.max_per_call`), partial success
+  DELETE file_delete_bulk  -> {"names":[...]} (up to `bulk.max_per_call`), partial success
 """
 import base64
 import binascii
@@ -37,22 +37,23 @@ from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
 
 from tatva_connect.api._base import (
-	ACTION_CREATED,
-	ACTION_DELETED,
-	ACTION_FETCHED,
-	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
 	_cfg,
 	_list_ok,
 	_ok,
 	_page,
-	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	ACTION_CREATED,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	EXTERNAL_ID_FIELD,
 	base64_message,
 	file_size_message,
+	not_found_message,
+	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	throw_field,
@@ -205,10 +206,9 @@ def _scoped_file(name, mp, is_sysmgr):
 		), ["name"])
 	doc = frappe.db.exists("File", name) and frappe.get_doc("File", name)
 	if not doc:
-		throw_field(_(
-			"No file on this API key's line has the id `{0}`. Check the value against a file_list "
-			"response for the lead it was attached to."
-		).format(name), ["name"], frappe.DoesNotExistError)
+		throw_field(not_found_message("file", hint=_(
+			"Check the value against a file_list response for the lead it was attached to."
+		)), ["name"], frappe.DoesNotExistError)
 
 	# A file finds its lead indirectly: through the task or note it hangs off, or from the lead itself.
 	scoped_by_lead(_file_lead(doc), mp, is_sysmgr, "File")
@@ -378,10 +378,10 @@ def file_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def file_get_bulk(**_kwargs):
-	"""Read many files by `names` (<= 100). Input-ordered; out-of-scope/unknown names are
+	"""Read many files by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are
 	reported not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("file", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
@@ -393,7 +393,7 @@ def file_attach_bulk(**_kwargs):
 	The ceiling is the FILE ceiling, not the row one: a file is bytes to decode, scan and write, not a
 	row. file_schema publishes the number this enforces."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	files = _read_required_list(frappe.form_dict, "files")
+	files = read_bulk_list("file", "create")
 
 	def one(i, item):
 		view, action = _create_one(item, mp, is_sysmgr)
@@ -408,7 +408,7 @@ def file_delete_bulk(**_kwargs):
 	"""Delete many files. Body: {"names":[...]}. Partial success. A delete moves no bytes, so it
 	shares the general row ceiling."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("file", "delete")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)

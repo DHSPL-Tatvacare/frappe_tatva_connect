@@ -30,30 +30,31 @@ back as its own title.
   POST   note_create       -> create a note; returns its `name`
   PUT    note_update       -> update a note by `name`, scope-checked
   DELETE note_delete       -> delete a note by `name`, scope-checked
-  POST   note_get_bulk     -> {"names":[...]} (<= 100), partial success
-  POST   note_create_bulk  -> {"notes":[...]} (<= 100), partial success
-  PUT    note_update_bulk  -> {"updates":[{"name":..,..}]} (<= 100), partial success
-  DELETE note_delete_bulk  -> {"names":[...]} (<= 100), partial success
+  POST   note_get_bulk     -> {"names":[...]} (up to `bulk.max_per_call`), partial success
+  POST   note_create_bulk  -> {"notes":[...]} (up to `bulk.max_per_call`), partial success
+  PUT    note_update_bulk  -> {"updates":[{"name":..,..}]} (up to `bulk.max_per_call`), partial success
+  DELETE note_delete_bulk  -> {"names":[...]} (up to `bulk.max_per_call`), partial success
 """
 import frappe
 from frappe import _
 from frappe.utils import get_datetime
 
 from tatva_connect.api._base import (
-	ACTION_CREATED,
-	ACTION_DELETED,
-	ACTION_FETCHED,
-	ACTION_UPDATED,
-	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
 	_list_ok,
 	_ok,
 	_page,
-	_read_required_list,
 	_resolve_caller,
 	_run_bulk,
 	_schema_ok,
+	ACTION_CREATED,
+	ACTION_DELETED,
+	ACTION_FETCHED,
+	ACTION_UPDATED,
+	EXTERNAL_ID_FIELD,
+	not_found_message,
+	read_bulk_list,
 	resolve_lead,
 	scoped_by_lead,
 	stamp_external_id,
@@ -136,10 +137,9 @@ def _scoped_note(name, mp, is_sysmgr):
 		), ["name"])
 	doc = frappe.db.exists("FCRM Note", name) and frappe.get_doc("FCRM Note", name)
 	if not doc:
-		throw_field(_(
-			"No note on this API key's line has the id `{0}`. Check the value against a note_list "
-			"response for the lead it was created on."
-		).format(name), ["name"], frappe.DoesNotExistError)
+		throw_field(not_found_message("note", hint=_(
+			"Check the value against a note_list response for the lead it was created on."
+		)), ["name"], frappe.DoesNotExistError)
 	lead = doc.reference_docname if doc.reference_doctype == "CRM Lead" else None
 	scoped_by_lead(lead, mp, is_sysmgr, "Note")
 	return doc
@@ -300,20 +300,20 @@ def note_delete(**_kwargs):
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True, read=True)
 def note_get_bulk(**_kwargs):
-	"""Read many notes by `names` (<= 100). Input-ordered; out-of-scope/unknown names are reported
+	"""Read many notes by `names` (up to `bulk.max_per_call`). Input-ordered; out-of-scope/unknown names are reported
 	not_found in place."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("note", "get")
 	return _bulk_read(names, lambda name: _read_one(name, mp, is_sysmgr))
 
 
 @frappe.whitelist(methods=["POST"])
 @_api(bulk=True)
 def note_create_bulk(**_kwargs):
-	"""Create many notes. Body: {"notes":[{...}, ...]} (<= 100). Each record is enforced in its own
+	"""Create many notes. Body: {"notes":[{...}, ...]} (up to `bulk.max_per_call`). Each record is enforced in its own
 	savepoint -> partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	notes = _read_required_list(frappe.form_dict, "notes")
+	notes = read_bulk_list("note", "create")
 
 	def one(i, item):
 		view, action = _create_one(item, mp, is_sysmgr)
@@ -325,9 +325,9 @@ def note_create_bulk(**_kwargs):
 @frappe.whitelist(methods=["PUT"])
 @_api(bulk=True)
 def note_update_bulk(**_kwargs):
-	"""Update many notes. Body: {"updates":[{"name":.., ...}, ...]} (<= 100). Partial success."""
+	"""Update many notes. Body: {"updates":[{"name":.., ...}, ...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	updates = _read_required_list(frappe.form_dict, "updates")
+	updates = read_bulk_list("note", "update")
 
 	def one(i, item):
 		view, action = _update_one((item or {}).get("name"), item, mp, is_sysmgr)
@@ -339,9 +339,9 @@ def note_update_bulk(**_kwargs):
 @frappe.whitelist(methods=["DELETE"])
 @_api(bulk=True)
 def note_delete_bulk(**_kwargs):
-	"""Delete many notes. Body: {"names":[...]} (<= 100). Partial success."""
+	"""Delete many notes. Body: {"names":[...]} (up to `bulk.max_per_call`). Partial success."""
 	_user, mp, is_sysmgr = _resolve_caller()
-	names = _read_required_list(frappe.form_dict, "names")
+	names = read_bulk_list("note", "delete")
 
 	def one(i, name):
 		_delete_one(name, mp, is_sysmgr)
