@@ -277,7 +277,7 @@ def _create_one(data, mp, is_sysmgr):
 		filename=filename,
 		attached_to_doctype=target_doctype,
 		attached_to_name=target_name,
-		meta=dict(collect(FILE_FIELDS, data, "File"), custom_source="Partner API"),
+		meta=dict(collect(FILE_FIELDS, data, "File", creating=True), custom_source="Partner API"),
 	)
 	return _file_view(doc), ACTION_CREATED
 

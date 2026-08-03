@@ -76,9 +76,9 @@ CALL_FIELDS = (
 	FieldSpec("external_id",   "External ID",   EXTERNAL_ID_FIELD),
 	FieldSpec("direction",     "Direction",     "type", required=True,
 	          allowed_values=tuple(_DIRECTION_TYPE)),
-	FieldSpec("from_number",   "From Number",   "from"),
-	FieldSpec("to_number",     "To Number",     "to"),
-	FieldSpec("status",        "Status",        "status"),
+	FieldSpec("from_number",   "From Number",   "from", required=True),
+	FieldSpec("to_number",     "To Number",     "to", required=True),
+	FieldSpec("status",        "Status",        "status", supplied=True),
 	FieldSpec("duration",      "Duration",      "duration"),
 	FieldSpec("recording_url", "Recording URL", "recording_url"),
 	FieldSpec("started_at",    "Started At",    "start_time"),
@@ -168,14 +168,14 @@ def _scoped_call(name, mp, is_sysmgr):
 	return doc
 
 
-def _apply_fields(doc, data, lead_name):
+def _apply_fields(doc, data, lead_name, creating=False):
 	"""Overlay the partner payload onto a CRM Call Log doc (create or update path).
 
 	`collect` decides WHAT may land and on which column, so this is keyed by column and no longer
 	restates the mapping. Two targets are never taken from the caller: `type` carries the partner's
 	vocabulary and is translated below, and `reference_docname` is resolved by `_attribute_lead` (writing
 	the raw value would attach the call to a lead off the caller's line)."""
-	fields = collect(CALL_FIELDS, data, "CRM Call Log")
+	fields = collect(CALL_FIELDS, data, "CRM Call Log", creating=creating)
 	direction = data.get("direction")
 	if direction and direction not in _DIRECTION_TYPE:
 		throw_field(_(
@@ -227,12 +227,9 @@ def _create_one(data, mp, is_sysmgr):
 	doc = frappe.new_doc("CRM Call Log")
 	# The autoname is field:id, so the row NAME is `id` — a fresh hash that cannot collide.
 	doc.id = f"PARTNER-{frappe.generate_hash(length=10)}"
-	# Sensible required-field floors so a sparse payload still inserts (status defaults to
-	# "Completed" only if the caller sent none; from/to default to empty strings).
+	# The one mandatory column this resource supplies; from/to are declared required instead, because frappe reads a floored "" as absent and threw a raw error naming columns the contract never published.
 	doc.status = data.get("status") or "Completed"
-	setattr(doc, "from", "")
-	doc.to = ""
-	_apply_fields(doc, data, lead_name)
+	_apply_fields(doc, data, lead_name, creating=True)
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + _attribute_lead, before the save
 
 	stamp_external_id("CRM Call Log", doc.name, data.get("external_id"))

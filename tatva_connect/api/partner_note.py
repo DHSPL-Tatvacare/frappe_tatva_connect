@@ -74,7 +74,7 @@ NOTE_FIELDS = (
 	FieldSpec("lead",        "Lead",        "reference_docname"),
 	FieldSpec("mobile_no",   "Mobile No"),
 	FieldSpec("external_id", "External ID", EXTERNAL_ID_FIELD),
-	FieldSpec("title",       "Title",       "title"),
+	FieldSpec("title",       "Title",       "title", supplied=True),
 	FieldSpec("content",     "Content",     "content", required=True),
 	FieldSpec("created_at",  "Created At",  fieldtype="Datetime"),
 )
@@ -145,7 +145,7 @@ def _scoped_note(name, mp, is_sysmgr):
 	return doc
 
 
-def _apply_fields(doc, data, lead_name):
+def _apply_fields(doc, data, lead_name, creating=False):
 	"""Overlay the partner payload onto an FCRM Note doc (create or update path).
 
 	Only a field the caller actually sent a VALUE for is written. An empty string is treated as "not
@@ -160,7 +160,7 @@ def _apply_fields(doc, data, lead_name):
 	Returns `fields` (the collected dict) so a caller building a NEW doc (create) can reuse it for the
 	mandatory-title fallback without recomputing collect().
 	"""
-	fields = collect(NOTE_FIELDS, data, "FCRM Note")
+	fields = collect(NOTE_FIELDS, data, "FCRM Note", creating=creating)
 	if fields.get("title"):
 		doc.title = _derive_title(fields, data)
 	# Presence, not truthiness: `collect` already drops a blank string, so this only states that rule.
@@ -190,7 +190,7 @@ def _create_one(data, mp, is_sysmgr):
 
 	doc = frappe.new_doc("FCRM Note")
 	# _apply_fields routes every field through collect(NOTE_FIELDS, data), the same path _update_one takes, so a future read_only/hidden spec is honoured on create too.
-	fields = _apply_fields(doc, data, lead_name)
+	fields = _apply_fields(doc, data, lead_name, creating=True)
 	if not doc.title:  # the mandatory-title fallback: a caller with no title concept still gets one
 		doc.title = _derive_title(fields, data)
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by _resolve_caller + resolve_lead, before the save

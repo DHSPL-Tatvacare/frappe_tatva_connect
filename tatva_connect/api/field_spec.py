@@ -36,7 +36,7 @@ from typing import NamedTuple
 import frappe
 from frappe import _
 
-from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, cast_declared, field_descriptor
+from tatva_connect.api._base import BEHAVIOR_OUTPUT_ONLY, cast_declared, field_descriptor, throw_field
 
 
 class FieldSpec(NamedTuple):
@@ -47,6 +47,7 @@ class FieldSpec(NamedTuple):
 	target: str | None = None  # the column it lands on; None = not a column
 	target_doctype: str | None = None  # None = the resource's own doctype
 	required: bool = False  # the API's contract, which may be looser than the doctype's reqd
+	supplied: bool = False  # the resource fills this when omitted — the only way a spec stays optional over a mandatory column
 	read_only: bool = False  # computed; never accepted from a caller
 	allowed_values: tuple | None = None  # the partner's vocabulary; None = a Select's own options
 	fieldtype: str | None = None  # ONLY for a non-column, which meta cannot type; declaring both throws
@@ -112,7 +113,7 @@ def describe(specs, doctype=None):
 	return out
 
 
-def collect(specs, data, doctype):
+def collect(specs, data, doctype, creating=False):
 	"""The caller's payload as `{target: value}`, every value in the type this contract PUBLISHES —
 	what a write path may apply.
 
@@ -140,4 +141,13 @@ def collect(specs, data, doctype):
 		if not spec.target:
 			continue
 		out[spec.target] = value
+	if creating:
+		missing = [s.fieldname for s in specs
+		           if s.required and not s.read_only and not s.supplied and s.fieldname not in out
+		           and (not s.target or s.target not in out)]
+		if missing:
+			throw_field(_(
+				"Required and not sent: {0}. Read `required` from the schema response and send every "
+				"field it marks true."
+			).format(", ".join(f"`{m}`" for m in missing)), missing)
 	return out
