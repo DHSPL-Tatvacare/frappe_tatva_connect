@@ -47,11 +47,13 @@ A **`429 rate_limited`** on a bulk call means something different: the key reall
 
 ## Bulk still saves the request budget
 
-A bulk call of up to **25 records** counts as **one** request against the request budget. Each record still counts against the daily volume budget. So a batch of 25 leads costs one request, not 25.
+A bulk call counts as **one** request against the request budget, however many records it carries. Each record still counts against the daily volume budget. So a full batch costs one request, not one per lead.
 
-**Files are the exception: up to 5 per call.** A file is not a row. Each one is decoded, scanned for malware and written to storage, which takes roughly a second, so twenty-five of them would be a request no gateway waits for. Every `*_schema` endpoint publishes the ceiling that applies to it in `bulk.max_per_call`, and that is the number the API enforces — it is read rather than assumed.
+The per-call ceiling is set per key and published as `bulk.max_per_call` in the entity's schema. It is read from there, never assumed — a call carrying more is refused and names the limit.
 
-At one bulk call every 5 seconds, that is 300 records a minute — comfortably more than the daily volume budget allows in an hour, so the volume budget, not the bulk rate, is what a real integration runs into first.
+**Files carry a much lower ceiling than rows.** A file is not a row: each one is decoded, scanned for malware and written to storage, which takes roughly a second, so a row-sized batch of them would be a request no gateway waits for. `file_schema` publishes its own `bulk.max_per_call`.
+
+At one bulk call every 5 seconds, the daily volume budget — not the bulk rate — is what a real integration runs into first.
 
 ## Response headers
 
@@ -129,7 +131,7 @@ async function callWithRetry(doRequest, maxAttempts = 6) {
 
 ## Spending the budget wisely
 
-- **Use bulk calls, one at a time.** Up to 25 records — or 5 files — are sent in one request, which spends only one unit of the request budget. The exact ceiling is read from `bulk.max_per_call` in the entity's schema. Sending calls in parallel does not go faster; it is refused.
+- **Use bulk calls, one at a time.** One request carries a whole batch and spends one unit of the request budget. The ceiling is read from `bulk.max_per_call` in the entity's schema; files are lower than rows, because each is decoded, scanned and stored. Sending calls in parallel does not go faster; it is refused.
 - **Slow down large backfills.** The daily volume budget, not the request rate, is the real ceiling on a backfill. A load larger than the daily budget is planned with Ops rather than attempted in one run.
 - **Cache repeated reads.** When the same lead is read again and again, the stored response is reused instead of fetched each time.
 

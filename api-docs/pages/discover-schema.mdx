@@ -114,7 +114,7 @@ Each row is addressed by its `key_field`. The write merges by that key and never
 - Rows that are not mentioned are left untouched.
 - A row is deleted by sending `{ "<key_field>": <value>, "_delete": true }`.
 
-Every row sent must carry its `key_field`, which is the row's address. The schema marks it `required` even when it is not part of the field grant.
+Every row should carry its `key_field` — it is the row's address, and the schema marks it `required` even when it is not part of the field grant. A row sent without one is still accepted, with the key stamped from the arrival date. That row can then only be addressed by that date, so the value is sent explicitly whenever the row must be updated later.
 
 ```json
 // The 2026-05-18 lab row's hba1c is updated, a new row for 2026-06-20 is added,

@@ -77,9 +77,8 @@ When a write fails validation, `error.fields` names the offending field:
 The most common causes are:
 
 - A required field is missing. `lead_schema` lists which fields the key marks required.
-- A multi-row child row has no key. Every row in a multi-row table needs its `key_field`, for example `report_date`. See [Schema discovery](/discover-schema#child-tables).
-- An unknown option value. A Link or Select field received a value not in its `options`. Valid options are read from `lead_schema`.
 - A value of the wrong type. Each field is sent in the `type` the schema declares for it.
+- An unknown option value. A Link or Select field received a value not in its `options`. Valid options are read from `lead_schema`.
 - A child table sent as anything but an array. The refusal names the field and the shape expected.
 - A single-row child received two rows. Single-row tables accept one row.
 

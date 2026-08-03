@@ -27,6 +27,12 @@ curl -i -H 'Authorization: token <api_key>:<api_secret>' \
 | `401` `unauthorized` | The key is missing, malformed, or wrong. | Confirm the header is exactly `Authorization: token <api_key>:<api_secret>`, with lowercase `token`, one space, and the key and secret joined by a colon. See [Conventions](/conventions#auth). |
 | `403` `forbidden` | The header is well-formed, but the key is not permitted here. | Confirm the key issued for the Partner API is the one in use. Broader access is requested from Ops. |
 
+## The key does not expire
+
+There is no token lifetime, no refresh call and no re-authentication step. The same key and secret are sent on every request indefinitely. Nothing needs to be scheduled, cached with a TTL, or renewed.
+
+A key stops working only when Ops disables the user or rotates the secret. Either shows as `401 unauthorized`, which therefore means *revoked*, never *expired* — retrying will not recover it, and a new key is requested from Ops.
+
 A `200` response has the following shape, trimmed. The `data` block is the exact set of fields and child tables the key may use:
 
 ```json
