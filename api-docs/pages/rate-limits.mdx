@@ -6,7 +6,7 @@ A key has three independent budgets. Each is configured per key, and any of them
 
 | Budget | Default | Counts |
 |---|---|---|
-| Request rate | 120 requests per minute | every call, read or write |
+| Request rate | 120 requests per minute, burst 240 | every call, read or write |
 | **Bulk rate** | **one bulk call per 5 seconds, one in flight at a time** | bulk write calls only |
 | Daily record volume | 10,000 records read and 10,000 records written per day | rows touched, not calls |
 
@@ -61,8 +61,8 @@ Every response reports the current state of the request budget, so a client can 
 
 | Header | Meaning |
 |---|---|
-| `X-RateLimit-Limit` | the **sustained** request rate for the window, not the ceiling. A short burst above it is admitted by design |
-| `X-RateLimit-Remaining` | requests left against the sustained rate. It is clamped at zero, so calls can still succeed while it reads zero |
+| `X-RateLimit-Limit` | the request rate for the window. The burst ceiling is twice this |
+| `X-RateLimit-Remaining` | requests left in the current window, floored at zero |
 | `X-RateLimit-Reset` | seconds until the window resets |
 | `Retry-After` | on a 429 or 503 only, seconds to wait before retrying |
 
