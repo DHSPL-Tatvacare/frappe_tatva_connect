@@ -22,6 +22,8 @@ import frappe
 
 from tatva_connect.automation.registry import AUTOMATIONS
 
+_MODEL_ANCHOR = "const MODEL = "
+
 _CHECKLIST = Path(frappe.get_app_path("tatva_connect")).parent / (
 	"docs/go-live/3-seed/db-seeds/go-live-config-checklist"
 )
@@ -55,12 +57,16 @@ def _state_toggles():
 	return {v["label"]: v["group"] for v in items.values() if v["type"] == "toggle"}
 
 
-def _html_toggle_keys():
-	"""Toggle labels embedded in the interactive checklist.html model, for html<->json parity."""
+def _html_model():
+	"""The model embedded in the interactive checklist, as the browser receives it."""
 	html = (_CHECKLIST / "checklist.html").read_text()
-	i = html.index("const M=") + len("const M=")
+	i = html.index(_MODEL_ANCHOR) + len(_MODEL_ANCHOR)
 	model, _ = json.JSONDecoder().raw_decode(html, i)
-	return {it["label"] for g in model["groups"] for it in g["items"] if it["type"] == "toggle"}
+	return model
+
+
+def _html_toggle_keys():
+	return {it["label"] for it in _html_model()["items"].values() if it["type"] == "toggle"}
 
 
 @unittest.skipUnless(_CHECKLIST.exists(), "checklist ships with the repo, not the deployed image")
@@ -79,7 +85,24 @@ class TestGoLiveChecklistParity(unittest.TestCase):
 	def test_html_model_matches_state_json(self):
 		self.assertEqual(_html_toggle_keys(), set(_state_toggles()))
 
-	# (d) planted-bad (recall guard, S.6): drop a real switch from the checklist view and the gate MUST
+	# (d) the committed artefacts still ARE the registry: rebuild the model and compare. A switch whose
+	# purpose, trigger or dependency changed in code but not here fails on content, not merely on the key set.
+	def test_the_artefacts_are_in_step_with_the_registry(self):
+		from importlib import util
+
+		spec = util.spec_from_file_location("golive_build", _CHECKLIST / "build.py")
+		build = util.module_from_spec(spec)
+		spec.loader.exec_module(build)
+		fresh = build.model()
+		on_disk = json.loads((_CHECKLIST / "checklist-state.json").read_text())
+		self.assertEqual(
+			{k: dict(v, done=False) for k, v in fresh["items"].items()},
+			{k: dict(v, done=False) for k, v in on_disk["items"].items()},
+			"checklist-state.json is out of step with AUTOMATIONS - run build.py",
+		)
+		self.assertEqual(fresh["items"], _html_model()["items"], "checklist.html is out of step - run build.py")
+
+	# (e) planted-bad (recall guard, S.6): drop a real switch from the checklist view and the gate MUST
 	# fail - proves equality bites, not just that today's files happen to line up.
 	def test_gate_bites_on_a_missing_switch(self):
 		crippled = set(_state_toggles())
