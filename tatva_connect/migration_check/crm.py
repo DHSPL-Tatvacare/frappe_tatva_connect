@@ -41,13 +41,26 @@ class PartnerAPIError(RuntimeError):
 	pass
 
 
+def _key_pair(token: str) -> str:
+	"""`api_key:api_secret`, whatever shape the operator's config carries.
+
+	The value arrives from `site_config.migration_check_accounts.<slug>.partner_token`, which the deploy
+	rewrites from `.env` on EVERY run (`compose.uat.yml`), and whose shipped example spells it
+	`"token CHANGE_ME:CHANGE_ME"`. Prefixing that again yields `Authorization: token token k:s`, which
+	frappe cannot parse — so it falls back to Guest and answers 403, never 401. The header owns the
+	scheme; the config owns the pair. Normalising here means no config value, and no redeploy of the
+	old one, can break this again."""
+	token = (token or "").strip()
+	return token.split(" ", 1)[1].strip() if token.lower().startswith("token ") else token
+
+
 class Partner:
 	"""Talks to this site's own partner API over loopback."""
 
 	def __init__(self, base_url: str, token: str, host: str | None = None):
 		self.base = base_url.rstrip("/")
 		self.session = requests.Session()
-		self.session.headers.update({"Authorization": f"token {token}", "Accept": "application/json"})
+		self.session.headers.update({"Authorization": f"token {_key_pair(token)}", "Accept": "application/json"})
 		if host:
 			self.session.headers["Host"] = host
 
