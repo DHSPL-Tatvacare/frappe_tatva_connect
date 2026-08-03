@@ -6,7 +6,7 @@ title: Schema discovery
 
 :::note{title="Discover, do not hardcode"}
 
-Two keys return different schemas, and grants change over time. `lead_schema` is read at startup and payloads are built from its response. A fixed field list must not be copied from this page.
+The schema belongs to the key and changes as its grants change. `lead_schema` is read at startup and payloads are built from its response. A fixed field list must not be copied from this page.
 
 :::
 
@@ -99,7 +99,7 @@ Two of these govern every write:
 
 ## Required fields
 
-A field with `"required": true` must be present on a create. This is read straight from the schema rather than assumed, because the required set is whatever the key is granted and can differ between keys.
+A field with `"required": true` must be present on a create. The required set is the key's own and is read from the schema, never assumed.
 
 ## Child tables
 
@@ -150,7 +150,7 @@ Whether multi-row or single-row, sending only some fields updates only those fie
 
 ## Routing
 
-`source`, product line (`vertical`), and `group` are the business line details. They are assigned automatically from the key and stamped on every lead, so they are not sent, and a lead cannot be moved to a different line or group. The program depends on the `mode`:
+`source`, product line (`vertical`) and `group` are assigned from the key and stamped on every lead. They are not sent, and a lead cannot be moved off them. The program depends on the `mode`:
 
 - **Forced**: stamped by the key, like the rest of the routing.
 - **List**: `custom_current_program` is sent on every lead, validated against `allowed_programs`. It is a mutable attribute, so re-sending a phone with a different program transitions the same lead, never a new one.

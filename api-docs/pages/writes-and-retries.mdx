@@ -70,8 +70,8 @@ It is optional. A caller's own system reference is sent, the CRM stores it and e
 read, so a caller can recognise its own row in a payload.
 
 It is **never interpreted**. It does not deduplicate, and it does not locate a record — no endpoint
-accepts it as an address. A colliding `external_id` is inert: it labels the new record and leaves
-anyone else's untouched. To find a record again, the `name` is kept.
+accepts it as an address. A colliding `external_id` is inert: it labels the new record and changes
+nothing else. To find a record again, the `name` is kept.
 
 ## 4. Retries are made safe with `Idempotency-Key`
 

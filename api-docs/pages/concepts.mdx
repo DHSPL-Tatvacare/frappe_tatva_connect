@@ -42,7 +42,7 @@ flowchart LR
 
 `custom_current_program` records the lead's current program. It is not part of identity: it may change on the same lead (a transition), and changing it never creates a second lead.
 
-Whether it is sent depends on the key's program mode, the one attribute that differs between keys:
+Whether it is sent depends on the key's program mode:
 
 | Mode | `custom_current_program` | Behaviour |
 |---|---|---|
@@ -67,4 +67,4 @@ Profiles are sliced by concern rather than by organisation or program, so a sing
 
 ## Status
 
-Every lead carries a universal `status`: `New`, `Contacted`, `Nurture`, `Qualified`, `Converted`, `Junk`, or `Unqualified`. This is the coarse lifecycle shared across every business line. The allowed values, along with any finer program-specific stage a key is allowed to set, are returned by [`lead_schema`](/discover-schema). They must not be hardcoded, because they can differ by key and change over time.
+Every lead carries a `status` — the coarse lifecycle: `New`, `Contacted`, `Nurture`, `Qualified`, `Converted`, `Junk`, or `Unqualified`. The allowed values, and any finer stage the key may set, are returned by [`lead_schema`](/discover-schema) and are read from there, never hardcoded.
