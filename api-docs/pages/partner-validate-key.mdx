@@ -33,6 +33,8 @@ There is no token lifetime, no refresh call and no re-authentication step. The s
 
 A key stops working only when Ops disables the user or rotates the secret. Either shows as `401 unauthorized`, which therefore means *revoked*, never *expired* — retrying will not recover it, and a new key is requested from Ops.
 
+The 30-minute countdown on the playground box above is unrelated: that is this page clearing the key out of browser storage so it is not left on a shared machine. It has no bearing on the key itself.
+
 A `200` response has the following shape, trimmed. The `data` block is the exact set of fields and child tables the key may use:
 
 ```json

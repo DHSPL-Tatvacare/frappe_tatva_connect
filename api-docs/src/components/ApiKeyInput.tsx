@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 const ACTIVE_KEY = "tatva_partner_token"; // the one the playground injects
 const LIST_KEY = "tatva_partner_tokens"; // all tokens this browser remembers
-const TTL_MS = 30 * 60 * 1000; // tokens expire 30 min after they were saved/activated
+const TTL_MS = 30 * 60 * 1000; // how long THIS BROWSER keeps a key; the key itself never expires
 const TEAL = "#0d9488"; // brand teal — visible in both light and dark
 const LINE = "rgba(127,127,127,0.45)";
 
@@ -38,7 +38,7 @@ const minsLeft = (savedAt: number, now: number): number =>
   Math.max(0, Math.ceil((TTL_MS - (now - savedAt)) / 60000));
 
 // Lets you save MANY keys in this browser and flip the active one with a click.
-// Each key self-expires after 30 min; the active one is mirrored to
+// Each key is dropped from this browser 30 min after last use; the active one is mirrored to
 // localStorage[ACTIVE_KEY], which the "Partner API key" playground identity injects.
 export function ApiKeyInput() {
   const [val, setVal] = useState("");
@@ -197,7 +197,7 @@ export function ApiKeyInput() {
                   </span>
                   <code style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{mask(e.v)}</code>
                   <span style={{ fontSize: 12, opacity: 0.55, whiteSpace: "nowrap" }}>
-                    expires in {minsLeft(e.t, now)}m
+                    cleared in {minsLeft(e.t, now)}m
                   </span>
                   {isActive ? (
                     <span style={{ color: TEAL, fontWeight: 600, fontSize: 13 }}>Active</span>
@@ -261,10 +261,11 @@ export function ApiKeyInput() {
       )}
 
       <div style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>
-        Saved only in this browser, and each key <b>self-expires after 30 minutes</b>. Paste
-        another key and <b>Save</b> to keep it too; <b>Use</b> switches the active one and
-        renews its 30 minutes. The <b>Partner API key</b> identity in any playground injects
-        whichever key is active.
+        Saved only in this browser, and <b>cleared from it 30 minutes</b> after it was last used — so
+        a key is not left sitting on a shared machine. That is this page forgetting the key, not the
+        key expiring: an API key stays valid until Ops revokes it. Paste another key and <b>Save</b> to
+        keep it too; <b>Use</b> switches the active one and restarts its 30 minutes. The <b>Partner API
+        key</b> identity in any playground injects whichever key is active.
       </div>
     </div>
   );
