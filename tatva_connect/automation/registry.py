@@ -119,6 +119,25 @@ AUTOMATIONS = [
 		requires="AI Voice::Channel::calls",
 	),
 	Auto(
+		key="AI Voice::Channel::bypass-guardrails",
+		fires_on="Provider call",
+		trigger_detail="automation/sends.send_voice — arms the AI Voice Call node's own bypass tick",
+		purpose=(
+			"A workflow author is allowed to place a call outside the hours the voice agent is configured "
+			"to call in: the node carries a tick for it, and while this row is on that tick is honoured and "
+			"the provider is told to dial immediately. It exists so a journey can be tested end to end "
+			"without waiting for the agent's calling window, and it is two deliberate acts rather than one "
+			"because the window is what stops a patient being rung at night. Off, the tick is ignored and "
+			"every call waits for the agent's own calling hours, which is the correct answer on a live site.\n"
+			"Example: a new welcome journey is proven on a test lead at 22:00, and the same graph on the "
+			"live site still calls patients only in the morning."
+		),
+		# Read in `sends.send_voice`, not a doc_event or a job, so `backs` is empty like the two rows above.
+		backs=[],
+		# Its absence is CORRECT while the channel is off — no call, nothing to bypass — so `requires` fits.
+		requires="AI Voice::Channel::calls",
+	),
+	Auto(
 		key="Storage::Recording::retry",
 		fires_on="Schedule",
 		trigger_detail="every 15m · retries call recordings whose download failed, with backoff",

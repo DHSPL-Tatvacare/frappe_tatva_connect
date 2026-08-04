@@ -163,13 +163,22 @@ def _resolve_from_phone(override, connection_default):
 USER_DATA_CORRELATION_KEY = "recipient_id"
 
 
-def place_call(connection, to_number, agent_id, from_override, correlation, variables=None):
+def place_call(connection, to_number, agent_id, from_override, correlation, variables=None,
+               bypass_call_guardrails=False):
 	"""Place ONE outbound call now: POST /call → execution_id. The node-facing caller (our engine is
 	one-journey-per-lead); the cohort/batch path is `place_call_batch`, W7.2.
 
 	`to_number` is ALREADY conformed to +E.164 by the send path's declared `number_format` — this adapter
 	adds NO formatter of its own (the pass-1 one-brain rule). `correlation` is the engine token, placed in
 	`user_data` so the terminal webhook wakes THIS parked journey and no other.
+
+	`bypass_call_guardrails` tells Bolna to dial immediately instead of waiting for the agent's configured
+	calling hours. It arrives ALREADY RESOLVED — `sends.send_voice` ANDs the author's tick with the dormant
+	`AI Voice::Channel::bypass-guardrails` switch, so no switch is read here. Default False: an adapter
+	called with nothing said about it must never skip a patient's calling window.
+
+	NOTE THE SHAPE, and it differs from the batch path by Bolna's own contract: this is a JSON body, so the
+	flag is a real bool; `place_call_batch` posts multipart form fields, where it is the STRING "true".
 	"""
 	api_key = connection.get("api_key") or ""
 	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
@@ -183,6 +192,9 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	}
 	if from_phone:
 		body["from_phone_number"] = from_phone
+	# Sent only when asked for: a `false` and an absent key read the same to Bolna, the absent one to us too.
+	if bypass_call_guardrails:
+		body["bypass_call_guardrails"] = True
 	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 	try:
 		resp = requests.post(f"{base_url}/call", json=body, headers=headers, timeout=30.0)
@@ -614,8 +626,14 @@ def list_phone_numbers(connection):
 	payload = _get(connection, "/phone-numbers/all")
 	if not isinstance(payload, list):
 		raise BolnaServiceError(f"Bolna /phone-numbers/all returned unexpected shape: {type(payload).__name__}")
+	# The NUMBER is the label — `telephony_provider` is the same word on every row and named none of them.
+	# The carrier rides as `status`, which `voice.api._listing:57` already joins on: no second joiner here.
 	return [
-		{"id": str(raw.get("phone_number")), "name": str(raw.get("telephony_provider") or "")}
+		{
+			"id": str(raw.get("phone_number")),
+			"name": str(raw.get("phone_number")),
+			"status": str(raw.get("telephony_provider") or ""),
+		}
 		for raw in payload
 		if isinstance(raw, dict) and raw.get("phone_number")
 	]
