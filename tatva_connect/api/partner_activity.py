@@ -40,6 +40,7 @@ from frappe import _
 from frappe.utils import get_datetime
 
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.taxonomy import labels
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -80,7 +81,7 @@ def _scoped_task(name, mp, is_sysmgr):
 	out-of-scope both raise the SAME generic not-found (no probing which ids exist)."""
 	if not name:
 		throw_field(_(
-			"No activity was named. Send `name`, the CRM Task id returned when the activity was "
+			"No activity was named. Send `name`, the id returned when the activity was "
 			"created; it is also carried by every row of an activity_list response."
 		), ["name"])
 	row = frappe.db.get_value(
@@ -116,7 +117,8 @@ def _render(row, cfg, answers=None):
 	return {
 		"name": str(row.name),
 		"lead": row.reference_docname,
-		"task_type": row.custom_task_type or "",
+		# The label, not the composite PK the column holds — asked of the schema, the same way every other hand-built payload resolves one, and it is the form `activity_create` already takes.
+		"task_type": labels.shown("CRM Task", "custom_task_type", row.custom_task_type) or "",
 		"status": row.status,
 		"external_id": row.get(EXTERNAL_ID_FIELD) or None,
 		"values": activity_brain._task_values(row, cfg, answers),

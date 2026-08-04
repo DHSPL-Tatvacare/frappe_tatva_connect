@@ -15,6 +15,8 @@ both run for ANY File insert no matter who creates it. This facade sits on top o
 bypasses it.
 """
 
+from urllib.parse import parse_qs, urlparse
+
 import frappe
 
 from tatva_connect.storage import blob_store
@@ -73,6 +75,31 @@ def proxy_url(file_or_key):
 	if hasattr(file_or_key, "file_url"):
 		key = blob_key_from_url(file_or_key.file_url)
 	return blob_store.download_url(key)
+
+
+def fetch_url(file_doc):
+	"""The URL an OFF-SITE caller downloads from — fully qualified, and signed when it can be.
+
+	`proxy_url` above is right for a browser already on this host and wrong for anyone else: it is
+	root-relative, and it needs our session or API token to even start, so it cannot be opened, handed to
+	a worker, or range-requested. An offloaded file therefore answers with the short-lived signed blob
+	link the proxy would have redirected to anyway — same bytes, same permission already checked by the
+	caller's own read, no credentials to pass on. A file still on local disk has no blob to sign, so it
+	keeps the proxy route with the host filled in. Signing failure degrades the same way, never a 500."""
+	key = None if blob_store.is_local_url(file_doc.file_url) else blob_key_from_url(file_doc.file_url)
+	if not key:
+		return frappe.utils.get_url(file_doc.file_url)
+	return blob_store.BlobStore().sas_url(key)
+
+
+def fetch_expires_at(file_doc):
+	"""When the URL `fetch_url` just handed out stops working, or None for a link that never expires.
+
+	Read off the token's own `se=` rather than computed as now+ttl: `sas_url` CACHES its token, so a
+	second caller inside the window gets the first one's remaining life, and now+ttl would over-promise
+	by however much of it had already elapsed. Calling `fetch_url` again is what makes the two agree —
+	the cache answers it, so nothing is minted twice."""
+	return parse_qs(urlparse(fetch_url(file_doc)).query).get("se", [None])[0]
 
 
 def by_blob_key(blob_key):

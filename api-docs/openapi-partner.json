@@ -74,7 +74,7 @@
     },
     {
       "name": "Files",
-      "description": "Files are attached to a lead, or to a scoped activity or note on that lead. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `file_schema` | Discovery: the attach payload contract. |\n| GET | `file_get` | Read one file's metadata and proxy url by `name`. |\n| GET | `file_list` | List a lead's files, filtered and paginated. |\n| POST | `file_attach` | Decode or download the bytes and attach to a lead, activity or note. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_get_bulk` | `{\"names\":[...]}` (up to 25). |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 5). |\n| DELETE | `file_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` always reads `true` and `file_url` is always a proxy url, never a raw storage key or a local path. The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Identity\n\nA file is addressed by `name`, returned when it was attached. A POST **attaches**: it does not deduplicate, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\n### No update\n\nA file's bytes are immutable. There is deliberately no update method: replacing a file means attaching the new one and deleting the old.",
+      "description": "Files are attached to a lead, or to a scoped activity or note on that lead. The same key as leads, with no per-entity enablement.\n\n| HTTP method | Method | Purpose |\n|---|---|---|\n| GET | `file_schema` | Discovery: the attach payload contract. |\n| GET | `file_get` | Read one file's metadata and proxy url by `name`. |\n| GET | `file_list` | List a lead's files, filtered and paginated. |\n| POST | `file_attach` | Decode or download the bytes and attach to a lead, activity or note. |\n| DELETE | `file_delete` | Delete a file by `name`. |\n| POST | `file_get_bulk` | `{\"names\":[...]}` (up to 25). |\n| POST | `file_attach_bulk` | `{\"files\":[...]}` (up to 5). |\n| DELETE | `file_delete_bulk` | `{\"names\":[...]}` (up to 25). |\n\n### Always private\n\nEvery file attached through this API is private. `is_private` always reads `true` and `file_url` is a signed link that expires — `expires_at` says when, and reading the file again by `name` returns a fresh one. The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent.\n\n### Identity\n\nA file is addressed by `name`, returned when it was attached. A POST **attaches**: it does not deduplicate, so re-sending the same bytes attaches a second file. A retry is made safe with the `Idempotency-Key` header. `external_id` is an optional label and never locates a record.\n\n### No update\n\nA file's bytes are immutable. There is deliberately no update method: replacing a file means attaching the new one and deleting the old.",
       "x-zudoku-collapsed": true
     },
     {
@@ -860,24 +860,32 @@
           },
           "file_url": {
             "type": "string",
-            "description": "Proxy URL to fetch the (private) bytes, never a raw storage key or local path."
+            "description": "A fully qualified, signed link to the bytes. It carries its own authorisation, so it is fetched with no `Authorization` header, and it expires — see `expires_at`."
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "When `file_url` stops working (UTC). Read the file again by `name` for a fresh link."
+          },
+          "size": {
+            "type": "integer",
+            "description": "The file's size in bytes, or null if unrecorded."
           },
           "is_private": {
             "type": "boolean",
             "description": "Always `true`, files attached via this API are private by design."
           },
-          "attached_to_doctype": {
+          "attached_to": {
             "type": "string",
             "enum": [
-              "CRM Lead",
-              "CRM Task",
-              "FCRM Note"
+              "lead",
+              "activity",
+              "note"
             ],
-            "description": "What the file hangs off: the lead, a scoped activity task, or a scoped note."
+            "description": "What the file hangs off, in the same words `file_attach` accepts."
           },
           "attached_to_name": {
             "type": "string",
-            "description": "The id of the lead or task the file is attached to."
+            "description": "The id of the lead, activity or note the file is attached to."
           }
         }
       },
@@ -934,7 +942,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The CRM Call Log id (the autonamed row name; NOT the `external_id`)."
+            "description": "The call id (the autonamed row name; NOT the `external_id`)."
           },
           "external_id": {
             "type": "string",
@@ -1180,7 +1188,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The FCRM Note id (the autonamed row name; NOT the `external_id`)."
+            "description": "The note id (the autonamed row name; NOT the `external_id`)."
           },
           "external_id": {
             "type": "string",
@@ -4858,7 +4866,7 @@
               {
                 "name": "9390",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4871,7 +4879,7 @@
               {
                 "name": "9378",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4884,7 +4892,7 @@
               {
                 "name": "9377",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4897,7 +4905,7 @@
               {
                 "name": "9376",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4910,7 +4918,7 @@
               {
                 "name": "9146",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4923,7 +4931,7 @@
               {
                 "name": "9145",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4936,7 +4944,7 @@
               {
                 "name": "9144",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -4949,7 +4957,7 @@
               {
                 "name": "9143",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4962,7 +4970,7 @@
               {
                 "name": "9142",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": null,
                 "values": {
@@ -4975,7 +4983,7 @@
               {
                 "name": "9141",
                 "lead": "a7f3c9e12b",
-                "task_type": "Product Line A::Group A::::Readiness Check",
+                "task_type": "Readiness Check",
                 "status": "Done",
                 "external_id": "V-A1",
                 "values": {
@@ -5019,9 +5027,11 @@
             "file_type": "Prescription",
             "external_id": "V-F1",
             "filename": "v.txt",
-            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
+            "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt?se=2026-08-04T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
+            "expires_at": "2026-08-04T10:45:54Z",
+            "size": 20480,
             "is_private": true,
-            "attached_to_doctype": "CRM Lead",
+            "attached_to": "lead",
             "attached_to_name": "a7f3c9e12b"
           }
         }
@@ -5043,9 +5053,11 @@
                 "file_type": "Prescription",
                 "external_id": "V-F1",
                 "filename": "v.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
+                "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt?se=2026-08-04T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
+                "expires_at": "2026-08-04T10:45:54Z",
+                "size": 20480,
                 "is_private": true,
-                "attached_to_doctype": "CRM Lead",
+                "attached_to": "lead",
                 "attached_to_name": "a7f3c9e12b"
               }
             ]
@@ -5330,8 +5342,8 @@
             ],
             "bytes": "The bytes are supplied either as a downloadable `file_url` (fetched by the server) or as `content_base64`. Exactly one is sent. The maximum download size is 25 MB.",
             "screening": "Every file is scanned for malware before it is stored, and nothing is written unless it passes. A file the scan REFUSES is the caller's: the response is a 400 with `error.code` `validation_error`, and `error.detail` names the verdict (`Type Not Allowed`, `Type Mismatch` or `Infected`), the file name and, for an infection, the signature. A scanner we cannot REACH is ours: the file was never judged, so the response is a 503 with `error.code` `server_busy` and `error.detail.verdict` `Scanner Unavailable`, and the same call is retried with exponential backoff. The scan runs on the bytes themselves, so it applies equally to a `content_base64` upload and to a `file_url` the server fetches. A refused file is not quarantined and cannot be retrieved; a clean copy is sent instead.",
-            "privacy": "Every file attached through this API is private. `is_private` always reads true and `file_url` is always a proxy url, never a raw storage key or a local path.",
-            "target": "A file is attached to its lead by default. Passing `activity` (a CRM Task name) homes it on that activity; passing `note` (an FCRM Note name) homes it on that note. Either must belong to the same lead.",
+            "privacy": "Every file attached through this API is private. `is_private` always reads true and `file_url` is a signed link that expires — `expires_at` says when, and reading the file again by `name` returns a fresh one.",
+            "target": "A file is attached to its lead by default. Passing `activity` (an activity id) homes it on that activity; passing `note` (a note id) homes it on that note. Either must belong to the same lead.",
             "immutable": "A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old."
           }
         }
@@ -6356,9 +6368,11 @@
             "file_type": "Prescription",
             "external_id": "V-F1",
             "filename": "v.txt",
-            "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt",
+            "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/c2dca7b4a6_v.txt?se=2026-08-04T10%3A45%3A54Z&sp=r&sr=b&sig=<signature>",
+            "expires_at": "2026-08-04T10:45:54Z",
+            "size": 20480,
             "is_private": true,
-            "attached_to_doctype": "CRM Lead",
+            "attached_to": "lead",
             "attached_to_name": "a7f3c9e12b"
           }
         }
@@ -6382,10 +6396,12 @@
                 "file_type": null,
                 "external_id": null,
                 "filename": "v28bbf87.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/d2bda27fcb_v28bbf87.txt",
+                "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/v28bbf87.txt?se=2026-08-04T10:45:54Z&sp=r&sr=b&sig=<signature>",
                 "is_private": true,
-                "attached_to_doctype": "CRM Lead",
-                "attached_to_name": "a7f3c9e12b"
+                "attached_to_name": "a7f3c9e12b",
+                "attached_to": "lead",
+                "expires_at": "2026-08-04T10:45:54Z",
+                "size": 5
               }
             }
           ]
@@ -6410,10 +6426,12 @@
                 "file_type": null,
                 "external_id": null,
                 "filename": "v28bbf87.txt",
-                "file_url": "/api/method/tatva_connect.storage.api.download_file?file_name=crm/crm_lead/a7f3c9e12b/d2bda27fcb_v28bbf87.txt",
+                "file_url": "https://<storage-account>.blob.core.windows.net/<container>/crm/crm_lead/a7f3c9e12b/v28bbf87.txt?se=2026-08-04T10:45:54Z&sp=r&sr=b&sig=<signature>",
                 "is_private": true,
-                "attached_to_doctype": "CRM Lead",
-                "attached_to_name": "a7f3c9e12b"
+                "attached_to_name": "a7f3c9e12b",
+                "attached_to": "lead",
+                "expires_at": "2026-08-04T10:45:54Z",
+                "size": 5
               }
             },
             {
@@ -9420,7 +9438,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The CRM Call Log id."
+            "description": "The call id."
           }
         ],
         "responses": {
@@ -9741,7 +9759,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The CRM Call Log id to delete (may also be sent in the JSON body)."
+            "description": "The call id to delete (may also be sent in the JSON body)."
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"

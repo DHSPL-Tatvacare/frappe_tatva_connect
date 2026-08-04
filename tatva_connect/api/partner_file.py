@@ -71,6 +71,14 @@ from tatva_connect.storage import file_manager
 #   request key -> the doctype it homes the file on
 _TARGETS = (("activity", "CRM Task"), ("note", "FCRM Note"))
 _TARGET_DOCTYPES = tuple(doctype for _key, doctype in _TARGETS)
+# The same table read the other way round, so a response names a home in the words `file_attach` accepts.
+_HOME_KEYS = {"CRM Lead": "lead", **{doctype: key for key, doctype in _TARGETS}}
+
+
+def _home_key(doctype):
+	"""Which home a file hangs from, as the request key that put it there. `_TARGETS` already pairs the
+	two, so the read side answers from the write side's own vocabulary rather than the table's name."""
+	return _HOME_KEYS.get(doctype, doctype)
 
 # The attach payload contract — declared ONCE, read by `describe` (what file_schema advertises) and by
 # `collect` (what lands on the File row). Discovery equals ingestion because neither owns a field list.
@@ -101,9 +109,11 @@ _VIEW_FIELDS = (
 	("file_type",           (FILE_TYPE_FIELD,),         None),
 	("external_id",         (EXTERNAL_ID_FIELD,),       None),
 	("filename",            ("file_name",),             None),
-	("file_url",            ("file_url",),               lambda doc: file_manager.proxy_url(doc)),
+	("file_url",            ("file_url",),               lambda doc: file_manager.fetch_url(doc)),
+	("expires_at",          ("file_url",),               lambda doc: file_manager.fetch_expires_at(doc)),
+	("size",                ("file_size",),              lambda doc: doc.get("file_size") or None),
 	("is_private",          ("is_private",),             lambda doc: bool(doc.get("is_private"))),
-	("attached_to_doctype", ("attached_to_doctype",),   None),
+	("attached_to",         ("attached_to_doctype",),    lambda doc: _home_key(doc.get("attached_to_doctype"))),
 	("attached_to_name",    ("attached_to_name",),      None),
 )
 
@@ -138,7 +148,7 @@ def _resolve_target(data, lead_name):
 				"No {0} on this lead has the id `{1}`. A file is homed only on a record that belongs to "
 				"the same lead — check the id against that lead's own list endpoint, or omit `{2}` to "
 				"attach the file to the lead itself."
-			).format(doctype, name, key), [key], frappe.DoesNotExistError)
+			).format(key, name, key), [key], frappe.DoesNotExistError)
 		return doctype, name
 	return "CRM Lead", lead_name
 
@@ -329,12 +339,13 @@ def file_schema(**_kwargs):
 			"quarantined and cannot be retrieved; a clean copy is sent instead."
 		),
 		privacy=(
-			"Every file attached through this API is private. `is_private` always reads true and "
-			"`file_url` is always a proxy url, never a raw storage key or a local path."
+			"Every file attached through this API is private. `is_private` always reads true, and "
+			"`file_url` is a signed link that expires — `expires_at` says when, and reading the file "
+			"again by `name` returns a fresh one."
 		),
 		target=(
-			"A file is attached to its lead by default. Passing `activity` (a CRM Task name) homes it on "
-			"that activity; passing `note` (an FCRM Note name) homes it on that note. Either must belong "
+			"A file is attached to its lead by default. Passing `activity` (an activity id) homes it on "
+			"that activity; passing `note` (a note id) homes it on that note. Either must belong "
 			"to the same lead."
 		),
 		immutable="A file's bytes cannot be changed. Replacing a file means attaching the new one and deleting the old.",

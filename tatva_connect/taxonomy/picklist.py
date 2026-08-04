@@ -19,7 +19,7 @@ method is @frappe.whitelist() (NEVER allow_guest) and NEVER trusts a client-supp
 
 Options returned: rows of the requested `category` whose grain matches (matching axes OR a
 blank/global axis), optionally gated by a cascading depends_on_field/value (the parent value
-itself validated within the entitled grain). 2+ chars, capped. Returns (name, display_label)
+itself validated within the entitled grain). Capped at _CAP. Returns (name, display_label)
 so the Link stores the composite PK but shows the human label.
 """
 import frappe
@@ -28,9 +28,9 @@ from frappe.utils import cint
 
 from tatva_connect.access import entitlement
 from tatva_connect.taxonomy import grain as grain_brain
+from tatva_connect.taxonomy import labels
 
-_CAP = 50
-_MIN = 2
+_CAP = labels.OPTION_CAP  # one ceiling for every Link picker, whichever query answers it
 
 # The axis names, asked of the grain brain. The COLUMNS are read from the schema per call (grain.columns).
 _AXES = grain_brain.AXES
@@ -45,13 +45,20 @@ def _filters(filters):
 
 def _grain_from_lead(lead):
 	"""The (vertical, group, program) grain re-read from the lead itself — never the client's.
-	get_doc enforces the caller's read permission, so a lead the caller can't see throws here.
-	Read permission is necessary but NOT sufficient: a lead may be shared/assigned outside the
-	caller's entitled_grains, so the lead's grain is CLAMPED through entitlement (same brain as
-	_grain_from_axes / the Smart View clamp) — else cross-grain options could be enumerated."""
-	doc = frappe.get_doc("CRM Lead", lead)
-	doc.check_permission("read")
-	grain = tuple((doc.get(column) or "") for column in grain_brain.columns("CRM Lead"))
+
+	`frappe.has_permission(..., throw=True)` is the SAME gate `Document.check_permission` runs
+	(document.py:384 calls straight into `frappe.permissions.has_permission`), so a lead the caller can't
+	see still throws here — and the framework reads the record for it through `get_lazy_doc`, which loads
+	no child tables. The `get_doc` this replaced hydrated every child table of a lead on every keystroke
+	in the picker, to look at three columns.
+
+	Read permission is necessary but NOT sufficient: a lead may be shared/assigned outside the caller's
+	entitled_grains, so the lead's grain is CLAMPED through entitlement (same brain as _grain_from_axes /
+	the Smart View clamp) — else cross-grain options could be enumerated."""
+	frappe.has_permission("CRM Lead", "read", doc=lead, throw=True)
+	columns = grain_brain.columns("CRM Lead")
+	row = frappe.db.get_value("CRM Lead", lead, columns, as_dict=True) or {}  # authz-ok: tier-b — gated by the has_permission throw above
+	grain = tuple((row.get(column) or "") for column in columns)
 	if not entitlement.grain_entitled(grain):
 		frappe.throw(_("You are not entitled to this grain."), frappe.PermissionError)
 	return grain
@@ -98,15 +105,15 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 	  + optional {depends_on_field, depends_on_value} -> only options that either declare no
 	    dependency, or whose declared (field, value) matches the form's current value.
 
-	Returns [(name, display_label), ...] — txt needs 2+ chars, capped at _CAP.
+	Returns [(name, display_label), ...] — capped at _CAP. `txt` narrows but is not required: a category
+	already scopes the read to one field's options in one grain, so a picker OPENS showing them rather
+	than hiding a two-value Yes/No list behind two keystrokes.
 	"""
 	f = _filters(filters)
 	category = (f.category or "").strip()
 	if not category:
 		return []
 	txt = (txt or "").strip()
-	if len(txt) < _MIN:
-		return []
 
 	grain = _resolve_grain(f)  # server-side; throws on an out-of-entitlement grain or unseeable lead
 
@@ -235,11 +242,41 @@ _COMPOSITE_PK_MASTERS = {
 }
 
 
+# Masters whose whole row set IS the vocabulary — no grain, no composite key, and safe to publish.
+# Named one by one on purpose: `lead_owner` is a Link at `User`, and a caller is never handed our staff.
+_PLAIN_MASTERS = ("CRM Lead Status",)
+
+
 def values_for(master, grain, fieldname):
 	"""Discovery: the human values a caller may send for a Link at `master`, grain-scoped. [] for a
-	master with no registered vocabulary (so callers can loop over every Link field blindly)."""
+	master with no registered vocabulary (so callers can loop over every Link field blindly).
+
+	A plain master is answered from its own rows: nothing about it varies by grain, so the registry above
+	has nothing to hold and the row set is already the answer."""
 	entry = _COMPOSITE_PK_MASTERS.get(master)
-	return entry[1](grain, fieldname) if entry else []
+	if entry:
+		return entry[1](grain, fieldname)
+	return frappe.get_all(master, pluck="name") if master in _PLAIN_MASTERS else []
+
+
+def resolve_value(master, value, grain, fieldname, doctype=""):
+	"""ONE value at a grain-scoped composite-PK master -> its PK, or None when this grain offers no
+	such value. Anything with nothing to translate comes back exactly as it arrived.
+
+	The UNIT `resolve_row_links` is built from, so a caller holding a single value and the FIELD NAME it
+	answers resolves through the same registry, the same grain rule and the same drop-and-log. That
+	caller is the multi-value seam: its selections are stored in a column called `value`, while the
+	category is derived from the CATALOG's fieldname — so the name and the column are not the same
+	string and the row spelling cannot serve it."""
+	entry = _COMPOSITE_PK_MASTERS.get(master)
+	if not entry or not isinstance(value, str) or not value.strip() or frappe.db.exists(master, value):
+		return value  # pass through (non-composite-PK Link / blank / already a PK)
+	pk = entry[0](value, grain, fieldname)
+	if not pk:
+		frappe.logger("tatva_picklist").info(
+			f"dropped unmatched {master} {doctype}.{fieldname}={value!r} for grain {grain}"
+		)
+	return pk
 
 
 def resolve_row_links(doctype, row, grain):
@@ -257,15 +294,10 @@ def resolve_row_links(doctype, row, grain):
 	out = {}
 	for fn, val in row.items():
 		f = meta.get_field(fn)
-		entry = _COMPOSITE_PK_MASTERS.get(f.options) if (f and f.fieldtype == "Link") else None
-		if not entry or not isinstance(val, str) or not val.strip() or frappe.db.exists(f.options, val):
-			out[fn] = val  # pass through (non-composite-PK Link / blank / already a PK)
-			continue
-		pk = entry[0](val, grain, fn)
-		if pk:
-			out[fn] = pk
-		else:
-			frappe.logger("tatva_picklist").info(
-				f"dropped unmatched {f.options} {doctype}.{fn}={val!r} for grain {grain}"
-			)  # omit -> the field is left unset rather than an invalid Link
+		master = f.options if (f and f.fieldtype == "Link") else None
+		resolved = resolve_value(master, val, grain, fn, doctype) if master else val
+		# None means two things, told apart by what ARRIVED: a failed resolution only happens for a non-blank string, so a sent None stays a sent None.
+		if resolved is None and val is not None:
+			continue  # omit -> the field is left unset rather than an invalid Link
+		out[fn] = resolved
 	return out
