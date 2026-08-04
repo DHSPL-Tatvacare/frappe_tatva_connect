@@ -34,6 +34,7 @@ SCRIPTS = [
 	("Facebook Page Token Helpers", "Facebook Page", "Form", "lead_sync/client_scripts/facebook_page.js"),
 	("CRM Facebook App Helpers", "CRM Facebook App", "Form", "lead_sync/client_scripts/crm_facebook_app.js"),
 	("CRM Tatva Automation Description", "CRM Tatva Automation", "Form", "automation/client_scripts/crm_tatva_automation.js"),
+	("CRM Tatva Automation Switch State (List)", "CRM Tatva Automation", "List", "automation/client_scripts/crm_tatva_automation_list.js"),
 	("CRM Lead Import Helpers", "CRM Lead Import", "Form", "lead_import/client_scripts/crm_lead_import.js"),
 	("Webhook Delivery Replay", "Integration Request", "Form", "webhooks/client_scripts/integration_request.js"),
 	("Webhook Delivery Replay (List)", "Integration Request", "List", "webhooks/client_scripts/integration_request_list.js"),
