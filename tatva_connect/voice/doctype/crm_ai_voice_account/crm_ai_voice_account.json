@@ -77,7 +77,7 @@
    "fieldname": "from_phone",
    "fieldtype": "Data",
    "label": "From Number (optional)",
-   "description": "The caller-id number the provider dials from. Optional; a per-call override wins over this, this wins over the agent default."
+   "description": "The caller-id number the provider dials from, in full international form starting with the country code (for example +919876543210). Optional; a per-call override wins over this, this wins over the agent default."
   },
   {
    "fieldname": "webhook_section_ingress",
