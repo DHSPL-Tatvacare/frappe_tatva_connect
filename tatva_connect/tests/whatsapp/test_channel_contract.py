@@ -210,10 +210,15 @@ class TestChannelContract(FrappeTestCase):
 	def test_a_trailing_slash_account_builds_a_reachable_send_url(self):
 		"""The same defect where it actually bit: the composed endpoint, not just the base."""
 		account = _account("https://live-mt-server.wati.io/000000/")
-		posted = mock.Mock(return_value={"result": True})
-		with mock.patch.object(transport, "make_post_request", posted):
+		# The wire moved from `make_post_request` to the session it wrapped, so a send can carry a timeout
+		# (A7). Same interception, one layer down; the URL this asserts on is unchanged.
+		answered = mock.Mock()
+		answered.json.return_value = {"result": True}
+		session = mock.Mock()
+		session.request.return_value = answered
+		with mock.patch.object(transport, "get_request_session", return_value=session):
 			transport.send_session_message(account, "919900000001", "hello")
-		url = posted.call_args.args[0]
+		url = session.request.call_args.args[1]
 		self.assertNotIn("//api/v1", url)
 		self.assertTrue(url.startswith("https://live-mt-server.wati.io/000000/api/v1/"), url)
 

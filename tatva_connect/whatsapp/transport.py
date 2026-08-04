@@ -15,8 +15,11 @@ WATI said.
 from urllib.parse import urlparse
 
 import frappe
-import requests  # ALLOWLIST 2026-06-29: multipart uploads (files=), raw-byte downloads, and the HTTPError type — none of which make_*_request can express. Do NOT convert the calls it guards.
-from frappe.integrations.utils import make_get_request, make_post_request
+import requests  # ALLOWLIST 2026-06-29: multipart uploads (files=) and raw-byte downloads — neither of which make_*_request can express. Do NOT convert the calls it guards.
+from frappe.integrations.utils import make_get_request
+from frappe.utils import get_request_session
+
+from tatva_connect.channels import transfer
 
 # WATI requires this exact content-type (not plain application/json).
 CONTENT_TYPE = "application/json-patch+json"
@@ -33,6 +36,9 @@ MAX_PAGES = 50
 
 # A media download is bytes over the wire, not an API call — it gets its own, longer budget.
 MEDIA_TIMEOUT = 60
+
+# A send must not hang for ever: the same budget `automation.actions` gives an endpoint that must answer.
+SEND_TIMEOUT = 30
 
 
 def base_url(account, version: str = API_V1) -> str:
@@ -70,8 +76,22 @@ def _post(url: str, token: str, body: dict) -> dict:
 	"""POST to WATI and return the parsed body. Raises OutcomeUnknown when there was no answer.
 
 	WATI signals some errors as HTTP 200 + {"result": false} (credits, session) and others as a 4xx
-	(e.g. a template sent without its required params). Both ARE answers: make_post_request raises on
-	the 4xx, and we return that response's own body so the caller surfaces a clean refusal.
+	(e.g. a template sent without its required params). BOTH ARE ANSWERS, so the status is never
+	consulted: whatever came back is parsed and handed to `_classify`, the one place a send outcome is
+	decided. An unreadable body becomes the same refusal shape `send_session_file` already returns.
+
+	IT MUST TIME OUT, AND `make_post_request` CANNOT. `make_request` (frappe `integrations/utils.py:48`)
+	declares no `timeout` and no `**kwargs`, so passing one is a `TypeError`, not a no-op; and there is
+	no door behind it either — `get_request_session` takes only `max_retries`, and `requests.Session`
+	holds no default timeout. So the session is asked directly, which is exactly what
+	`automation.actions._call_api` already does with `_API_TIMEOUT_SECONDS`. Frappe's own session is
+	still what sends — its retry adapter and pooling are unchanged — and POST is NOT in urllib3's
+	retryable set, so the mounted `Retry(total=5, status_forcelist=[500])` can never replay a send.
+
+	WHAT IS GIVEN UP, deliberately: `make_request` also stamps `frappe.flags.integration_request` and
+	`log_error()`s on any exception. Nothing reads that flag for WATI, and stamping it is the hazard
+	below, not a feature; the auto-log only ever fired for answers this function treats as ordinary
+	refusals, which the caller surfaces anyway.
 
 	A timeout or a connection error is not an answer, and it carries no response to read. The reply
 	must come from THIS call's exception — `frappe.flags.integration_request` is assigned only once a
@@ -79,14 +99,15 @@ def _post(url: str, token: str, body: dict) -> dict:
 	unsent message was stamped accepted, carrying another message's correlation id.
 	"""
 	try:
-		return make_post_request(url, headers=_headers(token), json=body)
-	except requests.HTTPError as e:
-		try:
-			return e.response.json()
-		except ValueError:
-			return {"result": False, "info": (e.response.text or str(e))[:400]}
+		response = get_request_session().request(
+			"POST", url, headers=_headers(token), json=body, timeout=SEND_TIMEOUT,
+		)
 	except Exception as e:
 		raise OutcomeUnknown(str(e)[:400]) from e
+	try:
+		return response.json()
+	except ValueError:
+		return {"result": False, "info": (response.text or "")[:400]}
 
 
 def send_template_message(account, to_number: str, template_name: str, broadcast_name: str, parameters=None):
@@ -193,12 +214,18 @@ def fetch_message_media(account, message_id):
 		f"{base_url(account, API_V3)}/api/ext/v3/conversations/messages/file/"
 		f"{frappe.utils.quote(str(message_id))}"
 	)
-	resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=MEDIA_TIMEOUT)
+	resp = requests.get(
+		url,
+		headers={"Authorization": f"Bearer {token}"},
+		timeout=MEDIA_TIMEOUT,
+		stream=True,
+		allow_redirects=False,  # SSRF: the account's own host is vetted, a 3xx off it is not — same rule as the webhook media route
+	)
 	if resp.status_code == 404:
 		return None
 	resp.raise_for_status()
 	return (
-		resp.content,
+		transfer.read_capped(resp),
 		resp.headers.get("content-type") or "application/octet-stream",
 		_filename_from_disposition(resp.headers.get("content-disposition")),
 	)
@@ -237,6 +264,13 @@ def get_media(account, data: str) -> tuple[bytes, str]:
 	allowed = [row.host for row in (account.get("custom_media_host_allowlist") or [])]
 	assert_safe_public_url(url, allowed)
 	token = account.get_password("token")
-	resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+	resp = requests.get(
+		url,
+		headers={"Authorization": f"Bearer {token}"},
+		timeout=60,
+		stream=True,
+		allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
+	)
 	resp.raise_for_status()
-	return resp.content, resp.headers.get("content-type") or "application/octet-stream"
+	content = transfer.read_capped(resp)
+	return content, resp.headers.get("content-type") or "application/octet-stream"
