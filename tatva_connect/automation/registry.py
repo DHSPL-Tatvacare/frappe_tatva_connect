@@ -212,6 +212,22 @@ AUTOMATIONS = [
 		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
+		key="WhatsApp::Channel::media-retry",
+		fires_on="Schedule",
+		trigger_detail="every 15 min · owed media, backoff over ~1 day",
+		purpose=(
+			"A photo or document that failed to download when its message arrived is asked for again, "
+			"on a widening backoff, and appears on the message once it lands. Only messages the "
+			"provider said carried media are retried, each is given a fixed number of attempts, and a "
+			"message whose attempts are spent is left alone. Off, a download that failed when the "
+			"message arrived is never retried and the message keeps its 'Media unavailable' note.\n"
+			"Example: the provider has a bad minute while a patient sends a prescription photo, and the "
+			"photo appears on the lead's WhatsApp tab a few minutes later instead of never."
+		),
+		backs=["tatva_connect.whatsapp.media_retry.sweep"],
+		requires="WhatsApp::Channel::messaging",
+	),
+	Auto(
 		key="Telephony::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="telephony/api gate",
@@ -1071,6 +1087,11 @@ _PARENT_OF = assert_valid_graph(AUTOMATIONS)
 def parent_of(key):
 	"""The ONE parent lookup — the key this row requires, or `""` when it stands alone."""
 	return _PARENT_OF.get(key, "")
+
+
+def area_of(key):
+	"""The ONE area derivation — segment 1 of the key, as this module's docstring declares."""
+	return (key or "").split("::")[0]
 
 
 def activator_for(key):

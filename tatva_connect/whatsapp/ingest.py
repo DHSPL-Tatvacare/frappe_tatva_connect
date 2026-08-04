@@ -20,7 +20,7 @@ from frappe import _
 
 from tatva_connect.channels import resolve
 from tatva_connect.whatsapp import media as media_module
-from tatva_connect.whatsapp import routing
+from tatva_connect.whatsapp import media_retry, routing
 
 # The media kinds that carry bytes we download and file against the lead.
 MEDIA_TYPES = media_module._MEDIA_TYPES
@@ -100,7 +100,7 @@ def _targets(event):
 	return targets
 
 
-def _fetch_media(event):
+def fetch_media(event):
 	"""Download this event's media through the account's own adapter, or None.
 
 	Two provider routes, one order of preference. The message-id route (`recover_media`) is asked first
@@ -157,6 +157,7 @@ def _apply_media(doc, event, lead, media):
 		filedoc = media_module.ensure_lead_media(lead, event.provider_message_id, filename, content)
 		doc.content_type = content_type_for(event.media_type)
 		doc.attach = filedoc.file_url          # proxy URL -> bubble renders; linker skips it (contract C)
+		media_retry.settle(doc)
 		# The body is already the event's text — an image's caption, a document's filename. Left alone.
 		return
 	if event.media_type in MEDIA_TYPES and (event.media_url or event.provider_message_id):
@@ -165,6 +166,8 @@ def _apply_media(doc, event, lead, media):
 		doc.message = (
 			_("Media unavailable: {0}").format(event.filename) if event.filename else _("Media unavailable")
 		)
+		# Not a verdict — the row is OWED these bytes, and says so with what a later attempt needs to ask again.
+		media_retry.park(doc, event)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +179,7 @@ def _ingest_inbound(event) -> None:
 	targets = _targets(event)
 	if not targets:
 		return
-	media = _fetch_media(event)
+	media = fetch_media(event)
 	for lead in targets:
 		_insert_inbound_row(event, lead, media)
 	frappe.db.commit()
@@ -272,7 +275,7 @@ def _ingest_outbound(event) -> None:
 	targets = _targets(event)
 	if not targets:
 		return
-	media = _fetch_media(event)
+	media = fetch_media(event)
 	for lead in targets:
 		_insert_outbound_row(event, lead, media)
 	frappe.db.commit()

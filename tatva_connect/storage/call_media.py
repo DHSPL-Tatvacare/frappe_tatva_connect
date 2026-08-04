@@ -38,6 +38,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation import settings
+from tatva_connect.channels import retry, transfer
 from tatva_connect.storage import blob_store, file_manager
 from tatva_connect.workflow_engine import thresholds
 
@@ -54,10 +55,11 @@ ROLE_CONTACT = "contact"
 ROLES = (ROLE_AGENT, ROLE_CONTACT)
 
 # The recording lifecycle. Blank means no producer has spoken about audio for this call at all.
-AWAITING = "Awaiting"
-STORED = "Stored"
+AWAITING = retry.AWAITING
+STORED = retry.STORED
+ABANDONED = retry.ABANDONED
+# This ledger's OWN state, and the reason it is not shared: a call can be settled as having produced no audio, while a message that carried no media simply has no media state.
 ABSENT = "Absent"
-ABANDONED = "Abandoned"
 
 # Nothing more will happen to a row in one of these — the reaper counts its retention from here.
 TERMINAL_RECORDING_STATES = (STORED, ABSENT, ABANDONED)
@@ -72,12 +74,9 @@ RECORDING_INDEX_FIELDS = ["recording_state", "recording_next_attempt_at"]
 FETCH_TIMEOUT = 60
 _CHUNK = 64 * 1024
 
-# A call recording is minutes of speech. Past this something is wrong with the URL, not with the call.
-MAX_BYTES = 50 * 1024 * 1024
-
 # Backoff between fetch attempts, in minutes. Its length IS the retry budget: spend it and the row is Abandoned.
-BACKOFF_MINUTES = (5, 15, 60, 360, 1440)
-MAX_ATTEMPTS = len(BACKOFF_MINUTES)
+BACKOFF_MINUTES = retry.LADDER
+MAX_ATTEMPTS = retry.BUDGET
 
 # One sweep's bound. A backlog drains over several passes rather than in one long job.
 SWEEP_BATCH = 50
@@ -192,17 +191,15 @@ def _fetch(ref):
 	"""The bytes and what the producer says they are. Streamed, capped and timed out in ONE place."""
 	import requests
 
-	response = requests.get(ref.url, headers=ref.headers or None, timeout=FETCH_TIMEOUT, stream=True)
+	response = requests.get(
+		ref.url,
+		headers=ref.headers or None,
+		timeout=FETCH_TIMEOUT,
+		stream=True,
+		allow_redirects=False,  # SSRF: the producer names this URL in its own payload; a 3xx could bounce it to an internal target
+	)
 	response.raise_for_status()
-	if int(response.headers.get("Content-Length") or 0) > MAX_BYTES:
-		raise ValueError(f"the producer declared {response.headers.get('Content-Length')} bytes, over the cap")
-	chunks, total = [], 0
-	for chunk in response.iter_content(_CHUNK):
-		total += len(chunk)
-		if total > MAX_BYTES:
-			raise ValueError(f"the download passed {MAX_BYTES} bytes and was stopped")
-		chunks.append(chunk)
-	content = b"".join(chunks)
+	content = transfer.read_capped(response, chunk=_CHUNK)
 	if not content:
 		raise ValueError("the producer answered with no bytes")
 	return content, response.headers.get("Content-Type")
@@ -211,15 +208,13 @@ def _fetch(ref):
 def _record_failure(call, ref, error):
 	"""Spend one attempt. The URL is kept so the sweep has something to retry, and never so it can be served."""
 	attempts = (frappe.db.get_value(MEDIA_DT, call, "recording_attempts") or 0) + 1
-	spent = attempts >= MAX_ATTEMPTS
+	state, next_at = retry.spend(attempts)
 	_set(call, {
-		"recording_state": ABANDONED if spent else AWAITING,
+		"recording_state": state,
 		"recording_source": ref.provider,
 		"recording_ref_url": ref.url,
 		"recording_attempts": attempts,
-		"recording_next_attempt_at": None if spent else add_to_date(
-			now_datetime(), minutes=BACKOFF_MINUTES[attempts - 1]
-		),
+		"recording_next_attempt_at": next_at,
 		"recording_error": str(error)[:500],
 	})
 

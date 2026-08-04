@@ -22,6 +22,7 @@ SWITCH_MESSAGING = "WhatsApp::Channel::messaging"
 SWITCH_TEMPLATES = "WhatsApp::Channel::templates"
 SWITCH_RECONCILE = "WhatsApp::Channel::reconcile"
 SWITCH_RECOVERY = "WhatsApp::Channel::recovery"
+SWITCH_MEDIA_RETRY = "WhatsApp::Channel::media-retry"
 
 
 def is_enabled() -> bool:

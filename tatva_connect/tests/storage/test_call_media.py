@@ -301,8 +301,10 @@ class TestAFailedFetchIsAGapNotAFailedJob(CallMediaCase):
 		self.assertIsNone(row.recording_next_attempt_at, "an abandoned row must never come due again")
 
 	def test_an_oversized_download_is_stopped(self):
-		"""The cap is the shared service's, written once for every producer."""
-		with patch.object(call_media, "MAX_BYTES", 8):
+		"""The cap is the OPERATOR's own max file size, applied to the transfer as well as to the save."""
+		from tatva_connect.channels import transfer
+
+		with patch.object(transfer, "site_ceiling", lambda: 8):
 			self.deliver()
 		self.assertIsNone(self.file_row())
 		self.assertEqual(self.media().recording_state, call_media.AWAITING)

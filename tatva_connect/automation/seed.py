@@ -9,7 +9,7 @@ no-op behaviourally. No one-off patch is ever needed to retire an automation.
 """
 import frappe
 
-from tatva_connect.automation.registry import AUTOMATIONS
+from tatva_connect.automation.registry import AUTOMATIONS, area_of
 from tatva_connect.automation.settings import is_enabled
 
 
@@ -20,7 +20,7 @@ def _scheduled_job(auto):
 
 def _structural_values(auto):
 	return {
-		"area": auto.key.split("::")[0],
+		"area": area_of(auto.key),
 		"fires_on": auto.fires_on,
 		"trigger_detail": auto.trigger_detail,
 		"description": auto.purpose,
