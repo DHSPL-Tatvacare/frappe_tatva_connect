@@ -13,7 +13,15 @@ frappe.ui.form.on('CRM AI Voice Account', {
     // Every secret on this form gets the same working eye toggle (a saved Password field holds only asterisks).
     tatva_enable_secret_reveal(frm, ['api_key', 'webhook_token', 'webhook_token_previous', 'webhook_hmac_secret']);
 
-    if (!frm.doc.provider) return;
+    // The webhook affordances belong to a provider, so they wait for one — and SAY so: withdrawing three
+    // controls in silence reads as a broken form rather than as an unanswered question.
+    if (!frm.doc.provider) {
+      frm.dashboard.clear_headline();
+      frm.dashboard.set_headline(
+        __('Pick a provider to set up this account’s webhook — the token and the URL to register belong to it.')
+      );
+      return;
+    }
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {
       frm.set_value('webhook_token', tatva_webhook_random_token());
@@ -37,6 +45,8 @@ frappe.ui.form.on('CRM AI Voice Account', {
 });
 
 function voice_show_webhook_urls(frm) {
+  // The `refresh` above already says why when there is no provider; painting a second headline here would
+  // overwrite that sentence with nothing.
   if (!frm.doc.provider) return;
   tatva_render_webhook_urls(frm, {
     single_label: 'Register this webhook on the voice provider',
