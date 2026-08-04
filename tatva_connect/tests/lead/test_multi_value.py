@@ -186,24 +186,26 @@ class TestLeadMultiValue(FrappeTestCase):
 		latest = self._latest_row_key()
 
 		# The rows table is the history layer: every row, its own selections.
-		self.assertEqual(curated[_ROW_KEYS[0]], held[(self.field_key, _ROW_KEYS[0])])
-		self.assertEqual(curated[_ROW_KEYS[1]], held[(self.field_key, _ROW_KEYS[1])])
-		# It serves LABELS, so it is compared through the same resolver every other label goes through.
+		# Compared through the resolver: each consumer answers the SAME selections in its own vocabulary — a partner sends and reads labels, the panel keeps the key a picker must send back and carries `display` beside it.
 		from tatva_connect.taxonomy import labels
 		master = multi_value.value_field().options
+
+		def shown(row_key):
+			return [labels.label(v, master) for v in held[(self.field_key, row_key)]]
+
+		self.assertEqual(curated[_ROW_KEYS[0]], shown(_ROW_KEYS[0]))
+		self.assertEqual(curated[_ROW_KEYS[1]], shown(_ROW_KEYS[1]))
+		# The rows table serves LABELS too, through that same resolver.
 		for row_key in _ROW_KEYS:
-			self.assertEqual(
-				cells[row_key],
-				[labels.label(v, master) for v in held[(self.field_key, row_key)]],
-				f"the rows table and the resolver disagree at {row_key}",
-			)
+			self.assertEqual(cells[row_key], shown(row_key),
+			                 f"the rows table and the resolver disagree at {row_key}")
 		# And it is offered to neither sort nor filter, because SQL cannot address it.
 		column = next(c for c in columns if c["key"] == self.fieldname)
 		self.assertFalse(column["sortable"])
 		self.assertFalse(column["filterable"])
 		# The panel is the flattened layer: the LATEST row, and it agrees with that row everywhere else.
 		self.assertEqual(panel["value"], held[(self.field_key, latest)])
-		self.assertEqual(panel["value"], curated[latest])
+		self.assertEqual(panel["display"], curated[latest], "the panel's label and the partner projection must agree")
 		self.assertFalse(panel["empty"])
 
 	def test_a_lead_with_no_selections_reads_empty_everywhere_rather_than_absent_in_one_place(self):
@@ -223,8 +225,12 @@ class TestLeadMultiValue(FrappeTestCase):
 	def test_a_write_through_the_data_tab_is_visible_through_the_partner_projection(self):
 		detail.update_lead_detail(self.lead.name, frappe.as_json({self.field_key: [self.values[1]]}))
 		latest = self._latest_row_key()
+		from tatva_connect.taxonomy import labels
+		label = labels.label(self.values[1], multi_value.value_field().options)
+		# The panel keeps the key a picker sends back and shows the label beside it; the partner projection has no picker and reads as the label it would be sent.
 		self.assertEqual(self._panel_field()["value"], [self.values[1]])
-		self.assertEqual(self._curated_rows()[latest], [self.values[1]])
+		self.assertEqual(self._panel_field()["display"], [label])
+		self.assertEqual(self._curated_rows()[latest], [label])
 		self.assertEqual(multi_value.read(self._reload(), self.field_key, latest), [self.values[1]])
 
 	def test_the_catalog_row_can_still_be_saved_once_the_box_is_ticked(self):

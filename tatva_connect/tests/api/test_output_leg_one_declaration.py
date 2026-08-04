@@ -113,15 +113,17 @@ class TestFileOutputLeg(_TrustedCallerCase):
 		self.assertEqual(got, view, "the create response and a fresh read disagree")
 
 	def test_view_shape_is_unchanged(self):
-		"""Pins the exact key set _file_view returns — the refactor to one declaration must not change
-		the JSON shape a partner already depends on."""
+		"""Pins the exact key set _file_view returns, so the shape a partner depends on only ever moves
+		on purpose. It moved once, deliberately: `attached_to_doctype` named a table a caller cannot
+		send anywhere and became `attached_to`, which names the home in the words `file_attach` accepts;
+		`expires_at` and `size` were added because `file_url` is now a signed link that dies."""
 		lead = self._lead("+919812390002")
 		view = self._hit(
 			partner_file.file_attach, lead=lead, filename="shape-test.txt", content_base64="cHJvYmU=",
 		)["data"]
 		self.assertEqual(set(view), {
-			"name", "file_type", "external_id", "filename", "file_url",
-			"is_private", "attached_to_doctype", "attached_to_name",
+			"name", "file_type", "external_id", "filename", "file_url", "expires_at", "size",
+			"is_private", "attached_to", "attached_to_name",
 		})
 
 
