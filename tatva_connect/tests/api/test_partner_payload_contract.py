@@ -151,6 +151,19 @@ class TestNoResponseNamesAnInternalTable(IntegrationTestCase):
 		_u, _mp, _is, parent_fields, child_allow = _caller_fields()
 		return _curate(frappe.get_doc("CRM Lead", self.lead.name), parent_fields, child_allow)
 
+	def test_a_user_link_stays_an_email(self):
+		"""A composite key is meaningless to a caller, so it reads as its label. `lead_owner` is the
+		opposite case: its key IS the identifier a caller matches on, and its title is a full name that
+		is neither unique nor addressable. Resolving by "does the target have a title" swaps one for the
+		other and silently breaks anyone integrating on it."""
+		from tatva_connect.api.partner import _readable
+
+		email = frappe.db.get_value("User", {"enabled": 1, "name": ["like", "%@%"]}, "name")
+		out = _readable("CRM Lead", {"lead_owner": email, "custom_substage": self.stage})
+		self.assertEqual(out["lead_owner"], email, "lead_owner must be published exactly as stored")
+		self.assertNotIn("::", str(out["custom_substage"]), "a composite key must read as its label")
+		self.assertNotEqual(out["custom_substage"], self.stage, "the stage was not resolved at all")
+
 	def test_the_lead_payload_names_no_table(self):
 		payload = self._lead_payload()
 		self.assertTrue(payload.get("name"), "the projection returned nothing to assert on")

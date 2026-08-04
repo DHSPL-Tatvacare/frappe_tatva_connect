@@ -272,11 +272,21 @@ def _column_values(section, row):
 
 
 def _readable(doctype, row):
-	"""A projected row as a human reads it: a Link at a master that declares a title holds a composite
-	key, so the title is published in its place. `labels.shown` asks the SCHEMA which fields those are,
-	so no field is named here and the next composite field needs no code — the same reader every other
-	hand-built payload in the app resolves through (notifications, WhatsApp, rule previews)."""
-	return {k: labels.shown(doctype, k, v) for k, v in row.items()}
+	"""A projected row as a human reads it: a Link at a COMPOSITE master holds a key built from the
+	grain, so the label is published in its place. No field is named here — the schema says which
+	fields those are, so the next composite field needs no code.
+
+	The gate is `is_composite`, not "does the target have a title": `lead_owner` is a Link at `User`,
+	whose title is a full name and whose key is an email. An email is the identifier a caller matches
+	on; a full name is not unique and addresses nothing, so that one is published exactly as stored."""
+	meta = frappe.get_meta(doctype)
+	out = {}
+	for fieldname, value in row.items():
+		df = meta.get_field(fieldname)
+		if df and df.fieldtype == "Link" and labels.is_composite(df.options):
+			value = labels.shown(doctype, fieldname, value)
+		out[fieldname] = value
+	return out
 
 
 def _read_multi_values(section, fieldnames, held, row_key):
