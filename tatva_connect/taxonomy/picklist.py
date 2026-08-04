@@ -242,8 +242,7 @@ _COMPOSITE_PK_MASTERS = {
 }
 
 
-# Masters whose whole row set IS the vocabulary — no grain, no composite key, and safe to publish.
-# Named one by one on purpose: `lead_owner` is a Link at `User`, and a caller is never handed our staff.
+# Masters whose whole row set IS the vocabulary, named one by one on purpose: `lead_owner` is a Link at `User` and a caller is never handed our staff.
 _PLAIN_MASTERS = ("CRM Lead Status",)
 
 

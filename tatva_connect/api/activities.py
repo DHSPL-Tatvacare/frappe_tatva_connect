@@ -583,7 +583,8 @@ def _annotate_task_type(rows):
 	flags = capture_flags(r.get("custom_task_type") for r in rows)
 	for row in rows:
 		label, needs = flags.get(row.get("custom_task_type"), (None, False))
-		row["task_type_label"] = label or row.get("custom_task_type")
+		# Named for the column it labels (the pair `activity.api` already writes), and the fallback reads a LABEL, never the key that used to reach a rep's card.
+		row["custom_task_type_label"] = label or labels.label(row.get("custom_task_type"), labels.TASK_TYPE)
 		row["needs_capture"] = needs
 	return rows
 
