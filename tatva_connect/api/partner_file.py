@@ -172,7 +172,7 @@ def _load_bytes(data):
 			# timeout IS set (config-sourced); bandit is low-confidence only because it can't resolve the value statically.
 			resp = requests.get(
 				file_url, timeout=cfg["file_download_timeout_seconds"], stream=True,
-				allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
+				allow_redirects=False,  # A PARTNER names this URL, and there is a caller to tell: the refusal below says "send the final URL". `transfer.fetch_capped` follows hops for OUR OWN providers, where nobody is on the other end — that is a different trust boundary, not a better policy.
 			)  # nosec B113
 			if 300 <= resp.status_code < 400:
 				throw_field(_(

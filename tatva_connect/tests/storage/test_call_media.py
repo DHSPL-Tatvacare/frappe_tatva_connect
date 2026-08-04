@@ -47,16 +47,29 @@ _AUDIO = b"\xff\xfb\x90\x64" + b"tatva-call-recording-probe" * 8
 
 
 class _FakeResponse:
-	"""What the producer's HTTP call answers. Streamed, exactly as the real fetcher reads it."""
+	"""What the producer's HTTP call answers. Streamed, exactly as the real fetcher reads it.
 
-	def __init__(self, content=_AUDIO, content_type="audio/mpeg", length=None):
+	`status_code` and `close` are here because the fetcher now decides whether it is holding a REDIRECT
+	before it reads a byte, and closes an intermediate one rather than leaving its connection open. A real
+	response has always carried both; the old fetcher simply never asked.
+	"""
+
+	def __init__(self, content=_AUDIO, content_type="audio/mpeg", length=None,
+	             status_code=200, location=None):
 		self.content = content
+		self.status_code = status_code
 		self.headers = {"Content-Type": content_type}
+		if location is not None:
+			self.headers["Location"] = location
 		if length is not None:
 			self.headers["Content-Length"] = str(length)
+		self.closed = False
 
 	def raise_for_status(self):
 		return None
+
+	def close(self):
+		self.closed = True
 
 	def iter_content(self, chunk_size):
 		for start in range(0, len(self.content), chunk_size):
@@ -80,9 +93,15 @@ class CallMediaCase(FileLayerCase):
 		}).insert(ignore_permissions=True).name
 
 	def deliver(self, ref=None, response=None, error=None, call=None):
-		"""Drive `store_recording` with ONLY the producer's HTTP replaced. Returns the mock."""
+		"""Drive `store_recording` with ONLY the producer's HTTP replaced. Returns the mock.
+
+		The SSRF guard is patched off for the same reason `test_partner_bulk_jobs` patches it — these
+		cases are about the media row's STATES, and `_PRODUCER_URL` is a reserved `.invalid` host on
+		purpose, so nothing here can reach the network. That the guard really runs is its own test
+		(`test_an_unsafe_producer_url_is_refused_and_recorded`), not an assumption made here.
+		"""
 		ref = ref if ref is not None else contract.RecordingRef(url=_PRODUCER_URL, provider=_PRODUCER)
-		with patch("requests.get") as fetch:
+		with patch("tatva_connect.utils.assert_safe_public_url"), patch("requests.get") as fetch:
 			if error is not None:
 				fetch.side_effect = error
 			else:
@@ -277,6 +296,24 @@ class TestAFailedFetchIsAGapNotAFailedJob(CallMediaCase):
 		self.deliver(error=OSError("nope"))
 		self.assertEqual(self.media().recording_ref_url, _PRODUCER_URL)
 
+	def test_an_unsafe_producer_url_is_refused_and_recorded(self):
+		"""The guard runs on the producer's URL too — and its refusal is a GAP like any other.
+
+		`store_recording` gained this the day the fetch began following redirects: a hop is only safe
+		because every destination is vetted, and vetting the first one is part of the same rule. Driven
+		with the guard ON — which is exactly what `deliver` patches off, so this is the one case that
+		proves the other cases are not testing a disarmed fetch.
+		"""
+		with patch("requests.get") as fetch:
+			url = call_media.store_recording(
+				self.call, contract.RecordingRef(url="http://169.254.169.254/latest/", provider=_PRODUCER)
+			)
+		self.assertIsNone(url, "an unsafe URL must not become a file")
+		fetch.assert_not_called()  # refused BEFORE the wire, which is the whole point of vetting first
+		row = self.media()
+		self.assertEqual(row.recording_state, call_media.AWAITING)
+		self.assertIn("unsafe URL", row.recording_error)
+
 	def test_a_redelivery_inside_the_backoff_does_not_spend_an_attempt(self):
 		"""A producer re-sending eleven copies of one callback must not burn the whole retry budget in a
 		second. The backoff governs the immediate re-ask exactly as it governs the sweep."""
@@ -354,7 +391,9 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 		})
 
 	def _sweep(self, response=None):
-		with patch("requests.get") as fetch:
+		# Guard patched off for `deliver`'s reason: `.invalid` never resolves, and these cases are the
+		# sweep's own arithmetic, not the SSRF rule.
+		with patch("tatva_connect.utils.assert_safe_public_url"), patch("requests.get") as fetch:
 			fetch.return_value = response or _FakeResponse()
 			swept = call_media.sweep()
 		self._register_keys(self.call)

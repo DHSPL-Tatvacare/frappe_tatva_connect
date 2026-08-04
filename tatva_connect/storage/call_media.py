@@ -188,21 +188,23 @@ def store_recording(call, ref):
 
 
 def _fetch(ref):
-	"""The bytes and what the producer says they are. Streamed, capped and timed out in ONE place."""
-	import requests
+	"""The bytes and what the producer says they are. Streamed, capped and timed out in ONE place.
 
-	response = requests.get(
+	THE REDIRECT IS THE DELIVERY. A recording URL is a signed, short-lived hop to object storage — Bolna
+	to S3, and the telephony providers the same — so refusing it reads the empty body of a 302 and reports
+	"no bytes" on every attempt for ever. `transfer.fetch_capped` follows the chain and vets EVERY hop,
+	which is what the SSRF guard could always have supported; it also drops our bearer token the moment
+	the host changes, so a provider's credential never reaches whoever its redirect names.
+	"""
+	content, content_type = transfer.fetch_capped(
 		ref.url,
-		headers=ref.headers or None,
 		timeout=FETCH_TIMEOUT,
-		stream=True,
-		allow_redirects=False,  # SSRF: the producer names this URL in its own payload; a 3xx could bounce it to an internal target
+		headers=ref.headers or None,
+		chunk=_CHUNK,
 	)
-	response.raise_for_status()
-	content = transfer.read_capped(response, chunk=_CHUNK)
 	if not content:
 		raise ValueError("the producer answered with no bytes")
-	return content, response.headers.get("Content-Type")
+	return content, content_type
 
 
 def _record_failure(call, ref, error):

@@ -219,7 +219,7 @@ def fetch_message_media(account, message_id):
 		headers={"Authorization": f"Bearer {token}"},
 		timeout=MEDIA_TIMEOUT,
 		stream=True,
-		allow_redirects=False,  # SSRF: the account's own host is vetted, a 3xx off it is not — same rule as the webhook media route
+		allow_redirects=False,  # This URL is BUILT from the account's own base_url, so a 3xx off it is unexpected rather than the delivery — unlike `get_media`, whose URL a payload names and whose hop is followed and vetted.
 	)
 	if resp.status_code == 404:
 		return None
@@ -257,20 +257,15 @@ def get_media(account, data: str) -> tuple[bytes, str]:
 	pulled from HISTORY is read by id instead, through `fetch_message_media`.
 	"""
 
-	from tatva_connect.utils import assert_safe_public_url
-
 	url = data if data.startswith("http") else f"{base_url(account)}/api/file/showFile?fileName={data}"
 	# SSRF guard: the media URL can originate from a webhook payload. Restrict it to this account's operator-configured host allowlist (blank = any public host; the IP block still runs).
 	allowed = [row.host for row in (account.get("custom_media_host_allowlist") or [])]
-	assert_safe_public_url(url, allowed)
-	token = account.get_password("token")
-	resp = requests.get(
+	# A provider serves media off a CDN as often as off its own host, so the hop is FOLLOWED and every
+	# destination is vetted — the allowlist and the private-IP block apply to each one, not only the first.
+	content, content_type = transfer.fetch_capped(
 		url,
-		headers={"Authorization": f"Bearer {token}"},
-		timeout=60,
-		stream=True,
-		allow_redirects=False,  # SSRF: assert_safe_public_url vetted THIS host only; a 3xx could bounce to an internal target
+		timeout=MEDIA_TIMEOUT,
+		headers={"Authorization": f"Bearer {account.get_password('token')}"},
+		allowed_hosts=allowed,
 	)
-	resp.raise_for_status()
-	content = transfer.read_capped(resp)
-	return content, resp.headers.get("content-type") or "application/octet-stream"
+	return content, content_type or "application/octet-stream"
