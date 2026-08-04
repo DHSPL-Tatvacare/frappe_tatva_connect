@@ -711,12 +711,16 @@ def _link_master(r):
 
 
 @frappe.whitelist()
-def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50):
+def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50, with_count=1):
 	"""THE composer. Returns {columns, rows, total} for a saved CRM Smart View, PQC-scoped.
 	Read-only. One qb query for the rows + one for the count; both AND the PQC.
 
 	`columns` (optional) is an interactive, catalog-bounded override of the saved column set
-	(the ColumnSettings picker) — a transient projection, never persisted by this read path."""
+	(the ColumnSettings picker) — a transient projection, never persisted by this read path.
+
+	`with_count=0` skips the COUNT entirely and returns `total: None`. Widening the page window cannot
+	change how many rows MATCHED, so Load More asks the same question a second time for nothing — and that
+	count is the unbounded half of this call, while the rows are capped at PAGE_MAX."""
 	v = frappe.get_doc("CRM Smart View", view)
 	# The same gate every other read wears (SV-02): rows were always PQC-scoped, but a private view's
 	# COLUMN SET is its definition, and it used to come back to any authenticated caller who knew the name.
@@ -816,11 +820,13 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	query_keys = needed - hydrate_keys
 
 	# ---- count (PQC-scoped) -------------------------------------------------
-	count_joins, _cf, _cc, count_crit = scoped(count_keys)
-	count_q = count_joins(frappe.qb.from_(driving_table).select(Count("*").as_("total")))
-	if count_crit is not None:
-		count_q = count_q.where(count_crit)
-	total = cint(count_q.run(as_dict=True)[0].get("total"))
+	total = None
+	if cint(with_count):
+		count_joins, _cf, _cc, count_crit = scoped(count_keys)
+		count_q = count_joins(frappe.qb.from_(driving_table).select(Count("*").as_("total")))
+		if count_crit is not None:
+			count_q = count_q.where(count_crit)
+		total = cint(count_q.run(as_dict=True)[0].get("total"))
 
 	# ---- rows ---------------------------------------------------------------
 	apply_joins, field_terms, compare_terms, crit = scoped(query_keys)
@@ -841,12 +847,44 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	rows = rows_q.run(as_dict=True)
 
 	_hydrate(rows, hydrate_keys, cat, driving_name)
+	_label_links(rows, col_keys, cat)
 
 	columns = [
-		{"key": k, "label": _flat_label(cat[k]), "fieldtype": _col_type(cat[k])[0]}
+		# The plain label: the section prefix is for the PICKER, and in the grid the column is already in context.
+		{"key": k, "label": cat[k].label or cat[k].fieldname, "fieldtype": _col_type(cat[k])[0]}
 		for k in col_keys if k in field_terms or k in hydrate_keys
 	]
-	return {"columns": columns, "rows": rows, "total": total}
+	out = {"columns": columns, "rows": rows, "total": total}
+	# A LEAD view's row IS the lead and its values are live, so the identity cell may be the same chip the
+	# native lists draw. An ACTIVITY view's name column is a snapshot of what it was at the punch (D-C), so
+	# it must keep showing that and never today's title.
+	if base_object == "Lead":
+		out["_link_titles"] = _lead_titles(r.get("name") for r in rows)
+	return out
+
+
+def _lead_titles(names):
+	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped."""
+	# `_resolve_title` and not `labels`: a lead is a PERMISSIONED record and that resolver is the one gating on read.
+	from tatva_connect.api.list_link_titles import _resolve_title
+
+	titles = {}
+	for name in {n for n in names if n}:
+		title = _resolve_title(LEAD_DOCTYPE, name)
+		if title is not None:
+			titles[f"{LEAD_DOCTYPE}::{name}"] = title
+	return titles
+
+
+def _label_links(rows, col_keys, cat):
+	"""Ship `<key>_label` beside every Link column's untouched key, resolved through the one title lookup (D-U)."""
+	masters = {k: m for k in col_keys if (m := _link_master(cat[k]))}
+	for key, doctype in masters.items():
+		by_key = labels.labels([r.get(key) for r in rows], doctype)
+		for r in rows:
+			value = r.get(key)
+			if value:
+				r[f"{key}_label"] = by_key.get(value) or value
 
 
 def _hydrate(rows, keys, cat, driving_name):
