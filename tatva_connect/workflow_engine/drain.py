@@ -61,6 +61,7 @@ def sweep(respect_switch=True):
 	"""
 	if respect_switch and not _armed():
 		return 0
+	_reap_stranded()
 	started = 0
 	for name in _due_workflows():
 		if not _claim(name):
@@ -111,8 +112,15 @@ def _claim(workflow_name):
 	re-evaluates its filter, sees `Draining` and returns nothing. That is the whole guarantee, and it is
 	the reason the state has to be inside the filter rather than checked after the read.
 
-	The clock is pushed forward as part of the claim: a workflow still showing due after being claimed
-	would be picked up again by the very next tick and drained twice.
+	THE CLOCK IS NOT TOUCHED HERE — `_release` moves it, and only when the occurrence is really over. It
+	used to be pushed forward as part of the claim, on the reasoning that a workflow still showing due
+	would be picked up by the very next tick and drained twice. The state IS that guarantee: this read
+	filters on `cohort_state` under the row lock, so a still-due row that is `Draining` loses the claim.
+	The clock was belt over braces, and it cost the scheduled lane every cohort larger than one burst.
+
+	`cohort_abort` is not cleared here either. The flag belongs to an OCCURRENCE, and an occurrence ends
+	where the clock moves; cleared at claim time, a resume after a pace-out would wipe an abort the
+	operator raised in the gap and walk on.
 
 	IT DOES NOT COMMIT — `sweep` does, once, after it has also registered the enqueue. The lock is held
 	until that commit, so the guarantee above is unchanged; what changes is that the claim and the job it
@@ -124,10 +132,54 @@ def _claim(workflow_name):
 		return False
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {
 		"cohort_state": DRAINING,
-		"cohort_abort": 0,
-		"trigger_next_run_at": cohort.next_run_at(_trigger_config(workflow_name)),
+		# The heartbeat starts at the claim, or a cohort whose first selector scan is slow reads as dead.
+		"cohort_progress_at": now_datetime(),
 	}, update_modified=False)
 	return True
+
+
+def _reap_stranded():
+	"""Hand back a claim whose walker died — W4.2's promised reaper, and `_release`'s second caller.
+
+	`_release`'s only other caller is the `run_cohort` job itself, so an OOM, a deploy restart or an RQ
+	timeout leaves the row `Draining` forever and every later `_claim` loses. There is no way back without
+	a manual database write, which is not a recovery story.
+
+	IT READS THE HEARTBEAT `run_cohort` ALREADY WRITES. `cohort_progress_at` is stamped by the claim and
+	moved again by every cursor write, so "no progress for `DRAIN_DEAD_AFTER_MINUTES`" means a dead worker
+	and nothing else: a walk that paced out released before it stopped, and so did one the switch stopped.
+	A row still `Draining` with NO stamp at all was claimed before this column existed and is stranded by
+	definition, which is why the age query and the unstamped case are asked together.
+
+	The stamp rides the writes `run_cohort` was already making — the claim, and each cursor write — so a
+	walk that is moving says so at no extra query, and one that stops saying so is a worker to free.
+
+	It reschedules, because a dead occurrence is over. The cursor is left alone, so the next claim resumes
+	from where the dead worker reached instead of re-walking the cohort from the top.
+
+	FRAPPE NATIVE, and the APIs rejected are named. Not a second `scheduler_events` entry: this is the
+	same question the sweep already asks of the same table on the same tick, and a separate cron would be
+	a second thing to arm, time and switch off. Not `update_modified`/`modified` as the heartbeat either —
+	the cursor write is PER LEAD, so a 10k cohort would dirty the row 10k times, collide with the
+	lifecycle save that `apply_transition` makes (the Suspend that W10 turned into the kill), stamp
+	`modified_by` as the drain for ever, and invalidate the document cache on every lead.
+	"""
+	dead_before = frappe.utils.add_to_date(now_datetime(), minutes=-thresholds.DRAIN_DEAD_AFTER_MINUTES)
+	stranded = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
+		_WORKFLOW_DT,
+		filters={"cohort_state": DRAINING},
+		or_filters=[["cohort_progress_at", "<", dead_before], ["cohort_progress_at", "is", "not set"]],
+		pluck="name",
+		limit=thresholds.MAX_DUE_PER_SWEEP,
+	)
+	for name in stranded:
+		# Closed with a REASON, never silently — `_release` commits this row along with the hand-back.
+		frappe.log_error(
+			title="cohort drain: a stranded claim was handed back",
+			message=f"workflow={name} no progress since before {dead_before}",
+		)
+		_release(name)
+	return len(stranded)
 
 
 def abort(workflow_name):
@@ -160,7 +212,8 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 		_release(workflow_name)
 		return 0
 
-	started, chunks = 0, 0
+	# Declared out here because the switch and abort breaks never reach the per-chunk reset below.
+	started, chunks, paced_out = 0, 0, False
 	while True:
 		# BOTH STOPS ARE READ HERE, on every pass, and both leave by the same door: the `break` falls to
 		# `_release` below, because a cohort left `Draining` is one `_claim` can never match again.
@@ -190,10 +243,12 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 			started += 1 if _start_one(workflow_name, version, lead) else 0
 			# The cursor stops AT the last lead actually started, never at the scan frontier — a pause must
 			# not carry the cursor past someone who was never begun.
-			frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_cursor", lead,
+			frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+			                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
 			                    update_modified=False)
 		if not paced_out:
-			frappe.db.set_value(_WORKFLOW_DT, workflow_name, "cohort_cursor", scanned_to,
+			frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+			                    {"cohort_cursor": scanned_to, "cohort_progress_at": now_datetime()},
 			                    update_modified=False)
 		frappe.db.commit()
 
@@ -202,7 +257,8 @@ def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch
 			break
 		if stop_after_chunks and chunks >= stop_after_chunks:
 			return started
-	_release(workflow_name)
+	# A pace-out is not a finished occurrence, so it releases without moving the clock. See `_release`.
+	_release(workflow_name, reschedule=not paced_out)
 	return started
 
 
@@ -231,11 +287,26 @@ def _start_one(workflow_name, version, lead):
 		return False
 
 
-def _release(workflow_name, clear_cursor=False):
-	"""Hand the cohort back. A finished walk clears its cursor; a paused one keeps it to resume from."""
+def _release(workflow_name, clear_cursor=False, reschedule=True):
+	"""Hand the cohort back. A finished walk clears its cursor; a paused one keeps it to resume from.
+
+	THE CLOCK MOVES HERE, NOT AT THE CLAIM, and that is what makes the scheduled lane work above one
+	burst. A walk that stopped for PACING has not finished its occurrence, so it releases with
+	`reschedule=False`: the row stays due, the next `sweep` tick claims it again, and the cursor carries it
+	on. Advanced at claim time instead, the row was already dated tomorrow the moment the walk began — so a
+	pace-out fell out of `_due_workflows` and the cohort gained one burst per occurrence and no more. A
+	Daily cohort of 10,000 took months, silently, with the cursor and the counts all reading correct.
+
+	`cohort_abort` is cleared on the same condition and for the same reason: the flag belongs to an
+	OCCURRENCE, and the occurrence is what the clock ends. A resume mid-pause must keep it, or an abort
+	raised while the cohort sat idle-but-due would be wiped by the very next claim.
+	"""
 	values = {"cohort_state": IDLE}
 	if clear_cursor:
 		values["cohort_cursor"] = ""
+	if reschedule:
+		values["cohort_abort"] = 0
+		values["trigger_next_run_at"] = cohort.next_run_at(_trigger_config(workflow_name))
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, values, update_modified=False)
 	frappe.db.commit()
 

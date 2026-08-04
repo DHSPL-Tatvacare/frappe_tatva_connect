@@ -23,7 +23,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.workflow_engine import cohort, drain, registry
+from tatva_connect.workflow_engine import cohort, drain, registry, thresholds
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _LEADS = 7
@@ -203,12 +203,17 @@ class TestOnlyOneSweepCanTakeACohort(_CohortCase):
 		self.assertEqual((first, second), (1, 0))
 		self.assertEqual(enqueue.call_count, 1, "two sweeps must not enqueue two drains for one cohort")
 
-	def test_the_claim_moves_the_clock_so_the_next_tick_skips_it(self):
-		"""A workflow still showing due after being claimed is picked up again by the very next tick."""
+	def test_the_claim_leaves_the_clock_alone_and_the_state_is_what_skips_it(self):
+		"""REPLACES a test that asserted the claim moved the clock forward. It did, and that write is what
+		broke the scheduled lane (A1): a walk that paused for pacing was already dated tomorrow, so the
+		sweep never came back for it. The promise the old test named — the next tick does not drain this
+		cohort twice — is kept by the STATE, under the row lock, and `test_two_sweeps_start_the_cohort_once`
+		is the assertion of it at the level that matters."""
 		self._make_due()
 		self.assertTrue(drain._claim(self.workflow_name))
 		next_run = frappe.db.get_value("CRM Workflow", self.workflow_name, "trigger_next_run_at")
-		self.assertGreater(next_run, frappe.utils.now_datetime())
+		self.assertLessEqual(next_run, frappe.utils.now_datetime(),
+		                     "the claim moved the clock, so a paused walk falls out of the due set")
 
 	def test_a_released_cohort_can_be_claimed_again(self):
 		"""The claim is a lease, not a tombstone — next month's cohort must be able to take it."""
@@ -374,3 +379,170 @@ class TestPacingRidesTheExistingBucket(_CohortCase):
 
 		source = inspect.getsource(drain)
 		self.assertIn("_bucket_pair", source, "pacing must charge the existing bucket, not a second one")
+
+
+class TestAPacedOutCohortComesBackOnTheNextTick(_CohortCase):
+	"""A1 — THE SCHEDULED LANE, which did not work above one burst.
+
+	`_claim` advanced `trigger_next_run_at` to the next occurrence at claim time. A walk that ran out of
+	rate tokens then `break`s and releases — and released a row that was already dated tomorrow, so
+	`_due_workflows` could not see it and the sweep never came back. With `DRAIN_BURST` at 60, a cohort
+	larger than the burst started ~60 journeys PER OCCURRENCE: a Daily 10,000 took months.
+
+	It failed silently, which is why this suite never caught it. The cursor, the counts, `cohort_state` and
+	the receipt were all correct at every step. The only wrong fact was a datetime that read like a
+	schedule. The old suite also mocked `_take_token` to always succeed, so the pause never happened at all.
+
+	PACING IS DRIVEN, NOT MOCKED AWAY: `_take_token` is given a per-tick budget smaller than the cohort, so
+	the walk really runs out mid-chunk and really has to come back. The REAL Redis bucket is not used here
+	— its `cohort` key is global and shared between suites and it FAILS OPEN when Redis cannot answer, so a
+	resume assertion on it would pass or fail by what else ran in the same minute.
+	"""
+
+	def _make_due(self):
+		frappe.db.set_value("CRM Workflow", self.workflow_name, {
+			"trigger_next_run_at": frappe.utils.add_to_date(None, minutes=-1), "cohort_state": "",
+		}, update_modified=False)
+		frappe.db.commit()
+
+	def test_a_walk_that_paused_for_pacing_is_still_due(self):
+		"""The defect in one assertion: a pause is not a completed occurrence, so the clock must not move."""
+		self._make_due()
+		with patch.object(drain, "_take_token", return_value=False):
+			drain.run_cohort(self.workflow_name, chunk=3, respect_switch=False)
+
+		row = frappe.db.get_value("CRM Workflow", self.workflow_name,
+		                          ["cohort_state", "trigger_next_run_at"], as_dict=True)
+		self.assertEqual(row.cohort_state, drain.IDLE, "a paused walk must hand its claim back")
+		self.assertLessEqual(row.trigger_next_run_at, frappe.utils.now_datetime(),
+		                     "a paced-out cohort was rescheduled, so no later sweep will pick it up")
+
+	def test_a_finished_walk_does_move_the_clock(self):
+		"""The other half, or the fix would just make every cohort run for ever: a walk that reached the end
+		of its cohort HAS completed its occurrence, and waits for the next one."""
+		self._make_due()
+		drain.run_cohort(self.workflow_name, respect_switch=False)
+
+		self.assertGreater(
+			frappe.db.get_value("CRM Workflow", self.workflow_name, "trigger_next_run_at"),
+			frappe.utils.now_datetime(),
+			"a completed cohort stayed due and will be walked again on the very next tick",
+		)
+
+	def test_the_cohort_finishes_across_ticks_through_the_real_sweep(self):
+		"""THE DELIVERABLE. More leads than one tick's pacing carries, driven through `drain.sweep` itself
+		— the entry the scheduler calls — until the cohort is done. Every lead started, nobody twice.
+
+		Under test the sweep's own `now=` makes the enqueue run the drain inline (`background_jobs.py:152`
+		short-circuits before `enqueue_after_commit`), so this really is the sweep's own path and not a
+		hand-written call to `run_cohort` — which is the distinction that let the original defect hide."""
+		self._make_due()
+		budget = {"left": 0}
+
+		def token(_workflow_name):
+			budget["left"] -= 1
+			return budget["left"] >= 0
+
+		with patch.object(drain, "_armed", return_value=True), \
+		     patch.object(drain, "_take_token", side_effect=token):
+			for _tick in range(5):
+				budget["left"] = 3  # a fresh minute's tokens, and fewer than the cohort needs
+				drain.sweep()
+
+		started = self._runs()
+		self.assertCountEqual(
+			started, [lead.name for lead in self.leads],
+			"the cohort did not finish across ticks — a paced-out walk was never picked up again",
+		)
+		self.assertEqual(len(started), len(set(started)), "a lead was started twice across ticks")
+
+
+class TestAClaimWhoseWalkerDiedIsHandedBack(_CohortCase):
+	"""A2 — `_release` had exactly ONE caller, the `run_cohort` job itself. An OOM, a deploy restart or an
+	RQ timeout left `cohort_state` on `Draining`, every later `_claim` lost, and that workflow's cohort
+	never ran again until somebody wrote to the database by hand. W4.2 promised this reaper and it was
+	never built; `docs/pending/2026-07-28-cohort-drain-leaks-its-claim-on-failure.md` raised it again.
+
+	The heartbeat it reads is not new machinery: `run_cohort` already writes the cursor as it walks, and
+	`cohort_progress_at` now rides that same write.
+	"""
+
+	def _strand(self, minutes_ago):
+		values = {"cohort_state": drain.DRAINING, "cohort_progress_at": None}
+		if minutes_ago is not None:
+			values["cohort_progress_at"] = frappe.utils.add_to_date(
+				frappe.utils.now_datetime(), minutes=-minutes_ago,
+			)
+		frappe.db.set_value("CRM Workflow", self.workflow_name, values, update_modified=False)
+		frappe.db.commit()
+
+	def _sweep(self):
+		with patch.object(drain, "_armed", return_value=True), patch("frappe.enqueue"):
+			drain.sweep()
+
+	def _state(self):
+		return frappe.db.get_value("CRM Workflow", self.workflow_name, "cohort_state")
+
+	def test_a_dead_claim_is_reaped(self):
+		self._strand(thresholds.DRAIN_DEAD_AFTER_MINUTES + 1)
+
+		self._sweep()
+
+		self.assertEqual(self._state(), drain.IDLE,
+		                 "a claim whose walker died is held for ever and no later claim can ever match it")
+
+	def test_a_claim_from_before_the_heartbeat_existed_is_reaped(self):
+		"""A row already `Draining` when this column shipped has no stamp at all. It is stranded by
+		definition — nothing will ever write its heartbeat, because its walker is long gone."""
+		self._strand(None)
+
+		self._sweep()
+
+		self.assertEqual(self._state(), drain.IDLE)
+
+	def test_a_walk_that_is_still_moving_is_left_alone(self):
+		"""The reaper must not free a claim from under a live worker. Progress inside the age is a walker
+		that is working, not one that died."""
+		self._strand(1)
+
+		self._sweep()
+
+		self.assertEqual(self._state(), drain.DRAINING,
+		                 "the reaper took a cohort away from a worker that was still walking it")
+
+	def _beating(self):
+		return frappe.db.get_value("CRM Workflow", self.workflow_name, "cohort_progress_at")
+
+	def test_the_walk_stamps_its_own_heartbeat(self):
+		"""Without this the reaper reads a column nothing writes and kills every live drain at the age."""
+		self._strand(thresholds.DRAIN_DEAD_AFTER_MINUTES + 1)
+
+		drain.run_cohort(self.workflow_name, chunk=2, stop_after_chunks=1, respect_switch=False)
+
+		self.assertGreater(
+			self._beating(), frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-1),
+			"the walk moved the cursor without moving its heartbeat, so the reaper will free it mid-walk",
+		)
+
+	def test_the_heartbeat_beats_per_lead_not_only_at_the_chunk_boundary(self):
+		"""The chunk-boundary stamp alone passes the test above, which is why this one exists separately.
+
+		`DRAIN_CHUNK` is 100 leads: inside a chunk, the per-lead write is the ONLY thing moving the
+		heartbeat, so a slow chunk would age past the reaper and be freed from under a live worker. Driven
+		by pacing out MID-CHUNK — the chunk-boundary write is skipped on that path (`if not paced_out`), so
+		a stamp that arrives can only have come from the per-lead write."""
+		self._strand(thresholds.DRAIN_DEAD_AFTER_MINUTES + 1)
+		stale = self._beating()
+		budget = {"left": 1}
+
+		def token(_workflow_name):
+			budget["left"] -= 1
+			return budget["left"] >= 0
+
+		with patch.object(drain, "_take_token", side_effect=token):
+			drain.run_cohort(self.workflow_name, chunk=5, respect_switch=False)
+
+		self.assertGreater(
+			self._beating(), stale,
+			"a walk that paced out mid-chunk never stamped, so only the chunk boundary beats",
+		)

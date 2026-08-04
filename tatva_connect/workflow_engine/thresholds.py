@@ -62,6 +62,15 @@ SIGNAL_RETENTION_DAYS = 7
 # patient" is asked long after. No dead-age: a journey has no waiting state that a reaper must close.
 RUN_RETENTION_DAYS = 90
 
+# W4.2 — minutes of NO PROGRESS after which a cohort claim is declared dead and handed back. `_release`
+# has one caller, the `run_cohort` job itself, so a worker that dies mid-walk leaves `cohort_state` on
+# `Draining` and every later `_claim` loses: that workflow's cohort never runs again. DERIVED, not picked —
+# `WAKE_JOB_TIMEOUT` already declares this engine's judgement that unfinished in 25 minutes is stuck rather
+# than slow, and this sits just above it so there is ONE notion of "too long" instead of two.
+# Generous is the safe direction: `cohort_progress_at` is stamped per lead, and a reap that fires early
+# only lets a second drain start, which `_start_one`'s `active_key` UNIQUE index makes a no-op.
+DRAIN_DEAD_AFTER_MINUTES = 30
+
 # A media row whose call is DELETED dies with the call, not with an age — the call is its only reason to
 # exist. This is the age for the other shape: a row nothing ever resolved, whose producer never spoke
 # again. `Awaiting` past it is `Abandoned` (terminal, inert, still readable), which is what the retry

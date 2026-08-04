@@ -17,6 +17,7 @@
   "cohort_state",
   "cohort_cursor",
   "cohort_abort",
+  "cohort_progress_at",
   "canvas_json",
   "trigger_vertical",
   "trigger_group",
@@ -120,6 +121,14 @@
    "default": "0",
    "no_copy": 1,
    "description": "Stops the current cohort at the next chunk boundary. Runs already started are left alone — cancelling one lead's journey is a different action."
+  },
+  {
+   "fieldname": "cohort_progress_at",
+   "fieldtype": "Datetime",
+   "label": "Cohort Progress At",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Derived. When this cohort walk last moved — stamped by the claim and again at every cursor write. A claim that stops moving is a dead worker, and the sweep hands it back."
   },
   {
    "fieldname": "canvas_json",
