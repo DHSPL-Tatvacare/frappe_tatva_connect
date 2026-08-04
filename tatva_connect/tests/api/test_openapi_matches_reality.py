@@ -34,6 +34,7 @@ from tatva_connect.api import (
 	partner_note,
 )
 from tatva_connect.api._base import _RATE_ENFORCEMENT, DEFAULTS, ERROR_CODES
+from tatva_connect.tests.api.partner_fixture import minimal_answers
 from tatva_connect.tests.api.spec import load_spec, response_example, spec_paths
 
 MODULES = (partner, partner_activity, partner_call, partner_file, partner_note, partner_bulk_job)
@@ -354,25 +355,28 @@ class TestOpenApiMatchesReality(unittest.TestCase):
 			types = r["data"]["task_types"]
 			if types:
 				tt = types[0]["name"]
+				# A type whose rules ask for an answer refuses an empty form, so the example is driven
+				# with the smallest submission that type accepts, computed from its own schema.
+				answers = minimal_answers(tt)
 				r = hit(partner_activity.activity_create,
 				        "tatva_connect.api.partner_activity.activity_create",
-				        lead=lead, task_type=tt, values={}, external_id="SPEC-A")
+				        lead=lead, task_type=tt, values=answers, external_id="SPEC-A")
 				act = r["data"]["name"]
 				hit(partner_activity.activity_get,
 				    "tatva_connect.api.partner_activity.activity_get", name=act)
 				hit(partner_activity.activity_update,
-				    "tatva_connect.api.partner_activity.activity_update", name=act, task_type=tt, values={})
+				    "tatva_connect.api.partner_activity.activity_update", name=act, task_type=tt, values=answers)
 				hit(partner_activity.activity_list,
 				    "tatva_connect.api.partner_activity.activity_list", lead=lead, limit=10)
 				r = hit(partner_activity.activity_create_bulk,
 				        "tatva_connect.api.partner_activity.activity_create_bulk",
-				        activities=[{"lead": lead, "task_type": tt, "values": {}}])
+				        activities=[{"lead": lead, "task_type": tt, "values": answers}])
 				a1 = r["results"][0]["data"]["name"]
 				hit(partner_activity.activity_get_bulk,
 				    "tatva_connect.api.partner_activity.activity_get_bulk", names=[a1])
 				hit(partner_activity.activity_update_bulk,
 				    "tatva_connect.api.partner_activity.activity_update_bulk",
-				    updates=[{"name": a1, "task_type": tt, "values": {}}])
+				    updates=[{"name": a1, "task_type": tt, "values": answers}])
 				hit(partner_activity.activity_delete_bulk,
 				    "tatva_connect.api.partner_activity.activity_delete_bulk", names=[a1])
 
