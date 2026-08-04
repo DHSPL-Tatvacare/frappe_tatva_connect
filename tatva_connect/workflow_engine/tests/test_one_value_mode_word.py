@@ -37,7 +37,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions
-from tatva_connect.workflow_engine import refs
+from tatva_connect.workflow_engine import contract, refs
 
 _RENAMED = "ZZ Renamed Mode"
 
@@ -45,20 +45,25 @@ _RENAMED = "ZZ Renamed Mode"
 class TestTheRuntimeFollowsTheDeclaration(FrappeTestCase):
 	"""THE red. Patch the one declaration; a runtime holding its own copy cannot follow."""
 
-	def test_set_field_reads_context_through_the_declaration(self):
-		"""`_resolve_set_field_value`'s From Context branch. With its own typed copy it falls through to
-		the literal branch and writes the variable NAME onto the patient's field."""
-		action = frappe._dict(value_mode=_RENAMED, context_field="patient_id", value="the-literal")
+	def test_a_row_reads_context_through_the_declaration(self):
+		"""`contract.resolve_row`'s From Context branch — THE one reader since W8.1, where the same decision
+		lived in four places. With its own typed copy it falls through to the literal branch and writes the
+		variable NAME onto the patient's field, or sends it to them as text."""
 		with patch.object(refs, "FROM_CONTEXT", _RENAMED):
-			resolved = actions._resolve_set_field_value(action, {"patient_id": "the-context-value"})
+			resolved = contract.resolve_row(_RENAMED, "patient_id", {"patient_id": "the-context-value"})
 		self.assertEqual(resolved, "the-context-value",
-		                 "Set Field did not follow the renamed declaration — it wrote its literal instead")
+		                 "the row did not follow the renamed declaration — it returned its literal instead")
 
-	def test_set_field_resolves_an_expression_through_the_declaration(self):
-		action = frappe._dict(value_mode=_RENAMED, expression="1 + 1", value="the-literal")
+	def test_a_row_resolves_an_expression_through_the_declaration(self):
 		with patch.object(refs, "EXPRESSION", _RENAMED):
-			resolved = actions._resolve_set_field_value(action, {})
-		self.assertEqual(resolved, 2, "Set Field did not follow the renamed Expression declaration")
+			resolved = contract.resolve_row(_RENAMED, "1 + 1", {})
+		self.assertEqual(resolved, 2, "the row did not follow the renamed Expression declaration")
+
+	def test_a_row_increments_through_the_declaration(self):
+		"""W8.2's mode, the same way. A runtime holding its own copy overwrites the counter with the step."""
+		with patch.object(refs, "INCREMENT", _RENAMED):
+			resolved = contract.resolve_row(_RENAMED, 1, {}, current=2)
+		self.assertEqual(resolved, 3, "the row did not follow the renamed Increment declaration")
 
 	def test_create_tasks_due_date_follows_the_declaration(self):
 		"""`_due_at` tests only for Expression and lets From Context be the `else`, so the drift here is
@@ -84,10 +89,14 @@ class TestWhatAnAuthorIsOfferedIsTheDeclarationItself(FrappeTestCase):
 		`Assign|Reassign`, a different question entirely, and a lock that cannot tell them apart reports
 		a naming decision as a defect. Two structural signals, unioned, and each covers the other's hole:
 
-		  * its options OVERLAP the declared vocabulary — so renaming one of the three in one place only
-		    leaves the param overlapping on the other two and it stays caught;
+		  * what it OFFERS overlaps the declared vocabulary — so renaming one of the words in one place only
+		    leaves the param overlapping on the others and it stays caught;
 		  * it gates a sibling that `reads: expression` — so a param whose words were ALL restated at once
 		    is still in scope, which overlap alone would miss.
+
+		W8.1 moved the Update Field vocabulary from a Select's `options` to the rows field's `modes`, so
+		`_offered` reads BOTH. Reading only `options` would have quietly dropped the one verb whose runtime
+		writes onto a patient's record from the lock that exists for it.
 
 		Returns `(verb, param, own_params)`.
 		"""
@@ -101,23 +110,34 @@ class TestWhatAnAuthorIsOfferedIsTheDeclarationItself(FrappeTestCase):
 				for field in (sibling.get("depends_on_value") or {})
 			}
 			for param in params:
-				options = set(param.get("options") or ())
-				if not options:
+				offered = self._offered(param)
+				if not offered:
 					continue
-				if options & self._declared() or param["name"] in expression_gates:
+				if offered & self._declared() or param["name"] in expression_gates:
 					found.append((verb, param, params))
 		self.assertTrue(found, "no value-mode param is declared — this lock would pass vacuously")
 		return found
 
+	def _offered(self, param):
+		"""The words this control puts in front of an author — a Select's options, or a rows field's modes."""
+		return set(param.get("options") or ()) | set(param.get("modes") or ())
+
 	def _declared(self):
-		return {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION}
+		return {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT}
+
+	def test_the_rows_verb_is_in_scope_of_this_lock(self):
+		"""Named, because the detector is structural and a structural detector can silently stop matching.
+		Update Field is the verb whose runtime writes onto a patient's record; if it ever leaves this list
+		the lock has narrowed rather than passed."""
+		self.assertIn(("Update Field", "updates"),
+		              {(verb, param["name"]) for verb, param, _ in self._value_mode_params()})
 
 	def test_every_offered_mode_is_a_declared_one(self):
 		for verb, param, _params in self._value_mode_params():
 			with self.subTest(verb=verb, param=param["name"]):
 				self.assertLessEqual(
-					set(param["options"]), self._declared(),
-					f"{verb}.{param['name']} offers a mode nothing declares: {param['options']}",
+					self._offered(param), self._declared(),
+					f"{verb}.{param['name']} offers a mode nothing declares: {sorted(self._offered(param))}",
 				)
 
 	def test_the_gate_a_mode_opens_names_a_declared_mode(self):
@@ -147,15 +167,16 @@ class TestTheDeclarationLivesInExactlyOnePlace(FrappeTestCase):
 		self.assertIs(contract.LITERAL, refs.LITERAL)
 
 	def test_no_module_types_the_vocabulary_a_second_time(self):
-		"""A source scan, deliberately narrow: only the two words that are unambiguous as literals.
+		"""A source scan, deliberately narrow: only the words that are unambiguous as literals.
 		`"Expression"` is skipped because it is also a legitimate FIELD LABEL (`actions.py`'s Small Text
-		box is labelled Expression), and a scan that cannot tell a label from a mode would be noise."""
+		box is labelled Expression), and a scan that cannot tell a label from a mode would be noise.
+		`"Increment by"` is in — it names nothing else in this tree."""
 		import pathlib
 		import re
 
 		root = pathlib.Path(actions.__file__).resolve().parents[1]
 		home = pathlib.Path(refs.__file__).resolve()
-		pattern = re.compile(r"""["'](Literal|From Context)["']""")
+		pattern = re.compile(r"""["'](Literal|From Context|Increment by)["']""")
 		offenders = []
 		for path in root.rglob("*.py"):
 			if path.resolve() == home or "/tests/" in path.as_posix() or "__pycache__" in path.as_posix():

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import frappe
 
-from tatva_connect.workflow_engine import registry
+from tatva_connect.workflow_engine import refs, registry
 
 _INTERPRETER = Path(frappe.get_app_path("tatva_connect")) / "workflow_engine" / "interpreter.py"
 
@@ -35,7 +35,7 @@ _VALID_EXAMPLE = {
 	"Terminal": {},
 	# One per effect verb — the example IS the documentation of a usable node of that type.
 	"Create Task": {"task_type": "x"},
-	"Update Field": {"target_doctype": "CRM Lead", "fieldname": "status", "value_mode": "Literal"},
+	"Update Field": {"target_doctype": "CRM Lead", "updates": [{"name": "status", "mode": "Literal", "value": "New"}]},
 	"Append Child Row": {"child_table": "x", "set_json": "{}"},
 	"Upsert Child Row": {"child_table": "x", "match_json": "{}", "set_json": "{}"},
 	"Call API": {"webhook_endpoint": "x"},
@@ -167,29 +167,50 @@ class TestRegistryConformance(unittest.TestCase):
 		exposed = {entry["type"] for entry in registry.node_types()}
 		self.assertEqual(exposed, set(registry.NODE_TYPES))
 
-	def test_a_value_rows_field_ships_its_modes_from_the_contract(self):
-		"""The mode switch's vocabulary travels with the field, and it is the CONTRACT's own words.
-
-		A `value_rows` row is filled one of two ways, and `sends._template_parameters` decides which by
-		comparing against `contract.FROM_CONTEXT`. If the control offered its own spelling of that word the
-		comparison would silently fall through to the literal branch, and a patient would receive the text
-		`crm_lead.first_name` where their name belonged — a wrong message, sent, with nothing logged.
-
-		So the words are asserted to BE the contract's objects, never a matching pair of strings. Typing
-		`["Literal", "From Context"]` into this test would let both sides drift together and prove nothing.
-		"""
-		from tatva_connect.workflow_engine import contract
-
-		found = [
-			field
+	def _value_rows_fields(self):
+		return [
+			(entry["type"], field)
 			for entry in registry.node_types()
 			for field in entry["config"]
 			if registry.read_kind_of(field) == "value_rows"
 		]
+
+	def test_a_value_rows_field_ships_its_modes_from_the_contract(self):
+		"""The mode switch's vocabulary travels with the field, and it is the CONTRACT's own words.
+
+		A `value_rows` row says HOW it is filled, and `contract.resolve_row` decides which way by comparing
+		against `refs.FROM_CONTEXT`. If the control offered its own spelling of that word the comparison
+		would silently fall through to the literal branch, and a patient would receive the text
+		`crm_lead.first_name` where their name belonged — a wrong message, sent, with nothing logged.
+
+		So every word is asserted to BE the declaration's object (`assertIs`), never a string that happens
+		to match. Typing `["Literal", "From Context"]` into this test would let both sides drift together
+		and prove nothing.
+
+		W8.1 — a field MAY offer its own list (`Update Field.updates` adds Increment, which no template slot
+		can take), so this no longer pins one pair. It pins the thing that matters: every offered word is
+		one of the four declared OBJECTS, and there is no fifth.
+		"""
+		found = self._value_rows_fields()
 		self.assertTrue(found, "no value_rows field is declared — this lock would pass vacuously")
-		for field in found:
-			with self.subTest(field=field["name"]):
-				self.assertEqual(field.get("modes"), [contract.LITERAL, contract.FROM_CONTEXT])
+		declared = (refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT)
+		for node_type, field in found:
+			with self.subTest(node_type=node_type, field=field["name"]):
+				self.assertTrue(field.get("modes"), "a value_rows field with no modes draws no switch")
+				for mode in field["modes"]:
+					self.assertTrue(any(mode is word for word in declared),
+					                f"{mode!r} is a second spelling of a declared mode, not the declaration")
+
+	def test_a_field_that_declares_no_modes_gets_the_default_pair(self):
+		"""The default is what every send verb rides on, and it must stay the pair a template slot can take:
+		a slot has no field to add to and nothing to compute against."""
+		from tatva_connect.workflow_engine import contract
+
+		for node_type, field in self._value_rows_fields():
+			if field["name"] == "updates":
+				continue
+			with self.subTest(node_type=node_type, field=field["name"]):
+				self.assertEqual(field["modes"], [contract.LITERAL, contract.FROM_CONTEXT])
 
 	def test_a_field_that_reads_nothing_ships_no_modes(self):
 		"""The negative half. `modes` says 'this control chooses HOW the value is filled'; putting it on a

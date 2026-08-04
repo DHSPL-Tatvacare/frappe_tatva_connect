@@ -33,8 +33,8 @@ class TestEngineWalk(FrappeTestCase):
 		cls.workflow = fx.make_workflow(_WORKFLOW, [
 			fx.trigger(to="s1"),
 			fx.node("s1", "Update Field", edges={"next": "b1"}, config={
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "Literal", "value": "New",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "Literal", "value": "New"}],
 			}),
 			fx.node("b1", "Route",
 			        config={"routes": [{"id": "r1", "label": "taken", "condition": {"type": "rule", "field": "seed.taken", "operator": "is", "value": 0}}]},

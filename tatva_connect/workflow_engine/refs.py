@@ -84,9 +84,11 @@ CTX_PREFIX = "$ctx."
 # both spell it, and `contract` imports `registry` which builds itself from `actions`.
 # These are the words an AUTHOR PICKS from a Select, so a rename here must reach every runtime `==` or a
 # Set Field silently writes the variable's NAME onto a patient's field and a task takes its default date.
+# W8.2 — `Increment by` is the one mode that reads the WRITE TARGET, not journey state: see `contract.resolve_row`.
 LITERAL = "Literal"
 FROM_CONTEXT = "From Context"
 EXPRESSION = "Expression"
+INCREMENT = "Increment by"
 
 ENGINE = "_engine"
 

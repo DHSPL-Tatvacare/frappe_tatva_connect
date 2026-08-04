@@ -57,32 +57,32 @@ class TestPublishWriteTarget(FrappeTestCase):
 	def test_a_field_outside_the_allowlist_is_refused_at_publish(self):
 		"""The misspelling. `custom_nonexistent_field` is on no catalog row, so nothing may ever set it."""
 		problems = graph.problems(_graph({
-			"target_doctype": "CRM Lead", "fieldname": "custom_nonexistent_field",
-			"value_mode": "Literal", "value": "x",
+			"target_doctype": "CRM Lead",
+			"updates": [{"name": "custom_nonexistent_field", "mode": "Literal", "value": "x"}],
 		}), entry_node="start")
-		self.assertTrue(_on(problems, "u1", "fieldname"), "publish accepted a field automation may never set")
+		self.assertTrue(_on(problems, "u1", "updates"), "publish accepted a field automation may never set")
 
 	def test_an_allowlisted_field_publishes(self):
 		"""The other direction. A gate that refused every field would pass the check above."""
 		problems = graph.problems(_graph({
-			"target_doctype": "CRM Lead", "fieldname": _SETTABLE,
-			"value_mode": "Literal", "value": "New",
+			"target_doctype": "CRM Lead",
+			"updates": [{"name": _SETTABLE, "mode": "Literal", "value": "New"}],
 		}), entry_node="start")
-		self.assertEqual(_on(problems, "u1", "fieldname"), [], problems)
+		self.assertEqual(_on(problems, "u1", "updates"), [], problems)
 
 	def test_a_target_the_run_cannot_reach_is_refused_at_publish(self):
 		"""`_resolve_write_target` raises for anything that is neither the Lead nor the trigger doc, and the
 		trigger doc's doctype IS the subject. Refused here rather than as a dead run."""
 		problems = graph.problems(_graph({
-			"target_doctype": "CRM Task", "fieldname": _SETTABLE,
-			"value_mode": "Literal", "value": "New",
+			"target_doctype": "CRM Task",
+			"updates": [{"name": _SETTABLE, "mode": "Literal", "value": "New"}],
 		}), entry_node="start")
 		self.assertTrue(_on(problems, "u1", "target_doctype"), "publish accepted an unreachable write target")
 
 	def test_the_subject_is_a_reachable_target(self):
 		"""A Task-subject workflow may write onto the Task that fired it — that is the trigger doc."""
-		nodes = _graph({"target_doctype": "CRM Task", "fieldname": "status",
-		                "value_mode": "Literal", "value": "Done"})
+		nodes = _graph({"target_doctype": "CRM Task",
+		                "updates": [{"name": "status", "mode": "Literal", "value": "Done"}]})
 		nodes[0]["config"]["subject_doctype"] = "CRM Task"
 		problems = graph.problems(nodes, entry_node="start")
 		self.assertEqual(_on(problems, "u1", "target_doctype"), [], problems)

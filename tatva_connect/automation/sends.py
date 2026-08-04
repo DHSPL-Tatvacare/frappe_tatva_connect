@@ -292,36 +292,50 @@ def _template_parameters(adapter, account, template, values, ctx):
 	The placeholder names still come from `adapter.template_variables`, which is the provider's own truth
 	about the template, so an author picks from what really exists rather than typing a name.
 
+	What a missing row and a blank row each mean is `_filled_rows`' contract, and is written down there —
+	this verb only says which names it wants filled and reshapes the answer for its provider.
+	"""
+	names = adapter.template_variables(account, template)
+	filled, blank = _filled_rows(names, values, ctx, f"Send WhatsApp: template {template.name}")
+	return [{"name": name, "value": value} for name, value in filled.items()], blank
+
+
+def _filled_rows(names, values, ctx, subject):
+	"""The declared rows, resolved for `names`. Returns `(filled, blank)` — THE one filler.
+
+	WhatsApp, Email and Voice each held a byte-identical copy of this loop, and the line inside it that
+	decides what a mode MEANS was a fourth copy of `actions._resolve_set_field_value`'s decision. Four
+	places to keep in step over a question — "what fills this blank" — that has one answer.
+
 	A slot with NO declared row RAISES: it is author error, it is wrong for every record equally, and no
 	patient's data can produce it. A slot whose declared row RESOLVES BLANK is returned in `blank` and
 	routes to `failed`: that IS a data state (this patient has no diagnosis recorded yet), and the one
 	thing this whole change exists to prevent is putting a blank into a message to a patient. Neither case
 	sends. An author who genuinely wants a blank writes a Literal row and gets one.
+
+	No `current` is passed, and that is the refusal rather than an omission: filling a template slot has no
+	write target, so `Increment by` raises here instead of quietly sending the author's step as text.
 	"""
 	from tatva_connect.workflow_engine import (
 		contract,  # lazy: registry imports actions, which imports this module
 	)
 
-	names = adapter.template_variables(account, template)
-	declared = contract.value_rows_map(values)
-
 	missing = missing_value_rows(names, values)
 	if missing:
 		raise ValueError(
-			"Send WhatsApp: template {} has no value declared for {} - every placeholder needs a row".format(
-				template.name, ", ".join(missing)
-			)
+			"{} has no value declared for {} - every placeholder needs a row".format(subject, ", ".join(missing))
 		)
 
-	parameters, blank = [], []
+	declared = contract.value_rows_map(values)
+	filled, blank = {}, []
 	for name in names:
 		mode, value = declared[name]
-		resolved = ctx.get(value) if mode == contract.FROM_CONTEXT else value
+		resolved = contract.resolve_row(mode, value, ctx)
 		if resolved is None or str(resolved) == "":
 			blank.append(name)
 			continue
-		parameters.append({"name": name, "value": str(resolved)})
-	return parameters, blank
+		filled[name] = str(resolved)
+	return filled, blank
 
 
 @frappe.whitelist()
@@ -610,33 +624,10 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 
 
 def _slot_values(template_name, slots, values, ctx):
-	"""Fill the template's named slots from the node's DECLARED mapping. Returns `(filled, blank)`.
-
-	The same split `_template_parameters` makes for WhatsApp, for the same reasons: a slot with NO declared
-	row RAISES because it is author error wrong for every record equally, while a declared row that
-	RESOLVES BLANK routes to `failed` because that is a data state - and either way nothing goes out with
-	a hole in it.
-	"""
-	from tatva_connect.workflow_engine import contract
-
-	declared = contract.value_rows_map(values)
-	missing = missing_value_rows(slots, values)
-	if missing:
-		raise ValueError(
-			"Send Email: template {} has no value declared for {} - every slot needs a row".format(
-				template_name, ", ".join(missing)
-			)
-		)
-
-	filled, blank = {}, []
-	for name in slots:
-		mode, value = declared[name]
-		resolved = ctx.get(value) if mode == contract.FROM_CONTEXT else value
-		if resolved is None or str(resolved) == "":
-			blank.append(name)
-			continue
-		filled[name] = str(resolved)
-	return filled, blank
+	"""Fill the Email Template's named slots from the node's DECLARED mapping — `_filled_rows`, named for
+	the caller that reads it. The split it makes is the same one WhatsApp gets, because it is the same
+	function."""
+	return _filled_rows(slots, values, ctx, f"Send Email: template {template_name}")
 
 
 def _agent_variables(account, agent_id, values, ctx):
@@ -652,7 +643,6 @@ def _agent_variables(account, agent_id, values, ctx):
 	A provider we cannot reach returns no slot names, so nothing is refused on our inability to ask.
 	"""
 	from tatva_connect.voice import api as voice_api
-	from tatva_connect.workflow_engine import contract
 
 	try:
 		names = voice_api.agent_variables_for(account, agent_id)
@@ -661,25 +651,7 @@ def _agent_variables(account, agent_id, values, ctx):
 		return {}, []
 	if not names:
 		return {}, []
-
-	missing = missing_value_rows(names, values)
-	if missing:
-		raise ValueError(
-			"AI Voice Call: agent {} has no value declared for {} - every placeholder needs a row".format(
-				agent_id, ", ".join(missing)
-			)
-		)
-
-	declared = contract.value_rows_map(values)
-	variables, blank = {}, []
-	for name in names:
-		mode, value = declared[name]
-		resolved = ctx.get(value) if mode == contract.FROM_CONTEXT else value
-		if resolved is None or str(resolved) == "":
-			blank.append(name)
-			continue
-		variables[name] = str(resolved)
-	return variables, blank
+	return _filled_rows(names, values, ctx, f"AI Voice Call: agent {agent_id}")
 
 
 def send_voice(subject_lead, contact_number, connection, agent_id, context=None, from_override=None,

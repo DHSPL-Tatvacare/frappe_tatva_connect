@@ -624,6 +624,19 @@ def _settable_problems(value, field, config, context):
 	return [_("{0} is not a field automation is allowed to set on {1}.").format(value, target)]
 
 
+def _settable_rows_problems(value, field, config, context):
+	"""W8.1 — `_settable_problems`, asked once per row. One fault per bad row, never one for the control.
+
+	Delegates rather than re-deciding: a rows field writes the same fields a single-field one did, so the
+	membership question has the same answer and must have the same asker.
+	"""
+	found = []
+	for row in value or []:
+		if isinstance(row, dict) and row.get("name"):
+			found += _settable_problems(row["name"], field, config, context)
+	return found
+
+
 def _link_grain_problems(value, field, config, context):
 	"""A grain-scoped link must name something the workflow's grain could ever reach.
 
@@ -757,6 +770,8 @@ FIELD_TYPES = {
 	"Sample Rows": {"control": "sample-rows", "check": _share_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "arms"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
+	# W8.1 — Value Map's twin for rows the AUTHOR names: same read kind, so gate and vocabulary arrive with it.
+	"Field Map": {"control": "field-map", "check": _settable_rows_problems, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "fields"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
 	# A vocabulary only the PROVIDER knows — fetched server-side from the account a sibling field names, so
 	# no credential reaches the browser. No `check`: what a provider offers is a runtime fact, and refusing
@@ -978,13 +993,26 @@ def _shapes_outputs(field, outputs_rule):
 	return not rows_from.get("node_field") and field["name"] == rows_from.get("declares")
 
 
+# WHICH CONTROL enters a row's value, per mode — declared, so no frontend decides it by position as `ValueMap.vue` does.
+_MODE_CONTROLS = {
+	refs.LITERAL: "data",
+	refs.FROM_CONTEXT: "value-picker",
+	refs.EXPRESSION: "textarea",
+	refs.INCREMENT: "number",
+}
+
+
 def _value_modes(field):
-	"""A `value_rows` field carries the two modes its rows may take.
+	"""A `value_rows` field carries the modes its rows may take — its own, or the default pair.
 
 	Its control has to render a mode switch, and typing `Literal` / `From Context` into the frontend would
 	be a second vocabulary for one idea. The runtime compares against `contract.FROM_CONTEXT` itself
-	(`sends._template_parameters`), so a drifted spelling would quietly send the literal string
+	(`contract.resolve_row`), so a drifted spelling would quietly send the literal string
 	`crm_lead.first_name` to a patient instead of their name, and nothing would report it.
+
+	A field MAY declare a different list, and W8.1's `Update Field.updates` does: it keeps the Expression
+	mode the single-field node always had and adds `Increment by`, neither of which a template slot can
+	take. The default is unchanged, so every send verb is untouched by that.
 
 	Imported lazily: `contract` reaches `registry`, which builds its verb node types out of `actions` —
 	at module scope this is a cycle.
@@ -994,7 +1022,8 @@ def _value_modes(field):
 
 	from tatva_connect.workflow_engine import contract
 
-	return {**field, "modes": [contract.LITERAL, contract.FROM_CONTEXT]}
+	modes = field.get("modes") or [contract.LITERAL, contract.FROM_CONTEXT]
+	return {**field, "modes": modes, "mode_controls": {m: _MODE_CONTROLS[m] for m in modes}}
 
 
 @frappe.whitelist()

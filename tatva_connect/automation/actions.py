@@ -35,7 +35,8 @@ def _action_label(a):
 		# The journey log is read by an operator, so name the type, not its composite PK.
 		return "Create Task {}".format(labels.label(a.task_type, labels.TASK_TYPE) or "?")
 	if a.action_type == "Update Field":
-		return "Update Field {}".format(a.fieldname or "?")
+		# W8.1 — a node sets MANY fields now, so the label names them all; `a.fieldname` would read "?" for every node.
+		return "Update Field {}".format(", ".join(r.get("name") for r in (a.updates or []) if r.get("name")) or "?")
 	if a.action_type in ("Append Child Row", "Upsert Child Row"):
 		return "{} {}".format(a.action_type, a.child_table or "?")
 	if a.action_type == "Call API":
@@ -352,33 +353,59 @@ def _pin_review_file(task_name, file_name):
 
 
 def _action_set_field(action, lead, context, axes, trigger_doc):
-	"""SET_FIELD via the UNIFIED write path: load the target doc, set the field, save — NEVER
-	frappe.db.set_value (skips validate/hook re-mirroring). The target is the rule's scope — the Lead,
-	or the triggering doc itself (a Field-Changed rule on a Task may set a field on that Task). Gated by
-	the enabled can_set allowlist at runtime (defense in depth). The write runs inside the rule's
-	savepoint, so a later action's failure rolls this back too (group atomicity)."""
-	if not (action.target_doctype and action.fieldname):
-		raise ValueError("Set Field action missing target doctype or fieldname")
-	if not fields.is_settable(action.target_doctype, action.fieldname, axes):
-		raise PermissionError(
-			f"{action.fieldname} on {action.target_doctype} not in the enabled Automation-Field allowlist"
-		)
+	"""UPDATE FIELD via the UNIFIED write path: load the target doc, set every declared row, save ONCE —
+	NEVER frappe.db.set_value (skips validate/hook re-mirroring). The target is the rule's scope — the
+	Lead, or the triggering doc itself (a Field-Changed rule on a Task may set a field on that Task).
+	Every row is gated by the enabled can_set allowlist at runtime (defense in depth), and gated BEFORE
+	anything is written so a forbidden third row cannot leave the first two applied. The write runs inside
+	the rule's savepoint, so a later action's failure rolls this back too (group atomicity).
+
+	W8.1 — one node, many fields, each row carrying its own mode. It was one field per node, which is why
+	one LeadSquared step needed three of ours. Row values resolve through `contract.resolve_row`, THE one
+	reader, so this node and a template slot cannot disagree about what `From Context` means.
+
+	W8.2 — a row in `Increment by` mode reads the field it is about to write, so the read and the write
+	must be one atomic step or two journeys on the same lead both read 2 and both write 3. The row lock is
+	taken FIRST and only when a row needs it: `frappe.db.get_value(..., for_update=True)`, the same door
+	`tasks.create_followup_task` uses to serialize its check-then-insert, held to the segment's commit.
+	"""
+	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this
+
+	rows = _update_rows(action)
+	if not (action.target_doctype and rows):
+		raise ValueError("Update Field action missing target doctype or rows")
+	for row in rows:
+		if not fields.is_settable(action.target_doctype, row["name"], axes):
+			raise PermissionError(
+				f"{row['name']} on {action.target_doctype} not in the enabled Automation-Field allowlist"
+			)
+	if any(row.get("mode") == refs.INCREMENT for row in rows):
+		doctype, name = resolve_target(action, lead, trigger_doc)
+		frappe.db.get_value(doctype, name, "name", for_update=True)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
-	tdoc.set(action.fieldname, _resolve_set_field_value(action, context))
+	for row in rows:
+		tdoc.set(row["name"], contract.resolve_row(
+			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
+		))
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
-def _resolve_set_field_value(action, context):
-	"""One seam for the three Set Field value modes. Literal = the field as typed; From Context =
-	the named context key; Expression = safe_eval against ctx (raises on a bad/missing ref so the
-	rule's savepoint rolls back — no partial write)."""
-	from tatva_connect.automation import expr
+def _update_rows(action):
+	"""The rows this node writes. Refuses the pre-W8.1 single-field shape LOUDLY.
 
-	if action.value_mode == refs.EXPRESSION:
-		return expr.resolve_expression(action.expression, context)
-	if action.value_mode == refs.FROM_CONTEXT:
-		return context.get(action.context_field)
-	return action.value
+	Authored configs are folded to rows by `patches/fold_update_field_into_rows.py`, so the only way the
+	old shape still reaches here is out of a `CRM Workflow Version` — which is content-addressed and
+	immutable by design, so it cannot be migrated and a journey parked on one executes what was frozen.
+	Reading `updates` and finding nothing would write nothing and say nothing; the raise makes it a
+	journey that visibly fails, which is the only honest answer for a rule whose author is long gone.
+	"""
+	rows = [r for r in (action.updates or []) if isinstance(r, dict) and r.get("name")]
+	if rows or not action.fieldname:
+		return rows
+	raise ValueError(
+		f"this Update Field node was frozen before W8.1 and still sets one field ({action.fieldname}); "
+		f"republish the workflow so its nodes carry rows"
+	)
 
 
 def _action_add_comment(action, lead, context, axes, trigger_doc):
@@ -757,20 +784,14 @@ VERBS = {
 	"Update Field": {
 		"lane": "effect", "handler": _action_set_field, "target": TARGET_AUTHORED,
 		"label": "Update Field",
-		"description": "Writes a value onto a field the operator has allowed automation to set.",
+		"description": "Writes values onto fields the operator has allowed automation to set.",
+		# W8.1 — one row per field with the mode ON THE ROW, replacing five params and the three gates they needed.
 		"params": [
 			{"name": "target_doctype", "label": "Write to", "type": "Target", "reqd": True},
-			# `doctype_from` names the sibling holding the doctype this field belongs to — read by the publish gate.
-			{"name": "fieldname", "label": "Field to set", "type": "Field", "reqd": True,
-			 "doctype_from": "target_doctype"},
-			{"name": "value_mode", "label": "Value Mode", "type": "Select",
-			 "options": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION], "reqd": True},
-			{"name": "value", "label": "Value", "type": "Data",
-			 "depends_on_value": {"value_mode": [refs.LITERAL]}},
-			{"name": "context_field", "label": "Take the value from", "type": "Variable",
-			 "depends_on_value": {"value_mode": [refs.FROM_CONTEXT]}},
-			{"name": "expression", "label": "Expression", "type": "Small Text", "reads": "expression",
-			 "depends_on_value": {"value_mode": [refs.EXPRESSION]}},
+			# `doctype_from` names the sibling holding these fields' doctype; `modes` adds the two no template slot can take.
+			{"name": "updates", "label": "Fields to set", "type": "Field Map", "reqd": True,
+			 "doctype_from": "target_doctype",
+			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
 		],
 	},
 	"Append Child Row": {

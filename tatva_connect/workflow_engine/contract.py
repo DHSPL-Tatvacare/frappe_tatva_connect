@@ -35,6 +35,7 @@ A field declaring none of these reads nothing. That is the default, and it is th
 subject line or a note is text, not a reference.
 """
 import frappe
+from frappe.utils import flt
 
 from tatva_connect.workflow_engine import refs, registry
 
@@ -117,6 +118,38 @@ def value_rows_map(rows):
 		for row in rows or []
 		if isinstance(row, dict) and row.get("name")
 	}
+
+
+# The absence of a write target, distinguishable from a target whose value is genuinely None or 0.
+_NO_TARGET = object()
+
+
+def resolve_row(mode, value, ctx, current=_NO_TARGET):
+	"""A declared row's `(mode, value)` becomes a value. THE one reader — the twin of `value_rows_map`.
+
+	It was written FOUR times: `sends._template_parameters`, `sends._slot_values` and
+	`sends._agent_variables` held a byte-identical `ctx.get(value) if mode == FROM_CONTEXT else value`, and
+	`actions._resolve_set_field_value` decided the same thing in different words with a third branch. Four
+	copies is four chances for a renamed mode to fall through to the literal branch — which writes the
+	author's VARIABLE NAME onto a patient's field, or sends it to them as text.
+
+	`current` is the write target's value NOW, and only `Increment by` reads it. A caller that has no
+	target passes nothing and the mode is REFUSED rather than treated as a literal: a send verb filling a
+	template slot has no field to add to, and the silent alternative is a patient receiving the digit the
+	author meant as a step. That refusal is the whole reason this parameter is a sentinel and not `None` —
+	a counter really can be sitting at `None`.
+	"""
+	if mode == refs.FROM_CONTEXT:
+		return ctx.get(value)
+	if mode == refs.EXPRESSION:
+		from tatva_connect.automation import expr
+
+		return expr.resolve_expression(value, ctx)
+	if mode == refs.INCREMENT:
+		if current is _NO_TARGET:
+			raise ValueError(f"{refs.INCREMENT} adds to a field's own value, so it cannot fill a template slot")
+		return flt(current) + flt(value)
+	return value
 
 
 def _predicate_fields(tree, depth=0):

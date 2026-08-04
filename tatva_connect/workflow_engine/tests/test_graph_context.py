@@ -93,19 +93,19 @@ class TestTargetAndFieldAreTableRows(FrappeTestCase):
 		return " | ".join(p["message"] for p in graph.problems(_graph(config), entry_node="trigger-1"))
 
 	def test_a_target_the_run_can_never_reach_is_refused(self):
-		self.assertIn("Sales Invoice", self._messages({"target_doctype": "Sales Invoice", "fieldname": "x", "value_mode": "Literal"}))
+		self.assertIn("Sales Invoice", self._messages({"target_doctype": "Sales Invoice", "updates": [{"name": "x", "mode": "Literal", "value": ""}]}))
 
 	def test_the_subject_is_a_reachable_target(self):
-		found = self._messages({"target_doctype": _SUBJECT, "fieldname": "status", "value_mode": "Literal", "value": "New"})
+		found = self._messages({"target_doctype": _SUBJECT, "updates": [{"name": "status", "mode": "Literal", "value": "New"}]})
 		self.assertNotIn("which this workflow never touches", found)
 
 	def test_a_field_automation_may_not_set_is_refused(self):
-		found = self._messages({"target_doctype": _SUBJECT, "fieldname": "zz_not_settable", "value_mode": "Literal", "value": "x"})
+		found = self._messages({"target_doctype": _SUBJECT, "updates": [{"name": "zz_not_settable", "mode": "Literal", "value": "x"}]})
 		self.assertIn("zz_not_settable", found)
 
 	def test_the_checks_live_on_the_rows(self):
 		self.assertIsNotNone(registry.FIELD_TYPES["Target"]["check"])
-		self.assertIsNotNone(registry.FIELD_TYPES["Field"]["check"])
+		self.assertIsNotNone(registry.FIELD_TYPES["Field Map"]["check"])
 
 
 class TestAGrainScopedLinkAsksTheOneMatcher(FrappeTestCase):

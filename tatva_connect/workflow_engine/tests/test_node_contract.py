@@ -45,7 +45,7 @@ class TestReadsDeclaration(FrappeTestCase):
 	"""`contract.reads_of` — every way a node can name a value, derived from the DECLARED field."""
 
 	def test_a_variable_field_is_a_reference(self):
-		found = contract.reads_of("Update Field", {"value_mode": "From Context", "context_field": "patient_id"})
+		found = contract.reads_of("Update Field", {"updates": [{"name": "status", "mode": "From Context", "value": "patient_id"}]})
 		self.assertEqual([r["ref"] for r in found], ["patient_id"])
 
 	def test_a_predicate_names_every_field_it_tests(self):
@@ -86,8 +86,8 @@ class TestReadsDeclaration(FrappeTestCase):
 		self.assertEqual([r["ref"] for r in found], ["escalation_email"])
 
 	def test_a_reference_says_which_control_carries_it(self):
-		found = contract.reads_of("Update Field", {"value_mode": "From Context", "context_field": "nope"})
-		self.assertEqual(found[0]["field"], "context_field", "the author must be told which box to fix")
+		found = contract.reads_of("Update Field", {"updates": [{"name": "status", "mode": "From Context", "value": "nope"}]})
+		self.assertEqual(found[0]["field"], "updates", "the author must be told which box to fix")
 
 
 class TestPublishRefusesADanglingReference(FrappeTestCase):
@@ -98,8 +98,8 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 		nodes = _graph(
 			_trigger(to="n1"),
 			_node("n1", "Update Field", {
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "From Context", "context_field": "patient_id",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "From Context", "value": "patient_id"}],
 			}, {"next": "end"}),
 			_node("end", "Terminal"),
 		)
@@ -114,8 +114,8 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 				"capture": [{"path": "body.id", "variable": "patient_id"}],
 			}, {"succeeded": "n1", "failed": "end"}),
 			_node("n1", "Update Field", {
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "From Context", "context_field": "api.patient_id",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "From Context", "value": "api.patient_id"}],
 			}, {"next": "end"}),
 			_node("end", "Terminal"),
 		)
@@ -130,8 +130,8 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 				"webhook_endpoint": "y", "capture": [{"path": "body.id", "variable": "patient_id"}],
 			}, {"succeeded": "end", "failed": "end"}),
 			_node("n1", "Update Field", {
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "From Context", "context_field": "patient_id",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "From Context", "value": "patient_id"}],
 			}, {"next": "end"}),
 			_node("end", "Terminal"),
 		)
@@ -154,8 +154,8 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 			_trigger(to="sv"),
 			_node("sv", "Set Variables", {"assign": '{"stage": "Qualified"}'}, {"next": "n1"}),
 			_node("n1", "Update Field", {
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "From Context", "context_field": "sv.stage",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "From Context", "value": "sv.stage"}],
 			}, {"next": "end"}),
 			_node("end", "Terminal"),
 		)
@@ -168,8 +168,8 @@ class TestPublishRefusesADanglingReference(FrappeTestCase):
 			_trigger(to="sv"),
 			_node("sv", "Set Variables", {"assign": 'dict(other="x")'}, {"next": "n1"}),
 			_node("n1", "Update Field", {
-				"target_doctype": "CRM Lead", "fieldname": "status",
-				"value_mode": "From Context", "context_field": "whatever",
+				"target_doctype": "CRM Lead",
+				"updates": [{"name": "status", "mode": "From Context", "value": "whatever"}],
 			}, {"next": "end"}),
 			_node("end", "Terminal"),
 		)
