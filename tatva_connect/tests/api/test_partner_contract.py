@@ -23,6 +23,8 @@ from unittest.mock import patch
 
 import frappe
 
+from tatva_connect.tests.api.partner_fixture import minimal_answers
+
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file, partner_note
 from tatva_connect.api._base import (
@@ -171,7 +173,7 @@ class TestPartnerContract(unittest.TestCase):
 		types = frappe.local.response["data"]["task_types"]
 		if types:
 			activity = partner_activity._create_one(
-				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": {}}),
+				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": minimal_answers(types[0]["name"])}),
 				self.mp, self.is_sysmgr)
 			addresses["activity"] = activity["name"]
 
@@ -741,7 +743,7 @@ class TestPartnerContract(unittest.TestCase):
 		# the human name the schema advertises -- exactly what a partner would send
 		advertised = types[0]["name"]
 		created = partner_activity._create_one(
-			frappe._dict({"lead": lead.name, "task_type": advertised, "values": {}}),
+			frappe._dict({"lead": lead.name, "task_type": advertised, "values": minimal_answers(advertised)}),
 			self.mp, self.is_sysmgr)
 
 		frappe.local.response = frappe._dict()
@@ -846,7 +848,7 @@ class TestPartnerContract(unittest.TestCase):
 
 		for _ in range(5):
 			partner_activity._create_one(
-				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": {}}),
+				frappe._dict({"lead": lead.name, "task_type": types[0]["name"], "values": minimal_answers(types[0]["name"])}),
 				self.mp, self.is_sysmgr)
 
 		configs = []

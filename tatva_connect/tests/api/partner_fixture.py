@@ -97,3 +97,40 @@ def teardown():
 		if frappe.db.exists(doctype, name):
 			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 	_MADE.clear()
+
+
+def _sample_answer(field):
+	"""A valid value for one declared field, taken from its own declaration."""
+	options = [o for o in (field.get("options") or "").split("\n") if o] if field.get("options") else []
+	if options:
+		return options[0]
+	return {
+		"Int": 1, "Float": 1.0, "Check": 0, "Currency": 1.0,
+		"Date": "2026-08-20", "Datetime": "2026-08-20 11:30:00", "Time": "11:30:00",
+	}.get(field.get("fieldtype"), "fixture")
+
+
+def minimal_answers(task_type):
+	"""The smallest submission an activity type accepts, computed from the type's OWN schema.
+
+	A form is refused when a field it SHOWS is mandatory and blank, and refused again when a field it does
+	NOT show carries a value — so the answer set cannot be guessed, and naming one field here would make
+	the test a copy of a seed that an operator may change. This asks the product's own resolvers instead
+	(`_settled` for what the form shows, `_required_here` for what it insists on), filling each newly
+	required field from its own options until nothing further is asked for. Answering one question can
+	reveal the next, so it repeats — bounded by the field count, which is the most rounds that can add
+	anything.
+	"""
+	from tatva_connect.activity.api import _required_here, _settled, compiled_fields
+
+	fields = compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
+	answers = {}
+	for _round in range(len(fields) + 1):
+		shown, live = _settled(fields, answers)
+		pending = [f for f in fields
+		           if f.fieldname not in answers and _required_here(f, shown, live)]
+		if not pending:
+			return answers
+		for f in pending:
+			answers[f.fieldname] = _sample_answer(f)
+	return answers

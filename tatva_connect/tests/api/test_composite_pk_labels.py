@@ -158,6 +158,7 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 
 	def setUp(self):
 		from tatva_connect.activity.api import save_activity
+		from tatva_connect.tests.api.partner_fixture import minimal_answers
 
 		# IntegrationTestCase rolls back once per CLASS, not per test, and any commit reached inside a
 		# test would make these fixtures permanent. Roll back after every test.
@@ -167,7 +168,7 @@ class TestHandBuiltPayloads(IntegrationTestCase):
 			"mobile_no": f"+9198124{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			"custom_vertical": VERTICAL, "custom_group": GROUP,
 		}).insert(ignore_permissions=True)
-		save_activity(self.lead.name, self.task_type, {}, task=None)
+		save_activity(self.lead.name, self.task_type, minimal_answers(self.task_type), task=None)
 		frappe.get_doc({
 			"doctype": "CRM Task", "title": "Label Probe Open",
 			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
@@ -267,7 +268,12 @@ class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
 				"doctype": "CRM Lead", "first_name": "Push Probe",
 				"mobile_no": f"+9198125{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
 			}).insert(ignore_permissions=True)
+			# The hook reads `get_doc_before_save()` and returns when the stage did not MOVE. Straight
+			# after an insert there is no before-image, so setting the field in memory looks like no
+			# change at all — the lead has to be saved once, then moved, for this to be a stage change.
+			doc.reload()
 			doc.custom_substage = self.stage
+			doc.save(ignore_permissions=True)
 			events.on_lead_stage_changed(doc)
 
 		self.assertTrue(sent, "the stage change did not dispatch")
@@ -284,3 +290,51 @@ class TestTheNotificationAndTheWhatsAppText(IntegrationTestCase):
 	def _assert_clean(self, text, screen):
 		self.assertTrue(text, f"{screen} produced nothing")
 		self.assertNotIn("::", str(text), f"{screen} carries a raw composite PK: {text!r}")
+
+
+class TestThePartnerApiRecordPayloads(IntegrationTestCase):
+	"""The partner API's RECORD payloads, which are hand-built and so must resolve their own labels.
+
+	Its own fixture: the shared one above saves an activity with no answers, and a type whose rules
+	require one refuses that — a pre-existing breakage that would otherwise mask what these assert.
+	"""
+
+	def setUp(self):
+		self.addCleanup(frappe.db.rollback)
+		frappe.set_user("Administrator")
+		self.stage = frappe.db.get_value("CRM Lead Stage", {"name": ["like", "%::%"]}, "name")
+		self.task_type = frappe.db.get_value(
+			"CRM Task Type", {"name": ["like", f"{VERTICAL}::{GROUP}::%"], "program": ["in", ["", None]]},
+			"name", order_by="name asc")
+		if not (self.stage and self.task_type):
+			raise unittest.SkipTest("no composite stage or activity type on this site")
+		self.lead = frappe.get_doc({
+			"doctype": "CRM Lead", "first_name": "Partner Label Probe",
+			"mobile_no": f"+9198126{int(frappe.generate_hash(length=8), 16) % 100000:05d}",
+			"custom_vertical": VERTICAL, "custom_group": GROUP,
+			"custom_substage": self.stage,
+		}).insert(ignore_permissions=True)
+
+	def test_the_lead_payload(self):
+		"""Every lead read returns this one projection — get, list, create and update alike."""
+		from tatva_connect.api.partner import _caller_fields, _curate
+
+		_user, _mp, _is, parent_fields, child_allow = _caller_fields()
+		payload = _curate(frappe.get_doc("CRM Lead", self.lead.name), parent_fields, child_allow)
+		self.assertTrue(payload.get("custom_substage"), "the projection said nothing about the stage")
+		leaks = pk_leaks(payload)
+		self.assertEqual(leaks, [], "the partner lead payload shows a raw composite PK:\n  " + "\n  ".join(leaks))
+
+	def test_the_activity_payload(self):
+		"""A partner sends `task_type` as the label, so returning the key made read and write disagree."""
+		from tatva_connect.api.partner_activity import _activity_payload
+
+		task = frappe.get_doc({
+			"doctype": "CRM Task", "title": "Partner Label Probe",
+			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
+			"custom_task_type": self.task_type, "status": "Todo",
+		}).insert(ignore_permissions=True)
+		payload = _activity_payload(task.name)
+		self.assertTrue(payload.get("task_type"), "the projection said nothing about the type")
+		leaks = pk_leaks(payload)
+		self.assertEqual(leaks, [], "the partner activity payload shows a raw composite PK:\n  " + "\n  ".join(leaks))
