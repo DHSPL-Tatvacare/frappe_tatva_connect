@@ -1248,7 +1248,10 @@ def lead_list(**_kwargs):
 		"CRM Lead", filters=filters, fields=fields,
 		limit_page_length=limit, limit_start=offset, order_by="modified desc",
 	)
-	# Echo the caller's own label under the partner-facing key, not the raw column name.
+	# Echo the caller's own label under the partner-facing key, not the raw column name, and read a
+	# composite Link the SAME way `_curate` does — a page and a single read must agree about a VALUE, not
+	# just about which fields it carries.
+	leads = [_readable("CRM Lead", row) for row in leads]
 	for row in leads:
 		row["external_id"] = row.pop(EXTERNAL_ID_FIELD, None)
 	_list_ok("leads", leads, total, offset, limit)

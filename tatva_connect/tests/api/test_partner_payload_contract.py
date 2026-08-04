@@ -151,6 +151,20 @@ class TestNoResponseNamesAnInternalTable(IntegrationTestCase):
 		_u, _mp, _is, parent_fields, child_allow = _caller_fields()
 		return _curate(frappe.get_doc("CRM Lead", self.lead.name), parent_fields, child_allow)
 
+	def test_a_page_and_a_single_read_agree_on_the_value(self):
+		"""`lead_list` builds its rows with its own query, so it can resolve differently from `lead_get`
+		and did — a page returned the composite key a single read had already turned into a label."""
+		from tatva_connect.api.partner import _caller_fields, _curate, _readable
+
+		_u, _mp, _is, parent_fields, child_allow = _caller_fields()
+		doc = frappe.get_doc("CRM Lead", self.lead.name)
+		single = _curate(doc, parent_fields, child_allow)
+		paged = _readable("CRM Lead", {f: doc.get(f) for f in parent_fields if doc.get(f) is not None})
+		for field, value in paged.items():
+			self.assertEqual(value, single.get(field),
+			                 f"a page and a single read disagree about {field}")
+		self.assertNotIn("::", str(paged.get("custom_substage")), "the page must resolve the stage too")
+
 	def test_a_user_link_stays_an_email(self):
 		"""A composite key is meaningless to a caller, so it reads as its label. `lead_owner` is the
 		opposite case: its key IS the identifier a caller matches on, and its title is a full name that
