@@ -38,8 +38,8 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr
 
 from tatva_connect.access import entitlement, posture
-from tatva_connect.lead import keyvalue, multirow
-from tatva_connect.taxonomy import grain, labels
+from tatva_connect.lead import keyvalue, multi_value, multirow
+from tatva_connect.taxonomy import grain, labels, picklist
 
 # Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
 # (vertical/group) is the dedup anchor; program transitions happen via deliberate routing
@@ -47,7 +47,7 @@ from tatva_connect.taxonomy import grain, labels
 _PROTECTED_FIELDS = frozenset({"custom_vertical", "custom_group", "custom_current_program"})
 
 _CATALOG_FIELDS = [
-	"field_key", "label", "fieldname", "section",
+	"field_key", "label", "fieldname", "section", "is_multi_value",
 ]
 
 
@@ -127,15 +127,20 @@ def _docfield(target_doctype, fieldname):
 		return None
 
 
-def _is_readonly(section, fieldname):
+def _is_readonly(section, fieldname, is_multi_value=False):
 	"""Read-only iff a protected routing field, the section's own row key, the docfield says so, or the
 	field is unknown (fail-closed: an unresolvable field is never writable).
 
 	A multi-row section's row key is the row's ADDRESS, not a value on it: editing it re-keys the row, so
 	the next write naming the original key appends a duplicate instead of updating. Read off the section
-	that declares it, never restated here — a single-row section declares none and loses nothing."""
+	that declares it, never restated here — a single-row section declares none and loses nothing.
+
+	A multi-value field has no column on the section's doctype ON PURPOSE, so the fail-closed branch is
+	not the right answer for it: what makes it writable is the catalog tick, and that is asked here."""
 	if fieldname in _PROTECTED_FIELDS or fieldname == (section.row_key_field or ""):
 		return True
+	if is_multi_value:
+		return False
 	df = _docfield(section.target_doctype, fieldname)
 	return bool(df.read_only) if df else True
 
@@ -145,7 +150,7 @@ def writable_keys(selected, is_readonly):
 	Target doctype is read off the section brain; `is_readonly(target_doctype, fieldname)` is injected."""
 	out = set()
 	for fk, row in selected.items():
-		if not is_readonly(_section_of(row), row.get("fieldname") or ""):
+		if not is_readonly(_section_of(row), row.get("fieldname") or "", cint(row.get("is_multi_value"))):
 			out.add(fk)
 	return out
 
@@ -205,6 +210,18 @@ def _bucket(doc, section):
 	}
 
 
+def _row_key(doc, section):
+	"""The address the row ON SHOW is kept under — the section's own row key, read off that row.
+
+	ONE rule, read AND write: whatever row the panel flattened to is the row an edit lands on, so a
+	multi-value selection can never be read from one cycle and written onto another. Blank on a section
+	that declares no row key, and blank is a real address, not an unset one."""
+	if not section.child_table_field:
+		return ""
+	child = _child_row(doc, section)
+	return cstr(child.get(section.row_key_field)) if (child and section.row_key_field) else ""
+
+
 def _field_values(doc, section, fieldname, value):
 	"""Every value this field is kept under — one per row on a multi-row section, else the one on show.
 	What `empty_everywhere` decides over; the panel still displays only `value`."""
@@ -213,7 +230,22 @@ def _field_values(doc, section, fieldname, value):
 	return [child.get(fieldname) for child in doc.get(section.child_table_field) or []]
 
 
+def _multi_values(doc, section, row):
+	"""Every address this multi-value field holds selections at — the values on show first.
+
+	One per row of a multi-row section, so `empty_everywhere` reads the field the same way it reads a
+	column: blank on the latest cycle but answered on an earlier one is not an empty field."""
+	held = multi_value.read_all(doc)
+	field_key = row.get("field_key")
+	if not (section.is_multi_row and section.child_table_field):
+		return [held.get((field_key, _row_key(doc, section)), [])]
+	return [held.get((field_key, cstr(child.get(section.row_key_field))), [])
+	        for child in doc.get(section.child_table_field) or []]
+
+
 def _value(doc, section, row):
+	if cint(row.get("is_multi_value")):
+		return multi_value.read(doc, row.get("field_key"), _row_key(doc, section))
 	if section.child_table_field:
 		child = _child_row(doc, section)
 		return None if child is None else child.get(row.get("fieldname"))
@@ -285,25 +317,55 @@ def _screening_answers(doc, section):
 
 def _display_label(df, value):
 	"""The panel's label for a Link value. None for a non-Link field, which tells the panel to render
-	the raw value."""
+	the raw value.
+
+	A multi-value field holds a LIST of the same Link, so its display is the list of those labels —
+	`labels.label` falls back to the raw value, so one unresolvable selection never blanks the rest."""
 	if not (df and df.fieldtype == "Link" and df.options and value):
 		return None
+	if isinstance(value, list):
+		return [labels.label(v, df.options) for v in value]
 	return labels.title_of(df.options, value)
+
+
+def _link_query(df, fieldname, lead):
+	"""The scoped query a picklist picker must ask, or None for any other Link (which keeps the native
+	one). The framework's `search_link` reads the master through the generic list path, so it demands
+	DocType read on CRM Picklist Value — which no rep holds, and every picklist picker 403s. This names
+	`taxonomy.picklist.picklist_query` instead: whitelisted, grain-derived server-side, written for
+	exactly this. The category comes from `picklist.category_of` — the ONE rule, never re-derived here
+	and never in the client. Grain is NOT passed: the query re-reads it off the lead, and an exact axis
+	filter would drop every blank-axis global option.
+
+	The fieldname is the CATALOG's, not the docfield's: a multi-value field is stored in a column called
+	`value` and its own name — the one the category is derived from — lives on the catalog row alone."""
+	if not (df and df.fieldtype == "Link" and df.options == "CRM Picklist Value"):
+		return None
+	return {
+		"query": "tatva_connect.taxonomy.picklist.picklist_query",
+		"filters": {"category": picklist.category_of(fieldname), "lead": lead},
+	}
 
 
 @frappe.whitelist()
 def lead_detail(lead):
 	"""Read projection: {sections:[{key,label,order,multi_row,row_key,row_count,fields:[{field_key,label,
 	fieldname,fieldtype,options,value,display,empty,read_only}]}]}. A key-value entry also carries
-	`has_more` — its own answers. Permission-gated; values resolved server-side."""
+	`has_more` — its own answers, and a picklist Link a `link_query` — the scoped query its picker asks.
+	A multi-value field carries `multi_value` and answers in LISTS (`value` and `display` both), which is
+	the panel's signal to render a set of selections rather than one.
+	Permission-gated; values resolved server-side."""
 	posture.require("CRM Lead", "read", doc=lead)
 	doc = frappe.get_doc("CRM Lead", lead)
 	buckets = {}
 	for fk, row in _select(doc).items():
 		section = _section_of(row)
 		bucket = buckets.setdefault(section.name, _bucket(doc, section))
-		df = _docfield(section.target_doctype, row.get("fieldname"))
+		is_multi = cint(row.get("is_multi_value"))
+		# A multi-value field has no column on its section, so what it IS reads off the column its selections really live in.
+		df = multi_value.value_field() if is_multi else _docfield(section.target_doctype, row.get("fieldname"))
 		value = _value(doc, section, row)
+		link_query = _link_query(df, row.get("fieldname"), lead)
 		bucket["fields"].append({
 			"field_key": fk,
 			"label": row.get("label") or row.get("fieldname"),
@@ -312,10 +374,16 @@ def lead_detail(lead):
 			"options": (df.options or "") if df else "",
 			"value": value,
 			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
-			"empty": empty_everywhere(_field_values(doc, section, row.get("fieldname"), value)),
-			"read_only": _is_readonly(section, row.get("fieldname")),
-			# order = the field's position in its target doctype (operator-controlled, not hardcoded)
-			"_idx": df.idx if df else 10_000,
+			"empty": empty_everywhere(
+				_multi_values(doc, section, row) if is_multi
+				else _field_values(doc, section, row.get("fieldname"), value)
+			),
+			"read_only": _is_readonly(section, row.get("fieldname"), is_multi),
+			# order = the field's position in its target doctype (operator-controlled); a multi-value field holds none, so it lands where an unknown one does
+			"_idx": 10_000 if is_multi else (df.idx if df else 10_000),
+			# only a picklist Link carries one; every other Link keeps the framework's own picker
+			**({"link_query": link_query} if link_query else {}),
+			**({"multi_value": True} if is_multi else {}),
 		})
 	# A key-value section owns no catalogued field, so the loop above never opens a bucket for it: its
 	# rows are the section. Opened here from the section itself, and only when the lead has answers.
@@ -333,9 +401,15 @@ def lead_detail(lead):
 
 def _stage_write(doc, section, row, value):
 	"""Stage one field write onto the in-memory doc (parent field or child row). Goes through the
-	doc API only — never raw SQL."""
+	doc API only — never raw SQL.
+
+	A multi-value field is staged at the SAME address it was read from (`_row_key`), so an edit lands on
+	the row the reader was looking at, and the lead's own save persists it with everything else."""
 	table = section.child_table_field
 	fieldname = row.get("fieldname")
+	if cint(row.get("is_multi_value")):
+		multi_value.replace(doc, row.get("field_key"), _row_key(doc, section), value or [])
+		return
 	if not table:
 		doc.set(fieldname, value)
 		return
@@ -442,14 +516,38 @@ def _filled_columns(section, columns, owned):
 	return {col["key"] for col in columns if cint(filled.get(col["key"]))}
 
 
-def _row_cells(child, columns):
-	"""One child row as {column_key: value}, a Link resolved to the SAME label the panel shows."""
+def _multi_value_columns(section):
+	"""The section's multi-value fields as columns of its rows table — appended, never SQL.
+
+	They are not columns of the child doctype (that is what makes them multi-value), so they can never
+	reach a WHERE, an ORDER BY or a `COUNT(col)`: `_row_columns` stays the SQL list and these ride
+	alongside it. Label and key come from the catalog, the type from the column the selections live in,
+	so the table names the field exactly as the panel above it does."""
+	rows = frappe.get_all(
+		"CRM Lead API Field", filters={"section": section.name, "is_multi_value": 1},
+		fields=["field_key", "label", "fieldname"], order_by="field_key asc",
+	)
+	df = multi_value.value_field()
+	return [{"key": r["fieldname"], "field_key": r["field_key"], "label": _(r["label"] or r["fieldname"]),
+	         "fieldtype": df.fieldtype, "options": df.options or ""} for r in rows]
+
+
+def _row_cells(child, columns, extra=(), held=None, row_key_field=""):
+	"""One child row as {column_key: value}, a Link resolved to the SAME label the panel shows.
+
+	A multi-value column has nothing on the row to read, so its cell is read from the lead's own
+	selections at THIS row's address — the same address the panel flattens to for the latest row, so
+	the first line of the table and the panel behind it can never say different things."""
 	cells = {"name": child.get("name")}
 	for col in columns:
 		value = child.get(col["key"])
 		if col["fieldtype"] == "Link" and col["options"]:
 			value = labels.title_of(col["options"], value) or value
 		cells[col["key"]] = value
+	address = cstr(child.get(row_key_field)) if row_key_field else ""
+	for col in extra:
+		selected = (held or {}).get((col["field_key"], address), [])
+		cells[col["key"]] = [labels.label(v, col["options"]) for v in selected]
 	return cells
 
 
@@ -514,7 +612,11 @@ def lead_detail_rows(lead, section, search=None, filters=None, order_by=None,
 
 	Two gates, both already owned elsewhere: read of the LEAD (as `lead_detail`), and the section being
 	one the caller's panel opens (`_select`) — a grain-foreign section answers nothing. Within it a
-	caller may sort or filter only by a served column; both are allowlisted, never passed through."""
+	caller may sort or filter only by a served column; both are allowlisted, never passed through.
+
+	A multi-value field is a column of this table too — it is what the reader was just looking at on the
+	panel — read per row at that row's own address. It is served `sortable: 0, filterable: 0`, because
+	it is not addressable in SQL."""
 	posture.require("CRM Lead", "read", doc=lead)
 	doc = frappe.get_doc("CRM Lead", lead)
 	if cstr(section) not in _sections_on_panel(_select(doc)):
@@ -523,6 +625,8 @@ def lead_detail_rows(lead, section, search=None, filters=None, order_by=None,
 	if not sec.child_table_field:
 		frappe.throw(_("{0} keeps no rows.").format(sec.title), title=_("No rows"))
 	columns = _row_columns(sec)
+	# Shown but never queried: SQL cannot address a multi-value column, so it stays out of the select, both allowlists and the filled count, and is read per row from the lead's own selections.
+	extra = _multi_value_columns(sec)
 	owned = {"parent": lead, "parenttype": "CRM Lead", "parentfield": sec.child_table_field}
 	narrowed = {**owned, **_row_filters(columns, filters)}
 	query = {"parent_doctype": "CRM Lead", "filters": narrowed, "or_filters": _row_search(columns, search)}
@@ -538,12 +642,17 @@ def lead_detail_rows(lead, section, search=None, filters=None, order_by=None,
 	# counted in the DB, never by reading the whole matching set back to take its length.
 	counted = frappe.get_all(sec.target_doctype, fields=[_COUNT_FIELD], **query)
 	filled = _filled_columns(sec, columns, owned)
+	held = multi_value.read_all(doc) if extra else {}
 	return {
 		"label": sec.title,
 		"row_key": sec.row_key_field or "",
 		# `sortable` answers D5 and nothing else: every column is still offered to the picker and to Filter.
-		"columns": [{**c, "sortable": c["key"] in filled} for c in columns],
-		"data": [_row_cells(child, columns) for child in children],
+		# `sortable`/`filterable` answer D5 and D1 — a column SQL cannot address reaches neither ORDER BY nor WHERE, though the column picker still offers it; `field_key` is how the cell reader addresses the selections.
+		"columns": [{**c, "sortable": c["key"] in filled, "filterable": True} for c in columns]
+		           + [{**{k: v for k, v in c.items() if k != "field_key"},
+		               "sortable": False, "filterable": False} for c in extra],
+		"data": [_row_cells(child, columns, extra, held, sec.row_key_field or "")
+		         for child in children],
 		"page_length": window,
 		"page_length_count": cint(page_length_count) or 20,
 		"row_count": len(children),

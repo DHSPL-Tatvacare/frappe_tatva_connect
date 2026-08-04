@@ -178,9 +178,14 @@ def field_behavior(fieldname, required=False):
 	return BEHAVIOR_REQUIRED if required else BEHAVIOR_OPTIONAL
 
 
-def field_descriptor(fieldname, label, fieldtype, required=False, options=None, allowed_values=None):
+def field_descriptor(fieldname, label, fieldtype, required=False, options=None, allowed_values=None,
+                     multi=False):
 	"""The one partner-facing field descriptor shared by every endpoint schema (lead, activity, ...).
-	A reserved field is OUTPUT_ONLY and never required; options apply only to Link and Select."""
+	A reserved field is OUTPUT_ONLY and never required; options apply only to Link and Select.
+
+	`multi` says the field takes a LIST of that type rather than one. It is additive and defaults off, so
+	every descriptor this already published is byte-identical — a field that takes many values is still a
+	Link at its master, which is what tells a caller where the vocabulary comes from."""
 	writable = is_writable(fieldname)
 	d = {
 		"fieldname": fieldname,
@@ -190,6 +195,8 @@ def field_descriptor(fieldname, label, fieldtype, required=False, options=None, 
 		"required": bool(required) and writable,
 		"options": options if fieldtype in ("Link", "Select") else None,
 	}
+	if multi:
+		d["multi"] = True
 	if allowed_values:
 		d["allowed_values"] = allowed_values
 	return d

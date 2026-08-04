@@ -67,7 +67,8 @@ from tatva_connect.api._base import (
 	throw_field,
 	validate_external_id,
 )
-from tatva_connect.lead import keyvalue
+from tatva_connect.lead import keyvalue, multi_value
+from tatva_connect.taxonomy import labels
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
 # ---------------------------------------------------------------------------
@@ -117,11 +118,18 @@ def _build_catalog() -> dict:
 	  section_key_value {section: the section row itself}  (key-value sections only — one row per field,
 	                     where a field's `fieldname` addresses a ROW, not a column; the section names
 	                     every column those rows are read through)
+	  multi_value    {section: {fieldname: field_key}}  the fields that take MORE THAN ONE value, whose
+	                 selections hang off the lead (tatva_connect.lead.multi_value) instead of a column
 	The four section_* maps are the `CRM Lead Section` rows themselves: ONE row per section states
 	its table, its target, its row key and its title, and no field row restates any of them.
 	"""
 	sections = _sections()
-	keys, read_only, audit, labels = [], [], [], {}
+	keys, read_only, audit, field_labels = [], [], [], {}
+	# Which fields are multi-value is `lead.multi_value`'s to say — this only projects that answer onto the section keys, cached because `_column_values` asks it once per incoming row.
+	multi = {}
+	for (section, fieldname), field_key in multi_value.declared().items():
+		if section in sections:
+			multi.setdefault(section, {})[fieldname] = field_key
 	for r in frappe.get_all(
 		"CRM Lead API Field",
 		fields=["field_key", "label", "section", "fieldname"],
@@ -146,7 +154,7 @@ def _build_catalog() -> dict:
 			if r.section == PARENT_SECTION:
 				audit.append({"fieldname": r.fieldname, "label": r.label or r.fieldname})
 			continue
-		labels[r.field_key] = r.label or r.fieldname
+		field_labels[r.field_key] = r.label or r.fieldname
 		# A key-value row is READ-ONLY: cataloguing a screening question shows it, it never grants a write.
 		if sections[r.section].is_key_value:
 			read_only.append(r.field_key)
@@ -156,13 +164,14 @@ def _build_catalog() -> dict:
 		"keys": keys,
 		"key_set": set(keys),
 		"read_only_keys": read_only,
-		"labels": labels,
+		"labels": field_labels,
 		"audit": audit,
 		"section_doctype": {k: s.target_doctype for k, s in sections.items()},
 		"section_child": {k: s.child_table_field for k, s in sections.items() if s.child_table_field},
 		"section_title": {k: s.title for k, s in sections.items()},
 		"section_key_field": {k: s.row_key_field for k, s in sections.items() if s.is_multi_row},
 		"section_key_value": {k: s for k, s in sections.items() if s.is_key_value},
+		"multi_value": multi,
 	}
 
 
@@ -212,25 +221,29 @@ LIST_FILTERS = {
 # TATVA: removed unused `catalog_label(key)` — dead code with no caller anywhere (audit #32, A.14).
 
 
+def _section_of_child(cf):
+	"""The section key a child-table fieldname belongs to, or "" — the ONE inversion of `section_child`.
+
+	Three helpers walked that map for themselves and answered three different questions about the same
+	row; the walk is written once here and each of them now just reads its own column off the section."""
+	for section, child in _catalog()["section_child"].items():
+		if child == cf:
+			return section
+	return ""
+
+
 def catalog_section_title(child_fieldname):
 	"""Readable section title for a child-table fieldname, e.g., 'custom_lab_profile'
 	-> 'Lab' — used in child-write error messages ('report_date is required to
 	identify a Lab row'). Falls back to the fieldname if the section is unknown."""
-	cat = _catalog()
-	for section, cf in cat["section_child"].items():
-		if cf == child_fieldname:
-			return cat["section_title"].get(section, section)
-	return child_fieldname
+	section = _section_of_child(child_fieldname)
+	return _catalog()["section_title"].get(section, child_fieldname)
 
 
 def _child_key_field(cf):
 	"""The row-key fieldname for a child-table fieldname, or None (single-row).
 	The section states it; no catalog row carries a copy."""
-	cat = _catalog()
-	for section, child in cat["section_child"].items():
-		if child == cf:
-			return cat["section_key_field"].get(section)
-	return None
+	return _catalog()["section_key_field"].get(_section_of_child(cf))
 
 
 def _child_key_value(cf):
@@ -239,11 +252,80 @@ def _child_key_value(cf):
 	The section names every column its rows are read through — the identity, the answer, the label and
 	the raw key the identity was derived from. A field row naming this section addresses one of its ROWS
 	through that identity, never a column."""
-	cat = _catalog()
-	for section, child in cat["section_child"].items():
-		if child == cf:
-			return cat["section_key_value"].get(section)
-	return None
+	return _catalog()["section_key_value"].get(_section_of_child(cf))
+
+
+# Multi-value fields: no column on the section, selections hang off the lead by (field_key, row_key). Below is address bookkeeping only — reading, resolving and writing one is `tatva_connect.lead.multi_value`.
+
+def _multi_value_fields(section):
+	"""{fieldname: field_key} for the multi-value fields of one section. Empty for every other."""
+	return _catalog()["multi_value"].get(section) or {}
+
+
+def _column_values(section, row):
+	"""An incoming row as the COLUMNS it writes — the delete flag and every multi-value field dropped.
+
+	A multi-value field is not a column, so setting one on a doc writes into nothing and the value is
+	lost in silence. Dropped HERE, once, rather than at each of the three places that stage a row."""
+	declared = _multi_value_fields(section)
+	return {k: v for k, v in (row or {}).items() if k != "_delete" and k not in declared}
+
+
+def _readable(doctype, row):
+	"""A projected row as a human reads it: a Link at a master that declares a title holds a composite
+	key, so the title is published in its place. `labels.shown` asks the SCHEMA which fields those are,
+	so no field is named here and the next composite field needs no code — the same reader every other
+	hand-built payload in the app resolves through (notifications, WhatsApp, rule previews)."""
+	return {k: labels.shown(doctype, k, v) for k, v in row.items()}
+
+
+def _read_multi_values(section, fieldnames, held, row_key):
+	"""{fieldname: [value, ...]} for the multi-value fields of `section` this caller may read.
+
+	`held` is one `multi_value.read_all` for the whole lead, passed in rather than re-read per row: a
+	lead with twelve drug cycles is still one pass over one child table."""
+	master = multi_value.value_field().options
+	return {fn: [labels.label(v, master) for v in held.get((fk, cstr(row_key)), [])]
+	        for fn, fk in _multi_value_fields(section).items() if fn in fieldnames}
+
+
+def _stage_multi_values(doc, section, row, row_key):
+	"""Stage the multi-value selections an incoming row carries, at that row's own address.
+
+	Staged HERE and not in `_collect`, because the address is only settled once the upsert engine has
+	resolved which row this is — a row that named no key is stamped with its arrival time.
+
+	`row=None` is the delete: the row is going, so every selection hanging off it goes with it, through
+	the same `replace` with nothing to put back. A field the caller did not send is left alone — an
+	absent field is "not sent" here exactly as an empty string is everywhere else in this API."""
+	for fieldname, field_key in _multi_value_fields(section).items():
+		if row is None:
+			multi_value.replace(doc, field_key, row_key, [])
+		elif fieldname in row:
+			multi_value.replace(doc, field_key, row_key, row.get(fieldname))
+
+
+def _resolve_multi_values(section, row, grain):
+	"""A collected row with every multi-value field's human values translated to composite picklist PKs.
+
+	Not a second resolver: each value goes through `picklist.resolve_value`, the unit `resolve_row_links`
+	itself is built from — same registry, same grain rule, same drop-and-log for a value this grain does
+	not offer. The MASTER is read off the column the selections live in, and the FIELDNAME is the
+	catalog's, because that is what the picklist category is derived from."""
+	declared = _multi_value_fields(section)
+	if not declared:
+		return row
+	from tatva_connect.taxonomy import picklist
+
+	master = multi_value.value_field().options
+	out = dict(row or {})
+	for fieldname in declared:
+		if fieldname not in out:
+			continue
+		sent = out[fieldname] if isinstance(out[fieldname], list) else [out[fieldname]]
+		resolved = [picklist.resolve_value(master, v, grain, fieldname, multi_value.DOCTYPE) for v in sent]
+		out[fieldname] = [v for v in resolved if v]
+	return out
 
 
 # -- helpers -----------------------------------------------------------------
@@ -394,13 +476,15 @@ def _resolve_picklists(parent, children, grain):
 	before any before_validate hook on insert/save, so a doc_event can't fix a Link — the ingestion
 	path must resolve first. Rides the SAME taxonomy.picklist brain the lead_schema discovery
 	advertises, so what a partner is TOLD they may send is exactly what is ACCEPTED. Shared by
-	create + update."""
+	create + update. A multi-value field's LIST rides the same call, one value at a time."""
 	from tatva_connect.taxonomy import picklist
 
 	cm = frappe.get_meta("CRM Lead")
-	parent = picklist.resolve_row_links("CRM Lead", parent, grain)
+	parent = _resolve_multi_values(PARENT_SECTION, picklist.resolve_row_links("CRM Lead", parent, grain), grain)
 	children = {
-		cf: [picklist.resolve_row_links(cm.get_field(cf).options, r, grain) for r in rows]
+		cf: [_resolve_multi_values(_section_of_child(cf),
+		                           picklist.resolve_row_links(cm.get_field(cf).options, r, grain), grain)
+		     for r in rows]
 		for cf, rows in children.items()
 	}
 	return parent, children
@@ -412,15 +496,13 @@ def _child_error(message, field):
 	throw_field(message, [field])
 
 
-def _merge_row(target, incoming):
-	"""Overlay only the sent fields onto an existing child row (partial update)."""
-	for k, v in (incoming or {}).items():
-		if k == "_delete":
-			continue
+def _merge_row(target, incoming, section):
+	"""Overlay only the sent columns onto an existing child row (partial update)."""
+	for k, v in _column_values(section, incoming).items():
 		target.set(k, v)
 
 
-def _apply_single_row(doc, cf, incoming, title):
+def _apply_single_row(doc, cf, incoming, title, section):
 	"""single-row child: merge sent fields onto the one row (create if none).
 	A 2nd distinct incoming row is ambiguous -> 400."""
 	if len(incoming) > 1:
@@ -428,9 +510,11 @@ def _apply_single_row(doc, cf, incoming, title):
 		               "before sending.").format(len(incoming), title), cf)
 	rows = doc.get(cf) or []
 	if rows:
-		_merge_row(rows[0], incoming[0])
+		_merge_row(rows[0], incoming[0], section)
 	else:
-		doc.append(cf, {k: v for k, v in (incoming[0] or {}).items() if k != "_delete"})
+		doc.append(cf, _column_values(section, incoming[0]))
+	# The section keeps one row per lead, so its selections are addressed by the lead alone.
+	_stage_multi_values(doc, section, incoming[0], "")
 
 
 def _row_arrival_key(doc, cf, key_field):
@@ -445,10 +529,13 @@ def _row_arrival_key(doc, cf, key_field):
 	return today() if (df and df.fieldtype == "Date") else now_datetime()
 
 
-def _apply_multi_row(doc, cf, incoming, key_field, title):
+def _apply_multi_row(doc, cf, incoming, key_field, title, section):
 	"""multi-row child, upsert-by-key. A row that names no key is stamped with its arrival time rather
 	than refused — see `_row_arrival_key`. Match by key -> partial-merge that row; new key -> append;
-	{key,_delete:true} -> drop that keyed row. Rows already on the doc that are not referenced -> untouched."""
+	{key,_delete:true} -> drop that keyed row. Rows already on the doc that are not referenced -> untouched.
+
+	A multi-value field is addressed by that same key, so it is staged here where the key is settled —
+	and a deleted row takes its selections with it rather than leaving them at an address nothing owns."""
 	rows = doc.get(cf) or []
 	# Index existing rows by the STRINGIFIED key: a stored Date is a date object but
 	# the incoming key arrives as an ISO string from JSON — cstr keys both uniformly
@@ -473,12 +560,14 @@ def _apply_multi_row(doc, cf, incoming, key_field, title):
 			if target is not None:
 				doc.remove(target)
 				by_key.pop(key, None)
+			_stage_multi_values(doc, section, None, key)
 			continue
 		if target is not None:
-			_merge_row(target, row)
+			_merge_row(target, row, section)
 		else:
-			new = doc.append(cf, {k: v for k, v in row.items() if k != "_delete"})
+			new = doc.append(cf, _column_values(section, row))
 			by_key[key] = new
+		_stage_multi_values(doc, section, row, key)
 
 
 def _already_present(rows, incoming):
@@ -488,7 +577,7 @@ def _already_present(rows, incoming):
 	)
 
 
-def _apply_key_value(doc, cf, incoming, identity_field):
+def _apply_key_value(doc, cf, incoming, identity_field, section):
 	"""key-value child: an answer is kept whenever it DIFFERS from what the question already holds, and
 	every re-read that says the same thing changes nothing.
 
@@ -505,7 +594,7 @@ def _apply_key_value(doc, cf, incoming, identity_field):
 		if newest is not None and cstr(newest.get(value_field)) == cstr((row or {}).get(value_field)):
 			continue  # left alone, never merged: a merge rewrote which form asked it
 		if identity or not _already_present(rows, row):
-			doc.append(cf, {k: v for k, v in (row or {}).items() if k != "_delete"})
+			doc.append(cf, _column_values(section, row))
 
 
 def _apply_children(doc, children):
@@ -518,18 +607,29 @@ def _apply_children(doc, children):
 	for cf, incoming in children.items():
 		if not incoming:
 			continue
+		section = _section_of_child(cf)
 		key_value = _child_key_value(cf)
 		if key_value:
-			_apply_key_value(doc, cf, incoming, key_value.row_key_field)
+			_apply_key_value(doc, cf, incoming, key_value.row_key_field, section)
 			continue
 		key_field = _child_key_field(cf)
 		title = catalog_section_title(cf)
 		if key_field:
-			_apply_multi_row(doc, cf, incoming, key_field, title)
+			_apply_multi_row(doc, cf, incoming, key_field, title, section)
 		else:
-			_apply_single_row(doc, cf, incoming, title)
+			_apply_single_row(doc, cf, incoming, title, section)
 	from tatva_connect.lead.leads import sync_headline_metrics
 	sync_headline_metrics(doc)
+
+
+def _apply_parent(doc, parent):
+	"""The lead's OWN collected fields onto the doc — the twin of `_apply_children`, and the ONE parent
+	write, so a create, a merge and an update cannot come to differ.
+
+	A multi-value field on the lead section is routed to its resolver at the lead's own address (blank),
+	because it has no column: `doc.update` would set an attribute nothing persists."""
+	doc.update(_column_values(PARENT_SECTION, parent))
+	_stage_multi_values(doc, PARENT_SECTION, parent, "")
 
 
 def _force_routing(doc, mp):
@@ -585,6 +685,23 @@ def _catalogued_answers(doc, cf, section):
 	]
 
 
+def _multi_value_descriptor(fieldname, field_key, mp):
+	"""One multi-value field, described from its catalog row and from the column it really stores in.
+
+	There is no docfield to read: the section's doctype has no column for this field, which is the whole
+	point. The label is the catalog's — the same one every other reader shows — and the type is the one
+	`CRM Lead Multi Value.value` declares, so the vocabulary advertised is the vocabulary accepted, from
+	the SAME registry the ingestion resolver dispatches through. A list, so never `required`."""
+	df = multi_value.value_field()
+	allowed_values = None
+	if mp:
+		from tatva_connect.taxonomy import picklist
+
+		allowed_values = picklist.values_for(df.options, (mp.vertical, mp.crm_group, mp.program or ""), fieldname)
+	return field_descriptor(fieldname, _catalog()["labels"].get(field_key) or fieldname,
+	                        df.fieldtype, False, df.options, allowed_values or None, multi=True)
+
+
 def _audit_fieldnames():
 	"""The reserved OUTPUT_ONLY lead fieldnames, deduped in catalog order — read once, projected by the
 	response and selected by the list, so a field `lead_schema` advertises is a field a response carries.
@@ -609,8 +726,13 @@ def _curate(doc, parent_fields, child_allow):
 	The audit fields are projected but never writable — `_build_catalog` routes a reserved field into
 	`audit` and out of `keys`, so read-only cannot become invisible. `lead_schema` has advertised
 	`owner`, `creation`, `modified` and `lead_owner` as OUTPUT_ONLY since it was written, and until this
-	no response carried one of them."""
-	out = {fn: doc.get(fn) for fn in [*parent_fields, *_audit_fieldnames()]}
+	no response carried one of them.
+
+	A multi-value field has no column to project off, so its selections are read from the lead's own
+	`multi_value` rows — once for the whole lead, then addressed per row."""
+	held = multi_value.read_all(doc)
+	out = _readable("CRM Lead", {fn: doc.get(fn) for fn in [*parent_fields, *_audit_fieldnames()]})
+	out.update(_read_multi_values(PARENT_SECTION, parent_fields, held, ""))
 	out.update({
 		"name": doc.name, "external_id": doc.get(EXTERNAL_ID_FIELD),
 		"source": doc.source, "custom_vertical": doc.custom_vertical,
@@ -625,10 +747,16 @@ def _curate(doc, parent_fields, child_allow):
 		if allowed:
 			# Return the caller's allowed fields + our row id (name) + the key field (the row's address per the contract — always present even if not ticked).
 			key_field = _child_key_field(cf)
+			section = _section_of_child(cf)
 			keys = list(allowed)
 			if key_field and key_field not in keys:
 				keys.append(key_field)
-			out[cf] = [dict({k: r.get(k) for k in keys}, name=r.get("name")) for r in (doc.get(cf) or [])]
+			out[cf] = [
+				dict(_readable(_catalog()["section_doctype"][section], {k: r.get(k) for k in keys}),
+				     **_read_multi_values(section, keys, held, r.get(key_field) if key_field else ""),
+				     name=r.get("name"))
+				for r in (doc.get(cf) or [])
+			]
 	return out
 
 
@@ -692,7 +820,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 
 	parent.setdefault("first_name", _NAMELESS)  # status is left for CRM's controller to default
 	doc = frappe.new_doc("CRM Lead")
-	doc.update(parent)
+	_apply_parent(doc, parent)
 	_apply_children(doc, children)
 	if mp:
 		_force_routing(doc, mp)
@@ -722,7 +850,7 @@ def _merge_onto(name, parent, children, mp, program, open_program, item):
 	"""Overlay the payload onto an existing lead. The one update path — taken both when the dedup
 	lookup finds it and when the unique index catches a race, so the two converge."""
 	doc = frappe.get_doc("CRM Lead", name)
-	doc.update(parent)
+	_apply_parent(doc, parent)
 	_apply_children(doc, children)
 	if mp:
 		_force_routing(doc, mp)
@@ -767,7 +895,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 		(program or doc.custom_current_program or ""),
 	)
 	parent, children = _resolve_picklists(parent, children, grain)
-	doc.update(parent)
+	_apply_parent(doc, parent)
 	_apply_children(doc, children)
 	if mp:
 		_force_routing(doc, mp)
@@ -809,14 +937,22 @@ def lead_schema(**_kwargs):
 	Two partners hitting this get different field lists — driven by their grid."""
 	user, mp, _is_sysmgr, parent_fields, child_allow = _caller_fields()
 
-	def _describe_section_fields(doctype, section_fields, required_override=None):
+	def _describe_section_fields(doctype, section_fields, required_override=None, section=None):
 		"""Field dicts for a section. `required_override` ({fieldname: bool}) reports the API's
 		actual contract instead of the doctype's `reqd` flag — used for the parent (identity
-		required, defaulted fields not) and a child key_field (required to address its row)."""
+		required, defaulted fields not) and a child key_field (required to address its row).
+
+		A multi-value field has no column on `doctype`, so it would fall out of a schema that only reads
+		the meta — advertised from the catalog and from the column its selections really live in, or a
+		partner would be sending and reading a field discovery never mentions."""
 		required_override = required_override or {}
 		m = frappe.get_meta(doctype)
+		declared_multi = _multi_value_fields(section)
 		entries = []
 		for fn in section_fields:
+			if fn in declared_multi:
+				entries.append(_multi_value_descriptor(fn, declared_multi[fn], mp))
+				continue
 			f = m.get_field(fn)
 			if not f:
 				continue
@@ -864,13 +1000,15 @@ def lead_schema(**_kwargs):
 			"multi_row": bool(key_field),
 			"key_field": key_field,
 			"fields": _describe_section_fields(cat["section_doctype"][section], fields,
-			                   required_override={key_field: True} if key_field else None),
+			                   required_override={key_field: True} if key_field else None,
+			                   section=section),
 		}
 
 	# The lead's writable fields + the caller's own external_id label + the OUTPUT_ONLY audit fields
 	# (discoverable, never writable — Frappe and the assignment rule set those).
 	m_lead = frappe.get_meta("CRM Lead")
-	fields = _describe_section_fields("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED)
+	fields = _describe_section_fields("CRM Lead", parent_fields, required_override=_LEAD_REQUIRED,
+	                                 section=PARENT_SECTION)
 	fields.append(field_descriptor("external_id", "External ID", "Data", required=False))
 	fields += [_audit_field(a["fieldname"], a["label"], m_lead) for a in cat["audit"]]
 

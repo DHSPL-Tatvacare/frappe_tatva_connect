@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-04 00:00:00.000000",
+ "description": "Every selection a lead holds for a field that takes MORE THAN ONE value. One level from the lead, whichever section the field belongs to: a Table MultiSelect on a child table is a second level of child rows and Frappe persists one, so those rows neither loaded nor saved. A row is addressed by (Field Key, Row Key) and nothing else — the section, the label and the column name all come from the catalog row the Field Key names, so this table restates none of them.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "field_key",
+  "row_key",
+  "value"
+ ],
+ "fields": [
+  {"fieldname": "field_key", "fieldtype": "Link", "options": "CRM Lead API Field", "label": "Field Key", "reqd": 1, "in_list_view": 1, "description": "WHICH field this selection answers, as a Link into the field catalog. A Link and not free text: a key can then never name a section and a fieldname that do not belong together, and the label, the section and the column are read off that one row."},
+  {"fieldname": "row_key", "fieldtype": "Data", "label": "Row Key", "in_list_view": 1, "description": "WHICH row of the field's section this selection belongs to — the value of that section's Row Key Field, e.g. a cycle date. BLANK IS A REAL ADDRESS, not an unset one: a section holding one row per lead declares no row key, and many rows carry none."},
+  {"fieldname": "value", "fieldtype": "Link", "options": "CRM Picklist Value", "label": "Value", "reqd": 1, "in_list_view": 1, "description": "ONE selected value, still a real Link to the picklist master — so the vocabulary is the grain-scoped one every other picklist field reads, and the label resolves through the master's own title field."}
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Lead",
+ "name": "CRM Lead Multi Value",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

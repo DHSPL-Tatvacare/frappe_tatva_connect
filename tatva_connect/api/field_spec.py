@@ -129,6 +129,7 @@ def collect(specs, data, doctype, creating=False):
 	A refusal names the PUBLIC fieldname. `started_at` lands on `start_time`, and a caller has never
 	heard of `start_time`."""
 	out = {}
+	sent = set()
 	for spec in specs:
 		if spec.read_only or spec.fieldname not in data:
 			continue
@@ -138,13 +139,16 @@ def collect(specs, data, doctype, creating=False):
 			continue
 		value = cast_declared(doctype, spec.fieldname, value,
 		                      fieldtype=_published_type(spec, _docfield(spec, doctype)))
+		sent.add(spec.fieldname)
 		if not spec.target:
 			continue
 		out[spec.target] = value
 	if creating:
+		# What was SENT, not what was ROUTED: a target-less spec never lands in `out` by design (it is the
+		# resource's own business, like `filename` reaching file_manager.save), so reading `out` alone
+		# called every required one of them missing and refused a correct call.
 		missing = [s.fieldname for s in specs
-		           if s.required and not s.read_only and not s.supplied and s.fieldname not in out
-		           and (not s.target or s.target not in out)]
+		           if s.required and not s.read_only and not s.supplied and s.fieldname not in sent]
 		if missing:
 			throw_field(_(
 				"Required and not sent: {0}. Read `required` from the schema response and send every "

@@ -112,6 +112,11 @@ def _offered(menu, doctype):
 	return [f.get("fieldname") for f in MENUS[menu](doctype)]
 
 
+def _without_relay(fields):
+	"""A menu with `link_query` taken back off, so a byte-identity check still means what it meant."""
+	return [{k: v for k, v in f.items() if k != "link_query"} for f in fields]
+
+
 def _drop(dt, fieldname):
 	"""Take a declaration back out of the world. A row is live the moment it is saved, so a leaked one
 	would follow this suite into every other module."""
@@ -362,13 +367,17 @@ class TestADisabledRowChangesNothing(LeadCase):
 		self.assertNotIn(CONTROL, derived.names(LEAD))
 
 	def test_no_menu_offers_it_and_each_is_byte_identical_to_native(self):
+		"""`link_query` is stripped before comparing, for the reason `test_quick_filters` strips it: a Link
+		at a composite master is RELAYED which scoped query its control must use, always and independently
+		of any derived row, so it is not something a disabled row turned on."""
 		from crm.api.doc import get_filterable_fields, get_group_by_fields, sort_options
 
 		native = {"filter": get_filterable_fields, "group_by": get_group_by_fields, "sort": sort_options}
 		for menu, native_menu in native.items():
 			with self.subTest(menu):
 				self.assertNotIn(CONTROL, _offered(menu, LEAD))
-				self.assertEqual(frappe.as_json(MENUS[menu](LEAD)), frappe.as_json(native_menu(LEAD)))
+				self.assertEqual(frappe.as_json(_without_relay(MENUS[menu](LEAD))),
+				                 frappe.as_json(native_menu(LEAD)))
 		# The column picker has no native twin — its contract for "nothing declared" is an empty list.
 		self.assertEqual(_offered("columns", LEAD), [])
 

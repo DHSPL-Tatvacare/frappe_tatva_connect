@@ -20,6 +20,11 @@ the fork stays dispatch-only. The column picker is the exception — it has no n
 doctype meta in the browser (`stores/meta.js` `getFields`) — so `get_column_fields` IS that lens, fed
 to `ColumnSettings.vue`'s existing `fieldSource` prop from `ViewControls.vue`.
 
+The two menus that carry a VALUE control — Filter and the quick-filter bar — also say which scoped link
+query each Link field's control must use, because a filter on a composite master is a cross-grain question
+and the framework's own search answers it once per grain. That decision is `taxonomy.labels.link_query`'s
+and is only relayed here.
+
 The quick-filter bar is not a lens at all and is the other pair here: its contents are a STORED choice
 (one `CRM Global Settings` row), so it is READ at the position that row gives and WRITTEN without the
 Property Setter a derived name has no DocField to carry.
@@ -35,8 +40,27 @@ import frappe
 from frappe.model.document import get_controller
 
 from tatva_connect.list_engine import derived, engine
+from tatva_connect.taxonomy import labels
 
 TASK = "CRM Task"
+
+
+def _link_queries(fields):
+	"""Every Link at a composite master, told WHICH scoped query its filter control must use.
+
+	A grain master keys one human value once per grain, so the framework's own link search offers `Not
+	Interested` four times and each one matches a single programme. `taxonomy.labels.label_query` offers it
+	once. Which masters those are is decided on THIS side — `labels.link_query` is the one decision — so the
+	client is handed a query name and never a list of doctypes to reason about.
+
+	A new dict per field rather than a stamp: native caches its quick-filter answer, and mutating those rows
+	would write this into the cache."""
+	return [
+		{**f, "link_query": query}
+		if f.get("fieldtype") == "Link" and (query := labels.link_query(f.get("options")))
+		else f
+		for f in fields
+	]
 
 
 def declared_fields(doctype):
@@ -75,7 +99,7 @@ def _narrow(fields, doctype, surface):
 def get_filterable_fields(doctype: str):
 	from crm.api.doc import get_filterable_fields as _native
 
-	return _narrow(_native(doctype), doctype, derived.FILTER)
+	return _link_queries(_narrow(_native(doctype), doctype, derived.FILTER))
 
 
 @frappe.whitelist()
@@ -132,14 +156,14 @@ def get_quick_filters(doctype: str, cached: bool = True):
 	declared = _declared_quick_filters(doctype)
 	chosen = _stored_choice(doctype)
 	if not declared or chosen is None:
-		return native
+		return _link_queries(native)
 
 	by_name = {f.get("fieldname"): f for f in native}
-	return [
+	return _link_queries([
 		declared[name] if name in declared else by_name[name]
 		for name in chosen
 		if name in declared or name in by_name
-	]
+	])
 
 
 @frappe.whitelist()

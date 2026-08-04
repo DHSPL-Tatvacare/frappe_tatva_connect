@@ -98,7 +98,9 @@ class TestDetailPureLogic(FrappeTestCase):
 			"lead:first_name": {"section": "lead", "fieldname": "first_name"},
 			"lead:mobile_no": {"section": "lead", "fieldname": "mobile_no"},
 		}
-		def ro(_dt, fn):
+		# The third argument is the catalog's multi-value tick, which `_is_readonly` answers off rather
+		# than falling through to a column that a multi-value field deliberately does not have.
+		def ro(_dt, fn, _is_multi_value=False):
 			return fn == "mobile_no"
 		writable = detail.writable_keys(selected, is_readonly=ro)
 		self.assertIn("lead:first_name", writable)

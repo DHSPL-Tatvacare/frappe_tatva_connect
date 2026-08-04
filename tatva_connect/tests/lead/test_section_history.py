@@ -214,12 +214,15 @@ class TestSectionRowsEndpoint(FrappeTestCase):
 		out = detail.lead_detail_rows(self.lead.name, SECTION)
 		self.assertEqual(out["columns"][0]["key"], self.section.row_key_field)
 
-	def test_a_column_carries_only_what_it_takes_to_render_and_sort_it(self):
+	def test_a_column_carries_only_what_it_takes_to_render_sort_and_filter_it(self):
 		"""The server sends the table and nothing about which of it to SHOW: narrowing is the column
-		picker's, exactly as on a listing page. `sortable` is not that decision — it is a fact about the
-		data (D5), and it gates the sort control only."""
+		picker's, exactly as on a listing page. `sortable` and `filterable` are not that decision —
+		`sortable` is a fact about the data (D5) and `filterable` a fact about the column (a multi-value
+		field is not addressable in SQL, so it can reach neither WHERE nor ORDER BY). Each gates its own
+		control and neither hides the column."""
 		for column in detail.lead_detail_rows(self.lead.name, SECTION)["columns"]:
-			self.assertEqual({"key", "label", "fieldtype", "options", "sortable"}, set(column))
+			self.assertEqual({"key", "label", "fieldtype", "options", "sortable", "filterable"},
+			                 set(column))
 
 	def test_a_column_null_on_every_row_is_not_offered_as_a_sort(self):
 		"""RED before the fix: SortBy was fed all 31 columns, so sorting by one that is null everywhere

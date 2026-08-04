@@ -17,9 +17,16 @@ class CRMLeadAPIField(Document):
 	def _fieldname_resolves_against_the_section(self):
 		"""What `fieldname` means is the section's answer, not this row's. A key-value section addresses a
 		ROW by it, so it is an identity and no column need exist; every other section resolves it against
-		its target's meta, where a name that is not a column can reach no value."""
+		its target's meta, where a name that is not a column can reach no value.
+
+		A MULTI-VALUE field is the second such case: its selections hang off the lead
+		(`tatva_connect.lead.multi_value`) because a field taking many values has no column that could
+		hold them, so the fieldname names the field and the picklist category and nothing else. Without
+		this the row could not be saved at all once the box was ticked."""
 		if not (self.section and self.fieldname):
 			return  # reqd catches both
+		if self.is_multi_value:
+			return
 		section = frappe.get_cached_doc("CRM Lead Section", self.section)
 		if section.is_key_value or not section.target_doctype:
 			return

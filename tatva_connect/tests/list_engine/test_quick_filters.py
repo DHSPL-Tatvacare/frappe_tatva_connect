@@ -33,6 +33,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.list_engine import derived, engine
+from tatva_connect.taxonomy import labels
 
 TASK = "CRM Task"
 LEAD = "CRM Lead"
@@ -169,17 +170,35 @@ class QuickFilterBarCase(FrappeTestCase):
 		self.assertEqual(their_choice, ["priority"])
 
 	def test_another_doctype_is_untouched_on_both_paths(self):
-		"""No cross-impact. CRM Lead declares no derived field, so both endpoints are native's answer and
-		native's writes — asserted by running native itself, with a stored row and without."""
+		"""No cross-impact. CRM Lead names no derived field on this bar, so both endpoints are native's
+		answer and native's writes — asserted by running native itself, with a stored row and without.
+
+		`link_query` is the one thing this layer adds, and it is a relay, not a narrowing: a Link at a
+		composite master is told which scoped query its control must use, because the framework's own search
+		offers a repeated label once per grain. Compared with it stripped, and asserted separately, so the
+		byte-identity above still means what it meant."""
 		self.assertIsNot(_dispatched(WRITE), _native(WRITE), "the write path is not ours at all")
 		before = ["status", "lead_name"]
+		relayed = lambda fields: [{k: v for k, v in f.items() if k != "link_query"} for f in fields]  # noqa: E731
 
 		for chosen in (None, before):
 			with self.subTest(stored=chosen):
 				_store(LEAD, chosen)
 				read = _dispatched(READ)(LEAD)
-				self.assertEqual(_stable(read), _stable(_native(READ)(LEAD)))
+				self.assertEqual(_stable(relayed(read)), _stable(_native(READ)(LEAD)))
 				self.assertEqual(
 					_applied(_dispatched(WRITE), LEAD, ["lead_name"], before),
 					_applied(_native(WRITE), LEAD, ["lead_name"], before),
 				)
+
+	def test_a_link_at_a_composite_master_is_told_which_query_to_use(self):
+		"""The relay itself. Without it a rep's quick-filter picker offers `Not Interested` once per
+		programme and each option matches one of them."""
+		_store(LEAD, None)
+		for f in _dispatched(READ)(LEAD):
+			expected = labels.link_query(f.get("options")) if f.get("fieldtype") == "Link" else None
+			self.assertEqual(f.get("link_query"), expected, f"{f.get('fieldname')} relays the wrong query")
+		self.assertTrue(
+			any(f.get("link_query") for f in _dispatched(READ)(LEAD)),
+			"no Link at a composite master reached this bar — the relay is proving nothing",
+		)

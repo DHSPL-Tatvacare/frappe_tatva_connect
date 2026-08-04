@@ -363,6 +363,8 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 			"surface": r.surface or "worklist",
 			"fieldtype": fieldtype,
 			"options": options,
+			# The scoped link query this column's FILTER control must use — the same one decision the native lenses relay, so both surfaces offer a composite master's label once.
+			"link_query": labels.link_query(options) if fieldtype == "Link" else None,
 		})
 	return out
 
@@ -646,6 +648,8 @@ def _apply_filters(crit, filters, cat, terms):
 		r = cat.get(key)
 		if not r or not r.filterable or key not in terms:
 			frappe.throw(_("{0} cannot be filtered on here.").format(key))
+		# A composite master's LABEL means every key carrying it — the SAME rule `list_engine` asks, so the two engines cannot answer one question two ways.
+		op, value = labels.filter_on(_link_master(r), op, value)
 		c = _criterion(terms[key], op, value)
 		crit = c if crit is None else (crit & c)
 	return crit
@@ -697,6 +701,13 @@ def _col_type(r):
 		return r.fieldtype, (r.options or "")
 	df = _col_docfield(r)
 	return (df.fieldtype, df.options or "") if df else ("Data", "")
+
+
+def _link_master(r):
+	"""The Link target a catalog column points at, or None where it is not a Link. Read off `_col_type`, so
+	the filter and the control that offered the value are looking at the same answer."""
+	fieldtype, options = _col_type(r)
+	return options if fieldtype == "Link" else None
 
 
 @frappe.whitelist()

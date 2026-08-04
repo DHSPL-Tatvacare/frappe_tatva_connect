@@ -52,6 +52,7 @@ Plan + the hardline rules: docs/plans/tasks-ui/2026-07-30-derived-fields-list-en
 import frappe
 
 from tatva_connect.list_engine import derived, repair
+from tatva_connect.taxonomy import labels
 
 KANBAN_PAGE_LENGTH = 20
 
@@ -73,11 +74,54 @@ def get_data(**kwargs):
 	and the rep's saved view both — and what was taken out is reported in the answer. A healthy request is
 	returned by `scrub` as the very object it came in as, so this costs the inert path nothing."""
 	kwargs, removed = repair.scrub(kwargs)
+	kwargs = _read_labels(kwargs)
 	doctype = kwargs.get("doctype")
 	view = frappe.parse_json(kwargs.get("view") or "{}") or {}
 	if view.get("view_type") != CALENDAR and not (doctype and derived.for_doctype(doctype)):
 		return _announce_removed(_native(kwargs), removed)
 	return _announce_removed(ListRequest(kwargs).answer(), removed)
+
+
+def _read_labels(kwargs):
+	"""The request as it must really run once a filter names a composite master's LABEL rather than a key.
+
+	`labels.filter_on` is the ONE rule and smartview asks the same function at its own seam; this is where
+	a listing request asks it. It sits ABOVE the derived-field fork on purpose, and NOT inside
+	`ListRequest.filters`, for two reasons that are structural: a doctype declaring no derived field never
+	builds a request at all (`get_data` above returns native's answer), and `answer()` hands native the
+	caller's ORIGINAL payload (`_native(self.raw)`) whenever the payload names none — so a rule EVERY list
+	must obey cannot live there. `ListRequest` still reads it, because it reads the request this returns.
+
+	`default_filters` is prepared too: it is a saved view's own definition, and native merges it into
+	`filters` (crm/api/doc.py:283-297) without ever asking where a value came from.
+
+	The caller's own object comes back when nothing names a label, so the inert path costs nothing — the
+	same contract `repair.scrub` above it keeps."""
+	doctype = kwargs.get("doctype")
+	if not doctype:
+		return kwargs
+	changed = {}
+	for key in ("filters", "default_filters"):
+		given = frappe.parse_json(kwargs.get(key) or "{}")
+		if not isinstance(given, dict):
+			continue
+		read = {name: _read_label(doctype, name, value) for name, value in given.items()}
+		if read != given:
+			changed[key] = frappe.as_json(read) if isinstance(kwargs.get(key), str) else read
+	return {**kwargs, **changed} if changed else kwargs
+
+
+def _read_label(doctype, fieldname, value):
+	"""One filter entry with its label read as the keys it means; anything but a Link never reaches the rule.
+
+	A filters dict holds either a bare value or an `[operator, value]` pair, and both are the pair
+	`filter_on` speaks, so the two shapes are normalised here and nowhere else."""
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	if not (df and df.fieldtype == "Link"):
+		return value
+	operator, given = value if isinstance(value, list | tuple) and len(value) == 2 else ("=", value)
+	read = labels.filter_on(df.options, operator, given)
+	return value if read == (operator, given) else list(read)
 
 
 def as_filters(conditions):

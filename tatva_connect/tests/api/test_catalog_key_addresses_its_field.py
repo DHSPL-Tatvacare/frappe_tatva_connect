@@ -64,8 +64,14 @@ class TestCatalogKeyAddressesItsField(FrappeTestCase):
 
 	def test_every_writable_key_collects_into_a_real_column(self):
 		"""The defect itself, at the seam that had it: a writable key that splits to a name no column
-		carries is a field a partner can be granted and can never actually set."""
+		carries is a field a partner can be granted and can never actually set.
+
+		A MULTI-VALUE key is the one shape that resolves to no column ON PURPOSE — a field taking many
+		values has no column that could hold them, so its selections are collected into the lead's own
+		`CRM Lead Multi Value` rows instead (`_stage_multi_values`). Exempt by the DECLARATION, read off
+		the catalog, never a list of keys kept here."""
 		section_doctype = self.catalog["section_doctype"]
+		multi_value = {fn for fields in self.catalog["multi_value"].values() for fn in fields}
 		broken = []
 		for key in self.catalog["keys"]:
 			section = key.partition(":")[0]
@@ -74,6 +80,8 @@ class TestCatalogKeyAddressesItsField(FrappeTestCase):
 				broken.append(f"{key}: section {section!r} is not a lead section")
 				continue
 			for fieldname in _resolved_fieldnames(key):
+				if fieldname in multi_value:
+					continue
 				if not frappe.get_meta(target).get_field(fieldname):
 					broken.append(f"{key}: collects into {target}.{fieldname}, which does not exist")
 		self.assertEqual(
