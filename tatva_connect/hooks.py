@@ -108,6 +108,7 @@ override_whitelisted_methods = {
 	# for a published dashboard; the wrapper strips the arg that rewinds a query to its unfiltered source.
 	"insights.api.run_doc_method": "tatva_connect.access.native_guards.run_doc_method",
 	# Insights spreadsheet import is off: client-named tables overwrite each other and the upload leaves a File nothing owns. The file layer is untouched.
+	"insights.api.get_file_data": "tatva_connect.access.insights_uploads.get_file_data",
 	"insights.api.import_csv_data": "tatva_connect.access.insights_uploads.import_csv_data",
 	"insights.api.data_sources.get_columns_from_uploaded_file": "tatva_connect.access.insights_uploads.get_columns_from_uploaded_file",
 	"insights.api.data_sources.import_csv": "tatva_connect.access.insights_uploads.import_csv",
@@ -346,6 +347,8 @@ scheduler_events = {
 			"tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
 			"tatva_connect.observability.rollup.run",
 		],
+		# Every 15 min, OFFSET off the quarter-hour: re-ask for media a message is still owed, on a widening backoff (dormant — gated on WhatsApp::Channel::media-retry). A bare `*/15` would collide with workflow_thresholds.SWEEP_CRON, and a duplicate dict key silently deletes whichever entry is written first.
+		"5,20,35,50 * * * *": ["tatva_connect.whatsapp.media_retry.sweep"],
 		# Daily: sweep abandoned email-draft staging files.
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 		# Daily: trim logs/monitor.json.log — the one log frappe appends to without rotating (1 GB or 30 days, whichever first).
@@ -801,6 +804,8 @@ before_request = [
 	"tatva_connect.intake.guards.throttle_intake",
 	# frappe_whatsapp rebuilds its notification map on each of its ELEVEN wildcard doc_events; memoise it for the request.
 	"tatva_connect.whatsapp.notification_map.install",
+	# A SCORM tree is a cache of its File, not storage: rebuild it from the blob when the disk no longer has it.
+	"tatva_connect.storage.scorm_rehydrate.install",
 ]
 # Rewrite framework-layer errors on partner-API paths into the unified error contract, then log one raw row per partner-API/webhook hit (runs last); both no-op for other endpoints.
 after_request = [
