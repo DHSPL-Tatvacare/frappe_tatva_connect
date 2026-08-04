@@ -177,21 +177,89 @@ class TestTheCap(_CapCase):
 
 		self.assertIsNone(contact_cap.refusal(sends.WHATSAPP, ""))
 
-	def test_a_rejected_hand_off_gives_the_slot_back(self):
-		"""Counting at the DECISION to send is what stops two in-flight sends both passing. Its cost is
-		that a provider outage would eat a patient's window for messages they never received — so a
-		hand-off refused outright is un-counted. The step stays readable; only its claim is withdrawn."""
+class TestARejectedHandOffReallyGivesTheSlotBack(_CapCase):
+	"""A3 — THE UN-COUNT NEVER SURVIVED, on either channel.
+
+	Counting at the DECISION to send is what stops two in-flight sends both passing. Its cost is that a
+	provider outage would eat a patient's whole window for messages they never received — so a hand-off
+	refused outright is un-counted. That was written, wired and dead: both delivery jobs called `void` and
+	then RAISED, and the exception rolled the job's transaction back over the compensating write. A
+	provider outage ate the allowance anyway.
+
+	THE OLD TEST PASSED THROUGHOUT. It called `contact_cap.void(...)` directly, so it proved the function
+	worked and proved nothing about the two places that use it — the same error as asserting `mock.called`,
+	wearing a different costume. These drive the real delivery entry points instead: the ones the RQ worker
+	calls, with only the WIRE stubbed, so the refusal, the un-count and the raise are all the shipped code.
+
+	THE TRANSACTION SHAPE IS NOT PRODUCTION'S and that is stated rather than glossed. `enqueue_after_commit`
+	never fires in a test that has not committed, so these call the delivery function directly and share
+	its transaction — where `void`'s rollback would discard anything uncommitted. Every fixture is
+	committed before the call, the assertion is the OUTCOME, and it is read back after a rollback so a
+	merely-pending write cannot pass.
+	"""
+
+	def _capped_step(self):
+		"""A patient at the ceiling, with the step that put them there COMMITTED and identified."""
 		self._arm(most=2)
 		self._already_contacted(2)
+		frappe.db.commit()
 		self.assertTrue(contact_cap.refusal(sends.WHATSAPP, _NUMBER), "the fixture must start capped")
+		return frappe.db.get_value(
+			STEP_LOG_DT, {"journey": self.journey.name, "contact": _NUMBER},
+			"name", order_by="creation desc, name desc",
+		)
 
-		self.assertTrue(contact_cap.void(self.journey.name, "n1"))
-
+	def _assert_slot_returned(self, step):
+		"""Read in a FRESH transaction: a write that only looked done would still be visible in this one."""
+		frappe.db.rollback()
+		self.assertEqual(
+			frappe.db.get_value(STEP_LOG_DT, step, "contact"), "",
+			"the un-count was rolled back with the raise, so the slot was never given back",
+		)
 		self.assertIsNone(contact_cap.refusal(sends.WHATSAPP, _NUMBER))
 		self.assertEqual(
 			frappe.db.count(STEP_LOG_DT, {"journey": self.journey.name}), 2,
 			"voiding deleted the audit row instead of withdrawing its claim",
 		)
+
+	def test_a_whatsapp_hand_off_the_provider_refuses_returns_the_slot(self):
+		"""Only `transport.send_template_message` is stubbed — WATI's `_classify` really classifies the
+		refusal and `_deliver_whatsapp` really throws on it."""
+		step = self._capped_step()
+		account = fx.whatsapp_account("cap-void-account")
+		self.addCleanup(self._drop, "WhatsApp Account", account)
+		template = fx.whatsapp_template("cap-void-template", account)
+		self.addCleanup(self._drop, "WhatsApp Templates", template)
+		frappe.db.commit()
+
+		with patch("tatva_connect.whatsapp.transport.send_template_message",
+		           return_value={"result": False, "info": "provider refused the hand-off"}):
+			with self.assertRaises(frappe.ValidationError):
+				sends._deliver_whatsapp(account, _NUMBER, template, [], self.lead.name,
+				                        correlation=f"{self.journey.name}::n1")
+
+		self._assert_slot_returned(step)
+
+	def test_a_voice_hand_off_bolna_refuses_returns_the_slot(self):
+		"""Bolna's own declared non-retryable 4xx, raised from where the adapter raises it."""
+		from tatva_connect.voice.adapters import bolna
+
+		step = self._capped_step()
+
+		with patch("tatva_connect.voice.api.connection_for",
+		           return_value={"api_key": "never-real", "base_url": "https://api.invalid", "from_phone": ""}), \
+		     patch("tatva_connect.voice.adapters.bolna.place_call",
+		           side_effect=bolna.BolnaServiceError("Bolna 400: refused")):
+			with self.assertRaises(bolna.BolnaServiceError):
+				sends._deliver_voice("cap-void-voice", _NUMBER, "agent-1", None, self.lead.name,
+				                     correlation=f"{self.journey.name}::n1")
+
+		self._assert_slot_returned(step)
+
+	def _drop(self, doctype, name):
+		if frappe.db.exists(doctype, name):
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+			frappe.db.commit()
 
 
 class TestTheSendVerbRefusesThroughItsOwnFailedEdge(_CapCase):

@@ -113,17 +113,45 @@ def _contacts_since(contact, days):
 
 
 def void(journey, node_id):
-	"""Un-count a send the provider REJECTED at hand-off. The step-log row stays; its `contact` goes.
+	"""Un-count a send the provider REJECTED at hand-off. ROLLS THE CALLER'S TRANSACTION BACK, then writes
+	the un-count and COMMITS it — because the write has to outlive the raise that always follows it.
 
-	The count happens at the decision to send, which is what stops two in-flight sends both passing. The
-	cost of counting early is that a provider outage would otherwise eat a patient's whole window for
-	messages they never received — so a hand-off that is refused outright gives the slot back.
+	THAT IS THE CONTRACT, not an implementation detail, and a caller with pending work of its own must not
+	use this. Both callers today void and then raise immediately — `sends._deliver_whatsapp` throws the
+	provider's reason, `sends._deliver_voice` re-raises Bolna's own error — and that exception rolls the
+	job's transaction back. Left pending, the un-count is undone with it: the slot was never actually
+	given back on either channel, which is the whole defect this line closes. The house pattern for a
+	write that must survive a raise is `observability/capture.py`'s — roll back first so this is the only
+	pending write, then commit exactly it.
+
+	THE APIS REJECTED, named. A bare `frappe.db.commit()` without the rollback: it would publish whatever
+	else the job left pending, which is a behaviour change wider than the un-count. `frappe.db.savepoint`:
+	the outer rollback destroys savepoints, so it survives nothing. A second connection: a new mechanism
+	for a write frappe can already make durable.
+
+	NOTHING IS PENDING AT EITHER CALL SITE — checked per path, not assumed. `_deliver_whatsapp` reaches
+	its refusal having only READ: the account, the adapter module, the template row and the token. WATI's
+	`_classify` is pure by its own docstring and `_post` writes no Integration Request (that is
+	`create_request_log`, which nothing here calls). Its one `log_error` is on the `unknown` branch, which
+	returns before the refusal. `_deliver_voice` reaches its refusal through `connection_for` (two reads)
+	and a `requests.post` that raises without touching the database at all.
+
+	NO SAVEPOINT IS OPEN, and a full rollback would destroy one. `sends.py`'s only savepoint is taken on
+	the ACCEPTED WhatsApp path, which the refusal can never reach; the two are disjoint TODAY, and anyone
+	folding them together has to revisit this. The segment's own savepoint is long released — its deferred
+	thunk only enqueues, and both callers run as the top frame of an RQ job with a transaction of its own.
+
+	A TEST DRIVES A DIFFERENT TRANSACTION SHAPE. `enqueue_after_commit` never fires in a test that has not
+	committed, so a test calls the delivery function directly and shares its transaction — where this
+	rollback discards whatever it had not committed. A test commits its fixtures first and asserts the
+	OUTCOME: the step row's `contact`, read back in a fresh transaction.
 
 	It clears the CONTACT and not the row: what happened is still true and still readable, and the step
 	keeps saying it was attempted. Only its claim on the ceiling is withdrawn.
 	"""
 	if not journey or not node_id:
 		return False  # a verb that mints no engine token has no step to point at
+	frappe.db.rollback()
 	row = frappe.db.get_value(
 		STEP_LOG_DT, {"journey": journey, "node_id": node_id, "contact": ["!=", ""]},
 		"name", order_by="creation desc, name desc",
@@ -131,4 +159,5 @@ def void(journey, node_id):
 	if not row:
 		return False
 	frappe.db.set_value(STEP_LOG_DT, row, "contact", "")  # authz-ok: tier-a — automation engine, queue context
+	frappe.db.commit()
 	return True
