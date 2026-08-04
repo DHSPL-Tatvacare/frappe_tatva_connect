@@ -49,6 +49,22 @@ class BolnaServiceError(RuntimeError):
 	"""4xx from Bolna — non-retryable, surfaced verbatim."""
 
 
+class BolnaOutcomeUnknown(RuntimeError):
+	"""The dial got NO ANSWER. Not a failure — the patient may well already have been called.
+
+	The voice twin of `whatsapp.transport.OutcomeUnknown`, and it exists for that module's reason: a
+	request that timed out may have reached the provider and started ringing, so a caller that files it
+	as failed lands it in a bin whose recovery action is REPLAY, and a replayed dial calls the patient a
+	second time.
+
+	DELIBERATELY NOT A SUBCLASS of `BolnaServiceError`, which catches at `sends._deliver_voice` to give the
+	contact-cap slot back and re-raise. Today the clause ORDER is what keeps them apart — the unknown is
+	matched first — so inheritance would be survivable there and nowhere else: any second caller that
+	handles only `BolnaServiceError`, or a reordering of those two clauses, would silently un-count and
+	replay a dial that may already have reached the patient. Two outcomes, two types, no ordering to rely on.
+	"""
+
+
 # ── classification core — PORTED VERBATIM IN LOGIC (constraint 2). A wrong outcome map routes a real
 # call's result down the wrong branch, so the status tokens, the no-reach set and the safe default are
 # copied exactly and locked by a table test. ────────────────────────────────────────────────────────
@@ -168,7 +184,11 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	if from_phone:
 		body["from_phone_number"] = from_phone
 	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-	resp = requests.post(f"{base_url}/call", json=body, headers=headers, timeout=30.0)
+	try:
+		resp = requests.post(f"{base_url}/call", json=body, headers=headers, timeout=30.0)
+	except Exception as e:
+		# No answer is not a refusal: the dial may already be ringing, so it must never be replayed.
+		raise BolnaOutcomeUnknown(str(e)[:400]) from e
 	if 400 <= resp.status_code < 500:
 		raise BolnaServiceError(f"Bolna {resp.status_code}: {_safe_error(resp)}")
 	resp.raise_for_status()

@@ -14,6 +14,7 @@ parked journey — no lookup row, no commit-race. `execution_id` is kept for aud
 from unittest.mock import MagicMock, patch
 
 import frappe
+import requests
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import sends
@@ -122,3 +123,69 @@ class TestPlaceCallRefusesAResponseThatCannotBeCorrelated(FrappeTestCase):
 		with patch("tatva_connect.voice.adapters.bolna.requests.post", return_value=blank):
 			with self.assertRaises(bolna.BolnaServiceError):
 				bolna.place_call({"api_key": "k", "base_url": "https://api.bolna.ai"}, _GOOD, "agent-1", None, _TOKEN)
+
+
+class TestADialThatGotNoAnswerIsUnknownAndNeverReplayed(FrappeTestCase):
+	"""A6 — voice had no unknown class, so a dial that never got an answer was indistinguishable from one
+	Bolna refused. It propagated raw, the job landed on the RQ failed registry, and the recovery action
+	that bin offers is REPLAY — which dials a patient who may already have been ringing.
+
+	WhatsApp built `transport.OutcomeUnknown` for exactly this and voice never inherited it. Nothing about
+	the graph changes: `placed`/`failed` was decided synchronously in `send_voice`, and this job runs after.
+	"""
+
+	def setUp(self):
+		# The credential read is not what is under test and owns no account row here; the wire below is.
+		connection = patch("tatva_connect.voice.api.connection_for", return_value={
+			"api_key": "never-real", "base_url": "https://api.bolna.ai", "from_phone": "",
+		})
+		connection.start()
+		self.addCleanup(connection.stop)
+
+	def _no_answer(self):
+		return patch("tatva_connect.voice.adapters.bolna.requests.post",
+		             side_effect=requests.Timeout("read timed out"))
+
+	def test_a_dial_with_no_answer_raises_the_unknown_and_not_a_service_error(self):
+		with self._no_answer():
+			with self.assertRaises(bolna.BolnaOutcomeUnknown):
+				bolna.place_call({"api_key": "k", "base_url": "https://api.bolna.ai"}, _GOOD, "agent-1",
+				                 None, _TOKEN)
+
+	def test_the_unknown_does_not_inherit_the_service_error(self):
+		"""Not because today's caller would break — `_deliver_voice` matches the unknown clause FIRST, so
+		inheritance survives there by ordering alone. That is the reason to lock it: the next caller to
+		handle only `BolnaServiceError`, or a reorder of those two clauses, would un-count and replay a
+		dial that may already have reached the patient, and nothing would say so."""
+		self.assertFalse(
+			issubclass(bolna.BolnaOutcomeUnknown, bolna.BolnaServiceError),
+			"an unknown outcome that IS a service error is not a separate outcome at all",
+		)
+
+	def test_a_refusal_still_raises(self):
+		"""The other half. Bolna's declared 4xx is an ANSWER — it really did decline — so it keeps the
+		documented behaviour: the cap slot comes back and the job fails where a human can see it."""
+		refused = MagicMock(status_code=400, content=b"{}")
+		refused.json.return_value = {"message": "bad agent"}
+		with patch("tatva_connect.voice.adapters.bolna.requests.post", return_value=refused):
+			with self.assertRaises(bolna.BolnaServiceError):
+				bolna.place_call({"api_key": "k", "base_url": "https://api.bolna.ai"}, _GOOD, "agent-1",
+				                 None, _TOKEN)
+
+	def test_the_delivery_job_records_the_unknown_instead_of_failing(self):
+		"""The outcome that matters: the job COMPLETES. A raise here is what files it where replay lives."""
+		with self._no_answer():
+			outcome = sends._deliver_voice(_ACCOUNT, _GOOD, "agent-1", None, "LEAD-1", correlation=_TOKEN)
+
+		self.assertIsNone(outcome, "the unknown branch must return, not raise onto the failed registry")
+
+	def test_nothing_is_written_for_a_call_we_cannot_confirm(self):
+		"""No execution_id came back, so there is nothing to correlate and no call to log. Writing a row
+		would claim a dial happened; the Wait's own timeout leg is what frees the journey either way."""
+		before = frappe.db.count("CRM Call Log")
+
+		with self._no_answer():
+			sends._deliver_voice(_ACCOUNT, _GOOD, "agent-1", None, "LEAD-1", correlation=_TOKEN)
+
+		self.assertEqual(frappe.db.count("CRM Call Log"), before,
+		                 "a call we never confirmed was logged as if it had been placed")

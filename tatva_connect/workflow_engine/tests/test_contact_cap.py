@@ -256,6 +256,29 @@ class TestARejectedHandOffReallyGivesTheSlotBack(_CapCase):
 
 		self._assert_slot_returned(step)
 
+	def test_a_dial_that_got_no_answer_keeps_the_slot(self):
+		"""A6's other half, and the line between the two: only a REFUSAL gives the slot back. A dial that
+		got no answer may already have reached the patient, so un-counting it would let the engine call
+		them again inside a window they have already been spent from. WhatsApp does not un-count its
+		unknown either — this is the same rule, not a voice-specific one."""
+		from tatva_connect.voice.adapters import bolna
+
+		step = self._capped_step()
+
+		with patch("tatva_connect.voice.api.connection_for",
+		           return_value={"api_key": "never-real", "base_url": "https://api.invalid", "from_phone": ""}), \
+		     patch("tatva_connect.voice.adapters.bolna.place_call",
+		           side_effect=bolna.BolnaOutcomeUnknown("no answer from the wire")):
+			sends._deliver_voice("cap-void-voice", _NUMBER, "agent-1", None, self.lead.name,
+			                     correlation=f"{self.journey.name}::n1")
+
+		frappe.db.rollback()
+		self.assertEqual(
+			frappe.db.get_value(STEP_LOG_DT, step, "contact"), _NUMBER,
+			"an unconfirmed dial gave the slot back, so a patient who may have been called can be called again",
+		)
+		self.assertTrue(contact_cap.refusal(sends.WHATSAPP, _NUMBER), "the ceiling stopped holding")
+
 	def _drop(self, doctype, name):
 		if frappe.db.exists(doctype, name):
 			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)

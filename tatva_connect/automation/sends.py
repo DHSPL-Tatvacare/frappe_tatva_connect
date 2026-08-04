@@ -762,10 +762,18 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 	execution_id for AUDIT: the wake correlation rides the `user_data` echo, so there is no lookup row to
 	write and no commit-race — the terminal webhook reads the engine token straight back out.
 
-	A RAISE HERE IS THE CORRECT BEHAVIOUR, not a bug to smooth over. The journey already took the `placed`
-	edge and cannot be walked back; the failure belongs on the RQ failed registry where it is visible and
-	replayable, exactly as `_deliver_whatsapp` argues. What frees a journey parked behind a call that never
-	happened is the Wait's own timeout leg, or the catch-up reconciler — never a rewritten output here.
+	A RAISE HERE IS THE CORRECT BEHAVIOUR FOR A REFUSAL, not a bug to smooth over. The journey already took
+	the `placed` edge and cannot be walked back; the failure belongs on the RQ failed registry where it is
+	visible and replayable, exactly as `_deliver_whatsapp` argues. What frees a journey parked behind a call
+	that never happened is the Wait's own timeout leg, or the catch-up reconciler — never a rewritten
+	output here.
+
+	A NO-ANSWER IS NOT A REFUSAL, and that is the one case the paragraph above does not cover. "Visible and
+	replayable" is the right home for a dial Bolna declined; it is the wrong home for one it never answered
+	about, because replay is the recovery action that bin offers and the patient may already be ringing.
+	So it takes `_deliver_whatsapp`'s unknown branch instead — recorded, not retried, and the cap slot is
+	NOT given back, because the call may well have gone. No new declared output: the graph's `placed`/
+	`failed` edge was decided synchronously in `send_voice` and this job runs long after it.
 	"""
 	from tatva_connect.voice import api as voice_api
 	from tatva_connect.voice.adapters import bolna
@@ -775,6 +783,13 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 			voice_api.connection_for(account_name), to_number, agent_id, from_override, correlation,
 			variables=variables,
 		)
+	except bolna.BolnaOutcomeUnknown as unanswered:
+		# No answer from the wire — the patient may already be ringing. Raising files this where the recovery action is replay, and a replayed dial calls them twice. Recorded, not retried, and the slot is not returned.
+		frappe.log_error(
+			title="automation: voice call outcome unknown",
+			message=f"lead={lead} account={account_name} agent={agent_id} reason={unanswered}",
+		)
+		return
 	except bolna.BolnaServiceError:
 		# Bolna's own 4xx, declared non-retryable — refused at hand-off, so the ceiling gives the slot back.
 		contact_cap.void(*_correlated_step(correlation))
