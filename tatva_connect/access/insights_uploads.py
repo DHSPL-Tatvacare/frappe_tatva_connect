@@ -2,9 +2,9 @@
 # See license.txt
 """Insights' spreadsheet import is off on this site.
 
-Three endpoints carry it. `import_csv_data` is gated on the uploads data source, but
-`get_columns_from_uploaded_file` and the legacy `import_csv` carry no data-source check at all, so
-gating one leaves the other two answering. All three are refused here instead.
+Four endpoints carry it: v3's `get_file_data` (preview) and `import_csv_data`, and v2's
+`get_columns_from_uploaded_file` and `import_csv`. Gating one leaves the rest answering — which is how
+a live `uploads` data source appeared on a site where this is off. All four are refused here instead.
 
 Why off: an imported table is named by the CLIENT and created with overwrite, so two people choosing
 the same name silently clobber each other; and the browser uploads with no parent record, leaving a
@@ -35,6 +35,7 @@ def _reap(filename):
 		return
 	try:
 		frappe.delete_doc("File", filename, ignore_permissions=True)  # authz-ok: tier-b — the gate is owner == session user AND unattached, both re-checked above
+		frappe.db.commit()  # the throw below rolls the request back (app.py:145-149) and would take this delete with it, while on_trash has already dropped the blob Azure cannot restore
 	except Exception:  # authz-ok: cleanup-only; a reap that fails must not mask the refusal below
 		frappe.log_error(title="Insights upload reap failed")
 
@@ -42,6 +43,11 @@ def _reap(filename):
 def _refuse(filename=None):
 	_reap(filename)
 	frappe.throw(_(_MESSAGE), title=_(_TITLE))
+
+
+@frappe.whitelist()
+def get_file_data(filename: str):
+	_refuse(filename)
 
 
 @frappe.whitelist()
