@@ -150,10 +150,25 @@ INDICATIVE_RESOURCES = {
 	"many.",
 }
 
-# Differences already accepted. Shown as a footnote on the affected row, not as a failure.
+# Differences the pipeline caused ON PURPOSE. Shown as an attribution on the affected row — the row
+# still reports its two figures and still says they differ, and the note says who did it and why.
+#
+# THE COLLAPSE FIRES ON EVERY EVENT CODE, not only on calls. LeadSquared writes the same record twice
+# under two different ids, and the migration keeps one of each identical pair (harness/rules.py); an
+# ACTIVITY written twice is collapsed exactly as a call is. Footnoting `calls` alone therefore left the
+# same deliberate act reading as an unexplained variance on the activities row — which is what put
+# "3 differences to review" on a report whose pipeline had done all three on purpose.
+#
+# The direction is stated because it is the reader's only check on the claim: a collapse can only ever
+# make the Frappe figure LOWER. More rows in Frappe than in LeadSquared is not this, and is a real gap.
+_COLLAPSED_DUPLICATES = (
+	"LeadSquared records some of these twice, under two different ids. The migration keeps one row per "
+	"identical pair, so the Frappe figure is lower by exactly what was collapsed — never higher."
+)
+
 EXPECTED_DIFFERENCES = {
-	"calls": "LeadSquared records some calls twice under two different ids. Duplicates are "
-	"collapsed on the way in, so the Frappe figure can be slightly lower.",
+	"activities": _COLLAPSED_DUPLICATES,
+	"calls": _COLLAPSED_DUPLICATES,
 }
 
 # The loader's own rule for "this task is done" — kept identical to sink_orm.load_tasks.

@@ -105,10 +105,6 @@
     null,
     "first_name"
    ],
-   "mx_Gender": [
-    null,
-    "gender"
-   ],
    "LastName": [
     null,
     "last_name"
@@ -128,6 +124,10 @@
    "mx_DOB_of_patient": [
     null,
     "custom_dob"
+   ],
+   "mx_Language": [
+    null,
+    "custom_patient_age"
    ],
    "Notes": [
     null,
@@ -549,7 +549,7 @@
    ],
    "Phone": [
     null,
-    "mobile_no"
+    "phone"
    ],
    "Mobile": [
     null,
@@ -795,7 +795,10 @@
    "236": "Introductory Call - Pre MB score",
    "235": "MB score activity details"
   },
-  "call_log_events": {},
+  "call_log_events": {
+   "21": "Incoming",
+   "22": "Outgoing"
+  },
   "lsq_event_names": {
    "241": "Phone Conversation New",
    "237": "Ringing No Response",
@@ -823,31 +826,503 @@
    "207": "Device, Lab Tests,  Tickets related and  other calls",
    "232": "Lab test/doctor activity",
    "236": "Introductory Call - Pre MB score",
-   "235": "MB score activity details"
+   "235": "MB score activity details",
+   "21": "Phone Call - Inbound",
+   "22": "Phone Call - Outbound"
   },
   "attachment_slots": {},
   "field_map": {
-   "FirstName": [
+   "mx_Job_Title_or_Occupation": [
     null,
-    "first_name"
+    "custom_job_title_or_occupation"
    ],
-   "Phone": [
+   "mx_Patient_pincode": [
     null,
-    "mobile_no"
+    "custom_patient_pincode"
+   ],
+   "mx_Lead_Status": [
+    null,
+    "custom_lead_status"
+   ],
+   "mx_Reinquired_Lead": [
+    null,
+    "custom_reinquired_lead"
+   ],
+   "mx_Age_Group": [
+    null,
+    "custom_age_group"
+   ],
+   "mx_Preferred_Language": [
+    null,
+    "custom_preferred_language"
+   ],
+   "mx_Patient_Age": [
+    null,
+    "custom_patient_age"
+   ],
+   "mx_Language": [
+    null,
+    "custom_language"
+   ],
+   "mx_Critical_patient": [
+    null,
+    "custom_critical_patient"
+   ],
+   "mx_BMI": [
+    null,
+    "custom_bmi"
+   ],
+   "mx_Department_Dropdown": [
+    null,
+    "custom_department_dropdown"
+   ],
+   "mx_Disease_Dropdown": [
+    null,
+    "custom_disease_dropdown"
+   ],
+   "mx_City_Dropdown": [
+    null,
+    "custom_city_dropdown"
+   ],
+   "mx_DOB": [
+    null,
+    "custom_dob"
+   ],
+   "mx_Diagnostics_address": [
+    null,
+    "custom_diagnostics_address"
+   ],
+   "mx_Month": [
+    null,
+    "custom_month"
+   ],
+   "mx_Condition_Dropdown": [
+    null,
+    "custom_condition_dropdown"
+   ],
+   "mx_Pincode": [
+    null,
+    "custom_pincode"
+   ],
+   "mx_Condition": [
+    null,
+    "custom_condition"
+   ],
+   "mx_Inclusions_or_additional_services_were_promised": [
+    null,
+    "custom_inclusions_or_additional_services_were_promised"
+   ],
+   "mx_Is_Patient_Tech_Savvy": [
+    null,
+    "custom_is_patient_tech_savvy"
+   ],
+   "mx_Wellness": [
+    null,
+    "custom_wellness"
+   ],
+   "mx_Diet_Services": [
+    null,
+    "custom_diet_services"
+   ],
+   "mx_Gender": [
+    null,
+    "custom_gender"
+   ],
+   "mx_Patient_ID": [
+    null,
+    "custom_patient_id"
+   ],
+   "mx_Current_diabetes_management": [
+    null,
+    "custom_current_diabetes_management"
+   ],
+   "ProspectID": [
+    null,
+    "custom_lsq_prospect_id"
    ],
    "ProspectAutoId": [
     null,
     "custom_lsq_lead_number"
+   ],
+   "FirstName": [
+    null,
+    "first_name"
+   ],
+   "LastName": [
+    null,
+    "last_name"
+   ],
+   "EmailAddress": [
+    null,
+    "email"
+   ],
+   "Source": [
+    null,
+    "source"
+   ],
+   "Notes": [
+    null,
+    "custom_notes"
+   ],
+   "Mobile": [
+    null,
+    "mobile_no"
+   ],
+   "Phone": [
+    null,
+    "phone"
+   ],
+   "mx_Nutra_Combo": [
+    "custom_plan_profile",
+    "custom_nutra_combo"
+   ],
+   "mx_Drug_Name": [
+    "custom_plan_profile",
+    "custom_drug_name"
+   ],
+   "mx_Sensor_Count": [
+    "custom_plan_profile",
+    "sensor_count"
+   ],
+   "mx_Transmitter_count": [
+    "custom_plan_profile",
+    "transmitter_count"
+   ],
+   "mx_Payment_Date_and_Time": [
+    "custom_plan_profile",
+    "custom_payment_date_and_time"
+   ],
+   "mx_Nutra_Given": [
+    "custom_plan_profile",
+    "custom_nutra_given"
+   ],
+   "mx_Generic_plan_shared": [
+    "custom_plan_profile",
+    "custom_generic_plan_shared"
+   ],
+   "mx_Device_explanation_call_remarks": [
+    "custom_plan_profile",
+    "custom_device_explanation_call_remarks"
+   ],
+   "mx_Follow_up_Physio_completed": [
+    "custom_plan_profile",
+    "custom_follow_up_physio_completed"
+   ],
+   "mx_Physio_consultation_completed": [
+    "custom_plan_profile",
+    "custom_physio_consultation_completed"
+   ],
+   "mx_Diet_plan_shared": [
+    "custom_plan_profile",
+    "custom_diet_plan_shared"
+   ],
+   "mx_AWB_number_of_Device": [
+    "custom_plan_profile",
+    "custom_awb_number_of_device"
+   ],
+   "mx_Date_of_Payment": [
+    "custom_plan_profile",
+    "custom_date_of_payment"
+   ],
+   "mx_Nutraceuticals": [
+    "custom_plan_profile",
+    "custom_nutraceuticals"
+   ],
+   "mx_CGM_Brand": [
+    "custom_plan_profile",
+    "cgm_brand"
+   ],
+   "mx_Program_Duration": [
+    "custom_plan_profile",
+    "program_duration"
+   ],
+   "mx_Program_End_Date": [
+    "custom_plan_profile",
+    "program_end_date"
+   ],
+   "mx_Program_Start_Date": [
+    "custom_plan_profile",
+    "program_start_date"
+   ],
+   "mx_CGM_Qty": [
+    "custom_plan_profile",
+    "custom_cgm_qty"
+   ],
+   "mx_BCA_Qty": [
+    "custom_plan_profile",
+    "custom_bca_qty"
+   ],
+   "mx_Payment_ID": [
+    "custom_plan_profile",
+    "custom_payment_id"
+   ],
+   "mx_CGM_Sold": [
+    "custom_plan_profile",
+    "custom_cgm_sold"
+   ],
+   "mx_BCA": [
+    "custom_plan_profile",
+    "custom_bca"
+   ],
+   "mx1_Invoice_amount": [
+    "custom_plan_profile",
+    "invoice_amount"
+   ],
+   "mx_Plan_Assigned_in_Portal": [
+    "custom_plan_profile",
+    "custom_plan_assigned_in_portal"
+   ],
+   "mx_Payment_Proof_Screenshot_For_Devices_Only": [
+    "custom_plan_profile",
+    "custom_payment_proof_screenshot_for_devices_only"
+   ],
+   "mx_Mention_the_exclusions_from_the_original_care_plan": [
+    "custom_plan_profile",
+    "custom_mention_the_exclusions_from_the_original_care_plan"
+   ],
+   "mx_Duration_or_Quantity": [
+    "custom_plan_profile",
+    "custom_duration_or_quantity"
+   ],
+   "mx_Plan_Name": [
+    "custom_plan_profile",
+    "plan_name"
+   ],
+   "mx_Actual_Cost": [
+    "custom_plan_profile",
+    "custom_actual_cost"
+   ],
+   "mx_CGM": [
+    "custom_plan_profile",
+    "custom_cgm"
+   ],
+   "mx_Physio_Services": [
+    "custom_plan_profile",
+    "custom_physio_services"
+   ],
+   "mx_Purchased_Plan_Name": [
+    "custom_plan_profile",
+    "custom_purchased_plan_name"
+   ],
+   "mx_Final_Agreed_Amount": [
+    "custom_plan_profile",
+    "custom_final_agreed_amount"
+   ],
+   "mx_Plan_Type": [
+    "custom_plan_profile",
+    "custom_plan_type"
+   ],
+   "mx_Plan_End_Date": [
+    "custom_plan_profile",
+    "custom_plan_end_date"
+   ],
+   "mx_Plan_Assigned_Date": [
+    "custom_plan_profile",
+    "custom_plan_assigned_date"
+   ],
+   "mx_Plan_Payment_Date": [
+    "custom_plan_profile",
+    "custom_plan_payment_date"
+   ],
+   "mx_Created_Time": [
+    "custom_lead_activity_metrics",
+    "custom_created_time"
+   ],
+   "mx_Phone_Call_Date_Time": [
+    "custom_lead_activity_metrics",
+    "custom_phone_call_date_time"
+   ],
+   "mx_RNR_Date_Time": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_date_time"
+   ],
+   "mx_RNR_Count__Reenquired_stage": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_reenquired_stage"
+   ],
+   "mx_RNR_Count__Converted_Stage": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_converted_stage"
+   ],
+   "mx_Call_Failure_Count": [
+    "custom_lead_activity_metrics",
+    "custom_call_failure_count"
+   ],
+   "mx_Answered_Call_Count": [
+    "custom_lead_activity_metrics",
+    "custom_answered_call_count"
+   ],
+   "mx_RNR_Count__Stage_RNR": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_stage_rnr"
+   ],
+   "mx_RNR_Count__Interested": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_interested"
+   ],
+   "mx_RNR_Count___Follow_up_or_Call_Back": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_follow_up_or_call_back"
+   ],
+   "mx_RNR_Count__New_Lead": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count_new_lead"
+   ],
+   "mx_Follow_up_Wellness_completed": [
+    "custom_lead_activity_metrics",
+    "custom_follow_up_wellness_completed"
+   ],
+   "mx_Follow_up_Diet_completed": [
+    "custom_lead_activity_metrics",
+    "custom_follow_up_diet_completed"
+   ],
+   "mx_Wellness_consultation_completed": [
+    "custom_lead_activity_metrics",
+    "custom_wellness_consultation_completed"
+   ],
+   "mx_Diet_consultation_completed": [
+    "custom_lead_activity_metrics",
+    "custom_diet_consultation_completed"
+   ],
+   "mx_Lead_Capture_Count": [
+    "custom_lead_activity_metrics",
+    "custom_lead_capture_count"
+   ],
+   "mx_Follow_up_Count": [
+    "custom_lead_activity_metrics",
+    "custom_follow_up_count"
+   ],
+   "mx_RNR_Count": [
+    "custom_lead_activity_metrics",
+    "custom_rnr_count"
+   ],
+   "mx_Call_Back_Count": [
+    "custom_lead_activity_metrics",
+    "custom_call_back_count"
+   ],
+   "mx_WhatsApp_Inbound_Count": [
+    "custom_acquisition_profile",
+    "custom_whatsapp_inbound_count"
+   ],
+   "mx_user_source": [
+    "custom_acquisition_profile",
+    "user_source"
+   ],
+   "mx_utm_source": [
+    "custom_acquisition_profile",
+    "utm_source"
+   ],
+   "mx_utm_term": [
+    "custom_acquisition_profile",
+    "utm_term"
+   ],
+   "mx_utm_therapy_area": [
+    "custom_acquisition_profile",
+    "utm_therapy_area"
+   ],
+   "mx_utm_disease": [
+    "custom_acquisition_profile",
+    "utm_disease"
+   ],
+   "mx_Sign_Up_Date": [
+    "custom_acquisition_profile",
+    "signup_date"
+   ],
+   "mx_Height_in_cm": [
+    "custom_lab_profile",
+    "custom_height_in_cm"
+   ],
+   "mx_Weight_in_kg": [
+    "custom_lab_profile",
+    "custom_weight_in_kg"
+   ],
+   "mx_Height_text": [
+    "custom_lab_profile",
+    "custom_height_text"
+   ],
+   "mx_Metabolic_Score": [
+    "custom_lab_profile",
+    "custom_metabolic_score"
+   ],
+   "mx_Waist_Circumference": [
+    "custom_lab_profile",
+    "custom_waist_circumference"
+   ],
+   "mx_TP_BDM_Name": [
+    "custom_care_providers_profile",
+    "custom_tp_bdm_name"
+   ],
+   "mx_Endorser_Dr_Free_text_option": [
+    "custom_care_providers_profile",
+    "custom_endorser_dr_free_text_option"
+   ],
+   "mx_RM_Name": [
+    "custom_care_providers_profile",
+    "rm_name"
+   ],
+   "mx_Success_Coach_Name": [
+    "custom_care_providers_profile",
+    "success_coach_name"
+   ],
+   "mx_Exercise_Coach_Name": [
+    "custom_care_providers_profile",
+    "exercise_coach_name"
+   ],
+   "mx_Diet_Coach_Name": [
+    "custom_care_providers_profile",
+    "diet_coach_name"
+   ],
+   "mx_Endorser_Dr_Name": [
+    "custom_care_providers_profile",
+    "custom_endorser_dr_name"
+   ],
+   "mx_BDM_Name_Field": [
+    "custom_care_providers_profile",
+    "custom_bdm_name_field"
+   ],
+   "mx_First_patient_of_the_Doctor": [
+    "custom_care_providers_profile",
+    "custom_first_patient_of_the_doctor"
+   ],
+   "mx_Doctor_consultation_required": [
+    "custom_care_providers_profile",
+    "custom_doctor_consultation_required"
+   ],
+   "mx_BDM_name": [
+    "custom_care_providers_profile",
+    "custom_bdm_name"
+   ],
+   "mx_Sales_Person_Name": [
+    "custom_care_providers_profile",
+    "custom_sales_person_name"
+   ],
+   "mx_Special_Remarks_for_CS_or_Health_Coaches": [
+    "custom_care_providers_profile",
+    "custom_special_remarks_for_cs_or_health_coaches"
+   ],
+   "mx_Sales_Team": [
+    "custom_care_providers_profile",
+    "custom_sales_team"
+   ],
+   "mx_Special_Remarks_from_Sales_Team": [
+    "custom_care_providers_profile",
+    "custom_special_remarks_from_sales_team"
+   ],
+   "mx_Doctor_Name": [
+    "custom_care_providers_profile",
+    "custom_doctor_name"
    ]
   },
   "fetches": [
    "activities",
    "notes",
+   "calls",
    "files"
   ],
   "compares": [
    "activities",
-   "notes"
+   "notes",
+   "calls"
   ]
  }
 }
