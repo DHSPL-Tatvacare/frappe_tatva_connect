@@ -4,9 +4,17 @@
 #   export APPS_JSON_BASE64=$(base64 < "$APPS_FILE" | tr -d '\n')
 #   docker build \
 #     --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-#     --build-arg=FRAPPE_BRANCH=version-16 --build-arg=FRAPPE_CORE_REF=v16.23.0 \
+#     --build-arg=FRAPPE_BRANCH=version-16 \
 #     --build-arg=APPS_JSON_BASE64="$APPS_JSON_BASE64" \
 #     --tag=<registry>/tatva-frappe:v16-1 --file=Containerfile .
+#
+# FRAPPE_CORE_REF: do NOT pass it from CI — this file's default is the single
+# source of truth for which core tag ships. CI additionally passes
+# APPS_RESOLVED_B64 (manifest refs resolved to commit SHAs; cache-bust +
+# provenance) and APP_REPO_SHA (this repo's commit; OCI revision label).
+# Local builds may omit both: you get an unpinned-cache build with an
+# "unknown" revision label, which is fine for a scratch image and never
+# promotable — the promote-prod guard rejects images without resolved pins.
 
 ARG FRAPPE_BRANCH=version-16
 
@@ -24,6 +32,17 @@ USER root
 
 RUN if [ -n "${APPS_JSON_BASE64}" ]; then \
     mkdir /opt/frappe && echo "${APPS_JSON_BASE64}" | base64 -d > /opt/frappe/apps.json; \
+  fi
+
+# Resolved pins (url + ref + commit for every app), computed by CI at build time.
+# Consumed HERE — before the app-install layer — so any app repo movement changes
+# this arg and busts the cache from this point down, while an unmoved world is a
+# full cache hit. This mechanism is what let CI drop --no-cache: apps.<lane>.json
+# pins branches (bench clones with --branch, which cannot take a raw SHA), so the
+# manifest bytes alone can never be a truthful cache key.
+ARG APPS_RESOLVED_B64=""
+RUN if [ -n "${APPS_RESOLVED_B64}" ]; then \
+    mkdir -p /opt/frappe && echo "${APPS_RESOLVED_B64}" | base64 -d > /opt/frappe/apps.resolved.json; \
   fi
 
 RUN chown -R frappe:frappe /home/frappe/.nvm
@@ -55,7 +74,22 @@ RUN export APP_INSTALL_ARGS="" && \
   cd /home/frappe/frappe-bench && \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr
 
+# Provenance travels with the artifact: the resolved manifest rides inside the
+# bench so a running container can answer "what exactly am I running?" without
+# reaching for the registry (cat apps.resolved.json).
+RUN if [ -f /opt/frappe/apps.resolved.json ]; then \
+    cp /opt/frappe/apps.resolved.json /home/frappe/frappe-bench/apps.resolved.json; \
+  fi
+
 FROM frappe/base:${FRAPPE_BRANCH} AS backend
+
+ARG APP_REPO_SHA=unknown
+ARG APPS_RESOLVED_B64=""
+# The promote-prod guard reads these labels to verify a candidate image against
+# apps.prod.json before it may be re-tagged for production.
+LABEL org.opencontainers.image.source="https://github.com/DHSPL-Tatvacare/frappe_tatva_connect" \
+  org.opencontainers.image.revision="${APP_REPO_SHA}" \
+  in.tatvacare.apps.resolved.b64="${APPS_RESOLVED_B64}"
 
 USER root
 
