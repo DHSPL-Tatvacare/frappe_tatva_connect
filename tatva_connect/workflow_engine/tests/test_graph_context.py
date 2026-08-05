@@ -156,7 +156,13 @@ class TestAContextlessCallerGetsNoInventedProblems(FrappeTestCase):
 
 
 class TestANewTypeGetsAllThreeFree(FrappeTestCase):
-	"""THE CHUNK'S CLAIM. W7 adds six node types next; each must validate the day it is declared."""
+	"""THE CHUNK'S CLAIM. W7 adds six node types next; each must validate the day it is declared.
+
+	The write-target example is a `Field Map` rather than a `Field`: W8.1 moved `Update Field` onto rows
+	and left `Field` declared by nothing, so the table's own orphan lock removed the row. The claim under
+	test is unchanged — a type declared today gets its Target, its write-target and its Link checks free —
+	and it is now made with a type that really exists rather than one only this test declared.
+	"""
 
 	def _declared(self, extra_fields):
 		declared = dict(registry.NODE_TYPES["Update Field"])
@@ -168,10 +174,11 @@ class TestANewTypeGetsAllThreeFree(FrappeTestCase):
 
 		fields = [
 			{"name": "zz_target", "label": "ZZ Target", "type": "Target"},
-			{"name": "zz_field", "label": "ZZ Field", "type": "Field", "doctype_from": "zz_target"},
+			{"name": "zz_fields", "label": "ZZ Fields", "type": "Field Map", "doctype_from": "zz_target"},
 			{"name": "zz_link", "label": "ZZ Link", "type": "Link", "link": "CRM Task Type"},
 		]
-		config = {"zz_target": "Sales Invoice", "zz_field": "nope", "zz_link": "nope"}
+		config = {"zz_target": "Sales Invoice", "zz_link": "nope",
+		          "zz_fields": [{"name": "nope", "mode": "Literal", "value": "x"}]}
 		with patch.dict(registry.NODE_TYPES, {"Update Field": self._declared(fields)}):
 			found = registry.validate_node(
 				"Update Field", config, [], mode=registry.PUBLISH, graph_context=_context(),
