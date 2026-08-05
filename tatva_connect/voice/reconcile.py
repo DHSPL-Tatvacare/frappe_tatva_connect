@@ -20,18 +20,23 @@ it. It does not wake journeys by a second route — it builds the provider's own
 to `bolna.handle`, the same function the webhook worker calls, so a reconciled outcome and a delivered one
 are the same event by construction. It never places a call.
 """
-import re
-
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
+from tatva_connect.automation import origin
 from tatva_connect.voice import channel
+from tatva_connect.workflow_engine import registry, versions
 
 # How long a call is given to report itself before the poll goes looking. Comfortably past any real call.
 GRACE_MINUTES = 30
 
 # One sweep's bound. A backlog is drained over several passes rather than in one long job.
 BATCH = 50
+
+JOURNEY_DT = "CRM Workflow Journey"
+JOURNEY_CALL_DT = "CRM Call Log"
+# The AI Voice Call verb's own parameter for the account it places on (`actions.VERBS`).
+ACCOUNT_FIELD = "connection"
 
 _DETAIL_PREFIX = "execution_id="
 
@@ -57,7 +62,7 @@ def _stale_parked_journeys():
 	would have woken — never a journey parked on a timer or on some other channel's event.
 	"""
 	return frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
-		"CRM Workflow Journey",
+		JOURNEY_DT,
 		filters={
 			"status": "Parked",
 			"awaiting_signal": ["like", "voice.%"],
@@ -106,32 +111,25 @@ def reconcile_journey(journey, correlation):
 
 
 def _placement_of(journey, correlation):
-	"""(execution_id, account) for the node this journey is parked behind, from the placement audit row.
+	"""(execution_id, account) for the node this journey is parked behind, each read from what already holds it.
 
-	`_log_voice_placement` writes exactly one row per placed call, carrying both. Reading it back is what
-	lets the poll exist without a call-record table: the journey knows its token, the token names the node, and
-	the node's own step log knows which provider execution it became.
+	THE EXECUTION ID *IS* THE CALL ROW. `CRM Call Log` autonames from the provider's id, and the engine
+	stamps the journey's token onto that row through the one map in `origin.AUTOMATION_STAMP` — so finding
+	it is a single indexed seek and there is no audit row to keep in step with anything.
+
+	The account comes off the journey's FROZEN node config, which is authoritative for a different reason:
+	it is the configuration this call was actually placed on, and a later edit to the workflow cannot move it.
 	"""
+	stamp = origin.AUTOMATION_STAMP[JOURNEY_CALL_DT]
+	call = frappe.db.get_value(JOURNEY_CALL_DT, {stamp: correlation}, "name")  # authz-ok: tier-a — workflow engine, scheduler context
+	return (call or None), (_account_of(journey, correlation) if call else None)
+
+
+def _account_of(journey, correlation):
+	"""The voice account this node declared, off the version the journey is bound to."""
 	_run, _, node_id = (correlation or "").partition("::")
-	if not node_id:
-		return None, None
-	rows = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
-		"CRM Workflow Step Log",
-		filters={"journey": journey, "node_id": node_id, "detail": ["like", f"{_DETAIL_PREFIX}%"]},
-		fields=["detail"],
-		limit=1,
-		order_by="creation desc",
-	)
-	return _parse_detail(rows[0].detail) if rows else (None, None)
-
-
-def _parse_detail(detail):
-	"""`execution_id=<id> account=<name>` -> the pair. The writer and this reader are the one format.
-
-	The account is taken to the end of the line rather than to the next space: an account name is an
-	operator's display name and may contain them. The execution id never does.
-	"""
-	match = re.match(rf"^{_DETAIL_PREFIX}(\S+)\s+account=(.*)$", (detail or "").strip())
-	if not match:
-		return None, None
-	return match.group(1) or None, match.group(2).strip() or None
+	version = frappe.db.get_value(JOURNEY_DT, journey, "workflow_version")
+	if not (node_id and version):
+		return None
+	node = next((n for n in versions.load(version).nodes if n.node_id == node_id), None)
+	return registry.config_of(node).get(ACCOUNT_FIELD) if node else None

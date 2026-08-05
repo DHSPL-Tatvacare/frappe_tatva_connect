@@ -14,6 +14,9 @@ import frappe
 AUTOMATION_STAMP = {
 	"CRM Task": "custom_workflow_token",
 	"WhatsApp Message": "custom_workflow_correlation",
+	# A placed AI call is the third automation-authored row, and its stamp does a second job: it is how the
+	# catch-up reconciler finds the execution a parked journey is waiting on, by the token the journey holds.
+	"CRM Call Log": "custom_workflow_correlation",
 }
 
 

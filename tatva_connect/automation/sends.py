@@ -72,10 +72,12 @@ The DATA checks above still run BEFORE the gate, so a dormant bench routes a lea
 import frappe
 
 from tatva_connect import automation
-from tatva_connect.automation import contact_cap
+from tatva_connect.automation import contact_cap, origin
 from tatva_connect.workflow_engine import refs
 
 SENDS_SWITCH = "Workflow::Engine::sends"
+# The table an AI call lands in, and the one `origin.AUTOMATION_STAMP` names the stamp column for.
+CALL_LOG_DT = "CRM Call Log"
 _RECORD_SAVEPOINT = "automation_whatsapp_record"
 
 # The two edges a send leaves by. Declared here, beside the code that CHOOSES between them, and read by
@@ -766,19 +768,22 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 		# Bolna's own 4xx, declared non-retryable — refused at hand-off, so the ceiling gives the slot back.
 		contact_cap.void(*_correlated_step(correlation))
 		raise
-	_log_voice_placement(correlation, account_name, result.get("correlation_id"), lead)
 	# The call goes onto the LEAD, in the table every other call lands in, in THIS job — one background
 	# job places and logs, so the row and the call can never disagree about whether it happened.
-	_write_voice_call_log(result, account_name, lead)
+	_write_voice_call_log(result, account_name, lead, correlation)
 
 
-def _write_voice_call_log(result, account_name, lead):
+def _write_voice_call_log(result, account_name, lead, correlation=None):
 	"""WRITE ONE: the call's row on the lead, the moment the provider accepts it.
 
 	Through `bridge._new_call_log`, the ONE writer of an outbound call row — a rep's click-to-call and
 	automation's call are the same kind of thing and there is not a second builder for the second kind.
 	The execution_id becomes the row's `id`, which is UNIQUE and is what the doctype autonames from, so
 	the terminal callback finds it by primary key.
+
+	The engine's token is stamped on afterwards, exactly as a raised task's is: the shared writer serves
+	telephony too and must not learn that workflows exist. That stamp is what ties a parked journey to the
+	execution it is waiting on, so the reconciler needs no audit row of its own.
 
 	Best-effort: a call really was placed, and losing its row must not fail the job and re-dial a patient.
 	"""
@@ -789,7 +794,7 @@ def _write_voice_call_log(result, account_name, lead):
 	if not execution_id:
 		return
 	try:
-		bridge._new_call_log(
+		row = bridge._new_call_log(
 			to_number=result.get("contact"),
 			# Already resolved by `place_call`; passed back rather than re-derived, so nothing on this
 			# path re-reads the account to find out which number it dialled from.
@@ -805,33 +810,10 @@ def _write_voice_call_log(result, account_name, lead):
 			# `custom_telephony_account` links a CRM Telephony Account; an AI call has none.
 			account_field=None,
 		)
+		if correlation:
+			# The column is read from the ONE declaration of where each authored row carries its token.
+			frappe.db.set_value(CALL_LOG_DT, row.name, origin.AUTOMATION_STAMP[CALL_LOG_DT],
+			                    correlation, update_modified=False)  # authz-ok: tier-a — engine bookkeeping, never user input
 	except Exception:
 		frappe.log_error(title="voice: call log write failed",
 		                 message=f"lead={lead} execution_id={execution_id}\n{frappe.get_traceback()}")
-
-
-def _log_voice_placement(correlation, account_name, execution_id, lead):
-	"""One audit row on the journey's own step log: which provider execution this node's call became.
-
-	It is also what the catch-up reconciler reads back — the journey is parked on the engine token, and this is
-	the only place the provider's id for that token is durably recorded. Best-effort: a call that really
-	was placed must not be reported as failed because its audit row could not be written.
-	"""
-	journey, _, node_id = (correlation or "").partition("::")
-	if not (journey and node_id and frappe.db.exists("CRM Workflow Journey", journey)):
-		frappe.logger("workflow_voice").info(
-			f"voice call placed outside a journey: lead={lead} execution_id={execution_id}"
-		)
-		return
-	try:
-		frappe.get_doc({
-			"doctype": "CRM Workflow Step Log",
-			"journey": journey,
-			"subject_name": lead,
-			"node_id": node_id,
-			"node_type": "AI Voice Call",
-			"outcome": PLACED,
-			"detail": f"execution_id={execution_id} account={account_name}",
-		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, scheduler/queue context
-	except Exception:
-		frappe.log_error(title="voice: placement audit row failed", message=frappe.get_traceback())
