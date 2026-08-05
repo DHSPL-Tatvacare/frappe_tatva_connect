@@ -26,7 +26,7 @@ import time
 import frappe
 
 from tatva_connect.automation import actions, expr, rules
-from tatva_connect.workflow_engine import refs, registry
+from tatva_connect.workflow_engine import contract, refs, registry
 
 JOURNEY_DT = "CRM Workflow Journey"
 STEP_LOG_DT = "CRM Workflow Step Log"
@@ -494,6 +494,35 @@ def _pluck(payload, dotted_path):
 	return cur
 
 
+def _wait_when(wait):
+	"""WHEN a time-mode Wait wakes, as the expression `wait_deadline` has always been handed.
+
+	A2 — one field used to be the delay, the timeout and the instant at once, so it could be none of them
+	well: it rendered as a bare text box that silently demanded a Python dict literal. They are now two
+	declarations, and this reads whichever one the mode actually asks for. `wait_deadline` and
+	`wait_resume_at` are untouched — the resolution stays exactly where it was, and this only knows which
+	field holds the answer.
+
+	An Until Time instant carries its own mode, so it is written into that same language by
+	`contract.as_expression` — the ONE writer, beside the ONE reader of a declared value.
+
+	A node frozen before the split still carries the old key. It is refused LOUDLY rather than read,
+	because the alternative is a Wait that resolves to nothing and parks a patient's journey for ever with
+	no clock: `_Permanent` marks it Failed where somebody sees it. `patches/split_wait_when.py` repairs
+	every mutable node; only a frozen `CRM Workflow Version` can still reach here, and republishing is the fix.
+	"""
+	if wait.get("mode") == registry.UNTIL_TIME:
+		when = contract.as_expression(wait.get("until_time"))
+	else:
+		when = wait.get("duration")
+	if when is None and wait.get("expression"):
+		raise _Permanent(
+			f"this Wait was frozen before its delay and its instant became separate settings "
+			f"({wait.get('expression')}); republish the workflow so its nodes carry the new ones"
+		)
+	return when
+
+
 def _park(journey, node, state):
 	"""Suspend at a Wait: persist Parked + the flavour columns (resume_at for a clock, awaiting_signal +
 	awaiting_correlation for an event, both for Event-or-Timeout) - the shape the timer/reconciler sweep
@@ -501,7 +530,7 @@ def _park(journey, node, state):
 	wait = _config(node)
 	mode = wait.get("mode")
 	values = {"status": "Parked", "current_node": node.node_id, "state_json": _storable(state)}
-	values["resume_at"] = wait_deadline(mode, wait.get("expression"), state) if mode in _TIME_MODES else None
+	values["resume_at"] = wait_deadline(mode, _wait_when(wait), state) if mode in _TIME_MODES else None
 	if mode in _EVENT_MODES:
 		correlation = _wait_correlation(wait, state)
 		# A Wait that NAMES a node it never got a token from is unwakeable, not patient: the null it parks

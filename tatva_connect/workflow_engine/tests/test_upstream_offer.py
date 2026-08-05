@@ -198,3 +198,53 @@ class TestNoInspectorListIsBuiltFromTheRawGraph(FrappeTestCase):
 		source = (self._CANVAS / "NodeInspector.vue").read_text()
 		self.assertIn("node_context", source)
 		self.assertIn("JSON.stringify(props.graph)", source, "the backend is no longer asked about the graph")
+
+
+class TestBothPickersHangOnTheWIRE(FrappeTestCase):
+	"""A1 — the wiring in the payload is what answers, so a stale wire empties BOTH pickers at once.
+
+	The canvas used to post node rows carrying the edges the graph was LOADED with, and nothing ever wrote
+	them again — so an edge the author had just drawn was invisible here. `Waiting on` and `Outcome` were
+	the visible half and no event-driven journey could be authored at all; the VALUE picker was the half
+	nobody would have looked for, because `variables` and `emitters` come off the same ancestor walk.
+
+	Driven as the difference one edge makes, rather than as a fixed expectation: what matters is not the
+	list, it is that the list is a function of the wire.
+	"""
+
+	def _unwired(self):
+		"""The same nodes with NOTHING joined to the Wait — the wire the author has not drawn yet.
+
+		Two upstream nodes, because the two pickers ask about different things: a send reports OUTCOMES and
+		writes no journey value, a Call API writes VALUES. One node could only ever prove half of it.
+		"""
+		return [
+			_node("trigger-1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {}),
+			_node(_UP, "Send WhatsApp", {}, {}),
+			_node("api-up", "Call API", {"webhook_endpoint": "x"}, {}),
+			_node(_WAIT, "Wait", {"mode": "Until Event", "event_name": "delivered"}, {}),
+		]
+
+	def _wired(self):
+		found = self._unwired()
+		found[1]["edges"] = [{"from_output": "sent", "to_node": "api-up"}]
+		found[2]["edges"] = [{"from_output": "succeeded", "to_node": _WAIT}]
+		return found
+
+	def test_the_outcome_pickers_are_empty_until_the_wire_exists(self):
+		self.assertEqual(_offered_at(_WAIT, self._unwired()), [])
+		self.assertIn(_UP, _offered_at(_WAIT, self._wired()))
+
+	def test_the_value_picker_is_the_second_victim_of_the_same_wire(self):
+		"""Same walk, same payload — so a stale wire cost the author their values too."""
+		before = {v["ref"] for v in upstream.available_at(json.dumps(self._unwired()), _WAIT)}
+		after = {v["ref"] for v in upstream.available_at(json.dumps(self._wired()), _WAIT)}
+		gained = after - before
+		self.assertTrue(gained, "wiring a node in offered no new value — the two questions have diverged")
+		self.assertTrue(all(ref.startswith("api-up.") for ref in gained), sorted(gained))
+
+	def test_one_payload_answers_both(self):
+		"""They are shipped together, off one call, so a control cannot be scoped by what it never got."""
+		payload = context.node_context(json.dumps(self._wired()), _WAIT)
+		self.assertIn(_UP, [e["node_id"] for e in payload["emitters"]])
+		self.assertTrue([v for v in payload["variables"] if v["ref"].startswith("api-up.")])

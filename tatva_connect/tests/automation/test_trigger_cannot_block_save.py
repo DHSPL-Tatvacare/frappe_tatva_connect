@@ -210,7 +210,7 @@ class TestThePredicateIsTheReplacement(FrappeTestCase):
 				to="w1",
 				predicate={"type": "rule", "field": "crm_lead.first_name", "operator": "is", "value": _MARKED},
 			),
-			fx.node("w1", "Wait", config={"mode": "For Duration", "expression": "{'minutes': 5}"},
+			fx.node("w1", "Wait", config={"mode": "For Duration", "duration": "{'minutes': 5}"},
 			        edges={"next": "end"}),
 			fx.node("end", "Terminal"),
 		])

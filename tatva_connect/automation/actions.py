@@ -753,17 +753,17 @@ VERBS = {
 		"outputs": ["assigned", "nobody"],
 		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
 		"params": [
-			{"name": "assign_mode", "label": "Mode", "type": "Select",
+			{"name": "assign_mode", "label": "Mode", "help": "Assign adds this person alongside anyone already on the record. Reassign clears the others first.", "type": "Select",
 			 "options": ["Assign", "Reassign"], "reqd": True},
-			{"name": "assignee_mode", "label": "Assign to", "type": "Select",
+			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, or take whoever an earlier node worked out.", "type": "Select",
 			 "options": ["User", "From Variable"], "reqd": True},
 			# `User` carries no grain axis, so the picker cannot be scoped by columns — it DECLARES the kind.
-			{"name": "assign_to_user", "label": "User", "type": "Link", "link": "User",
+			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
 			 "scope": "entitled_users",
 			 "depends_on_value": {"assignee_mode": ["User"]}},
-			{"name": "assignee_variable", "label": "Take the user from", "type": "Variable",
+			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
 			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
-			{"name": "assign_note", "label": "Note", "type": "Data"},
+			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them.", "type": "Data"},
 		],
 	},
 	"Create Task": {
@@ -772,12 +772,12 @@ VERBS = {
 		"description": "Raises a task on the lead.",
 		"outcomes": ["task.completed", "task.cancelled"],
 		"params": [
-			{"name": "task_type", "label": "Task Type", "type": "Link", "link": "CRM Task Type", "reqd": True},
-			{"name": "due_mode", "label": "Due Mode", "type": "Select",
+			{"name": "task_type", "label": "Task Type", "help": "Decides the task's own fields and who may complete it. Task types are set up under Taxonomy.", "type": "Link", "link": "CRM Task Type", "reqd": True},
+			{"name": "due_mode", "label": "Due Mode", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
 			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION]},
-			{"name": "due_from", "label": "Due date from", "type": "Variable",
+			{"name": "due_from", "label": "Due date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
 			 "depends_on_value": {"due_mode": [refs.FROM_CONTEXT]}},
-			{"name": "due_expression", "label": "Due Expression", "type": "Small Text", "reads": "expression",
+			{"name": "due_expression", "label": "Due Expression", "help": "Date arithmetic, e.g. add_days(ctx[\"crm_lead.creation\"], 7).", "type": "Small Text", "reads": "expression",
 			 "depends_on_value": {"due_mode": [refs.EXPRESSION]}},
 		],
 	},
@@ -787,9 +787,9 @@ VERBS = {
 		"description": "Writes values onto fields the operator has allowed automation to set.",
 		# W8.1 — one row per field with the mode ON THE ROW, replacing five params and the three gates they needed.
 		"params": [
-			{"name": "target_doctype", "label": "Write to", "type": "Target", "reqd": True},
+			{"name": "target_doctype", "label": "Write to", "help": "Which record is written — the patient's lead, or the record that started the journey.", "type": "Target", "reqd": True},
 			# `doctype_from` names the sibling holding these fields' doctype; `modes` adds the two no template slot can take.
-			{"name": "updates", "label": "Fields to set", "type": "Field Map", "reqd": True,
+			{"name": "updates", "label": "Fields to set", "help": "One row per field. Only fields an operator has allowed automation to write are offered; the rest are set up under Automation Fields.", "type": "Field Map", "reqd": True,
 			 "doctype_from": "target_doctype",
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
 		],
@@ -799,8 +799,8 @@ VERBS = {
 		"label": "Append Child Row",
 		"description": "Adds a row to a child table on the lead.",
 		"params": [
-			{"name": "child_table", "label": "Child Table", "type": "Data", "reqd": True},
-			{"name": "set_json", "label": "Set (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
+			{"name": "child_table", "label": "Child Table", "help": "The fieldname of the table on the lead, not its label.", "type": "Data", "reqd": True},
+			{"name": "set_json", "label": "Set (JSON)", "help": "The new row's values. Write $ctx.<name> to drop in a value the run is carrying.", "type": "Code", "reqd": True, "reads": "ctx_json"},
 		],
 	},
 	"Upsert Child Row": {
@@ -808,9 +808,9 @@ VERBS = {
 		"label": "Upsert Child Row",
 		"description": "Updates a matching child row, or adds one if none matches.",
 		"params": [
-			{"name": "child_table", "label": "Child Table", "type": "Data", "reqd": True},
-			{"name": "match_json", "label": "Match (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
-			{"name": "set_json", "label": "Set (JSON)", "type": "Code", "options": "JSON", "reqd": True, "reads": "ctx_json"},
+			{"name": "child_table", "label": "Child Table", "help": "The fieldname of the table on the lead, not its label.", "type": "Data", "reqd": True},
+			{"name": "match_json", "label": "Match (JSON)", "help": "How the existing row is found. No match and a new row is added instead.", "type": "Code", "reqd": True, "reads": "ctx_json"},
+			{"name": "set_json", "label": "Set (JSON)", "help": "What is written onto the row, found or new. Write $ctx.<name> to drop in a value the run is carrying.", "type": "Code", "reqd": True, "reads": "ctx_json"},
 		],
 	},
 	"Call API": {
@@ -826,21 +826,21 @@ VERBS = {
 		],
 		"emits_from": "capture",
 		"params": [
-			{"name": "webhook_endpoint", "label": "Endpoint", "type": "Link", "link": "Webhook", "reqd": True},
-			{"name": "webhook_payload_source", "label": "Send", "type": "Select",
+			{"name": "webhook_endpoint", "label": "Endpoint", "help": "Where the call goes, and the credential it goes with. Endpoints are curated under Webhook — this node cannot name a URL of its own.", "type": "Link", "link": "Webhook", "reqd": True},
+			{"name": "webhook_payload_source", "label": "Send", "help": "Send the whole record, or write the body yourself.", "type": "Select",
 			 "options": ["Lead", "Trigger Doc", "Custom"]},
 			# The author says WHAT is sent; the curated Webhook still says WHERE. `reads=ctx_json` is what
 			# makes its references visible to the publish gate, at any depth.
-			{"name": "request_body", "label": "Request Body", "type": "Code", "options": "JSON",
+			{"name": "request_body", "label": "Request Body", "help": "Write $ctx.<name> anywhere, at any depth, to drop in a value the run is carrying.", "type": "Code",
 			 "reads": "ctx_json", "depends_on_value": {"webhook_payload_source": ["Custom"]},
 			 "placeholder": '{"model": "gpt-4o", "messages": [{"role": "user", "content": "$ctx.crm_lead.first_name"}]}'},
 			# `preview` declares that this control can fetch a REAL answer: the method, and its sibling args.
-			{"name": "capture", "label": "Capture", "type": "Mapping",
+			{"name": "capture", "label": "Capture", "help": "Names for the parts of the response later nodes should be able to read. Press Test call to see a real response and pick from it.", "type": "Mapping",
 			 "preview": {
 				 "method": "tatva_connect.workflow_engine.context.test_call",
 				 "args": {"endpoint": "webhook_endpoint", "request_body": "request_body"},
 			 }},
-			{"name": "success_when", "label": "Succeeded when", "type": "Predicate"},
+			{"name": "success_when", "label": "Succeeded when", "help": "Which responses count as success and take the Succeeded branch. Leave it blank and any 2xx does.", "type": "Predicate"},
 		],
 	},
 	"Create Note": {
@@ -848,11 +848,11 @@ VERBS = {
 		"label": "Create Note",
 		"description": "Adds a note to the lead's timeline.",
 		"params": [
-			{"name": "comment_mode", "label": "Mode", "type": "Select",
+			{"name": "comment_mode", "label": "Mode", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
 			 "options": [refs.LITERAL, refs.EXPRESSION]},
-			{"name": "comment_text", "label": "Text", "type": "Data",
+			{"name": "comment_text", "label": "Text", "help": "Exactly what appears on the timeline.", "type": "Data",
 			 "depends_on_value": {"comment_mode": [refs.LITERAL]}},
-			{"name": "comment_expression", "label": "Expression", "type": "Small Text", "reads": "expression",
+			{"name": "comment_expression", "label": "Expression", "help": "Must produce text, e.g. \"Called \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression",
 			 "depends_on_value": {"comment_mode": [refs.EXPRESSION]}},
 		],
 	},
@@ -867,16 +867,16 @@ VERBS = {
 		"outcomes_channel": "whatsapp",
 		"params": [
 			# The recipient is DECLARED, in every trigger mode - the same field with the same picker, never conditional on anything else in the graph. Picked, never typed: a typed number is how a message reached the wrong country.
-			{"name": "contact_number", "label": "Contact number", "type": "Variable", "reqd": True},
-			{"name": "whatsapp_template", "label": "Template", "type": "Link",
+			{"name": "contact_number", "label": "Mobile Number", "help": "Picked, never typed — a typed number is how a message reaches the wrong person.", "type": "Variable", "reqd": True},
+			{"name": "whatsapp_template", "label": "Template", "help": "Only approved templates can be sent. They are set up under WhatsApp Templates, and the template decides which values are asked for below.", "type": "Link",
 			 "link": "WhatsApp Templates", "reqd": True},
 			# Which buttons this send OFFERS. The author declares them; a downstream Wait draws one branch per row. Never synced from the provider and never inferred from whatever arrives.
-			{"name": "buttons", "label": "Buttons offered", "type": "Button List"},
+			{"name": "buttons", "label": "Buttons offered", "help": "Buttons this message offers. Each one draws its own branch on a Wait placed after this node, so a tap can be routed by wiring rather than by a condition.", "type": "Button List"},
 			# The template's placeholders, DECLARED. `reads=value_rows` is what makes them visible to
 			# `contract.reads_of` and therefore refusable by the publish gate; `slots_from` names the
 			# sibling holding the template whose real placeholder names the control offers.
 			# `preview` is Call API's own declaration, reused verbatim: the method that fetches a REAL answer, and its sibling args.
-			{"name": "template_values", "label": "Template Values", "type": "Value Map",
+			{"name": "template_values", "label": "Template Values", "help": "One row per blank in the template. Every blank needs a row — a missing one sends the patient an empty space.", "type": "Value Map",
 			 "slots_from": "whatsapp_template",
 			 "slots_method": "tatva_connect.automation.sends.template_slots",
 			 "preview": {
@@ -892,12 +892,12 @@ VERBS = {
 		"outputs": [sends.SENT, sends.FAILED],
 		"params": [
 			# Picked from the grouped picker, never typed. The literal path this used to carry mailed a phone-shaped string as an address.
-			{"name": "email_recipient", "label": "Recipient", "type": "Variable", "reqd": True},
+			{"name": "email_recipient", "label": "Recipient", "help": "Picked, never typed. It must hold an email address.", "type": "Variable", "reqd": True},
 			# Frappe's own template store. There is no compose box: every message goes through the org's template chain.
-			{"name": "email_template", "label": "Template", "type": "Link", "link": "Email Template", "reqd": True},
+			{"name": "email_template", "label": "Template", "help": "There is no compose box — every message goes through the org's templates, set up under Email Template.", "type": "Link", "link": "Email Template", "reqd": True},
 			# The same Value Map WhatsApp uses; only the slot SOURCE differs, because an Email Template names its variables.
 			# The email twin: two readers, because rendering a WhatsApp body is the provider's job and rendering an email's is ours.
-			{"name": "template_values", "label": "Template Values", "type": "Value Map",
+			{"name": "template_values", "label": "Template Values", "help": "One row per variable the template names. Every one needs a row.", "type": "Value Map",
 			 "slots_from": "email_template",
 			 "slots_method": "tatva_connect.automation.sends.email_template_slots",
 			 "preview": {
@@ -922,12 +922,12 @@ VERBS = {
 		# reading "choose an account first" BEFORE meeting the account, and three controls looked broken.
 		"params": [
 			# 1. The account. Everything below is scoped by it, so it is asked first.
-			{"name": "connection", "label": "Voice account", "type": "Link",
+			{"name": "connection", "label": "Voice account", "help": "The provider account this call is placed on. Everything below belongs to it, so choose it first. Accounts are set up under AI Voice Account.", "type": "Link",
 			 "link": "CRM AI Voice Account", "reqd": True, "placeholder": "Select an account"},
 			# 2. The agents on THAT account, fetched server-side (the api key never reaches the browser) and
 			# cached. `options_from` names the sibling holding the account, so the picker empties and
 			# refetches when the author changes it rather than offering another account's agents.
-			{"name": "agent_id", "label": "Agent", "type": "Remote Select", "reqd": True,
+			{"name": "agent_id", "label": "Agent", "help": "Which agent speaks. Agents are created on the provider, not here — press Refresh after adding one.", "type": "Remote Select", "reqd": True,
 			 "options_from": "connection",
 			 "options_method": "tatva_connect.voice.api.list_agents",
 			 "detail_method": "tatva_connect.voice.api.get_agent",
@@ -939,22 +939,28 @@ VERBS = {
 			# for the identical reason: an undeclared slot is not a blank on a screen, it is "Hi
 			# customer_name" spoken to a patient. `slots_args` hands the control the sibling account,
 			# because an agent id means nothing without the account it lives on.
-			{"name": "agent_values", "label": "What the agent says", "type": "Value Map",
+			{"name": "agent_values", "label": "What the agent says", "help": "One row per blank the agent's script names. An unfilled blank is spoken aloud to the patient as it is written.", "type": "Value Map",
 			 "slots_from": "agent_id",
 			 "slots_args": {"account": "connection"},
 			 "slots_method": "tatva_connect.voice.api.agent_slots"},
 			# 4. Who it calls. Picked, never typed: a ref to a phone, conformed by the declared E164_PLUS.
-			{"name": "contact_number", "label": "Recipient", "type": "Variable", "reqd": True},
+			# "Mobile Number" is the ONE author-facing word for a person's number (ruled 2026-08-05); the
+			# stored column (`CRM Workflow Step Log.contact`) and the wire key (`to_number`) do not move.
+			{"name": "contact_number", "label": "Mobile Number", "help": "Picked, never typed — a typed number is how a call reaches the wrong person.", "type": "Variable", "reqd": True},
 			# 5. Which number it calls FROM. Picked from the numbers the account really owns — a typed
 			# from-number the provider does not own is rejected at dial time, which is a failed journey
 			# found on a live lead instead of at author time. Blank is a real answer, and the placeholder
 			# says what blank DOES rather than restating the label.
-			{"name": "from_override", "label": "From number", "type": "Remote Select",
+			{"name": "from_override", "label": "From number", "help": "Only numbers this account really owns are offered. Leave it blank to use the account's own.", "type": "Remote Select",
 			 "options_from": "connection",
 			 "options_method": "tatva_connect.voice.api.list_phone_numbers",
 			 "placeholder": "The account's own number",
 			 "gate_text": "Pick a voice account first — the numbers belong to it.",
 			 "empty_text": "This account owns no numbers. The agent's own default is used."},
+			# 6. Last, and OFF: it qualifies the whole node rather than any field above it, as the Trigger's "Only once per patient" does; honoured only while `AI Voice::Channel::bypass-guardrails` is armed, resolved in `sends.send_voice` so the adapter is handed a boolean and reads no switch.
+			{"name": "bypass_call_guardrails", "type": "Check",
+			 "label": "Skip the agent's calling hours",
+			 "help": "Places the call outside the agent's configured calling hours, for testing a journey end to end. Ignored unless an operator has also armed the AI Voice bypass switch."},
 		],
 	},
 }

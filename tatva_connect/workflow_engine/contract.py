@@ -30,6 +30,7 @@ no change here:
   reads=expression  a Python expression, read through `expr.context_keys`
   reads=ctx_json    a JSON map whose values may be `$ctx.<name>`
   reads=value_rows  rows of {name, mode, value}; a `From Context` row's value IS a variable name
+  reads=value_pair  ONE {mode, value} — the same rule as a row, for a field holding a single value
 
 A field declaring none of these reads nothing. That is the default, and it is the honest one: a literal
 subject line or a note is text, not a reference.
@@ -105,6 +106,47 @@ def value_row_keys(rows):
 		if row.get("value"):
 			found.add(str(row["value"]))
 	return found
+
+
+def value_pair_keys(pair):
+	"""The one journey-state name a `value_pair` field references — `value_row_keys` asked about ONE value.
+
+	The singular twin exists because a Wait's instant is one value with one mode, not a list of them, and
+	folding it into a one-element list would make every reader special-case a row that has no `name`.
+	"""
+	if not isinstance(pair, dict) or not pair.get("value"):
+		return set()
+	if pair.get("mode") == FROM_CONTEXT:
+		return {str(pair["value"])}
+	if pair.get("mode") == refs.EXPRESSION:
+		return _expression_keys(pair["value"])
+	return set()
+
+
+def as_expression(pair):
+	"""A `value_pair` written as the EXPRESSION its resolver already accepts, or None when nothing is set.
+
+	The resolver is untouched by the control that now fills it. `interpreter.wait_deadline` evaluates an
+	author-written expression through `expr.resolve_expression` (`safe_eval`), and it still does: this only
+	writes the two shapes an author can now PICK into the one language that resolver speaks. A literal
+	instant becomes a quoted string, and a value from the run becomes the `ctx["<ref>"]` subscript
+	`expr.resolve_expression` documents as the way a reference is written.
+
+	`frappe.as_json` does the quoting rather than an f-string with quotes around it: an instant is typed by
+	a person, and a value carrying a quote would otherwise close the literal early and change what runs.
+
+	`Expression` passes through untouched, and that is what makes the split from the old one-box-does-all
+	field LOSSLESS: whatever an author had written there is still exactly what runs.
+	"""
+	mode = (pair or {}).get("mode") or LITERAL
+	value = (pair or {}).get("value")
+	if value in (None, ""):
+		return None
+	if mode == refs.EXPRESSION:
+		return str(value)
+	if mode == FROM_CONTEXT:
+		return "ctx[{0}]".format(frappe.as_json(str(value)))
+	return frappe.as_json(str(value))
 
 
 def value_rows_map(rows):

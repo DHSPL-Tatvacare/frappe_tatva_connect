@@ -95,7 +95,7 @@ class TestGraphRules(FrappeTestCase):
 		"""Polling is a legitimate shape — the Wait is what makes it safe."""
 		found = graph.problems(_graph(
 			fx.trigger(to="w1"),
-			fx.node("w1", "Wait", config={"mode": "For Duration", "expression": "{'minutes': 5}"},
+			fx.node("w1", "Wait", config={"mode": "For Duration", "duration": "{'minutes': 5}"},
 			        edges={"next": "b1"}),
 			fx.node("b1", "Route",
 			        config={"routes": [{"id": "r1", "label": "New", "condition": {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"}}]},

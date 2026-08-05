@@ -79,31 +79,42 @@ NODE_TYPES = {
 		# The Trigger gates its OWN fields on its OWN mode — Wait's shipped pattern; what W1-contract.md:212 rejects is a node morphing on ANOTHER node's mode, and no other node type may gate on `mode`.
 		"config": [
 			_field("mode", "Starts on", "Select", options=[MODE_RECORD, MODE_SCHEDULE], reqd=True,
-			       default=MODE_RECORD),
+			       default=MODE_RECORD,
+			       help="A record event starts one journey the moment a record is saved. A schedule takes everyone who matches, on a rhythm, and starts a journey for each."),
 			# Declared in EVERY mode: "only when" on a save is "who is in the cohort" on a schedule, one predicate.
-			_field("subject_doctype", "Subject", "Select", options=_subject_options(), reqd=True),
+			_field("subject_doctype", "Subject", "Select", options=_subject_options(), reqd=True,
+			       help="Which record this workflow watches. It decides every field offered below and in every node after this one, so set it first."),
 			_field("event", "Event", "Select", options=["Created", "Updated", "Deleted"], reqd=True,
-			       depends_on_value={"mode": [MODE_RECORD]}),
+			       depends_on_value={"mode": [MODE_RECORD]},
+			       help="Which save starts the journey."),
 			# How often the cohort is taken; `cohort.next_run_at` names the API rejected and why.
 			_field("schedule", "Repeats", "Select", options=list(SCHEDULES), reqd=True,
-			       depends_on_value={"mode": [MODE_SCHEDULE]}),
+			       depends_on_value={"mode": [MODE_SCHEDULE]},
+			       help="How often everyone matching Only when is gathered up again."),
 			_field("schedule_time", "At", "Data", placeholder="09:00",
-			       depends_on_value={"mode": [MODE_SCHEDULE]}),
-			_field("vertical", "Vertical", "Grain", link="CRM Vertical"),
-			_field("group", "Group", "Grain", link="CRM Group"),
-			_field("program", "Program", "Grain", link="CRM Program"),
+			       depends_on_value={"mode": [MODE_SCHEDULE]},
+			       help="Time of day the schedule runs, on the site's own clock. Blank runs it at midnight."),
+			_field("vertical", "Vertical", "Grain", link="CRM Vertical",
+			       help="Narrows this workflow to one vertical. Leave it blank for any — and blank is what scopes the pickers below to everything."),
+			_field("group", "Group", "Grain", link="CRM Group",
+			       help="Narrows this workflow to one group. Leave it blank for any."),
+			_field("program", "Program", "Grain", link="CRM Program",
+			       help="Narrows this workflow to one programme. Leave it blank for any. Set it and every picker below offers only what that programme can reach."),
 			# Declared in EVERY mode, like the subject it narrows — the authoring experience is singular and
 			# nothing here may gate on `mode`. Sits after the subject that scopes it and BEFORE the predicate
 			# that consumes it, so the chain reads top to bottom exactly as AI Voice Call's params do.
 			# Blank means ANY, the same semantic a blank grain axis already carries.
 			_field("working_set", "Fields used", "Field Set",
-			       placeholder="Every field on the subject"),
-			_field("predicate", "Only when", "Predicate"),
+			       placeholder="Every field on the subject",
+			       help="Trims every picker in this workflow to the handful of fields it really works with. Nothing is blocked — each picker keeps a Show all fields link."),
+			_field("predicate", "Only when", "Predicate",
+			       help="Who this workflow is for. On a schedule it is the cohort. Values come from Subject above — choose that first or there is nothing to test."),
 			# W8.4. Declared in EVERY mode — a save lane can re-enrol too — but it is the SCHEDULE that
 			# makes it necessary: a cohort re-selects everyone its criteria match, every tick, so a monthly
 			# welcome journey sends the welcome every month for ever. Last, because it qualifies the whole
 			# Trigger rather than any one field above it.
-			_field("once_per_subject", "Only once per patient", "Check"),
+			_field("once_per_subject", "Only once per patient", "Check",
+			       help="Enrols each patient once and never again, however often they match. A schedule re-selects everyone who matches on every run, so without this a monthly journey sends the same welcome every month."),
 		],
 	},
 	"Route": {
@@ -115,7 +126,8 @@ NODE_TYPES = {
 			"base": ["otherwise"],
 			"rows_from": {"declares": "routes", "key": "id"},
 		},
-		"config": [_field("routes", "Routes", "Route Rows", reqd=True)],
+		"config": [_field("routes", "Routes", "Route Rows", reqd=True,
+		                  help="One branch per condition, tried top to bottom. Each row draws its own handle on the canvas — wire it there.")],
 	},
 	"Sample": {
 		"label": "Sample",
@@ -128,14 +140,17 @@ NODE_TYPES = {
 			"base": ["remainder"],
 			"rows_from": {"declares": "arms", "key": "id"},
 		},
-		"config": [_field("arms", "Arms", "Sample Rows", reqd=True)],
+		"config": [_field("arms", "Arms", "Sample Rows", reqd=True,
+		                  help="Each arm takes the share you give it. They need not add up to a hundred — whatever is left over takes Remainder.")],
 	},
 	"Set Variables": {
 		"label": "Set Variables",
 		"description": "Computes values into the journey's state for later nodes to read. Nothing to do with people — to change who owns a lead, use Assign to User.",
 		"outputs": ["next"],
-		"config": [_field("assign", "Values", "Code", options="JSON", reqd=True,
-		                  reads="expression", writes="expression_dict")],
+		"config": [_field("assign", "Values", "Code", reqd=True,
+		                  reads="expression", writes="expression_dict",
+		                  placeholder='{"risk_band": "high"}',
+		                  help="Names and their values, as one expression. Every name set here is offered to the nodes below this one.")],
 	},
 	"Wait": {
 		"label": "Wait",
@@ -155,16 +170,29 @@ NODE_TYPES = {
 		},
 		"config": [
 			_field("mode", "Mode", "Select",
-			       options=[UNTIL_EVENT, FOR_DURATION, UNTIL_TIME, EVENT_OR_TIMEOUT], reqd=True),
+			       options=[UNTIL_EVENT, FOR_DURATION, UNTIL_TIME, EVENT_OR_TIMEOUT], reqd=True,
+			       help="What ends the wait: something happening, a length of time, a moment on the calendar, or whichever of an event and a timeout comes first. It also decides which handles this node draws."),
 			_field("source_node", "Waiting on", "Node",
+			       help="Which earlier node this wait listens to. Only nodes that report an outcome AND always run before this one are offered — wire this node up on the canvas and they appear.",
 			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
 			_field("event_name", "Outcome", "Outcome",
+			       help="Which of that node's outcomes wakes the journey. Choose Waiting on first — this list is that node's own.",
 			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
 			# {dotted payload path: state key} — the VALUES are what this Wait writes, hence `payload_map`.
-			_field("accepts", "Accepts", "Code", options="JSON", writes="payload_map",
+			_field("accepts", "Accepts", "Code", writes="payload_map",
+			       placeholder='{"data.button_id": "chosen_button"}',
+			       help="Optional. Lifts values out of the arriving event into the journey so later nodes can read them — each entry maps a path in the event to a name you choose. Blank means wake me, I need nothing from it.",
 			       depends_on_value={"mode": [UNTIL_EVENT, EVENT_OR_TIMEOUT]}),
-			_field("expression", "Duration or time", "Data", reads="expression",
-			       depends_on_value={"mode": [FOR_DURATION, UNTIL_TIME, EVENT_OR_TIMEOUT]}),
+			# A2 — one field was the delay, the timeout AND the instant, so it served none of them; two jobs, two declarations, gated on this node's OWN mode, which is the pattern this node type already ships.
+			_field("duration", "Wait for", "Duration",
+			       help="How long the journey waits before moving on.",
+			       depends_on_value={"mode": [FOR_DURATION, EVENT_OR_TIMEOUT]}),
+			# Both ways of naming an instant: a care journey's real one is usually the patient's own date.
+			_field("until_time", "Wait until", "Instant",
+			       modes=[refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION],
+			       mode_controls={refs.LITERAL: "datetime"},
+			       help="A moment on the calendar, or a date the run is carrying — choose a value to wait for the patient's own appointment or review date.",
+			       depends_on_value={"mode": [UNTIL_TIME]}),
 		],
 	},
 	"Terminal": {
@@ -353,6 +381,7 @@ READ_KINDS = {
 	"expression": {"keys": lambda v: _contract()._expression_keys(v), "check": _expression_problem},
 	"ctx_json": {"keys": lambda v: _contract()._ctx_json_keys(v), "check": _json_problem},
 	"value_rows": {"keys": lambda v: _contract().value_row_keys(v), "check": None},
+	"value_pair": {"keys": lambda v: _contract().value_pair_keys(v), "check": None},
 }
 
 # WHICH NAMES a field of this kind contributes for later nodes to read. A resolver returning None means
@@ -672,11 +701,15 @@ def _option_problems(value, field, config, context):
 	config_json. Deliberately does NOT refuse a blank: whether the setting is required is the `reqd` rule's
 	question, and answering it twice would give the author two messages for one mistake.
 
-	`options` is a list only where the type offers a fixed vocabulary; `Code` declares `options="JSON"` as
-	a control hint, so the isinstance guard is what keeps this from refusing every JSON body.
+	A field that declares no options refuses nothing — `options` is this vocabulary's word for "the fixed
+	list of values this field accepts", and a type whose values are not a fixed list simply has none. A
+	`Code` field used to declare `options="JSON"` here, which is frappe's DocType word for which syntax the
+	DESK's code editor highlights and means nothing in this table; one key with two meanings is the second
+	brain this file exists to prevent, so those declarations are gone and what a Code field holds is said by
+	its read/write kind, which is also what parses it.
 	"""
 	options = field.get("options")
-	if not value or not isinstance(options, list) or value in options:
+	if not value or not options or value in options:
 		return []
 	return [
 		_("{0} is not a valid {1}. Choose one of: {2}").format(value, field["label"], ", ".join(options))
@@ -718,6 +751,57 @@ def _trim(number):
 	return int(number) if float(number).is_integer() else number
 
 
+def _delay_units():
+	"""The units a delay may be written in — READ OFF `add_to_date` ITSELF, never typed out here.
+
+	They are its integer-defaulted parameters, which is exactly the set it shifts a date by: `date` defaults
+	to None and the three formatting switches default to booleans, so both fall out without being named. A
+	hand-written tuple would be a second vocabulary that drifts the day frappe adds one, and it is the same
+	list the control offers — so what an author may pick and what publish accepts cannot disagree.
+	"""
+	import inspect
+
+	return tuple(
+		name
+		for name, param in inspect.signature(frappe.utils.add_to_date).parameters.items()
+		if isinstance(param.default, int) and not isinstance(param.default, bool)
+	)
+
+
+def _duration_problems(value, field, config, context):
+	"""A delay must really be `add_to_date` kwargs — refused HERE, where the author can still fix it.
+
+	This is the whole defect behind the "Duration or time" box: the declaration said `Data`, so any string
+	was accepted, and `wait_resume_at` then threw on a LIVE journey with a message about add_to_date kwargs
+	that means nothing to the person who typed `2 minutes`. Publish is the only place it is catchable
+	against the author rather than against a patient.
+
+	Enumerated through `expr.dict_literal_keys`, the same reader `upstream._expression_dict_keys` uses for a
+	Set Variables node, so "is this a dict literal and what are its keys" is answered once. It returns None
+	for anything computed — `{"days": ctx["x"]}` — and that is passed, not guessed at: only running it could
+	say, and a false block would stop an author with no way forward. A broken expression is already reported
+	by the `expression` read kind, so this stays silent on it rather than saying the same thing twice.
+	"""
+	if not value:
+		return []
+	from tatva_connect.automation import expr
+
+	try:
+		keys = expr.dict_literal_keys(value)
+	except (SyntaxError, ValueError, TypeError):
+		return []
+	if keys is None:
+		return []
+	units = _delay_units()
+	if not keys:
+		return [_("{0} is empty, so the journey would wait for no time at all.").format(field["label"])]
+	unknown = sorted(k for k in keys if k not in units)
+	if unknown:
+		return [_("{0} is not a length of time. Use one of: {1}").format(
+			", ".join(unknown), ", ".join(units))]
+	return []
+
+
 # `scalar` — does the stored value fit on a line as itself? A list or a tree does not, and a card that
 # prints one shows `[object Object]`. `summary` is how such a value is NAMED instead: `{"count": noun}`
 # renders "3 required", `{"phrase": text}` a fixed sentence where a count means nothing. Every non-scalar
@@ -740,8 +824,8 @@ def _trim(number):
 #   Variable           no check — "does this resolve upstream" needs the whole graph and this node's
 #                      position in it. `graph._reference_problems` already answers it from
 #                      `upstream.available_map`; a row check would be a second implementation.
-#   Field              no check — that a field is settable is a whole-graph question about the write
-#                      TARGET, already answered by `graph._write_target_problems`.
+#   Field Map          every named row is a field automation may write; the whole-graph half of that
+#                      question stays with `graph._write_target_problems`.
 #   Predicate          the tree is well formed and its operators exist.
 #   Mapping            every captured name is a legal variable name.
 #   Value Map          no check — its rows are validated by the `value_rows` read kind.
@@ -762,7 +846,6 @@ FIELD_TYPES = {
 	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": None},
-	"Field": {"control": "field-picker", "check": _settable_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Route Rows": {"control": "route-rows", "check": None, "primitive": False, "reads": "predicate_rows", "scalar": False, "summary": {"count": "routes"}},
 	# `reads` is None and that is not an oversight: an arm is a share of chance, so it references no journey
@@ -770,6 +853,10 @@ FIELD_TYPES = {
 	"Sample Rows": {"control": "sample-rows", "check": _share_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "arms"}},
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
+	# A2 — a delay, stored as the `add_to_date` kwargs `wait_resume_at` has always taken; NOT frappe's `Duration` fieldtype and NOT the fork's `DurationInput`/`formatDuration`, which both speak SECONDS, and a month is not a fixed number of them.
+	"Duration": {"control": "duration", "check": _duration_problems, "primitive": False, "reads": "expression", "scalar": True, "summary": None, "units": _delay_units()},
+	# A2 — ONE value with ONE mode: `Value Map`'s row, for a field that holds a single value.
+	"Instant": {"control": "instant", "check": None, "primitive": False, "reads": "value_pair", "scalar": False, "summary": {"phrase": "is set"}},
 	# W8.1 — Value Map's twin for rows the AUTHOR names: same read kind, so gate and vocabulary arrive with it.
 	"Field Map": {"control": "field-map", "check": _settable_rows_problems, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "fields"}},
 	"Button List": {"control": "button-list", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "buttons"}},
@@ -978,6 +1065,8 @@ def _wire(field, outputs_rule=None):
 		"primitive": row["primitive"],
 		"summary": row["summary"],
 		"shapes_outputs": _shapes_outputs(field, outputs_rule),
+		# A vocabulary the TYPE owns rather than any one field — present only where the type declares one.
+		**({"units": list(row["units"])} if row.get("units") else {}),
 	}
 
 
@@ -1017,13 +1106,16 @@ def _value_modes(field):
 	Imported lazily: `contract` reaches `registry`, which builds its verb node types out of `actions` —
 	at module scope this is a cycle.
 	"""
-	if read_kind_of(field) != "value_rows":
+	if read_kind_of(field) not in ("value_rows", "value_pair"):
 		return field
 
 	from tatva_connect.workflow_engine import contract
 
 	modes = field.get("modes") or [contract.LITERAL, contract.FROM_CONTEXT]
-	return {**field, "modes": modes, "mode_controls": {m: _MODE_CONTROLS[m] for m in modes}}
+	# A field may name a different control for a mode it fills differently (a Wait's literal instant is a calendar) — declared, so the control that draws it still never decides what a mode means.
+	declared = field.get("mode_controls") or {}
+	return {**field, "modes": modes,
+	        "mode_controls": {m: declared.get(m, _MODE_CONTROLS[m]) for m in modes}}
 
 
 @frappe.whitelist()

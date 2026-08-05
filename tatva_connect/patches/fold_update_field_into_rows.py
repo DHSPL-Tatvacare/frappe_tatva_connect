@@ -26,7 +26,7 @@ let those journeys finish first.
 """
 import frappe
 
-from tatva_connect.workflow_engine import refs
+from tatva_connect.workflow_engine import refs, registry
 
 NODE_DT = "CRM Workflow Node"
 NODE_TYPE = "Update Field"
@@ -45,7 +45,7 @@ def execute():
 		return
 
 	for row in frappe.get_all(NODE_DT, filters={"node_type": NODE_TYPE}, fields=["name", "config_json"]):
-		config = frappe.parse_json(row.config_json or "{}") or {}
+		config = registry.config_of(row)
 		folded = _folded(config)
 		if folded is None:
 			continue

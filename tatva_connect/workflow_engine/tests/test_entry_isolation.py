@@ -35,7 +35,7 @@ class TestEntryIsolation(FrappeTestCase):
 		# A graph that PARKS — the durable path, the one that used to commit inside the user's save.
 		cls.waiting = fx.make_workflow(_WAITING, [
 			fx.trigger(to="w1"),
-			fx.node("w1", "Wait", config={"mode": "For Duration", "expression": "{'minutes': 5}"},
+			fx.node("w1", "Wait", config={"mode": "For Duration", "duration": "{'minutes': 5}"},
 			        edges={"next": "end"}),
 			fx.node("end", "Terminal"),
 		])

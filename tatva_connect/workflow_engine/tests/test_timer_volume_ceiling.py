@@ -147,7 +147,7 @@ class TestTheJourneyStillWakesAndSaysWhy(_CeilingCase):
 		fx.arm_sweep(cls)
 		cls.workflow = fx.make_workflow(_WF, [
 			fx.trigger(to="w1"),
-			fx.node("w1", "Wait", config={"mode": "For Duration", "expression": "{'minutes': 5}"},
+			fx.node("w1", "Wait", config={"mode": "For Duration", "duration": "{'minutes': 5}"},
 			        edges={"next": "end"}),
 			fx.node("end", "Terminal"),
 		])
