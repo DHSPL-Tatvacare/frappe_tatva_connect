@@ -396,6 +396,7 @@ def _smart_view_tab(d):
 
 
 @frappe.whitelist()
+@frappe.read_only()
 def get_smart_views():
 	"""The caller's tabs: the standard views whose RULE grain overlaps their entitlement, plus their
 	own, plus any shared with them (native DocShare). Ordered. Read-only; returns [] (never throws)
@@ -415,6 +416,7 @@ def _assert_read(d):
 
 
 @frappe.whitelist()
+@frappe.read_only()
 def get_view(name):
 	"""The full editable definition of one view (for the authoring editor): scope + parsed
 	predicate + column keys. Gated by the one predicate (standard-in-grain / own / shared /
@@ -424,12 +426,12 @@ def get_view(name):
 	try:
 		predicate = frappe.parse_json(d.predicate) if d.predicate else None
 	except Exception:
-		frappe.log_error(title="smartview: corrupt predicate JSON", message=f"view={d.name}")
+		frappe.write_only()(frappe.log_error)(title="smartview: corrupt predicate JSON", message=f"view={d.name}")
 		predicate = None
 	try:
 		columns = frappe.parse_json(d.columns) if d.columns else []
 	except Exception:
-		frappe.log_error(title="smartview: corrupt columns JSON", message=f"view={d.name}")
+		frappe.write_only()(frappe.log_error)(title="smartview: corrupt columns JSON", message=f"view={d.name}")
 		columns = []
 	return {
 		"name": d.name,
@@ -479,7 +481,7 @@ def _column_field_keys(view, cat):
 	try:
 		keys = frappe.parse_json(view.columns) if view.columns else []
 	except Exception:
-		frappe.log_error(title="smartview: bad saved columns JSON")
+		frappe.write_only()(frappe.log_error)(title="smartview: bad saved columns JSON")
 		keys = []
 	keys = [k for k in (keys or []) if k in cat]
 	return keys or _starter_columns(cat)
@@ -711,6 +713,7 @@ def _link_master(r):
 
 
 @frappe.whitelist()
+@frappe.read_only()
 def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50, with_count=1):
 	"""THE composer. Returns {columns, rows, total} for a saved CRM Smart View, PQC-scoped.
 	Read-only. One qb query for the rows + one for the count; both AND the PQC.
@@ -742,7 +745,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	try:
 		predicate = frappe.parse_json(v.predicate) if v.predicate else None
 	except Exception:
-		frappe.log_error(title="smartview: bad predicate JSON")
+		frappe.write_only()(frappe.log_error)(title="smartview: bad predicate JSON")
 		predicate = None
 	if isinstance(filters, str):
 		filters = frappe.parse_json(filters) or []

@@ -78,7 +78,8 @@ def title_field(doctype):
 	try:
 		field = frappe.get_meta(doctype).title_field
 	except Exception:
-		frappe.log_error(f"labels: cannot read meta of {doctype}", frappe.get_traceback())
+		# On the PRIMARY, always: a reader of this module may be running on the replica and an Error Log is an INSERT.
+		frappe.write_only()(frappe.log_error)(f"labels: cannot read meta of {doctype}", frappe.get_traceback())
 		return None
 	return field if field and field != "name" else None
 
@@ -94,7 +95,7 @@ def title_of(doctype, value):
 	try:
 		return frappe.get_cached_value(doctype, value, field) or None
 	except Exception:
-		frappe.log_error(f"labels: cannot read title_field of {doctype}", frappe.get_traceback())
+		frappe.write_only()(frappe.log_error)(f"labels: cannot read title_field of {doctype}", frappe.get_traceback())
 		return None
 
 
