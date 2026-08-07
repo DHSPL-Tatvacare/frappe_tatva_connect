@@ -208,6 +208,8 @@ doc_events = {
 			"tatva_connect.lead.leads.validate_stage",
 			# mirror the latest lab row's headline metrics up to the core Lead fields
 			"tatva_connect.lead.leads.sync_headline_metrics",
+			# a user-facing field rendered as a link/redirect may only carry https:// — changed values only
+			"tatva_connect.access.link_scheme.guard_link_schemes",
 		],
 		"on_update": [
 			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
@@ -274,19 +276,12 @@ doc_events = {
 	"Webhook": {
 		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
 	},
-	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://.
-	# Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated
-	# reason is never blocked.
-	"CRM Lead": {
-		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
-	},
+	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://. Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated reason is never blocked.
+	# CRM Lead and CRM Intake Form carry this guard inside their OWN blocks above/below — a second entry keyed by the same doctype does not merge, it SHADOWS, and Python keeps the last one silently.
 	"CRM Deal": {
 		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
 	},
 	"CRM Organization": {
-		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
-	},
-	"CRM Intake Form": {
 		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
 	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
@@ -317,6 +312,8 @@ doc_events = {
 	},
 	# The wildcard router's guard set is DERIVED from enabled intake forms; bust its cache on any form add/toggle/remove so it never serves a stale set.
 	"CRM Intake Form": {
+		# URL scheme safety, declared HERE and not in the link_scheme group — this doctype already owns a block, and a second one keyed the same shadows it.
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
 		# On save: scaffold/sync the per-form DocType + Web Form from the contract, then refresh the wildcard-router guard set so the new sink routes immediately.
 		"on_update": [
 			"tatva_connect.intake.builder.sync_form",
