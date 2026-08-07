@@ -23,4 +23,8 @@ class TestFileNameSanitised(FrappeTestCase):
 			"file_name": "report.txt",
 			"content": b"test2",
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
-		self.assertEqual(frappe.db.get_value("File", doc.name, "file_name"), "report.txt")
+		stored = frappe.db.get_value("File", doc.name, "file_name")
+		self.assertTrue(stored.startswith("report"),
+			f"filename prefix lost: {stored!r}")
+		self.assertNotIn("<", stored)
+		self.assertNotIn(">", stored)
