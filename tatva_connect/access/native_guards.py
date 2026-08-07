@@ -259,6 +259,7 @@ def get_course_outline(course=None, progress=False):
 	decides it, so a forged Referer buys nothing.
 	"""
 	from lms.lms.utils import get_course_outline as _native
+
 	from tatva_connect.learning.outline import _course_from_referer
 
 	course = course or _course_from_referer()

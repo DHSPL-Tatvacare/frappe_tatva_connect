@@ -23,8 +23,8 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.access.user_links import LINK_FIELDS
 from tatva_connect.access.link_scheme import is_safe_scheme
+from tatva_connect.access.user_links import LINK_FIELDS
 
 # Roles that ARE the administrator; a grant to one of these is not an escalation.
 ADMIN_ROLES = {"Administrator", "System Manager"}

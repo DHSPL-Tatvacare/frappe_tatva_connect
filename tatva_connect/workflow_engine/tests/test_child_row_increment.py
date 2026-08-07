@@ -124,7 +124,8 @@ class TestIncrementOnASingletonChildRow(_ChildCounterBase):
 
 	def test_literal_set_still_works(self):
 		"""Plain values (no mode dict) still work alongside mode dicts."""
-		before = _reread_child_counter(self.lead.name)
+		self.assertNotEqual(_reread_child_counter(self.lead.name), 9,
+		                    "premise: the counter must not already hold the value being set")
 		actions._action_upsert_child(
 			frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE,
 			             match_json="{}", set_json=json.dumps({_COUNTER: "9"})),

@@ -131,7 +131,7 @@ class TestAnExportedCellIsNeverAFormula(ExportCase):
 		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
 		frappe.local.form_dict = frappe._dict({
 			"doctype": TASK,
-			"fields": frappe.as_json(["`tab%s`.`name`" % TASK, "`tab%s`.`title`" % TASK]),
+			"fields": frappe.as_json([f"`tab{TASK}`.`name`", f"`tab{TASK}`.`title`"]),
 			"filters": frappe.as_json({"name": task.name}),
 			"file_format_type": "CSV",
 			"title": TASK,

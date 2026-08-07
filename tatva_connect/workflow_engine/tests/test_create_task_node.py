@@ -33,8 +33,8 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, get_datetime, now_datetime
 
 from tatva_connect.automation import actions, describe
-from tatva_connect.taxonomy import labels
 from tatva_connect.tasks.tasks import create_followup_task
+from tatva_connect.taxonomy import labels
 from tatva_connect.tests.activity import task_type_fixture as ttf
 from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.workflow_engine import interpreter, refs, registry

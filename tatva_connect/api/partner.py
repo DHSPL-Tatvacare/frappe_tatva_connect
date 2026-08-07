@@ -68,8 +68,8 @@ from tatva_connect.api._base import (
 	validate_external_id,
 )
 from tatva_connect.lead import keyvalue, multi_value
-from tatva_connect.taxonomy import labels
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+from tatva_connect.taxonomy import labels
 
 # ---------------------------------------------------------------------------
 # The catalog (the platform superset a partner CAN be granted) is DATA, not code:

@@ -25,12 +25,14 @@ was called. The probe account is deleted in `addCleanup`, so a failing assertion
 account on the bench.
 """
 import unittest
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import actions, registry as auto_registry
+from tatva_connect.automation import actions
+from tatva_connect.automation import registry as auto_registry
 from tatva_connect.channels import resolve
 from tatva_connect.voice.adapters import bolna
 
@@ -59,7 +61,7 @@ class _Response:
 class TestTheFromNumberPickerShowsNumbers(FrappeTestCase):
 	"""#5 — `name` is what the control renders, and it was the carrier."""
 
-	_RAW = [
+	_RAW: ClassVar[list] = [
 		{"phone_number": "+919240289225", "telephony_provider": "plivo"},
 		{"phone_number": "+919240289226", "telephony_provider": "plivo"},
 	]

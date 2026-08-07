@@ -112,9 +112,9 @@ def _offered(menu, doctype):
 	return [f.get("fieldname") for f in MENUS[menu](doctype)]
 
 
-def _without_relay(fields):
+def _without_relay(menu):
 	"""A menu with `link_query` taken back off, so a byte-identity check still means what it meant."""
-	return [{k: v for k, v in f.items() if k != "link_query"} for f in fields]
+	return [{k: v for k, v in f.items() if k != "link_query"} for f in menu]
 
 
 def _drop(dt, fieldname):

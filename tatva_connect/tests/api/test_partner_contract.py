@@ -23,8 +23,6 @@ from unittest.mock import patch
 
 import frappe
 
-from tatva_connect.tests.api.partner_fixture import minimal_answers
-
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.api import _base, partner, partner_activity, partner_call, partner_file, partner_note
 from tatva_connect.api._base import (
@@ -38,6 +36,7 @@ from tatva_connect.api._base import (
 	_list_ok,
 	_run_bulk,
 )
+from tatva_connect.tests.api.partner_fixture import minimal_answers
 
 VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 BULK_SUMMARY_KEYS = ["failed", "succeeded", "total"]

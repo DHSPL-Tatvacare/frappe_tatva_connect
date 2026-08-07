@@ -74,7 +74,12 @@ class CRMTaskType(Document):
 
 		The declaration is the enforcement: the offered values are the field's own `options`, and the operator
 		vocabulary is the compile's (`activity.api.RULE_VALUE_OPERATORS`) rather than restated here."""
-		from tatva_connect.activity.api import RULE_SET_VALUE, RULE_VALUE_OPERATORS, rule_conditions, rule_targets
+		from tatva_connect.activity.api import (
+			RULE_SET_VALUE,
+			RULE_VALUE_OPERATORS,
+			rule_conditions,
+			rule_targets,
+		)
 
 		rows, questions = self._declared_rows(), self._declared_questions()
 		for row in self.rules:
@@ -111,7 +116,7 @@ class CRMTaskType(Document):
 		def walk(node):
 			if node in path:
 				frappe.throw(
-					_("Set Value copies in a circle: {0}.").format(" → ".join(path[path.index(node):] + [node])),
+					_("Set Value copies in a circle: {0}.").format(" → ".join([*path[path.index(node):], node])),
 					title=_("Circular copy"))
 			if node in seen:
 				return

@@ -145,7 +145,7 @@ def as_expression(pair):
 	if mode == refs.EXPRESSION:
 		return str(value)
 	if mode == FROM_CONTEXT:
-		return "ctx[{0}]".format(frappe.as_json(str(value)))
+		return f"ctx[{frappe.as_json(str(value))}]"
 	return frappe.as_json(str(value))
 
 

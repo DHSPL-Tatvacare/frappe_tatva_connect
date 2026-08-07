@@ -22,6 +22,7 @@ from frappe.desk.doctype.system_health_report.system_health_report import health
 from frappe.query_builder.functions import Count
 from frappe.utils import add_to_date, cint, now_datetime
 
+
 def _mb(value):
 	"""Megabytes, two places. A file size to fifteen decimals is noise, not precision."""
 	return round(float(value or 0), 2)
@@ -180,7 +181,10 @@ class ControlTower:
 		REFUSING writes rather than shedding keys, which is a different incident to a slow cache."""
 		config = frappe.cache.execute_command("CONFIG", "GET", "maxmemory") or []
 		policy = frappe.cache.execute_command("CONFIG", "GET", "maxmemory-policy") or []
-		as_text = lambda raw, i: (raw[i].decode() if isinstance(raw[i], bytes) else str(raw[i])) if len(raw) > i else None
+		def as_text(raw, i):
+			if len(raw) <= i:
+				return None
+			return raw[i].decode() if isinstance(raw[i], bytes) else str(raw[i])
 		return {
 			"keys": report.get("cache_keys"),
 			"memory": report.get("cache_memory_usage"),

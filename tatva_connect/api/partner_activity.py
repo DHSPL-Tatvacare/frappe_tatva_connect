@@ -40,7 +40,6 @@ from frappe import _
 from frappe.utils import get_datetime
 
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.taxonomy import labels
 from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_DELETED,
@@ -66,6 +65,7 @@ from tatva_connect.api._base import (
 	trusted_permissions,
 	validate_external_id,
 )
+from tatva_connect.taxonomy import labels
 
 # All numeric caps (bulk size, list page sizes) come from the CRM Partner API Settings
 # Single via _cfg() — one source of truth, no module-local copy.
