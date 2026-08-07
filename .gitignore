@@ -111,3 +111,7 @@ tatva_connect/tests/**/.browsers/
 # Request rows. Scrubbed, but it is captured patient traffic and this repo is public. The tests that
 # read it are TRACKED; the corpus itself is regenerated locally and never committed.
 tatva_connect/tests/whatsapp/fixtures/
+
+# Live VAPT scratch runs — ad-hoc probe scripts written against a running bench during a pentest pass.
+# The harness (run/attack/baseline/compare/config/vectors) is TRACKED; per-batch scratch files are not.
+tatva_connect/tests/vapt_live/batch*
