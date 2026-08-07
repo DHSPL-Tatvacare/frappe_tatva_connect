@@ -10,9 +10,13 @@
   "condition_field",
   "operator",
   "condition_value",
+  "condition_field_2",
+  "operator_2",
+  "condition_value_2",
   "action",
   "targets",
-  "add_target"
+  "add_target",
+  "set_value"
  ],
  "fields": [
   {
@@ -50,13 +54,35 @@
    "label": "Value"
   },
   {
+   "columns": 1,
+   "description": "A SECOND field the rule also reacts to. Both conditions must hold \u2014 this is AND, the `If All` LeadSquared offers. Left blank, the rule tests the first condition alone.",
+   "fieldname": "condition_field_2",
+   "fieldtype": "Autocomplete",
+   "label": "And When Field"
+  },
+  {
+   "default": "is",
+   "description": "How the second answer is compared.",
+   "fieldname": "operator_2",
+   "fieldtype": "Select",
+   "label": "And Operator",
+   "options": "is\nis not\nis set\nis not set"
+  },
+  {
+   "columns": 1,
+   "description": "The second answer compared against. Refused unless the And When Field offers it as an option.",
+   "fieldname": "condition_value_2",
+   "fieldtype": "Autocomplete",
+   "label": "And Value"
+  },
+  {
    "columns": 2,
    "description": "What happens when the condition holds. A hidden field is never required and its value is never accepted, so chained rules resolve without ordering.",
    "fieldname": "action",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action",
-   "options": "Show\nHide\nMake Mandatory",
+   "options": "Show\nHide\nMake Mandatory\nSet Value",
    "reqd": 1
   },
   {
@@ -73,6 +99,14 @@
    "fieldname": "add_target",
    "fieldtype": "Autocomplete",
    "label": "Add Target"
+  },
+  {
+   "depends_on": "eval:doc.action=='Set Value'",
+   "description": "The field whose answer is copied into the Targets. A declared question on this same task type \u2014 the copy is computed on the server and the Targets become read-only.",
+   "fieldname": "set_value",
+   "fieldtype": "Autocomplete",
+   "label": "Copy Value From",
+   "mandatory_depends_on": "eval:doc.action=='Set Value'"
   }
  ],
  "grid_page_length": 50,

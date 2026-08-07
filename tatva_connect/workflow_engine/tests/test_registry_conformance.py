@@ -44,6 +44,7 @@ _VALID_EXAMPLE = {
 	"Send Email": {"email_recipient": "sv.email", "email_template": "x"},
 	"AI Voice Call": {"contact_number": "crm_lead.mobile_no", "connection": "x", "agent_id": "a"},
 	"Assign to User": {"assign_mode": "Assign", "assignee_mode": "User", "assign_to_user": "x"},
+	"Generate Document": {"document_template": "x"},
 }
 
 

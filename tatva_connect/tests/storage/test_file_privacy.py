@@ -1,9 +1,15 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Fail-closed file-privacy gate (invariant 15).
+"""The privacy DECISION, in isolation — not the lifecycle that calls it.
 
-`storage.file_events.apply_privacy_policy` runs on File.validate and must keep every
-attachment PRIVATE unless its doctype is on the operator allowlist (CRM Azure Storage
+WHAT THIS PROVES AND WHAT IT DOES NOT. Each case hands `apply_privacy_policy` a `frappe._dict` and
+reads the flag it sets. No File is inserted or saved, so this says nothing about WHEN the checkpoint
+runs — and that gap is not hypothetical: the function was called from `before_insert` alone for
+months while this suite stayed green, and a later `.save()` could publish a patient document.
+Where the checkpoint runs, and that it still runs on every save, is proven in
+`test_file_privacy_lifecycle` with real bytes and a real user.
+
+The decision itself must keep every attachment PRIVATE unless its doctype is on the operator allowlist (CRM Azure Storage
 Settings -> Public Attachment Doctypes) AND the Storage::File::privacy toggle is ON.
 It must NEVER infer "public" from a doctype name (the removed *Settings suffix shortcut),
 so a doctype the operator never listed always defaults private.

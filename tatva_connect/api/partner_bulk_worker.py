@@ -47,6 +47,7 @@ def process_job(bulk_job_id):
 	if job.status != "UploadComplete":
 		return  # cheap early-out; the guarded claim below is the authoritative writer election
 	frappe.set_user(job.partner)  # grain scope + ownership from the same brain the sync endpoint uses
+	frappe.flags.in_patch = True  # frappe's own gate for Assignment Rule / Notification / webhooks / realtime; NOT in_import, which would disable the Select validator (api/_base.py:309)
 	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # disarm insert gap-locks
 	won = _claim_started(job.name)  # exactly one of {this worker, a pre-start cancel} may leave UploadComplete
 	frappe.db.commit()

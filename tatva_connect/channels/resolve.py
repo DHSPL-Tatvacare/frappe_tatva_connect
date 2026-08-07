@@ -92,6 +92,41 @@ def outcomes_for_channel(channel) -> list:
 	return sorted(f"{channel}.{outcome}" for outcome in found)
 
 
+def capabilities_for_channel(channel) -> set:
+	"""Every capability ANY registered adapter on this channel declares.
+
+	The send-side twin of `outcomes_for_channel`, and the UNION for that function's reason: the adapter is
+	only known at send time, while the canvas asks at authoring time with no lead in hand. So a node field
+	that exists because a provider supports it (`bypass_guardrails`) is offered when ANY provider on the
+	channel does — and a graph routed to one that does not simply sends the field nowhere.
+	"""
+	cfg = registry.by_channel(channel)
+	if not cfg:
+		frappe.throw(_("No channel registered as '{0}'.").format(channel), title=_("Unknown channel"))
+	found = set()
+	for path in (cfg.get("adapters") or {}).values():
+		found.update(frappe.get_module(path).DECLARATION.capabilities)
+	return found
+
+
+def offered_fields(fields, channel):
+	"""`fields` minus any whose declared `capability` no adapter on `channel` offers. THE one rule.
+
+	Written once and called by both surfaces that answer "which controls does this node have" — the verb
+	params (`actions.params_of`) and the canvas palette (`workflow_engine.registry.node_types`). They hold
+	the same field in two shapes, so the filter is shared rather than the shape.
+
+	CALL IT AT REQUEST TIME, NEVER AT IMPORT. It resolves adapter modules, and this app keeps adapters
+	lazy on purpose — `webhooks.registry.CHANNELS` stores module PATHS, so an adapter's import cost and
+	its import failures stay inside the request that needed it. A field with no `capability` (almost all
+	of them) short-circuits before any of that, so the common path never touches an adapter at all.
+	"""
+	if not channel or not any(f.get("capability") for f in fields):
+		return list(fields)
+	offered = capabilities_for_channel(channel)
+	return [f for f in fields if not f.get("capability") or f["capability"] in offered]
+
+
 def adapter_for_payload(channel, payload, event=None):
 	"""The adapter that OWNS a payload, and the account it names. Returns (adapter, account).
 

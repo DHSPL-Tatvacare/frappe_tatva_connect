@@ -3,9 +3,30 @@ import frappe
 
 from tatva_connect.automation.registry import parent_of
 
+# Entry points in the BULK lane; `frappe.local.job` is frappe's own (background_jobs.py:260) and absent in a web request, so an unlisted job runs live — never silently quiet.
+_BULK_JOBS = frozenset({
+	"tatva_connect.api.partner_bulk_worker.process_job",
+})
+
+_FOLLOW_LIVE = "Follow live"
+
+
+def _in_bulk_lane() -> bool:
+	job = getattr(frappe.local, "job", None)
+	return bool(job) and job.get("method") in _BULK_JOBS
+
 
 def is_enabled(key: str) -> bool:
 	"""On iff the row AND every ancestor it declares is on — the hierarchy is enforced here, nowhere else.
+
+	TWO LANES, ONE SPINE. In the bulk lane a switch is OFF unless its own row says `Follow live`; a row
+	that says so then resolves exactly as live does, ancestors and all. Restrictive on purpose — a switch
+	nobody has considered cannot flood a bulk job. `bulk_lane` is operator data: never seeded, never
+	defaulted in code.
+
+	The lane test runs BEFORE the ancestor walk and does not recurse. A switch is asked about itself; if
+	it may run, the walk below decides the rest. Testing it inside the loop would let a parent's
+	`bulk_lane` silently override a child's.
 
 	CACHED, and a flip still takes effect at once: frappe clears the document cache on BOTH write paths,
 	`doc.save()` and `db.set_value` (database.py:993), and this codebase uses the latter 81 times. There
@@ -18,6 +39,11 @@ def is_enabled(key: str) -> bool:
 	An unknown key returns None -> False: fail-closed dormant. The walk carries no cycle guard because
 	`assert_valid_graph` proved the chain terminates at import.
 	"""
+	if _in_bulk_lane() and frappe.get_cached_value(
+		"CRM Tatva Automation", key, "bulk_lane"
+	) != _FOLLOW_LIVE:
+		return False
+
 	while key:
 		if not frappe.get_cached_value("CRM Tatva Automation", key, "enabled"):
 			return False

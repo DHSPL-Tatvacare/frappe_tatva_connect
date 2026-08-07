@@ -74,30 +74,116 @@ class CRMTaskType(Document):
 
 		The declaration is the enforcement: the offered values are the field's own `options`, and the operator
 		vocabulary is the compile's (`activity.api.RULE_VALUE_OPERATORS`) rather than restated here."""
-		from tatva_connect.activity.api import RULE_VALUE_OPERATORS, rule_targets
+		from tatva_connect.activity.api import RULE_SET_VALUE, RULE_VALUE_OPERATORS, rule_conditions, rule_targets
 
 		rows, questions = self._declared_rows(), self._declared_questions()
 		for row in self.rules:
-			field = (row.condition_field or "").strip()
-			if field and field not in rows:
-				frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
-							 title=_("Unknown field"))
-			# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
-			if field and field not in questions:
-				frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
-							 title=_("Not a question"))
-			value = cstr(row.condition_value or "").strip()
-			if field and value and (row.operator or "").strip() in RULE_VALUE_OPERATORS:
-				options = _options_of(questions[field])
-				if options and value not in options:
-					frappe.throw(
-						_("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
-						title=_("Unknown value"))
+			# Every triplet the compile reads is judged here — asked of `rule_conditions` so neither can see more of a row than the other.
+			for field, operator, value in rule_conditions(row):
+				self._validate_condition(row, field, operator, value, rows, questions)
+			if (row.action or "") == RULE_SET_VALUE:
+				self._validate_copy_source(row, questions)
 			for target in rule_targets(row.targets):
 				if target not in rows:
 					frappe.throw(
 						_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, target),
 						title=_("Unknown target"))
+		self._validate_copy_graph()
+
+	def _validate_copy_graph(self):
+		"""Set Value copies must not run in a circle, across rows as well as within one.
+
+		A cycle has no fixpoint, so nothing downstream can settle it: `copied_values` swaps the pair and
+		stops on whichever parity its bound lands on, which makes a no-op re-save mutate the record — and
+		the browser, which re-runs on its own reactivity, never converges at all. Refused here because a
+		graph is a property of the whole rule set and no single row can see it."""
+		from tatva_connect.activity.api import RULE_SET_VALUE, rule_targets
+
+		edges = {}
+		for row in self.rules:
+			if (row.action or "") != RULE_SET_VALUE:
+				continue
+			source = cstr(row.get("set_value") or "").strip()
+			for target in rule_targets(row.targets):
+				edges.setdefault(source, set()).add(target)
+		seen, path = set(), []
+
+		def walk(node):
+			if node in path:
+				frappe.throw(
+					_("Set Value copies in a circle: {0}.").format(" → ".join(path[path.index(node):] + [node])),
+					title=_("Circular copy"))
+			if node in seen:
+				return
+			seen.add(node)
+			path.append(node)
+			for nxt in edges.get(node, ()):
+				walk(nxt)
+			path.pop()
+
+		for source in list(edges):
+			walk(source)
+
+	def _validate_copy_source(self, row, questions):
+		"""A Set Value row copies one declared field into another, so its source must be a field that holds
+		an answer — and never the target itself, which would copy a field onto itself and read as working.
+
+		Checked here for the same reason a When value is: the declaration is the enforcement, and raw SQL
+		aside, a source naming nothing is a rule that fires and copies blank over whatever the field held."""
+		from tatva_connect.activity.api import LEAD_SOURCE, rule_targets
+
+		source = cstr(row.get("set_value") or "").strip()
+		if not source:
+			frappe.throw(
+				_("Rule row {0}: Set Value names {1} but declares no field to copy from.").format(
+					row.idx, row.targets),
+				title=_("Set Value needs a source"))
+		if source not in questions:
+			frappe.throw(
+				_("Rule row {0}: {1} is not a field this task type declares an answer for, so there is "
+				  "nothing to copy from it.").format(row.idx, source),
+				title=_("Unknown source"))
+		for target in rule_targets(row.targets):
+			if target == source:
+				frappe.throw(
+					_("Rule row {0}: Set Value copies {1} onto itself.").format(row.idx, source),
+					title=_("Copies itself"))
+			# A layout row is a legitimate target for Show and Hide and holds nothing to write, so a copy
+			# aimed at one reads as configured in the grid and silently does nothing.
+			if target not in questions:
+				frappe.throw(
+					_("Rule row {0}: {1} holds no value, so Set Value has nowhere to copy into.").format(
+						row.idx, target),
+					title=_("Not a question"))
+			# The lead answers a lead-sourced field, so a copy would show one value read-only and store another.
+			if (questions[target].get("source") or "") == LEAD_SOURCE:
+				frappe.throw(
+					_("Rule row {0}: {1} is answered by the lead, so Set Value cannot fill it.").format(
+						row.idx, target),
+					title=_("Answered by the lead"))
+
+	def _validate_condition(self, row, field, operator, value, rows, questions):
+		"""ONE When triplet: it names a field this type declares, that field holds an answer, and the value
+		is one the field offers. Asked of both triplets so neither can be checked more loosely than the other."""
+		from tatva_connect.activity.api import RULE_VALUE_OPERATORS
+
+		field = (field or "").strip()
+		if not field:
+			return
+		if field not in rows:
+			frappe.throw(_("Rule row {0}: {1} is not a field this task type declares.").format(row.idx, field),
+						 title=_("Unknown field"))
+		# A layout row holds no answer to read, so such a rule looks right in the grid and never fires; as a TARGET it is fine, that is how a section hides.
+		if field not in questions:
+			frappe.throw(_("Rule row {0}: {1} is a layout row and holds no value to test.").format(row.idx, field),
+						 title=_("Not a question"))
+		value = cstr(value or "").strip()
+		if value and (operator or "").strip() in RULE_VALUE_OPERATORS:
+			options = _options_of(questions[field])
+			if options and value not in options:
+				frappe.throw(
+					_("Rule row {0}: {1} is not one of the options {2} declares.").format(row.idx, value, field),
+					title=_("Unknown value"))
 
 	def _declared_rows(self):
 		"""Every declared row of this type, keyed by fieldname — layout markers INCLUDED.

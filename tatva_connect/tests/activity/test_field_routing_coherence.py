@@ -40,6 +40,24 @@ from tatva_connect.tests.activity import task_type_fixture
 _COMBINATION_CEILING = 20000
 
 TYPE_NAME = "ZZ Routing Coherence Probe"
+PRESENCE_TYPE_NAME = "ZZ Presence Rule Probe"
+
+_ANY_ANSWER = "\x00zz-any-answer"
+_PRESENCE_OPERATORS = ("is set", "is not set")
+
+
+def _presence_answers(declared):
+	"""The non-blank answers an `is set` test can be satisfied BY — the field's own options, or a sentinel.
+
+	`is set` asks whether any answer was given, and no rule names the value that satisfies it, so the search
+	space has to supply one or the field reads as unreachable. Which one matters: for a Select or a Link the
+	answers are its declared options, and inventing a sentinel there manufactures a state a rep cannot
+	produce — a field shown only at that state would read REACHABLE while every real answer hides it, which
+	is a false pass in a safety lock and worse than the false failure the sentinel was added for. A field
+	with no option list is free text, where any non-blank string is genuinely reachable and the sentinel is
+	the honest stand-in."""
+	declared_options = [o.strip() for o in ((declared and declared.options) or "").split("\n") if o.strip()]
+	return declared_options or [_ANY_ANSWER]
 
 # Two targets that name a REAL CRM Task column the reader SELECTs but that the writer does not promote.
 # This is the whole defect surface: a target the two sides read differently AND that carries a value.
@@ -70,6 +88,21 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		cls.task_type = task_type_fixture.mint_type(TYPE_NAME, SCHEMA)
+		# A type the two locks below only judge correctly if the answer space reads a row the way the compile
+		# does. Its gate is reachable ONLY by an `is set` and a second-triplet condition, which is exactly the
+		# pair the space used to be blind to — and blindness there reads as a dead field, not as a gap.
+		cls.presence_type = task_type_fixture.mint_type(
+			PRESENCE_TYPE_NAME,
+			({"label": "ZZ Driver", "fieldname": "zz_driver", "fieldtype": "Data"},
+			 {"label": "ZZ Second", "fieldname": "zz_second", "fieldtype": "Select", "options": "Yes\nNo"},
+			 {"label": "ZZ Gated", "fieldname": "zz_gated", "fieldtype": "Data"}),
+			rules=(
+				{"rule_label": "onload", "action": "Hide", "targets": "zz_gated"},
+				{"rule_label": "driver answered and second is Yes",
+				 "condition_field": "zz_driver", "operator": "is set",
+				 "condition_field_2": "zz_second", "operator_2": "is", "condition_value_2": "Yes",
+				 "action": "Show", "targets": "zz_gated"},
+			))
 
 	@classmethod
 	def tearDownClass(cls):
@@ -164,6 +197,56 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 		self.assertEqual(dead, {}, "these declared fields can never appear on their form, so they can "
 								   "neither be answered by a rep nor accepted from a migration")
 
+	def test_every_seeded_declaration_passes_the_validator_that_authoring_would_run(self):
+		"""The rules a rep actually meets were never checked by the thing that checks rules.
+
+		`CRMTaskType.validate` refuses an unknown target, a condition on a layout row, a value the field
+		does not offer, a self-copy, a copy cycle and a copy onto a lead-answered field. It is a `validate()`
+		hook, so it runs when a type is SAVED — and every rule on a real site arrives by raw SQL instead: 27
+		`INSERT INTO tabCRM Task Type Rule` statements across eight seed files. So none of those guarantees
+		held on the declaration the product actually runs; they held only on types a test happened to save.
+
+		Driven over the LIVE seed for that reason. A seed is operator data and this does not re-decide it —
+		it asks the type's own validator the same question the Desk form would, so a hand-authored rule and
+		a seeded one are held to one standard."""
+		refused = {}
+		for name in frappe.get_all("CRM Task Type", pluck="name"):
+			doc = frappe.get_doc("CRM Task Type", name)
+			if not (doc.get("rules") or []):
+				continue
+			try:
+				doc._validate_rules()
+			except frappe.ValidationError as e:
+				refused[name] = str(e)
+
+		self.assertEqual(refused, {}, "these SEEDED declarations would be refused if an operator saved "
+									  "them in Desk, so the seed says something the engine does not accept")
+
+	def test_the_answer_space_sees_a_row_the_way_the_compile_does(self):
+		"""The lock above is only as wide as this, so it is asserted directly rather than inferred from a
+		green run over a seed that happens not to need it.
+
+		Both halves are what the live seed cost a morning: `is set` is satisfied by an answer no rule names,
+		and a condition may be written in either triplet. Read narrowly, the space cannot express the state
+		that opens the field and the lock calls it dead."""
+		space = self._rule_answer_space(frappe.get_doc("CRM Task Type", self.presence_type))
+		self.assertIn({"zz_driver": _ANY_ANSWER, "zz_second": "Yes"}, space,
+					  "the answer space cannot express `zz_driver is set AND zz_second is Yes`")
+
+	def test_a_closed_option_list_is_never_widened_with_an_answer_nobody_can_give(self):
+		"""The sentinel is what makes `is set` reachable, and it is exactly what must NOT reach a Select.
+
+		Given `zz_sel is set -> Show x` alongside `is Yes -> Hide x` and `is No -> Hide x`, a sentinel answer
+		satisfies the Show while satisfying neither Hide, so the lock calls `x` reachable when every answer a
+		rep can give hides it. A dead field passing the dead-field lock is worse than the false failure the
+		sentinel fixed."""
+		select = frappe._dict(fieldname="zz_sel", fieldtype="Select", options="Yes\nNo")
+		self.assertEqual(sorted(_presence_answers(select)), ["No", "Yes"])
+		self.assertNotIn(_ANY_ANSWER, _presence_answers(select))
+		# Free text has no option list, so any non-blank string is genuinely reachable and the sentinel stands.
+		self.assertEqual(_presence_answers(frappe._dict(fieldname="zz_txt", fieldtype="Data", options="")),
+						 [_ANY_ANSWER])
+
 	def _addresses_with_more_than_one_field(self, fields):
 		"""{address: [fieldnames]} for every storage address this type points at more than once."""
 		at = defaultdict(list)
@@ -175,13 +258,22 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 		"""Every combination of answers the type's own rules can tell apart, blank included.
 
 		Bounded by the RULES rather than by the schema: a condition nothing tests cannot change what is
-		shown, so enumerating its options would only multiply the search without widening it."""
+		shown, so enumerating its options would only multiply the search without widening it.
+
+		It must read a row exactly as far as `_rule_atom` does, or the space is narrower than the thing it
+		is searching and the lock reports fields dead that a rep can plainly reach. Both are real: a rule
+		row carries TWO condition triplets and the AND of them (D27), and an `is set` test is satisfied by
+		any non-blank answer rather than by a value the row names. Reading only the first triplet buried six
+		reachable Welcome Call fields; having no non-blank answer to offer would bury every field behind an
+		`is set` the same way."""
+		declared = {(f.fieldname or "").strip(): f for f in task_type.schema}
 		options = defaultdict(set)
 		for row in task_type.get("rules") or []:
-			field = (row.condition_field or "").strip()
-			if field:
-				options[field].add((row.condition_value or "").strip())
+			for field, operator, value in activity_api.rule_conditions(row):
+				options[field].add((value or "").strip())
 				options[field].add("")
+				if operator in _PRESENCE_OPERATORS:
+					options[field].update(_presence_answers(declared.get(field)))
 		names = sorted(options)
 		return [dict(zip(names, combo, strict=True)) for combo in itertools.product(*[sorted(options[n]) for n in names])] or [{}]
 

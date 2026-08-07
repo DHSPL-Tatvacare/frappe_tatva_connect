@@ -310,13 +310,21 @@ def _already_ran(workflow_name, version_name, lead_name):
 	return f"Already completed on {frappe.utils.formatdate(done)}"
 
 
+_SUBJECT_SLUG = frappe.scrub("CRM Lead")
+
+
 def _run_seed(context):
 	"""The part of the trigger context worth STORING on the journey, in `state_json`'s nested-by-writer shape.
 
-	A document's fields belong to the document. The only thing here that cannot be read back later is the
-	before/after pair the `changed to` operators need, so that is all a journey carries forward — and it stays
-	in the record's OWN namespace, because a before-value is a value of that record. Nothing shadows the
-	live document by doing so: no doctype has a `<field>__before` column.
+	The subject (the lead, `crm_lead`) is stripped to `__before` pairs only — its live values are
+	replaced by a record loader each segment, and copying them would freeze the lead as it was at
+	trigger time (a 30-day Wait would see 30-day-old data).
+
+	Every OTHER bucket — the trigger doc itself (crm_task, file, whatsapp_message) — is kept in full.
+	It has no live loader, and the author explicitly chose fields FROM that trigger record. Stripping
+	them silently defaulted due dates and blanked subjects on the durable path while the ephemeral path
+	carried them correctly. A trigger-task snapshot at trigger time IS the value the author asked for;
+	it is not stale — it is the defined reference point.
 
 	Computed BEFORE the enqueue, not inside the job, because a `refs.Values` resolves off live documents
 	and must never be serialised through a queue. Only this plain dict crosses.
@@ -324,11 +332,15 @@ def _run_seed(context):
 	from tatva_connect.workflow_engine import refs
 
 	buckets = context.buckets if isinstance(context, refs.Values) else (context or {})
-	seeded = {
-		source: {k: v for k, v in bucket.items() if k.endswith(refs.BEFORE)}
-		for source, bucket in buckets.items()
-	}
-	return {source: bucket for source, bucket in seeded.items() if bucket}
+	seeded = {}
+	for source, bucket in buckets.items():
+		if source == _SUBJECT_SLUG:
+			kept = {k: v for k, v in bucket.items() if k.endswith(refs.BEFORE)}
+		else:
+			kept = dict(bucket)
+		if kept:
+			seeded[source] = kept
+	return seeded
 
 
 def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref=None):

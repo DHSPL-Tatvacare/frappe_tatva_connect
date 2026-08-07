@@ -13,6 +13,7 @@
   "fires_on",
   "trigger_detail",
   "enabled",
+  "bulk_lane",
   "requires",
   "scheduled_job",
   "description"
@@ -69,6 +70,15 @@
    "label": "Enabled"
   },
   {
+   "description": "How this automation behaves inside a bulk or async job — a spreadsheet import, a partner bulk load. Blank or Quiet means it does not run for them, however the Enabled tick is set, so one import cannot flood every rep with assignments, notifications and follow-up tasks. Follow live means it obeys the Enabled tick for bulk jobs exactly as it does for a person working in the CRM. Live work is never affected by this field.",
+   "fieldname": "bulk_lane",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Bulk Lane",
+   "options": "\nQuiet\nFollow live"
+  },
+  {
    "description": "The automation this one leans on. It cannot be enabled while that one is off, and switching that one off switches this one off with it, so the dependency is enabled first and disabled last.",
    "fieldname": "requires",
    "fieldtype": "Link",
@@ -96,7 +106,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 00:00:00.000000",
+ "modified": "2026-08-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Tatva Automation",

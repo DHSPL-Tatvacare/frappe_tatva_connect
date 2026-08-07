@@ -44,8 +44,8 @@ def task_columns():
 # The rule grammar, named here the way a fieldtype is named: these ARE the language (D27/D28), declared as
 # the Select options of CRM Task Type Rule and read back by the compile below. The doctype JSON is the one
 # home; tests/activity/test_rule_compilation.py fails if the two ever disagree.
-RULE_SHOW, RULE_HIDE, RULE_MANDATORY = "Show", "Hide", "Make Mandatory"
-RULE_ACTIONS = (RULE_SHOW, RULE_HIDE, RULE_MANDATORY)
+RULE_SHOW, RULE_HIDE, RULE_MANDATORY, RULE_SET_VALUE = "Show", "Hide", "Make Mandatory", "Set Value"
+RULE_ACTIONS = (RULE_SHOW, RULE_HIDE, RULE_MANDATORY, RULE_SET_VALUE)
 # The operators that compare against a value, so the value is validated against the field's options; the
 # other two ask only whether an answer exists (D27).
 RULE_VALUE_OPERATORS = ("is", "is not")
@@ -407,40 +407,89 @@ def _field_descriptor(f):
 		"target": f.target or "",
 		"section": (f.get("section") or ""),
 		"source": (f.get("source") or ""),
-		"read_only": 0,  # a lead-sourced field is context, never an answer; stamped read-only by _mark_lead_read_only
+		# What the SERVER answers the rep may not edit: a lead field is context the lead owns, and a Set Value
+		# target is copied by `copied_values` — `compute_activity` discards what the client sends for either.
+		"read_only": 1 if (f.get("source") or "") == LEAD_SOURCE else 0,
 		"depends_on": (f.get("depends_on") or ""),
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
+		"copy_from": [],  # [{source, when}] — the Set Value rows naming this field; stamped by _compiled_rows
 		"container_depends_on": [],  # the conditions of the tab/section/column holding it; stamped by _layout
 	})
 
 
-def _rule_atom(row):
-	"""ONE rule row's When columns as an expression, in the syntax BOTH shipped evaluators read alike.
+def _one_condition(field, operator, value):
+	"""ONE When triplet as an expression, in the syntax BOTH shipped evaluators read alike.
 
-	A blank When is "always" (D25/§17.2), so it is the constant 1. Every operator (D27) compiles to a
+	A blank field is "always" (D25/§17.2), so it is the constant 1. Every operator (D27) compiles to a
 	COMPARISON because a comparison is the largest syntax the two evaluators share: the server's is Python
 	`safe_eval` (`_field_visible`) and the client's is a JS `new Function` (`utils/expressions.js`), so
-	`and`/`or`/`not` parse only in one and `&&`/`||`/`!` only in the other. `_rule_or` / `_rule_not` below
-	therefore combine with arithmetic, which reads identically in both. A value is JSON-quoted, which is
-	also a literal both languages accept."""
-	field = (row.condition_field or "").strip()
+	`and`/`or`/`not` parse only in one and `&&`/`||`/`!` only in the other. `_rule_or` / `_rule_and` /
+	`_rule_not` below therefore combine with arithmetic, which reads identically in both. A value is
+	JSON-quoted, which is also a literal both languages accept."""
+	field = (field or "").strip()
 	if not field:
 		return "1"
 	ref = "doc." + field
-	value = json.dumps(cstr(row.condition_value or ""))
-	operator = (row.operator or RULE_OPERATORS[0]).strip()
+	literal = json.dumps(cstr(value or ""))
+	operator = (operator or RULE_OPERATORS[0]).strip()
 	if operator == "is not":
-		return f"{ref}!={value}"
+		return f"{ref}!={literal}"
 	if operator == "is set":
 		return f'{ref}!=""'
 	if operator == "is not set":
 		return f'{ref}==""'
-	return f"{ref}=={value}"
+	return f"{ref}=={literal}"
+
+
+def rule_conditions(row):
+	"""The When triplets ONE rule row actually declares — THE one reading of a row's condition (D27).
+
+	A row carries two, and either may be left blank. Three readers need that answer: the compile ANDs them,
+	`CRMTaskType._validate_rules` checks each, and the dead-field lock enumerates the answers they can tell
+	apart. Each used to walk the row itself, and both bugs that cost a morning were one walk stopping at the
+	first triplet — a Hide written only in the second compiled to `eval:0` and hid its field forever (T-04),
+	and the lock reported six reachable Welcome Call fields dead (T-05). One walk, so a reader cannot see
+	less of a row than the compile does.
+
+	Returned verbatim: the compile embeds the value as given and the two checkers strip it, which is what
+	each already did."""
+	out = []
+	for field, operator, value in (
+		(row.condition_field, row.operator, row.condition_value),
+		(row.get("condition_field_2"), row.get("operator_2"), row.get("condition_value_2")),
+	):
+		if (field or "").strip():
+			out.append(((field or "").strip(), (operator or RULE_OPERATORS[0]).strip(), value))
+	return out
+
+
+def _rule_atom(row):
+	"""ONE rule row's whole When as an expression — every triplet it declares, ANDed (§17.2, D27).
+
+	LeadSquared offers `If All` across several conditions and four Anaya rules use it (Welcome Call 3, 5, 9
+	and 14 — `ANAYA-SEED-INVENTORY.md §6.2`). Written as two ROWS the compile would OR them (`_rule_or` is
+	`+`), which is the inverse: the action would fire when either held. The second triplet is therefore part
+	of the SAME row and joins with `_rule_and`.
+
+	Rules 5 and 9 declare THREE conditions in LSQ and two triplets carry two. They still compile correctly,
+	because the field their third condition tests is itself hidden until the earlier ones hold and a hidden
+	field's answer is inert (D22) — so the fixpoint collapses the third condition rather than dropping it.
+
+	A row declaring no condition at all is the form's opening state and compiles to the constant 1."""
+	atoms = [_one_condition(*c) for c in rule_conditions(row)]
+	if not atoms:
+		return "1"
+	return atoms[0] if len(atoms) == 1 else _rule_and(atoms)
 
 
 def _rule_or(atoms):
 	"""OR over rule atoms. `+` because it is truthy-summing in Python and in JS alike — see `_rule_atom`."""
 	return "+".join(f"({a})" for a in atoms)
+
+
+def _rule_and(atoms):
+	"""AND over rule atoms. `*` for the same reason `_rule_or` is `+` — it multiplies truthily in both."""
+	return "*".join(f"({a})" for a in atoms)
 
 
 def _rule_not(expr):
@@ -459,9 +508,11 @@ def _rules_by_target(tt):
 	out = {}
 	for row in tt.get("rules") or []:
 		atom = _rule_atom(row)
-		conditional = bool((row.condition_field or "").strip())
+		# ANY declared triplet makes the row conditional; reading only the first buries the field at `eval:0` (T-04).
+		conditional = bool(rule_conditions(row))
 		for target in rule_targets(row.targets):
-			out.setdefault(target, {}).setdefault(row.action or "", []).append((atom, conditional))
+			out.setdefault(target, {}).setdefault(row.action or "", []).append(
+				(atom, conditional, row.get("set_value") or ""))
 	return out
 
 
@@ -490,9 +541,9 @@ def _compiled_visibility(entry, own):
 	hides = entry.get(RULE_HIDE) or []
 	if not shows and not hides:
 		return own
-	conditional_hides = [atom for atom, conditional in hides if conditional]
+	conditional_hides = [atom for atom, conditional, _ in hides if conditional]
 	if shows:
-		base = _rule_or([atom for atom, _ in shows])
+		base = _rule_or([atom for atom, _c, _v in shows])
 	else:
 		base = "0" if len(conditional_hides) < len(hides) else "1"
 	expr = base if not conditional_hides else f"({base})*{_rule_not(_rule_or(conditional_hides))}"
@@ -506,7 +557,23 @@ def _compiled_mandatory(entry, own):
 	rows = entry.get(RULE_MANDATORY) or []
 	if not rows:
 		return own
-	return "eval:" + _rule_or([atom for atom, _ in rows])
+	return "eval:" + _rule_or([atom for atom, _c, _v in rows])
+
+
+def _compiled_copy_from(entry):
+	"""ONE field's Set Value rows as `[{source, when}]` — the fourth verb, and a COPY rather than a literal.
+
+	Every Set Value row LeadSquared actually declares reads `Set Value (Mail Merge <- <field>)`: all seven
+	transcribed rows name a FIELD to copy, never a constant (`ANAYA-SEED-INVENTORY.md:221-223, :787, :788,
+	:1173, :1291`). Six of the seven copy a lead field onto its activity twin (`Discharge Summary LM` ->
+	`Discharge Summary AM`), which is a SNAPSHOT — and LSQ marks every one of those targets Make Read-Only
+	in the same rule set. So a Set Value target is derived, not answered: `compute_activity` computes it and
+	ignores whatever the client sends for it, exactly as it already does for a `source = Lead` field.
+
+	A LIST, not the pair this shipped as: several rows may name one field, and returning the first row's
+	value beside the OR of every row's condition wrote rule A's value when only rule B's condition fired.
+	First row whose condition PASSES wins, which is the first-declared-wins the grid reads top to bottom."""
+	return [{"source": value, "when": "eval:" + atom} for atom, _c, value in entry.get(RULE_SET_VALUE) or []]
 
 
 def _compiled_rows(tt):
@@ -522,6 +589,10 @@ def _compiled_rows(tt):
 		entry = by_target.get(f.fieldname) or {}
 		d.depends_on = _compiled_visibility(entry, d.depends_on)
 		d.mandatory_depends_on = _compiled_mandatory(entry, d.mandatory_depends_on)
+		d.copy_from = _compiled_copy_from(entry)
+		# A copy target is answered by the server, so the rep may not edit it — see `_field_descriptor`.
+		if d.copy_from:
+			d.read_only = 1
 		out.append(d)
 	return out
 
@@ -698,6 +769,39 @@ def _settled(fields, values):
 	return shown, _inert(fields, values, shown)
 
 
+def copied_values(fields, values):
+	"""{fieldname: copied value} for every field a Set Value rule fills — THE one resolution of the verb.
+
+	Judged against the SETTLED answers, so a copy conditioned on a hidden field does not fire off that
+	field's stale answer: hiding a driver blanks it (D22) and the condition then reads false, which is the
+	same collapse visibility and mandatory already get from the one fixpoint.
+
+	The source is read from the same settled bag, so copying a hidden field yields blank rather than a value
+	the form was not showing. First rule whose condition passes wins; a field whose rules all fail is absent
+	from the result and keeps whatever it already held.
+
+	Settled to a fixpoint, exactly as `_shown_fieldnames` is and for the same reason: a copy is an answer, so
+	it can feed the next copy and can reveal the field a later copy is conditioned on. Resolving one pass
+	made `a -> b -> c` store `c` blank on the server while the browser — which re-runs on its own reactivity
+	— converged and showed the rep a value. The loop terminates because `_validate_copy_graph` refuses a
+	cycle; the field-count bound is the same backstop the visibility fixpoint keeps."""
+	out = {}
+	for _pass in range(len(fields) + 1):
+		shown, live = _settled(fields, {**values, **out})
+		step = {}
+		for f in fields:
+			if f.fieldname not in shown:
+				continue
+			for rule in f.copy_from:
+				if _field_visible(rule["when"], live):
+					step[f.fieldname] = live.get(rule["source"], "")
+					break
+		if step == out:
+			break
+		out = step
+	return out
+
+
 def _required_here(f, shown, live):
 	"""True when the submitted form must carry this field: it is actually SHOWN, and it is mandatory —
 	declared `reqd`, or made so by a Make Mandatory rule whose condition passes (§17.3).
@@ -733,6 +837,14 @@ def compute_activity(lead, task_type, values, task=None):
 	# The rules compiled in — the SAME projection the form rendered from, so the save cannot demand or accept
 	# anything the rep was not shown (§17.3).
 	schema = compiled_fields(tt)
+	# Set Value resolved HERE and not only in the browser, so a form the rep filled and one the partner API
+	# or the migration wrote store the same record from the same declaration. It runs before the settle
+	# because a copied answer is an answer: it may reveal a field or make one mandatory, exactly as a typed
+	# one does. What the caller sent for a copied field is discarded — the verb makes it derived, and LSQ
+	# marks every one of these targets read-only in the same rule set.
+	copied = copied_values(schema, values)
+	if copied:
+		values = {**values, **copied}
 	shown, live = _settled(schema, values)
 	promoted, staged = {}, {}
 	# The lead's OWN values, read on the server. A `source = Lead` answer is context, not something the
@@ -808,21 +920,6 @@ def compute_activity(lead, task_type, values, task=None):
 		anchor_lat=guard.get("anchor_lat"), anchor_lng=guard.get("anchor_lng"), task=task,
 	)
 	return fields
-
-
-def _mark_lead_read_only(descriptors):
-	"""Stamp `read_only` on every lead-sourced descriptor — always, and with nothing to ask.
-
-	A lead field on an activity form is the CONTEXT the activity was logged in, never a question: it is
-	shown so the rep can see the patient's details, and it is snapshotted onto the activity so *"at this
-	order punch the address was X"* stays true afterwards. A lead is corrected on its own page, where the
-	change is visible and attributable, and never sideways through an activity form.
-
-	`read_only` rather than a map of its own because that is the key the fork's controls already bind their
-	`disabled` to (`SidePanelLayout.vue`, `TaskModal.vue`) — one descriptor shape, no second vocabulary."""
-	for d in descriptors:
-		if (d.get("source") or "") == LEAD_SOURCE:
-			d["read_only"] = 1
 
 
 def lead_field_values(lead, task_type):
@@ -980,7 +1077,7 @@ def task_detail(task):
 	r = frappe.db.get_value(
 		"CRM Task", task,
 		["name", "title", "custom_task_type", "status", "priority", "due_date", "start_date",
-		 "assigned_to", "owner", "creation", "description",
+		 "assigned_to", "owner", "creation", "description", "custom_is_planned",
 		 *task_columns(),
 		 "custom_location_latitude", "custom_location_longitude",
 		 "custom_location_address", "custom_location_captured_at",
@@ -1004,6 +1101,9 @@ def task_detail(task):
 			"status": r.status,
 			"priority": r.priority,
 			"due_date": str(r.due_date) if r.due_date else None,
+			# Which half this row was BORN as, stamped once at insert. The form shows its scheduling half iff
+			# this is set — never re-derived from the due date, which a rep may clear.
+			"is_planned": int(r.custom_is_planned or 0),
 			"start_date": str(r.start_date) if r.start_date else None,
 			"assigned_to": r.assigned_to,
 			"reference_doctype": r.reference_doctype,
@@ -1069,7 +1169,6 @@ def type_config(task_type, lead=None):
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
 	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
-	_mark_lead_read_only(cfg["fields"])
 	return cfg
 
 

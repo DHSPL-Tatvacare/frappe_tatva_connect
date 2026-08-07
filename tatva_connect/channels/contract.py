@@ -41,9 +41,10 @@ from tatva_connect.channels.event import OUTCOMES
 
 # What a provider can DO, as opposed to what it can REPORT (that is `outcomes`). The first six are send-side. The next two are READ-side, and they are what makes an orphan status recoverable: `recover_message` = "I can hand back the ONE message a status names", `recover_media` = "and that message's file, by its id". A provider that declares neither is not broken — its orphan statuses are logged and dropped, which is what happened to every provider before either existed.
 # `recording` is the media-side member of the same vocabulary: "a call I carried can produce audio, and I can say where it is". It buys ONE adapter function, `recording_ref(payload) -> RecordingRef`, and nothing else — the owning, the naming, the retrying and the privacy all live once in `storage.call_media`, which never learns a vendor's name.
+# `bypass_guardrails` is "I accept a per-call instruction to dial NOW rather than wait for the agent's configured calling window". It is a request field some providers offer and others do not, so it is declared like any other capability — and the ONE author-facing word for it is this one; a vendor spelling it `bypass_call_guardrails` on the wire translates in its own adapter, which is what the boundary at the top of this file is for.
 CAPABILITIES = (
 	"templates", "media", "session", "buttons", "lists", "backfill", "recover_message", "recover_media",
-	"recording",
+	"recording", "bypass_guardrails",
 )
 
 # How a provider spells a phone number ON THE WIRE. `+919876543210`, `919876543210` and `9876543210` are the same subscriber and no two providers agree on which to accept — WATI puts the number in a URL query (`?whatsappNumber=`), where a `+` decodes as a space; a voice provider wants the `+`. The format is therefore a fact about the PROVIDER and it is declared, never resolved centrally.

@@ -81,12 +81,35 @@ class TestLMSVaptJul(FrappeTestCase):
 				"multiple": 0,
 			}
 		).insert(ignore_permissions=True)
+		# A quiz reaches a student through its course, so the fixture needs both — audit Aug'26 made membership the rule and a course-less quiz belongs to nobody.
+		# lms commits inside its own enrolment path, so a row can outlive the per-test rollback and collide on the next seed.
+		for doctype, filters in (
+			("LMS Enrollment", {"member": self.student}),
+			("LMS Course", {"name": ["like", f"{TAG}-%"]}),
+		):
+			for name in frappe.get_all(doctype, filters=filters, pluck="name"):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True, ignore_missing=True)
+		self.course = frappe.get_doc(
+			{
+				"doctype": "LMS Course",
+				"title": f"{TAG}-course",
+				"description": "quiz host",
+				"short_introduction": "quiz host",
+				"published": 1,
+				"instructors": [{"instructor": self.creator}],
+			}
+		).insert(ignore_permissions=True)
+		# Seeded as Administrator: that IS the assignment flow, and a student may no longer enrol themselves.
+		frappe.get_doc(
+			{"doctype": "LMS Enrollment", "member": self.student, "course": self.course.name}
+		).insert(ignore_permissions=True)
 
 	def _quiz(self, show_answers=0, max_attempts=1):
 		return frappe.get_doc(
 			{
 				"doctype": "LMS Quiz",
 				"title": f"{TAG}-quiz",
+				"course": self.course.name,
 				"show_answers": show_answers,
 				"max_attempts": max_attempts,
 				"passing_percentage": 50,

@@ -19,7 +19,9 @@ other behaviour of these five doctypes exactly upstream's.
 `default_kanban_settings` is deliberately NOT restated below. We never changed it, so it is upstream's
 declaration and inheritance already answers it; a copy here would be a second brain that silently wins.
 
-Each class carries its listing declaration and nothing else. Anything more belongs somewhere else.
+Each class carries its listing declaration and nothing else. Anything more belongs somewhere else — the
+two assignment gates are MIXED IN from `lead/assignment.py` rather than written here, because a doctype
+may have only one `override_doctype_class` entry and this file already holds it.
 
 Plan: docs/plans/list-view-cleanup/2026-07-31-listing-lead-column-and-row-click.md §5.
 """
@@ -30,8 +32,10 @@ from crm.fcrm.doctype.crm_lead.crm_lead import CRMLead
 from crm.fcrm.doctype.crm_task.crm_task import CRMTask
 from crm.fcrm.doctype.fcrm_note.fcrm_note import FCRMNote
 
+from tatva_connect.lead.assignment import LeadAssignmentGate, TaskAssignmentGate
 
-class TatvaCRMLead(CRMLead):
+
+class TatvaCRMLead(LeadAssignmentGate, CRMLead):
 	@staticmethod
 	def default_list_data():
 		# `name` is deliberately not a default column: a rep reads the person, support reads the id, and the picker still offers it because `rows` names it.
@@ -140,7 +144,25 @@ class TatvaCRMLead(CRMLead):
 		return {"columns": columns, "rows": rows}
 
 
-class TatvaCRMTask(CRMTask):
+class TatvaCRMTask(TaskAssignmentGate, CRMTask):
+	def before_insert(self):
+		"""Stamp which half this row was born as — an APPOINTMENT someone promised, or a RECORD of
+		something already done. The modal shows its scheduling half iff the answer is the former.
+
+		Derived from the only evidence that is always true at insert: whether a due date arrived with the
+		row. New Task requires one, the automation follow-up computes one, and Log Activity sends none.
+		Stored rather than re-derived, because a rep clearing the date later would otherwise turn a kept
+		appointment into a bare record and the task would lose the reason it existed.
+
+		Overwritten, never read from the caller: a client that could assert this would hand itself
+		scheduling controls for an appointment nobody made. An invariant, not an operator toggle, so it
+		binds on the controller beside the auth overrides rather than in `doc_events` — there is no state
+		of this system in which a row may be born not knowing which half it is."""
+		super_before = getattr(super(), "before_insert", None)
+		if super_before:
+			super_before()
+		self.custom_is_planned = 1 if self.due_date else 0
+
 	@staticmethod
 	def default_list_data():
 		columns = [

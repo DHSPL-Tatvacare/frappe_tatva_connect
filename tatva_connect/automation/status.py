@@ -35,25 +35,46 @@ def _dormant_ancestor(key, stored):
 	return ""
 
 
+def _stored_ticks():
+	return {row.name: bool(row.enabled) for row in frappe.get_all(DOCTYPE, fields=["name", "enabled"])}
+
+
+def _row(auto, stored):
+	"""The ONE shape and the ONE derivation — both reads below return this, so they cannot disagree."""
+	enabled = stored.get(auto.key, False)
+	effective = is_enabled(auto.key)
+	blocked_by = "" if effective else _dormant_ancestor(auto.key, stored)
+	return {
+		"key": auto.key,
+		"area": area_of(auto.key),
+		"enabled": enabled,
+		"requires": auto.requires,
+		"status": ON if effective else (BROKEN if enabled and blocked_by else OFF),
+		"blocked_by": blocked_by if enabled and not effective else "",
+	}
+
+
 @frappe.whitelist()
 def switch_state():
 	"""Every switch in the catalog with its stored tick and its derived status. Read-only; writes nothing."""
 	# Reads the catalog rows, so it requires read on the catalog — the same gate the doctype matrix already sets.
 	frappe.has_permission(DOCTYPE, "read", throw=True)
-	stored = {row.name: bool(row.enabled) for row in frappe.get_all(DOCTYPE, fields=["name", "enabled"])}
-	rows = []
-	for auto in AUTOMATIONS:
-		enabled = stored.get(auto.key, False)
-		effective = is_enabled(auto.key)
-		blocked_by = "" if effective else _dormant_ancestor(auto.key, stored)
-		rows.append(
-			{
-				"key": auto.key,
-				"area": area_of(auto.key),
-				"enabled": enabled,
-				"requires": auto.requires,
-				"status": ON if effective else (BROKEN if enabled and blocked_by else OFF),
-				"blocked_by": blocked_by if enabled and not effective else "",
-			}
-		)
-	return rows
+	stored = _stored_ticks()
+	return [_row(auto, stored) for auto in AUTOMATIONS]
+
+
+@frappe.whitelist()
+def switch_status(key: str):
+	"""ONE switch, same shape and same derivation as `switch_state` — for the Desk FORM header.
+
+	The form cannot answer `broken_dependency` from the document alone: the tick is on the row in front of
+	the operator, and whether an ancestor is dormant is a walk up `parent_of`. The list's own read is a
+	page-lifetime cache filled by list hooks, so a form reached FROM the list would otherwise paint a
+	snapshot older than the save the operator just made (frappe/model/indicator.js:87 consults
+	`listview_settings.get_indicator` before its own `doc.enabled` fallback at :107).
+	"""
+	frappe.has_permission(DOCTYPE, "read", throw=True)
+	auto = next((a for a in AUTOMATIONS if a.key == key), None)
+	if not auto:
+		return {}  # a row the catalog no longer declares; the form falls back to the stored tick
+	return _row(auto, _stored_ticks())

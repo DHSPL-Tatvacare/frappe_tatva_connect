@@ -114,3 +114,48 @@ class TestNativeIsUntouched(ExportCase):
 		)
 		expected = {"fields": ["name", "status"], "filters": {"status": "Open"}, "order_by": "modified desc"}
 		self.assertEqual(args, expected)
+
+
+class TestAnExportedCellIsNeverAFormula(ExportCase):
+	"""A name a partner supplies is inert in the CRM and executes when a manager opens the export.
+
+	Frappe neutralises nothing: `csvutils`, `xlsxutils` and `reportview` were all read and carry no
+	formula guard, and the CSV path's `handle_html` strips markup only — a payload with no `<` in it never
+	meets a sanitiser at any point between the API and Excel. So the cell travels intact and the
+	spreadsheet, not the CRM, is what runs it.
+	"""
+
+	def _csv_of(self, title):
+		task = frappe.get_doc(
+			{"doctype": TASK, "title": title, "status": "Todo"}
+		).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		frappe.local.form_dict = frappe._dict({
+			"doctype": TASK,
+			"fields": frappe.as_json(["`tab%s`.`name`" % TASK, "`tab%s`.`title`" % TASK]),
+			"filters": frappe.as_json({"name": task.name}),
+			"file_format_type": "CSV",
+			"title": TASK,
+		})
+		list_export.export_query()
+		content = frappe.local.response.get("filecontent")
+		frappe.delete_doc(TASK, task.name, force=True, ignore_permissions=True)  # the title cannot carry the suite's PROBE prefix, so teardown will not find it
+		return content.decode() if isinstance(content, bytes) else str(content)
+
+	def test_a_formula_leading_title_exports_as_text(self):
+		# The payload must be the FIRST character of the cell — that is exactly when a spreadsheet obeys it.
+		exported = self._csv_of('=HYPERLINK("http://attacker.example/","click")')
+		self.assertIn("'=HYPERLINK", exported, "a formula-leading cell reached the spreadsheet unquoted")
+		self.assertNotIn(',"=HYPERLINK', exported, "the raw formula is still the first character of a cell")
+
+	def test_an_ordinary_title_is_not_rewritten(self):
+		"""OVER-BLOCK: the guard touches the first character and only when it is one a spreadsheet obeys."""
+		exported = self._csv_of(f"{PROBE} ordinary title")
+		self.assertIn("ordinary title", exported)
+		self.assertNotIn("'" + PROBE, exported, "a harmless title was quoted")
+
+	def test_every_character_a_spreadsheet_obeys_is_covered(self):
+		for lead in ("=", "+", "-", "@"):
+			with self.subTest(lead=lead):
+				exported = self._csv_of(f"{lead}cmd|' /C calc'!A0")
+				self.assertIn(f"\"'{lead}", exported, f"a cell beginning {lead} was left executable")
+

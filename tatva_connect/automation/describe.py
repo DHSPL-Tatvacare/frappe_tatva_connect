@@ -329,7 +329,9 @@ def builder_verbs():
 	from tatva_connect.automation import actions
 
 	return [
-		{"verb": verb, "lane": declared["lane"], "params": declared["params"]}
+		# `params_of`, never `declared["params"]`: a field a provider does not support must not be
+		# advertised here while the inspector hides it — one question, one answer.
+		{"verb": verb, "lane": declared["lane"], "params": actions.params_of(verb)}
 		for verb, declared in actions.VERBS.items()
 	]
 

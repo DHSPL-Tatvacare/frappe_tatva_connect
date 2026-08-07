@@ -54,6 +54,10 @@ frappe.ui.form.on('CRM Task Type Rule', {
   condition_field(frm, cdt, cdn) {
     tatva_task_rule_row_options(frm, cdt, cdn);
   },
+  // The AND When Field is the same question asked twice; its Value list follows it the same way.
+  condition_field_2(frm, cdt, cdn) {
+    tatva_task_rule_row_options(frm, cdt, cdn);
+  },
   // A field was picked to append: add it to Targets, then clear the helper so it can be used again.
   add_target(frm, cdt, cdn) {
     tatva_task_rule_append_target(frm, cdt, cdn);
@@ -101,6 +105,11 @@ function tatva_task_rule_row_options(frm, cdt, cdn) {
   tatva_set_grid_row_options(grid, cdn, 'condition_field', tatva_task_questions(frm));
   tatva_set_grid_row_options(grid, cdn, 'add_target', tatva_task_rule_fields(frm));
   tatva_set_grid_row_options(grid, cdn, 'condition_value', tatva_task_rule_values(frm, row.condition_field));
+  // The AND half offers the same lists, read off its own When Field so the two rows never share a value set.
+  tatva_set_grid_row_options(grid, cdn, 'condition_field_2', tatva_task_questions(frm));
+  tatva_set_grid_row_options(grid, cdn, 'condition_value_2', tatva_task_rule_values(frm, row.condition_field_2));
+  // Set Value copies a declared question, so its source is picked from the same list a When Field is.
+  tatva_set_grid_row_options(grid, cdn, 'set_value', tatva_task_questions(frm));
 }
 
 // ---- the location condition (Enforcement) -----------------------------------

@@ -169,18 +169,19 @@ def location_required(task_type, lead, values):
 	ONE document read serves both halves — it used to ask the database twice, `db.get_value` for the columns
 	and then the condition parse, on every activity save and every backstop pass.
 
-	`get_doc` and NOT `get_cached_doc`, deliberately, and this is the one place in the module where that
-	matters. `compute_activity` reads the type with `get_doc` and settles the answers against THAT schema
-	before enforcing required fields; if this gate read a cached copy, the two would judge the same
-	submission against two declarations. The cache is not hypothetically stale here — every activity seed in
-	this app is raw SQL, which never invalidates it, which is why `apply-seeds.sh` ends with `clear-cache`.
-	So an ENFORCEMENT gate reads what the writer reads. `location_guard_applies` above is a door-first probe
-	that settles nothing and compares one column, so a cached read is correct there."""
+	An ENFORCEMENT gate reads what the writer reads, and the writer is `compute_activity`, which takes the
+	type with `get_cached_doc` and settles the answers against THAT schema before enforcing required fields.
+	Reading it any other way lets the two judge one submission against two declarations — and within a
+	request the cached read is the stronger guarantee, because it is the SAME document object rather than a
+	second load that merely ought to match. Staleness is handled where it arises: every activity seed in
+	this app is raw SQL, which never invalidates the cache, which is why `apply-seeds.sh` ends with
+	`clear-cache`. This read said `get_doc` until 2026-08-06 and its comment asserted the writer did too,
+	which was the divergence rather than the defence against one."""
 	if not (task_type and lead):
 		return None
 	if not frappe.db.exists("CRM Task Type", task_type):
 		return None
-	tt = frappe.get_doc("CRM Task Type", task_type)
+	tt = frappe.get_cached_doc("CRM Task Type", task_type)
 	if (tt.visit_mode or "") != VISIT_IN_PERSON and not _condition_holds(tt, values):
 		return None
 	return is_location_tracked(lead)

@@ -190,7 +190,8 @@ def template_account_mismatch(template_name, account_name) -> str | None:
 	return f"template {template_name} belongs to account {template_account}, but the resolved account is {account_name}"
 
 
-def send_whatsapp(subject_lead, contact_number, template_name, context=None, values=None, correlation=None):
+def send_whatsapp(subject_lead, contact_number, template_name, context=None, values=None, correlation=None,
+                  document_variable=None, document_file=None):
 	"""Validate and resolve a template send to `subject_lead`'s `mobile_no`, then RETURN
 	`(output, deferred-thunk-or-marker)` instead of sending inline (R1, post-audit remediation). Every
 	check that can fail the segment (blank config, no routing, a disabled account, a template/account
@@ -219,7 +220,15 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 
 	`values` is the node's DECLARED template mapping, and it is the whole reason a placeholder is no
 	longer an invisible read of journey state. `_template_parameters` builds the outbound list from it - this
-	stays the one and only place outbound WhatsApp parameters are assembled."""
+	stays the one and only place outbound WhatsApp parameters are assembled.
+
+	`document_variable`/`document_file` are the document header (D6), and there is NO second send path for
+	one: to the provider a media header is an ordinary NAMED parameter, so the file's URL is appended to the
+	same `parameters` list every other blank fills and the transport is untouched. The URL handed over is the
+	STABLE proxy URL and never a signed one - the provider stores what we give it and fetches it whenever it
+	likes, so a link that expires in minutes is a document that arrives dead on a patient's phone. A file
+	that is missing or still private is a routing answer rather than an exception, exactly like a number
+	that will not dial: the provider fetches as a stranger with no session, so a private file is a 403."""
 	if not template_name:
 		raise ValueError("Send WhatsApp action has no WhatsApp Template configured")
 	lead = frappe.get_doc("CRM Lead", subject_lead)
@@ -262,6 +271,33 @@ def send_whatsapp(subject_lead, contact_number, template_name, context=None, val
 		return FAILED, "failed: {} resolved to nothing, so the message would have gone out with a blank in it".format(
 			", ".join(sorted(blank))
 		)
+
+	if document_variable or document_file:
+		# BOTH or neither: a placeholder with nothing to put in it, or a file with no placeholder to put it in, is author error — wrong for every record equally, and the message could never have carried the document for anyone.
+		if not (document_variable and document_file):
+			raise ValueError(
+				f"Send WhatsApp: lead {subject_lead} - a document header needs both the placeholder name and the file to fill it"
+			)
+		# A pure REFERENCE read, like the recipient above: the author picks the file an upstream node produced and never types one.
+		attachment = (context or {}).get(document_file)
+		if not attachment:
+			return FAILED, f"failed: {document_file} resolved to no file for lead {subject_lead}"
+		# M3 — the File ROW answers both questions. A URL is not a filename and not a privacy flag.
+		row = frappe.db.get_value("File", attachment, ["file_url", "is_private"], as_dict=True)
+		if not row or not row.file_url:
+			return FAILED, f"failed: the document {attachment} no longer exists, so the message would carry a dead link"
+		if row.is_private:
+			return FAILED, f"failed: the document {attachment} is still private, and the provider fetches it with no session of ours"
+
+		from tatva_connect.storage import blob_store, file_manager
+
+		# The STABLE proxy URL (D5), absolute, and NEVER `file_manager.fetch_url` — that hands out a SAS that dies in minutes while the provider keeps our URL and fetches it much later. A file still on local disk already has a stable path of its own.
+		key = blob_store.blob_key_from_url(row.file_url)
+		parameters.append({
+			"name": document_variable,
+			"value": frappe.utils.get_url(file_manager.proxy_url(key) if key else row.file_url),
+		})
+
 	# LAST, so only a send really being queued claims a slot against the ceiling — see `_record_contact`.
 	_record_contact(context, WHATSAPP, contact)
 	return SENT, lambda: frappe.enqueue(
@@ -657,7 +693,7 @@ def _agent_variables(account, agent_id, values, ctx):
 
 
 def send_voice(subject_lead, contact_number, connection, agent_id, context=None, from_override=None,
-               values=None, correlation=None):
+               values=None, correlation=None, bypass_guardrails=False):
 	"""Place an outbound AI voice call to `subject_lead`, or route on why it did not happen. The structural
 	twin of `send_whatsapp`: the recipient is a DECLARED reference conformed by the channel's declared
 	format, the send is behind the SAME dormant `Workflow::Engine::sends` gate, and the provider call is
@@ -727,10 +763,12 @@ def send_voice(subject_lead, contact_number, connection, agent_id, context=None,
 		lead=subject_lead,
 		correlation=correlation,
 		variables=variables,
+		bypass_guardrails=bypass_guardrails,
 	)
 
 
-def _deliver_voice(account_name, to_number, agent_id, from_override, lead, correlation=None, variables=None):
+def _deliver_voice(account_name, to_number, agent_id, from_override, lead, correlation=None, variables=None,
+                   bypass_guardrails=False):
 	"""The deferred single call `send_voice` enqueues (R1). Runs in the background job after the segment
 	commits — a rolled-back segment never reaches it, so no dial. Places ONE call and records the
 	execution_id for AUDIT: the wake correlation rides the `user_data` echo, so there is no lookup row to
@@ -755,7 +793,7 @@ def _deliver_voice(account_name, to_number, agent_id, from_override, lead, corre
 	try:
 		result = bolna.place_call(
 			voice_api.connection_for(account_name), to_number, agent_id, from_override, correlation,
-			variables=variables,
+			variables=variables, bypass_guardrails=bypass_guardrails,
 		)
 	except bolna.BolnaOutcomeUnknown as unanswered:
 		# No answer from the wire — the patient may already be ringing. Raising files this where the recovery action is replay, and a replayed dial calls them twice. Recorded, not retried, and the slot is not returned.

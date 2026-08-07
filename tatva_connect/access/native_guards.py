@@ -16,6 +16,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime
 
+from tatva_connect.access import lms_visibility
+
 
 def _require_read(doctype, name):
 	frappe.has_permission(doctype, "read", name, throw=True)
@@ -182,39 +184,88 @@ def get_article_stats(article_name):
 
 # --- LMS (internal training only — Mode 2) -----------------------------------------------------
 # The LMS catalog endpoints are allow_guest + engine-bypass (get_all/get_value); a DocPerm lock can't
-# reach them. We NARROW instead of gate (metamorphic — narrow, never widen): a non-privileged caller
-# only ever sees PUBLISHED rows, so the draft-enumeration leak (filters={"published":0}) is closed
-# without breaking browse/enrol for anyone who is allowed to see drafts.
-_LMS_PRIVILEGED_ROLES = {"System Manager", "Moderator", "Course Creator"}
-
-
+# reach them. We NARROW instead of gate (metamorphic — narrow, never widen), and what we narrow TO is
+# the membership rule in `access/lms_visibility.py`: am I in it, or do I run it. `published` is no
+# longer asked — it is a draft flag for authors, not a permission, and filtering by it both leaked
+# published-but-unassigned content and hid a user's OWN unpublished batch from the Batches page while
+# the Home page (which reads membership) showed it.
 def _lms_privileged():
-	"""True if the caller may see unpublished LMS content (author/moderator/admin)."""
-	return bool(_LMS_PRIVILEGED_ROLES & set(frappe.get_roles()))
+	"""True if the caller may see every LMS record (author/moderator/evaluator/admin). One spelling —
+	`learning/outline.py` imports this; the roles themselves are declared once in the brain."""
+	return lms_visibility.is_privileged()
 
 
-def _force_published(filters):
-	"""Parse the request `filters` and force published=1 for a non-privileged caller."""
+def _scoped_to(filters, visible):
+	"""Parse the request `filters` and clamp a non-privileged caller to the rows they are IN.
+
+	`name in (…)` is the clamp because it is the only column every catalog filter shares, and native's
+	own shortcut keys (`enrolled`, `created`) rewrite exactly that key with a set this rule already
+	admits — enrolment and instructorship are both inside `visible`, so a rewrite can only narrow.
+	"""
 	if isinstance(filters, str):
 		filters = frappe.parse_json(filters) or {}
 	filters = dict(filters or {})
-	if not _lms_privileged():
-		filters["published"] = 1
+	if not lms_visibility.is_privileged():
+		filters["name"] = ["in", sorted(visible) or [""]]  # [""] matches no record; an empty IN list is not valid SQL
 	return filters
 
 
-@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _force_published narrows a non-privileged caller to published rows
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _scoped_to narrows a non-privileged caller to the courses they are in
 def get_courses(filters=None, start=0):
 	from lms.lms.utils import get_courses as _native
 
-	return _native(_force_published(filters), start)
+	return _native(_scoped_to(filters, lms_visibility.visible_courses()), start)
 
 
-@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _force_published narrows a non-privileged caller to published rows
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _scoped_to narrows a non-privileged caller to the batches they are in
 def get_batches(filters=None, start=0, order_by="start_date"):
 	from lms.lms.utils import get_batches as _native
 
-	return _native(_force_published(filters), start, order_by)
+	return _native(_scoped_to(filters, lms_visibility.visible_batches()), start, order_by)
+
+
+@frappe.whitelist()
+def get_programs():
+	# Native answers with two lists: the programs I am a member of, and every PUBLISHED one — the shop
+	# window. There is no catalogue here, so the second list is empty for a non-privileged caller; the
+	# first is already scoped to the session user by native itself.
+	from lms.lms.utils import get_programs as _native
+
+	data = _native()
+	if not lms_visibility.is_privileged():
+		data["published"] = []
+	return data
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; require_course denies a caller who is not in the course
+def get_reviews(course):
+	"""Native reads every review of ANY course through get_all with no gate at all — not published, not
+	enrolled, nothing — and stamps each row with the reviewer's username, full name and avatar. So the
+	leak is a roster of colleagues as much as it is the reviews. Gate on the course itself."""
+	lms_visibility.require_course(course)
+	from lms.lms.utils import get_reviews as _native
+
+	return _native(course)
+
+
+@frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; require_course denies a caller who is not in the course
+def get_course_outline(course=None, progress=False):
+	"""Native's only gate is `guest_access_allowed()`, so any logged-in user could read the full chapter
+	and lesson structure of any course, drafts included.
+
+	Delegates through `learning/outline.py`'s referer resolver rather than duplicating it: that shim
+	exists for an upstream race where CourseOverview.vue mounts before its course fetch lands and calls
+	this with no course at all. The resolver returns the course the Referer names; the gate below then
+	decides it, so a forged Referer buys nothing.
+	"""
+	from lms.lms.utils import get_course_outline as _native
+	from tatva_connect.learning.outline import _course_from_referer
+
+	course = course or _course_from_referer()
+	if not course:
+		return []
+	lms_visibility.require_course(course)
+	return _native(course, progress)
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _lms_privileged gate strips the creator email for a non-privileged caller
@@ -279,6 +330,33 @@ def submit_quiz(quiz, results=None):
 				MaximumAttemptsExceededError,
 			)
 	return _native(quiz, results)
+
+
+def _require_quiz_in_progress(quiz):
+	"""The caller must actually be TAKING this quiz, not merely entitled to it.
+
+	lms records no in-progress attempt anywhere: an LMS Quiz Submission row is written only at SUBMIT
+	(lms_quiz.py create_submission), the submission doctype carries no status or started field, and the
+	half-finished answers live in the browser's localStorage. The one piece of server-side state that
+	an open attempt does leave is the start stamp `get_quiz_with_questions` already writes below — a
+	real client cannot hold the questions without having gone through it, and a caller that jumped
+	straight to answer-checking has none. So the existing stamp is the proof; no new state is invented.
+	"""
+	if frappe.cache().get_value(_quiz_start_key(quiz)) is None:
+		frappe.throw(_("Open the quiz before checking an answer."), frappe.PermissionError)
+
+
+@frappe.whitelist()
+def check_answer(quiz, question, question_type, answers):
+	"""Native binds the question to the quiz and honours `show_answers`, but never asks whether the
+	caller may reach the quiz at all — the one quiz endpoint that does not (submit_quiz and
+	get_quiz_with_questions both call lms's own can_access_quiz). A student with no enrolment could
+	therefore walk any quiz whose `show_answers` is on, one option at a time, and read out the key."""
+	lms_visibility.require_quiz(quiz)
+	_require_quiz_in_progress(quiz)
+	from lms.lms.doctype.lms_quiz.lms_quiz import check_answer as _native
+
+	return _native(quiz, question, question_type, answers)
 
 
 @frappe.whitelist()

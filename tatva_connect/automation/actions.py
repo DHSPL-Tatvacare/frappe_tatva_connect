@@ -26,7 +26,7 @@ from frappe.utils import get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends
 from tatva_connect.taxonomy import labels
-from tatva_connect.workflow_engine import refs
+from tatva_connect.workflow_engine import document_render, refs
 
 
 def _action_label(a):
@@ -72,8 +72,8 @@ class _ParkSignal(Exception):
 # -- actions -----------------------------------------------------------------
 
 
-# A workflow must not hang on an endpoint that never answers; a timeout is the `failed` output.
-_API_TIMEOUT_SECONDS = 30
+# A workflow must not hang on an endpoint that never answers; a timeout is the `failed` output. 120s is safe because a journey runs on the `workflow` queue, whose job timeout is 1500s, and never inside a user's save — a reasoning model on a long prompt simply outlives 30s and read as a broken pipeline.
+_API_TIMEOUT_SECONDS = 120
 _LOG_LIMIT = 10000  # an Integration Request records the shape of an answer, never an unbounded body
 
 
@@ -91,10 +91,31 @@ def target_of(verb):
 	return (VERBS.get(verb) or {}).get("target")
 
 
+def params_of(verb):
+	"""The parameters an author really gets for `verb`: the declaration, minus any whose declared
+	`capability` no adapter on the verb's channel offers.
+
+	THE ONE READER, and that is the point of it. A field is offered because a PROVIDER supports it — the
+	calling-hours bypass is a request field Bolna takes and another vendor may not — so the question
+	"does this field exist here" has exactly one answer, given once. Read raw, the inspector could hide a
+	field while `describe` still advertised it, which is two answers and a support ticket.
+
+	The filter itself is `resolve.offered_fields` — shared with the canvas palette, which asks the same
+	question of the same fields in a different shape. Request-time only: it resolves adapter modules, and
+	a verb whose params declare no capability short-circuits before touching one.
+	"""
+	declared = VERBS.get(verb) or {}
+
+	from tatva_connect.channels import resolve
+
+	# `outcomes_channel` is the channel this verb sends on — the same key `outcomes_of` reads, never a second declaration of it.
+	return resolve.offered_fields(declared.get("params") or [], declared.get("outcomes_channel"))
+
+
 def authored_target_field(verb):
 	"""The parameter an `authored` verb takes its target doctype from — DERIVED from the verb's own params
 	(the one typed `Target`), never a second per-verb map that could name a field the verb does not have."""
-	for param in (VERBS.get(verb) or {}).get("params") or []:
+	for param in params_of(verb):
 		if param.get("type") == "Target":
 			return param["name"]
 	return None
@@ -243,17 +264,38 @@ def _assignee(action, context):
 	return action.assign_to_user or None
 
 
+# The third due mode's word — the delay is written with the Wait's own `Duration`, so one node's "in 14 days" and another's mean the same thing and land on the same arithmetic.
+DUE_AFTER_DELAY = "After a delay"
+
+
+def _priority_options():
+	"""The priorities a task may really carry — READ OFF `CRM Task`'s own field, never typed here.
+
+	A typed triple would be a second declaration of an operator's vocabulary: add a priority to the doctype
+	and this node would keep offering yesterday's. Split by `describe._value_options`, the ONE reader of a
+	Select's option lines, so what an author picks and what the record accepts cannot disagree.
+	"""
+	from tatva_connect.automation import describe
+
+	field = frappe.get_meta("CRM Task").get_field("priority")
+	return describe._value_options("Select", field.options if field else "")
+
+
 def _action_create_task(action, lead, context, axes, trigger_doc):
 	"""CREATE_TASK — reuse the idempotent follow-up helper, which grain-gates every task it raises, so
 	a grain-A rule cannot plant a grain-B activity type. The gate lives THERE, not here: it must read
 	the lead the task lands on, and `axes` is (None, None, None) for a Flow whose subject is not a Lead
 	(a File-triggered Document Review is exactly that). The due date resolves from a context field
-	(From Context) or an expression (Expression).
+	(From Context), an expression (Expression) or a delay from now (After a delay).
 
-	A File / WhatsApp Message trigger carries no assignee, so the follow-up would land unassigned (on
-	no rep's list, no assignment notification): fall back to the lead's owner. When the trigger is a
-	File and the raised type is Document Review, pin the file onto the review task and mark the File
-	Pending + linked (the review flow's on-upload step)."""
+	The assignee is resolved with the same controls as Assign to User — `assignee_mode` plus
+	`assign_to_user` / `assignee_variable`. When neither is chosen (the default, in every existing
+	workflow) the old auto rule fires: carry the trigger's assignee forward, falling back to the
+	lead's owner. A chosen user is grain-entitled through the same `_assert_entitled_to_act` gate
+	Assign to User uses.
+
+	When the trigger is a File and the raised type is Document Review, pin the file onto the review
+	task and mark the File Pending + linked (the review flow's on-upload step)."""
 	from tatva_connect.tasks.tasks import create_followup_task
 
 	lead = resolve_target(action, lead, trigger_doc)[1]  # declared `lead` — resolved, never assumed
@@ -262,17 +304,20 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	# different task of the same type on the same lead. Absent on an ephemeral journey, which cannot park.
 	token = context.get(refs.TOKEN) if hasattr(context, "get") else None
 
-	# Carry the completing task's assignee onto the next task (old-engine parity). Only a trigger that
-	# genuinely has no assignee field — a File / WhatsApp Message — falls back to the lead owner so its
-	# task is never orphaned; a Lead- or Task-triggered rule keeps producing an unassigned task for the
-	# native Assignment Rule to route (do NOT force lead_owner on those — it defeats the Assignment Rule).
-	assignee = trigger_doc.get("assigned_to") if trigger_doc else None
-	if not assignee:
-		# Fall back to the lead's owner whenever nothing else names an assignee. This used to be limited
-		# to File / WhatsApp Message triggers, which meant every task raised by a workflow that PARKS
-		# landed unassigned: on the durable path the "trigger doc" is the lead itself, a lead has no
-		# `assigned_to`, and the old condition could never fire. Unassigned work sits on nobody's list.
-		assignee = frappe.db.get_value("CRM Lead", lead, "lead_owner")
+	# Assignee: the same two modes as Assign to User's `_assignee` — User picks a person, From Variable
+	# reads one out of the run. When neither is chosen (the default, all existing workflows) the old
+	# auto rule fires: carry the trigger's assignee forward, falling back to the lead's owner.
+	mode = action.get("assignee_mode")
+	if mode == "From Variable":
+		assignee = context.get(action.get("assignee_variable")) or None
+	elif mode == "User":
+		assignee = action.get("assign_to_user") or None
+	else:
+		assignee = trigger_doc.get("assigned_to") if trigger_doc else None
+		if not assignee:
+			assignee = frappe.db.get_value("CRM Lead", lead, "lead_owner")
+	if assignee:
+		_assert_entitled_to_act(assignee, axes)
 	# Review flow: a File that raises a Document Review task gets its OWN task, one per document — the
 	# verdict is per-document, so it must never ride the per-lead-per-type throttle (which would collapse
 	# several reviewable files onto one task and mirror one verdict onto all). The File back-reference is
@@ -291,8 +336,12 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 	task = create_followup_task(
 		lead=lead,
 		task_type=action.task_type,
+		title=_subject(action, context),
 		due_at=_due_at(action, context),
 		assigned_to=assignee,
+		priority=action.get("priority") or None,
+		# The SAME token stamped below, handed in so the open-task check matches on it too: this node still reuses its own task on a re-fire, while a SECOND node of the same type gets its own instead of silently creating nothing. Narrowed by the node, never lifted.
+		node_token=token,
 	)
 	_stamp_workflow_token(task, token)
 
@@ -384,6 +433,12 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 		frappe.db.get_value(doctype, name, "name", for_update=True)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
 	for row in rows:
+		if tdoc.meta.get_field(row["name"]) is None:
+			raise ValueError(
+				f"{row['name']!r} is not a field on {action.target_doctype} — it may belong to a child "
+				"table; use Upsert Child Row to write fields on a child table"
+			)
+	for row in rows:
 		tdoc.set(row["name"], contract.resolve_row(
 			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
 		))
@@ -429,38 +484,100 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 def _action_append_child(action, lead, context, axes, trigger_doc):
 	"""APPEND_CHILD_ROW — add a new row to a CRM Lead child table (spec §4.2), via load+save so the
 	lead's hooks re-run. Every field must be allowlisted for the child doctype at the lead's grain."""
-	child_table, child_dt = _child_target(action)
-	values = _resolve_map(action.set_json, context)
-	if not values:
+	child_table, child_dt, _singleton = _child_target(action)
+	set_raw = _parse_set(action)
+	if not set_raw:
 		raise ValueError("Append Child Row needs a non-empty Set (JSON)")
-	_assert_child_allowlisted(child_dt, child_table, set(values), axes)
+	_assert_child_allowlisted(child_dt, child_table, set(set_raw), axes)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
+	values = {k: _resolve_set_value(v, context, current=None) for k, v in set_raw.items()}
 	tdoc.append(child_table, values)
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _action_upsert_child(action, lead, context, axes, trigger_doc):
-	"""UPSERT_CHILD_ROW — find the row by natural key and update it, else append (spec §4.2). The
-	match is type-aware (so 7=='7'==7.0 and a date literal matches a stored date), refuses to match on
-	a blank key, never rewrites the key, and fails loud if the key is non-unique."""
-	child_table, child_dt = _child_target(action)
-	match = _resolve_map(action.match_json, context)
-	values = _resolve_map(action.set_json, context)
-	if not match:
-		raise ValueError("Upsert Child Row needs a non-empty Match (JSON)")
-	if any(_blank(v) for v in match.values()):
-		raise ValueError("Upsert match key resolved to a blank value — refusing to match on blank")
-	_assert_child_allowlisted(child_dt, child_table, set(match) | set(values), axes, keys=set(match))
+	"""UPSERT_CHILD_ROW — find the row by natural key and update it, else append. A singleton child table
+	(is_multi_row=0, no row_key_field) auto-resolves its one row; keyed tables require a non-empty match.
+
+	W8.1 — set values carry {mode, value} pairs routed through `contract.resolve_row`, the ONE
+	reader, so a counter on a child row can be INCREMENTED the same way as a field on the lead."""
+	child_table, child_dt, singleton = _child_target(action)
+
+	if singleton:
+		if (action.match_json or "").strip() and action.match_json.strip() != "{}":
+			raise ValueError("a singleton child table has no row key — match through the section's own key, not a custom one")
+		match = {}
+		# Unconditionally lock the parent: two concurrent upserts on an empty singleton must not both append.
+		frappe.db.get_value(*resolve_target(action, lead, trigger_doc), "name", for_update=True)
+	else:
+		match = _resolve_map(action.match_json, context)
+		if not match:
+			raise ValueError("Upsert Child Row needs a non-empty Match (JSON)")
+		if any(_blank(v) for v in match.values()):
+			raise ValueError("Upsert match key resolved to a blank value — refusing to match on blank")
+	_assert_child_allowlisted(child_dt, child_table, set(match) | _parse_fieldnames(action), axes, keys=set(match))
+
+	if not singleton and any(isinstance(v, dict) and v.get("mode") == refs.INCREMENT for v in _parse_set(action).values()):
+		frappe.db.get_value(*resolve_target(action, lead, trigger_doc), "name", for_update=True)
+
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
-	row = _find_child_row(tdoc.get(child_table), match, child_dt)
+	if singleton:
+		row = _find_singleton_row(tdoc.get(child_table), child_dt)
+	else:
+		row = _find_child_row(tdoc.get(child_table), match, child_dt)
+
+	set_raw = _parse_set(action)
+	values = {k: _resolve_set_value(v, context, current=(row.get(k) if row else None)) for k, v in set_raw.items()}
+
 	if row:
 		for k, v in values.items():
-			if k in match:
+			if not singleton and k in match:
 				continue  # never rewrite the natural key out from under the upsert
 			row.set(k, v)
 	else:
-		tdoc.append(child_table, {**match, **values})
+		tdoc.append(child_table, values)
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+
+
+def _parse_set(action):
+	"""The set_json as a parsed dict — plain, without resolving $ctx. references. Mode-dict values
+	(keyed by \"mode\") are kept as-is so the caller can detect INCREMENT before resolving."""
+	raw = (action.set_json or "").strip()
+	if not raw:
+		return {}
+	try:
+		data = json.loads(raw)
+	except (ValueError, TypeError):
+		raise ValueError("invalid JSON in a child-row action")
+	if not isinstance(data, dict):
+		raise ValueError("child-row action set JSON must be an object")
+	return data
+
+
+def _parse_fieldnames(action):
+	"""The fieldnames a set_json names — keys only, for the allowlist check before values resolve."""
+	return set(_parse_set(action))
+
+
+def _find_singleton_row(rows, child_dt):
+	"""The one row of a singleton child table, or None. Raises if more than one exists — a singleton
+	with two rows is data corruption and an honest failure is the only safe outcome."""
+	existing = list(rows or [])
+	if len(existing) > 1:
+		raise ValueError(f"singleton child table {child_dt!r} has {len(existing)} rows — expected at most one")
+	return existing[0] if existing else None
+
+
+def _resolve_set_value(value, context, current):
+	"""A set_json value — plain literal or $ctx reference, or {mode, value} routed through contract."""
+	if isinstance(value, dict) and "mode" in value:
+		mode = value.get("mode")
+		if mode not in (refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT):
+			raise ValueError(f"unknown mode {mode!r} — must be one of {refs.LITERAL}, {refs.FROM_CONTEXT}, {refs.EXPRESSION}, {refs.INCREMENT}")
+		from tatva_connect.workflow_engine import contract  # lazy — circular with registry
+
+		return contract.resolve_row(mode, value.get("value"), context, current=current)
+	return _resolve(value, context)
 
 
 def _action_call_api(action, lead, context, axes, trigger_doc):
@@ -649,6 +766,10 @@ def _action_send_whatsapp(action, lead, context, axes, trigger_doc):
 		action.whatsapp_template, context, action.template_values,
 		# The token `_run_verb` minted for THIS node, so a delivery receipt can find this run and no other.
 		correlation=context.get(refs.TOKEN),
+		# The template's media-header placeholder and the file to resolve into it — an ordinary named
+		# parameter to WATI, so both stay declarations here and the send path owns the resolution.
+		document_variable=action.get("document_variable"),
+		document_file=action.get("document_file"),
 	)
 	context[refs.OUTPUT] = output
 	return result
@@ -682,9 +803,104 @@ def _action_place_voice_call(action, lead, context, axes, trigger_doc):
 		values=action.get("agent_values"),
 		# The token `_run_verb` minted for THIS node, carried to the provider so a terminal webhook wakes this run.
 		correlation=context.get(refs.TOKEN),
+		# The author's own tick, carried through untouched — it is a provider request field, not a gate.
+		bypass_guardrails=bool(action.get("bypass_guardrails")),
 	)
 	context[refs.OUTPUT] = output
 	return result
+
+
+def _action_generate_document(action, lead, context, axes, trigger_doc):
+	"""GENERATE DOCUMENT (effect, W13) — render a pre-authored template to a PDF, then park.
+
+	DISPATCH, THEN PARK, and that is the whole difference from Call API. The synchronous answer is only
+	"was the render accepted" (`queued`/`failed`); the thing a journey really waits for — the document
+	existing — is an OUTCOME the render job delivers, so a Wait placed after this node can name it. Call
+	API declares outputs and no outcomes, which is exactly why nothing can ever wait on one.
+
+	THE PDF IS OWNED BY A `CRM Campaign Document`, NEVER BY THE LEAD. `file_events.may_be_public()`
+	classifies a file by its OWNING doctype's place on the operator allowlist, so filing a marketing
+	document on the lead would mean publishing every lead attachment, clinical files included. Creating
+	that row here is all this handler does about files: no privacy flag, no Azure call, no second decider.
+
+	THE RENDER RIDES `workflow` LIKE EVERY OTHER ENGINE JOB. It was written for `long` on the belief that a
+	render is seconds of subprocess work; it is not — measured on this app's own template, 0.5s, the same
+	order as the WhatsApp and voice provider calls that already ride this lane. `test_workflow_lane_isolation`
+	holds the whole engine on one lane so a burst can never starve `wakeups.sweep`, and buying a carve-out in
+	that lock for a cost the measurement does not show would be trading a real invariant for a guess. The
+	unbounded case — pdfkit fetching a remote image with no timeout of its own — is answered where it lives,
+	by the job's own death penalty (`timeout=`), not by moving lanes. Deferred past commit, so a segment that
+	rolls back renders nothing.
+
+	Gated on `Document::Generation::render` HERE rather than inside the job (D9): a dormant bench must
+	dispatch no work at all, so the node takes its `failed` edge exactly as the voice channel does.
+	"""
+	subject = resolve_target(action, lead, trigger_doc)[1]
+	# Both keys are DECLARED emitted, so both are written on EVERY leg — a key that appears only on the
+	# happy path could not honestly be offered downstream at all (the `assigned_to` lesson). `document_file`
+	# is not knowable yet: the render job reports the real File name on the outcome a Wait accepts.
+	context["campaign_document"] = None
+	context["document_file"] = None
+	if not action.document_template:
+		raise ValueError("Generate Document node missing a template")
+
+	if not document_render.render_enabled():
+		context[refs.OUTPUT] = "failed"
+		return "failed: document generation is switched off"
+
+	# THE one filler (`sends._filled_rows`): a slot with no row is author error and raises, a row that
+	# resolves blank routes to `failed` — a gap in a document a patient reads is the same defect as a gap
+	# in a message they read, and a fourth copy of that loop is what that function exists to prevent.
+	values, blank = sends._filled_rows(
+		document_template_slots(action.document_template), action.get("document_values"), context,
+		f"Generate Document: template {action.document_template}",
+	)
+	if blank:
+		context[refs.OUTPUT] = "failed"
+		return f"failed: {', '.join(blank)} resolved blank for lead {subject}, so the document would carry a gap"
+
+	row = frappe.get_doc({
+		"doctype": document_render.CAMPAIGN_DOCUMENT_DT,
+		"lead": subject,
+		"template": action.document_template,
+		"status": document_render.QUEUED,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+	context["campaign_document"] = row.name
+	context[refs.OUTPUT] = "queued"
+	frappe.enqueue(
+		"tatva_connect.workflow_engine.document_render.render_document",
+		queue="workflow",
+		enqueue_after_commit=True,
+		timeout=document_render.RENDER_TIMEOUT_SECONDS,
+		campaign_document=row.name,
+		subject_doctype=fields.LEAD_DT,
+		subject_name=subject,
+		# The token `_run_verb` minted for THIS node, so the ready signal wakes this run and no other.
+		correlation=context.get(refs.TOKEN),
+		values=values,
+		file_name=action.get("file_name"),
+	)
+	return f"queued: {row.name}"
+
+
+@frappe.whitelist()
+def document_template_slots(template):
+	"""The inputs this `Web Template` really declares — the rows the node's Document Values grid offers.
+
+	A `Web Template` already IS "markup plus a child table declaring its inputs", which is the reason it is
+	the document template rather than a doctype of ours: the author is offered the names the render will
+	really look up, so nothing is typed from memory. Read off the template's own `fields`, never a regex
+	over its markup — a regex would drift from the renderer the first time a template used a block.
+
+	One function, three callers, exactly as `email_template_slots` is: the authoring grid, the publish gate
+	(which refuses an unmapped input), and the handler that fills them. A second reader is how a gate comes
+	to check a shape nobody sends.
+	"""
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	if not template or not frappe.db.exists("Web Template", template):
+		return []
+	return [row.fieldname for row in (frappe.get_doc("Web Template", template).get("fields") or []) if row.fieldname]
 
 
 def wait_resume_at(wait_expression, context, base):
@@ -773,12 +989,34 @@ VERBS = {
 		"outcomes": ["task.completed", "task.cancelled"],
 		"params": [
 			{"name": "task_type", "label": "Task Type", "help": "Decides the task's own fields and who may complete it. Task types are set up under Taxonomy.", "type": "Link", "link": "CRM Task Type", "reqd": True},
+			# The same assignee controls as Assign to User — the two verbs answer the same question so they share
+			# one vocabulary. When neither is chosen (the default, in every existing workflow) the old auto rule
+			# fires: carry the trigger's assignee forward, falling back to the lead's owner.
+			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, or take whoever an earlier node worked out. Leave empty to carry the trigger's assignee forward.", "type": "Select",
+			 "options": ["User", "From Variable"]},
+			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
+			 "scope": "entitled_users",
+			 "depends_on_value": {"assignee_mode": ["User"]}},
+			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
+			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
+			# The subject trio MIRRORS Create Note's — text an author writes, built from context the one way it is built anywhere; a second shape for "write some text" is a second thing to learn.
+			{"name": "subject_mode", "label": "Subject Mode", "help": "Type the subject, or build it from values the run is carrying. Leave it unset and the task is named after its type.", "type": "Select",
+			 "options": [refs.LITERAL, refs.EXPRESSION]},
+			{"name": "subject_text", "label": "Subject", "help": "Exactly what the rep reads on their task list.", "type": "Data",
+			 "depends_on_value": {"subject_mode": [refs.LITERAL]}},
+			{"name": "subject_expression", "label": "Subject Expression", "help": "Must produce text, e.g. \"Call \" + ctx[\"crm_lead.first_name\"].", "type": "Small Text", "reads": "expression",
+			 "depends_on_value": {"subject_mode": [refs.EXPRESSION]}},
+			{"name": "priority", "label": "Priority", "help": "How urgent this is on the rep's list. Leave it unset and the task keeps the priority the record itself defaults to.", "type": "Select",
+			 "options": _priority_options()},
 			{"name": "due_mode", "label": "Due Mode", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
-			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION]},
+			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION, DUE_AFTER_DELAY]},
 			{"name": "due_from", "label": "Due date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
 			 "depends_on_value": {"due_mode": [refs.FROM_CONTEXT]}},
 			{"name": "due_expression", "label": "Due Expression", "help": "Date arithmetic, e.g. add_days(ctx[\"crm_lead.creation\"], 7).", "type": "Small Text", "reads": "expression",
 			 "depends_on_value": {"due_mode": [refs.EXPRESSION]}},
+			# The Wait's own delay control, so "in 14 days" is authored the same way wherever it is written.
+			{"name": "due_delay", "label": "Due after", "help": "How long after this node runs the task falls due.", "type": "Duration",
+			 "depends_on_value": {"due_mode": [DUE_AFTER_DELAY]}},
 		],
 	},
 	"Update Field": {
@@ -834,11 +1072,16 @@ VERBS = {
 			{"name": "request_body", "label": "Request Body", "help": "Write $ctx.<name> anywhere, at any depth, to drop in a value the run is carrying.", "type": "Code",
 			 "reads": "ctx_json", "depends_on_value": {"webhook_payload_source": ["Custom"]},
 			 "placeholder": '{"model": "gpt-4o", "messages": [{"role": "user", "content": "$ctx.crm_lead.first_name"}]}'},
+			# WHICH RECORD the Test call is built from. Declared because a preview's args are read off this
+			# node's own config, and because a response is SHAPED by the record behind it: a capture tree
+			# built from whatever lead was modified last teaches the author paths the next patient will not
+			# have. The picker is narrowed to the workflow's grain by the link target's own axes.
+			{"name": "preview_lead", "label": "Test with", "help": "Whose record the Test call below is built from. Only patients inside this workflow's grain are offered. Leave it blank and the most recently updated one is used.", "type": "Link", "link": "CRM Lead"},
 			# `preview` declares that this control can fetch a REAL answer: the method, and its sibling args.
 			{"name": "capture", "label": "Capture", "help": "Names for the parts of the response later nodes should be able to read. Press Test call to see a real response and pick from it.", "type": "Mapping",
 			 "preview": {
 				 "method": "tatva_connect.workflow_engine.context.test_call",
-				 "args": {"endpoint": "webhook_endpoint", "request_body": "request_body"},
+				 "args": {"endpoint": "webhook_endpoint", "request_body": "request_body", "lead": "preview_lead"},
 			 }},
 			{"name": "success_when", "label": "Succeeded when", "help": "Which responses count as success and take the Succeeded branch. Leave it blank and any 2xx does.", "type": "Predicate"},
 		],
@@ -883,6 +1126,17 @@ VERBS = {
 				 "method": "tatva_connect.automation.sends.whatsapp_template_preview",
 				 "args": {"template": "whatsapp_template", "values": "template_values"},
 			 }},
+			# The document header (D6), and it is TWO ORDINARY CONTROLS because a media header is an ordinary
+			# named parameter to the provider — the header placeholder is matched by NAME like every other
+			# blank, so nothing about the send path is special-cased for it. DECLARED ALWAYS, never gated on
+			# a mode: the authoring experience is singular and nothing here morphs. Blank means this message
+			# carries no document, which is what every send does today.
+			{"name": "document_variable", "label": "Document placeholder", "capability": "media", "type": "Data",
+			 "help": "The name the template's own header gives its document, e.g. pdfLink. Copy it exactly — the provider matches by name, not by position. Leave it blank when the message carries no document.",
+			 "placeholder": "pdfLink"},
+			# `capability: media` on BOTH, so a provider that does not declare media renders neither — one filter (`params_of` -> `offered_fields`), never a second answer to "does this control exist here".
+			{"name": "document_file", "label": "Document to attach", "capability": "media", "type": "Variable",
+			 "help": "Which file goes into that header — pick the document an earlier Generate Document node produced. A file that is still private, or gone, sends nothing and takes the Failed branch."},
 		],
 	},
 	"Send Email": {
@@ -957,10 +1211,41 @@ VERBS = {
 			 "placeholder": "The account's own number",
 			 "gate_text": "Pick a voice account first — the numbers belong to it.",
 			 "empty_text": "This account owns no numbers. The agent's own default is used."},
-			# 6. Last, and OFF: it qualifies the whole node rather than any field above it, as the Trigger's "Only once per patient" does; honoured only while `AI Voice::Channel::bypass-guardrails` is armed, resolved in `sends.send_voice` so the adapter is handed a boolean and reads no switch.
-			{"name": "bypass_call_guardrails", "type": "Check",
+			# 6. Last, and OFF: it qualifies the whole node rather than any field above it, as the Trigger's "Only once per patient" does. Offered only because a voice adapter DECLARES `bypass_guardrails` — it is a provider request field, not a guardrail of ours, and `params_of` drops it for a provider that has none.
+			{"name": "bypass_guardrails", "type": "Check", "capability": "bypass_guardrails",
 			 "label": "Skip the agent's calling hours",
-			 "help": "Places the call outside the agent's configured calling hours, for testing a journey end to end. Ignored unless an operator has also armed the AI Voice bypass switch."},
+			 "help": "Dials as soon as the journey reaches this node instead of waiting for the agent's configured calling hours. Useful for testing a journey end to end."},
+		],
+	},
+	"Generate Document": {
+		"lane": "effect", "handler": _action_generate_document, "target": TARGET_LEAD,
+		"label": "Generate Document",
+		"description": "Renders a pre-authored template to a PDF for this patient, and reports when the document is ready to send.",
+		# The SYNCHRONOUS answer, and only that: was the render accepted. Whether it succeeded arrives later.
+		"outputs": ["queued", "failed"],
+		# STATIC, following Create Task, and the single most important line here: it is what makes this node
+		# WAITABLE. A render is answered by our own job rather than by a channel's adapters, so there is no
+		# channel to derive the list from; the two names live beside the job that delivers them.
+		"outcomes": [document_render.DOCUMENT_READY, document_render.DOCUMENT_FAILED],
+		# POINTERS, never a URL: a journey parks for days and a URL captured into state was true once. The
+		# file's real address is derived at send time, from the File row, by the node that needs it (I5).
+		"emits": [
+			{"name": "campaign_document", "type": "Link", "about": "the record the document is filed on"},
+			{"name": "document_file", "type": "Link", "about": "the rendered file, once the render reports"},
+		],
+		# THE ORDER IS THE AUTHORING SEQUENCE, as AI Voice Call's is: the template gates its own inputs, so
+		# it is asked first; what the document is CALLED is last, because it qualifies the finished artefact.
+		"params": [
+			{"name": "document_template", "label": "Template", "help": "The document's layout and wording. Templates are authored under Web Template, and the one you pick decides which values are asked for below.", "type": "Link",
+			 "link": "Web Template", "reqd": True, "placeholder": "Select a template"},
+			# The template's OWN declared inputs, row by row — the same control and the same reasoning as
+			# `template_values`: an undeclared input is not a blank on a screen, it is a gap in a document a
+			# patient reads. `slots_from` names the sibling holding the template whose inputs these are.
+			{"name": "document_values", "label": "Document Values", "help": "One row per input the template declares. Every one needs a row — a missing one leaves a hole in the document.", "type": "Value Map",
+			 "slots_from": "document_template",
+			 "slots_method": "tatva_connect.automation.actions.document_template_slots"},
+			{"name": "file_name", "label": "File name", "help": "What the document is called when the patient receives it. Leave it blank and it is named after its own record.", "type": "Data",
+			 "placeholder": "The record's own name"},
 		],
 	},
 }
@@ -1031,13 +1316,36 @@ def _blank(v):
 	return v is None or (isinstance(v, str) and not v.strip())
 
 
-def _due_at(action, context):
-	"""Resolve a Create Task due date, coercing defensively: a non-datetime value degrades to None
-	(create_followup_task then applies its default lead time) rather than dropping the task. Two
-	modes — From Context (read a context key) and Expression (safe_eval against ctx)."""
+def _subject(action, context):
+	"""The line a rep reads on their list, or None for the task type's own name.
+
+	The resolution is Create Note's, because the question is Create Note's: text the author typed, or text
+	built from what the run is carrying. Blank is a real answer and it is today's behaviour — the helper
+	then labels the task after its type, which is also what keeps the composite task_type key off a screen.
+	"""
 	from tatva_connect.automation import expr
 
-	if action.due_mode == refs.EXPRESSION:
+	if action.get("subject_mode") == refs.EXPRESSION:
+		text = expr.resolve_expression(action.get("subject_expression"), context)
+		# A non-string is author error and says so; nothing at all degrades to the type's name, as a blank subject already does.
+		if text is not None and not isinstance(text, str):
+			raise ValueError("Create Task subject expression did not evaluate to a string")
+	else:
+		text = action.get("subject_text")
+	return (text or "").strip() or None
+
+
+def _due_at(action, context):
+	"""Resolve a Create Task due date, coercing defensively: a non-datetime value degrades to None
+	(create_followup_task then applies its default lead time) rather than dropping the task. Three
+	modes — From Context (read a context key), Expression (safe_eval against ctx), and After a delay
+	(a length of time from the moment this node runs)."""
+	from tatva_connect.automation import expr
+
+	if action.due_mode == DUE_AFTER_DELAY:
+		# ONE delay arithmetic — the Wait's own resolver, based on now: the same delay written on either node must land on the same instant, and a delay that is not one is refused there in the author's words.
+		raw = wait_resume_at(action.get("due_delay"), context, frappe.utils.now_datetime()) if action.get("due_delay") else None
+	elif action.due_mode == refs.EXPRESSION:
 		raw = expr.resolve_expression(action.due_expression, context)
 	else:  # From Context is the `else`, so a renamed Expression falls silently to the default due date.
 		if not action.due_from:
@@ -1116,13 +1424,16 @@ def _resolve_map(raw, context):
 
 
 def _child_target(action):
-	"""(child_table fieldname, child doctype). The child table must be a Table field on CRM Lead."""
+	"""(child_table fieldname, child doctype, is_singleton). The child table must be a Table field on CRM Lead.
+	A singleton has is_multi_row=0 and no row_key_field — Upsert Child Row auto-resolves its one row."""
 	if not action.child_table:
 		raise ValueError("child-row action missing Child Table")
 	field = frappe.get_meta("CRM Lead").get_field(action.child_table)
 	if not field or field.fieldtype != "Table":
 		raise ValueError(f"{action.child_table!r} is not a child table on CRM Lead")
-	return action.child_table, field.options
+	sec = frappe.db.get_value("CRM Lead Section", {"child_table_field": action.child_table}, ["is_multi_row", "row_key_field"])
+	singleton = sec and sec[0] == 0 and not sec[1]
+	return action.child_table, field.options, singleton
 
 
 def _find_child_row(rows, match, child_dt):

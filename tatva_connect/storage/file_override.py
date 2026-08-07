@@ -22,12 +22,15 @@ import tempfile
 
 import frappe
 from frappe.core.doctype.file.file import File
+from frappe.utils import cstr
 
 from tatva_connect.storage import file_screening
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
-from tatva_connect.storage.file_events import apply_privacy_policy
+from tatva_connect.storage.file_events import apply_privacy_policy, assert_link_target_safe
 
 _HYDRATED = "_tatva_hydrated_files"  # per-request temp paths, so one download serves every reader
+_DERIVED = ("file_url", "file_size", "content_hash")  # core computes these from the bytes; a request never sends them (permlevel 1)
+_OWNER = ("attached_to_doctype", "attached_to_name")  # M1: the upload names the parent, and only the upload
 
 
 def discard_hydrated(**_kwargs):
@@ -63,7 +66,9 @@ class FileOverride(File):
 		self._inherit_file_name()  # before core's set_file_name() (file.py:112) carves a name out of the URL
 		apply_privacy_policy(self)  # decide privacy BEFORE core reads it to pick the directory
 		self._screen_content()  # refuse bad bytes BEFORE core writes them
+		sent = {f: self.get(f) for f in _DERIVED}  # what the CALLER sent, before core derives its own answers
 		super().before_insert()  # core writes the bytes, now to the directory the checkpoint chose
+		self._derived = {f: self.get(f) for f in _DERIVED if self.get(f) != sent[f]}  # only what core itself changed — see _restore_derived
 
 	def _screen_content(self):
 		"""The ONE screening call site, for every channel — the channel itself is resolved in the screener.
@@ -90,8 +95,69 @@ class FileOverride(File):
 		)
 
 	def validate(self):
+		"""THE second seam: every rule that must hold on EVERY save, not only on the first one.
+
+		Privacy is DERIVED here, never stored and trusted. `apply_privacy_policy` was called from
+		before_insert alone, so a plain `.save()` setting `is_private = 0` persisted and the bytes went
+		public — the flag decided at birth was never re-checked. Re-deriving before `super().validate()`
+		also puts the answer in front of core's own byte-mover (`handle_is_private_changed`, file.py:176),
+		which relocates a LOCAL file between public/ and private/, so the flag and the directory still
+		agree; it early-returns on a remote URL, so an offloaded file only re-flags.
+
+		The insert path is untouched, and the before_insert docstring's reasoning is untouched with it:
+		before_insert still decides first, before core writes a byte, and this pass reads the same owner
+		and returns the same answer. This is the controller's own method, not a doc_event — a doc_event
+		still runs after core, which is exactly what it could never be.
+		"""
+		self._restore_derived()
+		self._guard_owner_immutable()
+		if self.has_value_changed("file_url"):
+			assert_link_target_safe(self)
 		self._guard_private_url_reference()
+		if not self.is_folder:
+			apply_privacy_policy(self)
+		self._sanitize_file_name()
 		super().validate()
+
+	def _restore_derived(self):
+		"""Put back what core's own before_insert derived from the bytes, after permlevel 1 has reset it.
+
+		`file_url`, `file_size` and `content_hash` are computed, never user input, so they sit at permlevel 1
+		(`access/lockdown._PERMLEVEL_1_FIELDS`) — and frappe enforces a permlevel by RESETTING the field to
+		the doctype default, not by refusing the save. On an insert that reset runs AFTER before_insert
+		(`Document.insert`: before_insert -> validate_higher_perm_levels -> validate), so it would discard
+		core's freshly written URL, size and hash along with the caller's forgery, and the upload would land
+		with no URL at all. Only the values core CHANGED are banked, so a caller-sent value is still reset.
+		On an update nothing is banked and the reset restores the stored row, which IS the lock.
+		"""
+		for fieldname, value in (getattr(self, "_derived", None) or {}).items():
+			self.set(fieldname, value)
+
+	def _guard_owner_immutable(self):
+		"""M1: the upload names the file's parent, and no later save renames it.
+
+		`attached_to_doctype`/`attached_to_name` are real user input at upload, so permlevel is the wrong
+		tool — the reset would strip them and every upload would land unowned. They are constant instead.
+		This is not decoration on top of the privacy fix, it is the other half of it: privacy is derived
+		from the owner on every save, so a request that could re-home a file to an allowlisted doctype
+		would make a patient document public BY THE RULE.
+
+		The app's own re-home (`file_manager.rehome`), the attach-field bond (`file_events.link_attach_fields`)
+		and core's own linker all write with `db_set`/`db.set_value`, which never reach validate — so every
+		legitimate re-parenting keeps working untouched.
+		"""
+		before = self.get_doc_before_save()
+		if not before:
+			return
+		changed = [f for f in _OWNER if cstr(self.get(f)) != cstr(before.get(f))]
+		if not changed:
+			return
+		frappe.throw(
+			frappe._("A file's owner is set when the file is uploaded and cannot be changed afterwards ({0}).").format(
+				", ".join(changed)
+			),
+			frappe.CannotChangeConstantError,
+		)
 
 	def check_content(self):
 		"""Core reads a PDF's structure here to refuse embedded JavaScript (file.py:471, pdf_contains_js).
@@ -127,6 +193,21 @@ class FileOverride(File):
 		if self.file_name or not blob_key_from_url(self.file_url):
 			return
 		self.file_name = frappe.db.get_value("File", {"file_url": self.file_url}, "file_name")
+
+	def _sanitize_file_name(self):
+		"""Strip angle brackets from the filename — no file system needs them, and they are the
+		prerequisite for every HTML-injection vector. Frappe's own _sanitize_content strips event
+		handlers and script tags from `file_name` but leaves benign HTML elements (e.g. <img>)
+		intact — harmless via `{{ }}` text interpolation, but a future `v-html` consumer would
+		render them as DOM elements. Stripping the brackets at write time removes the prerequisite."""
+		if not self.has_value_changed("file_name"):
+			return
+		cleaned = self.file_name
+		for char in ("<", ">"):
+			if char in (cleaned or ""):
+				cleaned = cleaned.replace(char, "")
+		if cleaned != self.file_name:
+			self.file_name = cleaned
 
 	def _guard_private_url_reference(self):
 		"""VAPT: a new row may reference an existing PRIVATE blob only if the caller can already read one."""

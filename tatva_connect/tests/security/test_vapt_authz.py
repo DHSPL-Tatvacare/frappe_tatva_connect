@@ -30,6 +30,9 @@ OWNER = "vapt-owner@example.com"        # Sales User — owns the data
 PEER = "vapt-peer@example.com"          # Sales User — NOT on the data
 MANAGER = "vapt-manager@example.com"    # Sales Manager
 AGENT = "vapt-agent@example.com"        # Helpdesk Agent — the ONLY role that may touch HD doctypes
+STUDENT = "vapt-student@example.com"    # LMS Student assigned to NOTHING — the Aug'26 report's own actor
+VICTIM = "vapt-victim@example.com"      # the colleague that report's IDOR names in `member`
+LMS_TAG = "vapt-aug26"
 
 # brain switches that scope the doc-specific gates (Lead/Call Log visibility) for the peer test
 BRAIN = [
@@ -56,7 +59,8 @@ class TestVAPTAuthz(FrappeTestCase):
 		# capability role, so an "authorized owner" must hold it to be genuinely authorized (not a
 		# VAPT change — corrects a latent gap the WhatsApp-role gate exposed).
 		for u, roles in [(ATTACKER, [JUNK_ROLE]), (NOROLE, []), (OWNER, ["Sales User", "WhatsApp User"]),
-						 (PEER, ["Sales User"]), (MANAGER, ["Sales Manager"]), (AGENT, ["Agent"])]:
+						 (PEER, ["Sales User"]), (MANAGER, ["Sales Manager"]), (AGENT, ["Agent"]),
+						 (STUDENT, ["LMS Student"]), (VICTIM, ["LMS Student"])]:
 			self._user(u, roles)
 		self.contact = self._contact()
 		self.lead = self._lead(OWNER)
@@ -186,12 +190,16 @@ class TestVAPTAuthz(FrappeTestCase):
 			self.fail(f"L1 REGRESSION: owner cannot edit their OWN comment: {e}")
 
 	# ---------- LMS narrowing (internal, Mode 2) ----------
-	def test_lms_non_privileged_forced_to_published(self):
-		# The wrapper NARROWS (never denies): a non-privileged caller's filters are pinned to published=1,
-		# so a crafted {"published":0} can't enumerate drafts. A privileged LMS role is unaffected.
+	def test_lms_non_privileged_clamped_to_what_they_are_in(self):
+		# The wrapper still NARROWS (never denies), but to MEMBERSHIP — audit Aug'26: a crafted filter
+		# enumerates nothing at all. `published` is not re-injected HERE because the rule already applies it
+		# upstream in lms_visibility (assigned AND live); this asserts the clamp, not the second condition.
 		from tatva_connect.access import native_guards as ng
-		self.assertEqual(self._as(NOROLE, lambda: ng._force_published({"published": 0})), {"published": 1},
-						 "LMS BREACH: no-role caller could request unpublished (draft) catalog rows")
+		clamped = self._as(NOROLE, lambda: ng._scoped_to({"published": 0}, set()))
+		self.assertEqual(clamped["name"], ["in", [""]],
+						 "LMS BREACH: a caller who is in nothing was not clamped to nothing")
+		self.assertEqual(clamped["published"], 0,
+						 "published must not be re-injected as a permission — membership is the rule")
 
 	# ---------- File: profile-picture private-blob BAC ----------
 	def test_file_no_role_cannot_reference_private_blob(self):
@@ -291,3 +299,90 @@ class TestVAPTAuthz(FrappeTestCase):
 			return fn()
 		finally:
 			frappe.set_user("Administrator")
+
+	# --- L5: audit Aug'26 — the report's own nine requests, replayed ------------------------------
+
+	def _lms_fixture(self):
+		"""The smallest world the nine vectors need. Purged first: lms commits inside its enrolment path.
+
+		EVERYTHING IS PUBLISHED, deliberately. An unpublished fixture is refused for two reasons at once —
+		not assigned AND not live — so it cannot tell which condition did the work, and it never proves the
+		harder half: published content still reaches nobody it was not assigned to. The report's own targets
+		were live courses, so this is also the more faithful replay.
+		"""
+		like = ["like", f"{LMS_TAG}-%"]
+		for doctype, filters in (("LMS Enrollment", {"member": ["in", [STUDENT, VICTIM]]}),
+								 ("LMS Quiz", {"name": like}), ("LMS Program", {"name": like}),
+								 ("LMS Batch", {"name": like}), ("LMS Course", {"name": like})):
+			for name in frappe.get_all(doctype, filters=filters, pluck="name"):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True, ignore_missing=True)
+		course = frappe.get_doc({
+			"doctype": "LMS Course", "title": f"{LMS_TAG}-course", "description": "d",
+			"short_introduction": "d", "published": 1, "instructors": [{"instructor": MANAGER}],
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		question = frappe.get_doc({
+			"doctype": "LMS Question", "question": "Pick A", "type": "Choices",
+			"option_1": "A", "is_correct_1": 1, "option_2": "B", "is_correct_2": 0,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		quiz = frappe.get_doc({
+			"doctype": "LMS Quiz", "title": f"{LMS_TAG}-quiz", "course": course.name, "show_answers": 1,
+			"passing_percentage": 50, "questions": [{"question": question.name, "marks": 1}],
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		batch = frappe.get_doc({
+			"doctype": "LMS Batch", "title": f"{LMS_TAG}-batch", "description": "d", "batch_details": "d",
+			"start_date": "2026-01-01", "end_date": "2026-12-31", "start_time": "09:00:00",
+			"end_time": "17:00:00", "timezone": "Asia/Kolkata", "published": 1,
+			"instructors": [{"instructor": MANAGER}], "courses": [{"course": course.name}],
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		program = frappe.get_doc({
+			"doctype": "LMS Program", "title": f"{LMS_TAG}-program", "published": 1,
+			"program_courses": [{"course": course.name}],
+			"program_members": [{"member": VICTIM, "full_name": "A Colleague"}],
+		}).insert(ignore_permissions=True)  # authz-ok: tier-a — test fixture seeding
+		return course, quiz, batch, program
+
+	def test_L5_aug26_lms_report_vectors_are_all_refused(self):
+		"""Each entry is the request as the Aug'26 report filed it, against our own fixture ids."""
+		from frappe.client import get as client_get
+		from frappe.client import get_count as client_get_count
+		from frappe.client import get_list as client_get_list
+		from frappe.client import insert as client_insert
+
+		course, quiz, batch, program = self._lms_fixture()
+		empty = [
+			("F1 Batch Course of a batch the student is not in", lambda: client_get_list(
+				"Batch Course", fields=["name", "course", "title", "evaluator"],
+				filters={"parent": batch.name, "parenttype": "LMS Batch"}, parent="LMS Batch")),
+			("F4 LMS Program Member of a program the student is not in", lambda: client_get_list(
+				"LMS Program Member", fields=["member", "full_name", "progress", "name"],
+				filters={"parent": program.name, "parenttype": "LMS Program",
+						 "parentfield": "program_members"}, parent="LMS Program")),
+			("F7 LMS Program Course of a program the student is not in", lambda: client_get_list(
+				"LMS Program Course", fields=["course", "course_title", "name", "idx"],
+				filters={"parent": program.name, "parenttype": "LMS Program",
+						 "parentfield": "program_courses"}, parent="LMS Program")),
+			("F9 quiz count", lambda: client_get_count("LMS Quiz", filters={"name": quiz.name})),
+		]
+		refused = [
+			("F2 get_reviews", lambda: dispatch("lms.lms.utils.get_reviews", course=course.name)),
+			("F3 get_course_outline", lambda: dispatch(
+				"lms.lms.utils.get_course_outline", course=course.name, progress=True)),
+			("F5 client.get of an arbitrary quiz", lambda: client_get("LMS Quiz", quiz.name)),
+			("F6 check_answer without taking the quiz", lambda: dispatch(
+				"lms.lms.doctype.lms_quiz.lms_quiz.check_answer", quiz=quiz.name,
+				question=quiz.questions[0].question, question_type="Choices", answers='["1"]')),
+			("F8 enrol another user", lambda: client_insert({
+				"doctype": "LMS Enrollment", "course": course.name, "member": VICTIM,
+				"payment": None, "purchased_certificate": False})),
+		]
+		for label, call in empty:
+			with self.subTest(vector=label):
+				self.assertFalse(self._as(STUDENT, call), f"AUG26 BREACH: {label} returned rows")
+		for label, call in refused:
+			with self.subTest(vector=label):
+				with self.assertRaises(frappe.PermissionError, msg=f"AUG26 BREACH: {label} was answered"):
+					self._as(STUDENT, call)
+		self.assertFalse(
+			frappe.db.exists("LMS Enrollment", {"member": VICTIM, "course": course.name}),
+			"AUG26 BREACH: the named victim gained an enrolment",
+		)

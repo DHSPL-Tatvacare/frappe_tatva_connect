@@ -24,6 +24,7 @@ from tatva_connect import automation
 from tatva_connect.propagate import fail_safe
 from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
+from tatva_connect.utils import assert_safe_public_url
 
 
 def _public_attachment_doctypes() -> set:
@@ -48,12 +49,28 @@ def _is_external_link(file_url) -> bool:
 		and not blob_store.blob_key_from_url(file_url)
 
 
+def assert_link_target_safe(doc):
+	"""An external link is stored, never fetched by us — but the address it names is still ours to refuse.
+
+	A File row may carry any URL, so `http://169.254.169.254/...` or an internal host is storable today.
+	There is no server-side sink for it yet (`File.make_thumbnail` is the only one and nothing calls it),
+	which is why this is a value that should never be persisted rather than a live SSRF. The app already
+	owns the ONE outbound-URL guard, so this is that guard pointed at this field — never a second one.
+	Our own URLs are not external (`_is_external_link`), so a local file and an Azure proxy resolve nothing.
+	"""
+	if _is_external_link(doc.file_url):
+		assert_safe_public_url(doc.file_url, field="file_url")
+
+
 def apply_privacy_policy(doc):
-	"""THE privacy checkpoint, called by FileOverride.before_insert BEFORE core writes a byte.
+	"""THE privacy checkpoint, called by FileOverride.before_insert BEFORE core writes a byte, and again by
+	FileOverride.validate on EVERY save — the flag is derived from the owner each time, never stored and
+	trusted, so a later `.save()` cannot hand a patient document to the internet.
 
 	It is not a doc_event and must not become one: a doc_event runs AFTER the controller method, and core
 	picks public/ vs private/ from is_private inside its own before_insert — so as a hook this decided the
-	privacy of a file already written to the wrong directory. Private unless the doctype is on the
+	privacy of a file already written to the wrong directory. Both call sites are controller methods for
+	that reason, and both run before their `super()` call. Private unless the doctype is on the
 	operator's allowlist.
 
 	The caller never decides — a rep cannot make a patient document public by ticking a box, and no other
@@ -184,6 +201,8 @@ def link_attach_fields(doc, method=None):
 			"attached_to_name": None,
 			"attached_to_doctype": None,
 			"attached_to_field": None,
+			# Only the uploader may claim their own free row: bonding decides the owner, and the owner decides privacy, so claiming someone else's unattached file republishes it under a doctype the claimer chose.
+			"owner": frappe.session.user,
 		})
 		if unattached:  # bond ONLY a free row: an email/comment alias of the same blob is already spoken for
 			# db.set_value, never save(): every row reaching here holds an Azure PROXY url, which is one of core's own URL_PREFIXES (file.py:44), so core's byte-mover handle_is_private_changed early-returns on is_remote_file (file.py:313) and moves nothing — a save would only buy a validate() pass that re-raises the enforce_public_file_restrictions 403, plus a modified bump and a Version row.

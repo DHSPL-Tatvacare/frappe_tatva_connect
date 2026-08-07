@@ -228,6 +228,16 @@ class TestEmitsConformance(FrappeTestCase):
 			"email_recipient": "sv.email", "email_template": "probe",
 		})
 
+	def test_generate_document_writes_both_pointers_it_declares(self):
+		"""Driven with `Document::Generation::render` dormant, the shipped default — nothing renders and
+		no file is created, yet BOTH declared keys must still be written.
+
+		That is the whole point of the check for this verb: the node answers synchronously with `queued`
+		and the real File name only arrives later, on the outcome a Wait accepts. A key written only on
+		the path that reaches the renderer could never be honestly offered downstream, so the handler
+		writes both on every leg and this proves the dormant leg is one of them."""
+		self._assert_conformant("Generate Document", {"document_template": "probe"})
+
 	# --- the core node types ----------------------------------------------------------------------------
 
 	def test_set_variables_writes_the_keys_its_expression_names(self):
@@ -268,6 +278,7 @@ _DRIVERS = {
 	"Create Note": "test_create_note_writes_nothing_and_declares_nothing",
 	"Send WhatsApp": "test_send_whatsapp_writes_nothing_and_declares_nothing",
 	"Send Email": "test_send_email_writes_nothing_and_declares_nothing",
+	"Generate Document": "test_generate_document_writes_both_pointers_it_declares",
 }
 
 _NODE_DRIVERS = {

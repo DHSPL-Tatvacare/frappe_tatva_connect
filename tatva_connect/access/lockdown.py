@@ -53,6 +53,13 @@ _CRM_CORE = {
 	"CRM Call Media": {
 		"System Manager": (1, 1, 1, 1),
 	},
+	# Disabled — the doctype's contract is code execution in the viewer's session, and every
+	# VAPT pass found a new stored-XSS vector. Nobody may create, write, delete, or read.
+	# System Manager read-only stays so an existing workspace embed still renders for an admin
+	# who needs to migrate it off; every other role is denied entirely.
+	"Custom HTML Block": {
+		"System Manager": (1, 0, 0, 0),
+	},
 }
 
 # --- Helpdesk (agent-only internal; NO customer portal — product-owner decision 2026-07-09) --------
@@ -77,6 +84,12 @@ _HELPDESK = {
 		"System Manager": (1, 1, 1, 1),
 		"Agent": (1, 1, 1, 1),
 		"Agent Manager": (1, 1, 1, 1),
+	},
+	# `about` is a Code/HTML field rendered on the ticket form; stock lets a frontline Agent author it for every colleague. Authoring moves to Agent Manager, Agent keeps read.
+	"HD Ticket Template": {
+		"System Manager": (1, 1, 1, 1),
+		"Agent Manager": (1, 1, 1, 1),
+		"Agent": (1, 0, 0, 0),
 	},
 	"HD Article Feedback": {  # stock: All (1,1,1,1,if_owner) — a portal rating; internal-only -> agents
 		"System Manager": (1, 1, 1, 1),
@@ -172,6 +185,14 @@ FIELD_LEVELS = {
 			"Course Creator": (1, 1),
 		}
 	},
+	# A program's member table names every colleague and their progress; the parent's grant governs it.
+	"LMS Program": {
+		1: {
+			"System Manager": (1, 1),
+			"Moderator": (1, 1),
+			"Course Creator": (1, 1),
+		}
+	},
 	# Connection strings and service-account keys are plaintext at permlevel 0; the Password fields are already safe.
 	"Insights Data Source v3": {
 		1: {
@@ -185,13 +206,31 @@ FIELD_LEVELS = {
 			"System Manager": (1, 1),
 		}
 	},
+	# custom_script (Javascript) and custom_component (HTML) render to every learner in the batch.
+	"LMS Batch": {
+		1: {
+			"System Manager": (1, 1),
+		}
+	},
+	# File's computed columns (below). READ is granted to All deliberately — a blackout would blank file_url on every attachment list, every File form and every Attach field, and it is the WRITE that is the lock.
+	"File": {
+		1: {
+			"System Manager": (1, 1),
+			"All": (1, 0),
+		}
+	},
 }
 
 # Upstream fields reclassified to permlevel 1 via Property Setter (the non-fork way to change another app's field), paired with the FIELD_LEVELS grant above.
 _PERMLEVEL_1_FIELDS = {
 	"LMS Test Case": ("input", "expected_output"),
+	"LMS Program Member": ("full_name", "progress"),
 	"Insights Data Source v3": ("connection_string", "bigquery_service_account_key", "http_headers", "api_custom_headers"),
-	"Wiki Settings": ("head_html",),
+	# Both are written into every wiki page unescaped; `javascript` is the same injection as `head_html`.
+	"Wiki Settings": ("head_html", "javascript"),
+	"LMS Batch": ("custom_script", "custom_component"),
+	# Computed from the bytes and marked read_only, which frappe does NOT enforce server-side: a save rewrote all three (a forged hash, a forged size, and a file_url pointing anywhere).
+	"File": ("content_hash", "file_size", "file_url"),
 }
 
 

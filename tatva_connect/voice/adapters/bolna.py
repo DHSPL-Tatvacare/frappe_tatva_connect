@@ -40,7 +40,8 @@ DECLARATION = contract.declare(
 	# declared (a call can fail) and excluded from the waitable set as a synchronous output by `outcomes_of`.
 	outcomes={"answered", "no_answer", "completed", "failed"},
 	# Voice has none of the messaging send-side capabilities (templates/media/buttons/…); it places calls. `recording` is the one it does have, and it buys exactly `recording_ref` below — the owning, naming, retrying and privacy all live in `storage.call_media`.
-	capabilities={"recording"},
+	# `bypass_guardrails` says Bolna accepts a per-call "dial now, don't wait for the agent's calling window" instruction; the node offers the author a tick BECAUSE this is declared, and a provider that omits it never renders the field.
+	capabilities={"recording", "bypass_guardrails"},
 	number_format=contract.E164_PLUS,
 )
 
@@ -164,7 +165,7 @@ USER_DATA_CORRELATION_KEY = "recipient_id"
 
 
 def place_call(connection, to_number, agent_id, from_override, correlation, variables=None,
-               bypass_call_guardrails=False):
+               bypass_guardrails=False):
 	"""Place ONE outbound call now: POST /call → execution_id. The node-facing caller (our engine is
 	one-journey-per-lead); the cohort/batch path is `place_call_batch`, W7.2.
 
@@ -172,10 +173,12 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	adds NO formatter of its own (the pass-1 one-brain rule). `correlation` is the engine token, placed in
 	`user_data` so the terminal webhook wakes THIS parked journey and no other.
 
-	`bypass_call_guardrails` tells Bolna to dial immediately instead of waiting for the agent's configured
-	calling hours. It arrives ALREADY RESOLVED — `sends.send_voice` ANDs the author's tick with the dormant
-	`AI Voice::Channel::bypass-guardrails` switch, so no switch is read here. Default False: an adapter
-	called with nothing said about it must never skip a patient's calling window.
+	`bypass_guardrails` is the AUTHOR'S own tick, carried straight through: dial immediately instead of
+	waiting for the agent's configured calling hours. It is the channel's declared word (`contract`), and
+	THIS is where it becomes Bolna's — the body key below is spelt `bypass_call_guardrails`, which is a
+	fact about the vendor and stops here. No switch is read: placing a call at all is already gated by
+	`AI Voice::Channel::calls`, and a second switch that silently voided the tick was removed for saying
+	nothing an operator could see. Default False: an adapter told nothing must never skip a calling window.
 
 	NOTE THE SHAPE, and it differs from the batch path by Bolna's own contract: this is a JSON body, so the
 	flag is a real bool; `place_call_batch` posts multipart form fields, where it is the STRING "true".
@@ -193,7 +196,7 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	if from_phone:
 		body["from_phone_number"] = from_phone
 	# Sent only when asked for: a `false` and an absent key read the same to Bolna, the absent one to us too.
-	if bypass_call_guardrails:
+	if bypass_guardrails:
 		body["bypass_call_guardrails"] = True
 	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 	try:
@@ -683,7 +686,8 @@ def place_call_batch(connection, requests_, recipient_ids):
 	data = {"agent_id": agent_id}
 	if from_phone:
 		data["from_phone_numbers"] = from_phone
-	if first.get("bypass_call_guardrails"):
+	# Our word in, Bolna's word out — the same translation `place_call` does, and the same reason.
+	if first.get("bypass_guardrails"):
 		data["bypass_call_guardrails"] = "true"
 
 	headers = {"Authorization": f"Bearer {api_key}"}
@@ -698,7 +702,7 @@ def place_call_batch(connection, requests_, recipient_ids):
 	if not batch_id:
 		raise BolnaServiceError("Bolna /batches response missing batch_id — cannot correlate inbound webhooks")
 	when = datetime.now(timezone.utc) + timedelta(minutes=2)
-	_schedule_batch(base_url, api_key, batch_id, when, bool(first.get("bypass_call_guardrails")))
+	_schedule_batch(base_url, api_key, batch_id, when, bool(first.get("bypass_guardrails")))
 	return [
 		{"correlation_id": batch_id, "contact": req.get("contact"), "mode": "batch", "raw": raw}
 		for req in requests_

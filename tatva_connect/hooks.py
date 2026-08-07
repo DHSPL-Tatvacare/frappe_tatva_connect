@@ -48,12 +48,16 @@ override_doctype_class = {
 	# Mask secrets on every Error Log row, whichever app wrote it: frappe's own make_request logs the
 	# failing URL before our handler runs. Infrastructure, never a toggleable automation, hence bound here.
 	"Error Log": "tatva_connect.observability.error_log.MaskedErrorLog",
+	# Audit Aug'26 F8 (IDOR): `member` names the SUBJECT and arrives from the request, while if_owner only guards the row the forger already owns. A controller, not a doc_event, because lms's own before_insert validates duplicates and eligibility against `member` and every hook lands after it (document.py:1580).
+	"LMS Enrollment": "tatva_connect.access.lms_enrollment.TatvaLMSEnrollment",
 	# The five listing declarations are ours, so they live here: get_controller is the ONE function the list payload, the saved-view seeder and the rep pickers all already call.
 	"CRM Lead": "tatva_connect.list_engine.columns.TatvaCRMLead",
 	"CRM Task": "tatva_connect.list_engine.columns.TatvaCRMTask",
 	"CRM Call Log": "tatva_connect.list_engine.columns.TatvaCRMCallLog",
 	"FCRM Note": "tatva_connect.list_engine.columns.TatvaFCRMNote",
 	"CRM Deal": "tatva_connect.list_engine.columns.TatvaCRMDeal",
+	# A profile link reaches the DOM as an href, so its scheme is judged at write time; infrastructure, never a toggleable automation, hence bound here.
+	"User": "tatva_connect.access.user_links.TatvaUser",
 }
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from the account's provider (read-only mirror), not Meta — for the desk button and any caller.
@@ -113,14 +117,20 @@ override_whitelisted_methods = {
 	"insights.api.data_sources.get_columns_from_uploaded_file": "tatva_connect.access.insights_uploads.get_columns_from_uploaded_file",
 	"insights.api.data_sources.import_csv": "tatva_connect.access.insights_uploads.import_csv",
 	# VAPT hardening — LMS (internal training, Mode 2): allow_guest + engine-bypass catalog reads; the
-	# wrapper NARROWS a non-privileged caller to published rows (courses/batches) and strips the
-	# creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
+	# wrapper NARROWS a non-privileged caller to what they are IN (access/lms_visibility.py) and strips
+	# the creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
 	"lms.lms.utils.get_courses": "tatva_connect.access.native_guards.get_courses",
 	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
+	"lms.lms.utils.get_programs": "tatva_connect.access.native_guards.get_programs",
 	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
-	# Upstream LMS race (2.55.0, unfixed on develop): CourseOverview calls this with no course, so a
-	# student sees "Course Content coming soon!" on every course. Shim recovers it from the Referer.
-	"lms.lms.utils.get_course_outline": "tatva_connect.learning.outline.get_course_outline",
+	# Audit Aug'26 F2: get_reviews has NO gate of any kind and returns each reviewer's name and avatar.
+	"lms.lms.utils.get_reviews": "tatva_connect.access.native_guards.get_reviews",
+	# Audit Aug'26 F3: the outline of any course was readable by any login. The guard also carries the
+	# upstream-race shim (learning/outline.py) that recovers a missing course from the Referer.
+	"lms.lms.utils.get_course_outline": "tatva_connect.access.native_guards.get_course_outline",
+	# Audit Aug'26 F6: check_answer is the one quiz endpoint that never asks can_access_quiz, so the key
+	# was walkable option-by-option; the guard adds course membership AND "you are taking it right now".
+	"lms.lms.doctype.lms_quiz.lms_quiz.check_answer": "tatva_connect.access.native_guards.check_answer",
 	# The lesson editor drops any block type it cannot represent, so an embed must never be STORED — the reader is served one instead, the way get_lesson already rewrites private media URLs.
 	"lms.lms.utils.get_lesson": "tatva_connect.learning.embeds.get_lesson",
 	# VAPT Jul — quiz assessment integrity: submit_quiz gets an atomic single-attempt guard (N2 race) +
@@ -151,6 +161,13 @@ permission_query_conditions = {
 	"CRM Workflow Step Log": "tatva_connect.workflow_engine.permissions.get_step_log_permission_query_conditions",
 	# Smart Views: restrictive backstop — the SAME predicate the SPA endpoints grant through (smartview/permissions.py), so Desk can never see more than the app door.
 	"CRM Smart View": "tatva_connect.smartview.permissions.get_smart_view_permission_query_conditions",
+	# LMS (audit Aug'26 F1/F4/F5/F7/F9): internal training is membership-scoped, never `published`. These
+	# three ALSO close the child-table reads — frappe resolves a Batch Course / LMS Program Member /
+	# LMS Program Course list against the PARENT and applies the parent's conditions (database/query.py:275,
+	# 1547-1558) — and the quiz COUNT, which wraps the same filtered subquery (desk/reportview.py:70).
+	"LMS Batch": "tatva_connect.access.lms_permissions.get_batch_permission_query_conditions",
+	"LMS Program": "tatva_connect.access.lms_permissions.get_program_permission_query_conditions",
+	"LMS Quiz": "tatva_connect.access.lms_permissions.get_quiz_permission_query_conditions",
 }
 has_permission = {
 	"CRM Task": "tatva_connect.tasks.permissions.has_task_permission",
@@ -163,6 +180,10 @@ has_permission = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.has_whatsapp_message_permission",
 	# Smart Views: deny-only backstop; never denies an operator or a DocShare recipient (controllers run BEFORE the share fallback).
 	"CRM Smart View": "tatva_connect.smartview.permissions.has_smart_view_permission",
+	# LMS: the single-doc twin of the conditions above — frappe.client.get reads through has_permission, lists do not.
+	"LMS Batch": "tatva_connect.access.lms_permissions.has_batch_permission",
+	"LMS Program": "tatva_connect.access.lms_permissions.has_program_permission",
+	"LMS Quiz": "tatva_connect.access.lms_permissions.has_quiz_permission",
 }
 
 # Global spotlight search — a native Frappe FTS5 search class. List-valued hook: this ADDS our class
@@ -199,6 +220,8 @@ doc_events = {
 		# The lead is going, so every journey about it ends with it. Runs BEFORE the wildcard on_trash (doctype hooks compose first, document.py:1598), so a Deleted-entry workflow starting on this delete survives it.
 		"on_trash": [
 			"tatva_connect.workflow_engine.triggers.on_lead_deleted",
+			# A generated document is about this person, so it dies with them — and only the document path reclaims its blob (M1).
+			"tatva_connect.tatva_connect.doctype.crm_campaign_document.crm_campaign_document.drop_for_lead",
 		],
 	},
 	"CRM Task": {
@@ -251,12 +274,31 @@ doc_events = {
 	"Webhook": {
 		"validate": "tatva_connect.api.partner_bulk_job.guard_webhook_url",
 	},
+	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://.
+	# Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated
+	# reason is never blocked.
+	"CRM Lead": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
+	"CRM Deal": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
+	"CRM Organization": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
+	"CRM Intake Form": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
 	# Automation engine (Task 10): Deleted rides on_trash - the row still exists there (before removal),
 	# so router.on_deleted captures subject + context synchronously; the effect lane still runs
 	# after-commit like Created/Updated (router.py's on_deleted docstring has the full nuance).
 	"*": {
+		# Frappe's own XSS filter skips a tag that never closes (html_utils.py:162); this re-runs it without that skip.
+		"validate": [
+			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
+		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
 			# Workflow engine: run/start a Flow when a Created-entry Definition's grain + When match.
@@ -462,16 +504,8 @@ fixtures = [
 		"Partner API Requests (24h)", "Partner API Errors (24h)",
 		"Automation Active Grains", "Automation Failure Rate (7d)",
 	]]]},
-	# Workspace-P2: the grain x log-source heatmap is a matrix — no native chart form covers
-	# category x category, so it stays a Custom HTML Block that frappe.calls
-	# automation.report.grain_log_matrix and draws a hand-rolled table (100% theme-token, zero
-	# literal color). The health-by-grain widget is now a NATIVE Dashboard Chart (chart_type=Custom,
-	# source "Automation Health by Grain" above) — retired from here; embedded via the Workspace
-	# `custom_blocks` table + `content` JSON below, same name-scoped-fixture posture as Dashboard
-	# Chart/Number Card above.
-	{"dt": "Custom HTML Block", "filters": [["name", "in", [
-		"Grain x Log Source Heatmap",
-	]]]},
+	# Workspace-P2: the grain x log-source heatmap was a Custom HTML Block; retired. Health-by-grain
+	# is now a native Dashboard Chart (chart_type=Custom, source "Automation Health by Grain").
 	{
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).

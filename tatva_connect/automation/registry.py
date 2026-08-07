@@ -119,25 +119,6 @@ AUTOMATIONS = [
 		requires="AI Voice::Channel::calls",
 	),
 	Auto(
-		key="AI Voice::Channel::bypass-guardrails",
-		fires_on="Provider call",
-		trigger_detail="automation/sends.send_voice — arms the AI Voice Call node's own bypass tick",
-		purpose=(
-			"A workflow author is allowed to place a call outside the hours the voice agent is configured "
-			"to call in: the node carries a tick for it, and while this row is on that tick is honoured and "
-			"the provider is told to dial immediately. It exists so a journey can be tested end to end "
-			"without waiting for the agent's calling window, and it is two deliberate acts rather than one "
-			"because the window is what stops a patient being rung at night. Off, the tick is ignored and "
-			"every call waits for the agent's own calling hours, which is the correct answer on a live site.\n"
-			"Example: a new welcome journey is proven on a test lead at 22:00, and the same graph on the "
-			"live site still calls patients only in the morning."
-		),
-		# Read in `sends.send_voice`, not a doc_event or a job, so `backs` is empty like the two rows above.
-		backs=[],
-		# Its absence is CORRECT while the channel is off — no call, nothing to bypass — so `requires` fits.
-		requires="AI Voice::Channel::calls",
-	),
-	Auto(
 		key="Storage::Recording::retry",
 		fires_on="Schedule",
 		trigger_detail="every 15m · retries call recordings whose download failed, with backoff",
@@ -321,6 +302,32 @@ AUTOMATIONS = [
 			"tapped to call one or get directions."
 		),
 		backs=[],
+	),
+	Auto(
+		key="Lead::Assignment::owner",
+		fires_on="Doc Event",
+		trigger_detail="CRM Lead · after_insert + validate (lead_owner changed)",
+		purpose=(
+			"A lead naming an owner is put into that person's list: the name on the record becomes a real "
+			"assignment, and the lead is shared with them. Off, the owner field still records who owns the "
+			"lead and every other route to it is unchanged — a lead that names nobody is unaffected either "
+			"way, because frappe's own Assignment Rule is what picks a rep in that case.\n"
+			"Example: a manager sets the owner on a walk-in lead, and it appears in that rep's list at once."
+		),
+		backs=[],  # the fork assigns off a field in crm_lead.py, not a doc_event; gated by lead/assignment.LeadAssignmentGate on the override class
+	),
+	Auto(
+		key="Task::Assignment::assignee",
+		fires_on="Doc Event",
+		trigger_detail="CRM Task · after_insert + validate (assigned_to changed)",
+		purpose=(
+			"A task naming an assignee is put into that person's list: the name on the record becomes a "
+			"real assignment. Off, the assignee field still records who holds the task and the list is "
+			"reached by other routes. Un-assigning a previous holder is never gated — a task moved to "
+			"someone else always releases the person who had it.\n"
+			"Example: a rep is named on a follow-up task, and it appears in their list at once."
+		),
+		backs=[],  # as above: crm_task.py assigns off a field; gated by lead/assignment.TaskAssignmentGate
 	),
 	Auto(
 		key="Task::Assignment::followup",
@@ -568,6 +575,22 @@ AUTOMATIONS = [
 		],
 	),
 	Auto(
+		key="Access::Desk::sanitize",
+		fires_on="Doc Event",
+		trigger_detail="every doctype · validate · access/xss_guard.sanitize_unterminated_tags",
+		purpose=(
+			"A tag that is never closed — `<iframe src=…` with no `>` — slips past frappe's own write-time "
+			"filter, because the filter first asks a strict parser whether the value looks like HTML and a "
+			"strict parser says no. A browser is lenient, emits the unclosed tag at end of input, and runs "
+			"it. On, every saved value is put back through frappe's OWN sanitiser with that one shortcut "
+			"disabled, so nothing new decides what is safe. Off, which is how it ships, a value stores "
+			"exactly as frappe stores it today.\n"
+			"Example: a task title typed as an unterminated iframe is stored inert instead of executing "
+			"when the desk list draws it."
+		),
+		backs=["tatva_connect.access.xss_guard.sanitize_unterminated_tags"],
+	),
+	Auto(
 		key="Access::Grain::registry",
 		fires_on="Permission",
 		trigger_detail="access/entitlement · entitled_grains + grain_entitled source",
@@ -778,6 +801,28 @@ AUTOMATIONS = [
 		),
 		backs=[
 			"tatva_connect.workflow_engine.wakeups.sweep",
+		],
+		requires="Workflow::Engine::run",
+	),
+	Auto(
+		key="Document::Generation::render",
+		fires_on="Provider call",
+		trigger_detail="workflow_engine/document_render gate · Generate Document effect verb",
+		purpose=(
+			"A workflow is allowed to produce a document for one patient: the template the node names is "
+			"filled with that patient's own values, rendered to a PDF, and filed on a record of its own, "
+			"and the journey waiting on it is then told the document is ready. It is filed apart from the "
+			"lead deliberately, so a leaflet meant for a patient's phone can be published without "
+			"publishing anything else attached to them. Off, which is how it ships, a workflow carrying "
+			"the node still runs end to end and takes the node's failed branch with the reason recorded on "
+			"the step, so nothing is rendered and no file is created.\n"
+			"Example: a patient's own care plan is generated after their assessment call and reaches them "
+			"as an attachment, instead of a rep writing one by hand."
+		),
+		backs=[
+			"tatva_connect.workflow_engine.document_render.render_document",
+			# The other half of the same layer's housekeeping: a deleted lead takes its documents, and their blobs, with it.
+			"tatva_connect.tatva_connect.doctype.crm_campaign_document.crm_campaign_document.drop_for_lead",
 		],
 		requires="Workflow::Engine::run",
 	),

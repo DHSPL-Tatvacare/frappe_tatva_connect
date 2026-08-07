@@ -34,6 +34,11 @@ REVIEWED = {
 	# remote copy to be out of step with — the M2 threat model (a File's bytes moved, the reader still
 	# opening a disk) does not apply here. The module is temporary; this entry goes when it does.
 	"migration_check/storage.py:_root",
+	# Asks the FILESYSTEM how full it is, and never opens a file. The path is handed to
+	# `shutil.disk_usage`, which reads the mount's statistics — no File row is involved, no bytes are
+	# read, and there is nothing that offloading could move out from under it. M2 governs how a file's
+	# CONTENT is reached; this reaches no content.
+	"observability/control_tower.py:_disk",
 }
 
 _SKIP_DIRS = {"tests", "__pycache__", "node_modules"}

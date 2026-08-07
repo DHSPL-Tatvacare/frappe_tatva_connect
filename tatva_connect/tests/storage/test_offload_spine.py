@@ -1,8 +1,15 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Offload spine: every real file offloads on insert — no folder/draft special-case.
+"""The offload GATE: which files `after_insert` decides to offload — not whether offloading works.
 
-`storage.file_events.after_insert` must offload ANY file with local bytes, regardless
+WHAT THIS PROVES AND WHAT IT DOES NOT. Every case here drives `after_insert` with a `frappe._dict`
+and asserts that `offload` was CALLED. No File row is written, no bytes move, Azure is never reached.
+So this is a decision table for the gate and nothing more: if `offload()` itself broke, every test
+here would stay green. The OUTCOME — bytes really in the container, the row really repointed, a
+consumer really able to read them — is proven in `test_file_layer_registry` and `test_call_media`
+against real Azure, and that is where a regression in offloading would surface.
+
+The gate itself: `after_insert` must decide to offload ANY file with local bytes, regardless
 of its `folder` or whether it is attached. The removed `_is_compose_draft` skip (which
 deferred anything in "Home" or "Home/Email Drafts") was a per-uploader lottery on
 frappe's default "Home" folder — it silently stranded notes / form-field / helpdesk

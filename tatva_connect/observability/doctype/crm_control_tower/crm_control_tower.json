@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "creation": "2026-08-06 03:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "verdict",
+  "problems",
+  "collected",
+  "config_section",
+  "config",
+  "platform_section",
+  "platform",
+  "tatva_section",
+  "tatva"
+ ],
+ "fields": [
+  {
+   "fieldname": "verdict",
+   "fieldtype": "Data",
+   "in_preview": 1,
+   "label": "Verdict",
+   "read_only": 1
+  },
+  {
+   "fieldname": "problems",
+   "fieldtype": "Small Text",
+   "label": "Problems",
+   "read_only": 1
+  },
+  {
+   "fieldname": "collected",
+   "fieldtype": "Data",
+   "label": "Collected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "config_section",
+   "fieldtype": "Section Break",
+   "label": "Configuration"
+  },
+  {
+   "fieldname": "config",
+   "fieldtype": "Code",
+   "label": "Configuration",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "platform_section",
+   "fieldtype": "Section Break",
+   "label": "Platform"
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Code",
+   "label": "Platform",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tatva_section",
+   "fieldtype": "Section Break",
+   "label": "TatvaCare"
+  },
+  {
+   "fieldname": "tatva",
+   "fieldtype": "Code",
+   "label": "TatvaCare",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "hide_toolbar": 1,
+ "is_virtual": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-06 03:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "CRM Control Tower",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "print": 1,
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

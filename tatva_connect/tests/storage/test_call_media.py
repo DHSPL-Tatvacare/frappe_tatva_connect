@@ -361,6 +361,8 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 	"""
 
 	def setUp(self):
+		# Read BEFORE super(), which arms offload — this is the bench's own value, and it is what tearDown owes back.
+		self._offload_was = frappe.db.get_value("CRM Tatva Automation", _OFFLOAD, "enabled")
 		super().setUp()
 		# Every test in this class starts DORMANT, whatever an earlier committed run left on the bench.
 		frappe.db.set_value("CRM Tatva Automation", call_media.RETRY_SWITCH, "enabled", 0)
@@ -368,7 +370,8 @@ class TestTheSweepRetriesWhatWeAreStillOwed(CallMediaCase):
 
 	def tearDown(self):
 		frappe.db.set_value("CRM Tatva Automation", call_media.RETRY_SWITCH, "enabled", 0)
-		frappe.db.set_value("CRM Tatva Automation", _OFFLOAD, "enabled", 0)
+		# Restore, never force: this class commits, so a hardcoded 0 here left the bench dormant and the next suite in the chain could not offload at all.
+		frappe.db.set_value("CRM Tatva Automation", _OFFLOAD, "enabled", self._offload_was)
 		for name in frappe.get_all("File", filters={"attached_to_doctype": "CRM Call Log",
 		                                            "attached_to_name": self.call}, pluck="name"):
 			frappe.delete_doc("File", name, force=True, ignore_permissions=True)

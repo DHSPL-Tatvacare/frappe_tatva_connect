@@ -78,6 +78,10 @@ def node_context(nodes, node_id):
 	}
 
 
+# The service name `_call_endpoint` stamps on its Integration Request — the row `_payload_sent` reads back.
+_CALL_API_SERVICE = "Workflow Call API"
+
+
 @frappe.whitelist()
 def test_call(endpoint, request_body=None, lead=None):
 	"""Fire a Call API node's request for real, so an author can map what actually comes back.
@@ -90,8 +94,15 @@ def test_call(endpoint, request_body=None, lead=None):
 	Gated on the ENGINE switch, so a site whose automation is dormant makes no outbound call from an
 	authoring screen either. Answering `{"armed": False}` rather than throwing lets the control say why.
 
-	It says WHICH lead it used. A response is shaped by the record behind it, and an author reading a tree
-	built from a lead they did not choose would map paths that do not exist for the next one.
+	THE AUTHOR CHOOSES THE RECORD. `lead` is part of the contract, not a debugging aid: a response is
+	shaped by the record behind it, so a tree built from a lead the author did not pick teaches them paths
+	the next record will not have. Blank still falls back to the most recently modified lead — the button
+	has to answer before a choice has been made — and the answer always names the lead it used, so a
+	fallback is something the author can see rather than something they assume. A lead that has been
+	deleted since it was picked is an ANSWER, in the same shape as a dormant engine: a preview control has
+	nothing to show the author when its call 500s.
+
+	It also reports what really went on the wire, in BOTH modes — see `_payload_sent`.
 	"""
 	if not frappe.has_permission("CRM Workflow", "write"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -103,9 +114,11 @@ def test_call(endpoint, request_body=None, lead=None):
 	if not automation.is_enabled(ENGINE_SWITCH):
 		return {"armed": False}
 
-	subject = lead or frappe.db.get_value("CRM Lead", {}, "name", order_by="modified desc")
+	subject = (lead or "").strip() or frappe.db.get_value("CRM Lead", {}, "name", order_by="modified desc")
 	if not subject:
 		return {"armed": True, "error": _("There is no lead to build a request from yet.")}
+	if not frappe.db.exists("CRM Lead", subject):
+		return {"armed": True, "lead": subject, "error": _("That lead no longer exists.")}
 
 	doc = frappe.get_doc("CRM Lead", subject)
 	doc.check_permission("read")  # the author sees this record's data in the tree, so they must be able to
@@ -113,7 +126,31 @@ def test_call(endpoint, request_body=None, lead=None):
 	# every Test call press 500'd. There is no change set at author time — nothing is mid-save.
 	body = actions.build_request_body(request_body, context_for(doc, changed={})) if request_body else None
 	response = actions._call_endpoint(endpoint, doc, body)
-	return {"armed": True, "lead": subject, "sent": body, **response}
+	return {"armed": True, "lead": subject, "sent": _payload_sent(subject, body), **response}
+
+
+def _payload_sent(subject, body):
+	"""What REALLY left, read back off the row the call itself wrote.
+
+	`_call_endpoint` decides the payload — the authored body when there is one, else the whole record —
+	and logs exactly that decision on its Integration Request. This used to report `body`, which is None
+	in every mode but Custom, so the one mode where the payload most needs showing showed nothing.
+	Recomputing `payload_doc.as_dict()` here would put that decision in two places, and a copy of a
+	decision is a thing that drifts; the log holds the same value, already written, and it is written
+	BEFORE the request, so a call that never reached the network still says what it tried to send.
+
+	Falls back to the authored body if no row can be found, so a preview degrades to what it used to show
+	rather than to an error.
+	"""
+	sent = frappe.db.get_value(
+		"Integration Request",
+		{
+			"integration_request_service": _CALL_API_SERVICE,
+			"reference_doctype": "CRM Lead", "reference_docname": subject,
+		},
+		"data", order_by="creation desc",
+	)
+	return frappe.parse_json(sent) if sent else body
 
 
 def _trigger_config(nodes):

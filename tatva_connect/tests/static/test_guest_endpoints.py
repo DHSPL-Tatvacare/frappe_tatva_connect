@@ -64,17 +64,19 @@ MARKER = "guest-ok:"
 #   _grain_from_form        — taxonomy.lookups.hospital_query's grain resolver: derives the grain
 #     SERVER-SIDE from the named, published CRM Intake Form — a client-supplied grain value is
 #     never read (A.9/A.16).
-#   _force_published        — access.native_guards' LMS wrappers (get_courses/get_batches): forces
-#     `published=1` for a non-privileged caller (metamorphic narrow), so an unauthenticated/no-LMS
-#     caller can never enumerate DRAFT catalog rows via a crafted filter (VAPT Jun'26, Mode 2).
+#   _scoped_to              — access.native_guards' LMS catalog wrappers (get_courses/get_batches):
+#     clamps a non-privileged caller to `name in (the rows they are IN)` (metamorphic narrow), so an
+#     unauthenticated/no-LMS caller enumerates nothing via a crafted filter. It replaced a
+#     `published=1` bound, which both leaked published-but-unassigned rows and hid a member's own
+#     unpublished batch (audit Aug'26; internal training is membership-scoped, never published).
 #   _lms_privileged         — the same module's LMS privilege check (get_job_details): strips the
 #     creator email (`owner`) for a non-privileged caller. A real per-caller narrowing gate.
 #   _insights_privileged   — native_guards.run_doc_method: strips the pipeline-rewind arg when the caller cannot READ the target, so Insights' permissions-off public path cannot replay a query before its own filters. Named, not `has_permission`, which returns an IGNORABLE boolean.
-#   _published_course_from_referer — learning.outline's course recovery: the shim reads the course
-#     from the Referer, which is CLIENT-SUPPLIED and so forgeable, and therefore honours it only for
-#     a course the caller could already reach — published only for a non-privileged one (it reuses
-#     _lms_privileged), the same bound _force_published puts on the catalog. A crafted Referer
-#     cannot read a DRAFT course's outline.
+#   require_course          — access.lms_visibility's throw: denies unless the caller is IN the course
+#     (enrolled, reaching it through a batch or program, or instructing it). Gates get_reviews and
+#     get_course_outline, both of which native serves to any caller at all. It is also what makes
+#     learning.outline's Referer recovery safe: the Referer is CLIENT-SUPPLIED and forgeable, so the
+#     resolver decides nothing and this gate refuses whatever a crafted one names.
 GUEST_GATE_TOKENS = (
 	"spine.receive",
 	"_receive",
@@ -83,10 +85,10 @@ GUEST_GATE_TOKENS = (
 	"PermissionError",
 	"_scoped",
 	"_grain_from_form",
-	"_force_published",
+	"_scoped_to",
+	"require_course",
 	"_lms_privileged",
 	"_insights_privileged",
-	"_published_course_from_referer",
 	# LMS's own guest switch (utils.guest_access_allowed) — an override that delegates to a native LMS
 	# endpoint mirrors it before delegating, so our door is never softer than the one it fronts.
 	"guest_access_allowed",

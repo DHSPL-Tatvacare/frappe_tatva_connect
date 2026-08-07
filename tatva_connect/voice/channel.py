@@ -13,9 +13,6 @@ SWITCH_CALLS = "AI Voice::Channel::calls"
 # The dormant catch-up poll (`voice.reconcile`). Off, the reconciler is a function nothing calls.
 SWITCH_RECONCILE = "AI Voice::Channel::reconcile"
 
-# Whether an author's "skip the calling window" tick is honoured at all. Off, the tick is ignored.
-SWITCH_BYPASS_GUARDRAILS = "AI Voice::Channel::bypass-guardrails"
-
 
 def is_enabled() -> bool:
 	"""The voice master kill-switch. Dormant by default — OFF until explicitly enabled."""
@@ -25,14 +22,3 @@ def is_enabled() -> bool:
 def reconciler_enabled() -> bool:
 	"""The catch-up poll's own switch, independent of the channel's."""
 	return settings.is_enabled(SWITCH_RECONCILE)
-
-
-def bypass_guardrails_enabled() -> bool:
-	"""Whether an author's bypass tick is honoured. Dormant by default, and the SECOND of two acts.
-
-	Skipping the agent's calling hours takes an operator arming this row AND an author ticking the node's
-	own field: a lone tick would mean one mis-click rings a patient at night. The switch is the half that
-	is revocable in one click without a deploy (I8), which is why frappe's `developer_mode` is not used
-	for it — that flag answers whether files may be written, and is not runtime-reversible.
-	"""
-	return settings.is_enabled(SWITCH_BYPASS_GUARDRAILS)

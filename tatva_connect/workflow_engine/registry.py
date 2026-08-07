@@ -654,16 +654,85 @@ def _settable_problems(value, field, config, context):
 
 
 def _settable_rows_problems(value, field, config, context):
-	"""W8.1 — `_settable_problems`, asked once per row. One fault per bad row, never one for the control.
+	"""W8.1 — `_settable_problems`, asked once per row, and the value that row writes judged beside it.
 
 	Delegates rather than re-deciding: a rows field writes the same fields a single-field one did, so the
 	membership question has the same answer and must have the same asker.
+
+	A row whose FIELD is already refused is not asked about its VALUE — one fault, one message, the same
+	restraint `_settable_problems` shows for a field on a target that is itself refused.
 	"""
+	target = config.get(field.get("doctype_from") or "")
+	# Read ONCE for the whole table, and only at PUBLISH — on this table `context` is how a check is told which pass it is in.
+	known = _target_fields(target) if context and target else {}
 	found = []
 	for row in value or []:
-		if isinstance(row, dict) and row.get("name"):
-			found += _settable_problems(row["name"], field, config, context)
+		if not isinstance(row, dict) or not row.get("name"):
+			continue
+		refused = _settable_problems(row["name"], field, config, context)
+		found += refused or _literal_value_problems(row, known.get(row["name"]))
 	return found
+
+
+def _target_fields(doctype):
+	"""The written record's own field vocabulary, keyed by fieldname — asked of `describe.fields_for_doctype`.
+
+	THE resolver the builder's own pickers read, so what publish judges a value against is exactly what the
+	author was offered. A bare `get_meta` walk here would be a second vocabulary AND a smaller one: a CRM
+	Task's real business fields are `CRM Task Type Field` rows and never columns of the doctype.
+	"""
+	from tatva_connect.automation import describe
+
+	return {declared["key"]: declared for declared in describe.fields_for_doctype(doctype)}
+
+
+# WORDING ONLY, never a decision — the plain word for a type a literal can fail on, translated where it is said, like every other label this file declares.
+_TYPE_WORDS = {
+	"Date": "a date",
+	"Datetime": "a date and time",
+	"Int": "a whole number",
+	"Float": "a number",
+	"Currency": "an amount",
+	"Percent": "a percentage",
+	"Check": "a tick — 1 or 0",
+}
+
+
+def _literal_value_problems(row, declared):
+	"""A literal the target field can never hold, refused HERE — where the author can still fix it.
+
+	A word typed into a date, or a source nobody ever declared, publishes green today and then dies inside a
+	background job on the first live patient, with no author anywhere near it. This is the same argument
+	`_duration_problems` makes: publish is the only place the fault is catchable against the person who
+	typed it.
+
+	ONLY a literal is judgeable. From Context, Expression and Increment are resolved from a live run, so
+	nothing here could judge them and pretending otherwise would block an author with no way forward — the
+	modes are named exactly as `contract.resolve_row` branches on them, so a row carrying no mode is judged
+	as the literal the runtime would really write. A blank is not judged: whether the row needs a value at
+	all is the `reqd` rule's question, and answering it twice gives one mistake two messages.
+
+	`describe.coerces` is the asker — the value half of the builder contract, already the one answer to "can
+	this field hold this". A Select is a fixed list rather than a cast, so it is refused by `_option_problems`,
+	the sentence this file already says for a value outside a declared list, asked about the TARGET field's
+	options rather than a config field's.
+	"""
+	from tatva_connect.automation import describe
+
+	if row.get("mode") in (refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT):
+		return []
+	value = row.get("value")
+	if not declared or value in (None, ""):
+		return []
+	ftype = declared["type"]
+	if ftype == "Select" and declared.get("options"):
+		return _option_problems(value, {"label": declared["label"], "options": declared["options"]},
+		                        config=None, context=None)
+	if describe.coerces(value, ftype):
+		return []
+	word = _TYPE_WORDS.get(ftype)
+	return [_("{0} is not a valid {1} — that field holds {2}.").format(
+		value, declared["label"], _(word) if word else _("a {0} value").format(ftype))]
 
 
 def _link_grain_problems(value, field, config, context):
@@ -1146,14 +1215,22 @@ def node_types():
 	`outputs_by` is deliberately NOT shipped. It is a RESOLUTION RULE, and the canvas re-implemented it the
 	whole time it was on the wire. Resolved outputs come from `graph_outputs`, which can see the whole
 	graph; a rule handed to a client is an invitation to interpret it, and the invitation was accepted.
+
+	A config field a PROVIDER makes possible is dropped here when no adapter on the node's channel offers
+	it — the calling-hours bypass is a Bolna request field, not a control every voice provider has. Asked
+	at request time through the same `offered_fields` the verb params use, so the palette and the builder
+	can never disagree about whether a field exists.
 	"""
+	from tatva_connect.channels import resolve
+
 	return [
 		{
 			"type": node_type,
 			"label": declared["label"],
 			"description": declared["description"],
 			"singleton": declared.get("singleton", False),
-			"config": [_wire(f, declared.get("outputs_by")) for f in declared["config"]],
+			"config": [_wire(f, declared.get("outputs_by"))
+			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
 			"outputs": declared.get("outputs"),
 			"outcomes": outcomes_for(node_type),
 		}
@@ -1183,6 +1260,10 @@ def _verb_node_types():
 			"outputs": list(declared.get("outputs") or ["next"]),
 			"is_verb": True,
 			"config": [_field(**_verb_field(param)) for param in declared["params"]],
+			# Which channel this verb sends on, carried so `node_types` can drop a config field no adapter
+			# on it supports. Resolved THERE and not here: this runs at import, and resolving a capability
+			# imports adapter modules — which this app keeps lazy on purpose.
+			"channel": declared.get("outcomes_channel"),
 		}
 		for verb, declared in actions.VERBS.items()
 		if declared["lane"] == "effect"

@@ -59,6 +59,14 @@ ADMIN_STRUCTURAL = [
 	"Custom Field", "Property Setter", "Workflow", "Role Profile", "Module Profile",
 ]
 
+# Doctypes whose stored value is EXECUTED by a browser or by the server. Owner-scoped writes do not make
+# one of these safe: the author controls what runs, the reader supplies the session it runs in. They can
+# never be waved through as "personal", which is exactly how one of them was missed before.
+EXECUTES_CODE = [
+	"Custom HTML Block", "Client Script", "Server Script", "Website Script", "Website Theme",
+	"Web Page", "Web Form", "Print Format", "Report",
+]
+
 # --- REVIEWED stock/core write grants (audit 2026-06-29) -----------------------------------------
 # Doctypes a GUEST (unauthenticated) may write — stock APP features we don't fork. Not ours, not a
 # crown jewel, not admin (asserted in test_guest_writes_only_reviewed_stock).
@@ -73,7 +81,7 @@ STOCK_GUEST_WRITABLE = {
 # Neither is ours / a crown jewel / a structural-admin doctype (asserted below).
 STOCK_NOROLE_WRITABLE = {
 	# (a) Frappe-personal, owner-scoped
-	"Address", "Custom HTML Block", "Dashboard Settings", "Desktop Icon", "Desktop Layout",
+	"Address", "Dashboard Settings", "Desktop Icon", "Desktop Layout",
 	"Document Follow", "File", "Google Calendar", "Google Contacts", "Kanban Board", "List Filter",
 	"Note", "Notification Settings", "Reminder", "Tag", "Tag Link", "ToDo", "User", "Workspace",
 	"Workspace Sidebar", "Workflow Action",
@@ -179,9 +187,12 @@ class TestCatastropheSweep(AuthzTestCase):
 		)
 
 	def _assert_allowlist_is_clean(self, allowlist, who):
-		"""A reviewed stock allowlist can NEVER contain one of our doctypes, a crown jewel, or a
-		structural-admin doctype — else it could launder a real leak past the sweep."""
-		forbidden = (set(self.ours) | set(SENSITIVE_CRM) | set(ADMIN_STRUCTURAL)) & allowlist
+		"""A reviewed stock allowlist can NEVER contain one of our doctypes, a crown jewel, a
+		structural-admin doctype, or one that EXECUTES what it stores — else it could launder a real
+		leak past the sweep."""
+		forbidden = (
+			set(self.ours) | set(SENSITIVE_CRM) | set(ADMIN_STRUCTURAL) | set(EXECUTES_CODE)
+		) & allowlist
 		self.assertFalse(
 			forbidden,
 			f"the {who} write-allowlist contains protected doctype(s) {sorted(forbidden)} — a reviewed allowlist must "
