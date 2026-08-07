@@ -30,7 +30,7 @@ PHONE = f"{PHONE_PREFIX}0001"
 
 # The closed metadata columns this module claims; the identifier columns are open sets and must never appear.
 CLOSED = ("status", "vertical", "lead_group", "program", "assignee")
-OPEN = ("lead", "phone", "phone_alt", "patient_id", "prospect_id")
+OPEN = ("lead", "phone")
 
 
 class TestVocabulary(FrappeTestCase):

@@ -349,30 +349,6 @@ class TestPermissionPredicate(FrappeTestCase):
 		self.assertNotIn(f"|{REP}|", self._principals_column(lead) or "")
 		self.assertNotIn(lead, self._leads_found_by(REP)[0], "a cancelled assignment still granted visibility")
 
-	def test_a_child_row_follows_its_parent_leads_ownership(self):
-		lead = self.other_in_a[2]
-		note = frappe.get_doc({
-			"doctype": "FCRM Note", "title": f"{TOKEN} note", "content": "predicate child row",
-			"reference_doctype": "CRM Lead", "reference_docname": lead,
-		}).insert(ignore_permissions=True)
-		self.addCleanup(frappe.delete_doc, "FCRM Note", note.name, force=True, ignore_permissions=True)
-		CRMLeadSearch().index_doc("FCRM Note", note.name)
-		self.assertNotIn(f"|{REP}|", self._note_principals(note.name) or "")
-
-		doc = frappe.get_doc("CRM Lead", lead)
-		doc.lead_owner = REP
-		doc.save(ignore_permissions=True)
-		self.assertIn(
-			f"|{REP}|", self._note_principals(note.name) or "",
-			"the note kept its parent's OLD principals — a child row did not follow the reindex",
-		)
-
-	def _note_principals(self, note):
-		rows = CRMLeadSearch().sql(
-			"SELECT principals FROM search_fts WHERE doc_id = ?", [f"FCRM Note:{note}"], read_only=True
-		)
-		return rows[0]["principals"] if rows else None
-
 	def test_a_share_is_a_principal(self):
 		lead = self.other_in_a[3]
 		frappe.share.add("CRM Lead", lead, REP, read=1, flags={"ignore_share_permission": True})

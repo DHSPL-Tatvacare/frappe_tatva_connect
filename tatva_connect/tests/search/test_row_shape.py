@@ -45,11 +45,9 @@ PHONE_PREFIX = "+91610011"
 PHONE = f"{PHONE_PREFIX}0001"
 ALT_PHONE = f"{PHONE_PREFIX}0002"
 EMAIL = "zzshape.patient@example.com"
-PATIENT_ID = "ZZSHAPE-PATIENT-4271"
-PROSPECT_ID = "ZZSHAPE-PROSPECT-9314"
 
 # Every identifier that must never appear in a field the row displays.
-HIDDEN = (PATIENT_ID, PROSPECT_ID, ALT_PHONE, EMAIL)
+HIDDEN = (ALT_PHONE, EMAIL)
 
 # The fields the row really draws, in the order it draws them; `ident` is the one place an ID may appear.
 DISPLAYED = ("title", "snippet", "status", "phone", "vertical", "group", "program", "assignee")
@@ -67,8 +65,7 @@ class TestRowShape(FrappeTestCase):
 		cls.program, cls.other_program = programs[0], programs[-1]
 		cls.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": TOKEN, "last_name": "Shape", "status": "New",
-			"mobile_no": PHONE, "email": EMAIL, "custom_alternate_number": ALT_PHONE,
-			"custom_patient_id": PATIENT_ID, "custom_lsq_prospect_id": PROSPECT_ID,
+			"mobile_no": PHONE, "email": EMAIL,
 		}).insert(ignore_permissions=True).name
 		# The grain axes are permlevel-1 fields, so they are written straight to the columns the index reads.
 		for field, value in (("custom_vertical", cls.vertical), ("custom_group", cls.group), ("custom_current_program", cls.program)):
@@ -135,8 +132,8 @@ class TestRowShape(FrappeTestCase):
 			self.assertNotIn(value, blob, f"{value!r} reached a displayed field")
 
 	def test_the_response_never_carries_an_identifier_column_of_its_own(self):
-		"""Structural, not textual: the shaped hit has no patient_id / prospect_id / phone_alt key at all, so no
-		consumer can draw one by accident. `lead` and `file_url` are navigation, and `ident` is the one slot."""
+		"""Structural, not textual: the shaped hit carries only `lead` and `phone` as identifier keys — every
+		other identifier was removed. `lead` and `file_url` are navigation, and `ident` is the one slot."""
 		hit = self._hit(TOKEN)
 		for column, _fieldname, _kind in search_index._IDENTIFIERS:
 			if column in ("lead", "phone"):
@@ -144,26 +141,6 @@ class TestRowShape(FrappeTestCase):
 			self.assertNotIn(column, hit, f"{column} is an input-only identifier and must not be in the response")
 
 	# --- 2. the dynamic slot: decided by the server, whole, labelled from meta --------------------------
-
-	def test_typing_a_patient_id_returns_that_id_as_the_ident_slot(self):
-		hit = self._hit(PATIENT_ID)
-		self.assertIsNotNone(hit, "a punched patient id did not find its lead")
-		self.assertEqual(hit["ident"], {"column": "patient_id", "label": self._label("custom_patient_id"), "value": PATIENT_ID})
-		self.assertEqual(hit["ident"]["label"], "Patient ID", "the label is no longer the field's own")
-
-	def test_typing_a_prospect_id_returns_that_field_as_the_ident_slot(self):
-		hit = self._hit(PROSPECT_ID)
-		self.assertEqual(hit["ident"], {"column": "prospect_id", "label": self._label("custom_lsq_prospect_id"), "value": PROSPECT_ID})
-
-	def test_the_whole_id_is_returned_so_nothing_can_render_as_a_fragment(self):
-		"""Typing a PREFIX of an id still yields the whole value — the mark can only ever wrap all of it."""
-		hit = self._hit(PATIENT_ID[:12])
-		self.assertEqual(hit["ident"]["value"], PATIENT_ID)
-
-	def test_typing_an_alternate_number_names_that_field_not_the_mobile_slot(self):
-		hit = self._hit(ALT_PHONE)
-		self.assertEqual(hit["ident"]["column"], "phone_alt")
-		self.assertEqual(hit["ident"]["label"], self._label("custom_alternate_number"))
 
 	def test_typing_the_docname_returns_it_labelled_with_frappes_own_word_for_that_column(self):
 		"""A docname is not a meta field, so it has no label of its own — and it matches whole, never by prefix."""
@@ -183,11 +160,9 @@ class TestRowShape(FrappeTestCase):
 		self.assertEqual(hit["ident"]["column"], "phone")
 		self.assertEqual(hit["ident"]["value"], PHONE, "the stored number, whole, is what the row marks")
 
-	def test_an_email_is_never_an_ident_because_it_is_not_a_displayed_identifier(self):
-		"""Email is removed from display entirely: it stays searchable and gets no slot of its own."""
+	def test_an_email_is_not_indexed(self):
 		hit = self._hit(EMAIL)
-		self.assertIsNotNone(hit, "an email no longer finds its lead")
-		self.assertNotIn("ident", hit)
+		self.assertIsNone(hit, "email is removed from indexing and must not find a lead")
 
 	# --- 4. program: in the index, and filterable ------------------------------------------------------
 

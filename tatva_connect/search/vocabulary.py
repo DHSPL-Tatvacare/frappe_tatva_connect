@@ -5,7 +5,7 @@
 
 The index filters ONLY on its own metadata columns (`CRMLeadSearch.INDEX_SCHEMA["metadata_fields"]`), and only
 five of those are closed sets: `status`, `vertical`, `lead_group`, `program`, `assignee`. The identifier columns
-(`lead`, `phone`, `patient_id`, …) grow with every patient — open sets — so they stay in the full-text lane and
+(`lead`, `phone`, …) grow with every patient — open sets — so they stay in the full-text lane and
 are absent here, and `file_url` is not a value anyone types.
 
 Every value offered is the value `prepare_document` really writes, derived from the declarations it reads: the

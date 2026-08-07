@@ -41,11 +41,7 @@ from tatva_connect.search.index import TOGGLE, CRMLeadSearch
 TOKEN = "zzcolumnpatient"
 PHONE_PREFIX = "+91610008"
 PHONE = f"{PHONE_PREFIX}0001"
-ALT_PHONE = f"{PHONE_PREFIX}0002"
 EMAIL = "zzcolumn.patient@example.com"
-PATIENT_ID = "ZZCOL-PATIENT-77"
-PROSPECT_ID = "ZZCOL-PROSPECT-88"
-NOTE_TOKEN = "zzcolumnnote"
 
 REP = "zz-column-rep@example.com"
 OTHER = "zz-column-other@example.com"
@@ -62,12 +58,12 @@ _NEW_CONTENT_OF = CRMLeadSearch._content_of
 
 
 def _old_content_of(self, doc):
-	# The other half of the old code: a lead's displayed snippet WAS its identifiers, joined.
+	# The other half of the old code: a lead's displayed snippet WAS its phone number.
 	if doc.doctype != "CRM Lead":
 		return _NEW_CONTENT_OF(self, doc)
 	ctx = self._lead_context(doc.name)
 	ids = ctx["ids"] if ctx else {}
-	return " · ".join(str(p) for p in [ids.get("phone"), doc.get("email"), ids.get("patient_id"), ids.get("prospect_id")] if p)
+	return str(ids.get("phone") or "")
 
 
 class TestIndexedColumns(FrappeTestCase):
@@ -90,22 +86,15 @@ class TestIndexedColumns(FrappeTestCase):
 			"CRM Lead Stage", filters={"name": ["like", "%::%"]}, pluck="name", order_by="name asc", limit=2
 		)
 		cls.stage, cls.substage = stages[0], stages[-1]
-		cls.source = frappe.get_all("CRM Lead Source", pluck="name", order_by="name asc", limit=1)[0]
 
 		cls.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": TOKEN, "last_name": "Columns", "status": "New",
-			"mobile_no": PHONE, "email": EMAIL, "source": cls.source,
-			"custom_alternate_number": ALT_PHONE,
-			"custom_patient_id": PATIENT_ID, "custom_lsq_prospect_id": PROSPECT_ID,
+			"mobile_no": PHONE, "email": EMAIL,
 		}).insert(ignore_permissions=True).name
 		# Straight to the columns the index reads: custom_stage is DERIVED from custom_substage by the controller.
 		for field, value in (("custom_stage", cls.stage), ("custom_substage", cls.substage), ("lead_owner", REP)):
 			frappe.db.set_value("CRM Lead", cls.lead, field, value, update_modified=False)
 
-		cls.note = frappe.get_doc({
-			"doctype": "FCRM Note", "title": f"{NOTE_TOKEN} note", "content": f"<p>{TOKEN} body</p>",
-			"reference_doctype": "CRM Lead", "reference_docname": cls.lead,
-		}).insert(ignore_permissions=True).name
 		cls.file = frappe.get_doc({
 			"doctype": "File", "file_name": f"{TOKEN}.txt", "is_private": 1,
 			"content": "column fixture", "attached_to_doctype": "CRM Lead", "attached_to_name": cls.lead,
@@ -172,7 +161,7 @@ class TestIndexedColumns(FrappeTestCase):
 
 	def _row(self, doctype, name):
 		rows = CRMLeadSearch().sql(
-			"SELECT title, content, keys, lead, principals, phone, patient_id, prospect_id, program, file_url"
+			"SELECT title, content, keys, lead, principals, phone, program, file_url"
 			" FROM search_fts WHERE doc_id = ?",
 			[f"{doctype}:{name}"], read_only=True,
 		)
@@ -205,27 +194,18 @@ class TestIndexedColumns(FrappeTestCase):
 	# --- 2. every owner-chosen column finds its record --------------------------------------------------
 
 	def test_each_lead_column_finds_the_lead(self):
-		wanted = (self.lead, "unique id"), (TOKEN, "full name"), (PHONE, "mobile number"), (EMAIL, "email")
+		wanted = (self.lead, "unique id"), (TOKEN, "full name"), (PHONE, "mobile number")
 		for value, label in wanted:
 			self.assertIn(
 				("CRM Lead", self.lead, self.lead), self._hits(value),
 				f"a lead's {label} did not find it",
 			)
 
-	def test_each_identifier_finds_the_lead_even_though_none_is_displayed(self):
-		"""The whole point of `keys`: input-only. Every declared identifier resolves to its record."""
-		for value, label in ((PATIENT_ID, "patient id"), (PROSPECT_ID, "prospect id"), (ALT_PHONE, "alternate number")):
-			self.assertIn(
-				("CRM Lead", self.lead, self.lead), self._hits(value),
-				f"a lead's {label} did not find it",
-			)
-
-	def test_the_stage_leaf_the_substage_leaf_and_the_source_find_the_lead(self):
+	def test_the_stage_leaf_and_the_substage_leaf_find_the_lead(self):
 		"""The composite PK is never indexed — the leaf is, exactly as `_read_lead_context` spells it."""
 		for value, label in (
 			(self.stage.split("::")[-1], "stage"),
 			(self.substage.split("::")[-1], "sub stage"),
-			(self.source, "source"),
 		):
 			leads = {lead for _, _, lead in self._hits(value)}
 			self.assertIn(self.lead, leads, f"a lead's {label} ({value!r}) did not find it")
@@ -239,11 +219,11 @@ class TestIndexedColumns(FrappeTestCase):
 	def test_every_identifier_is_in_keys_and_in_no_displayed_field(self):
 		"""One assertion per identifier, both halves: searchable, and absent from title AND content."""
 		row = self._row("CRM Lead", self.lead)
-		for value in (self.lead, PHONE, ALT_PHONE, PATIENT_ID, PROSPECT_ID, EMAIL):
+		for value in (self.lead, PHONE):
 			self.assertIn(value, row["keys"], f"{value!r} is not searchable")
 			self.assertNotIn(value, row["content"], f"{value!r} reached the displayed snippet")
 			self.assertNotIn(value, row["title"], f"{value!r} reached the displayed title")
-		for value in (self.stage.split("::")[-1], self.source):
+		for value in (self.stage.split("::")[-1],):
 			self.assertIn(value, row["keys"])
 			self.assertNotIn(value, row["content"])
 
@@ -252,21 +232,7 @@ class TestIndexedColumns(FrappeTestCase):
 		for value in (digits, digits[-10:]):
 			self.assertIn(("CRM Lead", self.lead, self.lead), self._hits(value), f"{value!r} did not find the lead")
 
-	# --- 4. a child row carries the same context every other child row carries --------------------------
-
-	def test_a_note_row_carries_its_leads_name_lead_id_and_principals(self):
-		note = self._row("FCRM Note", self.note)
-		lead = self._row("CRM Lead", self.lead)
-		self.assertEqual(note["lead"], self.lead, "an indexed row with no lead is dropped by _visible_rows")
-		self.assertEqual(note["principals"], lead["principals"], "a note did not inherit its lead's permission set")
-		self.assertEqual(note["title"], lead["title"], "a child row must be titled by its patient")
-		self.assertIn(f"|{REP}|", note["principals"])
-
-	def test_a_child_row_never_carries_its_leads_identifiers_in_a_displayed_field(self):
-		note = self._row("FCRM Note", self.note)
-		for value in (PATIENT_ID, PROSPECT_ID, EMAIL, ALT_PHONE):
-			self.assertNotIn(value, note["content"] or "")
-			self.assertNotIn(value, note["keys"] or "", "a lead's ids belong to the LEAD row, not its children")
+	# --- 4. every indexed row on this site carries a lead and principals -------------------------------
 
 	def test_every_indexed_row_on_this_site_carries_a_lead_and_principals(self):
 		"""A row with an empty permission column is invisible to every non-exempt caller, silently."""
@@ -275,11 +241,6 @@ class TestIndexedColumns(FrappeTestCase):
 		total = engine.sql("SELECT COUNT(*) c FROM search_fts", read_only=True)[0]["c"]
 		self.assertTrue(total > 1, "the index is empty — this assertion proved nothing")
 		self.assertEqual(broken, 0, "indexed rows carry no lead and can never be returned")
-
-	def test_a_note_is_permission_scoped_by_its_lead_not_by_its_own_row(self):
-		"""Two personas, one entitled: the rep owns the lead, OTHER neither owns nor is assigned it."""
-		self.assertIn(("FCRM Note", self.note, self.lead), self._hits(NOTE_TOKEN, user=REP))
-		self.assertEqual(self._hits(NOTE_TOKEN, user=OTHER), [], "a note on someone else's lead was returned")
 
 	# --- 5. file_url is indexed metadata, so a File hit costs no read -----------------------------------
 
@@ -305,13 +266,12 @@ class TestIndexedColumns(FrappeTestCase):
 	# --- 6. the RED proofs, made permanent --------------------------------------------------------------
 
 	def test_the_old_code_showed_every_identifier_in_the_lead_row(self):
-		"""The build this batch corrects, reconstructed in place and driven through a real index: mobile, email,
-		patient id and prospect id all landed in the DISPLAYED snippet, so every lead row was a wall of ids."""
+		"""The build this batch corrects, reconstructed in place: the old code put phone into the displayed
+		snippet. email is no longer in the indexed fields so it was already invisible to the old code too."""
 		with patch.object(CRMLeadSearch, "_content_of", _old_content_of):
 			self._rebuild()
 			content = self._row("CRM Lead", self.lead)["content"]
-			for value in (PHONE, EMAIL, PATIENT_ID, PROSPECT_ID):
-				self.assertIn(value, content, f"{value!r} was expected in the OLD displayed snippet")
+			self.assertIn(PHONE, content, f"{PHONE!r} was expected in the OLD displayed snippet")
 		self._rebuild()
 		self.assertEqual(self._row("CRM Lead", self.lead)["content"], "", "the rebuild did not restore the ID rule")
 

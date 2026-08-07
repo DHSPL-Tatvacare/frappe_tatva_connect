@@ -50,7 +50,7 @@ PHONE_PREFIX = "+91610009"
 FULL_FIRST_NAME = "Rameshzz"
 
 # The order the owner chose. Not derived from the code under test on purpose: this list IS the requirement.
-EXPECTED_ORDER = ["CRM Lead", "FCRM Note", "File"]
+EXPECTED_ORDER = ["CRM Lead", "File"]
 
 
 class TestResultRanking(FrappeTestCase):
@@ -62,10 +62,6 @@ class TestResultRanking(FrappeTestCase):
 		cls.lead = frappe.get_doc({
 			"doctype": "CRM Lead", "first_name": f"{FULL_FIRST_NAME} {TOKEN}", "last_name": "Rank",
 			"status": "New", "mobile_no": f"{PHONE_PREFIX}0001",
-		}).insert(ignore_permissions=True).name
-		cls.note = frappe.get_doc({
-			"doctype": "FCRM Note", "title": f"{TOKEN} note", "content": f"<p>{TOKEN} body</p>",
-			"reference_doctype": "CRM Lead", "reference_docname": cls.lead,
 		}).insert(ignore_permissions=True).name
 		# A task carrying the same token, minted on purpose: it must NOT appear in any result below.
 		cls.task = frappe.get_doc({
@@ -89,7 +85,7 @@ class TestResultRanking(FrappeTestCase):
 	@classmethod
 	def _purge(cls):
 		for name in frappe.get_all("CRM Lead", filters={"mobile_no": ["like", f"{PHONE_PREFIX}%"]}, pluck="name"):
-			for doctype in ("CRM Task", "FCRM Note"):
+			for doctype in ("CRM Task",):
 				for child in frappe.get_all(doctype, filters={"reference_docname": name}, pluck="name"):
 					frappe.delete_doc(doctype, child, force=True, ignore_permissions=True)
 			for child in frappe.get_all("File", filters={"attached_to_name": name}, pluck="name"):
@@ -166,12 +162,11 @@ class TestResultRanking(FrappeTestCase):
 		self.assertEqual(sorted(collapsed), sorted(EXPECTED_ORDER), "the same hits must be present, only reordered")
 
 	def test_a_whole_doctype_is_never_overtaken_by_a_stronger_text_match(self):
-		"""The tier is a magnitude, not a tie-break: the note matches the token in BOTH its text fields and the
-		lead matches it in one, so a bm25-driven order would promote the note past the lead."""
+		"""The tier is a magnitude, not a tie-break: the file matches the token and the lead matches it,
+		so a bm25-driven order might promote the file past the lead."""
 		res = CRMLeadSearch().search(TOKEN) or {}
 		scores = {r["doctype"]: r["score"] for r in res["results"]}
-		self.assertGreater(scores["CRM Lead"], scores["FCRM Note"])
-		self.assertGreater(scores["FCRM Note"], scores["File"])
+		self.assertGreater(scores["CRM Lead"], scores["File"])
 
 	# --- 3. recency: a decision, not a silent conditional -----------------------------------------------
 

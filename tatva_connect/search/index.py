@@ -28,7 +28,7 @@ from tatva_connect.taxonomy import labels
 TOGGLE = "Search::Index::indexing"
 
 # Which lead-detail tab a hit opens; a lead opens the detail root (the frontend navigates via the hash).
-TAB = {"CRM Lead": None, "FCRM Note": "notes", "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
+TAB = {"CRM Lead": None, "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
 
 # The batch build SELECTs these real columns before prepare_document runs; title/content map to always-present
 # system columns we overwrite there (row title = patient name, content = composed), so no row is ever skipped.
@@ -62,9 +62,6 @@ _HEALTH_PRAGMA = "PRAGMA quick_check"
 _IDENTIFIERS = (
 	("lead", "name", "exact"),
 	("phone", "mobile_no", "digits"),
-	("phone_alt", "custom_alternate_number", "digits"),
-	("patient_id", "custom_patient_id", "text"),
-	("prospect_id", "custom_lsq_prospect_id", "text"),
 )
 
 # The lead's grain axes, in the order the row shows them. STATIC on purpose: this defines a persistent sqlite
@@ -227,8 +224,7 @@ class CRMLeadSearch(SQLiteSearch):
 	# DECLARATION ORDER IS DISPLAY ORDER — `_doctype_tier` reads it, so the leads -> notes -> attachments preference is written once.
 	INDEXABLE_DOCTYPES: ClassVar[dict] = {
 		# `_LEAD_FIELDS` is every field the context read consumes, so a change to any of them reindexes the lead.
-		"CRM Lead": {"fields": [*_PLACEHOLDER, "email", "custom_substage", "source", *_LEAD_FIELDS]},
-		"FCRM Note": {"fields": [*_PLACEHOLDER, "title", "content", "reference_doctype", "reference_docname"]},
+		"CRM Lead": {"fields": [*_PLACEHOLDER, "custom_substage", *_LEAD_FIELDS]},
 		# `file_url` is declared so the framework's own metadata mapping stores it — a hit opens the bytes with no per-result read.
 		"File": {"fields": [*_PLACEHOLDER, "file_name", "file_url", "attached_to_doctype", "attached_to_name"]},
 		# CRM Task is out — 12,567 rows / 2.93 MB the owner does not want in the spotlight. Re-enable by uncommenting; _content_of/_keys_of/TAB cover it, and SearchResults.vue needs its tile back.
@@ -368,8 +364,8 @@ class CRMLeadSearch(SQLiteSearch):
 		engine (DocPerm, permission_query_conditions, has_permission hooks, User Permissions, shares):
 
 		  · by LEAD — a sub-entity is visible only if the lead it hangs off is on the caller's line.
-		  · by the row's OWN doctype — a lead grant is not a note grant. Without this a caller who reaches
-		    a lead by share or assignment, but holds no FCRM Note read, was served clinical note text.
+		· by the row's OWN doctype — a lead grant is not a File read grant. Without this a caller who
+		    reaches a lead by share or assignment, but holds no File read, was served a clinical file.
 
 		One bounded question per doctype present in the page (<= 3), never an enumeration. Runs BEFORE the
 		framework truncates to MAX_SEARCH_RESULTS, so scoping costs no recall inside the candidate set. It is
@@ -501,9 +497,7 @@ class CRMLeadSearch(SQLiteSearch):
 				parts.append(ctx["ids"].get(column))
 				if kind == "digits":
 					parts += _phone_keys(ctx["ids"].get(column))
-			# Email is searched and never displayed either; stage/sub-stage/source are closed sets P5 turns into filters.
-			parts += [doc.get("email")]
-			parts += [leaf(doc.get("custom_stage")), leaf(doc.get("custom_substage")), doc.get("source")]
+			parts += [leaf(doc.get("custom_stage")), leaf(doc.get("custom_substage"))]
 		if doc.doctype == "CRM Task":
 			parts += [doc.get("assigned_to"), self._user_name(doc.get("assigned_to"))]
 		parts += [ctx.get("owner_name"), ctx.get("owner")]
