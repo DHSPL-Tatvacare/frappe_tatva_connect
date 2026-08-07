@@ -473,6 +473,8 @@ after_migrate = [
 	"tatva_connect.wiki_reconcile.reconcile",
 	# Phase 3 of the task-sections plan: every answer a task ALREADY carries gets the home field_target names. Here and not only in its patch because the answers land in fixture Table fields routed by the section seed above — both AFTER post-model-sync patches, so on the upgrade that carries the whole chain in one migrate the patch runs before its own prerequisites and is logged applied. Idempotent; writes only what is missing.
 	"tatva_connect.activity.backfill.ensure_section_rows",
+	# Finish the custom_is_planned stamp. Here and not only in its patch because the column ships in custom_field.json, so the post-model-sync patch ALWAYS runs before sync_fixtures lands it, no-ops and is logged applied — dead. One-shot: the due date is sound evidence only for rows written before the stamp, so the pass marks itself done and never judges a row twice.
+	"tatva_connect.tasks.plan_origin.backfill_is_planned",
 	# LAST, deliberately: apply_schema records a failed structural step instead of throwing on the spot, because it is entry two of twenty-four and a throw there skipped every seed, drift assert and the lockdown behind it. The run still fails — after everything else has had its chance to land.
 	"tatva_connect.schema_setup.assert_schema_applied",
 ]

@@ -15,24 +15,20 @@ Migrated LSQ data splits on the same evidence and needs no special case: an LSQ 
 land as records.
 
 Skip-until-ready: the column arrives with `sync_fixtures`, which runs AFTER post-model-sync patches, so on
-the upgrade path this can execute before the field exists. It no-ops then, and the `after_migrate` pass is
-not needed to finish it — the same migrate's later run of this patch name never happens, so the guard is
-what makes a re-run safe rather than what completes the work. A fresh site baselines this line without
-running it and is born correct, so there is no schema_setup twin: no DDL, and nothing to repair.
+the upgrade path this ALWAYS executes before the field exists. It no-ops then and is logged applied — an
+applied patch is dead, so this line never completes the work on the path that needs it. Measured on the
+2026-08-06 UAT replay: 60 tasks carried a due date and 0 were stamped. The backfill therefore lives in
+`tasks/plan_origin.py` and is run again from `after_migrate`, which is the pass that finishes it; this
+line stays only so a site whose column somehow predates it is not left waiting. A fresh site baselines
+this line without running it and is born correct, so there is no schema_setup twin: no DDL to repair.
 
 Idempotent: writes only rows still holding the default, so a second run touches nothing.
 """
 
-import frappe
+from tatva_connect.tasks.plan_origin import backfill_is_planned
 
 
 def execute():
-	if not frappe.db.has_column("CRM Task", "custom_is_planned"):
-		return
-
-	task = frappe.qb.DocType("CRM Task")
-	(
-		frappe.qb.update(task)
-		.set(task.custom_is_planned, 1)
-		.where(task.due_date.isnotnull() & (task.custom_is_planned == 0))
-	).run()
+	# The work itself lives in tasks/plan_origin.py because this line runs BEFORE sync_fixtures lands the
+	# column, no-ops, and is logged applied — dead for ever. The after_migrate pass completes it.
+	backfill_is_planned()

@@ -588,7 +588,15 @@ AUTOMATIONS = [
 			"Example: a task title typed as an unterminated iframe is stored inert instead of executing "
 			"when the desk list draws it."
 		),
-		backs=["tatva_connect.access.xss_guard.sanitize_unterminated_tags"],
+		# This toggle governs the sanitiser only. The link-scheme guard is the OTHER write-time browser-safety
+		# doc_event in access/ and is deliberately ALWAYS ON — an https-only rule needs no operator opinion and
+		# tests/access/test_link_scheme.py locks it against becoming dormant — so it carries no switch of its
+		# own and is covered here so the drift lock passes. Same shape and same reason as the always-on SSRF
+		# guard carried by Partner::AsyncBulk::jobs.
+		backs=[
+			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
+			"tatva_connect.access.link_scheme.guard_link_schemes",
+		],
 	),
 	Auto(
 		key="Access::Grain::registry",
