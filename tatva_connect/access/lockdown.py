@@ -258,6 +258,28 @@ _PERMLEVEL_1_FIELDS = {
 	"File": ("content_hash", "file_size", "file_url"),
 }
 
+# BASELINE floor trims: a stray grant on the auto-inherited `Desk User` role that lets any System User
+# enumerate a sensitive core doctype via get_list. `select` alone lists rows (and User is a CORE_DOCTYPE, so
+# permlevel cannot hide its columns), so a rep pulls the whole staff directory. Stripped surgically — only
+# this flag on this role — leaving every other row (LMS staff, System Manager) exactly as frappe/lms set it.
+BASELINE_ROLE_TRIMS = {
+	"User": {"Desk User": {"select": 0}},
+}
+
+
+def apply_baseline_role_trims():
+	"""Strip the BASELINE_ROLE_TRIMS grants. Surgical `update_permission_property`, never a matrix rebuild —
+	we do not own User's matrix, we only correct one inherited flag and let frappe's engine enforce the rest."""
+	for doctype, roles in BASELINE_ROLE_TRIMS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		for role, flags in roles.items():
+			if not frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0}):
+				continue
+			for ptype, value in flags.items():
+				update_permission_property(doctype, role, 0, ptype, value, validate=False)
+	frappe.clear_cache()
+
 
 def apply_field_levels():
 	"""Grant the permlevel rows FIELD_LEVELS declares. `add_permission` copies the doctype's stock matrix
@@ -358,6 +380,7 @@ def apply(*_args, **_kwargs):
 	apply_field_permlevels()
 	apply_app_security_settings()
 	apply_unpublished_web_forms()
+	apply_baseline_role_trims()
 	frappe.clear_cache()
 
 

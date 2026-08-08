@@ -217,6 +217,35 @@ def get_courses(filters=None, start=0):
 	return _native(_scoped_to(filters, lms_visibility.visible_courses()), start)
 
 
+@frappe.whitelist()
+def get_my_courses():
+	"""The home 'my courses' section falls back to featured/popular (ALL published) when the caller has none,
+	so a rep sees courses they are not assigned to — the exact catalog the scoped Courses list already hides,
+	leaving the two screens disagreeing. Keep the native result for a privileged caller (discovery); for
+	everyone else drop any card not in their membership set, so home and the Courses list show the same thing."""
+	from lms.lms.api import get_my_courses as _native
+
+	data = _native() or []
+	if lms_visibility.is_privileged():
+		return data
+	visible = lms_visibility.visible_courses()
+	return [c for c in data if isinstance(c, dict) and c.get("name") in visible]
+
+
+@frappe.whitelist()
+def get_my_batches():
+	"""Same fallback shape as get_my_courses: when the caller has no batches, native returns
+	get_upcoming_batches (ALL published), showing batches a rep is not in. Scope to membership so home
+	matches the Batches list."""
+	from lms.lms.api import get_my_batches as _native
+
+	data = _native() or []
+	if lms_visibility.is_privileged():
+		return data
+	visible = lms_visibility.visible_batches()
+	return [b for b in data if isinstance(b, dict) and b.get("name") in visible]
+
+
 @frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; _scoped_to narrows a non-privileged caller to the batches they are in
 def get_batches(filters=None, start=0, order_by="start_date"):
 	from lms.lms.utils import get_batches as _native

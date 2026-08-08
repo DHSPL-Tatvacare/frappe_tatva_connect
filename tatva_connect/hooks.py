@@ -120,6 +120,10 @@ override_whitelisted_methods = {
 	# wrapper NARROWS a non-privileged caller to what they are IN (access/lms_visibility.py) and strips
 	# the creator email from job details. Can't be locked via DocPerm (methods bypass the engine).
 	"lms.lms.utils.get_courses": "tatva_connect.access.native_guards.get_courses",
+	# Home 'my courses' falls back to featured/popular (ALL published) when the caller has none — scope it to membership so home matches the Courses list.
+	"lms.lms.api.get_my_courses": "tatva_connect.access.native_guards.get_my_courses",
+	# Same fallback: home 'my batches' -> get_upcoming_batches (ALL published) when the caller has none — scope to membership.
+	"lms.lms.api.get_my_batches": "tatva_connect.access.native_guards.get_my_batches",
 	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
 	"lms.lms.utils.get_programs": "tatva_connect.access.native_guards.get_programs",
 	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
