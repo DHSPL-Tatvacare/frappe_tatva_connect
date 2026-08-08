@@ -16,9 +16,7 @@
   "source",
   "section",
   "target",
-  "can_read",
-  "can_watch",
-  "can_set"
+  "can_watch"
  ],
  "fields": [
   {
@@ -107,32 +105,18 @@
    "label": "Target"
   },
   {
-   "fieldname": "can_read",
-   "fieldtype": "Check",
-   "default": "0",
-   "label": "Automation: Readable",
-   "description": "A workflow criterion may test this activity field."
-  },
-  {
    "fieldname": "can_watch",
    "fieldtype": "Check",
    "default": "0",
    "label": "Automation: Watchable",
-   "description": "A change to this field may fire a workflow, which is meaningful only where the field names a Target column. Readable is implied."
-  },
-  {
-   "fieldname": "can_set",
-   "fieldtype": "Check",
-   "default": "0",
-   "label": "Automation: Settable",
-   "description": "A workflow action may write this activity field."
+   "description": "A change to this field may fire a workflow, which is meaningful only where the field names a Target column."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-16 00:00:00.000000",
+ "modified": "2026-08-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type Field",

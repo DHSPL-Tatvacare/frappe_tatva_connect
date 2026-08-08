@@ -1,12 +1,14 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Shared seed helpers for the automation allowlist — now the resource catalogs + the ONE grain brain.
+"""Shared seed helpers for what a workflow may reach — the resource catalogs + the ONE grain brain.
 
-Capabilities are Check flags on `CRM Lead API Field` / `CRM Task Type Field`; a field is settable IN a
-grain iff that grain's internal contract (`CRM Lead API Mapping` is_internal=1) ticks its field_key — the
-same brain `access.entitlement.field_in_grains_via_contract` reads. So `seed_settable` ticks the CONTRACT,
-never a per-row grain flag. Class-level seeds commit (FrappeTestCase rolls back per test, not per class),
-so every seed is recorded and `clear()` undoes exactly it.
+A field is reachable IN a grain iff that grain's internal contract (`CRM Lead API Mapping` is_internal=1)
+ticks its field_key — the same brain `access.entitlement.field_in_grains_via_contract` reads. That is the
+whole gate: `seed_settable` ticks the CONTRACT and nothing else. `can_watch` is separate and is not a
+permission — it is the dispatcher's diff list, which is why `seed_watchable` still writes a flag.
+
+Class-level seeds commit (FrappeTestCase rolls back per test, not per class), so every seed is recorded
+and `clear()` undoes exactly it.
 """
 import frappe
 
@@ -40,22 +42,16 @@ def _flag_rows(doctype, fieldname, flag):
 	return names
 
 
-def seed_readable(doctype, fieldname):
-	"""Tick can_read — testable by a criterion; no change to it fires a rule."""
-	_flag_rows(doctype, fieldname, "can_read")
-	return fieldname
-
-
 def seed_watchable(doctype, fieldname):
-	"""Tick can_watch — a change fires a rule (implies readable in fields.py)."""
+	"""Tick can_watch — a change fires a rule, and its before-value is captured on save."""
 	_flag_rows(doctype, fieldname, "can_watch")
 	return fieldname
 
 
 def seed_settable(doctype, fieldname, vertical="", group="", program="", child_table_field="", is_row_key=0):
-	"""Tick can_set AND tick the field_key in grain (vertical, group, program)'s internal contract. A lead
-	field absent from the catalog is materialised as a `lead:*` parent row (faithful port of the old
-	allowlist-row seed — a real settable lead field, rolled back with the test)."""
+	"""Tick the field_key in grain (vertical, group, program)'s internal contract — the one gate. A lead
+	field absent from the catalog is materialised as a `lead:*` parent row (a real reachable lead field,
+	rolled back with the test). A Task field needs no tick: its grain derives from its task type."""
 	if doctype == _LEAD:
 		names = frappe.get_all(_LEAD_CATALOG, filters={"fieldname": fieldname}, pluck="name")
 		if not names:
@@ -66,12 +62,9 @@ def seed_settable(doctype, fieldname, vertical="", group="", program="", child_t
 			_seeded_rows.append((_LEAD_CATALOG, doc.name))
 			names = [doc.name]
 		for name in names:  # name == field_key (autoname field:field_key)
-			frappe.db.set_value(_LEAD_CATALOG, name, "can_set", 1)
-			_seeded_flags.append((_LEAD_CATALOG, name))
 			_tick_contract(name, vertical, group, program)
 		_bust_ticks_cache()
 		return names[0]
-	_flag_rows(doctype, fieldname, "can_set")
 	return fieldname
 
 
@@ -106,7 +99,7 @@ def clear(doctype=None):
 	_seeded_ticks.clear()
 	for catalog, name in _seeded_flags:
 		if frappe.db.exists(catalog, name):
-			frappe.db.set_value(catalog, name, {"can_read": 0, "can_watch": 0, "can_set": 0})
+			frappe.db.set_value(catalog, name, "can_watch", 0)
 	_seeded_flags.clear()
 	for dt, name in _seeded_rows:
 		if frappe.db.exists(dt, name):

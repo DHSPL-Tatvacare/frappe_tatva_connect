@@ -93,10 +93,18 @@ class TestUpdateFieldRaisesOnChildRowFields(_ChildCounterBase):
 # -- Upsert Child Row + singleton INCREMENT -------------------------------------------------
 
 
+def _upsert(*rows):
+	"""An Upsert Child Row action — the section, and the rows it writes. HOW the row is found is the
+	section's own declaration, so there is nothing else on the node to say."""
+	return frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE, set_fields=list(rows))
+
+
+def _row(field, mode, value):
+	return {"name": field, "mode": mode, "value": str(value)}
+
+
 def _singleton_upsert(lead_name, field, mode, value):
-	"""An Upsert Child Row action on a singleton — empty match, auto-resolved row."""
-	return frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE,
-	                    match_json="{}", set_json=json.dumps({field: {"mode": mode, "value": str(value)}}))
+	return _upsert(_row(field, mode, value))
 
 
 class TestIncrementOnASingletonChildRow(_ChildCounterBase):
@@ -127,8 +135,7 @@ class TestIncrementOnASingletonChildRow(_ChildCounterBase):
 		self.assertNotEqual(_reread_child_counter(self.lead.name), 9,
 		                    "premise: the counter must not already hold the value being set")
 		actions._action_upsert_child(
-			frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE,
-			             match_json="{}", set_json=json.dumps({_COUNTER: "9"})),
+			_upsert(_row(_COUNTER, refs.LITERAL, "9")),
 			self.lead.name, {}, fx.AXES, None,
 		)
 		self.assertEqual(_reread_child_counter(self.lead.name), 9)
@@ -147,8 +154,7 @@ class TestIncrementOnASingletonChildRow(_ChildCounterBase):
 		counter to 1 instead of incrementing. The typo must be a loud refusal."""
 		with self.assertRaises(ValueError) as raised:
 			actions._action_upsert_child(
-				frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE,
-				             match_json="{}", set_json=json.dumps({_COUNTER: {"mode": "Incremnt", "value": "1"}})),
+				_upsert(_row(_COUNTER, "Incremnt", "1")),
 				self.lead.name, {}, fx.AXES, None,
 			)
 		self.assertIn("Incremnt", str(raised.exception))
@@ -159,25 +165,37 @@ class TestIncrementOnASingletonChildRow(_ChildCounterBase):
 
 class TestSingletonInvariants(_ChildCounterBase):
 
-	def test_a_non_empty_match_against_a_singleton_refuses_loudly(self):
-		"""A singleton has no row key — any match is an author error, never silently ignored."""
+	def test_a_node_authored_as_json_refuses_by_name(self):
+		"""W8.3 — `set_json`/`match_json` are gone. A config frozen into a CRM Workflow Version cannot be
+		migrated, so reading `set_fields` and finding nothing must be loud, never a silent no-op."""
 		with self.assertRaises(ValueError) as raised:
 			actions._action_upsert_child(
 				frappe._dict(action_type="Upsert Child Row", child_table=_CHILD_TABLE,
-				             match_json=json.dumps({"x": "y"}), set_json="{}"),
+				             set_json=json.dumps({_COUNTER: "1"})),
 				self.lead.name, {}, fx.AXES, None,
 			)
-		self.assertIn("singleton", str(raised.exception))
+		self.assertIn("set_json", str(raised.exception))
 
-	def test_an_empty_match_against_a_keyed_table_still_refuses(self):
-		"""The keyed path is untouched — empty match_json must still be refused for multi-row tables."""
-		with self.assertRaises(ValueError) as raised:
-			actions._action_upsert_child(
-				frappe._dict(action_type="Upsert Child Row", child_table="custom_acquisition_profile",
-				             match_json="{}", set_json=json.dumps({"utm_source": "x"})),
-				self.lead.name, {}, fx.AXES, None,
-			)
-		self.assertIn("non-empty", str(raised.exception))
+	def test_a_keyed_section_writes_its_latest_row_and_never_a_second(self):
+		"""The match map is gone and the section decides instead: a multi-row section resolves through
+		`lead.multirow.row_for_section` — the row the Data tab and every Smart View already show — so an
+		upsert UPDATES it rather than appending a rival row nobody sees."""
+		tdoc = frappe.get_doc("CRM Lead", self.lead.name)
+		tdoc.set("custom_acquisition_profile", [])
+		tdoc.append("custom_acquisition_profile", {"touch_at": "2026-01-01 10:00:00", "utm_source": "old"})
+		tdoc.append("custom_acquisition_profile", {"touch_at": "2026-06-01 10:00:00", "utm_source": "new"})
+		tdoc.save(ignore_permissions=True)
+
+		actions._action_upsert_child(
+			frappe._dict(action_type="Upsert Child Row", child_table="custom_acquisition_profile",
+			             set_fields=[_row("utm_source", refs.LITERAL, "written")]),
+			self.lead.name, {}, fx.AXES, None,
+		)
+
+		rows = frappe.get_doc("CRM Lead", self.lead.name).get("custom_acquisition_profile")
+		self.assertEqual(len(rows), 2, "an upsert appended a row instead of updating the latest one")
+		self.assertEqual({str(r.touch_at)[:10]: r.utm_source for r in rows},
+		                 {"2026-01-01": "old", "2026-06-01": "written"})
 
 	def test_a_singleton_with_two_rows_raises(self):
 		"""rows[0] silently hid 941 corrupted rows. A singleton with two rows must fail loud."""

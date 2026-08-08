@@ -4,14 +4,10 @@
 //      kind, app, expiry and each required scope. A verdict is returned; the token never is.
 //   2) "Refresh From Facebook" — re-runs discovery, so a new Page token, a new form and an edited
 //      form's questions all become visible without deleting and recreating the source.
-// The token is a Password field (asterisks once saved), so the eye toggle reads the real value back
-// through the shared helper (public/js/tatva_connect.bundle.js).
 // No fork — a Client Script override on an upstream doctype.
 
 frappe.ui.form.on('Lead Sync Source', {
   refresh(frm) {
-    tatva_enable_secret_reveal(frm, ['access_token']);
-
     if (frm.is_new() || frm.doc.type !== 'Facebook') return;
 
     frm.add_custom_button(__('Validate Token'), () => {

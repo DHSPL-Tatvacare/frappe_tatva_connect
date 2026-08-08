@@ -24,9 +24,9 @@
 				title: __("Replay Deliveries"),
 				fields: [
 					{
-						fieldname: "service",
+						fieldname: "channel",
 						fieldtype: "Data",
-						label: __("Service"),
+						label: __("Channel"),
 						reqd: 1,
 						description: __("As it appears in the Service column, e.g. Acefone or WATI."),
 					},
@@ -49,7 +49,7 @@
 				primary_action_label: __("Replay"),
 				primary_action(values) {
 					frappe.call({
-						method: "tatva_connect.webhooks.spine.replay_service",
+						method: "tatva_connect.webhooks.spine.replay_channel",
 						args: values,
 						freeze: true,
 						freeze_message: __("Re-enqueuing…"),

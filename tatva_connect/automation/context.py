@@ -86,6 +86,8 @@ def context_for(doc, changed):
 	values = dict(doc.get_valid_dict())
 	for fieldname, value in activity_values(doc).items():
 		values.setdefault(fieldname, value)
+	for fieldname, value in section_values(doc).items():
+		values.setdefault(fieldname, value)
 	for fieldname, (old, _new) in changed.items():
 		values[f"{fieldname}{refs.BEFORE}"] = old
 	return refs.Values(buckets={refs.slug(doc.doctype): values})
@@ -99,10 +101,8 @@ def activity_values(doc):
 	non-CRM-Task subject or a plain task with no activity type. The fail-closed location backstop reads the
 	form through here too (`activity.automation.reconstruct_values`), so there is one reader, not two.
 
-	NOTE (audit GAP 3, deferred): read is gated by can_read only at AUTHOR time (describe), not here at
-	fire time. Enforcing readable_fields here is the right shape but needs the seed to first tick can_read
-	on EVERY criterion-referenced schema field (many live TP-tuple rules key on can_read=0 fields today) —
-	a coordinated seed change owned by the automation engine, not a code-only fix. Tracked for that owner."""
+	Reading is scoped by the workflow's GRAIN at author time (`describe._criterion_fields`), which is the
+	same contract execution enforces — there is no second per-field read flag to consult here."""
 	if doc.doctype != "CRM Task" or not doc.get("custom_task_type"):
 		return {}
 	from tatva_connect.activity.api import _task_values, _type_config
@@ -111,6 +111,33 @@ def activity_values(doc):
 	if not cfg:
 		return {}
 	return _task_values(doc, cfg)
+
+
+def section_values(doc):
+	"""CRM Lead's child-section values flattened to one row each, keyed `<child_table>.<column>` — the
+	same dotted path `describe.field_catalog` offers an author and `refs.parse` reads as one field.
+
+	A lead's counters and profile values live in child rows, so a Route thresholding on one of them has
+	nothing to read without this. The meta carries the Table field and never its columns, which is why the
+	vocabulary needs the mirror union in `describe.fields_for_doctype`.
+
+	Every section resolves through `multirow.row_for_section` — a singleton gives its one row, a multi-row
+	section its latest. That is the row the Data tab and a Smart View already show, so a column means the
+	same reading wherever it is read; a rule that could see nothing would break that as surely as one that
+	picked a different row."""
+	if doc.doctype != "CRM Lead":
+		return {}
+	from tatva_connect.lead import multirow
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	out = {}
+	for section in crm_lead_section.child_sections():
+		row = multirow.row_for_section(doc, section)
+		if row is None:
+			continue
+		for fieldname, value in row.get_valid_dict().items():
+			out[f"{section.child_table_field}.{fieldname}"] = value
+	return out
 
 
 def field_types_for(doctype):

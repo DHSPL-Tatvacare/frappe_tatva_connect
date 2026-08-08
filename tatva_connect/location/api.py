@@ -488,6 +488,7 @@ PLACES_DETAILS_URL = "https://places.googleapis.com/v1/places/"
 def place_autocomplete(query):
 	"""Places API (New) autocomplete proxy (key server-side). Returns [{place_id, description}] for the
 	Desk 'Set Clinic Location' type-ahead. Biased to the operator's country (blank = worldwide)."""
+	frappe.has_permission("CRM Lead", "read", throw=True)
 	key = _api_key()
 	if not (key and query):
 		return []
@@ -516,6 +517,7 @@ def place_autocomplete(query):
 @frappe.whitelist()
 def place_details(place_id):
 	"""Places API (New) details proxy: a placeId -> {lat, lng, address}. Key server-side."""
+	frappe.has_permission("CRM Lead", "read", throw=True)
 	key = _api_key()
 	if not (key and place_id):
 		return None
@@ -697,6 +699,7 @@ def map_config():
 	    configured, rather than silently drawing something else.
 
 	Geocoding + the Desk history stay Google regardless."""
+	frappe.has_permission("CRM Lead", "read", throw=True)
 	s = _settings()
 	google_ok = bool(automation.is_enabled("Location::Google::capture") and _api_key())
 	return {

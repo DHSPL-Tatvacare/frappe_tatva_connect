@@ -12,10 +12,6 @@
   const missing = (name) => typeof window[name] !== 'function';
   const warn = (name) => console.warn(`tatva_connect: ${name} is unavailable (public/js/tatva_connect.bundle.js did not load); the rest of this form still works.`);
 
-  // COSMETIC -- absent, the operator loses a convenience and learns nothing false.
-  // A saved Password field stays masked, which is the more conservative state, not a weaker one.
-  if (missing('tatva_enable_secret_reveal')) window.tatva_enable_secret_reveal = (frm, fieldnames) => warn('tatva_enable_secret_reveal');
-  if (missing('tatva_bind_secret_reveal')) window.tatva_bind_secret_reveal = () => {};
   // The banner is a convenience over the URL; the webhook works whether or not it is painted.
   if (missing('tatva_render_webhook_urls')) window.tatva_render_webhook_urls = (frm) => { if (frm && frm.dashboard) frm.dashboard.clear_headline(); warn('tatva_render_webhook_urls'); };
   // A dropdown that offers nothing falls back to free text, and the server still decides what is valid.

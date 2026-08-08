@@ -248,6 +248,18 @@ def get_reviews(course):
 	return _native(course)
 
 
+@frappe.whitelist()
+def get_certified_participants(filters=None, start=0, page_length=40, limit_start=None, limit_page_length=None):
+	"""Internal-only. Native returns a cross-member directory — every certified colleague's full name,
+	username, avatar and open_to (work/hiring) — to any authenticated caller. It spans all members, so
+	there is no "what you are in" to narrow to; a non-privileged caller is denied outright."""
+	if not lms_visibility.is_privileged():
+		frappe.throw(_("Only training staff may view the certified-participant directory."), frappe.PermissionError)
+	from lms.lms.api import get_certified_participants as _native
+
+	return _native(filters, start, page_length, limit_start, limit_page_length)
+
+
 @frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; require_course denies a caller who is not in the course
 def get_course_outline(course=None, progress=False):
 	"""Native's only gate is `guest_access_allowed()`, so any logged-in user could read the full chapter

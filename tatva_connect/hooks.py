@@ -123,6 +123,8 @@ override_whitelisted_methods = {
 	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
 	"lms.lms.utils.get_programs": "tatva_connect.access.native_guards.get_programs",
 	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
+	# VAPT Aug'26: the certified-participant directory is cross-member PII (name/username/avatar/open_to) readable by any login; internal training staff only.
+	"lms.lms.api.get_certified_participants": "tatva_connect.access.native_guards.get_certified_participants",
 	# Audit Aug'26 F2: get_reviews has NO gate of any kind and returns each reviewer's name and avatar.
 	"lms.lms.utils.get_reviews": "tatva_connect.access.native_guards.get_reviews",
 	# Audit Aug'26 F3: the outline of any course was readable by any login. The guard also carries the
@@ -194,6 +196,11 @@ sqlite_search = ["tatva_connect.search.index.CRMLeadSearch"]
 doc_events = {
 	# A finished lead_import job stamps its outcome back onto the CRM Lead Import it came from.
 	"CRM Bulk Job": {"on_update": "tatva_connect.lead_import.api.follow_job_status"},
+	# Ownership-spoof IDOR: these LMS doctypes ship a `pass` controller, so client.insert trusts `member`; pin it to the caller. Add a doctype here to close it. LMS Enrollment is cured by its own class override above.
+	"LMS Batch Feedback": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
+	"LMS Lesson Note": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
+	"LMS Programming Exercise Submission": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
+	"LMS Video Watch Duration": {"validate": "tatva_connect.access.lms_member_guard.enforce_member"},
 	"CRM Lead": {
 		# stamp/clamp the lead's grain from the acting user's entitlement (single->auto, manager->validated pick),
 		# THEN canonicalise empty routing fields (''->None) BEFORE dedup, so the {mobile, vertical, group} anchor + stored leads agree (NULL, never '').
@@ -456,6 +463,8 @@ after_migrate = [
 	"tatva_connect.storage.drift.assert_no_disk_reads",
 	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
 	"tatva_connect.access.lockdown.assert_locked",
+	# The ledger now feeds apply(); LOCKED_MATRIX is the frozen reference it was seeded from. Retires when the first app is armed in ENFORCED_APPS.
+	"tatva_connect.access.lockdown.assert_ledger_parity",
 	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
 	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",

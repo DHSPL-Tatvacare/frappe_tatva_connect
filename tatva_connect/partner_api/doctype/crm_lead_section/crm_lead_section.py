@@ -28,6 +28,31 @@ def sql_source(section):
 	return "child" if section.get("child_table_field") else "parent"
 
 
+def child_sections():
+	"""Every section that lives in a child table, as section docs.
+
+	A caller wanting the ONE row a section resolves to passes each of these to
+	`lead.multirow.row_for_section` — the same rule the Data tab and a Smart View read through. Listed
+	here beside `sql_source` so nobody re-filters `CRM Lead Section` by hand."""
+	return [
+		frappe.get_cached_doc("CRM Lead Section", r.name)
+		for r in frappe.get_all("CRM Lead Section", filters={"child_table_field": ["!=", ""]}, fields=["name"])
+	]
+
+
+def section_for_child(value):
+	"""The child section a value names — by section name, by child-table fieldname, or by child doctype.
+
+	A child-row workflow node stores the SECTION (a Link, so it rides the app's own link picker and
+	`api.list_link_titles`), the publish gate asks about the record its fields live on, and the runtime
+	needs the table fieldname to reach the rows. One resolver answers all three, and accepting the
+	fieldname is also why a config authored before the node was retyped still resolves."""
+	for section in child_sections():
+		if value and value in (section.name, section.child_table_field, section.target_doctype):
+			return section
+	return None
+
+
 class CRMLeadSection(Document):
 	def validate(self):
 		self._multi_row_needs_a_row_key()

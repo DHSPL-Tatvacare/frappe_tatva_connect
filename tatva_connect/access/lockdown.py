@@ -4,9 +4,16 @@
 
 Standard doctypes (custom=0, e.g. Contact) can't carry our perms in their own JSON, so Frappe
 overrides them via `Custom DocPerm` — and when ANY Custom DocPerm exists for a doctype, the
-stock DocPerm is ignored entirely. We REBUILD that matrix to exactly the roles in LOCKED_MATRIX;
+stock DocPerm is ignored entirely. We REBUILD that matrix to exactly the roles the LEDGER declares;
 every other role — including the `All` role that every login holds, plus unused ERPNext roles —
 is therefore denied. Fail-closed.
+
+WHAT THIS MODULE DECIDES, AND WHAT IT DOES NOT. `ledger.py` decides WHAT a doctype may be; this module
+decides only HOW that becomes rows on this site, and it is the only module in the package that writes a
+permission row. The set it rebuilds is `rebuild_targets()`: every doctype the ledger OPENs, plus — for
+each app armed in ENFORCED_APPS — every parent doctype of that app, which resolves to DENIED unless the
+ledger names it. With ENFORCED_APPS empty the behaviour is exactly what LOCKED_MATRIX gave, and
+assert_ledger_parity proves it on every migrate.
 
 Runs on after_migrate, idempotently (reset then rebuild), for the SAME reason as schema_setup:
 install-app baselines patches.txt WITHOUT running it, so a fresh DB must get the lock here, not
@@ -17,17 +24,18 @@ EXACTLY this, drop anything that drifted in".
 Row-scope (which records within a doctype a role may see) is a SEPARATE layer — User Permission +
 the visibility brain — not this module. This module is purely the doctype-level gate.
 """
+
 import frappe
 from frappe import _
 from frappe.permissions import add_permission, reset_perms, update_permission_property
 
+from tatva_connect.access import ledger
 from tatva_connect.whatsapp.roles import WHATSAPP_ADMIN, WHATSAPP_USER
 
-# doctype -> {role: (read, write, create, delete[, if_owner])}. ONLY these roles get access; every
-# other role is denied. The matrix is composed from per-app sections below (one auditable surface —
-# constitution A.8/S.6: extend the ONE lock, never a parallel per-app idiom). System Manager is
-# listed on every row because a Custom DocPerm OVERRIDES the stock DocPerm entirely — omit it and the
-# stock System Manager grant would vanish. A 5-tuple sets if_owner (own-records-only, policy §5 rule 2).
+# Apps fully inverted — every parent doctype DENIED unless the ledger opens it. Armed one app at a time.
+ENFORCED_APPS = ()
+
+# FROZEN REFERENCE — apply() reads the LEDGER now; parity asserted on migrate. Edit the ledger, not this.
 
 # --- CRM / core (frappe) -----------------------------------------------------------------------
 _CRM_CORE = {
@@ -140,10 +148,22 @@ _WIKI = {
 	"Wiki Feedback": {  # drops the Guest row: an anonymous caller could create AND edit ratings
 		"System Manager": (1, 1, 1, 1),
 		"Wiki Approver": (1, 1, 1, 1),
-		"Wiki User": (0, 0, 1, 0),  # rate a page; never read or edit one. Wiki User not All — assert_locked forbids a non-if_owner All create
+		"Wiki User": (
+			0,
+			0,
+			1,
+			0,
+		),  # rate a page; never read or edit one. Wiki User not All — assert_locked forbids a non-if_owner All create
 	},
 	"Wiki Page Patch": {  # legacy contribution flow, superseded by Wiki Change Request; drops the Guest read
-		"System Manager": (1, 1, 1, 1, 0, 1),  # 6th element = submit/cancel/amend; without it the rebuild strips them
+		"System Manager": (
+			1,
+			1,
+			1,
+			1,
+			0,
+			1,
+		),  # 6th element = submit/cancel/amend; without it the rebuild strips them
 		"Wiki Approver": (1, 1, 1, 1, 0, 1),
 		"All": (1, 1, 1, 1, 1),  # own records only — stock shape, kept
 	},
@@ -225,7 +245,12 @@ FIELD_LEVELS = {
 _PERMLEVEL_1_FIELDS = {
 	"LMS Test Case": ("input", "expected_output"),
 	"LMS Program Member": ("full_name", "progress"),
-	"Insights Data Source v3": ("connection_string", "bigquery_service_account_key", "http_headers", "api_custom_headers"),
+	"Insights Data Source v3": (
+		"connection_string",
+		"bigquery_service_account_key",
+		"http_headers",
+		"api_custom_headers",
+	),
 	# Both are written into every wiki page unescaped; `javascript` is the same injection as `head_html`.
 	"Wiki Settings": ("head_html", "javascript"),
 	"LMS Batch": ("custom_script", "custom_component"),
@@ -260,15 +285,48 @@ def apply_field_permlevels():
 			continue
 		for fieldname in fields:
 			frappe.make_property_setter(
-				{"doctype": doctype, "fieldname": fieldname, "property": "permlevel", "value": 1, "property_type": "Int"},
+				{
+					"doctype": doctype,
+					"fieldname": fieldname,
+					"property": "permlevel",
+					"value": 1,
+					"property_type": "Int",
+				},
 				is_system_generated=True,
 			)
 	frappe.clear_cache()
 
 
+def _app_parent_doctypes(app_name):
+	"""Parent doctypes belonging to `app_name`. Children inherit their parent and singles carry no matrix."""
+	modules = frappe.get_all("Module Def", filters={"app_name": app_name}, pluck="name")
+	if not modules:
+		return []
+	return frappe.get_all(
+		"DocType", filters={"module": ["in", modules], "istable": 0, "issingle": 0}, pluck="name"
+	)
+
+
+def rebuild_targets():
+	"""doctype -> the rows it must be rebuilt to. THE one reader of the ledger on the write path.
+
+	Two sources, and the second is the inversion. Always: every doctype the ledger OPENs, which is what
+	LOCKED_MATRIX did. Additionally: every parent doctype of an app in ENFORCED_APPS, which resolves to
+	DENIED unless OPEN names it — so a doctype nobody classified is closed rather than left at whatever
+	its app shipped. tatva_connect is skipped throughout: our own doctypes declare their permissions in
+	their own JSON (POLICY §6), and rebuilding them here would silently overwrite that declaration."""
+	targets = {dt: ledger.rows_for(dt) for dt in ledger.OPEN}
+	for app_name in ENFORCED_APPS:
+		if app_name == "tatva_connect":
+			continue
+		for doctype in _app_parent_doctypes(app_name):
+			targets.setdefault(doctype, ledger.rows_for(doctype))
+	return {dt: rows for dt, rows in targets.items() if frappe.db.exists("DocType", dt)}
+
+
 def apply(*_args, **_kwargs):
-	"""Rebuild each locked doctype's permission matrix to exactly LOCKED_MATRIX (after_migrate)."""
-	for doctype, roles in LOCKED_MATRIX.items():
+	"""Rebuild each governed doctype's permission matrix to exactly what the ledger declares (after_migrate)."""
+	for doctype, roles in rebuild_targets().items():
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		reset_perms(doctype)  # drop any prior custom perms -> deterministic rebuild
@@ -293,7 +351,9 @@ def apply(*_args, **_kwargs):
 					"cancel": submittable,
 					"amend": submittable,
 				}
-			).insert(ignore_permissions=True)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
+			).insert(
+				ignore_permissions=True
+			)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	apply_field_levels()
 	apply_field_permlevels()
 	apply_app_security_settings()
@@ -338,8 +398,31 @@ def effective_all_guest_grants(doctype):
 
 
 def assert_locked(*_args, **_kwargs):
-	"""Fail the migrate if a locked doctype is EFFECTIVELY open to All/Guest write/create/delete
-	— the Layer-4 drift guard, same idiom as automation.drift / notifications.drift."""
-	bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]
+	"""Fail the migrate if a governed doctype is EFFECTIVELY open to All/Guest write/create/delete
+	— the Layer-4 drift guard, same idiom as automation.drift / notifications.drift.
+
+	Reads the same rebuild_targets() the write path does, so arming an app in ENFORCED_APPS extends the
+	guard with it and the two can never describe different sets of doctypes."""
+	bad = [grant for doctype in rebuild_targets() for grant in effective_all_guest_grants(doctype)]
 	if bad:
 		frappe.throw(_("Permission lockdown drift — locked doctypes open to All/Guest: {0}").format(bad))
+
+
+def assert_ledger_parity(*_args, **_kwargs):
+	"""Fail the migrate if the ledger and the frozen LOCKED_MATRIX have diverged.
+
+	LOCKED_MATRIX is no longer read by apply(); it is kept as the reviewed reference the ledger was
+	seeded from, and this asserts the swap stayed a no-op. It retires the day the first app is armed in
+	ENFORCED_APPS and the ledger legitimately says more than the matrix ever did."""
+
+	def pad(perms):
+		return tuple(perms[:5]) + (0,) * (5 - len(perms[:5]))
+
+	drift = []
+	for doctype in set(LOCKED_MATRIX) | set(ledger.OPEN):
+		want = {r: pad(p) for r, p in LOCKED_MATRIX.get(doctype, {}).items()}
+		have = {r: pad(p) for r, p in ledger.rows_for(doctype).items()} if doctype in ledger.OPEN else {}
+		if want != have:
+			drift.append(doctype)
+	if drift:
+		frappe.throw(_("Ledger drifted from LOCKED_MATRIX: {0}").format(sorted(drift)))

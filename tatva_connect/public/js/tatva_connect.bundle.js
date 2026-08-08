@@ -1,5 +1,4 @@
 // Shared Desk helpers for the account + settings forms (WhatsApp Account, CRM Telephony Account, CRM Push Settings), loaded on every Desk page via hooks.py `app_include_js` as a content-hashed bundle.
-// `tatva_enable_secret_reveal(frm, fieldnames)` — make the eye on a Password field reveal the real secret (a saved one holds only asterisks).
 // `tatva_webhook_random_token()` — generate a URL-safe-ish secret for a fresh token.
 // `tatva_render_webhook_urls(frm, opts)` — fetch the REAL URL(s) server-side and paint the banner; remembers them for the Copy button.
 // `tatva_set_grid_row_options(grid, cdn, fieldname, data)` — feed ONE opened grid row's dropdown (per-row option sets).
@@ -29,51 +28,6 @@ window.tatva_set_grid_column_options = function tatva_set_grid_column_options(gr
   } catch (e) {
     // Field absent / grid not built yet — a safe no-op, exactly as the surfaces this replaces treated it.
   }
-}
-
-// A saved Password field holds only asterisks, so the eye must fetch the plaintext from the server to reveal anything.
-window.tatva_enable_secret_reveal = function tatva_enable_secret_reveal(frm, fieldnames) {
-  // The form script's refresh runs before the Password controls are made, so wait for the toggle to exist.
-  (fieldnames || []).forEach((fieldname) => tatva_bind_secret_reveal(frm, fieldname, 0));
-}
-
-window.tatva_bind_secret_reveal = function tatva_bind_secret_reveal(frm, fieldname, attempt) {
-  if (frm.is_new()) return;
-  const ctrl = frm.get_field(fieldname);
-  if (!ctrl || !ctrl.toggle_password) {
-    if (attempt < 20) setTimeout(() => tatva_bind_secret_reveal(frm, fieldname, attempt + 1), 100);
-    return;
-  }
-
-  // Frappe's Password control scores every keystroke against frappe.core...test_password_strength — on a
-  // REVEALED field that would POST the provider's secret to a user-password endpoint, so the check is off.
-  if (ctrl.disable_password_checks) ctrl.disable_password_checks();
-
-  // Its keyup handler also re-hides the eye whenever the value contains a '*', which is every saved secret:
-  // one keystroke and the toggle would vanish until reload. Keep it shown after the native handler runs.
-  ctrl.toggle_password.removeClass('hidden');
-  ctrl.$input.on('keyup', () => setTimeout(() => ctrl.toggle_password.removeClass('hidden'), 600));
-
-  ctrl.toggle_password.off('click').on('click', () => {
-    if (ctrl.$input.attr('type') === 'text') {
-      ctrl.$input.val(ctrl.value || '').attr('type', 'password');
-      ctrl.toggle_password.html(frappe.utils.icon('eye', 'sm'));
-      return;
-    }
-    frappe.call({
-      method: 'tatva_connect.api.account_secrets.reveal',
-      args: { doctype: frm.doctype, name: frm.doc.name, fieldname },
-      callback: (r) => {
-        const secret = (r.message || {}).value;
-        if (!secret) {
-          frappe.show_alert({ message: __('Not set — type a value in the field.'), indicator: 'orange' });
-          return;
-        }
-        ctrl.$input.val(secret).attr('type', 'text');
-        ctrl.toggle_password.html(frappe.utils.icon('eye-off', 'sm'));
-      },
-    });
-  });
 }
 
 // A pass/fail list from any server-side validate endpoint returning {ok, checks:[{label, passed, detail}]}.

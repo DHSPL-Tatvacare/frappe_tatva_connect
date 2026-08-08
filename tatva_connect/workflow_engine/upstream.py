@@ -11,7 +11,7 @@ able to wake it". The same argument applies to every variable name, and this mod
 TWO SOURCES, ONE LIST
 ---------------------
   * the SUBJECT's own fields, from the Trigger — the lead (or task) the workflow watches, read through
-    `automation.describe.builder_schema`, which is already grain-scoped and allowlist-filtered.
+    `automation.describe.builder_schema`, which is already grain-scoped.
   * whatever ANCESTOR nodes write into journey state, from each verb's `emits` declaration — including the
     variables an author named themselves in a Call API's `capture` rows.
 

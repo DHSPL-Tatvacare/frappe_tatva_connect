@@ -213,3 +213,15 @@ class TestLMSVaptJul(FrappeTestCase):
 			quiz.name, json.dumps([{"question_name": self.question.name, "answer": ["A"]}])
 		)
 		self.assertEqual(r.get("score"), 1)
+
+	# --- Certified-participant directory is internal-only (cross-member PII: name/username/open_to) -----
+	def test_certified_participants_denied_to_student(self):
+		frappe.set_user(self.student)
+		with self.assertRaises(frappe.PermissionError):
+			native_guards.get_certified_participants()
+
+	def test_certified_participants_allowed_for_staff(self):
+		# Authorised path intact: a privileged caller still gets the directory (native list shape).
+		frappe.set_user(self.creator)
+		rows = native_guards.get_certified_participants()
+		self.assertIsInstance(rows, list)

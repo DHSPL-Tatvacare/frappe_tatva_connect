@@ -171,18 +171,9 @@ def _select(doc):
 
 
 def _child_row(doc, section):
-	"""The single child row a child-section field reads from. A multi-row section picks the latest via
-	the ONE shared rule (multirow.latest_child_row); a single-row section takes the one row. Returns a
-	child doc or None."""
-	table = section.child_table_field
-	if not table:
-		return None
-	children = doc.get(table) or []
-	if not children:
-		return None
-	if section.is_multi_row and section.row_key_field:
-		return multirow.latest_child_row(children, section.row_key_field)
-	return children[0]
+	"""The single child row a child-section field reads from — `multirow.row_for_section`, the ONE rule
+	the Data tab, the headline sync and a workflow criterion all read through."""
+	return multirow.row_for_section(doc, section)
 
 
 def _is_multi_row(section):

@@ -1,11 +1,11 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""Append Child Row really lands a row, and really refuses an undeclared field.
+"""Append Child Row really lands a row, and really refuses a field this grain is not entitled to.
 
-`_assert_child_allowlisted` asked `fields.is_settable` about the CHILD doctype. `is_settable` handles the
+`_assert_child_in_grain` asked `fields.is_settable` about the CHILD doctype. `is_settable` handles the
 Task catalogs and the lead catalog and returns False for everything else, so every Append/Upsert Child Row
-node raised PermissionError on its first field — the verb had never worked. The allowlist brain was right;
-the question was addressed to the wrong doctype.
+node raised PermissionError on its first field — the verb had never worked. The gate was right; the
+question was addressed to the wrong doctype.
 
 Driven through `interpreter._run_verb`, the real executor, and asserted on the lead's own child table —
 never on a call. A test that asserted the handler was invoked would have stayed green throughout.
@@ -19,8 +19,8 @@ from tatva_connect.workflow_engine import interpreter, refs
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _TABLE = "custom_acquisition_profile"  # the `acq` section's child table, per the CRM Lead Section brain
-_ALLOWED = "utm_source"                # seeded can_set for this test's grain
-_FORBIDDEN = "utm_medium"             # a real column on the same child doctype, never ticked can_set
+_ALLOWED = "utm_source"                # ticked into this test's grain contract by setUp
+_FORBIDDEN = "custom_signed_up_on_app"  # a real column on the same child doctype, entitled to no grain here
 
 
 class TestChildRowAllowlist(FrappeTestCase):
@@ -46,7 +46,10 @@ class TestChildRowAllowlist(FrappeTestCase):
 		return frappe._dict(
 			node_id="c1",
 			node_type="Append Child Row",
-			config_json=frappe.as_json({"child_table": _TABLE, "set_json": frappe.as_json(values)}),
+			config_json=frappe.as_json({
+				"child_table": _TABLE,
+				"set_fields": [{"name": k, "mode": refs.LITERAL, "value": v} for k, v in values.items()],
+			}),
 		)
 
 	def test_an_allowlisted_child_field_really_lands_a_row(self):
@@ -59,7 +62,7 @@ class TestChildRowAllowlist(FrappeTestCase):
 		self.assertEqual(len(rows), before + 1, "Append Child Row did not add a row to the lead")
 		self.assertEqual(rows[-1].get(_ALLOWED), "wf-probe")
 
-	def test_a_field_outside_the_allowlist_is_refused(self):
+	def test_a_field_outside_the_grain_is_refused(self):
 		"""The fail-closed direction. Fixing the doctype the gate is asked about must not open the gate."""
 		with self.assertRaises(PermissionError):
 			interpreter._run_verb(self._node({_FORBIDDEN: "wf-probe"}), self.lead.name, None, refs.Values(), fx.AXES)

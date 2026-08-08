@@ -10,9 +10,6 @@
 
 frappe.ui.form.on('CRM AI Voice Account', {
   refresh(frm) {
-    // Every secret on this form gets the same working eye toggle (a saved Password field holds only asterisks).
-    tatva_enable_secret_reveal(frm, ['api_key', 'webhook_token', 'webhook_token_previous', 'webhook_hmac_secret']);
-
     // The webhook affordances belong to a provider, so they wait for one — and SAY so: withdrawing three
     // controls in silence reads as a broken form rather than as an unanswered question.
     if (!frm.doc.provider) {

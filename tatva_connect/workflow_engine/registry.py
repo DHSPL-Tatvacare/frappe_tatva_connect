@@ -641,16 +641,35 @@ def _settable_problems(value, field, config, context):
 	`is_settable` — which expects a lead's DATA grain — is the exact defect this gate must not commit.
 	Does NOT refuse a field on a target that is itself already refused: one fault, one message.
 	"""
-	target = config.get(field.get("doctype_from") or "")
+	target = _written_doctype(field, config)
 	if not value or not context or not target:
 		return []
 	from tatva_connect.automation import actions, fields
 
-	if target not in set(actions.reachable_targets(context["subject"])):
+	if target not in set(actions.reachable_targets(context["subject"])) and not _child_doctype(target):
 		return []
 	if fields.is_set_declared(target, value):
 		return []
 	return [_("{0} is not a field automation is allowed to set on {1}.").format(value, target)]
+
+
+def _child_doctype(value):
+	"""True when `value` IS a lead child section's own doctype — asked of the section brain, never listed."""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	section = crm_lead_section.section_for_child(value)
+	return bool(section) and section.target_doctype == value
+
+
+def _written_doctype(field, config):
+	"""The RECORD a `doctype_from` sibling names. A child-row node names a `CRM Lead Section`, and the
+	record its rows live on is that section's target — resolved by the section brain, so the gate and the
+	handler read the same config the same way."""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	value = config.get(field.get("doctype_from") or "")
+	section = crm_lead_section.section_for_child(value)
+	return section.target_doctype if section else value
 
 
 def _settable_rows_problems(value, field, config, context):
@@ -662,7 +681,7 @@ def _settable_rows_problems(value, field, config, context):
 	A row whose FIELD is already refused is not asked about its VALUE — one fault, one message, the same
 	restraint `_settable_problems` shows for a field on a target that is itself refused.
 	"""
-	target = config.get(field.get("doctype_from") or "")
+	target = _written_doctype(field, config)
 	# Read ONCE for the whole table, and only at PUBLISH — on this table `context` is how a check is told which pass it is in.
 	known = _target_fields(target) if context and target else {}
 	found = []

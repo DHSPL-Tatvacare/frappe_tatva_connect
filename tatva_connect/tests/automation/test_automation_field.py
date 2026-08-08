@@ -1,12 +1,12 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The automation query brain (`automation/fields.py`) over the resource catalogs — one brain per resource,
-folded out of the retired `CRM Automation Field`. Capabilities are Check flags on `CRM Lead API Field` /
-`CRM Task Type Field`; routing derives from `CRM Lead Section`, grain from the internal contract. Real
-Frappe engine as the oracle; FrappeTestCase rolls the transaction back, so toggling a real catalog flag in
-a test never persists.
+"""The query brain (`automation/fields.py`) over the resource catalogs — one brain per resource, folded out
+of the retired `CRM Automation Field`. What a workflow may reach is the GRAIN CONTRACT and nothing else;
+routing derives from `CRM Lead Section`. `can_watch` is the one surviving flag and is not a permission —
+it is the dispatcher's diff list. Real Frappe engine as the oracle; FrappeTestCase rolls the transaction
+back, so toggling a real catalog flag in a test never persists.
 
-C4 — a capability change on the catalog is reflected by the reader with NO code edit.
+C4 — a contract/catalog change is reflected by the reader with NO code edit.
 C5 — the retired `CRM Automation Field` doctype (doc + table) is absent.
 """
 import unittest
@@ -32,30 +32,30 @@ class TestAutomationFieldBrain(FrappeTestCase):
 		self.assertFalse(frappe.db.exists("DocType", "CRM Automation Field"))
 		self.assertFalse(frappe.db.table_exists("CRM Automation Field"))
 
-	# C4 — tick can_read on the catalog, the reader reflects it with no code change.
-	def test_can_read_reflected_in_readable_fields(self):
-		self._set(can_read=0, can_watch=0)
-		self.assertNotIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
-		self._set(can_read=1)
-		self.assertIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
-
-	# can_watch IMPLIES can_read (folded in readable_fields, and nowhere else), and is watchable.
-	def test_can_watch_implies_readable_and_watchable(self):
-		self._set(can_read=0, can_watch=1)
-		self.assertIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
+	# C4 — toggle can_watch on the catalog, the reader reflects it with no code change.
+	def test_can_watch_reflected_in_watchable(self):
+		self._set(can_watch=0)
+		self.assertFalse(fields.is_watchable("CRM Lead", self.row.fieldname))
+		self.assertNotIn(self.row.fieldname, fields.watchable_fields("CRM Lead"))
+		self._set(can_watch=1)
 		self.assertTrue(fields.is_watchable("CRM Lead", self.row.fieldname))
 		self.assertIn(self.row.fieldname, fields.watchable_fields("CRM Lead"))
 
-	# Fail-closed: an unticked field is neither readable, watchable, nor settable.
-	def test_unticked_field_is_fenced(self):
-		self._set(can_read=0, can_watch=0, can_set=0)
-		self.assertNotIn(self.row.fieldname, fields.readable_fields("CRM Lead"))
-		self.assertFalse(fields.is_watchable("CRM Lead", self.row.fieldname))
-		self.assertFalse(fields.is_settable("CRM Lead", self.row.fieldname, ("", "", "")))
+	# Watching is not reaching: a watched field is still gated by its grain like any other.
+	def test_can_watch_is_not_a_write_permission(self):
+		self._set(can_watch=1)
+		self.assertFalse(fields.is_settable("CRM Lead", self.row.fieldname, ("zz-no", "zz-no", "zz-no")))
 
-	# Fail-closed: a non-subject doctype has no catalog — empty vocabulary, no writes.
+	# Fail-closed: a grain no contract ticks reaches nothing, whatever the catalog says.
+	def test_a_grain_with_no_contract_is_fenced(self):
+		for row in frappe.get_all(_CATALOG, fields=["fieldname"], limit=5):
+			self.assertFalse(
+				fields.is_settable("CRM Lead", row.fieldname, ("zz-no", "zz-no", "zz-no")),
+				f"{row.fieldname} was reachable at a grain no contract ticks",
+			)
+
+	# Fail-closed: a non-subject doctype has no catalog — no writes.
 	def test_non_subject_doctype_is_fenced(self):
-		self.assertEqual(fields.readable_fields("Customer"), [])
 		self.assertFalse(fields.is_settable("Customer", "customer_name", ("", "", "")))
 
 

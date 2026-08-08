@@ -191,6 +191,9 @@ def resolve_row(mode, value, ctx, current=_NO_TARGET):
 		if current is _NO_TARGET:
 			raise ValueError(f"{refs.INCREMENT} adds to a field's own value, so it cannot fill a template slot")
 		return flt(current) + flt(value)
+	# The fall-through this docstring warns of, closed: a renamed mode is refused, a blank one stays Literal.
+	if mode and mode != refs.LITERAL:
+		raise ValueError(f"{mode!r} is not a value mode — it would have been written as a literal")
 	return value
 
 

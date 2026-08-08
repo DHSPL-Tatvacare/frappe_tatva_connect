@@ -46,3 +46,19 @@ def latest_child_row(rows, row_key_field):
 	"""The single latest row from a multi-row child table, or None — the head of `sorted_child_rows`."""
 	ordered = sorted_child_rows(rows, row_key_field)
 	return ordered[0] if ordered else None
+
+
+def row_for_section(doc, section):
+	"""THE one row a section's fields read from, or None. Multi-row picks the latest by the rule above;
+	single-row takes its one row.
+
+	Every consumer asks this and none decides for itself — the Data tab, the headline sync, a Smart View
+	and a workflow criterion all show the same reading, which is what "one row in EVERY consumer" means.
+	A section naming no child table is the lead itself and has no row here."""
+	table = section.get("child_table_field")
+	rows = doc.get(table) if table else None
+	if not rows:
+		return None
+	if section.get("is_multi_row") and section.get("row_key_field"):
+		return latest_child_row(rows, section.get("row_key_field"))
+	return rows[0]

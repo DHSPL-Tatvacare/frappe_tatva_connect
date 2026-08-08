@@ -14,14 +14,6 @@ frappe.ui.form.on('WhatsApp Account', {
     // Upstream's Subscribe button is a Meta Graph call (needs version + business_id); every other provider subscribes by registering the URL on its own dashboard.
     if (frm.doc.custom_provider !== 'Meta') frm.remove_custom_button(__('Subscribe App to Webhooks'));
 
-    // Every secret on this form gets the same working eye toggle, whatever the provider.
-    tatva_enable_secret_reveal(frm, [
-      'token',
-      'custom_webhook_token',
-      'custom_webhook_token_previous',
-      'custom_webhook_hmac_secret',
-    ]);
-
     if (frm.doc.custom_provider !== 'WATI') return;
 
     frm.add_custom_button(__('Generate Webhook Token'), () => {

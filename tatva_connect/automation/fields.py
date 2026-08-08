@@ -1,20 +1,28 @@
-"""The ONE query brain over the per-resource field catalogs — the automation allowlist (read + write),
-folded out of the retired `CRM Automation Field` into the resource brains (one brain per resource):
+"""The ONE query brain over the per-resource field catalogs (one brain per resource):
   • lead fields     → `CRM Lead API Field` (routing DERIVED from its `section` → `CRM Lead Section`;
                       grain from the internal contract `access.entitlement.field_in_grains_via_contract`).
   • task fields     → `CRM Task Field` (NATIVE columns, e.g. status) + `CRM Task Type Field` (per-task-type
                       DECLARED fields) — two sources read as ONE, so a Task lookup sees both.
 
-Three capabilities are three Check flags on each catalog row:
-  • can_read  — a rule criterion / Route condition may test this field (grain-independent).
-  • can_watch — a change to this field may fire a rule (Updated). Implies can_read: the dispatcher captures
-    a watched field's before/after pair, so a `changed to` rule fires ONLY on the transition — once.
-  • can_set   — this field may be written by a Set Field / child-row action (grain-scoped via the contract).
+WHAT AUTOMATION MAY TOUCH IS THE GRAIN, AND ONLY THE GRAIN. `can_read`/`can_set` were a second, weaker
+allowlist ticked per field on top of the internal contract, and every question they answered the contract
+already answered — so a field could be entitled to a grain and still unreachable, for no reason an operator
+could see. They are gone. A workflow reads and writes the columns of its subject that its grain entitles,
+and the SAME rows answer both, so a picker can never offer what execution refuses.
 
-Grain is a SET scope only. Read/watch ignore grain; the lead set reads honour the internal contract — the
-SAME brain internal field entitlement uses. Lead child routing is DERIVED from `CRM Lead Section`; a native
-Task column's grain derives from the task type — never stored twice (the AST lock forbids hardcoded
-child-table names outside the section seed).
+  • can_watch — the one flag that survives, and it is not a permission: it is the dispatcher's diff list.
+    A watched field's before/after pair is captured on save, which is what `changed to` reads. Only a
+    watched field carries a before-value; every other field is read straight off the record.
+
+WHAT THE GRAIN NARROWS IS THE PICKER, NOT THE GATE. `readable_rows_in_rule_grain` is what an author is
+OFFERED; the gate at publish and at run time is wider on purpose — run state falls through to the live
+document, so a node reading any real field of the subject reads it fine, and `upstream._subject_field_refs`
+records why narrowing THERE would reject every predicate on a site whose contracts are not seeded yet.
+The two are never in conflict because the offer is a subset of the gate: an author cannot build something
+the runtime would refuse.
+
+Lead child routing is DERIVED from `CRM Lead Section`; a native Task column's grain derives from the task
+type — never stored twice (the AST lock forbids hardcoded child-table names outside the section seed).
 """
 import frappe
 
@@ -23,14 +31,21 @@ TASK_DT = "CRM Task"
 
 
 def _catalogs_for(doctype):
-	"""The resource catalog(s) holding a subject's automatable fields (one brain per resource). Task has TWO
-	sources read as one — its native columns (`CRM Task Field`) + its per-task-type declared fields
+	"""The resource catalog(s) holding a subject's fields (one brain per resource). Task has TWO sources
+	read as one — its native columns (`CRM Task Field`) + its per-task-type declared fields
 	(`CRM Task Type Field`); one resolver, same signatures, no parallel path."""
 	if doctype == LEAD_DT:
 		return ["CRM Lead API Field"]
 	if doctype == TASK_DT:
 		return ["CRM Task Field", "CRM Task Type Field"]
 	return []
+
+
+def _task_writable(fieldname):
+	"""A native column `activity.api.task_columns` admits, or any declared activity field."""
+	from tatva_connect.activity.api import task_columns
+
+	return fieldname in task_columns() or bool(frappe.db.exists("CRM Task Type Field", {"fieldname": fieldname}))
 
 
 def _grain_key(axes):
@@ -44,13 +59,7 @@ def _union_pluck(doctype, **query):
 	return list(dict.fromkeys(out))
 
 
-# -- read + watch side (grain-independent) -----------------------------------
-
-
-def readable_fields(doctype):
-	"""The fieldnames a rule criterion may test — the builder's vocabulary and the validator's fence.
-	can_watch is folded in here (and nowhere else) because it implies can_read."""
-	return _union_pluck(doctype, or_filters={"can_read": 1, "can_watch": 1})
+# -- watch side (the dispatcher's diff list, not a permission) ----------------
 
 
 def is_watchable(doctype, fieldname):
@@ -64,27 +73,25 @@ def watchable_fields(doctype):
 	return _union_pluck(doctype, filters={"can_watch": 1})
 
 
-# -- set side (grain-scoped) -------------------------------------------------
+# -- grain scope (the one gate, shared by read and write) ---------------------
 
 
-def is_settable(doctype, fieldname, axes, child_table_field="", require_row_key=False):
-	"""Runtime/author write-gate. Lead: a can_set catalog row whose section routing matches the child
-	context and whose field_key is ticked by the lead's grain contract. Task: a can_set row in either Task
-	catalog (a native Task column's grain derives from the task type, not from these axes). Fail-closed."""
+def is_settable(doctype, fieldname, axes, child_table_field=""):
+	"""Runtime/author gate. Lead: a catalog row whose section routing matches the child context and whose
+	field_key is ticked by the lead's grain contract. Task: any row in either Task catalog (a native Task
+	column's grain derives from the task type, not from these axes). Fail-closed."""
 	from tatva_connect.access import entitlement
 
 	if doctype == TASK_DT:
-		return any(frappe.db.exists(c, {"fieldname": fieldname, "can_set": 1}) for c in _catalogs_for(TASK_DT))
+		return _task_writable(fieldname)
 	if doctype != LEAD_DT:
 		return False
 	grain = {_grain_key(axes)}
 	for row in frappe.get_all(
-		"CRM Lead API Field", filters={"fieldname": fieldname, "can_set": 1}, fields=["field_key", "fieldname", "section"]
+		"CRM Lead API Field", filters={"fieldname": fieldname}, fields=["field_key", "fieldname", "section"]
 	):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
 		if (sec.child_table_field or "") != (child_table_field or ""):
-			continue
-		if require_row_key and row.fieldname != (sec.row_key_field or ""):
 			continue
 		if entitlement.field_in_grains_via_contract(row.field_key, grain):
 			return True
@@ -92,7 +99,7 @@ def is_settable(doctype, fieldname, axes, child_table_field="", require_row_key=
 
 
 def is_set_declared(doctype, fieldname, child_table_field=""):
-	"""MEMBERSHIP only: is this fieldname a can_set field of this doctype AT ALL, in any grain?
+	"""MEMBERSHIP only: is this fieldname a field of this doctype AT ALL, in any grain?
 
 	The publish-time half of the write gate, and DELIBERATELY weaker than `is_settable`. At publish there
 	is no lead — only the workflow's declared grain, which is a RULE grain whose blank axis means ANY.
@@ -103,50 +110,111 @@ def is_set_declared(doctype, fieldname, child_table_field=""):
 	allows the write stays at execution, where `is_settable` has a real lead.
 
 	Same routing rule as `is_settable`: a field belongs to the child table its `CRM Lead Section` names,
-	so a parent write (`child_table_field=""`) never matches a child-only field. One allowlist brain.
+	so a parent write (`child_table_field=""`) never matches a child-only field. One brain.
 	"""
 	if doctype == TASK_DT:
-		return any(frappe.db.exists(c, {"fieldname": fieldname, "can_set": 1}) for c in _catalogs_for(TASK_DT))
-	if doctype != LEAD_DT:
+		return _task_writable(fieldname)
+	section = _child_section(doctype)
+	if section:
+		child_table_field = section.child_table_field
+	elif doctype != LEAD_DT:
 		return False
-	for row in frappe.get_all("CRM Lead API Field", filters={"fieldname": fieldname, "can_set": 1}, fields=["section"]):
+	for row in frappe.get_all("CRM Lead API Field", filters={"fieldname": fieldname}, fields=["section"]):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
 		if (sec.child_table_field or "") == (child_table_field or ""):
 			return True
 	return False
 
 
-def _settable_parent_rows(doctype, ticked):
-	"""can_set PARENT fields (Lead: whose section has no child table; Task: any can_set row across both
-	catalogs), keeping only the field_keys `ticked` accepts.
+def _child_section(doctype):
+	"""The `CRM Lead Section` this doctype IS the child of, or None — asked of the section brain itself."""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	return None if doctype in (LEAD_DT, TASK_DT) else crm_lead_section.section_for_child(doctype)
+
+
+def _settable_rows_for(doctype, ticked):
+	"""The fields a write node may name on `doctype`, keeping only the field_keys `ticked` accepts:
+	the Lead's own (a section with no child table), a Task's (any row across both catalogs), or — when
+	the doctype IS a child section's target — that section's rows, under their own column names.
 
 	ONE walk, so the two grain questions below differ in exactly the membership predicate and nowhere
 	else. A single function with a wildcard FLAG was the alternative, and a flag that silently changes
 	what a blank axis means is precisely how a rule grain gets compared as the empty string."""
 	if doctype == TASK_DT:
-		return [frappe._dict(fieldname=f) for f in _union_pluck(TASK_DT, filters={"can_set": 1})]
+		from tatva_connect.activity.api import task_columns
+
+		declared = frappe.get_all("CRM Task Type Field", pluck="fieldname", distinct=True)
+		return [frappe._dict(fieldname=f) for f in sorted(set(task_columns()) | set(declared))]
+	section = _child_section(doctype)
+	if section:
+		return [frappe._dict(fieldname=r.fieldname)
+		        for r, sec in _lead_rows_in_grain(ticked) if sec.name == section.name]
 	if doctype != LEAD_DT:
 		return []
+	return [frappe._dict(fieldname=r.fieldname) for r, sec in _lead_rows_in_grain(ticked) if not sec.child_table_field]
+
+
+def _lead_rows_in_grain(ticked):
+	"""Every lead catalog row `ticked` accepts, paired with its resolved `CRM Lead Section`.
+
+	THE one walk. Read and write differ in what they keep, never in how a row is found or which grain
+	accepts it — a second walk is how the picker and the executor came to disagree before."""
 	out = []
-	for row in frappe.get_all("CRM Lead API Field", filters={"can_set": 1}, fields=["field_key", "fieldname", "section"]):
+	for row in frappe.get_all("CRM Lead API Field", fields=["field_key", "fieldname", "section"]):
 		sec = frappe.get_cached_doc("CRM Lead Section", row.section)
-		if sec.child_table_field:
-			continue
 		if ticked(row.field_key):
+			out.append((row, sec))
+	return out
+
+
+def readable_rows_in_rule_grain(doctype, axes):
+	"""What a criterion may TEST at this workflow's grain: the subject's own columns plus its child-section
+	columns, each named `<child_table>.<column>` — the dotted path `field_catalog` already offers and
+	`refs.parse` already reads as one field.
+
+	Wider than the write list on purpose. A write into a child table goes through Upsert Child Row, which
+	addresses the table itself, so `settable_rows_in_rule_grain` stays parent-only; a READ just needs the
+	value, and the counters LeadSquared routes on live in a child row.
+
+	A MULTI-ROW section is included and resolves to its latest row (`context.section_values`, via
+	`multirow.row_for_section`) — the same row the Data tab and a Smart View show, so a column means the
+	same reading wherever it is read.
+
+	A TASK narrows by nothing: its grain IS its type, so every field it carries — `custom_task_type` and
+	`status` included — already belongs to the grain that reached it. Narrowing it by the write list left
+	the exact per-field gate this work deleted, still standing on the Task side."""
+	from tatva_connect.access import entitlement
+
+	grain = _grain_key(axes)
+	if doctype == TASK_DT:
+		from tatva_connect.automation import describe
+
+		# `fields_for_doctype`, never the typed catalog: its one-level child walk leaks 44 fields the gate lacks.
+		return [frappe._dict(fieldname=d["key"]) for d in describe.fields_for_doctype(TASK_DT)]
+	if doctype != LEAD_DT:
+		return []
+	found = _lead_rows_in_grain(lambda key: entitlement.field_in_any_grain_overlapping(key, grain))
+	out = []
+	for row, sec in found:
+		if not sec.child_table_field:
 			out.append(frappe._dict(fieldname=row.fieldname))
+		else:
+			out.append(frappe._dict(fieldname=f"{sec.child_table_field}.{row.fieldname}"))
 	return out
 
 
 def settable_rows(doctype, axes):
-	"""can_set PARENT fields at a real record's DATA grain — every axis carries a value, blank is literal."""
+	"""Writable fields at a real record's DATA grain — every axis carries a value, blank is literal."""
 	from tatva_connect.access import entitlement
 
 	grain = {_grain_key(axes)}
-	return _settable_parent_rows(doctype, lambda key: entitlement.field_in_grains_via_contract(key, grain))
+	return _settable_rows_for(doctype, lambda key: entitlement.field_in_grains_via_contract(key, grain))
 
 
 def settable_rows_in_rule_grain(doctype, axes):
-	"""can_set PARENT fields a RULE declaring `axes` could EVER be allowed to set — blank means ANY.
+	"""Writable fields a RULE declaring `axes` could EVER reach — blank means ANY. Read AND write ask this
+	one, so the criterion picker and the write picker cannot offer different sets.
 
 	The author-time twin of `settable_rows`, and the reason it is a separate name rather than an argument:
 	a workflow's declared grain is a rule grain, and the picker that fed it to `settable_rows` offered a
@@ -157,4 +225,4 @@ def settable_rows_in_rule_grain(doctype, axes):
 	from tatva_connect.access import entitlement
 
 	grain = _grain_key(axes)
-	return _settable_parent_rows(doctype, lambda key: entitlement.field_in_any_grain_overlapping(key, grain))
+	return _settable_rows_for(doctype, lambda key: entitlement.field_in_any_grain_overlapping(key, grain))

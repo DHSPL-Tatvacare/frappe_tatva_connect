@@ -405,7 +405,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	"""UPDATE FIELD via the UNIFIED write path: load the target doc, set every declared row, save ONCE —
 	NEVER frappe.db.set_value (skips validate/hook re-mirroring). The target is the rule's scope — the
 	Lead, or the triggering doc itself (a Field-Changed rule on a Task may set a field on that Task).
-	Every row is gated by the enabled can_set allowlist at runtime (defense in depth), and gated BEFORE
+	Every row is gated by the lead's grain contract at runtime (defense in depth), and gated BEFORE
 	anything is written so a forbidden third row cannot leave the first two applied. The write runs inside
 	the rule's savepoint, so a later action's failure rolls this back too (group atomicity).
 
@@ -426,7 +426,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	for row in rows:
 		if not fields.is_settable(action.target_doctype, row["name"], axes):
 			raise PermissionError(
-				f"{row['name']} on {action.target_doctype} not in the enabled Automation-Field allowlist"
+				f"{row['name']} on {action.target_doctype} is not entitled to this workflow's grain"
 			)
 	if any(row.get("mode") == refs.INCREMENT for row in rows):
 		doctype, name = resolve_target(action, lead, trigger_doc)
@@ -484,100 +484,73 @@ def _action_add_comment(action, lead, context, axes, trigger_doc):
 def _action_append_child(action, lead, context, axes, trigger_doc):
 	"""APPEND_CHILD_ROW — add a new row to a CRM Lead child table (spec §4.2), via load+save so the
 	lead's hooks re-run. Every field must be allowlisted for the child doctype at the lead's grain."""
-	child_table, child_dt, _singleton = _child_target(action)
-	set_raw = _parse_set(action)
-	if not set_raw:
-		raise ValueError("Append Child Row needs a non-empty Set (JSON)")
-	_assert_child_allowlisted(child_dt, child_table, set(set_raw), axes)
+	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this
+
+	section = _child_target(action)
+	rows = _child_rows(action)
+	_assert_child_in_grain(section.target_doctype, section.child_table_field, {r["name"] for r in rows}, axes)
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
-	values = {k: _resolve_set_value(v, context, current=None) for k, v in set_raw.items()}
-	tdoc.append(child_table, values)
+	tdoc.append(section.child_table_field, {
+		r["name"]: contract.resolve_row(r.get("mode"), r.get("value"), context) for r in rows
+	})
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
 def _action_upsert_child(action, lead, context, axes, trigger_doc):
-	"""UPSERT_CHILD_ROW — find the row by natural key and update it, else append. A singleton child table
-	(is_multi_row=0, no row_key_field) auto-resolves its one row; keyed tables require a non-empty match.
+	"""UPSERT_CHILD_ROW — write the lead's row in a section, adding it when the lead has none.
 
-	W8.1 — set values carry {mode, value} pairs routed through `contract.resolve_row`, the ONE
-	reader, so a counter on a child row can be INCREMENTED the same way as a field on the lead."""
-	child_table, child_dt, singleton = _child_target(action)
+	W8.3 — HOW the row is found is the section's own declaration (`lead.multirow.row_for_section`, the
+	rule the Data tab and every Smart View already read), never a match map this node restates. The node
+	that restated it could be authored two ways the runtime and the publish gate disagreed about.
 
-	if singleton:
-		if (action.match_json or "").strip() and action.match_json.strip() != "{}":
-			raise ValueError("a singleton child table has no row key — match through the section's own key, not a custom one")
-		match = {}
-		# Unconditionally lock the parent: two concurrent upserts on an empty singleton must not both append.
-		frappe.db.get_value(*resolve_target(action, lead, trigger_doc), "name", for_update=True)
-	else:
-		match = _resolve_map(action.match_json, context)
-		if not match:
-			raise ValueError("Upsert Child Row needs a non-empty Match (JSON)")
-		if any(_blank(v) for v in match.values()):
-			raise ValueError("Upsert match key resolved to a blank value — refusing to match on blank")
-	_assert_child_allowlisted(child_dt, child_table, set(match) | _parse_fieldnames(action), axes, keys=set(match))
+	W8.1 — rows carry {mode, value} and resolve through `contract.resolve_row`, THE one reader, so a
+	counter on a child row is INCREMENTED exactly as a field on the lead is.
 
-	if not singleton and any(isinstance(v, dict) and v.get("mode") == refs.INCREMENT for v in _parse_set(action).values()):
-		frappe.db.get_value(*resolve_target(action, lead, trigger_doc), "name", for_update=True)
+	W8.2 — `Increment by` reads the row it is about to write, so the parent is locked first. The lock is
+	unconditional here: with no row yet, two concurrent journeys would otherwise both append one."""
+	from tatva_connect.lead import multirow
+	from tatva_connect.workflow_engine import contract  # lazy: registry imports actions, which imports this
+
+	section = _child_target(action)
+	rows = _child_rows(action)
+	_assert_child_in_grain(section.target_doctype, section.child_table_field, {r["name"] for r in rows}, axes)
+	frappe.db.get_value(*resolve_target(action, lead, trigger_doc), "name", for_update=True)
 
 	tdoc = _resolve_write_target(action, lead, trigger_doc)
-	if singleton:
-		row = _find_singleton_row(tdoc.get(child_table), child_dt)
-	else:
-		row = _find_child_row(tdoc.get(child_table), match, child_dt)
-
-	set_raw = _parse_set(action)
-	values = {k: _resolve_set_value(v, context, current=(row.get(k) if row else None)) for k, v in set_raw.items()}
-
+	held = tdoc.get(section.child_table_field) or []
+	if not section.is_multi_row and len(held) > 1:
+		raise ValueError(
+			f"{section.title} declares one row and this lead has {len(held)} rows — "
+			"refusing to write into a section whose row is ambiguous"
+		)
+	row = multirow.row_for_section(tdoc, section)
+	values = {r["name"]: contract.resolve_row(
+		r.get("mode"), r.get("value"), context, current=(row.get(r["name"]) if row else None),
+	) for r in rows}
 	if row:
-		for k, v in values.items():
-			if not singleton and k in match:
-				continue  # never rewrite the natural key out from under the upsert
-			row.set(k, v)
+		for name, value in values.items():
+			row.set(name, value)
 	else:
-		tdoc.append(child_table, values)
+		tdoc.append(section.child_table_field, values)
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
-def _parse_set(action):
-	"""The set_json as a parsed dict — plain, without resolving $ctx. references. Mode-dict values
-	(keyed by \"mode\") are kept as-is so the caller can detect INCREMENT before resolving."""
-	raw = (action.set_json or "").strip()
-	if not raw:
-		return {}
-	try:
-		data = json.loads(raw)
-	except (ValueError, TypeError):
-		raise ValueError("invalid JSON in a child-row action")
-	if not isinstance(data, dict):
-		raise ValueError("child-row action set JSON must be an object")
-	return data
+def _child_rows(action):
+	"""The rows this child-row node writes — `_update_rows`' twin, and refusing the pre-W8.3 JSON shape
+	for the same reason it refuses the pre-W8.1 one: a config frozen into a `CRM Workflow Version` cannot
+	be migrated, so reading `set_fields` and finding nothing would write nothing and say nothing."""
+	rows = [r for r in (action.set_fields or []) if isinstance(r, dict) and r.get("name")]
+	if rows:
+		return rows
+	if action.get("set_json") or action.get("match_json"):
+		raise ValueError(
+			"this child-row node was authored as JSON (set_json/match_json), which this engine no longer "
+			"reads — re-author it on the canvas as Section + Fields to set"
+		)
+	raise ValueError("a child-row node needs at least one field to set")
 
 
-def _parse_fieldnames(action):
-	"""The fieldnames a set_json names — keys only, for the allowlist check before values resolve."""
-	return set(_parse_set(action))
 
-
-def _find_singleton_row(rows, child_dt):
-	"""The one row of a singleton child table, or None. Raises if more than one exists — a singleton
-	with two rows is data corruption and an honest failure is the only safe outcome."""
-	existing = list(rows or [])
-	if len(existing) > 1:
-		raise ValueError(f"singleton child table {child_dt!r} has {len(existing)} rows — expected at most one")
-	return existing[0] if existing else None
-
-
-def _resolve_set_value(value, context, current):
-	"""A set_json value — plain literal or $ctx reference, or {mode, value} routed through contract."""
-	if isinstance(value, dict) and "mode" in value:
-		mode = value.get("mode")
-		if mode not in (refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT):
-			raise ValueError(f"unknown mode {mode!r} — must be one of {refs.LITERAL}, {refs.FROM_CONTEXT}, {refs.EXPRESSION}, {refs.INCREMENT}")
-		from tatva_connect.workflow_engine import contract  # lazy — circular with registry
-
-		return contract.resolve_row(mode, value.get("value"), context, current=current)
-	return _resolve(value, context)
 
 
 def _action_call_api(action, lead, context, axes, trigger_doc):
@@ -1032,23 +1005,27 @@ VERBS = {
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
 		],
 	},
+	# W8.3 — authored exactly like Update Field: `child_table` names a CRM Lead Section, its columns are rows.
 	"Append Child Row": {
 		"lane": "effect", "handler": _action_append_child, "target": TARGET_LEAD,
 		"label": "Append Child Row",
-		"description": "Adds a row to a child table on the lead.",
+		"description": "Adds a row to a section on the lead.",
 		"params": [
-			{"name": "child_table", "label": "Child Table", "help": "The fieldname of the table on the lead, not its label.", "type": "Data", "reqd": True},
-			{"name": "set_json", "label": "Set (JSON)", "help": "The new row's values. Write $ctx.<name> to drop in a value the run is carrying.", "type": "Code", "reqd": True, "reads": "ctx_json"},
+			{"name": "child_table", "label": "Section", "help": "Which of the lead's sections gains a row.", "type": "Link", "link": "CRM Lead Section", "reqd": True},
+			{"name": "set_fields", "label": "Fields to set", "help": "One row per field on the new row.", "type": "Field Map", "reqd": True,
+			 "doctype_from": "child_table",
+			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION]},
 		],
 	},
 	"Upsert Child Row": {
 		"lane": "effect", "handler": _action_upsert_child, "target": TARGET_LEAD,
 		"label": "Upsert Child Row",
-		"description": "Updates a matching child row, or adds one if none matches.",
+		"description": "Updates the lead's row in a section, or adds one if it has none.",
 		"params": [
-			{"name": "child_table", "label": "Child Table", "help": "The fieldname of the table on the lead, not its label.", "type": "Data", "reqd": True},
-			{"name": "match_json", "label": "Match (JSON)", "help": "How the existing row is found. No match and a new row is added instead.", "type": "Code", "reqd": True, "reads": "ctx_json"},
-			{"name": "set_json", "label": "Set (JSON)", "help": "What is written onto the row, found or new. Write $ctx.<name> to drop in a value the run is carrying.", "type": "Code", "reqd": True, "reads": "ctx_json"},
+			{"name": "child_table", "label": "Section", "help": "Which of the lead's sections is written. How its row is found is the section's own declaration, not this node's.", "type": "Link", "link": "CRM Lead Section", "reqd": True},
+			{"name": "set_fields", "label": "Fields to set", "help": "One row per field. Increment by adds to what the row already holds.", "type": "Field Map", "reqd": True,
+			 "doctype_from": "child_table",
+			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
 		],
 	},
 	"Call API": {
@@ -1312,10 +1289,6 @@ def verbs_in_lane(lane):
 # -- value + child helpers ---------------------------------------------------
 
 
-def _blank(v):
-	return v is None or (isinstance(v, str) and not v.strip())
-
-
 def _subject(action, context):
 	"""The line a rep reads on their list, or None for the task type's own name.
 
@@ -1410,57 +1383,24 @@ def body_references(raw):
 	return [name for name in found if name]
 
 
-def _resolve_map(raw, context):
-	"""Parse a {fieldname: value} JSON map and resolve each value (literal | $ctx.<field>)."""
-	if not (raw or "").strip():
-		return {}
-	try:
-		data = json.loads(raw)  # ALLOWLIST 2026-06-29: keep raw — the except gives a precise "invalid JSON" error; parse_json won't raise.
-	except (ValueError, TypeError):
-		raise ValueError("invalid JSON in a child-row action")
-	if not isinstance(data, dict):
-		raise ValueError("child-row action JSON must be an object")
-	return {k: _resolve(v, context) for k, v in data.items()}
-
 
 def _child_target(action):
-	"""(child_table fieldname, child doctype, is_singleton). The child table must be a Table field on CRM Lead.
-	A singleton has is_multi_row=0 and no row_key_field — Upsert Child Row auto-resolves its one row."""
-	if not action.child_table:
-		raise ValueError("child-row action missing Child Table")
-	field = frappe.get_meta("CRM Lead").get_field(action.child_table)
-	if not field or field.fieldtype != "Table":
-		raise ValueError(f"{action.child_table!r} is not a child table on CRM Lead")
-	sec = frappe.db.get_value("CRM Lead Section", {"child_table_field": action.child_table}, ["is_multi_row", "row_key_field"])
-	singleton = sec and sec[0] == 0 and not sec[1]
-	return action.child_table, field.options, singleton
+	"""The `CRM Lead Section` this node writes — resolved by the section brain, whichever spelling the
+	config holds. The section already validated that its `child_table_field` is a real Table field on
+	CRM Lead holding `target_doctype` rows (`CRMLeadSection.validate`), so nothing is re-checked here."""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	section = crm_lead_section.section_for_child(action.child_table)
+	if not section:
+		raise ValueError(f"{action.child_table!r} is not a section on CRM Lead that lives in a child table")
+	return section
 
 
-def _find_child_row(rows, match, child_dt):
-	"""Type-aware row match (spec §4.2). Casts both sides by the child field's fieldtype so a Date
-	literal matches a stored Date/Datetime and 7/'7'/7.0 collapse — preventing dup-append. Raises if
-	the key matches more than one row (a key marked is_row_key that isn't actually unique)."""
-	meta = frappe.get_meta(child_dt)
-	hits = [row for row in (rows or []) if all(_eq(row.get(k), v, meta.get_field(k)) for k, v in match.items())]
-	if len(hits) > 1:
-		raise ValueError(f"upsert key matched {len(hits)} rows in {child_dt} — not a unique row key")
-	return hits[0] if hits else None
 
 
-def _eq(a, b, df):
-	"""Type-aware equality for a match key - delegates to the ONE shared comparator
-	(rules._eq_typed) so before/after diff semantics (watch._diff_watched_fields) and
-	changed_from_to (rules._one_match) and upsert row-matching all share one brain. Casts both
-	sides by the field's fieldtype (Date->getdate, Datetime->get_datetime, Float/Currency->flt,
-	Int->cint, ...). Falls back to None-safe equality on an uncastable value."""
-	from tatva_connect.automation.rules import _eq_typed
-	return _eq_typed(a, b, df.fieldtype if df is not None else None)
-
-
-def _assert_child_allowlisted(child_dt, child_table, fieldnames, axes, keys=None):
-	"""Every set/match field must be an enabled can_set row for the child table at the lead's grain;
-	match keys must additionally be the section's row key. Fail-closed. One allowlist brain
-	(fields.is_settable).
+def _assert_child_in_grain(child_dt, child_table, fieldnames, axes):
+	"""Every field written must be a catalog row for the child table entitled at the lead's grain.
+	Fail-closed. One brain (fields.is_settable).
 
 	The doctype asked about is the LEAD, never the child doctype: the lead catalog (`CRM Lead API Field`)
 	is where a child field is declared, and WHICH child table it lands in is derived from its
@@ -1469,9 +1409,8 @@ def _assert_child_allowlisted(child_dt, child_table, fieldnames, axes, keys=None
 	Append/Upsert Child Row node could ever run. `child_dt` is kept for the message, which is what an
 	author reads.
 	"""
-	keys = keys or set()
 	for f in fieldnames:
-		if not fields.is_settable(fields.LEAD_DT, f, axes, child_table_field=child_table, require_row_key=(f in keys)):
+		if not fields.is_settable(fields.LEAD_DT, f, axes, child_table_field=child_table):
 			raise PermissionError(
-				f"{f} on {child_dt} ({child_table}) is not in the enabled Automation-Field allowlist"
+				f"{f} on {child_dt} ({child_table}) is not entitled to this workflow's grain"
 			)

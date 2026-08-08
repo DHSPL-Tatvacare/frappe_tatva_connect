@@ -3,27 +3,25 @@
  "allow_rename": 1,
  "autoname": "field:fieldname",
  "creation": "2026-07-18 00:00:00.000000",
- "description": "Catalog of NATIVE CRM Task columns the automation engine may read / watch / set — the Task resource's field brain for its OWN columns. Its per-task-type DECLARED fields live on CRM Task Type Field; this holds the native columns (status, ...). Completes 'one brain per resource' for Task: Lead's native columns live on CRM Lead API Field; Task's live here. Grain for a native Task column derives from the task's type (the contract), never stored on these rows.",
+ "description": "Catalog of NATIVE CRM Task columns — the Task resource's field brain for its OWN columns. Its per-task-type DECLARED fields live on CRM Task Type Field; this holds the native columns (status, ...). Completes 'one brain per resource' for Task: Lead's native columns live on CRM Lead API Field; Task's live here. Grain for a native Task column derives from the task's type (the contract), never stored on these rows.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "fieldname",
   "label",
-  "can_read",
   "can_watch",
   "can_set"
  ],
  "fields": [
   {"fieldname": "fieldname", "fieldtype": "Data", "label": "Fieldname", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "The native column on CRM Task (e.g. status)."},
   {"fieldname": "label", "fieldtype": "Data", "label": "Label", "in_list_view": 1},
-  {"fieldname": "can_read", "fieldtype": "Check", "label": "Automation: Readable", "default": "0", "in_list_view": 1, "description": "A workflow criterion may test this Task column."},
-  {"fieldname": "can_watch", "fieldtype": "Check", "label": "Automation: Watchable", "default": "0", "in_list_view": 1, "description": "A change to this Task column may fire a workflow (changed-to). Implies Readable — the dispatcher captures its before-value so a rule fires only on the transition."},
-  {"fieldname": "can_set", "fieldtype": "Check", "label": "Automation: Settable", "default": "0", "in_list_view": 1, "description": "A workflow action may write this Task column."}
+  {"fieldname": "can_watch", "fieldtype": "Check", "label": "Automation: Watchable", "default": "0", "in_list_view": 1, "description": "A change to this Task column may fire a workflow (changed-to) — the dispatcher captures its before-value so a rule fires only on the transition."},
+  {"fieldname": "can_set", "fieldtype": "Check", "label": "Writable Column", "default": "0", "in_list_view": 1, "description": "An activity field declared with this target is PROMOTED to this column (activity.api.task_columns). A write is a write, whether an activity form or a workflow makes it; a column this does not name falls to the key-value home."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-18 00:00:00.000000",
+ "modified": "2026-08-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Field",

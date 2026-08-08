@@ -6,8 +6,8 @@ subject = one entry here + its `on_update` hook in hooks.py (the migrate drift g
 `automation.drift`, fails the build if the hook is missing). Nothing else — no config table: you cannot
 watch a doctype without a code-level hook + deploy anyway, so participation is intrinsically code.
 
-This map is the single source of truth for: the allowlist doctype gate (a can_read / can_watch row must
-name a subject), the drift gate's doctype list, and `watch._subject`'s Lead resolution. No parallel list.
+This map is the single source of truth for: the catalog doctype gate (a can_watch row must name a
+subject), the drift gate's doctype list, and `watch._subject`'s Lead resolution. No parallel list.
 """
 
 # link=None → the doc IS the lead. Otherwise `link` is the fieldname pointing at the CRM Lead; a

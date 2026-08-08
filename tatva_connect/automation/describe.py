@@ -2,8 +2,8 @@
 from and the controller validates against.
 
 No field/operator/value list is hardcoded in the UI: everything flows from one place — the task
-type's activity schema (`CRM Task Type Field`, which carries fieldtype + options) and the
-Automatable-Field allowlist. Add a field to a task type's form and it appears in the builder, with
+type's activity schema (`CRM Task Type Field`, which carries fieldtype + options) scoped to what the
+workflow's grain entitles. Add a field to a task type's form and it appears in the builder, with
 the right operators and value choices, automatically. The engine's *evaluation* of these operators
 lives in `automation/rules._one_match`; this module owns only the *vocabulary* (what's offered and
 accepted), so the UI and the validator can never drift from each other.
@@ -77,8 +77,12 @@ def fields_for_doctype(doctype):
 	`activity.api.compute_activity` homes through `field_target` — a retained common column on the task
 	row, or the section row that addresses it - it is NEVER a CRM Task doctype field itself. So the
 	vocabulary here is unioned with every distinct activity-schema fieldname (meta wins on a name
-	clash) - the SAME union `crm_automation_field._require_real_field` accepts for a can_read/
-	can_set row and `router._activity_values` resolves at fire time (one brain, no drift)."""
+	clash) - the SAME union `router._activity_values` resolves at fire time (one brain, no drift).
+
+	CRM Lead is under-described by its meta for the mirror-image reason: a lead's counters and profile
+	values live in SINGLETON CHILD tables, so the meta carries the Table field and never its columns. They
+	are unioned in under `<child_table>.<column>` — the dotted path `field_catalog` already offers and
+	`context.section_values` writes at fire time."""
 	if not doctype:
 		return []
 	descriptors = [_descriptor(df.fieldname, df.label, df.fieldtype, df.options) for df in _meta_fields(doctype)]
@@ -88,6 +92,11 @@ def fields_for_doctype(doctype):
 			if fieldname in present:
 				continue
 			descriptors.append(_descriptor(r.fieldname, r.label, r.fieldtype, r.options))
+	if doctype == "CRM Lead":
+		from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+		tables = {s.child_table_field for s in crm_lead_section.child_sections()}
+		descriptors += [d for d in field_catalog(doctype) if d["key"].split(".", 1)[0] in tables]
 	return descriptors
 
 
@@ -211,12 +220,18 @@ def _settable_targets(subject, vertical, group, program):
 
 	Each descriptor carries the `doctype` it belongs to: a flat list spanning two records cannot be
 	rendered under a chosen Target without it.
+
+	The lead's CHILD sections are reachable too — a child-row node names one and then sets its columns,
+	which is the same Field Map asking the same question about a different record. Listed from
+	`crm_lead_section.child_sections()`, so a section added tomorrow is offered with nothing to regenerate.
 	"""
 	from tatva_connect.automation import actions
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
+	targets = actions.reachable_targets(subject) + [s.target_doctype for s in crm_lead_section.child_sections()]
 	return [
 		descriptor
-		for dt in actions.reachable_targets(subject)
+		for dt in dict.fromkeys(targets)
 		for descriptor in _settable_fields(dt, vertical, group, program)
 	]
 
@@ -301,14 +316,16 @@ def _typed_catalog(doctype):
 	return catalog
 
 
-def _criterion_fields(doctype):
-	"""`fields` for the builder contract: the typed catalog INTERSECTED with the enabled READ allowlist
-	(fields.readable_fields) - the builder can only offer a field the engine is actually allowed to test
-	(Part H: the allowlist is both the security fence and the builder vocabulary). Reading is not
-	watching: a field a rule may TEST need not be one whose change may FIRE the rule."""
+def _criterion_fields(doctype, vertical, group, program):
+	"""`fields` for the builder contract: the typed catalog scoped to what this workflow's GRAIN entitles.
+
+	The scope is `fields.settable_rows_in_rule_grain` — the same rows `_settable_fields` reads, so the
+	criterion picker and the write picker cannot offer different sets, and nothing is offered that
+	execution would refuse. It replaced a per-field read allowlist that answered a question the grain
+	contract already answered, differently."""
 	if not doctype:
 		return []
-	allowed = set(fields.readable_fields(doctype))
+	allowed = {r.fieldname for r in fields.readable_rows_in_rule_grain(doctype, (vertical, group, program))}
 	return [d for d in _typed_catalog(doctype) if d["key"] in allowed]
 
 
@@ -382,7 +399,7 @@ def builder_schema(on_doctype=None, event=None, vertical=None, group=None, progr
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	return {
-		"fields": _criterion_fields(on_doctype),
+		"fields": _criterion_fields(on_doctype, vertical, group, program),
 		"operators_by_type": operators_by_type(),
 		"operator_shapes": operator_shapes(),
 		"verbs": builder_verbs(),

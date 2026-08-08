@@ -2,14 +2,10 @@
 // The Page token is what the crawl actually runs on, and once derived from a long-lived user token it
 // does not expire. "Validate Token" is where that is confirmed rather than assumed: a Page token
 // reporting an expiry means the user token it came from was short-lived when discovery ran.
-// The token is a Password field (asterisks once saved), so the eye toggle reads the real value back
-// through the shared helper (public/js/tatva_connect.bundle.js).
 // No fork — a Client Script override on an upstream doctype.
 
 frappe.ui.form.on('Facebook Page', {
   refresh(frm) {
-    tatva_enable_secret_reveal(frm, ['access_token']);
-
     if (frm.is_new()) return;
 
     frm.add_custom_button(__('Validate Token'), () => {

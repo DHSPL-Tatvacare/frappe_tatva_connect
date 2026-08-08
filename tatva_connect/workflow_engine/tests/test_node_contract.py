@@ -62,9 +62,14 @@ class TestReadsDeclaration(FrappeTestCase):
 		)}
 		self.assertEqual(found, {"report_date"})
 
-	def test_a_ctx_json_map_names_its_dollar_ctx_values(self):
+	def test_a_child_rows_field_names_its_read_references(self):
+		"""W8.3 — a child-row node declares rows, not JSON, so its references are read by `value_rows`,
+		the same kind Update Field rides. A Literal row must not be read as a reference."""
 		found = {r["ref"] for r in contract.reads_of("Append Child Row", {
-			"child_table": "labs", "set_json": json.dumps({"value": "$ctx.result", "unit": "mg"}),
+			"child_table": "labs", "set_fields": [
+				{"name": "value", "mode": "From Context", "value": "result"},
+				{"name": "unit", "mode": "Literal", "value": "mg"},
+			],
 		})}
 		self.assertEqual(found, {"result"}, "a literal must not be read as a reference")
 

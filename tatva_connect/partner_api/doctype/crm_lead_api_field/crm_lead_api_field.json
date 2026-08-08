@@ -18,9 +18,7 @@
   "sortable",
   "surface",
   "automation_section",
-  "can_read",
-  "can_watch",
-  "can_set"
+  "can_watch"
  ],
  "fields": [
   {"fieldname": "field_key", "fieldtype": "Data", "label": "Field Key", "reqd": 1, "unique": 1, "in_list_view": 1, "description": "section:fieldname, e.g. lab:hba1c"},
@@ -32,14 +30,12 @@
   {"fieldname": "filterable", "fieldtype": "Check", "label": "Filterable", "description": "Smart Views: only filterable fields may reach a WHERE clause."},
   {"fieldname": "sortable", "fieldtype": "Check", "label": "Sortable", "description": "Smart Views: only sortable fields may reach ORDER BY."},
   {"fieldname": "surface", "fieldtype": "Select", "label": "Surface", "options": "\nworklist\ndetail", "description": "Smart Views display hint: worklist (column on the list) vs detail (drawer only)."},
-  {"fieldname": "automation_section", "fieldtype": "Section Break", "label": "Automation Capabilities", "description": "What the workflow/automation engine may do with this field. Folded here from the retired CRM Automation Field so there is one brain per resource."},
-  {"fieldname": "can_read", "fieldtype": "Check", "label": "Automation: Readable", "default": "0", "description": "A workflow criterion or Branch condition may test this field."},
-  {"fieldname": "can_watch", "fieldtype": "Check", "label": "Automation: Watchable", "default": "0", "description": "A change to this field may fire a workflow (Updated trigger). Implies Readable."},
-  {"fieldname": "can_set", "fieldtype": "Check", "label": "Automation: Settable", "default": "0", "description": "A workflow action may write this field. Grain-scoped via the internal contract."}
+  {"fieldname": "automation_section", "fieldtype": "Section Break", "label": "Automation", "description": "What a workflow may read and write is decided by the grain contract, not here. This section carries only the dispatcher's diff list."},
+  {"fieldname": "can_watch", "fieldtype": "Check", "label": "Automation: Watchable", "default": "0", "description": "A change to this field may fire a workflow (Updated trigger); its before-value is captured on save."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 00:00:00.000000",
+ "modified": "2026-08-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Partner API",
  "name": "CRM Lead API Field",

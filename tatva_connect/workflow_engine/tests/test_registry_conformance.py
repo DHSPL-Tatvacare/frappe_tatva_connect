@@ -36,8 +36,8 @@ _VALID_EXAMPLE = {
 	# One per effect verb — the example IS the documentation of a usable node of that type.
 	"Create Task": {"task_type": "x"},
 	"Update Field": {"target_doctype": "CRM Lead", "updates": [{"name": "status", "mode": "Literal", "value": "New"}]},
-	"Append Child Row": {"child_table": "x", "set_json": "{}"},
-	"Upsert Child Row": {"child_table": "x", "match_json": "{}", "set_json": "{}"},
+	"Append Child Row": {"child_table": "x", "set_fields": [{"name": "f", "mode": "Literal", "value": "v"}]},
+	"Upsert Child Row": {"child_table": "x", "set_fields": [{"name": "f", "mode": "Literal", "value": "v"}]},
 	"Call API": {"webhook_endpoint": "x"},
 	"Create Note": {},
 	"Send WhatsApp": {"contact_number": "crm_lead.mobile_no", "whatsapp_template": "x"},
@@ -219,7 +219,7 @@ class TestRegistryConformance(unittest.TestCase):
 		from tatva_connect.workflow_engine import contract
 
 		for node_type, field in self._value_rows_fields():
-			if field.get("modes") is not None and field["name"] in ("updates", "until_time"):
+			if field.get("modes") is not None and field["name"] in ("updates", "until_time", "set_fields"):
 				continue
 			with self.subTest(node_type=node_type, field=field["name"]):
 				self.assertEqual(field["modes"], [contract.LITERAL, contract.FROM_CONTEXT])

@@ -1,19 +1,19 @@
-"""The native CRM Task columns a declared activity field or an automation may write; without a row, none may."""
+"""The native CRM Task columns a declared activity field is PROMOTED to; without a row, a field falls to key-value."""
 import frappe
 
-# `can_set` is the ONE gate: a write is a write, whether an automation action or an activity form makes it.
+# `can_set` is the ONE gate on promotion: a write is a write, whether an activity form or a workflow makes it.
 # The four custom columns are the ones the task row RETAINS (D18); `description` is the Notes every LSQ form
 # carries as an ordinary activity field its rules show, hide and require.
 _ROWS = [
-	{"fieldname": "status", "label": "Status", "can_read": 1, "can_watch": 1, "can_set": 0},
-	{"fieldname": "custom_outcome", "label": "Outcome", "can_read": 1, "can_watch": 1, "can_set": 1},
-	{"fieldname": "custom_followup_at", "label": "Follow-up At", "can_read": 1, "can_watch": 0, "can_set": 1},
-	{"fieldname": "custom_scheduled_at", "label": "Scheduled At", "can_read": 1, "can_watch": 0, "can_set": 1},
-	{"fieldname": "custom_asm", "label": "ASM", "can_read": 1, "can_watch": 0, "can_set": 1},
-	{"fieldname": "description", "label": "Notes", "can_read": 1, "can_watch": 0, "can_set": 1},
+	{"fieldname": "status", "label": "Status", "can_watch": 1, "can_set": 0},
+	{"fieldname": "custom_outcome", "label": "Outcome", "can_watch": 1, "can_set": 1},
+	{"fieldname": "custom_followup_at", "label": "Follow-up At", "can_watch": 0, "can_set": 1},
+	{"fieldname": "custom_scheduled_at", "label": "Scheduled At", "can_watch": 0, "can_set": 1},
+	{"fieldname": "custom_asm", "label": "ASM", "can_watch": 0, "can_set": 1},
+	{"fieldname": "description", "label": "Notes", "can_watch": 0, "can_set": 1},
 ]
 
-_FLAGS = ("can_read", "can_watch", "can_set")
+_FLAGS = ("can_watch", "can_set")
 
 
 def ensure_rows():
