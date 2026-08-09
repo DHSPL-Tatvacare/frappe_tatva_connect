@@ -8,6 +8,8 @@
  "field_order": [
   "section_break_ingress",
   "webhook_rate_limit_per_minute",
+  "section_break_outbound",
+  "calls_per_minute_per_account",
   "section_break_capture",
   "capture_rules",
   "section_break_behaviour",
@@ -25,6 +27,18 @@
    "label": "Webhook Rate Limit (per minute, per caller IP)",
    "description": "Inbound deliveries accepted from one caller address in a minute, on each webhook endpoint. Past the cap the provider is answered 429 and backs off, and its own retry re-delivers the call, so nothing is dropped. Left at 0 the built-in default applies (120 for telephony).",
    "default": "120"
+  },
+  {
+   "fieldname": "section_break_outbound",
+   "fieldtype": "Section Break",
+   "label": "Outbound Calling (click-to-call limits)"
+  },
+  {
+   "default": "60",
+   "fieldname": "calls_per_minute_per_account",
+   "fieldtype": "Int",
+   "label": "Calls Per Minute",
+   "description": "Click-to-call attempts placed in a minute across everyone on one CRM Telephony Account. Acefone enforces its own limit at account level and answers 429 past it, so this is the same shape; set it to whatever limit they state for the tenant. Left at 0 the built-in default applies (60)."
   },
   {
    "fieldname": "section_break_capture",

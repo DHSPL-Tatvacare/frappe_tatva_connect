@@ -111,45 +111,48 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 	}
 
 
-def _rows_from_report(resp) -> list:
-	"""The call records out of Acefone's response. The envelope is `{count, limit, page, results}`."""
+def _rows_from_report(resp):
+	"""Records out of the `{count, limit, page, results}` envelope, or None when the request failed — `[]` means no more calls, None means no answer."""
 	if isinstance(resp, dict) and isinstance(resp.get("results"), list):
 		return resp["results"]
 	if isinstance(resp, list):
 		return resp
 	frappe.log_error(title="Acefone call records: unrecognised shape", message=str(resp)[:2000])
-	return []
+	return None
 
 
-def _records_for_number(account_doc, number: str, days: int) -> list:
-	"""This lead's records out of the account's window.
-
-	The API takes a date range and ignores a customer-number filter, so the match is made here, on the
-	last-10 digits — the same reduction `phone.match_digits(…, last=10)` applies everywhere in the app.
-	"""
+def _records_for_number(account_doc, number: str, days: int):
+	"""(records, truncated) — the API ignores a customer-number filter, so the match is made here on last-10 digits; a partial window must never report as complete."""
 	now = now_datetime()
 	from_date = add_to_date(now, days=-int(days)).strftime("%Y-%m-%d %H:%M:%S")
 	to_date = now.strftime("%Y-%m-%d %H:%M:%S")
 
 	mine = []
+	truncated = False
 	for page in range(1, MAX_PAGES + 1):
 		resp = acefone.get_call_records(
 			account_doc, from_date=from_date, to_date=to_date, page=page, limit=PAGE_SIZE
 		)
 		rows = _rows_from_report(resp)
+		if rows is None:
+			truncated = True  # throttled or an error body; records may remain unread
+			frappe.log_error(
+				title="Acefone reconcile: page failed",
+				message=f"{account_doc.name}: page {page} of {days}d returned no usable records",
+			)
+			break
 		if not rows:
 			break
 		mine.extend(r for r in rows if phone.match_digits(r.get("client_number"), last=10) == number)
 		if len(rows) < PAGE_SIZE:
 			break
 	else:
-		# The ceiling was reached with records still unread. Silently returning a partial window would
-		# read as "this lead has no more calls", so it is said out loud.
+		truncated = True
 		frappe.log_error(
 			title="Acefone reconcile: window truncated",
 			message=f"{account_doc.name}: stopped at {MAX_PAGES} pages of {PAGE_SIZE} over {days}d",
 		)
-	return mine
+	return mine, truncated
 
 
 def reconcile_lead(lead_name: str, days: int = 7, dry_run: bool = True) -> dict:
@@ -171,10 +174,11 @@ def reconcile_lead(lead_name: str, days: int = 7, dry_run: bool = True) -> dict:
 		return {"ok": False, "reason": "lead has no mobile number"}
 
 	account_doc = frappe.get_doc("CRM Telephony Account", account)
-	rows = _records_for_number(account_doc, number, days)
+	rows, truncated = _records_for_number(account_doc, number, days)
 
 	summary = {"ok": True, "lead": lead_name, "account": account, "scanned": 0, "new": 0,
-	           "existing": 0, "declined": 0, "failed": 0, "dry_run": bool(dry_run)}
+	           "existing": 0, "declined": 0, "failed": 0, "dry_run": bool(dry_run),
+	           "truncated": truncated}
 	for row in rows:
 		summary["scanned"] += 1
 		_reconcile_one(row, account, dry_run, summary)

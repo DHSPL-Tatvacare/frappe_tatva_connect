@@ -29,6 +29,7 @@ from tatva_connect.automation import actions, expr, rules
 from tatva_connect.workflow_engine import contract, refs, registry
 
 JOURNEY_DT = "CRM Workflow Journey"
+_WORKFLOW_DT = "CRM Workflow"
 STEP_LOG_DT = "CRM Workflow Step Log"
 SIGNAL_DT = "CRM Workflow Signal"
 
@@ -88,8 +89,8 @@ def _storable(state):
 	return frappe.as_json(state.buckets)
 
 
-def _subject_loader(journey):
-	"""A zero-argument loader for the subject's fields AS THEY ARE NOW, or `None` when there is no subject.
+def _doc_loader(doctype, name):
+	"""A zero-argument loader for one record's fields AS THEY ARE NOW, or `None` when there is no record.
 
 	A LOADER and not a snapshot, because it is called on the first reference of the segment and not before.
 	State used to be captured once, when the workflow was triggered, and never updated. Every later segment
@@ -98,20 +99,48 @@ def _subject_loader(journey):
 	why dates decayed — a datetime survives one JSON round trip as a string, and every comparison after the
 	first park was string-vs-datetime.
 	"""
-	if not journey.subject_doctype or not journey.subject_name:
+	if not doctype or not name:
 		return None
 
 	def load():
-		if not frappe.db.exists(journey.subject_doctype, journey.subject_name):
+		if not frappe.db.exists(doctype, name):
 			return {}  # deleted mid-flight; the journey fails at its next real read, not while reading state
 		from tatva_connect.automation import context as ctx_build
 
-		doc = frappe.get_doc(journey.subject_doctype, journey.subject_name)
+		doc = frappe.get_doc(doctype, name)
 		# The SAME builder the Trigger uses, unpacked back to this record's own bucket. A second walk here
 		# is how the two evaluators came to speak different languages in the first place.
-		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(journey.subject_doctype), {})
+		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(doctype), {})
 
 	return load
+
+
+def _readable_records(subject_doctype, subject_name):
+	"""The records a segment may read: the subject, and the LEAD the journey is about.
+
+	Every subject resolves to a lead — that is what `automation.subjects` is for, and every effect verb
+	already acts on it. Only the subject was loaded, so a workflow watching a CRM Task could not test one
+	field of the patient it was about, and the three LeadSquared thresholds that reach `Inactive Doctor`
+	read counters on the lead. The author was offered them and the runtime had no value: a predicate an
+	author can build and the evaluator then refuses is exactly what the offer-is-a-subset rule forbids.
+	One entry when the subject IS the lead, so nothing is loaded or namespaced twice.
+	"""
+	found = []
+	if subject_doctype and subject_name:
+		found.append((refs.slug(subject_doctype), subject_doctype, subject_name))
+	lead_name = _lead_of(subject_doctype, subject_name)
+	if lead_name and subject_doctype != "CRM Lead":
+		found.append((refs.slug("CRM Lead"), "CRM Lead", lead_name))
+	return found
+
+
+def _lead_of(subject_doctype, subject_name):
+	"""The lead a subject belongs to, through `subjects.resolve_lead_name` — the ONE resolver."""
+	if not (subject_doctype and subject_name) or not frappe.db.exists(subject_doctype, subject_name):
+		return None
+	from tatva_connect.automation import subjects
+
+	return subjects.resolve_lead_name(frappe.get_doc(subject_doctype, subject_name))
 
 
 def _refreshed_state(journey):
@@ -123,12 +152,44 @@ def _refreshed_state(journey):
 	makes that collision impossible by construction rather than by ordering, and the subject stays a
 	loader, so it is still read as it is NOW and still never copied into what persists.
 	"""
-	return refs.Values(
-		buckets=frappe.parse_json(journey.state_json or "{}"),
-		records={refs.slug(journey.subject_doctype): _subject_loader(journey)}
-		if journey.subject_doctype
-		else {},
-	)
+	state = refs.Values(buckets=frappe.parse_json(journey.state_json or "{}"))
+	for source, doctype, name in _readable_records(journey.subject_doctype, journey.subject_name):
+		state.offer_record(source, _doc_loader(doctype, name))
+	return state
+
+
+def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=None, active_key=None):
+	"""THE one Journey insert, for both lanes. A journey is the record that a workflow RAN — the durable
+	lane's is carried across parks, the inline lane's is closed in the same breath, and neither is a
+	different kind of thing. Extracted so the two cannot describe a run differently.
+
+	The subject is the resolved parent LEAD (D7); `seed_context` carries only what a later segment cannot
+	re-derive (the `__before` pairs), never the subject's own fields. `active_key` is the durable lane's
+	double-start guard and is passed only by it: an inline run completes within this call, so claiming the
+	key would make a live durable journey reject a rep's activity save.
+	"""
+	from tatva_connect.workflow_engine import versions
+
+	journey = frappe.get_doc({
+		"doctype": JOURNEY_DT,
+		"workflow": workflow,
+		"workflow_version": version_name,
+		"subject_doctype": "CRM Lead",
+		"subject_name": lead_name,
+		"trigger_doctype": trigger_ref[0] if trigger_ref else None,
+		"trigger_name": trigger_ref[1] if trigger_ref else None,
+		"current_node": versions.entry_node_of(versions.load(version_name)),
+		"state_json": frappe.as_json(seed_context or {}),
+		"status": "Running",
+		"active_key": active_key,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
+	# Stamped HERE, where a journey is born, so both lanes carry it — a list view cannot join to the
+	# journey table, so these two are the only way the workflow list can say when it last ran and how often.
+	frappe.db.set_value(_WORKFLOW_DT, workflow, {
+		"last_journey_at": journey.creation,
+		"journeys_started": (frappe.db.get_value(_WORKFLOW_DT, workflow, "journeys_started") or 0) + 1,
+	}, update_modified=False)
+	return journey
 
 
 def advance(journey):
@@ -328,18 +389,30 @@ def has_wait(version):
 	return any(n.node_type == "Wait" for n in version.nodes)
 
 
-def run_inline(version_name, lead_name, trigger_doc, seed_state):
-	"""EPHEMERAL execution (D4): walk the frozen graph inline to Terminal with NO persisted Journey - the
-	rule-shaped Flow. The SAME node executor as `advance` (`_run_verb`, the Route/Assign logic, `expr`) -
-	one interpreter, two shapes - minus the durable machinery a rule never needs (no Journey row, no
-	active_key, no park, no signal inbox). A Wait node is a config error here: a graph that parks must run
-	as a continuous Journey, and the front-door only routes a wait-free graph to this path.
+def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
+	"""INLINE execution: walk the frozen graph to Terminal inside the triggering save - the rule-shaped
+	Flow. The SAME node executor as `advance` (`_run_verb`, the Route/Assign logic, `expr`) - one
+	interpreter, two shapes - minus the machinery a wait-free graph never needs (no active_key, no park,
+	no signal inbox). A Wait node is a config error here: a graph that parks must run as a continuous
+	Journey, and the front-door only routes a wait-free graph to this path.
+
+	IT RECORDS ITSELF. It used to persist nothing, which meant the twelve TatvaPractice flows could move a
+	doctor's stage and raise her next task while no surface anywhere could say what ran or why. A run is a
+	run: this one opens the same `open_journey` the durable lane opens and closes it Done in one segment,
+	so `history.py`, the lead's history tab and the step-log visibility rule all serve both lanes with no
+	second implementation.
+
+	THREE TRANSACTION BOUNDARIES, AND THEY ARE THE POINT.
+	  * the Journey row is inserted BEFORE the flow's savepoint, so a failed run still leaves a record;
+	  * the walk runs INSIDE it, so a failure rolls back only the flow's writes and the triggering save
+	    survives - an inline effect can DO but never DENY;
+	  * the step rows are BUFFERED and written after the savepoint resolves, so the audit of a failed run
+	    is not erased by the rollback it is describing. That is exactly what `_fail` already does for the
+	    durable lane, and this is the same rule applied to this one.
 
 	`seed_state` is the trigger context (the record's fields), so a Route reads the trigger's values and an
-	effect verb sees them exactly as the durable path sees signal-merged state. The whole walk runs inside
-	ONE savepoint: a failure rolls back only the flow's own writes (the triggering save survives), and the
-	caller logs it - an ephemeral effect can DO but never DENY. Deferred thunks fire after the savepoint
-	releases. Returns the final state (for tests / callers); raises `_Permanent` on a broken graph."""
+	effect verb sees them exactly as the durable path sees signal-merged state. Deferred thunks fire after
+	the savepoint releases. Returns the final state (for tests / callers)."""
 	from tatva_connect.workflow_engine import versions
 
 	version = versions_load(version_name)
@@ -348,9 +421,15 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 	# run has no persisted state, so the Trigger's own namespaced buckets are the whole vocabulary and the
 	# same references resolve here as at dispatch.
 	state = seed_state if isinstance(seed_state, refs.Values) else refs.Values(buckets=seed_state or {})
+	# The lead this run is about, as a record — the same one `advance` carries, so both lanes resolve `crm_lead.…`.
+	if lead_name:
+		state.offer_record(refs.slug("CRM Lead"), _doc_loader("CRM Lead", lead_name))
 	axes = rules_lead_axes(lead_name)
 	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
-	seen, hops, deferred = set(), 0, []
+	seen, hops, deferred, steps = set(), 0, [], []
+	# Outside the savepoint below: this row is the record that the run HAPPENED, and a failed run needs it most.
+	journey = open_journey(workflow or version.workflow, version_name, lead_name,
+	                       _storable(state), _trigger_ref(trigger_doc))
 	save_point = f"tc_wf_inline_{frappe.generate_hash(length=8)}"
 	frappe.db.savepoint(save_point)
 	try:
@@ -360,6 +439,7 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 				raise _Permanent(f"node {cursor!r} is not in the frozen graph",
 				                 code=registry.CODE_NODE_NOT_IN_GRAPH)
 			if node.node_type == "Terminal":
+				steps.append(_step(node, "done"))
 				break
 			if node.node_type == "Wait":
 				raise _Permanent(f"ephemeral Flow reached Wait node {node.node_id} - a waiting Flow must run as a durable Journey")
@@ -370,21 +450,90 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state):
 				raise _Permanent(f"hop budget exceeded ({MAX_HOPS})")
 			seen.add(cursor)
 			if actions.lane_of(node.node_type) == "effect":
+				started = time.monotonic()
 				step_deferred, _marker = _run_verb(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
-				cursor = _edge(node, _verb_output(node, state))
+				outcome = _verb_output(node, state)
+				# W12 — popped HERE, not at flush time: consuming it is what stops the next node inheriting
+				# a recipient that was never its own, exactly as `advance` does it.
+				steps.append(_step(node, outcome, duration_ms=int((time.monotonic() - started) * 1000),
+				                   channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)))
+				cursor = _edge(node, outcome)
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				cursor, _ = _next_control(node, state, lead_name)  # the ONE control-flow step, shared with advance
+				cursor, detail = _next_control(node, state, lead_name)  # the ONE control-flow step, shared with advance
+				steps.append(_step(node, "ok", detail or ""))
 			elif node.node_type == registry.TRIGGER:
+				steps.append(_step(node, "ok", "entered"))
 				cursor = _edge(node, "next")  # a pass-through here too — see `advance`
 			else:
 				raise _Permanent(f"unknown node type {node.node_type!r}")
 		frappe.db.release_savepoint(save_point)
-	except Exception:
+	except Exception as e:
 		frappe.db.rollback(save_point=save_point)  # undo only the flow's writes; the triggering save is untouched
+		# `_fail` names the node from `current_node`; this lane never advances it as it walks (one write per node).
+		journey.current_node = cursor
+		_flush_steps(journey, steps)
+		# `str(e)` as the durable lane does: an operator reads this, and the traceback still reaches Error Log.
+		_fail(journey, str(e))  # the ONE failure recorder, shared with the durable lane
 		raise
+	_persist(journey, {"status": DONE, "current_node": cursor, "state_json": _storable(state),
+	                   "active_key": None, "resume_at": None, "awaiting_signal": None})
+	_flush_steps(journey, steps)
 	_run_deferred(deferred)
 	return state
+
+
+def _flush_steps(journey, steps):
+	"""Write the walk's audit AFTER its savepoint has resolved, so a rolled-back run keeps its trail.
+
+	ONE STATEMENT FOR THE WHOLE WALK, through `frappe.db.bulk_insert`. Written as documents it cost
+	fifteen statements a row and only two of them were the write: four wildcard hooks contribute a
+	savepoint pair each (they issue no queries — that isolation is what stops one broken hook taking a
+	rep's save down), and `frappe_whatsapp` queries its notification table five times on every insert of
+	every doctype. An audit row has no lifecycle worth running: nothing hooks it, nothing validates it,
+	and its `name` is a sequence value. Measured, not assumed.
+
+	The durable lane still writes through `_step_log` row by row, interleaved with its own commits, and
+	is deliberately untouched.
+
+	Never lets logging break a run that already happened: the effects are applied and the journey is
+	closed by the time this is called, so a broken audit row is reported, not raised."""
+	if not steps:
+		return
+	try:
+		now, user = frappe.utils.now(), frappe.session.user
+		frappe.db.bulk_insert(
+			STEP_LOG_DT, ["name", "owner", "creation", "modified", "modified_by", "docstatus", "idx",
+			              "journey", "subject_name"] + list(_STEP_FIELDS),
+			[(frappe.db.get_next_sequence_val(STEP_LOG_DT), user, now, now, user, 0, 0,
+			  journey.name, journey.subject_name) + tuple(step[f] for f in _STEP_FIELDS)
+			 for step in steps],
+		)
+	except Exception:
+		frappe.log_error(title="workflow: step log failed",
+		                 message=f"journey={journey.name} :: {frappe.get_traceback()}")
+	for step in steps:
+		_publish_step(journey, step, step["outcome"], step["detail"])  # best-effort; never raises
+
+
+# The audit a step carries, named ONCE. `_step_log` writes these one row at a time for the durable lane and
+# `_flush_steps` writes them in a single statement for the inline one; the SHAPE cannot differ between them.
+_STEP_FIELDS = ("node_id", "node_type", "outcome", "detail", "duration_ms", "channel", "contact")
+
+
+def _step(node, outcome, detail="", duration_ms=0, channel=None, contact=None):
+	"""One step's audit, in the one shape. `node` is unpacked here so a buffered step holds no document."""
+	# `frappe._dict` so the same record answers `step["node_id"]` for the insert and `step.node_id` for
+	# `_publish_step`, which takes the node itself on the durable path.
+	return frappe._dict(node_id=node.node_id, node_type=node.node_type, outcome=outcome,
+	                    detail=detail, duration_ms=duration_ms, channel=channel or "", contact=contact or "")
+
+
+def _trigger_ref(trigger_doc):
+	"""(doctype, name) of the record that fired this run, in the shape `open_journey` takes."""
+	if not trigger_doc:
+		return None
+	return (trigger_doc.get("doctype"), trigger_doc.get("name"))
 
 
 def rules_lead_axes(lead_name):

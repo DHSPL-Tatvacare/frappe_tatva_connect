@@ -9,11 +9,13 @@ records everything the answer needs: `CRM Workflow Journey` says where a journey
 waiting for, and `CRM Workflow Step Log` says which node ran, what it decided, what it said and
 how long it took. Neither had a surface, so the answer existed and was unreachable.
 
-Four questions, four endpoints, one each — never one endpoint with a mode flag:
+Five questions, five endpoints, one each — never one endpoint with a mode flag:
   `journeys_for_subject`  which journeys exist for this record, and where each one sits now
   `journey_steps`         what happened, in order
   `journey_state`         why it stopped — parked on what, failed for what reason, or done
   `stuck_journeys`        which journeys nobody will come back to, so an operator sees them unprompted
+  `runs_for_workflow`     what one WORKFLOW has been doing — the only question keyed by the flow, not
+                          by a record, and the one the canvas header asks
 
 IT STORES NOTHING
 -----------------
@@ -48,6 +50,7 @@ import frappe
 from frappe import _
 
 from tatva_connect.access import visibility
+from tatva_connect.taxonomy import labels
 from tatva_connect.workflow_engine import interpreter
 
 JOURNEY_DT = "CRM Workflow Journey"
@@ -127,11 +130,45 @@ def stuck_journeys(limit=25, start=0, workflow=None):
 	size, offset = _bounded(limit, MAX_JOURNEYS), _offset(start)
 	base = {"workflow": workflow} if workflow else {}
 	window = size + offset + 1
-	rows = _stuck_page({**base, "status": "Failed"}, window) + _stuck_page(
+	rows = _journey_page({**base, "status": "Failed"}, window) + _journey_page(
 		{**base, "status": "Parked", "resume_at": ["is", "not set"], "awaiting_signal": ["is", "not set"]},
 		window,
 	)
 	rows.sort(key=lambda row: row.modified, reverse=True)
+	visible = [row for row in rows if visibility.parent_readable(row.subject_doctype, row.subject_name)]
+	return {
+		"journeys": [_summary(row) for row in visible[offset : offset + size]],
+		"has_more": len(visible) > offset + size,
+	}
+
+
+@frappe.whitelist()
+def runs_for_workflow(workflow, limit=25, start=0, status=None):
+	"""Every run of ONE workflow, newest first — the header's run history.
+
+	The fifth question, and the only one keyed by the WORKFLOW rather than by a record. The other four
+	answer "what happened to this patient"; an author fixing a flow asks "what has this flow been doing",
+	and until the inline lane started opening journeys there was nothing to answer it with.
+
+	TWO GATES, because the leaks are different. `has_permission` on the WORKFLOW is what stops a caller
+	enumerating the runs — and therefore the volume and the failure rate — of a flow they may not see;
+	that is the same gate `node_counts` already applies for the same reason. Then every row is filtered
+	by `visibility.parent_readable` on its own subject, so a reader who may see the workflow still sees
+	only the patients they may see. `get_list` carries the first half in SQL through the journey table's
+	registered permission_query_conditions; the per-row pass is that rule's single-row twin and is what
+	keeps the answer correct while the visibility switch is still dormant — exactly as in
+	`stuck_journeys`, and for exactly that reason.
+
+	Paged AFTER filtering, never before: a page sliced first and filtered second returns short pages and
+	a `has_more` that lies.
+	"""
+	if not frappe.has_permission("CRM Workflow", "read", workflow):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	size, offset = _bounded(limit, MAX_JOURNEYS), _offset(start)
+	filters = {"workflow": workflow}
+	if status:
+		filters["status"] = status
+	rows = _journey_page(filters, size + offset + 1, order_by="creation desc, name desc")
 	visible = [row for row in rows if visibility.parent_readable(row.subject_doctype, row.subject_name)]
 	return {
 		"journeys": [_summary(row) for row in visible[offset : offset + size]],
@@ -155,7 +192,7 @@ def node_counts(workflow, workflow_version=None):
 	describes no graph that ever existed. `workflow_version` is optional only so a caller may ask about the
 	whole workflow deliberately; the canvas always passes the version it is showing.
 
-	Scoped by `get_list`, exactly as `_stuck_page` is, so the journey table's registered
+	Scoped by `get_list`, exactly as `_journey_page` is, so the journey table's registered
 	permission_query_conditions apply IN SQL rather than through a second rule written here.
 
 	Counted by the database, through `get_list`'s own function syntax — `{"COUNT": "*", "as": "total"}`
@@ -187,16 +224,19 @@ def node_counts(workflow, workflow_version=None):
 	return found
 
 
-def _stuck_page(filters, window):
+def _journey_page(filters, window, order_by="modified desc"):
 	"""One bounded page off the journey table through `get_list`, so the row-visibility brain's
 	permission_query_conditions apply in SQL when the operator has switched them on. The
 	`parent_readable` pass in the caller is the same rule's single-row twin, and is what keeps the
-	answer correct while that switch is still dormant."""
+	answer correct while that switch is still dormant.
+
+	The order is the caller's because the two questions sort differently: what is STUCK is newest
+	activity first, what a workflow has RUN is newest run first."""
 	return frappe.get_list(
 		JOURNEY_DT,
 		filters=filters,
 		fields=_JOURNEY_FIELDS,
-		order_by="modified desc",
+		order_by=order_by,
 		limit=window,
 		offset=0,
 	)
@@ -214,6 +254,11 @@ def _summary(row):
 		"stop_reason": row.stop_reason,
 		"subject_doctype": row.subject_doctype,
 		"subject_name": row.subject_name,
+		# WHO this run was about, as a person reads it. `subject_name` is a docname, so a surface that
+		# printed it showed `otfteqi3e1` under a column headed Patient. Resolved through
+		# `taxonomy.labels.title_of` — the ONE title reader this app already answers every other picker,
+		# list and badge with, so a lead is named the same here as it is everywhere else.
+		"subject_label": labels.title_of(row.subject_doctype, row.subject_name) or row.subject_name,
 		"trigger_doctype": row.trigger_doctype,
 		"trigger_name": row.trigger_name,
 		"retry_count": row.retry_count or 0,

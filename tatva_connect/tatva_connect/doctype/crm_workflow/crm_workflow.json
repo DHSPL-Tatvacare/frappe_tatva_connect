@@ -14,6 +14,7 @@
   "trigger_mode",
   "trigger_next_run_at",
   "last_journey_at",
+  "journeys_started",
   "cohort_state",
   "cohort_cursor",
   "cohort_abort",
@@ -48,7 +49,7 @@
    "fieldname": "entry_node",
    "fieldtype": "Data",
    "label": "Entry Node",
-   "description": "The node a Run starts at. The Trigger node declares the subject, the event and the predicate — the workflow header no longer carries them."
+   "description": "The node a Run starts at. The Trigger node declares the subject, the event and the predicate \u2014 the workflow header no longer carries them."
   },
   {
    "fieldname": "trigger_doctype",
@@ -57,7 +58,7 @@
    "read_only": 1,
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query — a predicate in JSON cannot answer that. One writer: the Workflow controller.",
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save, so 'which workflows care about this (doctype, event)?' has to be one indexed query \u2014 a predicate in JSON cannot answer that. One writer: the Workflow controller.",
    "in_list_view": 1
   },
   {
@@ -76,7 +77,7 @@
    "read_only": 1,
    "search_index": 1,
    "no_copy": 1,
-   "description": "Derived from the Trigger node — how a run is born. Record Event, or Schedule for a cohort."
+   "description": "Derived from the Trigger node \u2014 how a run is born. Record Event, or Schedule for a cohort."
   },
   {
    "fieldname": "trigger_next_run_at",
@@ -95,7 +96,16 @@
    "search_index": 1,
    "in_list_view": 1,
    "no_copy": 1,
-   "description": "Derived. When a Journey was last STARTED down this workflow — materialised here because a list view cannot join to the Journey table, the same way trigger_next_run_at is. Written once as a Journey is born, never on its steps: touching this header on every node of every Journey is the cost this column was scoped to avoid. It does not mean 'when a Journey last did anything'."
+   "description": "Derived. When a Journey was last STARTED down this workflow \u2014 materialised here because a list view cannot join to the Journey table, the same way trigger_next_run_at is. Written once as a Journey is born, never on its steps: touching this header on every node of every Journey is the cost this column was scoped to avoid. It does not mean 'when a Journey last did anything'."
+  },
+  {
+   "fieldname": "journeys_started",
+   "fieldtype": "Int",
+   "label": "Total Runs",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 0,
+   "description": "How many times this workflow has started a run. Stamped where a journey is born, because a list view cannot count the journey table."
   },
   {
    "fieldname": "cohort_state",
@@ -120,7 +130,7 @@
    "label": "Abort Cohort",
    "default": "0",
    "no_copy": 1,
-   "description": "Stops the current cohort at the next chunk boundary. Runs already started are left alone — cancelling one lead's journey is a different action."
+   "description": "Stops the current cohort at the next chunk boundary. Runs already started are left alone \u2014 cancelling one lead's journey is a different action."
   },
   {
    "fieldname": "cohort_progress_at",
@@ -128,7 +138,7 @@
    "label": "Cohort Progress At",
    "read_only": 1,
    "no_copy": 1,
-   "description": "Derived. When this cohort walk last moved — stamped by the claim and again at every cursor write. A claim that stops moving is a dead worker, and the sweep hands it back."
+   "description": "Derived. When this cohort walk last moved \u2014 stamped by the claim and again at every cursor write. A claim that stops moving is a dead worker, and the sweep hands it back."
   },
   {
    "fieldname": "canvas_json",
@@ -145,7 +155,7 @@
    "label": "Vertical",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
    "in_list_view": 1
   },
   {
@@ -155,7 +165,7 @@
    "label": "Group",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
    "in_list_view": 1
   },
   {
@@ -165,14 +175,14 @@
    "label": "Program",
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns — a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
+   "description": "DERIVED from the Trigger node on save, never authored. The dispatcher runs on every document save and filters on these, so they must be indexed columns \u2014 a declaration inside JSON cannot answer that. One writer: the Workflow controller.",
    "in_list_view": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-07-30 19:30:00.000000",
+ "modified": "2026-08-09 01:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow",

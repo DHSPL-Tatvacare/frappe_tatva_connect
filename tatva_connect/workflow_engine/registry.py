@@ -73,7 +73,7 @@ def _field(name, label, fieldtype, **kwargs):
 NODE_TYPES = {
 	TRIGGER: {
 		"label": "Trigger",
-		"description": "What starts this workflow: the subject it watches, the event, the grain it applies to, and the conditions a subject must meet. Exactly one per workflow, and the only node with no inbound edge.",
+		"description": "What starts this workflow. Exactly one per workflow, and the only node with no inbound edge.",
 		"outputs": ["next"],
 		"singleton": True,
 		# The Trigger gates its OWN fields on its OWN mode — Wait's shipped pattern; what W1-contract.md:212 rejects is a node morphing on ANOTHER node's mode, and no other node type may gate on `mode`.
@@ -91,7 +91,7 @@ NODE_TYPES = {
 			_field("schedule", "Repeats", "Select", options=list(SCHEDULES), reqd=True,
 			       depends_on_value={"mode": [MODE_SCHEDULE]},
 			       help="How often everyone matching Only when is gathered up again."),
-			_field("schedule_time", "At", "Data", placeholder="09:00",
+			_field("schedule_time", "At", "Time", placeholder="09:00",
 			       depends_on_value={"mode": [MODE_SCHEDULE]},
 			       help="Time of day the schedule runs, on the site's own clock. Blank runs it at midnight."),
 			_field("vertical", "Vertical", "Grain", link="CRM Vertical",
@@ -119,7 +119,7 @@ NODE_TYPES = {
 	},
 	"Route": {
 		"label": "Route",
-		"description": "Routes on the first matching condition, tried top to bottom. A lead that matches no row takes Otherwise, so it can never fall out of the graph.",
+		"description": "Branches on the first matching condition, tried top to bottom. Anything matching no row takes Otherwise.",
 		# Outputs are this node's OWN rows (one edge each) followed by a reserved `otherwise`. The rows lead
 		# and the fixed base follows — the same `rows_from` seam Wait uses, reading own config, no mode-map.
 		"outputs_by": {
@@ -131,7 +131,7 @@ NODE_TYPES = {
 	},
 	"Sample": {
 		"label": "Sample",
-		"description": "Splits by chance into arms of a declared size, for a trial or a control group. A lead lands in the SAME arm every time it is judged, so a control group stays a control group. Whatever share is left over takes Remainder.",
+		"description": "Splits by chance into arms, for a trial or a control group. A lead always lands in the same arm.",
 		# The SAME `rows_from` seam Route reads its own config through — rows lead, the fixed base follows.
 		# Sample is a SEPARATE node from Route and never a mode of it: this node's rule is that assignment
 		# is stable per lead, and that rule is meaningless on a conditional, so merging them would put a
@@ -145,7 +145,7 @@ NODE_TYPES = {
 	},
 	"Set Variables": {
 		"label": "Set Variables",
-		"description": "Computes values into the journey's state for later nodes to read. Nothing to do with people — to change who owns a lead, use Assign to User.",
+		"description": "Computes values into the journey for later nodes to read. To change who owns a lead, use Assign to User.",
 		"outputs": ["next"],
 		"config": [_field("assign", "Values", "Code", reqd=True,
 		                  reads="expression", writes="expression_dict",
@@ -856,6 +856,22 @@ def _delay_units():
 	)
 
 
+def _time_problems(value, field, config, context):
+	"""A time of day must really be one. `_duration_problems`' twin, and the same defect it describes:
+	the declaration said `Data`, so `quarter past nine` published CLEAN and `cohort._at_time_of_day`
+	then silently fell back to midnight — a daily cohort the operator set for 09:00 firing at 00:00, with
+	nothing anywhere saying so. Parsed by `frappe.utils.get_time`, the same reader the runtime uses."""
+	if not value:
+		return []
+	from frappe.utils import get_time
+
+	try:
+		get_time(value)
+	except Exception:
+		return [_("{0} is not a time of day — write it as 09:00.").format(value)]
+	return []
+
+
 def _duration_problems(value, field, config, context):
 	"""A delay must really be `add_to_date` kwargs — refused HERE, where the author can still fix it.
 
@@ -927,6 +943,8 @@ FIELD_TYPES = {
 	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Select": {"control": "select", "check": _option_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	# `time` reaches the inspector's own primitive fallback as `<FormControl type="time">` — no widget of its own.
+	"Time": {"control": "time", "check": _time_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
 	# A boolean goes through frappe-ui's own FormControl, which the inspector already falls through to for
 	# every primitive — so a tick needs no branch of its own in the inspector and no bespoke widget.
 	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},

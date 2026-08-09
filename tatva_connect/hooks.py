@@ -62,9 +62,11 @@ override_doctype_class = {
 
 # Rewire frappe_whatsapp's "Sync templates" endpoint to pull from the account's provider (read-only mirror), not Meta — for the desk button and any caller.
 override_whitelisted_methods = {
+	# Guest doorman over frappe's upload endpoint; BOTH spellings frappe resolves to the same function (dotted via get_attr, bare via globals()) — the web form posts each in one submission.
+	"upload_file": "tatva_connect.intake.guards.upload_file",
+	"frappe.handler.upload_file": "tatva_connect.intake.guards.upload_file",
 	"frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_templates.whatsapp_templates.fetch": "tatva_connect.whatsapp.templates_sync.sync_templates",
-	# Acefone rides crm's NATIVE call UI (no fork): phone icon -> Acefone bridge call, call-log fetch gains a playable recording path.
-	"crm.integrations.exotel.handler.make_a_call": "tatva_connect.telephony.bridge.make_a_call",
+	# The call UI calls tatva_connect.telephony.bridge.make_a_call directly, so crm's Exotel alias is gone; this one stays for the recording player.
 	"crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log": "tatva_connect.telephony.bridge.get_call_log",
 	# Mirror LSQ: surface Task created/closed in the Lead/Deal activity timeline (native omits it); derived on read, nothing stored.
 	"crm.api.activities.get_activities": "tatva_connect.api.activities.get_activities",
@@ -401,6 +403,8 @@ scheduler_events = {
 		"5,20,35,50 * * * *": ["tatva_connect.whatsapp.media_retry.sweep"],
 		# Daily: sweep abandoned email-draft staging files.
 		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
+		# Hourly: delete Guest-uploaded intake files never bonded to a record, past the 30-min TTL (dormant — gated on Intake::RateLimit::enforcement); bounded batch, drains across ticks.
+		"25 * * * *": ["tatva_connect.intake.guards.reap_guest_orphans"],
 		# Daily: trim logs/monitor.json.log — the one log frappe appends to without rotating (1 GB or 30 days, whichever first).
 		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
 		# Daily: drop expired partner-API idempotency records.

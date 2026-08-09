@@ -72,21 +72,9 @@ def write(cdr) -> str:
 
 
 def _publish(doc) -> None:
-	"""Tell the record's open detail page that its calls changed. The DOC room, never the site room.
-
-	Emitted post-commit, so a live listener reads a durable row rather than an in-flight one.
-
-	Passing neither room, user nor doctype/docname falls through to the site room — `"all"`, which every
-	System User joins at connect and which nothing guards, unlike the `has_permission`-gated
-	`doc_subscribe`. That sent the RAW CDR into every logged-in browser.
-
-	The payload names the record and nothing more, mirroring `whatsapp_message`: a listener needs only
-	to know WHICH record changed, then refetches through the permission-checked read path.
-
-	The row's OWN reference is used, never a hardcoded doctype — an outbound row can hang off a CRM Deal
-	(`bridge._new_call_log`) and the Deal page carries the same Calls tab.
-	"""
-	# `reference_doctype` defaults to "CRM Lead" on the doctype, so the docname is what says it resolved.
+	"""Post-commit nudge to the record's DOC room; no room means `"all"`, which every System User joins unguarded, and that shipped the raw CDR to every browser."""
+	# The row's OWN reference, never a hardcoded doctype — an outbound row can hang off a CRM Deal.
+	# `reference_doctype` defaults to "CRM Lead", so the docname is what says it resolved.
 	if not doc.get("reference_docname"):
 		return
 	frappe.publish_realtime(

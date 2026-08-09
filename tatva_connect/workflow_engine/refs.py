@@ -176,7 +176,8 @@ def readable_for(doctype):
 	if not doctype:
 		return []
 	found = [
-		{"ref": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"], "options": f.get("options")}
+		{"ref": of_record(doctype, f["key"]), "label": f["label"], "type": f["type"],
+		 "options": f.get("options"), "pick": f.get("pick")}
 		for f in _describe().fields_for_doctype(doctype)
 	]
 	return found + [
@@ -225,6 +226,12 @@ class Values:
 		self.buckets = {k: dict(v) for k, v in (buckets or {}).items() if isinstance(v, dict)}
 		self._loaders = dict(records or {})
 		self._loaded = {}
+
+	def offer_record(self, source, loader):
+		"""Add a record this state may read, unless that source already carries values. A bucket wins: it
+		is the doc mid-save, whose in-memory values are the truth a re-read would miss."""
+		if loader and source not in self.buckets:
+			self._loaders.setdefault(source, loader)
 
 	# --- reading ------------------------------------------------------------------------------------
 

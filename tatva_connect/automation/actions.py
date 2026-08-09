@@ -164,6 +164,21 @@ def resolve_target(action, lead_name, trigger_doc):
 	)
 
 
+def _save_target(tdoc, touched=None):
+	"""Save a verb's target, skipping reconciliation of the child tables this run did not write.
+
+	Frappe reconciles EVERY child table on every save and `CRM Lead` has eleven, so a stage write issued ten
+	`DELETE ... WHERE name NOT IN (...)` statements against tables it never looked at. `ignore_children_type`
+	is Frappe's own flag for this and it suppresses ONLY the delete (`document.update_child_table`): rows held
+	in memory are still upserted, so a hook that APPENDS a row is unaffected. Safe by construction here — no
+	verb removes a child row, so those deletes were no-ops to begin with.
+	"""
+	tdoc.flags.ignore_children_type = [
+		df.options for df in tdoc.meta.get_table_fields() if df.fieldname != touched
+	]
+	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+
+
 def _resolve_write_target(action, lead_name, trigger_doc):
 	"""The record this verb writes to, loaded fresh in the current transaction. ONE decision
 	(`resolve_target`), one load — a handler never names its own doctype."""
@@ -442,7 +457,7 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 		tdoc.set(row["name"], contract.resolve_row(
 			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
 		))
-	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+	_save_target(tdoc)
 
 
 def _update_rows(action):
@@ -493,7 +508,7 @@ def _action_append_child(action, lead, context, axes, trigger_doc):
 	tdoc.append(section.child_table_field, {
 		r["name"]: contract.resolve_row(r.get("mode"), r.get("value"), context) for r in rows
 	})
-	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+	_save_target(tdoc, section.child_table_field)
 
 
 def _action_upsert_child(action, lead, context, axes, trigger_doc):
@@ -532,7 +547,7 @@ def _action_upsert_child(action, lead, context, axes, trigger_doc):
 			row.set(name, value)
 	else:
 		tdoc.append(section.child_table_field, values)
-	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
+	_save_target(tdoc, section.child_table_field)
 
 
 def _child_rows(action):
@@ -938,7 +953,7 @@ VERBS = {
 	"Assign to User": {
 		"lane": "effect", "handler": _action_assign_to_user, "target": TARGET_LEAD,
 		"label": "Assign to User",
-		"description": "Moves ownership of the lead. The default owner is an Assignment Rule's job; this is for ownership changing because something happened.",
+		"description": "Moves ownership of the lead. Use it when ownership changes because something happened.",
 		"outputs": ["assigned", "nobody"],
 		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
 		"params": [

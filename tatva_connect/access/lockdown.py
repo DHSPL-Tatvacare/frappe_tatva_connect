@@ -177,6 +177,20 @@ APP_SECURITY_SETTINGS = {
 	"Insights Settings": {"enable_permissions": 1, "apply_user_permissions": 1},
 }
 
+# Doctypes that must never load from a spreadsheet. `DataImport.validate_doctype` refuses on a falsy `allow_import` BEFORE any permission check and a System Manager does NOT bypass that line, so this one flag closes the Desk importer and the SPA's menu together; it is set through a Property Setter because these doctypes belong to the crm app, which is the override frappe reads itself (`utils/user.py` builds `can_import` from DocType rows AND Property Setter rows). CRM LEAD IS DELIBERATELY ABSENT - the flag is doctype-wide and the bulk lead load is the one import the business runs, so naming it here would kill that load at Desk too.
+IMPORT_OFF = (
+	"CRM Deal",
+	"CRM Task",
+	"CRM Call Log",
+	"CRM Organization",
+	"FCRM Note",
+	"CRM Product",
+	"CRM Territory",
+	"CRM Industry",
+	"CRM Lead Source",
+	"CRM Sales Hierarchy",
+)
+
 # Standard Web Forms other apps ship PUBLISHED and login-free. sync_all re-imports them on every migrate AND install, so unpublishing by hand survives neither.
 UNPUBLISHED_WEB_FORMS = {
 	"request-data": "frappe's GDPR data-download form — no public website, and nobody monitors the doctype",
@@ -319,6 +333,24 @@ def apply_field_permlevels():
 	frappe.clear_cache()
 
 
+def apply_import_lock():
+	"""Turn `allow_import` off for IMPORT_OFF via Property Setter (idempotent upsert) - the non-fork way to close another app's importer, and the same mechanism `apply_field_permlevels` uses above."""
+	for doctype in IMPORT_OFF:
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		frappe.make_property_setter(
+			{
+				"doctype": doctype,
+				"doctype_or_field": "DocType",
+				"property": "allow_import",
+				"value": 0,
+				"property_type": "Check",
+			},
+			is_system_generated=True,
+		)
+	frappe.clear_cache()
+
+
 def _app_parent_doctypes(app_name):
 	"""Parent doctypes belonging to `app_name`. Children inherit their parent and singles carry no matrix."""
 	modules = frappe.get_all("Module Def", filters={"app_name": app_name}, pluck="name")
@@ -378,6 +410,7 @@ def apply(*_args, **_kwargs):
 			)  # authz-ok: tier-a — permission scaffolding, runs in schema setup
 	apply_field_levels()
 	apply_field_permlevels()
+	apply_import_lock()
 	apply_app_security_settings()
 	apply_unpublished_web_forms()
 	apply_baseline_role_trims()

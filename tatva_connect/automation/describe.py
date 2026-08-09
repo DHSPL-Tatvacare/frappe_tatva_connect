@@ -45,6 +45,13 @@ def _value_options(fieldtype, raw_options):
 
 
 def _descriptor(key, label, fieldtype, raw_options):
+	"""ONE descriptor shape, and `pick` is part of it — the control a value for this field is drawn with.
+
+	It was missing here and computed only inside `_typed_catalog`, so every consumer that came through
+	this builder (the write picker, `refs.readable_for`) got a field whose type said `Link` and whose
+	pick-source said nothing. A Link's raw options is its TARGET DOCTYPE, a string, which the browser's
+	`Array.isArray(options)` then discarded — so a Link and a Select both fell through to a free-text box
+	and an author typed `Field-Sales::Doctor Activated` by hand. The declaration says what draws it."""
 	ftype = fieldtype or "Data"
 	return {
 		"key": key,
@@ -52,6 +59,7 @@ def _descriptor(key, label, fieldtype, raw_options):
 		"type": ftype,
 		"operators": operators_for(ftype),
 		"options": _value_options(ftype, raw_options),
+		"pick": _pick_for(ftype, raw_options),
 	}
 
 

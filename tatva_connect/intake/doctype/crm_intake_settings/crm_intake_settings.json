@@ -8,18 +8,26 @@
  "field_order": [
   "ratelimit_section",
   "ip_per_hour",
-  "phone_per_day"
+  "phone_per_day",
+  "upload_section",
+  "files_per_handle",
+  "uploads_per_ip_per_hour",
+  "reap_batch_size"
  ],
  "fields": [
   {"fieldname": "ratelimit_section", "fieldtype": "Section Break", "label": "Submission Rate Limits"},
   {"description": "Max enrolment submissions per IP per hour (on top of frappe's native 10/min). Blank = 20. Enforced when CRM Tatva Automation → Intake::RateLimit::enforcement is ON.", "fieldname": "ip_per_hour", "fieldtype": "Int", "label": "Per IP / hour"},
-  {"description": "Max submissions per phone number per day. Blank = 3.", "fieldname": "phone_per_day", "fieldtype": "Int", "label": "Per phone / day"}
+  {"description": "Max submissions per phone number per day. Blank = 3.", "fieldname": "phone_per_day", "fieldtype": "Int", "label": "Per phone / day"},
+  {"fieldname": "upload_section", "fieldtype": "Section Break", "label": "Guest Upload Limits"},
+  {"description": "Max files one anonymous visitor may upload before submitting (per handle). Blank = 10. Enforced when Intake::RateLimit::enforcement is ON.", "fieldname": "files_per_handle", "fieldtype": "Int", "label": "Files per visitor"},
+  {"description": "Max guest file uploads per IP per hour. Blank = 40.", "fieldname": "uploads_per_ip_per_hour", "fieldtype": "Int", "label": "Uploads per IP / hour"},
+  {"description": "Max abandoned guest files the hourly reaper deletes per run (bounded so a backlog drains across runs, never one mega-sweep). Blank = 500.", "fieldname": "reap_batch_size", "fieldtype": "Int", "label": "Reaper batch size"}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-23 00:00:00.000000",
+ "modified": "2026-08-09 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Settings",

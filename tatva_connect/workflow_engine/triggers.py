@@ -352,39 +352,12 @@ def _start_one(workflow_name, version_name, lead_name, seed_context, trigger_ref
 	`_maybe_start` already classified (no re-resolve). The `active_key` UNIQUE index closes the double-start
 	race — a second entry for the same (workflow, lead) raises IntegrityError on insert, caught + treated as
 	already-running."""
-	entry_node = versions.entry_node_of(versions.load(version_name))  # the ONE entry-resolution brain
 	frappe.flags.in_workflow = True  # the first segment's own writes must not re-enter entry detection
 	try:
-		journey = frappe.get_doc({
-			"doctype": JOURNEY_DT,
-			"workflow": workflow_name,
-			"workflow_version": version_name,
-			"subject_doctype": "CRM Lead",
-			"subject_name": lead_name,
-			# What actually fired, kept apart from the subject. A Task save and a lead save both resolve to
-			# the same lead, and a node acting "on the trigger doc" means different records in each case.
-			"trigger_doctype": trigger_ref[0] if trigger_ref else None,
-			"trigger_name": trigger_ref[1] if trigger_ref else None,
-			"current_node": entry_node,
-			# Only what a later segment cannot re-derive. The subject's own fields are NOT seeded: they
-			# live on the document and are read from it each segment, so copying them here would freeze
-			# the lead as it was at trigger time — which is what made a 30-day Wait test 30-day-old data.
-			# The `__before` pairs are kept, because the change that fired this journey is not re-derivable.
-			"state_json": frappe.as_json(seed_context or {}),
-			"status": "Running",
-			# The uniqueness key the double-start guard rests on. It was DECLARED on the doctype and
-			# described in three docstrings, but the column was not unique and nothing ever wrote it — so
-			# every save of a matching lead started another journey, and each one sent its own messages.
-			# Cleared when the journey reaches a terminal state, so the same lead may enter again later.
-			"active_key": f"{workflow_name}::{lead_name}",
-		}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
-		# The list view's "Last journey" column, MATERIALISED — the same shape `trigger_next_run_at`
-		# already uses on this header, because a list view cannot join to the journey table. Stamped when a
-		# journey is BORN and never on its steps: touching the header once per node of every journey is the
-		# cost this column was explicitly scoped to avoid. Inside the try, so a start that rolls back leaves
-		# no claim that one happened. `update_modified=False` — the operator did not edit this workflow.
-		frappe.db.set_value(
-			_WORKFLOW_DT, workflow_name, "last_journey_at", journey.creation, update_modified=False,
+		# `active_key` is the double-start guard and the durable lane's alone; cleared on every terminal transition.
+		journey = interpreter.open_journey(
+			workflow_name, version_name, lead_name, seed_context, trigger_ref,
+			active_key=f"{workflow_name}::{lead_name}",
 		)
 		interpreter.advance(journey)
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):

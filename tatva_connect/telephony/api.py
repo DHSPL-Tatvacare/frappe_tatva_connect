@@ -10,10 +10,9 @@ to use (resolved upstream by telephony/routing.py). The only GLOBAL state is the
 writes a CRM Call Log — that lives in handler.py. Mirrors the kill-switch +
 defensive-POST conventions of tatva_connect/wati/api.py.
 
-Click-to-call returns only {"success": bool, "message": str} — no synchronous call id. It is sent a
-`custom_identifier` to echo back, but Acefone echoes nothing: the field was empty on all 363 captured
-CDRs, as was `ref_id`. There is therefore NO correlation key from a placed call back to its CDR, and
-outbound-from-CRM cannot be built on one.
+Click-to-call returns `ref_id` synchronously and Acefone repeats it on the CDR, so that is the
+correlation key. `custom_identifier` is NOT: it was empty on all 363 captured CDRs, and their docs type
+it two ways (Object in the table, string in the OpenAPI block) — do not build on it.
 """
 import re
 from urllib.parse import urlencode
@@ -21,6 +20,7 @@ from urllib.parse import urlencode
 import frappe
 from frappe import _
 from frappe.integrations.utils import make_get_request, make_post_request
+from frappe.utils import cint
 
 from tatva_connect import automation, phone
 
@@ -49,6 +49,12 @@ def assert_enabled():
 		)
 
 
+@frappe.whitelist()
+def calls_enabled() -> dict:
+	"""Whether the CRM may place calls — the one thing that draws the phone icon, read off OUR switch."""
+	return {"enabled": is_enabled()}
+
+
 def base_url_of(account) -> str:
 	"""This account's base URL with any trailing slash stripped (or the default)."""
 	base = (account.get("base_url") or DEFAULT_BASE_URL).strip()
@@ -59,6 +65,36 @@ def _headers(account) -> dict:
 	"""Bearer auth from this CRM Telephony Account's api_token Password field."""
 	token = account.get_password("api_token")
 	return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _failure(exc) -> dict:
+	"""Acefone's error body plus the transport outcome; without the status a 429 reads as a rejected number."""
+	resp = getattr(frappe.flags, "integration_request", None)
+	if resp is None:
+		return {"success": False, "message": str(exc)[:400]}
+	try:
+		body = resp.json()
+	except Exception:
+		body = None
+	if not isinstance(body, dict):
+		body = {"success": False, "message": (getattr(resp, "text", "") or str(exc))[:400]}
+	body["status_code"] = getattr(resp, "status_code", None)
+	# An HTTP-date Retry-After reads as 0, so the caller falls back rather than promise a wait it cannot compute.
+	body["retry_after"] = cint((getattr(resp, "headers", None) or {}).get("Retry-After")) or None
+	return body
+
+
+def succeeded(resp) -> bool:
+	"""True only on a real success: `status_code` is stamped only by `_failure`, and Acefone sends `success` as a boolean AND as the STRING "false" (their rate-limit page)."""
+	resp = resp or {}
+	if resp.get("status_code") is not None:
+		return False
+	return str(resp.get("success", "")).strip().casefold() in ("true", "1")
+
+
+def token_rejected(resp) -> bool:
+	"""A 401/403 — the account's api_token is expired or wrong; Acefone's short-lived tokens die after 60 minutes."""
+	return (resp or {}).get("status_code") in (401, 403)
 
 
 def _post(account, endpoint: str, body: dict) -> dict:
@@ -72,24 +108,12 @@ def _post(account, endpoint: str, body: dict) -> dict:
 	try:
 		return make_post_request(url, headers=_headers(account), json=body)
 	except Exception as e:
-		resp = getattr(frappe.flags, "integration_request", None)
-		if resp is not None:
-			try:
-				return resp.json()
-			except Exception:
-				return {"success": False, "message": (getattr(resp, "text", "") or str(e))[:400]}
-		return {"success": False, "message": str(e)[:400]}
+		return _failure(e)
 
 
 def click_to_call(account, destination_number, agent_number, caller_id=None, custom_identifier=None) -> dict:
-	"""POST /v1/click_to_call on `account` — bridge an agent's phone to the destination.
-
-	Returns Acefone's body, e.g. {"success": True, "message": "..."}. There is
-	NO synchronous call id; `custom_identifier` (we pass the CRM Call Log name)
-	is echoed back in the CDR webhook for deterministic correlation.
-	"""
-	# Acefone wants BARE DIGITS — a leading "+" is rejected ("Unable to process this
-	# request"). Normalize all numbers here (the single choke point).
+	"""POST /v1/click_to_call — rings the agent first, then bridges to the destination; `ref_id` correlates it."""
+	# Acefone wants BARE DIGITS — a leading "+" is rejected. The single choke point for that.
 	body = {
 		"agent_number": phone.match_digits(agent_number),
 		"destination_number": phone.match_digits(destination_number),
@@ -115,13 +139,7 @@ def _get(account, endpoint: str, params: dict) -> dict:
 	try:
 		return make_get_request(url, headers=_headers(account))
 	except Exception as e:
-		resp = getattr(frappe.flags, "integration_request", None)
-		if resp is not None:
-			try:
-				return resp.json()
-			except Exception:
-				return {"success": False, "message": (getattr(resp, "text", "") or str(e))[:400]}
-		return {"success": False, "message": str(e)[:400]}
+		return _failure(e)
 
 
 def get_call_records(account, from_date=None, to_date=None, page=1, limit=100, **filters) -> dict:

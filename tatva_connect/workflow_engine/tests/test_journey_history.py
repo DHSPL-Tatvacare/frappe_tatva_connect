@@ -131,6 +131,52 @@ class TestJourneyHistory(FrappeTestCase):
 		self.assertIn(mine, listed)
 		self.assertNotIn(orphan, listed, "a journey whose subject cannot be read must not be listed")
 
+	# ------------------------------------------------- runs of ONE workflow
+
+	def test_a_workflows_runs_come_back_newest_first(self):
+		"""The header's question — what has THIS flow been doing. Keyed by the workflow, not by a record."""
+		older = self._run()
+		newer = self._run()
+		listed = history.runs_for_workflow(WORKFLOW)["journeys"]
+		found = [r["journey"] for r in listed]
+		self.assertIn(older, found)
+		self.assertIn(newer, found)
+		self.assertLess(found.index(newer), found.index(older), "runs are not newest first")
+
+	def test_a_run_names_the_lead_and_never_its_docname(self):
+		"""A column headed Patient must not print `otfteqi3e1`. Resolved through `taxonomy.labels.title_of`,
+		the one title reader every other picker, list and badge in this app already answers with."""
+		run = self._run()
+		row = next(r for r in history.runs_for_workflow(WORKFLOW)["journeys"] if r["journey"] == run)
+		self.assertEqual(row["subject_label"], frappe.db.get_value("CRM Lead", self.lead.name, "lead_name"))
+		self.assertNotEqual(row["subject_label"], row["subject_name"])
+
+	def test_a_workflows_runs_carry_the_failure_reason(self):
+		"""Same derivation the other lists use — a Failed run says which node, and because what."""
+		run = self._run(status="Failed")
+		self._step(run, "d_task", "failed", detail="PermissionError: not entitled")
+		row = next(r for r in history.runs_for_workflow(WORKFLOW)["journeys"] if r["journey"] == run)
+		self.assertEqual(row["failure"]["node_id"], "d_task")
+		self.assertIn("not entitled", row["failure"]["detail"])
+
+	# The per-row half of the gate — `visibility.parent_readable` on each row's own subject — is the
+	# SAME call `stuck_journeys` makes and is locked by
+	# `test_stuck_journeys_hides_a_journey_whose_subject_is_unreadable`. It is not re-asserted here: a rep
+	# is refused by the workflow gate below before the row filter is ever reached, so the only way to
+	# exercise it from this endpoint would be a contrived user, and a contrived fixture proves nothing.
+
+	def test_runs_of_a_workflow_a_caller_may_not_read_are_refused(self):
+		"""The OTHER leak: the volume and the failure rate of a flow are themselves information."""
+		self._run()
+		frappe.set_user(REP_B)
+		with self.assertRaises(frappe.PermissionError):
+			history.runs_for_workflow(WORKFLOW)
+
+	def test_a_caller_cannot_lift_the_runs_limit(self):
+		"""Bounded by the same ceiling every other list here obeys."""
+		self.assertLessEqual(len(history.runs_for_workflow(WORKFLOW, limit=10_000)["journeys"]),
+		                     history.MAX_JOURNEYS)
+
 	def test_stuck_journeys_is_not_a_rep_surface(self):
 		self._run(status="Failed")
 		frappe.set_user(REP_B)

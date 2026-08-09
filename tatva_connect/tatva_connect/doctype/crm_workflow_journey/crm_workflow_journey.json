@@ -86,6 +86,7 @@
    "default": "Running",
    "read_only": 1,
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "search_index": 1,
    "description": "Records whether the execution is Running, Parked, Done, Failed, or Stopped. Stopped is terminal and deliberate - the subject left, so the journey was ended rather than allowed to fail."
   },
@@ -155,7 +156,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-07-20 19:30:00.000000",
+ "modified": "2026-08-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Journey",

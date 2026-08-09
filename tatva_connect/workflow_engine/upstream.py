@@ -130,7 +130,7 @@ def emitters_at(nodes, node_id):
 	return found
 
 
-def _shaped(name, ftype, label, source, source_label, options=None, emitted=False):
+def _shaped(name, ftype, label, source, source_label, options=None, emitted=False, pick=None):
 	"""One field, in the builder contract's own shape — `{ref, label, type, source, source_label, emitted}`.
 
 	`options` rides along ONLY when the field really has choices, so a Select's predicate value becomes a
@@ -161,6 +161,10 @@ def _shaped(name, ftype, label, source, source_label, options=None, emitted=Fals
 	}
 	if options:
 		shape["options"] = options
+	# `pick` rides on the same terms as `options` and for the same reason: it is `describe._pick_for`'s
+	# answer to "what draws a value for this field", and dropping it here is what made a Link a text box.
+	if pick:
+		shape["pick"] = pick
 	return shape
 
 
@@ -324,10 +328,17 @@ def _subject_fields(by_id):
 	subject = _subject_doctype(by_id)
 	if not subject or not frappe.db.exists("DocType", subject):
 		return []
-	return [
-		_shaped(f["ref"], f["type"], f["label"], refs.slug(subject), _(subject), f.get("options"))
-		for f in refs.readable_for(subject)
-	]
+	# The LEAD too, whenever the subject is not itself one: `interpreter._record_loaders` carries it at run
+	# time, so offering less here would hide a value the engine really has — and offering more would be the
+	# defect this rule exists to prevent. Two records, one list, each row naming its own source.
+	found = []
+	for doctype in dict.fromkeys([subject, "CRM Lead"]):
+		found += [
+			_shaped(f["ref"], f["type"], f["label"], refs.slug(doctype), _(doctype), f.get("options"),
+			        pick=f.get("pick"))
+			for f in refs.readable_for(doctype)
+		]
+	return found
 
 
 def _subject_doctype(by_id):

@@ -1,40 +1,31 @@
-"""Make Acefone ride crm's NATIVE call UI via clean overrides — no crm fork.
-
-crm's call UI (the phone icon on lead/deal/contact, "Make a Call", the call
-popup, the inline "Listen" recording player) turns on when a telephony
-integration's settings are enabled. We enable the Exotel slot (no Exotel creds
-needed) and override the two backend methods that UI calls, so the native UI
-drives Acefone instead. The CRM never reaches Exotel — make_a_call is replaced.
-
-Registered in hooks.override_whitelisted_methods:
-  crm.integrations.exotel.handler.make_a_call          -> make_a_call
-  crm.fcrm.doctype.crm_call_log.crm_call_log.get_call_log -> get_call_log
-"""
+"""The outbound core. `make_a_call` is called directly by CallUI.vue; `get_call_log` is the one hooks override left, for the recording player."""
 from urllib.parse import quote
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
+from tatva_connect import phone as phone_utils
 from tatva_connect.telephony import providers, routing, writer
+from tatva_connect.utils import spend_rate_limit
 
 MEDIUM = "Acefone"
 RECORDING_ENDPOINT = "/api/method/tatva_connect.api.telephony.recording"
 
+SETTINGS = "CRM Telephony Settings"
+# Per-minute cap, at the account level because that is where Acefone enforces its own. Operator data;
+# blank or zero means the default, never "no calls allowed".
+_PER_MINUTE_FIELD = "calls_per_minute_per_account"
+_DEFAULT_PER_MINUTE = 60
+# Long enough to eat a double-click, short enough not to block a genuine redial.
+_REPEAT_SECONDS = 5
+
 
 @frappe.whitelist()
 def make_a_call(to_number, from_number=None, caller_id=None):
-	"""Place a bridge call via the routed account's provider — drop-in for crm's Exotel make_a_call.
-
-	The native UI passes only the number, so we resolve the lead/deal, its routed
-	telephony account, and that account's provider adapter from it. Returns the new
-	call-log name (the popup just shows "Calling…"); failures raise so the native
-	toast shows a clean message.
-	"""
+	"""Place a bridge call: the caller passes only a number, and the lead, account, provider and agent line are resolved from it."""
 	ref_doctype, ref_name = _reference_for_number(to_number)
-	# We mint a CRM Call Log against the resolved lead/deal with ignore_permissions below;
-	# gate that write on read-visibility of the parent (the same scope the visibility brain
-	# applies to the call log) so an agent can't call — and create a log against — a lead
-	# they cannot see.
+	# The row is minted with ignore_permissions, so gate it on READ of the parent — no calling a lead you cannot see.
 	if ref_name:
 		frappe.has_permission(ref_doctype, "read", ref_name, throw=True)
 	account_name = routing.resolve_for_reference(ref_doctype, ref_name) if ref_name else None
@@ -45,10 +36,10 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
 	agent_number = _agent_number(account)
+	_throttle(account_name, to_number)  # before the row is minted: a refusal must leave no Initiated row
+	# caller passed, never defaulted: the same writer serves automation, which must not record a session user.
 	call_log = _new_call_log(
 		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account),
-		# A rep pressed the phone icon, so the call is theirs. Passed rather than defaulted: the same
-		# writer now serves automation, which has no session user and must not record one.
 		caller=frappe.session.user,
 	)
 
@@ -57,18 +48,74 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 		destination_number=to_number,
 		agent_number=agent_number,
 		caller_id=account.caller_id,
-		# The placeholder key, not the row's name: the CDR echoes this back and the writer matches it
-		# against the same column it dedupes every other call on.
-		custom_identifier=call_log.get(writer.CALL_KEY_FIELD),
+		custom_identifier=call_log.get(writer.CALL_KEY_FIELD),  # belt-and-braces; `ref_id` is the real key
 	)
-	if not (resp or {}).get("success"):
-		call_log.db_set("status", "Failed")
-		info = (resp or {}).get("message") or _("click-to-call was rejected")
+	if not adapter.succeeded(resp):
+		_refuse(call_log, resp, adapter, providers.provider_of(account))
+	_adopt_ref_id(call_log, resp)
+	return {"name": call_log.name}
+
+
+def _refuse(call_log, resp, adapter, provider) -> None:
+	"""Mark the row Failed DURABLY then raise; frappe.throw rolls back, so an uncommitted status is lost."""
+	call_log.db_set("status", "Failed")
+	frappe.db.commit()
+
+	if adapter.token_rejected(resp):
 		frappe.throw(
-			_("{0} could not place the call: {1}").format(providers.provider_of(account), info),
+			_("{0} rejected our credentials — the account's API token is expired or invalid.").format(provider),
 			title=_("Call Failed"),
 		)
-	return {"name": call_log.name}
+
+	if (resp or {}).get("status_code") == 429:
+		# Never echo the gateway body; frappe maps this to HTTP 429 so our cap and theirs arrive alike.
+		wait = (resp or {}).get("retry_after")
+		frappe.throw(
+			_("{0} is busy — try again in {1} seconds.").format(provider, wait)
+			if wait
+			else _("{0} is busy — try again in a moment.").format(provider),
+			exc=frappe.RateLimitExceededError,
+			title=_("Call Failed"),
+		)
+
+	info = (resp or {}).get("message") or _("click-to-call was rejected")
+	frappe.throw(
+		_("{0} could not place the call: {1}").format(provider, info),
+		title=_("Call Failed"),
+	)
+
+
+def _adopt_ref_id(call_log, resp) -> None:
+	"""Take Acefone's `ref_id` over our placeholder so the CDR finds this row by key, not by recency."""
+	ref_id = str((resp or {}).get("ref_id") or "").strip()
+	if not ref_id:
+		return
+	call_log.db_set(writer.CALL_KEY_FIELD, ref_id)
+	frappe.db.commit()
+
+
+def _cap(field, fallback):
+	"""An operator-tunable per-minute cap; an unreadable setting falls back rather than block calling."""
+	try:
+		return cint(frappe.db.get_single_value(SETTINGS, field)) or fallback
+	except Exception:
+		return fallback
+
+
+def _throttle(account_name, to_number) -> None:
+	"""Refuse an originate the line's minute, or a double-click, has already spent."""
+	user = frappe.session.user
+	spend_rate_limit(
+		"telephony-rl:account", account_name, _cap(_PER_MINUTE_FIELD, _DEFAULT_PER_MINUTE), 60,
+		_("This telephony line is at its call limit for the minute. Try again shortly."),
+	)
+
+	digits = phone_utils.match_digits(to_number, last=10) or str(to_number)
+	repeat = frappe.cache.make_key(f"telephony-repeat:{user}:{digits}")
+	# setnx, so redis decides the winner rather than two requests both reading "absent".
+	if not frappe.cache.setnx(repeat, 1):
+		frappe.throw(_("That call is already being placed."), exc=frappe.RateLimitExceededError)
+	frappe.cache.expire(repeat, _REPEAT_SECONDS)
 
 
 def _reference_for_number(number):
@@ -95,19 +142,7 @@ def _agent_number(account):
 
 def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, medium,
                   call_id=None, caller=None, account_field="custom_telephony_account"):
-	"""THE ONE WRITER for an outbound call row, whoever placed it — a rep's click-to-call or automation.
-
-	`call_id` — the provider's own id when it is known at placement. Acefone returns none on a
-	click-to-call, so a placeholder is minted and sent for it to echo back, and its `custom_provider_call_id`
-	is how the hangup CDR finds the row again. A caller that ALREADY has the provider's id (an AI voice
-	call answers with its execution_id) passes it here instead: `CRM Call Log.id` is UNIQUE and the doctype
-	autonames from it, so the id becomes the row's name and a later lookup is a primary-key seek. Such a row
-	deliberately claims NO `custom_provider_call_id` — this is a MIXED table and a voice row must never
-	answer telephony's own key lookup.
-
-	`caller` — the User this call belongs to. Automation has no session user, so it passes None rather than
-	letting a background job's identity be recorded as the person who called the patient.
-	"""
+	"""THE ONE WRITER for an outbound row, rep or automation; `call_id` set only when the provider's id is known at placement, and such a row claims NO provider-key column."""
 	doc = frappe.new_doc("CRM Call Log")
 	doc.id = call_id or frappe.generate_hash(length=12)
 	if not call_id:

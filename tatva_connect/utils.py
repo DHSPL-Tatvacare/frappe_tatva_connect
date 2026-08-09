@@ -114,3 +114,12 @@ def _block(url: str, field: "str | None", cause: str, next_step: str) -> NoRetur
 	frappe.log_error(title="Blocked unsafe outbound URL", message=f"{cause}: {url}")
 	throw_field(_("This call names an unsafe URL — {0}. {1}").format(cause, next_step),
 	            [field] if field else [])
+
+
+def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: str) -> None:
+	"""One fixed-window redis counter keyed by ANY identity; frappe's own rate_limit keys on IP only, and an office NATs to one address."""
+	key = frappe.cache.make_key(f"{scope}:{ident}")
+	if not frappe.cache.get(key):
+		frappe.cache.setex(key, window, 0)
+	if frappe.cache.incrby(key, 1) > limit:
+		frappe.throw(message, exc=frappe.RateLimitExceededError)
