@@ -593,9 +593,11 @@ AUTOMATIONS = [
 		# tests/access/test_link_scheme.py locks it against becoming dormant — so it carries no switch of its
 		# own and is covered here so the drift lock passes. Same shape and same reason as the always-on SSRF
 		# guard carried by Partner::AsyncBulk::jobs.
+		# The LMS member-IDOR guard is a third always-on access write-guard with no switch (locked by tests/security/test_lms_member_idor.py), carried here so the drift lock passes — same shape and reason as link_scheme above.
 		backs=[
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
 			"tatva_connect.access.link_scheme.guard_link_schemes",
+			"tatva_connect.access.lms_member_guard.enforce_member",
 		],
 	),
 	Auto(
@@ -896,9 +898,8 @@ AUTOMATIONS = [
 			"Example: a script POSTing the form in a loop is throttled with a plain 'try again later', "
 			"while a patient submitting once is unaffected."
 		),
-		# before_request gate — drift walks only doc_events/scheduler, so backs is empty
-		# (like the visibility/partner-rate-limit gates).
-		backs=[],
+		# The before_request throttle needs no backs; the guest-orphan reaper is a scheduler_events job gated by this same flag, so drift requires it listed here.
+		backs=["tatva_connect.intake.guards.reap_guest_orphans"],
 	),
 	Auto(
 		key="Storage::File::screening",

@@ -3,9 +3,8 @@ from urllib.parse import quote
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import add_to_date, cint, now_datetime
 
-from tatva_connect import phone as phone_utils
 from tatva_connect.telephony import providers, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
@@ -17,8 +16,6 @@ SETTINGS = "CRM Telephony Settings"
 # blank or zero means the default, never "no calls allowed".
 _PER_MINUTE_FIELD = "calls_per_minute_per_account"
 _DEFAULT_PER_MINUTE = 60
-# Long enough to eat a double-click, short enough not to block a genuine redial.
-_REPEAT_SECONDS = 5
 
 
 @frappe.whitelist()
@@ -36,7 +33,8 @@ def make_a_call(to_number, from_number=None, caller_id=None):
 	adapter = providers.adapter_for(account)
 	adapter.assert_enabled()
 	agent_number = _agent_number(account)
-	_throttle(account_name, to_number)  # before the row is minted: a refusal must leave no Initiated row
+	_assert_free(ref_doctype, ref_name)
+	_throttle(account_name)  # before the row is minted: a refusal must leave no Initiated row
 	# caller passed, never defaulted: the same writer serves automation, which must not record a session user.
 	call_log = _new_call_log(
 		to_number, agent_number, account_name, ref_doctype, ref_name, providers.provider_of(account),
@@ -102,20 +100,48 @@ def _cap(field, fallback):
 		return fallback
 
 
-def _throttle(account_name, to_number) -> None:
-	"""Refuse an originate the line's minute, or a double-click, has already spent."""
-	user = frappe.session.user
+def _throttle(account_name) -> None:
+	"""Refuse an originate the line has already spent its minute on."""
 	spend_rate_limit(
 		"telephony-rl:account", account_name, _cap(_PER_MINUTE_FIELD, _DEFAULT_PER_MINUTE), 60,
 		_("This telephony line is at its call limit for the minute. Try again shortly."),
 	)
 
-	digits = phone_utils.match_digits(to_number, last=10) or str(to_number)
-	repeat = frappe.cache.make_key(f"telephony-repeat:{user}:{digits}")
-	# setnx, so redis decides the winner rather than two requests both reading "absent".
-	if not frappe.cache.setnx(repeat, 1):
-		frappe.throw(_("That call is already being placed."), exc=frappe.RateLimitExceededError)
-	frappe.cache.expire(repeat, _REPEAT_SECONDS)
+
+def _assert_free(ref_doctype, ref_name) -> None:
+	"""Refuse a second call to a record someone is already ringing — one rep double-clicking, or two reps on one lead.
+
+	The Call Log row IS that state, so it is read rather than mirrored into a cache key that can disagree with it.
+	`OUTBOUND_MATCH_WINDOW_MIN` already means "this outbound call is still in flight" — the same window the writer
+	matches a CDR on — so a row the provider never reported back stops blocking on its own.
+	"""
+	if not ref_name:
+		return
+	cutoff = add_to_date(now_datetime(), minutes=-writer.OUTBOUND_MATCH_WINDOW_MIN)
+	rows = frappe.get_all(  # authz-ok: tier-b — gated: the caller passed has_permission on this very record above
+		"CRM Call Log",
+		filters={
+			"reference_doctype": ref_doctype,
+			"reference_docname": ref_name,
+			"type": "Outgoing",
+			"status": "Initiated",
+			"creation": [">=", cutoff],
+		},
+		fields=["caller"],
+		limit=1,
+		ignore_permissions=True,
+	)
+	if not rows:
+		return
+	caller = rows[0].get("caller")
+	who = frappe.get_cached_value("User", caller, "full_name") if caller else None
+	frappe.throw(
+		_("{0} is already calling this record.").format(who)
+		if who
+		else _("A call to this record is already being placed."),
+		exc=frappe.RateLimitExceededError,
+		title=_("Call In Progress"),
+	)
 
 
 def _reference_for_number(number):
