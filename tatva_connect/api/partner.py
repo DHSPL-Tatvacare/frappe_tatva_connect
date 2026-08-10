@@ -610,10 +610,7 @@ def _apply_key_value(doc, cf, incoming, identity_field, section):
 def _apply_children(doc, children):
 	"""Config-driven UPSERT-BY-KEY write engine (§3-4 of the child-table contract).
 	Per child table, the section decides single-row vs multi-row + the key field;
-	a partial write never wipes the other fields/rows already on the doc.
-	After applying, mirror the latest lab row's headline metrics up to the parent
-	(the validate hook also does this, but doing it here keeps the API path explicit
-	and idempotent)."""
+	a partial write never wipes the other fields/rows already on the doc."""
 	for cf, incoming in children.items():
 		if not incoming:
 			continue
@@ -628,8 +625,6 @@ def _apply_children(doc, children):
 			_apply_multi_row(doc, cf, incoming, key_field, title, section)
 		else:
 			_apply_single_row(doc, cf, incoming, title, section)
-	from tatva_connect.lead.leads import sync_headline_metrics
-	sync_headline_metrics(doc)
 
 
 def _apply_parent(doc, parent):

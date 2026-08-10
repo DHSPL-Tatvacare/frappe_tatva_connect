@@ -23,12 +23,10 @@ from tatva_connect.automation.settings import is_enabled
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.labels import LEAD_STAGE
 
-# Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage)
-# or auto-synced headline mirrors (the latest-lab snapshot). Keeps the signal, drops the churn.
+# Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage).
+# The five headline mirrors left this set on 2026-08-10 with the sync that wrote them — nothing auto-writes them now, so a change to one is a real edit and belongs in the trail.
 _NOISE_FIELDS = {
 	"custom_stage",
-	"custom_latest_hba1c", "custom_latest_fbs",
-	"custom_height_feet", "custom_weight_kg", "custom_last_report_date",
 }
 
 

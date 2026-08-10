@@ -3,23 +3,13 @@ import frappe
 from frappe import _
 
 from tatva_connect import automation
-from tatva_connect.lead import multirow
 from tatva_connect.whatsapp.phone import to_e164
 
 # Phone-type fields on CRM Lead we keep canonical (+E.164). mobile_no is the dedup +
 # WhatsApp-inbound match key; the rest are normalized for consistency.
 PHONE_FIELDS = ("mobile_no", "phone", "custom_alternate_number", "custom_caregiver_phone")
 
-# Headline metrics surfaced on the core Lead for list/sort/kanban. Each maps a
-# CRM Lead parent field -> the CRM Lab Profile child field it mirrors. Auto-synced
-# from the LATEST lab row on every write; agents never hand-maintain these.
-HEADLINE_LAB_MAP = {
-	"custom_latest_hba1c": "hba1c",
-	"custom_latest_fbs": "fbs",
-	"custom_height_feet": "height_feet",
-	"custom_weight_kg": "weight_kg",
-	"custom_last_report_date": "report_date",
-}
+# RETIRED 2026-08-10 — sync_headline_metrics + HEADLINE_LAB_MAP + _latest_lab_row. It copied the latest lab row's five values onto flat lead columns "so ops can sort/kanban"; on this site three of those columns have no catalog row at all and the other two are on no surface, unfilterable, unsortable and ticked by no contract, so nothing read them. The lab section carries the same five values (lab:hba1c, lab:fbs, lab:height_feet, lab:weight_kg, lab:report_date) and both the Data tab and Smart Views already flatten to the latest row through multirow.latest_child_row, which is what the copy was for. The columns and their fixtures are LEFT IN PLACE (dropping them is a schema decision, and custom_computed_bmi's formula still reads two of them — it has no catalog row and no runtime reader, so it is dead alongside this, not broken by it).
 
 # Routing fields the dedup anchor keys on. An omitted field arrives as '' (form/import)
 # or None (API); both MUST canonicalise to one value so the {mobile, vertical, group}
@@ -272,34 +262,6 @@ def lead_stages(lead):
 		fields=["name", "stage", "substage_of", "display_label", "color", "position"],
 		order_by="position asc, stage asc",
 	)
-
-
-def _latest_lab_row(doc):
-	"""The most recent CRM Lab Profile child row, or None — via the ONE multi-row rule
-	(multirow.latest_child_row), keyed by the 'lab' section's own row_key_field, NOT a hardcoded
-	report_date. So the headline sync agrees with the Data tab and Smart Views on which row is 'latest'."""
-	section = frappe.get_cached_doc("CRM Lead Section", "lab")
-	rows = doc.get(section.child_table_field) or []
-	return multirow.latest_child_row(rows, section.row_key_field)
-
-
-def sync_headline_metrics(doc, method=None):
-	"""Copy the latest lab row's headline values up to the core Lead fields, so ops
-	can sort/scan/kanban on them. Idempotent: re-derives from the child each write,
-	whether the change came from the partner API or a UI/grid edit. No lab row leaves
-	the headlines as-is (don't clobber on an unrelated save)."""
-	if not automation.is_enabled("Lead::CRM Lead::headline"):
-		return
-	# Defensive (P9): during the profile-restructure migration the lab table's columns
-	# may briefly be out of sync with the doc meta — skip rather than throw on a live
-	# Lead save if the source lab column is missing.
-	if not frappe.db.has_column("CRM Lab Profile", "hba1c"):
-		return
-	row = _latest_lab_row(doc)
-	if not row:
-		return
-	for parent_field, lab_field in HEADLINE_LAB_MAP.items():
-		doc.set(parent_field, row.get(lab_field))
 
 
 # lead_section_gate() RETIRED — the Data tab is now a clean server-side projection

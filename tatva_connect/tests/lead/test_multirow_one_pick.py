@@ -3,7 +3,7 @@
 """The multi-row 'latest row' invariant — ONE row, the same one, in EVERY consumer.
 
 The audit found the "latest multi-row child" decided in three places with three tiebreaks
-(detail.py, leads.py, smartview/api.py), so two lab rows sharing one report_date resolved to a
+(detail.py, leads.py — retired 2026-08-10 — and smartview/api.py), so two lab rows sharing one report_date resolved to a
 DIFFERENT row per surface — a break of the CLAUDE.md invariant. These tests lock the fix: one shared
 rule (multirow.latest_child_row) drives the Python consumers, and the SQL builder orders by the same
 keys, so a date tie resolves identically everywhere.
@@ -15,7 +15,7 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.lead import detail, leads, multirow
+from tatva_connect.lead import detail, multirow
 
 
 def _row(report_date, creation, name):
@@ -47,10 +47,9 @@ class TestLatestChildRule(FrappeTestCase):
 
 
 class TestConsumersAgreeOnTie(FrappeTestCase):
-	"""detail (Data tab) and leads (headline sync) must pick the SAME row on a date tie —
-	they both route through multirow.latest_child_row, so they cannot diverge."""
+	"""The Data tab must pick the row the SHARED rule picks — it routes through multirow.latest_child_row, so it cannot diverge. (The third consumer, leads.sync_headline_metrics, was retired 2026-08-10; the rule it shared is unchanged.)"""
 
-	def test_data_tab_and_headline_pick_the_same_lab_row(self):
+	def test_data_tab_and_the_shared_rule_pick_the_same_lab_row(self):
 		section = frappe.get_cached_doc("CRM Lead Section", "lab")
 		key = section.row_key_field
 		a = _row("2026-03-01", "2026-03-01 08:00:00", "rowA")
@@ -60,9 +59,9 @@ class TestConsumersAgreeOnTie(FrappeTestCase):
 		doc = frappe._dict({section.child_table_field: rows})
 
 		data_tab_pick = detail._child_row(doc, section)
-		headline_pick = leads._latest_lab_row(doc)
+		shared_pick = multirow.latest_child_row(rows, key)
 		self.assertIsNotNone(data_tab_pick)
-		self.assertEqual(data_tab_pick.name, headline_pick.name)
+		self.assertEqual(data_tab_pick.name, shared_pick.name)
 		self.assertEqual(data_tab_pick.name, "rowB")  # the shared rule: newest creation on a tie
 
 
