@@ -297,6 +297,10 @@ doc_events = {
 	"CRM Organization": {
 		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
 	},
+	# osm_tile_url is rendered as the map tile src; operator-set, https-only. New key (no existing CRM Maps Settings block, so nothing to shadow).
+	"CRM Maps Settings": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
 	# Per-form intake sinks are runtime custom DocTypes with no code hook — a single wildcard after_insert processes them; early-returns cheaply (cached set test) for every non-intake doctype.
 	# Automation engine (Task 4): the unified (on_doctype, event) router rides the SAME wildcard - no per-doctype code push. A doctype is "live" for automation only because an enabled rule names it (router.live_doctypes, self-healing cache); every handler early-returns cheaply otherwise.
 	# Automation engine (Task 10): Deleted rides on_trash - the row still exists there (before removal),

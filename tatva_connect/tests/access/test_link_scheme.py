@@ -62,3 +62,27 @@ class TestWebsiteFieldScheme(FrappeTestCase):
 		lead.set("first_name", lead.first_name)
 		lead.website = None
 		lead.save(ignore_permissions=True)
+
+
+class TestMapsSettingsScheme(FrappeTestCase):
+	"""osm_tile_url on CRM Maps Settings (a Single) — rendered as the leaflet tile src, https:// only.
+	Driven through real .save() so the guard is proven at the write, not just as a pure function."""
+
+	def test_http_tile_url_rejected(self):
+		s = frappe.get_single("CRM Maps Settings")
+		s.osm_tile_url = "http://tiles.example.test/{z}/{x}/{y}.png"
+		with self.assertRaises(frappe.ValidationError) as cm:
+			s.save(ignore_permissions=True)
+		self.assertIn("secure web address", str(cm.exception))
+
+	def test_javascript_tile_url_rejected(self):
+		s = frappe.get_single("CRM Maps Settings")
+		s.osm_tile_url = "javascript:alert(1)"
+		with self.assertRaises(frappe.ValidationError) as cm:
+			s.save(ignore_permissions=True)
+		self.assertIn("secure web address", str(cm.exception))
+
+	def test_https_tile_url_accepted(self):
+		s = frappe.get_single("CRM Maps Settings")
+		s.osm_tile_url = "https://tiles.example.test/{z}/{x}/{y}.png"
+		s.save(ignore_permissions=True)

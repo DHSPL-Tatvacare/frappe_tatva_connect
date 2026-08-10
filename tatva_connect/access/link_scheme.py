@@ -12,7 +12,8 @@ models, two different guards, two different names.
 
 Used by:
   - user_links.py        (profile links: linkedin/github/twitter/medium)
-  - link_scheme doc_events (CRM Lead/Deal/Organization website, CRM Intake Form.success_url)
+  - link_scheme doc_events (CRM Lead/Deal/Organization website, CRM Intake Form.success_url,
+    CRM Maps Settings.osm_tile_url)
 
 Operator-only fields (WhatsApp Account.url, telephony base_url, etc.) are NOT driven
 through here — they carry a different contract (internal API endpoints) and are gated by
@@ -59,6 +60,10 @@ _LINK_FIELDS = {
 	),
 	"success_url": (
 		"CRM Intake Form",
+	),
+	# Rendered as the leaflet tile `src` (location/api.py returns it as `tile_url`); operator-set, so https-only at save.
+	"osm_tile_url": (
+		"CRM Maps Settings",
 	),
 }
 

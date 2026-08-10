@@ -30,6 +30,14 @@ from frappe.utils import now_datetime
 
 from tatva_connect.channels import contract
 from tatva_connect.storage import call_media
+from tatva_connect.utils import assert_safe_public_url
+
+
+def _safe_base_url(connection):
+	"""The account's Bolna base URL (or the public default), SSRF-vetted before any outbound call — an operator-set host resolving to an internal/metadata address is refused (utils.assert_safe_public_url, the one outbound guard)."""
+	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	assert_safe_public_url(base_url)
+	return base_url
 
 DECLARATION = contract.declare(
 	channel="voice",
@@ -184,7 +192,7 @@ def place_call(connection, to_number, agent_id, from_override, correlation, vari
 	flag is a real bool; `place_call_batch` posts multipart form fields, where it is the STRING "true".
 	"""
 	api_key = connection.get("api_key") or ""
-	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	base_url = _safe_base_url(connection)
 	if not api_key:
 		raise BolnaServiceError("Bolna connection missing api_key")
 	from_phone = _resolve_from_phone(from_override, connection.get("from_phone"))
@@ -546,7 +554,7 @@ def account_for_payload(payload, event):
 
 def _get(connection, path):
 	api_key = connection.get("api_key") or ""
-	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	base_url = _safe_base_url(connection)
 	if not api_key:
 		raise BolnaServiceError("Bolna connection missing api_key")
 	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -674,7 +682,7 @@ def place_call_batch(connection, requests_, recipient_ids):
 	if len(requests_) != len(recipient_ids):
 		raise BolnaServiceError("place_call_batch: requests and recipient_ids length mismatch")
 	api_key = connection.get("api_key") or ""
-	base_url = (connection.get("base_url") or "https://api.bolna.ai").rstrip("/")
+	base_url = _safe_base_url(connection)
 	if not api_key:
 		raise BolnaServiceError("Bolna connection missing api_key")
 
