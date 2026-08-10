@@ -229,7 +229,7 @@ def _refuse_disabled_bulk_complete(doctype, docnames, action, data):
 
 @frappe.whitelist()
 def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None,
-                         throttle=True, node_token=None, priority=None):
+                         throttle=True, node_token=None, priority=None, description=None):
 	"""Idempotent follow-up task. Throttle (default): ONE open task per lead per type — if one
 	is already open, return it untouched. Otherwise create it (assigned + due at
 	`due_at` if given, else `due_in_hours` from now). Also the method the WhatsApp
@@ -250,6 +250,7 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	it never moves an existing token) — this helper only READS it, and does not stamp.
 
 	`priority` is set on the inserted task when given; when None the doctype's own default stands.
+	`description` is the same shape: the task's own note, written only when the caller supplies one.
 	Both new arguments default to None, which is byte-for-byte today's behaviour for every caller.
 
 	THE ONE EXCEPTION to "every writer goes through compute_activity", and it is a real one: this
@@ -336,6 +337,10 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 	# and the allowed values are the column's, validated by the doctype, never a typed list in here.
 	if priority:
 		task.priority = priority
+	# Same rule as `priority` directly above: written only when asked for, so an unset note leaves the
+	# doctype's own default standing rather than blanking a description a caller never spoke about.
+	if description:
+		task.description = description
 	task.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the task before the write
 	return task.name
 

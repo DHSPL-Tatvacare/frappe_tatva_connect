@@ -355,6 +355,10 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		due_at=_due_at(action, context),
 		assigned_to=assignee,
 		priority=action.get("priority") or None,
+		description=action.get("description") or None,
+		# The author's control, inverted at the seam: the param asks "allow duplicates", the helper asks
+		# "throttle". One negation here keeps the author's word plain and the helper's contract unchanged.
+		throttle=not action.get("allow_duplicate_tasks"),
 		# The SAME token stamped below, handed in so the open-task check matches on it too: this node still reuses its own task on a re-fire, while a SECOND node of the same type gets its own instead of silently creating nothing. Narrowed by the node, never lifted.
 		node_token=token,
 	)
@@ -996,6 +1000,11 @@ VERBS = {
 			 "depends_on_value": {"subject_mode": [refs.EXPRESSION]}},
 			{"name": "priority", "label": "Priority", "help": "How urgent this is on the rep's list. Leave it unset and the task keeps the priority the record itself defaults to.", "type": "Select",
 			 "options": _priority_options()},
+			{"name": "description", "label": "Note", "help": "A line of instruction shown under the subject, e.g. \"Patient has not uploaded the documents\". Leave it blank and the task carries no note.", "type": "Small Text"},
+			# Duplicate suppression, exposed. `create_followup_task` throttles by default — one OPEN task
+			# per lead per type, narrowed by this node's token — and that default is preserved by leaving
+			# this unticked. Tick it and every fire raises its own task, which is what LeadSquared does.
+			{"name": "allow_duplicate_tasks", "label": "Allow duplicate tasks", "help": "Off (the default): if this node already has an open task of this type for the patient, it is reused instead of raising another. On: every fire raises a new task, even when one is still open.", "type": "Check"},
 			{"name": "due_mode", "label": "Due Mode", "help": "Leave it unset for the task type's own default due date.", "type": "Select",
 			 "options": [refs.FROM_CONTEXT, refs.EXPRESSION, DUE_AFTER_DELAY]},
 			{"name": "due_from", "label": "Due date from", "help": "A date carried by the run — the patient's appointment, or a date an earlier node worked out.", "type": "Variable",
