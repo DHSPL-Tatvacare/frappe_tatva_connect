@@ -504,9 +504,9 @@ def _flush_steps(journey, steps):
 		now, user = frappe.utils.now(), frappe.session.user
 		frappe.db.bulk_insert(
 			STEP_LOG_DT, ["name", "owner", "creation", "modified", "modified_by", "docstatus", "idx",
-			              "journey", "subject_name"] + list(_STEP_FIELDS),
+			              "journey", "subject_name", *_STEP_FIELDS],
 			[(frappe.db.get_next_sequence_val(STEP_LOG_DT), user, now, now, user, 0, 0,
-			  journey.name, journey.subject_name) + tuple(step[f] for f in _STEP_FIELDS)
+			  journey.name, journey.subject_name, *(step[f] for f in _STEP_FIELDS))
 			 for step in steps],
 		)
 	except Exception:

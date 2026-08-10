@@ -104,9 +104,9 @@ class TestLMSMemberIDOR(AuthzTestCase):
 		]
 		self.assertEqual(
 			unguarded, [],
-			"New student-creatable LMS doctype(s) with an unguarded `member` field: {0}. "
-			"Wire access.lms_member_guard.enforce_member in hooks doc_events, or add an "
-			"UPSTREAM_SAFE entry citing why upstream already enforces it.".format(unguarded),
+			f"New student-creatable LMS doctype(s) with an unguarded `member` field: {unguarded}. "
+			f"Wire access.lms_member_guard.enforce_member in hooks doc_events, or add an "
+			f"UPSTREAM_SAFE entry citing why upstream already enforces it.",
 		)
 
 	def test_student_cannot_spoof_member(self):

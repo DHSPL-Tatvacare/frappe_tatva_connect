@@ -64,8 +64,8 @@ class TestDeskUserFloor(IntegrationTestCase):
 		removed = sorted(REVIEWED_READABLE - live)
 		self.assertEqual(
 			live, REVIEWED_READABLE,
-			"Desk User read/select floor drifted. ADDED (review + gate or add to REVIEWED_READABLE): "
-			"{}. REMOVED (a control tightened — update the set): {}.".format(added, removed),
+			f"Desk User read/select floor drifted. ADDED (review + gate or add to REVIEWED_READABLE): "
+			f"{added}. REMOVED (a control tightened — update the set): {removed}.",
 		)
 
 	def test_writable_floor_has_not_drifted(self):
@@ -74,8 +74,8 @@ class TestDeskUserFloor(IntegrationTestCase):
 		removed = sorted(REVIEWED_WRITABLE - live)
 		self.assertEqual(
 			live, REVIEWED_WRITABLE,
-			"Desk User write/create/delete floor drifted. ADDED (review — is it own/hook scoped?): "
-			"{}. REMOVED: {}.".format(added, removed),
+			f"Desk User write/create/delete floor drifted. ADDED (review — is it own/hook scoped?): "
+			f"{added}. REMOVED: {removed}.",
 		)
 
 	def test_user_directory_not_enumerable_by_desk_user(self):
