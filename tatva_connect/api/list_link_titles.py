@@ -58,14 +58,14 @@ def _attach_link_titles(result, doctype=None):
 
 	def add(dt, value):
 		# Dedup, then delegate to the ONE resolver. A Dynamic Link target can be a permissioned record,
-		# so _resolve_title gates on read (a caller who sees the row but not the referenced lead must not
+		# so resolve_title gates on read (a caller who sees the row but not the referenced lead must not
 		# get the lead's name); static masters (Stage/Picklist) read freely.
 		if not (dt and value):
 			return
 		key = f"{dt}::{value}"
 		if key in titles:
 			return
-		title = _resolve_title(dt, value)
+		title = resolve_title(dt, value)
 		if title is not None:
 			titles[key] = title
 
@@ -95,7 +95,7 @@ def _add_kanban_columns(result, doctype, add):
 		add(df.options, column.get("name"))
 
 
-def _resolve_title(target_dt, value):
+def resolve_title(target_dt, value):
 	"""The title for a `_link_titles` entry: the framework's two gates (the target opts in via
 	show_title_field_in_link, and the caller may read it), then the shared lookup. The title_field read
 	itself lives in taxonomy.labels.title_of, so there is one implementation of it, not two."""
@@ -116,7 +116,7 @@ def _resolve_title(target_dt, value):
 def get_doc_link_titles(doctype, name):
 	"""The `_link_titles` map ({target_doctype}::{value} -> clean title) for ONE document's Link /
 	Dynamic Link fields — the detail / side-panel counterpart of the list `get_data` map, same brain
-	(`_resolve_title`). ONE call per doc load (mirrors the assignees / permissions resources in
+	(`resolve_title`). ONE call per doc load (mirrors the assignees / permissions resources in
 	`useDocument`), never per field. Only fields whose target opts into show_title_field_in_link get an
 	entry; the UI falls back to the raw value for the rest, so it never blanks."""
 	frappe.has_permission(doctype, "read", doc=name, throw=True)
@@ -127,7 +127,7 @@ def get_doc_link_titles(doctype, name):
 			continue
 		value = doc.get(df.fieldname)
 		target = df.options if df.fieldtype == "Link" else doc.get(df.options)
-		title = _resolve_title(target, value)
+		title = resolve_title(target, value)
 		if title is not None:
 			titles[f"{target}::{value}"] = title
 	_add_attach_labels(doc, doctype, titles)

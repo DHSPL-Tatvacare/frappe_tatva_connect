@@ -868,12 +868,12 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 def _lead_titles(names):
 	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped."""
-	# `_resolve_title` and not `labels`: a lead is a PERMISSIONED record and that resolver is the one gating on read.
-	from tatva_connect.api.list_link_titles import _resolve_title
+	# `resolve_title` and not `labels`: a lead is a PERMISSIONED record and that resolver is the one gating on read.
+	from tatva_connect.api.list_link_titles import resolve_title
 
 	titles = {}
 	for name in {n for n in names if n}:
-		title = _resolve_title(LEAD_DOCTYPE, name)
+		title = resolve_title(LEAD_DOCTYPE, name)
 		if title is not None:
 			titles[f"{LEAD_DOCTYPE}::{name}"] = title
 	return titles

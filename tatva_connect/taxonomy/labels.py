@@ -22,7 +22,7 @@ The SPA list does not use this module at all; it uses the framework's own `_link
 api/list_link_titles.py), which ships the label alongside the untouched key. This module is for the
 hand-built payloads that have no such map.
 
-`api.list_link_titles._resolve_title` calls `title_of` for the lookup, so there is one implementation
+`api.list_link_titles.resolve_title` calls `title_of` for the lookup, so there is one implementation
 of "read the title_field"; it adds the framework's `show_title_field_in_link` and read-permission
 gates on top, which are the list map's semantics, not this module's.
 
