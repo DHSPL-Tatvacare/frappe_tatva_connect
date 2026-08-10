@@ -19,6 +19,8 @@
   "cohort_cursor",
   "cohort_abort",
   "cohort_progress_at",
+  "cohort_next_chunk_at",
+  "cohort_interval_seconds",
   "canvas_json",
   "trigger_vertical",
   "trigger_group",
@@ -141,6 +143,22 @@
    "description": "Derived. When this cohort walk last moved \u2014 stamped by the claim and again at every cursor write. A claim that stops moving is a dead worker, and the sweep hands it back."
   },
   {
+   "fieldname": "cohort_next_chunk_at",
+   "fieldtype": "Datetime",
+   "label": "Next Batch Due",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Derived. When this cohort owes its next batch. The drain books that batch itself and this is the durable half of the booking, so the sweep leaves the cohort alone until the moment passes and steps in only if the booking never arrived."
+  },
+  {
+   "fieldname": "cohort_interval_seconds",
+   "fieldtype": "Int",
+   "label": "Seconds Between Batches",
+   "non_negative": 1,
+   "no_copy": 1,
+   "description": "Optional. Overrides the site-wide pace for this workflow alone. Set it when this workflow places CALLS rather than sending messages, because the two providers accept different rates. Blank uses the pace in Cohort Pace Settings."
+  },
+  {
    "fieldname": "canvas_json",
    "fieldtype": "Long Text",
    "label": "Canvas Layout (JSON)",
@@ -182,7 +200,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-08-09 01:30:00.000000",
+ "modified": "2026-08-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow",

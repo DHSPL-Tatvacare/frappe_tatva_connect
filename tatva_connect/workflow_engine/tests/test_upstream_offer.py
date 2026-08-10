@@ -166,6 +166,57 @@ class TestThePickerAndPublishCannotDisagree(FrappeTestCase):
 				)
 
 
+	def test_a_node_on_ONE_arm_of_a_split_is_not_certain_at_the_join(self):
+		"""The defect this walk shipped with, and the reason both the picker and the gate were wrong at once.
+
+		Two arms of a Route rejoin. Both can REACH the join, so a walk that asks "can this reach me" counts
+		both as having run — but exactly one did. A Wait at the join naming the other arm is then accepted
+		by `_wait_problems`, whose own words are "does not always run before it — the journey would park for
+		ever", and a journey down the unchosen arm does precisely that: Parked, no error, no step log, no
+		clock, and the patient never gets their next task.
+
+		The question is DOMINANCE, not reachability, and this is the lock on it. The straight-line case is
+		asserted beside it because a fix that refuses everything would also pass the first half.
+		"""
+		def node(node_id, node_type, config, edges):
+			return {"node_id": node_id, "node_type": node_type, "config_json": json.dumps(config),
+			        "edges": [{"from_output": o, "to_node": t} for o, t in edges.items()]}
+
+		trigger = {"mode": "Record Event", "subject_doctype": "CRM Lead", "event": "Created"}
+		split = [
+			node("start", "Trigger", trigger, {"next": "gate"}),
+			node("gate", "Route", {"routes": [{"id": "a", "condition": None}, {"id": "b", "condition": None}]},
+			     {"a": "task", "b": "note", "otherwise": "end"}),
+			node("task", "Create Task", {"task_type": "x"}, {"next": "join"}),
+			node("note", "Create Note", {"comment_mode": "Literal", "comment_text": "hi"}, {"next": "join"}),
+			node("join", "Wait", {"mode": "Until Event", "event_name": "task.completed", "source_node": "task"},
+			     {"event": "end"}),
+			node("end", "Terminal", {}, {}),
+		]
+		self.assertNotIn("task", graph.upstream_ancestors(split, "join"),
+		                 "a node on one arm of a split is not certain at the join")
+		self.assertTrue(
+			[p for p in graph.problems(split, "start")
+			 if p.get("severity") == registry.BLOCKS and p.get("code") == "wait.source-unreachable"],
+			"publish accepted a Wait that parks every journey down the other arm",
+		)
+
+		straight = [
+			node("start", "Trigger", trigger, {"next": "task"}),
+			node("task", "Create Task", {"task_type": "x"}, {"next": "join"}),
+			node("join", "Wait", {"mode": "Until Event", "event_name": "task.completed", "source_node": "task"},
+			     {"event": "end"}),
+			node("end", "Terminal", {}, {}),
+		]
+		self.assertIn("task", graph.upstream_ancestors(straight, "join"),
+		              "a node on the only path to this one IS certain")
+		self.assertFalse(
+			[p for p in graph.problems(straight, "start")
+			 if p.get("severity") == registry.BLOCKS and p.get("code") == "wait.source-unreachable"],
+			"a legitimate Wait on the node directly above it was refused",
+		)
+
+
 class TestNoInspectorListIsBuiltFromTheRawGraph(FrappeTestCase):
 	"""THE STRUCTURAL GUARD. Without it this grows back the way `outputs_for` did — a JS re-derivation of
 	a backend answer, under a comment claiming it mirrors one.
@@ -190,14 +241,19 @@ class TestNoInspectorListIsBuiltFromTheRawGraph(FrappeTestCase):
 			f"the graph prop is being re-decided in the canvas instead of asked of the backend: {offenders}",
 		)
 
-	def test_the_graph_prop_still_reaches_the_backend(self):
-		"""The prop is not banned — it is the QUESTION. Deleting it would pass the test above by making the
-		inspector answer nothing at all."""
+	def test_the_graph_still_reaches_the_backend(self):
+		"""The graph is not banned — it is the QUESTION. Deleting it would pass the test above by making the
+		canvas answer nothing at all.
+
+		Asked by the CANVAS rather than the inspector since `authoring_context`: the answer is a fact about
+		the graph, and the inspector is a panel `:key` destroys on every node click, so asking there
+		re-fetched the subject's whole schema per click.
+		"""
 		if not self._CANVAS.exists():
 			self.skipTest("frontend not mounted in this container")
-		source = (self._CANVAS / "NodeInspector.vue").read_text()
-		self.assertIn("node_context", source)
-		self.assertIn("JSON.stringify(props.graph)", source, "the backend is no longer asked about the graph")
+		source = (self._CANVAS / "WorkflowCanvas.vue").read_text()
+		self.assertIn("authoring_context", source)
+		self.assertIn("resolveContext(graphNodes.value)", source, "the backend is no longer asked about the live graph")
 
 
 class TestBothPickersHangOnTheWIRE(FrappeTestCase):

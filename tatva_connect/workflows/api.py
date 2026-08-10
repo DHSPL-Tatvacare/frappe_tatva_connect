@@ -44,7 +44,37 @@ def get_workflow(name):
 	payload = doc.as_dict()
 	payload["nodes"] = _nodes_of(name)
 	payload["version"] = _current_version(name)
+	payload["_link_titles"] = _link_titles_of(payload["nodes"])
 	return payload
+
+
+def _link_titles_of(nodes):
+	"""`{doctype}::{pk}` -> the title, for every Link value the graph holds — the DOCUMENT transport, the same one `get_doc_link_titles` gives a lead and `get_data` gives a list.
+
+	A node's Link value lives in `config_json`, so nothing on the wire carried a title and every card asked the framework's link search for itself: ten parallel requests on opening one Anaya flow. One map on the load answers all of them, and the per-control fallback stays for a node the author has only just dropped.
+
+	WHICH values are links is not decided here. `FIELD_TYPES[…]["summary"]["as"] == "title"` is the same declaration the card renders from, so the map and the card can never disagree about what needs a title.
+	"""
+	from tatva_connect.api.list_link_titles import resolve_title
+	from tatva_connect.workflow_engine import registry
+
+	titled = {}
+	for declaration in registry.node_types():
+		for field in declaration.get("config") or []:
+			if (field.get("summary") or {}).get("as") == "title" and field.get("link"):
+				titled.setdefault(declaration["type"], {})[field["name"]] = field["link"]
+
+	found = {}
+	for node in nodes:
+		for fieldname, target in (titled.get(node.get("node_type")) or {}).items():
+			value = (registry.config_of(node) or {}).get(fieldname)
+			key = f"{target}::{value}"
+			if not value or key in found:
+				continue
+			title = resolve_title(target, value)
+			if title is not None:
+				found[key] = title
+	return found
 
 
 def _current_version(workflow):

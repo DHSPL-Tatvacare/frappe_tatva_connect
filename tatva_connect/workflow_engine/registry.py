@@ -939,19 +939,22 @@ def _duration_problems(value, field, config, context):
 #                      by `graph._write_target_problems` and `graph._wait_problems`.
 # NOTHING here refuses a runtime fact. Whether a lead has a number, whether a provider accepts it, and
 # whether a lead matches the grain are unknowable at publish and must not be pretended at.
+# The readings a card can give a scalar value, and the whole vocabulary of them. `raw` is the value itself — the author typed it, or it IS the human word. The other three name a reading the stored value alone cannot give: a composite primary key, `add_to_date` kwargs, a tick. A row naming anything else is refused by the canvas contract test, and the frontend renders from this word and holds no list of field types.
+CARD_READINGS = ("raw", "title", "delay", "label")
+
 FIELD_TYPES = {
-	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
-	"Select": {"control": "select", "check": _option_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
-	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Data": {"control": "data", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Select": {"control": "select", "check": _option_problems, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Small Text": {"control": "textarea", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 	# `time` reaches the inspector's own primitive fallback as `<FormControl type="time">` — no widget of its own.
-	"Time": {"control": "time", "check": _time_problems, "primitive": True, "reads": None, "scalar": True, "summary": None},
+	"Time": {"control": "time", "check": _time_problems, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 	# A boolean goes through frappe-ui's own FormControl, which the inspector already falls through to for
 	# every primitive — so a tick needs no branch of its own in the inspector and no bespoke widget.
-	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": None},
-	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": None},
+	"Check": {"control": "checkbox", "check": None, "primitive": True, "reads": None, "scalar": True, "summary": {"as": "label"}},
+	"Code": {"control": "code", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Link": {"control": "link", "check": _link_grain_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "title"}},
+	"Grain": {"control": "grain", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Variable": {"control": "value-picker", "check": None, "primitive": False, "reads": "variable", "scalar": True, "summary": {"as": "raw"}},
 	"Predicate": {"control": "predicate", "check": _predicate_problems, "primitive": False, "reads": "predicate", "scalar": False, "summary": {"phrase": "has a condition"}},
 	"Route Rows": {"control": "route-rows", "check": None, "primitive": False, "reads": "predicate_rows", "scalar": False, "summary": {"count": "routes"}},
 	# `reads` is None and that is not an oversight: an arm is a share of chance, so it references no journey
@@ -960,7 +963,7 @@ FIELD_TYPES = {
 	"Mapping": {"control": "mapping", "check": _variable_problems, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "captured"}},
 	"Value Map": {"control": "value-map", "check": None, "primitive": False, "reads": "value_rows", "scalar": False, "summary": {"count": "mapped"}},
 	# A2 — a delay, stored as the `add_to_date` kwargs `wait_resume_at` has always taken; NOT frappe's `Duration` fieldtype and NOT the fork's `DurationInput`/`formatDuration`, which both speak SECONDS, and a month is not a fixed number of them.
-	"Duration": {"control": "duration", "check": _duration_problems, "primitive": False, "reads": "expression", "scalar": True, "summary": None, "units": _delay_units()},
+	"Duration": {"control": "duration", "check": _duration_problems, "primitive": False, "reads": "expression", "scalar": True, "summary": {"as": "delay"}, "units": _delay_units()},
 	# A2 — ONE value with ONE mode: `Value Map`'s row, for a field that holds a single value.
 	"Instant": {"control": "instant", "check": None, "primitive": False, "reads": "value_pair", "scalar": False, "summary": {"phrase": "is set"}},
 	# W8.1 — Value Map's twin for rows the AUTHOR names: same read kind, so gate and vocabulary arrive with it.
@@ -969,16 +972,16 @@ FIELD_TYPES = {
 	# A vocabulary only the PROVIDER knows — fetched server-side from the account a sibling field names, so
 	# no credential reaches the browser. No `check`: what a provider offers is a runtime fact, and refusing
 	# an agent id at publish would mean calling the provider from the publish gate.
-	"Remote Select": {"control": "remote-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Remote Select": {"control": "remote-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 	# W3.1 — which of the subject's fields this workflow works with. A DISPLAY narrowing and nothing more:
 	# `check` and `reads` are both None DELIBERATELY. A read kind would hand these names to
 	# `contract.reads_of`, and a field the schema later lost would turn a tidier picker into a publish
 	# BLOCK — two answers to "what may be read", which is the second brain this whole declaration avoids.
 	# Journey state still falls through to the live document and publish still accepts any real field.
 	"Field Set": {"control": "field-set", "check": None, "primitive": False, "reads": None, "scalar": False, "summary": {"count": "fields"}},
-	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
-	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": None},
+	"Target": {"control": "graph-select", "check": _target_problems, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Node": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
+	"Outcome": {"control": "graph-select", "check": None, "primitive": False, "reads": None, "scalar": True, "summary": {"as": "raw"}},
 }
 
 

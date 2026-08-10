@@ -54,6 +54,14 @@ class TestTheTableIsTheVocabulary(unittest.TestCase):
 				self.assertIn("check", row)
 				self.assertIn("primitive", row)
 				self.assertIn("reads", row, "None is a valid answer, absence is not")
+				# The fifth fact: how the value READS on a canvas card. `None` used to mean "the frontend
+				# decides", and the frontend decided `String(value)` — so a Link printed its composite key
+				# and a delay printed its JSON. A row must now name one reading, and a type added later
+				# cannot ship until it does.
+				self.assertTrue(
+					set(row.get("summary") or {}) & {"phrase", "count", "as"},
+					f"{name} declares no card rendering — name one of phrase / count / as",
+				)
 
 	def test_a_check_a_row_names_really_exists(self):
 		"""A row may only name a check the module actually has, or validation silently does nothing."""

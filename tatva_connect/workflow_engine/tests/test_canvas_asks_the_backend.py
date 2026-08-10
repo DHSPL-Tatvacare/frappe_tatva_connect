@@ -140,21 +140,36 @@ class TestTheCardSummaryReadsTheTable(FrappeTestCase):
 		]
 		self.assertEqual(unnamed, [], f"these hold a list or a tree and would print as objects: {unnamed}")
 
-	def test_a_scalar_type_declares_no_summary_word(self):
-		"""The other direction: a plain value is SHOWN. Naming it would hide the thing the author set."""
-		named = [
+	def test_a_scalar_type_declares_how_it_reads(self):
+		"""The other direction, and it was WRONG until 2026-08-10: a scalar declared nothing, on the premise
+		that a plain value is printable. It is not. A Link holds a composite primary key, so a card printed
+		`Goodflip-Care::Anaya::Tukavo::Tucatinib Order punch`; a Duration holds `add_to_date` kwargs, so it
+		printed `{"days": 10}`; a Check holds 1. The intent stands — a scalar is SHOWN, never renamed — but
+		the row must now say HOW it reads, and `raw` is the explicit answer for the ones that already read
+		well. The frontend used to fill that silence with `String(value)`, which is the seventh consumer this
+		whole class exists to prevent."""
+		silent = [
 			name for name, row in registry.FIELD_TYPES.items()
-			if row["scalar"] and row["summary"] is not None
+			if row["scalar"] and not (row["summary"] or {}).get("as")
 		]
-		self.assertEqual(named, [], f"these would be named instead of shown: {named}")
+		self.assertEqual(silent, [], f"these leave the card to guess how to print them: {silent}")
 
-	def test_a_summary_says_which_of_the_two_shapes_it_is(self):
-		"""One of `count` or `phrase`, never both and never neither — the card branches on exactly this."""
+	def test_a_summary_says_which_of_the_three_shapes_it_is(self):
+		"""One of `count`, `phrase` or `as`, never two and never none — the card branches on exactly this."""
 		for name, row in registry.FIELD_TYPES.items():
-			if row["summary"] is None:
-				continue
 			with self.subTest(type=name):
-				self.assertEqual(len(set(row["summary"]) & {"count", "phrase"}), 1, "one shape, declared")
+				self.assertEqual(
+					len(set(row["summary"] or {}) & {"count", "phrase", "as"}), 1, "one shape, declared"
+				)
+
+	def test_every_reading_a_row_names_is_one_the_card_can_render(self):
+		"""A row naming a reading the card has no renderer for would print nothing at all — the silent
+		blank that replaces the silent raw value. The vocabulary is closed and lives in ONE place."""
+		for name, row in registry.FIELD_TYPES.items():
+			reading = (row["summary"] or {}).get("as")
+			if reading:
+				with self.subTest(type=name):
+					self.assertIn(reading, registry.CARD_READINGS)
 
 	def test_the_summary_reaches_the_wire_on_the_field(self):
 		"""C17.2 — the card reads `f.summary`; a table column the wire drops is half a change."""

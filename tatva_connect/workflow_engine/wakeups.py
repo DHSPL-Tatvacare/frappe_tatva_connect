@@ -71,56 +71,85 @@ def assert_lane_registered():
 		)
 
 
-def schedule_wake(name, resume_at):
-	"""Set the alarm for a parked journey. The diary row is already written; this only makes it PUNCTUAL.
+def schedule_on_lane(due, method, kwargs, key):
+	"""Book ONE job on this lane for a future moment. THE engine's only way to schedule delayed work.
 
-	`frappe.enqueue` has no delay parameter, and Frappe hard-disables RQ's scheduler on both worker paths
-	(`background_jobs.py:359`, `:364-366`) so that its own scheduler is the only one running. That is a
-	reason not to run two schedulers, not a reason to reject delayed work: a queue Frappe's scheduler does
-	not manage is an empty lane. `enqueue_at` takes the identical job `enqueue_call` already builds, so
-	this mirrors `queue_args` and adds nothing to the queue layer.
+	`frappe.enqueue` has no delay parameter (`background_jobs.py:76` — the signature carries `now` and
+	`enqueue_after_commit`, and nothing else about time), and Frappe hard-disables RQ's scheduler on both
+	worker paths (`background_jobs.py:359`, `:364-366`) so that its own scheduler is the only one running.
+	That is a reason not to run two schedulers, not a reason to reject delayed work: this lane is one
+	Frappe's scheduler does not manage, and `run_wake_scheduler` services it. `enqueue_at` takes the
+	identical job `enqueue_call` already builds, so this adds nothing to the queue layer.
 
-	AFTER COMMIT, always: the alarm must not exist for a segment that rolled back. Deduplicated on the journey
-	name so a re-park cannot stack alarms. The payload is the NAME — `drive_journey` re-reads the row and
-	re-claims it, so a stale or duplicated job is a no-op and a lost one is caught by the sweep.
+	AFTER COMMIT, always: a booking must not survive the transaction that asked for it rolling back. The
+	booking already held under this key is dropped FIRST and unconditionally, so a re-book REPLACES rather
+	than stacks — a second booking for the same subject would fire early, which is worse than late.
 
-	ABOVE `SCHEDULE_TO_DRAIN_HANDOVER` NO ALARM IS SET, and returns False so the park can say so. An alarm
-	is a COPY of `resume_at`, which is already the truth, held in Redis for the whole wait — §6.2's rule is
-	that a workflow entry in Redis is a pointer or a copy and never a fact, and §5.4 declares the sweep the
-	volume path. Below the ceiling the copy buys punctuality cheaply; above it the sweep is already doing
-	the work, so the journey goes LATE, NEVER WRONG.
+	EXTRACTED, so the parked journey and the cohort drain share one way to wait. A second hand-rolled
+	`enqueue_at` would be a second answer to "how does this engine come back later", and the two would
+	disagree the first time either was touched — the timezone conversion below is exactly the kind of
+	detail a copy gets wrong invisibly.
 	"""
 	from frappe.utils.background_jobs import create_job_id, get_queue
 
 	queue_args = {
 		"site": frappe.local.site,
 		"user": frappe.session.user,
-		"method": "tatva_connect.workflow_engine.wakeups.drive_journey",
+		"method": method,
 		"event": None,
-		"job_name": "workflow-wake",
+		"job_name": key,
 		"is_async": True,
-		"kwargs": {"name": name},
+		"kwargs": kwargs,
 	}
-	job_id = create_job_id(f"workflow-wake::{name}")
-	due = frappe.utils.get_datetime(resume_at)
+	job_id = create_job_id(key)
 	queue = get_queue(WAKE_QUEUE)
-	punctual = alarms_pending(queue) < thresholds.SCHEDULE_TO_DRAIN_HANDOVER
+	at = _as_utc(frappe.utils.get_datetime(due))
 
-	def alarm():
-		# Dropped FIRST and unconditionally: `drive_journey` claims on status alone and never re-reads the
-		# clock, so an alarm left from an earlier park does not go stale — it wakes the journey EARLY.
+	def book():
 		_forget_wake(queue, job_id)
-		if punctual:
-			queue.enqueue_at(
-				_as_utc(due),
-				"frappe.utils.background_jobs.execute_job",
-				kwargs=queue_args,
-				job_timeout=thresholds.WAKE_JOB_TIMEOUT,
-				job_id=job_id,
-			)
+		queue.enqueue_at(
+			at,
+			"frappe.utils.background_jobs.execute_job",
+			kwargs=queue_args,
+			job_timeout=thresholds.WAKE_JOB_TIMEOUT,
+			job_id=job_id,
+		)
 
-	frappe.db.after_commit.add(alarm)
-	return punctual
+	frappe.db.after_commit.add(book)
+
+
+def forget_on_lane(key):
+	"""Drop the booking held under this key, after commit. The other half of `schedule_on_lane`."""
+	from frappe.utils.background_jobs import create_job_id, get_queue
+
+	job_id = create_job_id(key)
+	queue = get_queue(WAKE_QUEUE)
+	frappe.db.after_commit.add(lambda: _forget_wake(queue, job_id))
+
+
+def schedule_wake(name, resume_at):
+	"""Set the alarm for a parked journey. The diary row is already written; this only makes it PUNCTUAL.
+
+	The booking itself is `schedule_on_lane`'s; what belongs to a JOURNEY is the ceiling below. The payload
+	is the NAME — `drive_journey` re-reads the row and re-claims it, so a stale or duplicated job is a
+	no-op and a lost one is caught by the sweep.
+
+	ABOVE `SCHEDULE_TO_DRAIN_HANDOVER` NO ALARM IS SET, and returns False so the park can say so. An alarm
+	is a COPY of `resume_at`, which is already the truth, held in Redis for the whole wait — §6.2's rule is
+	that a workflow entry in Redis is a pointer or a copy and never a fact, and §5.4 declares the sweep the
+	volume path. Below the ceiling the copy buys punctuality cheaply; above it the sweep is already doing
+	the work, so the journey goes LATE, NEVER WRONG.
+
+	The forget still happens when no alarm is set, and unconditionally: `drive_journey` claims on status
+	alone and never re-reads the clock, so an alarm left over from an EARLIER park does not go stale — it
+	wakes the journey early.
+	"""
+	key = f"workflow-wake::{name}"
+	if alarms_pending() >= thresholds.SCHEDULE_TO_DRAIN_HANDOVER:
+		forget_on_lane(key)
+		return False
+	schedule_on_lane(resume_at, "tatva_connect.workflow_engine.wakeups.drive_journey", {"name": name}, key)
+	return True
 
 
 def alarms_pending(queue=None):

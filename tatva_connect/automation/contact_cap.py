@@ -22,7 +22,7 @@ when this send's own step-log row becomes visible to the next caller. A per-numb
 DIFFERENT numbers proceed in parallel and is the drop-in swap if this ever profiles badly.
 
 WHAT WAS REJECTED, and why:
-  * `api._base._bucket_pair`, the Redis token bucket the cohort drain paces itself with. It is a
+  * `api._base._bucket_pair`, the Redis token bucket the partner API paces its callers with. It is a
     per-minute PACING device with a deliberate fail-open, and Redis has no persistence here. A ceiling
     measured in weeks that silently lifts when Redis restarts is not a ceiling.
   * `frappe.rate_limiter` — per-request, keyed on the caller, sized in seconds. Wrong axis entirely.

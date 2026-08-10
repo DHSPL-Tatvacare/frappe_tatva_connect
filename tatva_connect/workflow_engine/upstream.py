@@ -41,7 +41,25 @@ def available_at(nodes, node_id):
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
-	nodes = frappe.parse_json(nodes) if isinstance(nodes, str) else (nodes or [])
+	nodes = rows_of(nodes)
+	if node_id not in {n.get("node_id") for n in nodes}:
+		return []
+	return with_subject_fields(emitted_at(nodes, node_id), subject_fields_of(nodes))
+
+
+def rows_of(nodes):
+	"""The authored graph as rows, whether it arrived over the wire or from a caller that already has it."""
+	return frappe.parse_json(nodes) if isinstance(nodes, str) else (nodes or [])
+
+
+def emitted_at(nodes, node_id):
+	"""The POSITIONAL half of `available_at` — what ancestors of THIS node write into journey state.
+
+	Split out because it is the only half that depends on where the node sits: the other half is the
+	subject's own schema, which is a fact about the graph's Trigger and identical at every node. The
+	canvas asks for both once per graph rather than the whole answer once per click.
+	"""
+	nodes = rows_of(nodes)
 	by_id = {n.get("node_id"): n for n in nodes if n.get("node_id")}
 	if node_id not in by_id:
 		return []
@@ -53,40 +71,112 @@ def available_at(nodes, node_id):
 			if value["ref"] not in seen:
 				seen.add(value["ref"])
 				found.append(value)
-
-	# The subject's own fields, and no de-duplication against the nodes above: every key here is
-	# `<source>.<field>`, so a Call API's `api.status` and the lead's `crm_lead.status` are two entries and
-	# two labels. This list used to be de-duplicated by BARE name with the node's value first, which meant a
-	# node emitting `status` silently ATE the lead's own — the author was offered one `Status`, the wrong
-	# one, and the predicate they had built at the Trigger could not match at a Route below the call.
-	for field in _subject_fields(by_id):
-		if field["ref"] not in seen:
-			seen.add(field["ref"])
-			found.append(field)
 	return found
 
 
-def _ancestors(by_id, node_id):
-	"""Every node that can reach `node_id`, nearest first.
+def subject_fields_of(nodes):
+	"""The GRAPH half of `available_at` — the subject's own fields, one answer for every node in the graph."""
+	nodes = rows_of(nodes)
+	return _subject_fields({n.get("node_id"): n for n in nodes if n.get("node_id")})
 
-	Walked backwards over the edges rather than forwards from the Trigger: what matters is not what the
-	graph contains but what has certainly already run by the time this node does.
+
+def with_subject_fields(emitted, subject_fields):
+	"""The ONE composition rule, so the two halves are only ever put back together one way.
+
+	No de-duplication of the subject's fields against the nodes above is expected to bite: every key is
+	`<source>.<field>`, so a Call API's `api.status` and the lead's `crm_lead.status` are two entries and
+	two labels. This list used to be de-duplicated by BARE name with the node's value first, which meant a
+	node emitting `status` silently ATE the lead's own — the author was offered one `Status`, the wrong
+	one, and the predicate they had built at the Trigger could not match at a Route below the call. The
+	guard stays because it is what makes the order — emitted first — the answer on a collision.
 	"""
-	incoming = {}
+	seen = {value["ref"] for value in emitted}
+	return [*emitted, *[field for field in subject_fields if field["ref"] not in seen]]
+
+
+def _ancestors(by_id, node_id):
+	"""Every node that has CERTAINLY run by the time `node_id` runs, nearest first.
+
+	NOT "every node that can reach it", which is what this walked until 2026-08-10 while its docstring
+	claimed otherwise. The two agree on a straight line and part company the moment a graph branches and
+	rejoins: both arms of a Route can reach the join, but exactly ONE of them ran. Offering the other arm's
+	values is the silent non-match this module exists to prevent, and `graph._wait_problems` — the gate
+	whose whole job is to refuse a Wait on a node that "does not always run before it" — asked this same
+	question and so accepted one. A journey down the other arm then parks for ever: no error, no step log,
+	no clock.
+
+	The question both were asking is DOMINANCE — a node is certain only if EVERY path from the entry to
+	this one passes through it. That is what is computed here, by the standard iterative fixpoint.
+
+	Reachability is kept as the answer for a graph with no entry: mid-authoring, before a Trigger is
+	dropped, "certainly ran" has no meaning, and an empty picker at that moment is the very thing the
+	module docstring says not to do. Nothing can publish in that state — the gate requires a Trigger — so
+	the loose answer is never the one a live workflow is judged by.
+	"""
+	incoming, outgoing = {}, {}
 	for node in by_id.values():
 		for edge in node.get("edges") or []:
 			target = edge.get("to_node")
 			if target:
 				incoming.setdefault(target, []).append(node["node_id"])
+				outgoing.setdefault(node["node_id"], []).append(target)
 
-	order, seen, queue = [], {node_id}, [node_id]
-	while queue:
-		for parent in incoming.get(queue.pop(0), []):
-			if parent not in seen:
-				seen.add(parent)
-				order.append(parent)
-				queue.append(parent)
-	return order
+	def reachable_backwards():
+		order, seen, queue = [], {node_id}, [node_id]
+		while queue:
+			for parent in incoming.get(queue.pop(0), []):
+				if parent not in seen:
+					seen.add(parent)
+					order.append(parent)
+					queue.append(parent)
+		return order
+
+	entry = _entry_of(by_id, incoming)
+	if not entry or node_id not in by_id:
+		return reachable_backwards()
+
+	dominators = _dominators(by_id, incoming, entry)
+	certain = dominators.get(node_id, set()) - {node_id}
+	# Nearest first, which is the order every caller reads in: the walk backwards already visits by
+	# distance, so ordering by it keeps a nearer node's value winning the de-duplication above.
+	return [n for n in reachable_backwards() if n in certain]
+
+
+def _entry_of(by_id, incoming):
+	"""Where a journey starts: the Trigger, or the one node nothing points at. `None` when neither is
+	answerable, which is an unfinished graph and never a publishable one."""
+	triggers = [n for n, node in by_id.items() if node.get("node_type") == registry.TRIGGER]
+	if len(triggers) == 1:
+		return triggers[0]
+	roots = [n for n in by_id if not incoming.get(n)]
+	return roots[0] if len(roots) == 1 else None
+
+
+def _dominators(by_id, incoming, entry):
+	"""`{node: the nodes every path from `entry` to it passes through}`, itself included.
+
+	The textbook iterative formulation: everything is assumed to dominate everything until a path proves
+	otherwise. A node the entry cannot reach keeps the full set and therefore dominates nothing that
+	matters — it can never run, so nothing it emits is ever certain.
+	"""
+	everything = set(by_id)
+	dominators = {n: set(everything) for n in by_id}
+	dominators[entry] = {entry}
+	changed = True
+	while changed:
+		changed = False
+		for node in by_id:
+			if node == entry:
+				continue
+			parents = incoming.get(node) or []
+			found = set(everything)
+			for parent in parents:
+				found &= dominators[parent]
+			found = found | {node} if parents else {node}
+			if found != dominators[node]:
+				dominators[node] = found
+				changed = True
+	return dominators
 
 
 def node_label(node_id, node_type):

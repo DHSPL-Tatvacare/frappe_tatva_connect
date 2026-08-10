@@ -42,11 +42,20 @@ from tatva_connect.workflow_engine import ENGINE_SWITCH, registry, upstream
 
 
 @frappe.whitelist()
-def node_context(nodes, node_id):
-	"""The whole authoring contract for one node, in one response.
+def authoring_context(nodes):
+	"""The whole authoring contract for EVERY node of a graph, in one response.
 
-	One call rather than three: a control cannot be scoped by something it was never handed, and every
-	separate call is a place the grain can be dropped.
+	THE SAME CONTRACT `node_context` DESCRIBES, ASKED ONCE FOR THE GRAPH. A node's position decides what
+	it can see, and that stays true — but only two of the answers below actually move with position. The
+	subject, the grain, the declared working set, the write targets and the operator vocabulary are facts
+	about the Trigger, so they are identical at every node: measured on the Anaya activity flow, 240 KB of
+	a 241 KB answer was byte-identical across all 25 nodes and was re-fetched on every click of a
+	different node. Schema is fetched per doctype everywhere else in this CRM — `stores/meta.js` holds
+	one `getdoctype` per doctype, the canvas holds one `graph_outputs` per graph — and this is that same
+	shape for the one question that had not adopted it.
+
+	`nodes` keyed by node id, each carrying only the positional half. Not a list: the canvas looks its
+	node up by id.
 	"""
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -70,11 +79,52 @@ def node_context(nodes, node_id):
 		# would have nothing left to prepend. It stays a config key for the same reason it stays unfiltered:
 		# the moment the DISPATCHER selects on it, it needs an indexed column and a back-fill.
 		"working_set": trigger.get("working_set") or [],
-		"variables": upstream.available_at(nodes, node_id),
-		"emitters": upstream.emitters_at(nodes, node_id),
+		"subject_fields": upstream.subject_fields_of(nodes),
 		"settable": schema.get("set_targets") or [],
 		"operators_by_type": schema.get("operators_by_type") or {},
 		"operator_shapes": schema.get("operator_shapes") or {},
+		"nodes": {
+			node_id: {
+				"emitted": upstream.emitted_at(nodes, node_id),
+				"emitters": upstream.emitters_at(nodes, node_id),
+			}
+			for node_id in [n.get("node_id") for n in nodes if n.get("node_id")]
+		},
+	}
+
+
+@frappe.whitelist()
+def node_context(nodes, node_id):
+	"""The whole authoring contract for one node, in one response.
+
+	One call rather than three: a control cannot be scoped by something it was never handed, and every
+	separate call is a place the grain can be dropped.
+
+	One node's slice of `authoring_context`, so there is one implementation of the contract rather than
+	two that agree until they do not.
+	"""
+	return for_node(authoring_context(nodes), node_id)
+
+
+def for_node(answer, node_id):
+	"""One node's slice of a graph answer, in the shape every control has always consumed.
+
+	A node the graph does not hold has no position, and no position means no values — the same answer
+	`upstream.available_at` gives, rather than the subject's whole schema attributed to a node that is
+	not there.
+	"""
+	positional = (answer.get("nodes") or {}).get(node_id)
+	return {
+		"subject": answer["subject"],
+		"grain": answer["grain"],
+		"working_set": answer["working_set"],
+		"variables": upstream.with_subject_fields(positional["emitted"], answer["subject_fields"])
+		if positional
+		else [],
+		"emitters": positional["emitters"] if positional else [],
+		"settable": answer["settable"],
+		"operators_by_type": answer["operators_by_type"],
+		"operator_shapes": answer["operator_shapes"],
 	}
 
 

@@ -28,8 +28,9 @@ WAKE_JOB_TIMEOUT = 1500
 # lands where a single sweep pass can already carry the whole parked population.
 SCHEDULE_TO_DRAIN_HANDOVER = 200
 
-# Leads per committed chunk — small enough that a killed worker loses little, large enough to amortise.
-DRAIN_CHUNK = 100
+# THE COHORT'S PACE, entire: this many journeys, then this long, then again — the drain books its own next chunk, so these two ARE the rate. Defaults; the operator tunes both in `CRM Cohort Pace Settings`.
+DRAIN_CHUNK = 60
+DRAIN_INTERVAL_SECONDS = 60
 
 # Journeys ended per committed chunk when a workflow is suspended or deleted. Larger than DRAIN_CHUNK
 # because ending a journey is one write, not a graph walk, and the set shrinks with every pass.
@@ -38,10 +39,6 @@ STOP_CHUNK = 200
 # Drains one sweep will start; more than a handful due in one minute is a misconfiguration, not load.
 MAX_DUE_PER_SWEEP = 20
 
-# Journeys started per minute, global and per workflow — the provider is the binding constraint, not us.
-DRAIN_RATE = 60
-DRAIN_BURST = 60
-DRAIN_WINDOW = 60
 
 # ── THE CLEANUP POSTURE ──────────────────────────────────────────────────────────────────────────
 # Everything ends. What cannot complete is CLOSED WITH A REASON, never deleted on the spot: closing is

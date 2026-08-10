@@ -1,6 +1,14 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""W7.2 PART B — the drain that walks a cohort. ONE job, a keyset cursor, committed per chunk.
+"""W7.2 PART B — the drain that walks a cohort. ONE chunk per job, a keyset cursor, committed per chunk.
+
+IT PACES ITSELF, and that is the whole of its rate: a job starts `DRAIN_CHUNK` journeys, books its own
+successor `DRAIN_INTERVAL_SECONDS` later, and exits. Nothing outside contributes to the throughput and
+nothing outside has to run for the cohort to finish — `sweep` NOTICES a booking that never arrived, which
+is a backstop, not a motor. Turn the scheduler off and a walk in flight still completes.
+
+Each job living for seconds rather than minutes is the second half of that: the lane is free between
+chunks, so a wake, a send or a Suspend never queues behind a cohort, and no job ever nears its timeout.
 
 A COHORT IS A journey FACTORY, NOT A SECOND ENGINE. The schedule fires, this walks the leads the Trigger's
 criteria select, and each one gets its OWN ordinary journey through `triggers.start_journey` — the SAME entry the
@@ -20,7 +28,7 @@ WHAT IT REUSES, SO THERE IS NO SECOND BRAIN:
   * the criteria     — `cohort.matching_leads`, the same grain + `rules.predicate_match` the preview counts with
   * the start        — `triggers.start_journey`, the same entry a save uses; its `active_key` UNIQUE index is
                        what makes a resume unable to double-start a lead even if the cursor were lost
-  * the pacing       — `api._base._bucket_pair`, the partner API's own atomic Redis bucket
+  * the waiting      — `wakeups.schedule_on_lane`, the same booking a parked journey makes
   * the drain shape  — `api.partner_bulk_worker`: claim the row, chunk, commit each, re-read the abort
                        flag between chunks, resume from stored state. Same moves, same order.
 
@@ -28,18 +36,25 @@ DORMANT. `Workflow::Cohort::drain` ships OFF, and both the sweep and the job re-
 the switch may be turned off between the two, which is exactly what `triggers.start_journey` guards against.
 """
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect.automation import settings as automation
-from tatva_connect.workflow_engine import cohort, thresholds
+from tatva_connect.workflow_engine import cohort, thresholds, wakeups
 
 SWITCH_COHORT = "Workflow::Cohort::drain"
 
 _WORKFLOW_DT = "CRM Workflow"
+_PACE_DT = "CRM Cohort Pace Settings"
+_RUN_COHORT = "tatva_connect.workflow_engine.drain.run_cohort"
 
 # W4.3 — every number this drain paces itself by is DECLARED in `thresholds`, never re-stated here.
 
 IDLE, DRAINING = "", "Draining"
+
+
+def _booking_key(workflow_name):
+	"""The id this cohort's next chunk is held under — ONE definition, so the sweep's enqueue and the drain's own booking dedupe against each other rather than both running."""
+	return f"cohort-drain::{workflow_name}"
 
 
 def sweep(respect_switch=True):
@@ -67,9 +82,9 @@ def sweep(respect_switch=True):
 		if not _claim(name):
 			continue
 		frappe.enqueue(
-			"tatva_connect.workflow_engine.drain.run_cohort",
-			queue="workflow",
-			job_id=f"cohort-drain::{name}",
+			_RUN_COHORT,
+			queue=wakeups.WAKE_QUEUE,
+			job_id=_booking_key(name),
 			deduplicate=True,
 			enqueue_after_commit=True,
 			now=bool(frappe.flags.get("in_test")),
@@ -86,7 +101,11 @@ def _armed():
 
 
 def _due_workflows():
-	"""The one indexed question Part A materialised the columns for: mode plus a clock."""
+	"""The one indexed question Part A materialised the columns for: mode plus a clock.
+
+	A cohort mid-walk is excluded by the CLAIM, not by a second filter here: `_claim` requires IDLE and a
+	walking cohort holds `Draining` from its first chunk to its last.
+	"""
 	from tatva_connect.tatva_connect.doctype.crm_workflow.crm_workflow import ARMED_STATE
 	from tatva_connect.workflow_engine.registry import MODE_SCHEDULE
 
@@ -145,17 +164,16 @@ def _reap_stranded():
 	timeout leaves the row `Draining` forever and every later `_claim` loses. There is no way back without
 	a manual database write, which is not a recovery story.
 
-	IT READS THE HEARTBEAT `run_cohort` ALREADY WRITES. `cohort_progress_at` is stamped by the claim and
-	moved again by every cursor write, so "no progress for `DRAIN_DEAD_AFTER_MINUTES`" means a dead worker
-	and nothing else: a walk that paced out released before it stopped, and so did one the switch stopped.
-	A row still `Draining` with NO stamp at all was claimed before this column existed and is stranded by
-	definition, which is why the age query and the unstamped case are asked together.
+	IT JUDGES BY THE BATCH THAT NEVER ARRIVED, not by silence. A cohort between chunks is deliberately still
+	for `cohort_interval_seconds`, which the operator may set as high as an hour — judged on quiet alone, a
+	healthy slow-paced cohort would be torn down mid-walk on every sweep. `cohort_next_chunk_at` says when
+	the walk is next accounted for, so overdue by `DRAIN_DEAD_AFTER_MINUTES` is a lost booking and nothing
+	else. `_stranded` also asks the older question for a claim that never got as far as booking.
 
-	The stamp rides the writes `run_cohort` was already making — the claim, and each cursor write — so a
-	walk that is moving says so at no extra query, and one that stops saying so is a worker to free.
-
-	It reschedules, because a dead occurrence is over. The cursor is left alone, so the next claim resumes
-	from where the dead worker reached instead of re-walking the cohort from the top.
+	IT RESUMES RATHER THAN RESCHEDULING when the cursor says leads remain. Rescheduling was right when a
+	killed job meant a dead occurrence; now the job is one short chunk and the cohort behind it is
+	unfinished, so dating it tomorrow would silently drop every lead the walk had not reached. Releasing
+	without the clock leaves the row due, and the next sweep resumes it from the cursor.
 
 	FRAPPE NATIVE, and the APIs rejected are named. Not a second `scheduler_events` entry: this is the
 	same question the sweep already asks of the same table on the same tick, and a separate cron would be
@@ -164,22 +182,35 @@ def _reap_stranded():
 	lifecycle save that `apply_transition` makes (the Suspend that W10 turned into the kill), stamp
 	`modified_by` as the drain for ever, and invalidate the document cache on every lead.
 	"""
-	dead_before = frappe.utils.add_to_date(now_datetime(), minutes=-thresholds.DRAIN_DEAD_AFTER_MINUTES)
-	stranded = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
+	stranded = _stranded()
+	for name in stranded:
+		unfinished = bool(frappe.db.get_value(_WORKFLOW_DT, name, "cohort_cursor"))
+		# Closed with a REASON, never silently — `_release` commits this row along with the hand-back.
+		frappe.log_error(
+			title="cohort drain: a stranded claim was handed back",
+			message=f"workflow={name} resumed={unfinished}",
+		)
+		_release(name, reschedule=not unfinished)
+	return len(stranded)
+
+
+def _stranded():
+	"""Claims whose walker is gone: a booked chunk that never arrived, or a claim that never booked one."""
+	dead_before = add_to_date(now_datetime(), minutes=-thresholds.DRAIN_DEAD_AFTER_MINUTES)
+	overdue = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
 		_WORKFLOW_DT,
-		filters={"cohort_state": DRAINING},
+		filters={"cohort_state": DRAINING, "cohort_next_chunk_at": ["<", dead_before]},
+		pluck="name",
+		limit=thresholds.MAX_DUE_PER_SWEEP,
+	)
+	never_booked = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
+		_WORKFLOW_DT,
+		filters={"cohort_state": DRAINING, "cohort_next_chunk_at": ["is", "not set"]},
 		or_filters=[["cohort_progress_at", "<", dead_before], ["cohort_progress_at", "is", "not set"]],
 		pluck="name",
 		limit=thresholds.MAX_DUE_PER_SWEEP,
 	)
-	for name in stranded:
-		# Closed with a REASON, never silently — `_release` commits this row along with the hand-back.
-		frappe.log_error(
-			title="cohort drain: a stranded claim was handed back",
-			message=f"workflow={name} no progress since before {dead_before}",
-		)
-		_release(name)
-	return len(stranded)
+	return list(dict.fromkeys(overdue + never_booked))
 
 
 def abort(workflow_name):
@@ -193,72 +224,66 @@ def abort(workflow_name):
 	frappe.db.commit()
 
 
-def run_cohort(workflow_name, chunk=None, stop_after_chunks=None, respect_switch=True):
-	"""Walk this workflow's cohort, starting one ordinary journey per lead. The queued entry point.
+def run_cohort(workflow_name, chunk=None, respect_switch=True, book_next=True):
+	"""Start ONE chunk of this cohort's journeys, book the next chunk, and return. The queued entry point.
 
-	Re-reads the switch and the abort flag AT EVERY CHUNK BOUNDARY and commits each, so a cohort can be
-	stopped mid-flight and a killed worker resumes from the stored cursor rather than from the top.
+	THE DRAIN PACES ITSELF. One chunk per job, and the job books its own successor `_pace` seconds out, so
+	the rate is this engine's own and no outside clock contributes to it. `sweep` is what NOTICES a booking
+	that never arrived — a backstop, never the motor. Each job therefore lives for seconds rather than
+	minutes, which is what keeps the lane free for wakes, sends and a Suspend between chunks.
+
+	It used to loop until a token bucket ran dry and then stop dead, leaving the 15-minute sweep to bring
+	it back: the delivered rate was one chunk per SWEEP, not per minute, and no constant said so.
 
 	RESPECTING THE SWITCH IS THE DEFAULT, and that is the whole safety property: the sweep enqueues this
 	by name and kwargs, so anything it does not pass is whatever the signature says. It said False, so the
 	only caller in production read no switch at all. A caller that genuinely wants to bypass the switch —
 	a test driving the walk itself — says so out loud.
+
+	The switch and the abort flag both end the OCCURRENCE, exactly as they did when this was one long loop:
+	they release WITH the clock, so the cohort comes back at its next scheduled time and not before.
 	"""
-	chunk = chunk or thresholds.DRAIN_CHUNK
-	config = _trigger_config(workflow_name)
-	subject = config.get("subject_doctype") or "CRM Lead"
+	if respect_switch and not _armed():
+		_release(workflow_name)
+		return 0
 	version = _version_of(workflow_name)
 	if not version:
 		_release(workflow_name)
 		return 0
+	row = frappe.db.get_value(
+		_WORKFLOW_DT, workflow_name, ["cohort_cursor", "cohort_abort"], as_dict=True,
+	) or frappe._dict()
+	if row.get("cohort_abort"):
+		_release(workflow_name)
+		return 0
 
-	# Declared out here because the switch and abort breaks never reach the per-chunk reset below.
-	started, chunks, paced_out = 0, 0, False
-	while True:
-		# BOTH STOPS ARE READ HERE, on every pass, and both leave by the same door: the `break` falls to
-		# `_release` below, because a cohort left `Draining` is one `_claim` can never match again.
-		if respect_switch and not _armed():
-			break
-		row = frappe.db.get_value(
-			_WORKFLOW_DT, workflow_name, ["cohort_cursor", "cohort_abort"], as_dict=True,
-		) or frappe._dict()
-		if row.get("cohort_abort"):
-			break
-		# `scanned_to` is how far the selector READ, which is not the last lead it MATCHED. The cursor
-		# follows the scan, so leads the criteria reject are passed once and never walked again.
-		leads, scanned_to = cohort.matching_leads(
-			subject, config, after=row.get("cohort_cursor"), limit=chunk,
-		)
-		if not leads:
-			_release(workflow_name, clear_cursor=True)
-			return started
+	size, interval = _pace(workflow_name)
+	config = _trigger_config(workflow_name)
+	subject = config.get("subject_doctype") or "CRM Lead"
 
-		paced_out = False
-		for lead in leads:
-			if not _take_token(workflow_name):
-				# The provider is full. PAUSE — never skip: a lead that was not started must stay in front
-				# of the cursor so the next tick picks it up, or the cohort silently loses people.
-				paced_out = True
-				break
-			started += 1 if _start_one(workflow_name, version, lead) else 0
-			# The cursor stops AT the last lead actually started, never at the scan frontier — a pause must
-			# not carry the cursor past someone who was never begun.
-			frappe.db.set_value(_WORKFLOW_DT, workflow_name,
-			                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
-			                    update_modified=False)
-		if not paced_out:
-			frappe.db.set_value(_WORKFLOW_DT, workflow_name,
-			                    {"cohort_cursor": scanned_to, "cohort_progress_at": now_datetime()},
-			                    update_modified=False)
-		frappe.db.commit()
+	# `scanned_to` is how far the selector READ, which is not the last lead it MATCHED. The cursor follows the scan, so leads the criteria reject are passed once and never walked again.
+	leads, scanned_to = cohort.matching_leads(
+		subject, config, after=row.get("cohort_cursor"), limit=chunk or size,
+	)
+	if not leads:
+		_release(workflow_name, clear_cursor=True)
+		return 0
 
-		chunks += 1
-		if paced_out:
-			break
-		if stop_after_chunks and chunks >= stop_after_chunks:
-			return started
-	# A pace-out is not a finished occurrence, so it releases without moving the clock. See `_release`.
-	_release(workflow_name, reschedule=not paced_out)
+	started = 0
+	for lead in leads:
+		started += 1 if _start_one(workflow_name, version, lead) else 0
+		# The cursor stops AT the last lead actually started, never at the scan frontier — a worker that dies mid-chunk must not carry it past someone who was never begun.
+		frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+		                    {"cohort_cursor": lead, "cohort_progress_at": now_datetime()},
+		                    update_modified=False)
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name,
+	                    {"cohort_cursor": scanned_to, "cohort_progress_at": now_datetime()},
+	                    update_modified=False)
+	frappe.db.commit()
+
+	# Leads remain, so the CLAIM IS KEPT and only the booking carries the walk on. See `_pause`.
+	if book_next:
+		_pause(workflow_name, interval)
 	return started
 
 
@@ -291,45 +316,59 @@ def _release(workflow_name, clear_cursor=False, reschedule=True):
 	"""Hand the cohort back. A finished walk clears its cursor; a paused one keeps it to resume from.
 
 	THE CLOCK MOVES HERE, NOT AT THE CLAIM, and that is what makes the scheduled lane work above one
-	burst. A walk that stopped for PACING has not finished its occurrence, so it releases with
-	`reschedule=False`: the row stays due, the next `sweep` tick claims it again, and the cursor carries it
-	on. Advanced at claim time instead, the row was already dated tomorrow the moment the walk began — so a
-	pace-out fell out of `_due_workflows` and the cohort gained one burst per occurrence and no more. A
-	Daily cohort of 10,000 took months, silently, with the cursor and the counts all reading correct.
+	chunk. A walk with leads still in front of it has not finished its occurrence, so it releases with
+	`reschedule=False` and the row stays due. Advanced at claim time instead, the row was already dated
+	tomorrow the moment the walk began — so a pause fell out of `_due_workflows` and the cohort gained one
+	chunk per occurrence and no more. A Daily cohort of 10,000 took months, silently, with the cursor and
+	the counts all reading correct.
 
 	`cohort_abort` is cleared on the same condition and for the same reason: the flag belongs to an
 	OCCURRENCE, and the occurrence is what the clock ends. A resume mid-pause must keep it, or an abort
 	raised while the cohort sat idle-but-due would be wiped by the very next claim.
+
+	RELEASING IS FOR AN OCCURRENCE THAT IS OVER, never for a walk that is merely between chunks — that is
+	`_pause`. Any booking still outstanding is dropped here, or a released cohort would be walked on a
+	minute later by an alarm nobody expects.
 	"""
-	values = {"cohort_state": IDLE}
+	values = {"cohort_state": IDLE, "cohort_next_chunk_at": None}
 	if clear_cursor:
 		values["cohort_cursor"] = ""
 	if reschedule:
 		values["cohort_abort"] = 0
 		values["trigger_next_run_at"] = cohort.next_run_at(_trigger_config(workflow_name))
+	wakeups.forget_on_lane(_booking_key(workflow_name))
 	frappe.db.set_value(_WORKFLOW_DT, workflow_name, values, update_modified=False)
 	frappe.db.commit()
 
 
-def _take_token(workflow_name):
-	"""Charge one journey against the partner API's OWN atomic bucket — global and per-workflow, both must pay.
+def _pause(workflow_name, seconds):
+	"""Between chunks: KEEP THE CLAIM, record when the next chunk is owed, and book it.
 
-	`_bucket_pair` is the one limiter in this app and its Lua is what makes the check atomic under
-	concurrency. It is imported rather than copied: a second limiter would be a second answer to "may this
-	go out now", and the two would disagree the first time either was tuned. Fail-open is its own contract
-	— a Redis outage must not stop a cohort.
+	THE CLAIM IS HELD FOR THE WHOLE COHORT, and it is not a lock — it is one word in one column. No worker,
+	no connection and no row lock survives this call; the job exits and the lane is free. What the flag buys
+	is that nothing else can take this cohort mid-walk: `_claim` filters on IDLE, so the sweep cannot start a
+	second walker, and `cohort_state` stays `Draining` so the operator's "Stop cohort" button stays on screen
+	for as long as the cohort is really running. Releasing between chunks took both of those away.
+
+	`cohort_next_chunk_at` is the DURABLE half of the booking — the job in Redis is a copy and §6.2 is that a
+	copy is never a fact. It is what `_stranded` judges by, so a cohort waiting out a long interval reads as
+	healthy rather than as a dead worker.
 	"""
-	from tatva_connect.api._base import _bucket_pair
+	due = add_to_date(now_datetime(), seconds=seconds)
+	wakeups.schedule_on_lane(due, _RUN_COHORT, {"workflow_name": workflow_name}, _booking_key(workflow_name))
+	frappe.db.set_value(_WORKFLOW_DT, workflow_name, {"cohort_next_chunk_at": due}, update_modified=False)
+	frappe.db.commit()
 
-	verdict = _bucket_pair(
-		True, 1,
-		"cohort", thresholds.DRAIN_RATE, thresholds.DRAIN_BURST,
-		f"cohort:{workflow_name}", thresholds.DRAIN_RATE, thresholds.DRAIN_BURST, thresholds.DRAIN_WINDOW,
-	)
-	if not verdict:
-		return True  # exempt or unreadable — the limiter's own fail-open
-	retry_after, _remaining, _shared = verdict
-	return retry_after is None
+
+def _pace(workflow_name):
+	"""`(leads per chunk, seconds until the next one)` — the operator's row, with this workflow's own interval winning.
+
+	A workflow that DIALS is paced by the voice provider's ceiling and one that messages by WhatsApp's, so
+	the interval is overridable per workflow while the chunk stays global; `thresholds` holds the defaults
+	for a site that has never opened the settings.
+	"""
+	size, interval = frappe.get_cached_doc(_PACE_DT).pace()
+	return size, frappe.db.get_value(_WORKFLOW_DT, workflow_name, "cohort_interval_seconds") or interval
 
 
 def _trigger_config(workflow_name):
