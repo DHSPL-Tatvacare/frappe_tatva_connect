@@ -1,6 +1,6 @@
 """The pull path maps a Call Detail Record exactly as the push path maps a webhook.
 
-Both are pinned against a live Acefone record (account 214181). The two sources carry the same facts
+Both are pinned against one anonymised Acefone record. The two sources carry the same facts
 differently — a webhook says "Dialer (inbound)", a record says `direction: inbound` plus
 `call_hint: dialer` — and the whole point of this module is that they end up at the same envelope. A
 drift here means the same call is logged one way when pushed and another when pulled.
@@ -10,7 +10,7 @@ import unittest
 from tatva_connect.telephony import reconcile
 from tatva_connect.telephony.adapters import acefone
 
-# One real record, trimmed. The webhook for this same call arrives as
+# One anonymised record, trimmed. The webhook for this same call arrives as
 # {"call_id": "...", "direction": "Dialer (outbound)", "caller_id_number": "+919240289226", ...}
 RECORD = {
 	"call_id": "12a445d3-635d-45da-a3b9-161ac269a3a0",
@@ -18,22 +18,22 @@ RECORD = {
 	"direction": "outbound",
 	"call_hint": "dialer",
 	"status": "answered",
-	"client_number": "+919678119748",
+	"client_number": "+919000300201",
 	"did_number": "+919240289226",
 	"call_duration": 52,
 	"date": "2026-07-12",
 	"time": "17:34:58",
 	"end_stamp": "2026-07-12 17:35:49",
 	"hangup_cause": "disconnected_by_caller",
-	"agent_name": "Shaik Khamrunisa Nisha",
+	"agent_name": "Redacted",
 	"agent_number": "Extension-0602141810277",
 	"recording_url": "https://console.acefone.in/file/recording?callId=x&type=rec&token=y",
 	"call_flow": [
 		{"type": "init", "value": "1783857298"},
-		{"type": "Agent", "id": "05021", "name": "Shaik", "num": "Extension-0602141810277",
-		 "email": "s.kamrunissa@tatvacare.in", "dialst": "Dialed"},
-		{"type": "Agent", "id": "05021", "name": "Shaik", "num": "Extension-0602141810277",
-		 "email": "s.kamrunissa@tatvacare.in", "dialst": "Answered"},
+		{"type": "Agent", "id": "05021", "name": "Redacted", "num": "Extension-0602141810277",
+		 "email": "rep@example.com", "dialst": "Dialed"},
+		{"type": "Agent", "id": "05021", "name": "Redacted", "num": "Extension-0602141810277",
+		 "email": "rep@example.com", "dialst": "Answered"},
 	],
 }
 
@@ -60,7 +60,7 @@ class TestReconcileMapping(unittest.TestCase):
 		"""A record is explicit where a webhook is not: `client_number` is always the customer and
 		`did_number` always ours, whichever way the call went."""
 		self.assertEqual(self.cdr["direction"], "outbound")
-		self.assertEqual(self.cdr["customer_number"], "9678119748")
+		self.assertEqual(self.cdr["customer_number"], "9000300201")
 		self.assertEqual(self.cdr["did_number"], "9240289226")
 
 	def test_the_channel_agrees_with_what_the_webhook_would_have_said(self):
@@ -79,7 +79,7 @@ class TestReconcileMapping(unittest.TestCase):
 		"""The record has no agent-email field, but its `call_flow` carries one — and the email is the
 		only identifier that resolves to a CRM user. A reconciled call attributes its rep or the pull
 		path would quietly log everything unattributed."""
-		self.assertEqual(self.cdr["agent_key"], "s.kamrunissa@tatvacare.in")
+		self.assertEqual(self.cdr["agent_key"], "rep@example.com")
 
 	def test_status_duration_and_timestamps_survive_the_record_shape(self):
 		"""A record splits the start into `date` + `time`; a webhook sends one stamp."""

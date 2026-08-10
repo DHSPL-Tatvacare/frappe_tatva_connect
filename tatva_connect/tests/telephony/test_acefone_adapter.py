@@ -122,15 +122,15 @@ class TestAcefoneParsing(unittest.TestCase):
 		"""A garbage number must NOT become a 2-digit suffix: `mobile_no LIKE '%5'` matches a
 		large slice of the lead table."""
 		self.assertEqual(phone.match_digits("55", last=10), "")
-		self.assertEqual(phone.match_digits("+91 99112 32686", last=10), "9911232686")
-		self.assertEqual(phone.match_digits("9911232686", last=10), "9911232686")
+		self.assertEqual(phone.match_digits("+91 99112 32686", last=10), "9000300202")
+		self.assertEqual(phone.match_digits("9000300202", last=10), "9000300202")
 
 	def test_agent_extension_is_never_treated_as_a_phone(self):
 		"""`Extension-0602141810347` is an agent extension. The old adapter fed it to a phone
 		matcher; its digits could suffix-collide with a real number."""
 		cdr = acefone.normalize({
 			"call_id": "x", "direction": "Dialer (inbound)", "call_status": "answered",
-			"caller_id_number": "+919911232686", "call_to_number": "+919240276210",
+			"caller_id_number": "+919000300202", "call_to_number": "+919240276210",
 			"answered_agent_number": "Extension-0602141810347",
 			"answered_agent_name": "Rep",
 		}, event="inbound_complete")
@@ -141,7 +141,7 @@ class TestAcefoneParsing(unittest.TestCase):
 		actually handled it is the last one."""
 		cdr = acefone.normalize({
 			"call_id": "x", "direction": "Dialer (inbound)", "call_status": "answered",
-			"caller_id_number": "+919911232686", "call_to_number": "+919240276210",
+			"caller_id_number": "+919000300202", "call_to_number": "+919240276210",
 			"answered_agent": [
 				{"name": "First", "email": "first@example.com", "is_transferred_agent": "No"},
 				{"name": "Final", "email": "final@example.com", "is_transferred_agent": "Yes"},
