@@ -100,9 +100,13 @@ class CRMWorkflow(Document):
 		Without it the list endpoint raises and the page renders NOTHING — not the rows, and not the
 		empty state either, because the SPA only decides between them once the response arrives.
 		"""
+		# Read left to right as a reader asks: what is it, is it running, whose business line, what does it watch, when was it touched. The three grain axes sit together and in containment order because they are ONE fact read at a glance, and they were already being fetched for the row - only never drawn.
 		columns = [
 			{"label": "Workflow", "type": "Data", "key": "workflow_name", "width": "16rem"},
 			{"label": "State", "type": "Select", "key": "lifecycle_state", "width": "8rem"},
+			{"label": "Vertical", "type": "Data", "key": "trigger_vertical", "width": "9rem"},
+			{"label": "Group", "type": "Data", "key": "trigger_group", "width": "9rem"},
+			{"label": "Program", "type": "Data", "key": "trigger_program", "width": "10rem"},
 			{"label": "Subject", "type": "Data", "key": "trigger_doctype", "width": "10rem"},
 			{"label": "Event", "type": "Data", "key": "trigger_event", "width": "8rem"},
 			{"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
