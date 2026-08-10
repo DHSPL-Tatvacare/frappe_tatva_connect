@@ -1,0 +1,108 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-10 19:30:00.000000",
+ "description": "One selectable value of one activity question, as a row — the shape CRM Lead Stage already uses for stages.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "task_type",
+  "fieldname",
+  "column_break_key",
+  "option_value",
+  "display_label",
+  "selectable",
+  "position"
+ ],
+ "fields": [
+  {
+   "description": "Scopes the value, as CRM Lead Stage.program scopes a stage. Carries vertical/group/program through the type.",
+   "fieldname": "task_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Task Type",
+   "options": "CRM Task Type",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The question this value belongs to, by CRM Task Type Field.fieldname.",
+   "fieldname": "fieldname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Fieldname",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_key",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The value exactly as LeadSquared spells it. Never normalised — the honour-LSQ rule.",
+   "fieldname": "option_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Value",
+   "reqd": 1
+  },
+  {
+   "description": "What a reader sees. Defaults to the value.",
+   "fieldname": "display_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Label"
+  },
+  {
+   "default": "1",
+   "description": "Unticked retires a value from the picker without deleting the answers that already carry it.",
+   "fieldname": "selectable",
+   "fieldtype": "Check",
+   "label": "Selectable"
+  },
+  {
+   "description": "Order within the question, as declared.",
+   "fieldname": "position",
+   "fieldtype": "Int",
+   "label": "Position"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-10 19:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Taxonomy",
+ "name": "CRM Task Option",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
