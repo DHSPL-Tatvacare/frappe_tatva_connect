@@ -219,10 +219,12 @@ doc_events = {
 			"tatva_connect.lead.leads.normalize_lead_phones",
 			"tatva_connect.lead.leads.dedup_guard",
 			"tatva_connect.lead.leads.validate_stage",
-			# mirror the latest lab row's headline metrics up to the core Lead fields
-			"tatva_connect.lead.leads.sync_headline_metrics",
 			# a user-facing field rendered as a link/redirect may only carry https:// — changed values only
 			"tatva_connect.access.link_scheme.guard_link_schemes",
+		],
+		# A tracked grain's doctor is pinned where the rep created them; before the wildcard, so a Created-entry workflow reads a lead that already has coordinates.
+		"after_insert": [
+			"tatva_connect.location.api.capture_on_create",
 		],
 		"on_update": [
 			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)

@@ -19,7 +19,7 @@ from frappe import _
 from frappe.utils import flt
 
 from tatva_connect import automation
-from tatva_connect.location.api import leads_within_radius
+from tatva_connect.location.api import NEAR_MAX_ROWS, haversine, leads_within_radius
 
 SWITCH = "Location::NearMe::directory"
 ROLE = "Field Map User"
@@ -68,8 +68,23 @@ def _search(lat, lng, radius_km):
 	return leads_within_radius(lat, lng, radius_km, fields=_FIELDS, query=frappe.get_all)
 
 
+def _by_name(q, lat, lng):
+	"""Anchored leads whose name or number matches, ANYWHERE — a name is not a place, so a rep looking one up must not be answered "not within 120 km of you". Same rows, same ceiling, same nearest-first order as a ring; distance is still measured so the panel can say how far away the match is."""
+	rows = frappe.get_all(  # authz-ok: tier-b — _assert_access owns the boundary, exactly as the ring query does
+		"CRM Lead",
+		filters={"custom_clinic_latitude": ["is", "set"], "custom_clinic_longitude": ["is", "set"]},
+		or_filters={"lead_name": ["like", f"%{q.strip()}%"], "mobile_no": ["like", f"%{q.strip()}%"]},
+		fields=_FIELDS,
+		limit_page_length=NEAR_MAX_ROWS + 1,
+	)
+	near = [(r, round(haversine(flt(lat), flt(lng), r.custom_clinic_latitude, r.custom_clinic_longitude))) for r in rows]
+	near.sort(key=lambda t: t[1])
+	capped = len(near) > NEAR_MAX_ROWS
+	return (near[:NEAR_MAX_ROWS] if capped else near), capped
+
+
 @frappe.whitelist()
-def doctors_in_territory(lat, lng, radius_km=None):
+def doctors_in_territory(lat, lng, radius_km=None, q=None):
 	"""Every anchored lead near (lat,lng), nearest first — cross-grain, all owners.
 
 	`radius_km` given (the user picked one) => that ring, exactly. Omitted (first load) => walk
@@ -79,14 +94,20 @@ def doctors_in_territory(lat, lng, radius_km=None):
 	told matches what was searched. `capped` says the ring held more than NEAR_MAX_ROWS and only the
 	nearest were returned, so the client can render the count honestly (C7)."""
 	_assert_access()
-	rungs = [flt(radius_km)] if flt(radius_km) > 0 else list(RADIUS_LADDER)
-	used, near, capped = rungs[-1], [], False
-	for rung in rungs:
-		near, capped = _search(lat, lng, rung)
-		if near:
-			used = rung
-			break
+	if (q or "").strip():
+		near, capped = _by_name(q, lat, lng)
+		used = 0  # no ring was searched; `scope` is what the panel reads, never this number.
+	else:
+		rungs = [flt(radius_km)] if flt(radius_km) > 0 else list(RADIUS_LADDER)
+		used, near, capped = rungs[-1], [], False
+		for rung in rungs:
+			near, capped = _search(lat, lng, rung)
+			if near:
+				used = rung
+				break
 	return {
+		# The MODE, said plainly. A ring and a name answer different questions, and the panel must not infer which from a radius of zero — that renders as "within 0 km".
+		"scope": "search" if (q or "").strip() else "ring",
 		"radius_km": used,
 		"capped": capped,
 		"doctors": [

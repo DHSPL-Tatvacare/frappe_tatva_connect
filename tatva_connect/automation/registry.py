@@ -278,16 +278,18 @@ AUTOMATIONS = [
 	Auto(
 		key="Location::Google::capture",
 		fires_on="Provider call",
-		trigger_detail="location/api gate",
+		trigger_detail="location/api gate · CRM Lead after_insert",
 		purpose=(
 			"On a visit type marked location-tracked, the rep's GPS is captured at completion and "
 			"checked against the clinic's pinned location, and the result is recorded as a "
-			"tamper-proof visit trail. Off, a visit is closed with no location captured and no check "
-			"made.\n"
+			"tamper-proof visit trail. The same switch pins a NEW doctor at the position the rep "
+			"created them from, so the very first visit is measured against a real location instead "
+			"of setting one. Off, a visit is closed with no location captured and no check made, and "
+			"a new doctor is created with no pinned location.\n"
 			"Example: a doctor visit is marked done, the rep's coordinates are captured, confirmed "
 			"to be within the allowed radius of the clinic, and logged as a Visit Audit entry."
 		),
-		backs=[],
+		backs=["tatva_connect.location.api.capture_on_create"],
 	),
 	Auto(
 		key="Location::NearMe::directory",
@@ -850,19 +852,7 @@ AUTOMATIONS = [
 		# apply_privacy_policy is called by FileOverride.before_insert, an override_doctype_class seam and NOT a doc_event (as a hook it ran after core had written the bytes), so backs is empty — drift walks only doc_event/scheduler paths and this target stays OUT of the registry.
 		backs=[],
 	),
-	Auto(
-		key="Lead::CRM Lead::headline",
-		fires_on="Doc Event",
-		trigger_detail="CRM Lead · validate",
-		purpose=(
-			"The newest clinical readings on a lead's lab records are surfaced onto the lead's summary "
-			"fields, so the header shows the latest value rather than the first one. Off, the headline "
-			"fields hold whatever was last written into them by hand.\n"
-			"Example: a new lab report is added to a lead, and its HbA1c value appears on the lead's "
-			"headline fields."
-		),
-		backs=["tatva_connect.lead.leads.sync_headline_metrics"],
-	),
+	# RETIRED 2026-08-10 — Lead::CRM Lead::headline. Leaving the registry is how a switch retires: automation.seed.sync_catalog prunes the CRM Tatva Automation row whose key no longer appears here. The lab section already carries the same five values and every surface reads the latest row through multirow.latest_child_row.
 	Auto(
 		key="Lead::Enrolment::intake",
 		fires_on="Doc Event",

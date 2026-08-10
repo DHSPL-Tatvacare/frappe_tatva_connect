@@ -64,15 +64,17 @@ def _lead_axes(lead):
 	return grain.of("CRM Lead", lead)
 
 
-def is_location_tracked(lead):
-	"""Allowed radius (metres) if this lead's grain is location-tracked, else None. Grain-scoped
+def tracked_radius(vertical, group, program):
+	"""Allowed radius (metres) if this GRAIN is location-tracked, else None. Grain-scoped
 	via the shared brain (blank axis = wildcard). Dormant: kill-switch off or no grains -> None.
 
 	Every activity save asks this, so it must be cheap and it must not raise on an operator's sloppy
 	config. Duplicate rows for the SAME grain are deduped before resolve_scoped sees them: twelve
 	identical rows are one scope entered twelve times, not twelve ambiguous ones, and letting that
 	throw would break every activity save on the site. A genuine ambiguity — two DIFFERENT grains that
-	are equally specific — still raises, because that one an operator has to fix."""
+	are equally specific — still raises, because that one an operator has to fix.
+
+	Takes AXES, not a lead: the Create Lead form must ask before a lead exists. One resolver, two callers."""
 	if not automation.is_enabled("Location::Google::capture"):
 		return None
 	seen, grains = set(), []
@@ -85,10 +87,21 @@ def is_location_tracked(lead):
 		               "radius_m": r.radius_m})
 	if not grains:
 		return None
-	winner = resolve_scoped(grains, *_lead_axes(lead))
+	winner = resolve_scoped(grains, vertical, group, program)
 	if not winner:
 		return None
 	return cint(winner.get("radius_m")) or DEFAULT_RADIUS_M
+
+
+def is_location_tracked(lead):
+	"""The same question asked of a stored lead — its axes, read from the schema, through `tracked_radius`."""
+	return tracked_radius(*_lead_axes(lead))
+
+
+@frappe.whitelist()
+def grain_is_tracked(vertical=None, group=None, program=None):
+	"""Read-only hint for the Create Lead form: ask this grain's rep for a position? The server decides again in `capture_on_create`, because `stamp_entitled_grain` may clamp the grain after the form sent it."""
+	return bool(tracked_radius(vertical or "", group or "", program or ""))
 
 
 def location_guard_applies(task_type, lead):
@@ -300,6 +313,21 @@ def ensure_anchor(ld, here_lat, here_lng):
 	# First in-person capture establishes the anchor at the rep's position.
 	_write_anchor(ld, here_lat, here_lng, ANCHOR_GPS)
 	return _read_anchor(ld), True
+
+
+def capture_on_create(doc, method=None):
+	"""CRM Lead.after_insert — a tracked grain's new doctor is pinned where the rep created them, so Near Me and the visit radius work before the first visit instead of after it.
+
+	The fix rides the create payload as `lat`/`lng`, the names `save_activity` already reads it under (activity/api.py:909). No fix, untracked grain or switch off and this does nothing — the anchor is then set by the first in-person visit exactly as it is today.
+
+	Runs BEFORE the wildcard `after_insert` (frappe composes doctype hooks first, document.py:1598), so a Created-entry workflow reads a doctor that already has coordinates.
+	"""
+	if is_location_tracked(doc.name) is None:
+		return
+	lat, lng = flt(doc.get("lat")), flt(doc.get("lng"))
+	if not (lat and lng):
+		return
+	ensure_anchor(doc, lat, lng)
 
 
 def set_or_check_anchor(lead, lat, lng, accuracy, radius):
