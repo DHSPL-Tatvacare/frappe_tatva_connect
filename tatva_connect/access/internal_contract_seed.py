@@ -350,7 +350,7 @@ GRAIN_FIELDS = {
 		'care:custom_special_remarks_from_sales_team',
 		'care:custom_tp_bdm_name',
 		'care:diet_coach_name',
-		'care:doctor_name',
+		'care:custom_doctor_name',
 		'care:exercise_coach_name',
 		'care:rm_name',
 		'care:success_coach_name',
