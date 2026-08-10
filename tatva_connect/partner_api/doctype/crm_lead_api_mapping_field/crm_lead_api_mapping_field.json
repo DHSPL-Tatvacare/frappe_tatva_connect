@@ -6,14 +6,16 @@
  "engine": "InnoDB",
  "istable": 1,
  "field_order": [
-  "field"
+  "field",
+  "reqd_on_create_form"
  ],
  "fields": [
-  {"fieldname": "field", "fieldtype": "Link", "options": "CRM Lead API Field", "label": "Field", "reqd": 1, "in_list_view": 1}
+  {"fieldname": "field", "fieldtype": "Link", "options": "CRM Lead API Field", "label": "Field", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "reqd_on_create_form", "fieldtype": "Check", "label": "Required on Create Lead form", "in_list_view": 1, "depends_on": "eval:parent.is_internal", "description": "The Create Lead modal only. A partner payload, an intake form and an import are never judged by it."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 00:00:00.000000",
+ "modified": "2026-08-10 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Partner API",
  "name": "CRM Lead API Mapping Field",

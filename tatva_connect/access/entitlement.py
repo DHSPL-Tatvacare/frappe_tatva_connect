@@ -26,6 +26,7 @@ REGISTRY_FLAG = "Access::Grain::registry"
 _GRAINS_CACHE = "tatva_connect:entitled_grains"
 _RESTRICT_CACHE = "tatva_connect:field_restrictions"
 _INTERNAL_TICKS_CACHE = "tatva_connect:internal_contract_ticks"
+_INTERNAL_REQUIRED_CACHE = "tatva_connect:internal_contract_required_ticks"
 _UNIVERSAL_CACHE = "tatva_connect:internal_universal_fields"
 _REGISTRY_FLAG_CACHE = "tatva_connect:grain_registry_flag"
 _REGISTRY_ROWS_CACHE = "tatva_connect:grain_registry_rows"
@@ -184,6 +185,34 @@ def _internal_ticks():
 			))
 		return ticks
 	return request_cache(_INTERNAL_TICKS_CACHE, "all", build)
+
+
+def _internal_required_ticks():
+	"""{grain_tuple: set(field_keys ticked `reqd_on_create_form`)} — one FORM's rule, kept out of `_internal_ticks`, which answers visibility."""
+	def build():
+		required = {}
+		for m in frappe.get_all(
+			"CRM Lead API Mapping", filters={"is_internal": 1},
+			fields=["name", "vertical", "crm_group", "program"],
+		):
+			g = (m.vertical or "", m.crm_group or "", m.program or "")
+			required[g] = set(frappe.get_all(
+				"CRM Lead API Mapping Field",
+				filters={"parent": m.name, "reqd_on_create_form": 1}, pluck="field",
+			))
+		return required
+	return request_cache(_INTERNAL_REQUIRED_CACHE, "all", build)
+
+
+def contract_keys_for_lead_grain(vertical, group, program, required_only=False):
+	"""The field_keys the contracts COVERING one leaf declare — a lead is a POINT, so this is `grain.covers` and only it."""
+	ticks = _internal_required_ticks() if required_only else _internal_ticks()
+	keys = set()
+	for contract_grain, declared in ticks.items():
+		candidate = dict(zip(taxonomy_grain.AXES, contract_grain, strict=True))
+		if taxonomy_grain.covers(candidate, vertical, group, program):
+			keys |= declared
+	return keys
 
 
 def field_in_grains_via_contract(field_key, grains):
