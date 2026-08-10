@@ -36,8 +36,11 @@ from tatva_connect.tests.static.test_tp_seed_fidelity import _strip_sql_comments
 
 SEEDS = pathlib.Path(app_root(__file__)).parent / "docs" / "go-live" / "3-seed" / "db-seeds"
 
-PRE_LOAD = "seeds.manifest"
-POST_LOAD = "seeds-post-load.manifest"
+# The manifests, by their CURRENT names — renamed from seeds.manifest / seeds-post-load.manifest, which
+# this file went on reading until 2026-08-10: every test errored on a missing file, so the phase order
+# was unguarded for the whole of that window. setUp below turns that failure mode into a named one.
+PRE_LOAD = "1-before-load.manifest"
+POST_LOAD = "2-after-load.manifest"
 LAYOUT_SEED = "2026-07-27-activity-form-layout.bench-console.py"
 
 # Any statement, not just INSERT: a pre-load UPDATE amends rows that do not exist yet, matches none, and exits 0.
@@ -64,6 +67,9 @@ class _BundleCase(unittest.TestCase):
 	def setUp(self):
 		if not SEEDS.exists():
 			self.skipTest(f"the go-live bundle is not in this checkout: {SEEDS}")
+		# The bundle IS here, so a manifest that is not is a rename, and this guard must say so rather than error.
+		for manifest in (PRE_LOAD, POST_LOAD):
+			self.assertTrue((SEEDS / manifest).exists(), f"{manifest} is gone — renamed? this guard reads it by name")
 
 
 class TestNoRuleReachesTheLoad(_BundleCase):
@@ -86,5 +92,7 @@ class TestThePostLoadManifest(_BundleCase):
 		self.assertEqual(both, [], "a seed in both lists runs twice and its phase means nothing")
 
 	def test_the_layout_seed_runs_after_the_rules(self):
-		self.assertIn(LAYOUT_SEED, _entries(POST_LOAD))
-		self.assertNotIn(LAYOUT_SEED, _entries(PRE_LOAD))
+		# By BASENAME: an entry now carries its phase folder, and comparing the whole string would pass
+		# vacuously the day a folder is renamed — the same silence the manifest rename already bought.
+		self.assertIn(LAYOUT_SEED, [pathlib.PurePath(e).name for e in _entries(POST_LOAD)])
+		self.assertNotIn(LAYOUT_SEED, [pathlib.PurePath(e).name for e in _entries(PRE_LOAD)])
