@@ -19,6 +19,7 @@
   "column_break_routing",
   "program",
   "allowed_programs",
+  "program_optional",
   "fields_section",
   "allowed_fields"
  ],
@@ -34,12 +35,13 @@
   {"fieldname": "column_break_routing", "fieldtype": "Column Break"},
   {"fieldname": "program", "fieldtype": "Link", "options": "CRM Program", "label": "Program", "description": "Pin the key to ONE program (forced on every lead). Leave BLANK for a multi-program key (e.g. Anaya) — then the caller must send the program per lead, limited to Allowed Programs."},
   {"fieldname": "allowed_programs", "fieldtype": "Table", "options": "CRM Lead API Mapping Program", "label": "Allowed Programs", "description": "Used ONLY when Program above is blank. The set of programs this key may set per lead; a lead's program must be one of these."},
+  {"default": "0", "fieldname": "program_optional", "fieldtype": "Check", "label": "Program Optional At Create", "depends_on": "eval:!doc.program", "description": "Used ONLY when Program above is blank and Allowed Programs is set. Off, a lead that names no program is refused. On, such a lead is accepted with no program at all and the program is chosen later in the CRM. A program that IS sent is still checked against Allowed Programs either way, and a later send that names none never clears one already chosen."},
   {"fieldname": "fields_section", "fieldtype": "Section Break", "label": "Allowed Fields (empty = full catalog)"},
   {"fieldname": "allowed_fields", "fieldtype": "Table", "options": "CRM Lead API Mapping Field", "label": "Allowed Fields", "description": "Tick the fields this partner may send/read. Leave empty to allow the full catalog. mobile_no is always allowed."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-10 12:00:00.000000",
+ "modified": "2026-08-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Partner API",
  "name": "CRM Lead API Mapping",

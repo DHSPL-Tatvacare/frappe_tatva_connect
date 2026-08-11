@@ -289,7 +289,7 @@ def _resolve_anchor_address(ld, anchor):
 	custom_clinic_address (db_set, no modified bump) so later prechecks / Desk views don't re-hit Google."""
 	if anchor.get("address"):
 		return anchor["address"]
-	addr = _reverse_geocode(anchor["lat"], anchor["lng"])
+	addr = (_reverse_geocode(anchor["lat"], anchor["lng"]) or {}).get("address")
 	if addr and ld.meta.has_field("custom_clinic_address"):
 		ld.db_set("custom_clinic_address", addr, update_modified=False)
 	return addr or ""
@@ -445,15 +445,39 @@ def lead_captures(lead):
 	return out
 
 
+# Google's component types -> the CRM Lead field each one fills. The parts were already in the response and were being thrown away, so a rep who pinned a clinic still had to type the address under it.
+_COMPONENTS = {
+	"locality": "city",
+	"administrative_area_level_1": "state",
+	"country": "country",
+	"postal_code": "pincode",
+}
+# What a street line is made of, in the order it reads.
+_LINE1 = ("premise", "street_number", "route", "sublocality_level_1", "neighborhood")
+
+
+def _address_parts(result):
+	"""One Google result -> {address, line1, city, state, country, pincode}; a missing part is simply absent."""
+	parts, line1 = {"address": result.get("formatted_address")}, {}
+	for component in result.get("address_components") or []:
+		for kind in component.get("types") or []:
+			if kind in _COMPONENTS:
+				parts.setdefault(_COMPONENTS[kind], component.get("long_name"))
+			if kind in _LINE1:
+				line1.setdefault(kind, component.get("long_name"))
+	parts["line1"] = ", ".join(line1[k] for k in _LINE1 if line1.get(k))
+	return parts
+
+
 def _reverse_geocode(lat, lng):
-	"""lat/lng -> formatted address, or None on any failure / no key. Never raises."""
+	"""lat/lng -> the address PARTS dict, or None on any failure / no key. Never raises."""
 	key = _api_key()
 	if not key:
 		return None
 	try:
 		r = requests.get(GEOCODE_URL, params={"latlng": f"{lat},{lng}", "key": key}, timeout=_TIMEOUT)
 		results = (r.json() or {}).get("results") or []
-		return results[0]["formatted_address"] if results else None
+		return _address_parts(results[0]) if results else None
 	except Exception:
 		frappe.log_error(title="location: reverse-geocode failed", message=frappe.get_traceback())
 		return None
@@ -479,9 +503,8 @@ def geocode(address):
 
 @frappe.whitelist()
 def reverse_geocode(lat, lng):
-	"""Address for a coordinate — used by the capture confirmation modal before the record is
-	saved (so it works pre-insert, with no record name yet)."""
-	return {"address": _reverse_geocode(flt(lat), flt(lng))}
+	"""Address for a coordinate, whole and in parts — used by the capture confirmation modal before the record is saved (so it works pre-insert, with no record name yet). The parts are what let a pinned clinic fill its own address instead of the rep typing what the map already knows."""
+	return _reverse_geocode(flt(lat), flt(lng)) or {}
 
 
 @frappe.whitelist()
@@ -778,7 +801,7 @@ def test_connection():
 	frappe.has_permission("CRM Maps Settings", "read", throw=True)
 	if not _api_key():
 		frappe.throw(_("Set a Google Maps API key first, then save."))
-	addr = _reverse_geocode(*_SAMPLE)
+	addr = (_reverse_geocode(*_SAMPLE) or {}).get("address")
 	if not addr:
 		frappe.throw(
 			_("Google returned no result. Check the key, that billing is enabled, and that the "

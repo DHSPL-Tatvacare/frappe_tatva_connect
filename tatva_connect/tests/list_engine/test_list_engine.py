@@ -283,10 +283,10 @@ class TestTheMenusOfferIt(ListEngineCase):
 		"""The column is taken OUT of the request so native can resolve the rest, so it has to come back in
 		the answer at the position the caller put it — otherwise the client applies the rep's new column, the
 		server replies without it, and the table silently reverts. That is exactly what happened in the
-		browser: `Due State` could be added and would not stick."""
+		browser: `Task Status` could be added and would not stick."""
 		asked = [
 			{"label": "Title", "type": "Data", "key": "title", "width": "16rem"},
-			{"label": "Due State", "type": "Select", "key": FIELD, "width": "10rem"},
+			{"label": "Task Status", "type": "Select", "key": FIELD, "width": "10rem"},
 		]
 		result = self._get_data(columns=asked, rows=_rows_arg("name", "title", FIELD))
 		keys = [c.get("key") for c in result["columns"]]
@@ -364,7 +364,7 @@ class TestTheRoutingContract(ListEngineCase):
 		"real-column kanban": ({"view": {"view_type": "kanban"}, "column_field": "status"}, "NATIVE"),
 		"default_filters only": ({"default_filters": {"status": "Todo"}}, "NATIVE"),
 		"derived in rows": ({"rows": ["name", FIELD]}, "PROJECT"),
-		"derived in columns": ({"columns": [{"key": FIELD, "label": "Due State"}]}, "PROJECT"),
+		"derived in columns": ({"columns": [{"key": FIELD, "label": "Task Status"}]}, "PROJECT"),
 		"derived in kanban_fields": (
 			{"view": {"view_type": "kanban"}, "column_field": "status", "kanban_fields": [FIELD]},
 			"PROJECT",

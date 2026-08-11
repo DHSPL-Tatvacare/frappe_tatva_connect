@@ -33,7 +33,7 @@ from tatva_connect.tests.list_engine.test_list_engine import FIELD, PROBE, TASK,
 ASKED = [
 	{"label": "Title", "type": "Data", "key": "title", "width": "16rem", "align": "left"},
 	{
-		"label": "Due State",
+		"label": "Task Status",
 		"type": "Select",
 		"key": FIELD,
 		"options": "",
@@ -63,8 +63,9 @@ class TestTheColumnCarriesTheDescriptor(ListEngineCase):
 		self.assertIn("themes", column, "the column carries no colours, so its cells cannot be coloured")
 
 	def test_a_stale_saved_label_is_replaced_by_the_declaration_s(self):
-		"""What a rep's saved view holds is a snapshot, not a source. Renaming in `fields.py` moves the
-		column header with the four menus, or the field answers to two names at once."""
+		"""What a rep's saved view holds is a snapshot, not a source. Renaming the declaration moves the
+		column header with the four menus, or the field answers to two names at once — a view saved before
+		Task Status got its name still holds the old one."""
 		stale = copy.deepcopy(ASKED)
 		stale[1]["label"] = "Due State"
 		result = self._get_data(columns=stale, rows=_rows_arg("name", "title", FIELD))
@@ -107,7 +108,7 @@ class TestTheSavedViewColumnGetsTheSameTreatment(ListEngineCase):
 			"data": [],
 			"columns": [
 				{"label": "Title", "type": "Data", "key": "title", "width": "16rem"},
-				{"label": "Due State", "type": "Select", "key": FIELD, "width": "10rem"},
+				{"label": "Task Status", "type": "Select", "key": FIELD, "width": "10rem"},
 			],
 			"rows": ["name", "title", FIELD],
 			"fields": [],

@@ -20,6 +20,7 @@ from tatva_connect.activity import timeline
 from tatva_connect.activity.api import _blob_key, capture_flags, lead_timeline
 from tatva_connect.activity.lead_events import history
 from tatva_connect.automation.settings import is_enabled
+from tatva_connect.list_engine import derived
 from tatva_connect.taxonomy import labels
 from tatva_connect.taxonomy.labels import LEAD_STAGE
 
@@ -241,6 +242,28 @@ _FILTERABLE = {
 
 # A page is a page. Without a ceiling `page_length` is a request for the whole table.
 _MAX_PAGE = 500
+
+
+def _condition(doctype, field, wanted):
+	"""One `where` entry as a frappe tuple. A value may carry its own operator, the way timeline.PREDICATES writes `("in", (...))`."""
+	if isinstance(wanted, (list, tuple)) and len(wanted) == 2 and isinstance(wanted[0], str):
+		return [doctype, field, wanted[0], wanted[1]]
+	return [doctype, field, "=", wanted]
+
+
+def _with_derived(doctype, picked, where):
+	"""`where` plus any DERIVED field picked — through the one resolver that already turns a bucket into real column tuples, so Task Status narrows this tab without its rule being written twice. What may be picked is what the doctype DECLARES, asked of the registry rather than restated; nothing picked leaves the dict untouched, which is every tab but Tasks."""
+	declared = {f.fieldname: f for f in derived.for_doctype(doctype)}
+	wanted = [(declared[f], v) for f, v in picked.items() if f in declared]
+	if not wanted:
+		return where
+	snap = derived.snapshot()
+	conditions = [_condition(doctype, f, v) for f, v in where.items()]
+	for field, value in wanted:
+		bucket = field.bucket(value)
+		if bucket:
+			conditions += derived.resolve(field, bucket, snap)
+	return conditions
 
 
 def _search_or_filters(kind, search):
@@ -502,7 +525,7 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 	allowed = {f: v for f, v in picked.items() if f in _FILTERABLE.get(kind, ())}
 	# The lead scope AND the row predicate are written last: which rows are a comment or an email at all
 	# is declared once, in timeline.PREDICATES, and read here rather than restated.
-	where = {**allowed, link_field: lead, **timeline.PREDICATES.get(doctype, {})}
+	where = _with_derived(doctype, picked, {**allowed, link_field: lead, **timeline.PREDICATES.get(doctype, {})})
 	matching = _search_or_filters(kind, search)
 	# `limit` internally, `page_length` on the wire: the param name matches get_data so the frontend is
 	# unchanged, while get_all takes the name frappe has not deprecated.

@@ -396,6 +396,7 @@ def _resolve_program(item, mp, allowed_programs):
 	return resolve_program(
 		mp.program, allowed_programs, item.get("custom_current_program"),
 		field_label="custom_current_program", source_label="key",
+		optional=bool(mp.get("program_optional")),
 	)
 
 
@@ -1021,16 +1022,19 @@ def lead_schema(**_kwargs):
 		# Open-program key: line + group forced; program mode is LIST if the key has an
 		# allowed_programs set, else NONE. Both derived from config, no hardcoding.
 		ap = _allowed_programs(user, True)
+		optional = bool(mp.get("program_optional"))  # LIST mode only: a lead may arrive before the pick
 		routing = {
 			"mode": "list" if ap else "none",
 			"source": mp.source, "vertical": mp.vertical, "group": mp.crm_group,
 			"program": None,
 			"allowed_programs": ap,
-			"program_required": bool(ap),
+			"program_required": bool(ap) and not optional,
 			"note": (
-				"Line and group are fixed. custom_current_program is sent from allowed_programs on "
-				"every lead. Program is a mutable attribute, NOT identity: the same patient on a "
-				"new program is the SAME lead (a transition)."
+				"Line and group are fixed. custom_current_program is "
+				+ ("optional: send one from allowed_programs, or omit it and it is set later in the "
+				   "CRM. " if optional else "sent from allowed_programs on every lead. ")
+				+ "Program is a mutable attribute, NOT identity: the same patient on a "
+				  "new program is the SAME lead (a transition)."
 			) if ap else "Line and group are fixed. This key uses no program.",
 		}
 	elif mp:

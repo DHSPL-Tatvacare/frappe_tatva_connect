@@ -121,17 +121,6 @@ def _sections():
 	return entitlement.request_cache("tatva_connect:smartview_sections", "all", build)
 
 
-def _column_exists(doctype, fieldname):
-	"""Does this doctype really have this column? Asked of meta, never assumed — a catalog row that names
-	a column nobody created is a 500 waiting for the first person to filter on it."""
-	if not (doctype and fieldname):
-		return False
-	try:
-		return bool(frappe.get_meta(doctype).get_field(fieldname))
-	except Exception:
-		return False
-
-
 def _lead_catalog():
 	"""Every lead catalog row, keyed by field_key, each carrying its section's DERIVED facts: where the
 	column physically lives (parent/child) and how one row of it is picked. A stored copy of either is
@@ -152,12 +141,6 @@ def _lead_catalog():
 			if not section:
 				continue  # a row whose section does not resolve names no table to be read from
 			r.sql_source = crm_lead_section.sql_source(section)
-			# AND THE COLUMN HAS TO BE REAL. A row naming a column its section's doctype does not have
-			# is not a missing value — it is SQL error 1054 the moment anyone filters or sorts on it, and
-			# `acq:custom_whatsapp_inbound_count` did exactly that. A key-value row is exempt: its
-			# fieldname addresses a ROW, and the column it reads is the section's own value column.
-			if r.sql_source != "answer" and not _column_exists(section.target_doctype, r.fieldname):
-				continue
 			r.row_key_field = section.row_key_field or ""  # the field a multi-row child is ordered by; blank -> creation
 			r.value_field = section.value_field or ""  # the column a key-value row's answer is read from
 			r.target_doctype = section.target_doctype
@@ -954,7 +937,8 @@ def _hydrate(rows, keys, cat, driving_name):
 	for (doctype, order_field), fields in child_buckets.items():
 		if not doctype:
 			continue
-		order_field = order_field if _column_exists(doctype, order_field) else "creation"
+		# The section's own ordering column, asked of the DATABASE — `creation` when it names nothing real.
+		order_field = order_field if frappe.db.has_column(doctype, order_field) else "creation"
 		seen = set()
 		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
 			doctype,

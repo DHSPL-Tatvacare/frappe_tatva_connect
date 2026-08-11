@@ -597,6 +597,68 @@ class TestPartnerContract(unittest.TestCase):
 		self.assertEqual(fields, ["custom_current_program"],
 		                 "the refusal must name the field in error.fields")
 
+	# -- a key whose programme is decided after review, not at intake --------
+
+	def _open_key(self, program_optional=0):
+		"""A LIST-mode key: line + group fixed, programme chosen per lead from allowed_programs."""
+		return frappe._dict({"source": None, "vertical": VERTICAL, "crm_group": GROUP,
+		                     "program": None, "program_optional": program_optional})
+
+	def _create_on(self, mp, programs, phone, program=None):
+		item = frappe._dict({"mobile_no": phone, "first_name": "Program Optional"})
+		if program is not None:
+			item["custom_current_program"] = program
+		_u, _m, _s, pf, ca = partner._caller_fields()
+		return partner._upsert_one(item, mp, False, pf, ca, allowed_programs=programs)
+
+	def _refusal(self, mp, programs, phone, program=None):
+		"""Drive a create that must be refused and return the classified verdict."""
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			self._create_on(mp, programs, phone, program)
+		code, http, _message, fields, _detail = _base._classify(ctx.exception, "lead_create")
+		return code, http, fields
+
+	def test_a_list_key_still_refuses_a_lead_that_names_no_program(self):
+		"""The default is unchanged. Without the box a multi-programme key must be told which one, so
+		relaxing it for one contract can never quietly relax it for the rest."""
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if not programs:
+			self.skipTest("no CRM Programs configured")
+		verdict = self._refusal(self._open_key(), programs, "+919812300107")
+		self.assertEqual(verdict, ("validation_error", 400, ["custom_current_program"]))
+
+	def test_the_box_lets_a_lead_in_with_no_program_at_all(self):
+		"""Ingest is not blocked on a decision the CRM makes after review: the lead lands, programme blank."""
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if not programs:
+			self.skipTest("no CRM Programs configured")
+		doc, action = self._create_on(self._open_key(1), programs, "+919812300108")
+		self.assertEqual(action, "created")
+		self.assertFalse(doc.custom_current_program, "an optional key must leave the programme unset")
+
+	def test_the_box_never_widens_the_set_a_key_may_choose_from(self):
+		"""It relaxes ONLY 'you must pick'. A programme outside the key's own set is refused either way."""
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if not programs:
+			self.skipTest("no CRM Programs configured")
+		verdict = self._refusal(self._open_key(1), programs, "+919812300109", "__not_permitted__")
+		self.assertEqual(verdict, ("validation_error", 400, ["custom_current_program"]))
+
+	def test_a_later_send_naming_no_program_never_clears_the_one_already_chosen(self):
+		"""The whole point of the box is that the CRM decides later -- so a partner re-sending the same
+		row, still not knowing the programme, must not undo the decision it was waiting for."""
+		programs = frappe.get_all("CRM Program", pluck="name", order_by="name", limit=2)
+		if not programs:
+			self.skipTest("no CRM Programs configured")
+		mp, chosen = self._open_key(1), programs[0]
+		doc, _a = self._create_on(mp, programs, "+919812300110", chosen)
+		self.assertEqual(doc.custom_current_program, chosen)
+
+		doc, action = self._create_on(mp, programs, "+919812300110")
+		self.assertEqual(action, "updated", "the same phone on the same line is the same lead")
+		self.assertEqual(doc.custom_current_program, chosen,
+		                 "a send that names no programme must leave the chosen one standing")
+
 	# -- P3: the label is written the same way on every entity ---------------
 
 	def test_an_overlong_external_id_is_the_same_clean_400_on_every_entity(self):

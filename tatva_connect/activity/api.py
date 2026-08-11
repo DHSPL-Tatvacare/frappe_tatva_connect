@@ -911,7 +911,8 @@ def compute_activity(lead, task_type, values, task=None):
 		frappe.throw(_("A captured location is required for this in-person activity."),
 					 title=_("Location required"))
 	guard = set_or_check_anchor(lead, lat, lng, accuracy, radius)  # throws if out of range
-	fields.update(location_fields(lat, lng, address=_reverse_geocode(lat, lng), accuracy=accuracy))
+	address = (_reverse_geocode(lat, lng) or {}).get("address")
+	fields.update(location_fields(lat, lng, address=address, accuracy=accuracy))
 	# Accepted (in range, or the first capture that establishes the anchor). Distance is logged from
 	# the guard's single haversine — no recompute. Commits with the task save (same txn — task succeeds).
 	log_visit_audit(

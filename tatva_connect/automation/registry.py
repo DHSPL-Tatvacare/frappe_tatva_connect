@@ -596,10 +596,12 @@ AUTOMATIONS = [
 		# own and is covered here so the drift lock passes. Same shape and same reason as the always-on SSRF
 		# guard carried by Partner::AsyncBulk::jobs.
 		# The LMS member-IDOR guard is a third always-on access write-guard with no switch (locked by tests/security/test_lms_member_idor.py), carried here so the drift lock passes — same shape and reason as link_scheme above.
+		# The Custom Field fieldname guard is the fourth: a fieldname must be a legal SQL identifier, always on, no switch (locked by tests/access/test_custom_field_guard.py); a before_validate doc_event so it survives ignore_validate.
 		backs=[
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
 			"tatva_connect.access.link_scheme.guard_link_schemes",
 			"tatva_connect.access.lms_member_guard.enforce_member",
+			"tatva_connect.access.custom_field_guard.guard_custom_field",
 		],
 	),
 	Auto(

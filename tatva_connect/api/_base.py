@@ -600,7 +600,7 @@ def _load_caller():
 	user = frappe.session.user
 	mp = frappe.db.get_value(
 		"CRM Lead API Mapping", {"partner_user": user, "enabled": 1},
-		["name", "source", "vertical", "crm_group", "program"], as_dict=True,
+		["name", "source", "vertical", "crm_group", "program", "program_optional"], as_dict=True,
 	)
 	roles = frappe.get_roles(user)
 	is_sysmgr = "System Manager" in roles
