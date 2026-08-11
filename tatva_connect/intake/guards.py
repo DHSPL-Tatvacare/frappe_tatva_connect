@@ -164,6 +164,11 @@ def _submitted_phone(intake_form):
 		return to_e164(frappe.cstr((data or {}).get(field) or "")) or None
 	except frappe.ValidationError:
 		frappe.clear_last_message()
+		# The per-phone limit silently stops applying to this submit — say so, without the number.
+		frappe.log_error(
+			title="Intake per-phone throttle skipped: unparseable phone",
+			message=f"intake_form={intake_form} question={field}",
+		)
 		return None
 
 

@@ -53,12 +53,20 @@ def save(
 def link(file_url, *, attached_to_doctype, attached_to_name, meta=None):
 	"""Surface an already-stored file on a record — a File row pointing at an existing blob URL (no
 	re-upload), so the file also shows in that record's attachments. Privacy is decided by the checkpoint
-	in FileOverride.before_insert, never by the caller (see save())."""
+	in FileOverride.before_insert, never by the caller (see save()).
+
+	`file_size` / `content_hash` are carried across from the row that already owns this URL. Core derives
+	them from bytes it writes, and a reference writes none, so it left them 0/None — a patient's
+	prescription then read "0.00 B" on the lead while the blob was whole. They describe the BLOB, not the
+	row, so copying them is the same fact restated for a second owner, never a measurement invented here.
+	"""
+	owned = frappe.db.get_value("File", {"file_url": file_url}, ["file_size", "content_hash"], as_dict=True)
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_url": file_url,
 		"attached_to_doctype": attached_to_doctype,
 		"attached_to_name": attached_to_name,
+		**({"file_size": owned.file_size, "content_hash": owned.content_hash} if owned else {}),
 		**(meta or {}),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 

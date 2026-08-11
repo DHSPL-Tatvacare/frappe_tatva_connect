@@ -5,15 +5,17 @@ public Web Form bound to it (the two fronts, one sink — see the architecture p
 Both are created live, from data, with no deploy: the per-form DocType name is
 DERIVED from the form name, never stored, so there is no schema change to ship.
 
-`sync_form(cfg)` is idempotent: it creates the DocType + Web Form on first sync and
-adds any missing fields on re-sync. It NEVER drops a column (data safety) and NEVER
-builds DDL from user strings — every name is validated against frappe's own DocType
-name rules first, and all writes go through the DocType / Web Form document API.
+`sync_form(cfg)` is idempotent: it creates the DocType + Web Form on first sync and, on
+re-sync, adds any missing field AND re-applies the contract's declaration onto the fields
+already there. It NEVER drops a column (data safety) and NEVER builds DDL from user strings —
+every name is validated against frappe's own DocType name rules first, and all writes go
+through the DocType / Web Form document API.
 """
 import re
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from tatva_connect import automation
 
@@ -21,6 +23,11 @@ from tatva_connect import automation
 # the hidden back-link the wildcard router reads to resolve the contract. Everything the
 # patient sees is declared in the contract's grid — nothing else is injected (no hardcoding).
 _INTAKE_FORM_FIELD = "intake_form"
+
+# Server-side ceiling on files per submission (frappe File.validate_attachment_limit reads it off the
+# DocType). The Attach control is single-file by design (attach.js:72), so the form offers one slot per
+# declared field and this is the backstop that a tampered POST cannot exceed.
+_MAX_ATTACHMENTS = 2
 
 # Layout / display fieldtypes — they appear on the Web Form for structure but are NOT
 # storage columns on the submission DocType (and never map to a lead field).
@@ -105,16 +112,17 @@ def _row_fields(cfg) -> list[dict]:
 					"reqd": 0,
 					"options": None,
 					"mapping": None,
+					"manual_for": fn,  # shown only when the parent took no pick — the fold's own rule
 				}
 			)
 	return rows
 
 
-def _docfields(cfg) -> list[dict]:
-	"""DocField list for the per-form submission DocType: the hidden back-link + one column per
-	DATA-bearing contract field, each carrying the contract's own fieldtype/options. Layout /
-	display types (Section/Column/Page Break, HTML) are web-form-only and are NOT columns."""
-	fields = [
+def _builder_fields(cfg) -> list[dict]:
+	"""The columns the BUILDER owns on every sink, independent of the contract. Declared once, here:
+	the re-sync derives its reserved-name set from this list rather than re-typing the names, so
+	adding a column here can never leave a stale copy behind."""
+	return [
 		{
 			"fieldname": _INTAKE_FORM_FIELD,
 			"label": "Intake Form",
@@ -141,19 +149,52 @@ def _docfields(cfg) -> list[dict]:
 			"default": 0,
 		},
 	]
+
+
+def _docfields(cfg) -> list[dict]:
+	"""DocField list for the per-form submission DocType: the builder's own columns + one column per
+	DATA-bearing contract field, each carrying the contract's own fieldtype/options. Layout /
+	display types (Section/Column/Page Break, HTML) are web-form-only and are NOT columns.
+
+	A contract row emits `options` ALWAYS — None when it has none — because the re-sync applies a
+	contract row's keys verbatim, so an absent key would leave a stale Options list behind instead
+	of clearing it."""
+	fields = _builder_fields(cfg)
 	for r in _row_fields(cfg):
 		if r["fieldtype"] in LAYOUT_FIELDTYPES:
 			continue
-		df = {"fieldname": r["fieldname"], "label": r["label"], "fieldtype": r["fieldtype"], "reqd": r["reqd"]}
-		if r["options"]:
-			df["options"] = r["options"]
-		fields.append(df)
+		fields.append(
+			{
+				"fieldname": r["fieldname"],
+				"label": r["label"],
+				"fieldtype": r["fieldtype"],
+				"reqd": r["reqd"],
+				"options": r["options"],
+			}
+		)
 	return fields
 
 
+def _prop(value, key):
+	"""One DocField property, normalised for comparison: `reqd` is a Check (int), the rest are
+	None-or-a-string — so a blank Options and an absent one are the same thing."""
+	return cint(value) if key == "reqd" else (value or None)
+
+
 def _ensure_doctype(cfg) -> str:
-	"""Create the per-form `custom=1` DocType on first sync; on re-sync add only the
-	missing fields (never drop). Returns the doctype name."""
+	"""Create the per-form `custom=1` DocType on first sync; on re-sync add the missing fields AND
+	re-apply the contract's declaration onto the ones already there (never drop). Returns the
+	doctype name.
+
+	Re-applying is not cosmetic: matching by fieldname alone left a column's fieldtype/Options
+	frozen at whatever the contract said on the day it was first synced. Add a value to a Select
+	and the Web Form offered it while the submission column still rejected it — the patient could
+	not submit at all.
+
+	CAVEAT, unguarded: `DocType.save` carries no equivalent of Customize Form's
+	ALLOWED_FIELDTYPE_CHANGE gate, so a fieldtype edit here goes straight to an ALTER. Widening
+	(Data -> Select, Small Text -> Data) is safe; a narrowing edit on a live form can let the DB
+	truncate stored answers. Options / label / reqd changes are always safe."""
 	dt = doctype_name_for(cfg)
 	wanted = _docfields(cfg)
 
@@ -166,6 +207,7 @@ def _ensure_doctype(cfg) -> str:
 				"custom": 1,
 				"naming_rule": "Autoincrement",
 				"autoname": "autoincrement",
+				"max_attachments": _MAX_ATTACHMENTS,
 				"fields": wanted,
 				"permissions": [
 					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
@@ -175,13 +217,30 @@ def _ensure_doctype(cfg) -> str:
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 		return dt
 
-	# Re-sync: append any field the contract added since the last sync. Additive only.
-	meta = frappe.get_meta(dt)
-	missing = [f for f in wanted if not meta.has_field(f["fieldname"])]
-	if missing:
-		doc = frappe.get_doc("DocType", dt)
-		for f in missing:
+	# Re-sync: add what the contract gained, re-declare what it changed. Never drops a column.
+	reserved = {f["fieldname"] for f in _builder_fields(cfg)}
+	doc = frappe.get_doc("DocType", dt)
+	by_name = {df.fieldname: df for df in doc.fields}
+	# Applies the ceiling to a sink scaffolded before it existed.
+	dirty = cint(doc.max_attachments) != _MAX_ATTACHMENTS
+	doc.max_attachments = _MAX_ATTACHMENTS
+	for f in wanted:
+		df = by_name.get(f["fieldname"])
+		if df is None:
 			doc.append("fields", f)
+			dirty = True
+			continue
+		if f["fieldname"] in reserved:
+			continue  # the builder's own column — a contract row never re-declares it
+		# The contract row's OWN keys are the declaration; no second list of "syncable" properties.
+		for key, value in f.items():
+			if key == "fieldname":
+				continue
+			want = _prop(value, key)
+			if _prop(df.get(key), key) != want:
+				df.set(key, want)
+				dirty = True
+	if dirty:
 		doc.save(ignore_permissions=True)  # authz-ok: tier-a — intake form builder, operator-run
 	return dt
 
@@ -208,6 +267,15 @@ def _depends_on(field: str, op: str, value: str) -> str | None:
 	return None
 
 
+def _manual_depends_on(parent: str) -> str:
+	"""Show a `manual_field` companion once its parent carries the Other sentinel, testing the LAST
+	segment of the value: a Link holds a composite PK ("...::Others"), a Select holds the bare word,
+	and one expression has to answer for both. Blank is deliberately NOT tested — blank is the state
+	every form opens in, so it would show the box to everyone before they had answered anything."""
+	f = _safe_fieldname(parent)
+	return f'eval:["Others","Other"].includes(String(doc.{f} || "").split("::").pop())'
+
+
 def _web_form_fields(cfg) -> list[dict]:
 	"""Web Form Field rows — one per declared contract field (incl. layout fields, for form
 	structure), each with its fieldtype / label / reqd / options and compiled show-if. The
@@ -228,6 +296,8 @@ def _web_form_fields(cfg) -> list[dict]:
 				row["depends_on"] = dep
 				if r["reqd"] and not is_layout:
 					row["mandatory_depends_on"] = dep
+		elif r.get("manual_for"):
+			row["depends_on"] = _manual_depends_on(r["manual_for"])
 		rows.append(row)
 	return rows
 
@@ -238,6 +308,11 @@ def _web_form_fields(cfg) -> list[dict]:
 # Access flags (anonymous / login_required / allow_multiple) come from the contract too, with a
 # code fallback below so a blank/legacy contract still yields a sane anonymous, no-login form.
 _SETTINGS_COLUMNS = (
+	# Frappe's own banner slot — the template paints it ABOVE the title (web_form.html:22 vs :88).
+	"banner_image",
+	# Client-side only: it filters options the page already holds and is NEVER a permission gate.
+	"client_script",
+	"custom_css",
 	"anonymous",
 	"login_required",
 	"allow_multiple",

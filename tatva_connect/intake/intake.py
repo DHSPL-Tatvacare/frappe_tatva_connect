@@ -42,13 +42,25 @@ def _intake_doctypes() -> dict:
 		from tatva_connect.intake.builder import safe_doctype_name_for
 
 		cached = {}
+		unroutable = []
 		# The wildcard fires site-wide, incl. during install before the contract table exists.
 		if frappe.db.table_exists("CRM Intake Form"):
 			for cfg in frappe.get_all("CRM Intake Form", filters={"enabled": 1}, fields=["name", "form_name"]):
 				dt = safe_doctype_name_for(frappe._dict(cfg))  # None for a legacy/invalid name
 				if dt and frappe.db.exists("DocType", dt):
 					cached[dt] = cfg.name
+				else:
+					unroutable.append((cfg.name, cfg.form_name, dt))
+		# Cache BEFORE logging, never inside the loop: log_error INSERTS an Error Log, which fires the
+		# same wildcard after_insert that calls this function — a cold cache there would rebuild, log,
+		# and recurse without end. With the cache already set, the re-entrant call returns immediately.
 		frappe.cache().set_value(_INTAKE_DOCTYPES_CACHE_KEY, cached)
+		for name, form_name, dt in unroutable:
+			# An ENABLED form with no sink routes nothing — save it to scaffold, or disable it.
+			frappe.log_error(
+				title="Intake form is enabled but routes nothing",
+				message=f"form={name} form_name={form_name} derived_doctype={dt}",
+			)
 	return cached
 
 
@@ -117,7 +129,12 @@ def _fold_submission_to_lead(doc, cfg):
 			notes.append((field or "Note", val))
 			continue
 		if not frappe.db.exists("CRM Lead Section", table):
-			continue  # stale/invalid target_table on an already-saved row — skip, don't throw
+			# Stale/invalid target_table on an already-saved row — skip, don't throw, but never quietly.
+			frappe.log_error(
+				title="Intake answer dropped: unknown target section",
+				message=f"form={cfg.name} submission={doc.doctype}/{doc.name} question={m.source_field} target_table={table}",
+			)
+			continue
 		# No catalogue check here: the fold must never silently DROP a patient's answer — the target is gated at the picker and the save-time backstop, where an operator can act on it.
 		section = frappe.get_cached_doc("CRM Lead Section", table)
 		if section.child_table_field:
@@ -189,7 +206,9 @@ def _resolve_value(doc, m):
 	pick-list next time — unless it's a pick-only master (City)."""
 	# cstr() so a checkbox/number/date value (non-string) never AttributeErrors on .strip();
 	# the `or ""` keeps falsy values (unchecked box = 0, empty) skippable exactly as before.
-	picked = frappe.cstr(doc.get(m.source_field) or "").strip()
+	# Resolved to the HUMAN label first: a Link's value is its composite PK, so testing the raw value against the Other sentinel below never matched and the typed companion was ignored.
+	raw = frappe.cstr(doc.get(m.source_field) or "").strip()
+	picked = _link_label(doc, m.source_field, raw) if raw else ""
 	manual = frappe.cstr(doc.get(m.manual_field) or "").strip() if m.manual_field else ""
 
 	# "manual wins" when nothing was picked, or the pick is an explicit Other sentinel
@@ -203,11 +222,7 @@ def _resolve_value(doc, m):
 			canonical = _ensure_master(m.master_doctype, display_field, manual)
 			return canonical or manual
 		return manual
-	# A picked value from a Link field is the row's PK — the composite key now
-	# (e.g. "GF Care::Anaya::Nivolumab::Apollo", or City's "Bengaluru::Karnataka").
-	# Store the HUMAN label (the link target's title_field), never the opaque key.
-	# Non-Link sources (Select / Data) pass straight through.
-	return _link_label(doc, m.source_field, picked) if picked else picked
+	return picked  # already the human label, never the opaque composite key
 
 
 def _link_label(doc, source_field, value):
@@ -267,14 +282,30 @@ def _ensure_master(doctype, display_field, value):
 def _attach_files(doc, lead_name):
 	"""Surface every uploaded attachment onto the lead so files show in its attachments.
 	No hardcoded field name: we read the submission's OWN Attach / Attach Image fields, so a
-	form can declare any attachment (prescription, report, ...) and all of them are linked."""
+	form can declare any attachment (prescription, report, ...) and all of them are linked.
+
+	Each file is isolated behind its OWN savepoint: linking runs after the lead is already built,
+	so a failure on one attachment must never roll the lead — or the other attachments — back with
+	it. The File row still exists and is still bonded to the submission, so a missed link is
+	recoverable; a lost lead is not. Every failure is logged."""
 	from tatva_connect.storage import file_manager
 
 	for df in doc.meta.fields:
-		if df.fieldtype in ("Attach", "Attach Image"):
-			url = doc.get(df.fieldname)
-			if url:
-				file_manager.link(
-					url, attached_to_doctype="CRM Lead", attached_to_name=lead_name,
-					meta={"custom_source": "Intake"},
-				)
+		if df.fieldtype not in ("Attach", "Attach Image"):
+			continue
+		url = doc.get(df.fieldname)
+		if not url:
+			continue
+		sp = f"intake_attach_{frappe.generate_hash(length=8)}"
+		frappe.db.savepoint(sp)
+		try:
+			file_manager.link(
+				url, attached_to_doctype="CRM Lead", attached_to_name=lead_name,
+				meta={"custom_source": "Intake"},
+			)
+		except Exception:
+			frappe.db.rollback(save_point=sp)
+			frappe.log_error(
+				title="Intake attachment link failed",
+				message=f"lead={lead_name} field={df.fieldname}\n\n{frappe.get_traceback()}",
+			)
