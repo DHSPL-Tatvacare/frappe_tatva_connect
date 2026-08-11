@@ -802,24 +802,19 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 
 	count_keys = needed if (search or "").strip() else filtered_keys
 
-	# THE PAGE IS FETCHED, THEN FILLED IN. A key-value field is stored as a ROW, not a column, so the
-	# query needs one join PER FIELD to spread six of them across one line — and each of those joins
-	# ranks the whole table for the whole type, whether the page shows fifty rows or fifty thousand.
-	# That is the cost that grows with the data.
+	# THE PAGE IS FETCHED, THEN FILLED IN. A value that lives off the driving row costs a join, and the
+	# page's LIMIT is applied AFTER that join — so the join walks the whole table to return fifty rows and
+	# its cost grows with the data, never with the page. Measured on UAT (117,529 tasks, 56,745 child
+	# rows): one task column 0.6s; the same page plus ONE child column 30s at 100% CPU, and MariaDB
+	# refusing it as MAX_JOIN_SIZE. Resolving the page first and reading the child for those fifty
+	# parents: instant.
 	#
-	# So a key-value field the view only DISPLAYS leaves the query entirely and is fetched afterwards for
-	# the page's own rows (`_hydrate`). A field that is FILTERED, SORTED or SEARCHED on stays in the query
-	# — you cannot page a list before you have narrowed it. Displayed-only is the common case and the
-	# expensive one: six joins become one small read keyed on fifty parents.
-	#
-	# Only key-value fields move. A section of real columns is ONE join however many of its fields are
-	# shown (D3), which is already cheap, and a multi-row section needs its "latest row" ranking to stay
-	# in the query — moving those would buy nothing and would fork a rule that lives in one place.
+	# So a column the view only DISPLAYS leaves the query entirely and is read afterwards for the page's
+	# own rows (`_hydrate`). A column that is FILTERED, SORTED or SEARCHED on stays in the query — you
+	# cannot page a list before you have narrowed it. Displayed-only is the common case and the expensive
+	# one.
 	must_query = filtered_keys | (needed if (search or "").strip() else set())
-	hydrate_keys = {
-		k for k in col_keys
-		if k not in must_query and cat.get(k) and cat[k].sql_source == "answer"
-	}
+	hydrate_keys = _hydrate_split(col_keys, must_query, cat)
 	query_keys = needed - hydrate_keys
 
 	# ---- count (PQC-scoped) -------------------------------------------------
@@ -890,6 +885,18 @@ def _label_links(rows, col_keys, cat):
 				r[f"{key}_label"] = by_key.get(value) or value
 
 
+# A value off the driving row costs a join, and a join makes a page cost the table. Two shapes reach it.
+_OFF_ROW_SOURCES = ("answer", "child")
+
+
+def _hydrate_split(col_keys, must_query, cat):
+	"""The PROJECTED columns that leave the page query. `must_query` (filtered/sorted/searched) cannot move — those decide which rows the page holds."""
+	return {
+		k for k in col_keys
+		if k not in must_query and cat.get(k) and cat[k].sql_source in _OFF_ROW_SOURCES
+	}
+
+
 def _hydrate(rows, keys, cat, driving_name):
 	"""Fill the page's key-value columns in ONE read per table, keyed on the page's own rows.
 
@@ -917,12 +924,15 @@ def _hydrate(rows, keys, cat, driving_name):
 		for r in rows:
 			r.setdefault(key, None)
 
-	# One read per (table, address column, value column) — in practice one, since a resource declares a
-	# single key-value section. Grouped so a second one would cost a second read and not a second rule.
-	buckets = {}
+	# Grouped so a second section costs a second read and not a second rule: key-value rows are ADDRESSED
+	# by fieldname, a child's fields ARE its columns, so the two group by what each read needs.
+	buckets, child_buckets = {}, {}
 	for key in keys:
 		row = cat[key]
-		buckets.setdefault((row.target_doctype, row.row_key_field, row.value_field), {})[row.fieldname] = key
+		if row.sql_source == "child":
+			child_buckets.setdefault((row.target_doctype, row.row_key_field or ""), {})[row.fieldname] = key
+		else:
+			buckets.setdefault((row.target_doctype, row.row_key_field, row.value_field), {})[row.fieldname] = key
 
 	for (doctype, address, value_field), fields in buckets.items():
 		if not (doctype and address and value_field):
@@ -938,6 +948,30 @@ def _hydrate(rows, keys, cat, driving_name):
 			key = fields.get(answer.get(address))
 			if target is not None and key:
 				target[key] = answer.get(value_field)
+
+	# The newest row per parent wins — the same ordering the query's ROW_NUMBER applied, now read over the
+	# page's parents instead of the table. A single-row section trivially has one row and needs no branch.
+	for (doctype, order_field), fields in child_buckets.items():
+		if not doctype:
+			continue
+		order_field = order_field if _column_exists(doctype, order_field) else "creation"
+		seen = set()
+		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
+			doctype,
+			filters={"parent": ["in", names], "parenttype": driving_name},
+			fields=["parent", *fields],
+			order_by=f"{order_field} desc, creation desc, name desc",
+			limit_page_length=0,
+		):
+			parent = cstr(child.get("parent"))
+			if parent in seen:
+				continue
+			seen.add(parent)
+			target = by_name.get(parent)
+			if target is None:
+				continue
+			for fieldname, key in fields.items():
+				target[key] = child.get(fieldname)
 
 
 # ---------------------------------------------------------------------------
