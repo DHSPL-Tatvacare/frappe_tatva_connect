@@ -292,7 +292,8 @@ def _screening_answers(doc, section):
 		entries.append({
 			"field_key": f"{section.name}#{identity}",
 			"label": row.get(section.label_field) or row.get(section.question_field) or _("(no question)"),
-			"fieldname": "",
+			# The identity IS the address, so an activity form can name a question the way it names any other field.
+			"fieldname": identity,
 			"fieldtype": "Data",
 			"options": "",
 			"value": value,
@@ -338,14 +339,42 @@ def _link_query(df, fieldname, lead):
 	}
 
 
+# The record types whose Data tab this projection serves; a Deal is served its lead's panel, never its own.
+_PANEL_PARENTS = ("CRM Lead", "CRM Deal")
+
+
+def resolve_panel_lead(record, doctype="CRM Lead"):
+	"""The CRM Lead a panel is really about — ONE hop, at the entry point, and nothing below it changes.
+
+	A Deal is the customer a Lead became, so its Data tab is the LEAD's sections read through `deal.lead`;
+	nothing is copied onto the deal. The hop is a plain field read, deliberately ungated: the gate is
+	`posture.require` on the RESOLVED lead, so reaching a patient through a deal id can never show more
+	than reaching them through the lead id would."""
+	if doctype not in _PANEL_PARENTS:
+		frappe.throw(_("Unsupported record type {0}").format(doctype))
+	if doctype == "CRM Lead":
+		return record
+	lead = frappe.db.get_value("CRM Deal", record, "lead")
+	if not lead:
+		frappe.throw(_("This deal is not linked to a lead."), title=_("No lead on this deal"))
+	return lead
+
+
 @frappe.whitelist()
-def lead_detail(lead):
+def lead_detail(lead, doctype="CRM Lead"):
 	"""Read projection: {sections:[{key,label,order,multi_row,row_key,row_count,fields:[{field_key,label,
 	fieldname,fieldtype,options,value,display,empty,read_only}]}]}. A key-value entry also carries
 	`has_more` — its own answers, and a picklist Link a `link_query` — the scoped query its picker asks.
 	A multi-value field carries `multi_value` and answers in LISTS (`value` and `display` both), which is
 	the panel's signal to render a set of selections rather than one.
-	Permission-gated; values resolved server-side."""
+	Permission-gated; values resolved server-side.
+
+	`doctype` names the RECORD the caller is looking at, not a field's target: a Deal resolves to its lead
+	here and the rest of this module never learns a second doctype. The answer carries the resolved `lead`
+	back so the panel's own follow-up reads (history, a section's rows) address the lead, and `read_only`,
+	because `update_lead_detail`'s allowlist is built for a lead and a write arriving from a deal surface
+	is not the same question."""
+	lead = resolve_panel_lead(lead, doctype)
 	posture.require("CRM Lead", "read", doc=lead)
 	doc = frappe.get_doc("CRM Lead", lead)
 	buckets = {}
@@ -387,7 +416,7 @@ def lead_detail(lead):
 	for b in buckets.values():
 		b["fields"].sort(key=lambda f: (f.pop("_idx"), f["label"]))
 	sections = sorted(buckets.values(), key=lambda s: s["order"])
-	return {"sections": sections}
+	return {"sections": sections, "lead": lead, "read_only": doctype != "CRM Lead"}
 
 
 def _stage_write(doc, section, row, value):
@@ -670,3 +699,18 @@ def update_lead_detail(lead, changes):
 		_stage_write(doc, _section_of(row), row, value)
 	doc.save()
 	return {"ok": True}
+
+
+def write_lead_fields(lead, values):
+	"""`update_lead_detail` addressed by FIELDNAME — what an activity form's `source = Lead` answers write through. Address translation only: the gate, the staging and the save stay `update_lead_detail`'s."""
+	if not values:
+		return {}
+	selected = _select(frappe.get_doc("CRM Lead", lead))
+	changes = {}
+	for fieldname, value in values.items():
+		found = [fk for fk, row in selected.items() if (row.get("fieldname") or "") == fieldname]
+		if len(found) != 1:
+			# None means no section declares it here; more than one means the fieldname names no single row.
+			frappe.throw(_("Field {0} has no single home on this lead").format(fieldname))
+		changes[found[0]] = value
+	return update_lead_detail(lead, changes)

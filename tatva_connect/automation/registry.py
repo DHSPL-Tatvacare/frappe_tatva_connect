@@ -543,6 +543,30 @@ AUTOMATIONS = [
 		backs=["tatva_connect.lead.leads.validate_stage"],
 	),
 	Auto(
+		key="Deal::CRM Deal::guards",
+		fires_on="Doc Event",
+		trigger_detail="CRM Deal · before_validate + validate",
+		purpose=(
+			"A deal is anchored to the lead it came from: it is filed under that lead's product line, "
+			"a product line that has not been armed for deals refuses to carry one, and a second deal "
+			"on the same customer is refused at save. Off, a deal can be created loose, on any product "
+			"line, as many times as anyone likes.\n"
+			"A deal may also only be opened from the stage its programme has declared to be the moment "
+			"the lead bought, and each sale line's renewal date is worked out from the plan's duration "
+			"rather than typed.\n"
+			"Example: a rep converts a patient who already has a deal, and the duplicate is refused."
+		),
+		backs=[
+			"tatva_connect.deal.deals.require_lead",
+			"tatva_connect.deal.deals.stamp_grain_from_lead",
+			"tatva_connect.deal.deals.guard_deals_enabled",
+			"tatva_connect.deal.deals.guard_conversion_point",
+			"tatva_connect.deal.deals.one_deal_per_lead",
+			"tatva_connect.deal.deals.stamp_renewal_dates",
+			"tatva_connect.deal.deals.normalize_deal_phones",
+		],
+	),
+	Auto(
 		key="Lead::Facebook::form-refresh",
 		fires_on="Schedule",
 		trigger_detail="daily 01:00",
@@ -689,6 +713,24 @@ AUTOMATIONS = [
 		# Gated by the shared brain inside access/visibility.py (keyed on this row), NOT a
 		# doc_event — so backs is empty, like Telephony::CRM Call Log::visibility. The
 		# permission-hook targets stay OUT of the registry (drift walks only doc_events + scheduler).
+		backs=[],
+	),
+	Auto(
+		key="Workflow::Authoring::surface",
+		fires_on="Provider call",
+		trigger_detail="access/surfaces gate · the Workflows menu item and its direct URL",
+		purpose=(
+			"The Workflows authoring screen is reachable: a user who is permitted to read workflows "
+			"sees the Workflows item in the menu and may open it directly. Permission alone is not "
+			"enough — this row is the operator's own switch for whether the screen exists yet, so "
+			"authoring can be held back until the programme's journeys are ready to be written. Off, "
+			"which is how it ships, the menu item is absent and the address is refused. This decides "
+			"whether the SCREEN appears and changes nothing about which workflows a person may see — "
+			"that stays Workflow::CRM Workflow::visibility.\n"
+			"Example: a manager who may read workflows opens the CRM and finds no Workflows item until "
+			"the operator turns this on for go-live."
+		),
+		# Gated inside the surface brain, not a doc_event, so `backs` is empty — the drift lock walks doc_events and scheduler entries only.
 		backs=[],
 	),
 	Auto(

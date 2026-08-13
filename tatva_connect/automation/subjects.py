@@ -16,6 +16,8 @@ subject), the drift gate's doctype list, and `watch._subject`'s Lead resolution.
 SUBJECTS = {
 	"CRM Lead": {"link": None},
 	"CRM Task": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	# A Deal is the customer a Lead became and names it in `lead`; a Link to CRM Lead needs no guard.
+	"CRM Deal": {"link": "lead"},
 	# A File resolves to the lead it is attached to (attached_to_doctype/attached_to_name) — the guard
 	# keeps a File attached to anything else (a Task, a Note) from ever resolving to a lead.
 	"File": {"link": "attached_to_name", "guard_field": "attached_to_doctype", "guard_value": "CRM Lead"},

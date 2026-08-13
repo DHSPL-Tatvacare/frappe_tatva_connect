@@ -25,6 +25,9 @@ would offer values that match nothing, and pointing a picker at the lead table w
 uncreatable. (Plan decision 7.)
 """
 import frappe
+from frappe import _
+
+from tatva_connect.access import visibility
 
 # The three masters that MAKE a field a grain axis. This is the one place the grain doctypes are named;
 # WHICH fields point at them is read off the meta below, so the two can never drift apart.
@@ -33,23 +36,23 @@ GRAIN_MASTERS = ("CRM Vertical", "CRM Group", "CRM Program")
 _DOCTYPE = "CRM Lead"
 
 
-def grain_filter_fields():
-	"""Every CRM Lead field that is a Link to a grain master, off the live meta.
+def grain_filter_fields(doctype: str = _DOCTYPE):
+	"""Every field on `doctype` that is a Link to a grain master, off the live meta.
 
 	The rule, expressed once: the TARGET decides. Nothing here enumerates fieldnames, so
 	`custom_vertical`, `custom_group`, `custom_current_program` and the two history Links are covered by
-	the same sentence — and so is any grain Link added later.
+	the same sentence — and so is any grain Link added later, on either record that carries a grain.
 	"""
 	return tuple(
 		field.fieldname
-		for field in frappe.get_meta(_DOCTYPE).fields
+		for field in frappe.get_meta(doctype).fields
 		if field.fieldtype == "Link" and field.options in GRAIN_MASTERS
 	)
 
 
 @frappe.whitelist()
-def grain_filter_options():
-	"""`{fieldname: [values]}` — the distinct values of every grain axis on the leads the CALLER can see.
+def grain_filter_options(doctype: str = _DOCTYPE):
+	"""`{fieldname: [values]}` — the distinct values of every grain axis on the rows the CALLER can see.
 
 	Every grain field gets a key, even where no visible lead carries a value for it: the frontend reads
 	"the endpoint answered for this field" as "this field is scoped", so an omitted key would silently
@@ -59,10 +62,13 @@ def grain_filter_options():
 	System Manager is not special-cased — their `get_list` is unscoped, so they get every value present
 	on any lead, which is the same rule applied to a wider set of rows rather than a second rule.
 	"""
+	# Only the records that CARRY a grain may be asked; anything else is a caller naming a table we never scope.
+	if doctype not in visibility.PARENT_DOCTYPES:
+		frappe.throw(_("Unsupported record type {0}").format(doctype))
 	out = {}
-	for fieldname in grain_filter_fields():
+	for fieldname in grain_filter_fields(doctype):
 		rows = frappe.get_list(
-			_DOCTYPE, fields=[fieldname], distinct=True, limit_page_length=0, ignore_ifnull=True,
+			doctype, fields=[fieldname], distinct=True, limit_page_length=0, ignore_ifnull=True,
 		)
 		out[fieldname] = sorted({row.get(fieldname) for row in rows if row.get(fieldname)})
 	return out

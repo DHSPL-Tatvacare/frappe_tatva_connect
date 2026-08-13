@@ -22,6 +22,11 @@ _MASTER = {"vertical": "CRM Vertical", "group": "CRM Group", "program": "CRM Pro
 _AXIS_OF = {master: axis for axis, master in _MASTER.items()}
 
 
+def master(axis: str) -> str:
+	"""The master doctype an axis is named by. The ONE answer — never re-derived by walking the schema back."""
+	return _MASTER.get(axis, "")
+
+
 def columns(doctype="CRM Lead"):
 	"""Which column each axis lives in on `doctype`, in AXES order, `None` for an axis it does not carry.
 

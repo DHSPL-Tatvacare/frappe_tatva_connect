@@ -162,6 +162,8 @@ permission_query_conditions = {
 	"WhatsApp Message": "tatva_connect.whatsapp.permissions.get_whatsapp_message_permission_query_conditions",
 	# Picklist Engine: clamp any generic list read of CRM Picklist Value to the caller's entitled grains, so get_list can't bypass the scoped picklist_query.
 	"CRM Picklist Value": "tatva_connect.access.picklist.get_picklist_value_permission_query_conditions",
+	# A colleague is not a customer: frappe makes one Contact per User, so this hides the staff ones (linked User is a System User) from the CRM list, the Convert picker and Helpdesk's contact search at once.
+	"Contact": "tatva_connect.access.contact_scope.get_contact_permission_query_conditions",
 	# The Definition is scoped by the grain it DECLARES, not through a parent lead — it has none. Who may see a workflow is a different question from whose leads it acts on; the engine reads workflows with get_all and is untouched by this.
 	"CRM Workflow": "tatva_connect.workflow_engine.permissions.get_workflow_permission_query_conditions",
 	"CRM Workflow Journey": "tatva_connect.workflow_engine.permissions.get_journey_permission_query_conditions",
@@ -294,7 +296,19 @@ doc_events = {
 	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://. Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated reason is never blocked.
 	# CRM Lead and CRM Intake Form carry this guard inside their OWN blocks above/below — a second entry keyed by the same doctype does not merge, it SHADOWS, and Python keeps the last one silently.
 	"CRM Deal": {
-		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+		# a deal is the customer a lead became, so it is anchored to that lead and grained by it before anything reads the grain
+		"before_validate": [
+			"tatva_connect.deal.deals.require_lead",
+			"tatva_connect.deal.deals.stamp_grain_from_lead",
+		],
+		"validate": [
+			"tatva_connect.deal.deals.guard_deals_enabled",
+			"tatva_connect.deal.deals.guard_conversion_point",
+			"tatva_connect.deal.deals.one_deal_per_lead",
+			"tatva_connect.deal.deals.stamp_renewal_dates",
+			"tatva_connect.deal.deals.normalize_deal_phones",
+			"tatva_connect.access.link_scheme.guard_link_schemes",
+		],
 	},
 	"CRM Organization": {
 		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
@@ -536,7 +550,7 @@ fixtures = [
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).
 		"filters": [
-			["dt", "in", ["CRM Lead", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File", "CRM Dashboard"]],
+			["dt", "in", ["CRM Lead", "CRM Deal", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File", "CRM Dashboard"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
@@ -558,6 +572,17 @@ fixtures = [
 		"Assignment Rule-grain_group",
 		"Assignment Rule-grain_program",
 		"FCRM Note-custom_lsq_activity_id",
+		# The SKU's plan length and the sale row's dates — renewal is derived from the two, never typed. By name, not dt-in: crm owns the product catalog and a vacuum would sweep its own fields the day it adds one.
+		"CRM Product-custom_duration_days",
+		# A SKU belongs to a product line: the axes make the catalog scope itself, exactly as they do on a lead.
+		"CRM Product-custom_vertical",
+		"CRM Product-custom_group",
+		"CRM Product-custom_current_program",
+		"CRM Products-custom_start_date",
+		"CRM Products-custom_renewal_date",
+		# A B2B sale is invoiced, so the line carries its invoice — the transaction and what was bought are one row.
+		"CRM Products-custom_invoice_no",
+		"CRM Products-custom_invoice_date",
 		# The contract a Facebook form's leads are created against — the ONE place its grain and field set are declared.
 		"Lead Sync Source-routing_section",
 		"Lead Sync Source-api_mapping",
@@ -663,6 +688,10 @@ fixtures = [
 # WhatsApp capability policy (the ONE brain) — the crm fork's validate_access() reads this hook to
 # decide who may use WhatsApp, so the allow-list lives here, not in the fork. See whatsapp/roles.py.
 whatsapp_capability_roles = whatsapp_roles.CAPABILITY_ROLES
+
+# Surface visibility (the ONE rule) — the crm fork's get_boot() calls this to put the answer on the page it
+# already serves, so the menu is correct at first paint with no gate call. See access/surfaces.py.
+crm_surfaces = "tatva_connect.access.surfaces.my_surfaces"
 
 # Apps
 # ------------------

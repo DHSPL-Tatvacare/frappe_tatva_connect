@@ -28,7 +28,9 @@ from tatva_connect.taxonomy import labels
 TOGGLE = "Search::Index::indexing"
 
 # Which lead-detail tab a hit opens; a lead opens the detail root (the frontend navigates via the hash).
-TAB = {"CRM Lead": None, "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
+# A Deal is NOT a child of a lead — it is a second record about the same person — so it opens its OWN
+# record and names no tab. Declared rather than left to `TAB.get`'s default so the map says so out loud.
+TAB = {"CRM Lead": None, "CRM Deal": None, "CRM Task": "tasks", "CRM Call Log": "calls", "File": "attachments"}
 
 # The batch build SELECTs these real columns before prepare_document runs; title/content map to always-present
 # system columns we overwrite there (row title = patient name, content = composed), so no row is ever skipped.
@@ -225,6 +227,10 @@ class CRMLeadSearch(SQLiteSearch):
 	INDEXABLE_DOCTYPES: ClassVar[dict] = {
 		# `_LEAD_FIELDS` is every field the context read consumes, so a change to any of them reindexes the lead.
 		"CRM Lead": {"fields": [*_PLACEHOLDER, "custom_substage", *_LEAD_FIELDS]},
+		# The deal tier. A deal is the customer a lead became, so its row is the SAME patient — title,
+		# grain, stage and principals all come off `deal.lead` and nothing is copied onto the deal. The
+		# list is also the reindex trigger, so `status` moving restamps the row; `lead` is the resolver's.
+		"CRM Deal": {"fields": [*_PLACEHOLDER, "lead", "organization", "status"]},
 		# `file_url` is declared so the framework's own metadata mapping stores it — a hit opens the bytes with no per-result read.
 		"File": {"fields": [*_PLACEHOLDER, "file_name", "file_url", "attached_to_doctype", "attached_to_name"]},
 		# CRM Task is out — 12,567 rows / 2.93 MB the owner does not want in the spotlight. Re-enable by uncommenting; _content_of/_keys_of/TAB cover it, and SearchResults.vue needs its tile back.
@@ -434,6 +440,9 @@ class CRMLeadSearch(SQLiteSearch):
 		# The CRM Lead a row hangs off, via the resolvers that already own this decision.
 		if doc.doctype == "CRM Lead":
 			return doc.name
+		if doc.doctype == "CRM Deal":
+			# The one spelling this app already uses for the hop (whatsapp/routing.py, notifications/events.py).
+			return doc.get("lead")
 		if doc.doctype == "File":
 			return _file_lead(doc)
 		# The declared linkage for this doctype, never a private resolver imported behind the gate's back.
@@ -485,6 +494,9 @@ class CRMLeadSearch(SQLiteSearch):
 			return " ".join(p for p in [doc.get("from"), doc.get("to")] if p)
 		if dt == "File":
 			return doc.get("file_name") or ""
+		if dt == "CRM Deal":
+			# The title is already the patient; the snippet says WHICH record this is — who it is with, and where it stands.
+			return " ".join(p for p in [doc.get("organization"), doc.get("status")] if p)
 		# CRM Lead — no snippet at all: its row is rendered from metadata, and an ID is never displayed text.
 		return ""
 

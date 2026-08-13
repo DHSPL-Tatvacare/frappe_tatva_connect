@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "format:{program}::{stage}",
  "creation": "2026-06-04 00:00:00.000000",
- "description": "Per-program lead lifecycle. A row with blank substage_of is a MAIN stage; a row with substage_of set is a SUBSTAGE under that main stage. Drives the Lead's custom_stage / custom_substage dropdowns.",
+ "description": "The stages and substages a lead moves through, per programme.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -12,6 +12,7 @@
   "stage",
   "substage_of",
   "selectable",
+  "is_conversion_point",
   "display_label",
   "color",
   "position"
@@ -34,7 +35,7 @@
    "reqd": 1
   },
   {
-   "description": "Blank = this row IS a main stage. Set = this row is a substage of the linked main stage.",
+   "description": "Blank means this row is a main stage. Set means it is a substage of the stage named.",
    "fieldname": "substage_of",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -44,14 +45,20 @@
   },
   {
    "default": "0",
-   "description": "1 = pickable on a lead (a substage, or a main stage that has no substages). Main stages that have substages are NOT directly pickable.",
+   "description": "Ticked, this can be picked on a lead. A main stage that has substages cannot be picked directly.",
    "fieldname": "selectable",
    "fieldtype": "Check",
    "in_standard_filter": 1,
    "label": "Selectable"
   },
   {
-   "description": "Auto: 'Program / Main / Substage' (or 'Program / Stage'). Shown in the Lead's Stage picker.",
+   "default": "0",
+   "fieldname": "is_conversion_point",
+   "fieldtype": "Check",
+   "label": "Reaching This Stage Means They Bought"
+  },
+  {
+   "description": "Filled in automatically, and shown in the lead's Stage picker.",
    "fieldname": "display_label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -72,7 +79,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 00:00:00.000000",
+ "modified": "2026-08-13 21:30:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Lead Stage",

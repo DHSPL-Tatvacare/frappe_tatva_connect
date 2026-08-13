@@ -211,6 +211,14 @@ FIELD_LEVELS = {
 			"Sales User": (1, 0),
 		}
 	},
+	# The deal's grain is stamped from its lead and carries the same permlevel, so it needs the same grant or a rep sees no product line on the deal at all.
+	"CRM Deal": {
+		1: {
+			"System Manager": (1, 1),
+			"Sales Manager": (1, 1),
+			"Sales User": (1, 0),
+		}
+	},
 	# A permlevel-1 CHILD field resolves against the PARENT's permlevel access, so this grant governs LMS Test Case.
 	"LMS Programming Exercise": {
 		1: {

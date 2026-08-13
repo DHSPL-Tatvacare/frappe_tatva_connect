@@ -8,6 +8,9 @@ from tatva_connect.taxonomy import grain
 
 _FIELDNAME_CACHE = "tatva_connect:quick_entry_catalogued_fieldnames"
 
+# Records whose grain the server stamps, so their axis fields are hidden on the create form rather than offered.
+_GRAIN_STAMPED = ("CRM Lead", "CRM Deal")
+
 
 @frappe.whitelist()
 def get_fields_layout(doctype: str, type: str, parent_doctype: str | None = None,
@@ -15,19 +18,20 @@ def get_fields_layout(doctype: str, type: str, parent_doctype: str | None = None
 	from crm.fcrm.doctype.crm_fields_layout.crm_fields_layout import get_fields_layout as _native
 
 	tabs = _native(doctype, type, parent_doctype)
-	if doctype != "CRM Lead" or type != "Quick Entry":
+	if type != "Quick Entry" or doctype not in _GRAIN_STAMPED:
 		return tabs
 
 	hide_grain = "System Manager" not in frappe.get_roles()
-	visible, required = _contract_view(vertical, group, program)
+	# The contract decides which SECTIONS are drawn off the LEAD catalog; a deal carries none, so it takes the axis hiding alone.
+	visible, required = _contract_view(vertical, group, program) if doctype == "CRM Lead" else (None, ())
 	for tab in tabs:
 		for section in tab.get("sections") or []:
 			# A layout fieldname with no meta field stays a plain string (crm_fields_layout.py:77).
 			fields = [f for c in section.get("columns") or [] for f in c.get("fields") or [] if isinstance(f, dict)]
 			for field in fields:
-				if field["fieldname"] == "mobile_no" or field["fieldname"] in required:
+				if field["fieldname"] in required or (field["fieldname"] == "mobile_no" and doctype == "CRM Lead"):
 					field["reqd"] = 1
-				if hide_grain and field["fieldname"] in grain.columns("CRM Lead"):
+				if hide_grain and field["fieldname"] in grain.columns(doctype):
 					field["hidden"] = 1
 			if visible is not None and not _section_belongs(fields, visible):
 				for field in fields:

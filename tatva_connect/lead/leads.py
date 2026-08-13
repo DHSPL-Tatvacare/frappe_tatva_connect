@@ -259,7 +259,8 @@ def lead_stages(lead):
 	return frappe.get_all(
 		"CRM Lead Stage",
 		filters={"selectable": 1, "program": ["in", ["", None, program]]},
-		fields=["name", "stage", "substage_of", "display_label", "color", "position"],
+		# is_conversion_point rides this already-running query so the Convert affordance stops lying; the server guard (deal.deals.guard_conversion_point) remains the authority.
+		fields=["name", "stage", "substage_of", "display_label", "color", "position", "is_conversion_point"],
 		order_by="position asc, stage asc",
 	)
 

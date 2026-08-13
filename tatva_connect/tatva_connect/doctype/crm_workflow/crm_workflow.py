@@ -52,6 +52,7 @@ TRIGGER_INDEX = {
 class CRMWorkflow(Document):
 	def validate(self):
 		self.sync_trigger_index()
+		self.deal_subject_needs_a_selling_line()
 
 	def on_trash(self):
 		"""A workflow that is gone cannot serve its journeys, so they end with it.
@@ -80,6 +81,24 @@ class CRMWorkflow(Document):
 		# Not a copy but a DERIVATION, which is why it sits beside the map rather than in it: the drain asks
 		# one indexed question — mode plus a clock — and a record-event workflow is never due, so it carries none.
 		self.trigger_next_run_at = cohort.next_run_at(config)
+
+	def deal_subject_needs_a_selling_line(self):
+		"""A Deal-subject workflow only exists where the line SELLS — the authoritative per-grain gate.
+
+		The picker (`registry.subject_options`) and this check read the ONE fact through the ONE function,
+		`access.surfaces.deals_enabled`; the picker can only ask the wildcard question because the grain and
+		the subject are chosen on the same node, and this runs after `sync_trigger_index` has copied both
+		onto the header, so it is the first point where the pair can be judged together. A blank vertical is
+		the wildcard, exactly as it is everywhere else: it passes when any line sells.
+		"""
+		from tatva_connect.access.surfaces import deals_enabled
+
+		if self.trigger_doctype != registry._DEAL_SUBJECT or deals_enabled(self.trigger_vertical or ""):
+			return
+		frappe.throw(
+			_("{0} does not sell deals, so a workflow scoped to it cannot watch a Deal.").format(self.trigger_vertical),
+			title=_("Deals not enabled"),
+		)
 
 	def trigger_node(self):
 		"""This workflow's Trigger node, or None. There is at most one — `validate_trigger` enforces it."""

@@ -59,6 +59,12 @@
    "sort_options": 0,
    "translatable": 0,
    "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "deals_enabled",
+   "fieldtype": "Check",
+   "label": "Deals Enabled"
   }
  ],
  "force_re_route_to_default_view": 0,
@@ -77,7 +83,7 @@
  "links": [],
  "make_attachments_public": 0,
  "max_attachments": 0,
- "modified": "2026-05-26 15:13:01.535338",
+ "modified": "2026-08-13 22:30:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Vertical",
@@ -106,21 +112,21 @@
   {
    "amend": 0,
    "cancel": 0,
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
    "if_owner": 0,
    "import": 0,
    "permlevel": 0,
-   "print": 1,
+   "print": 0,
    "read": 1,
-   "report": 1,
+   "report": 0,
    "role": "Sales User",
    "select": 0,
-   "share": 1,
+   "share": 0,
    "submit": 0,
-   "write": 1
+   "write": 0
   },
   {
    "amend": 0,

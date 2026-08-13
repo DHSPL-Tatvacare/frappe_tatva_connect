@@ -54,10 +54,33 @@ def _subject_options():
 	Offering anything else would let an author pick a subject the engine cannot resolve to a lead, and
 	the workflow would then be silently dead: it would match on save, fail to resolve a subject, and
 	return without a trace. A wrong pick is impossible instead of merely discouraged.
+
+	Static, because this is read at IMPORT to build the declaration — a database read here would run
+	before a site exists. What a given GRAIN may actually pick is `subject_options` below, asked per request.
 	"""
 	from tatva_connect.automation.subjects import SUBJECTS
 
 	return sorted(SUBJECTS)
+
+
+# The subject that is not universally offered, and the line-level fact that decides it.
+_DEAL_SUBJECT = "CRM Deal"
+
+
+def subject_options(vertical=""):
+	"""The subjects a workflow scoped to THIS product line may watch — the declaration above, gated.
+
+	`CRM Vertical.deals_enabled` is the one fact that governs everything deal-related, asked through
+	`access.surfaces.deals_enabled` — the SAME function the sidebar's Deals/Contacts/Organizations
+	liveness sits on, so a line that does not sell offers no Deal anywhere. A blank vertical is the
+	WILDCARD the rest of the app already means by a blank axis: it asks whether any line sells at all.
+	"""
+	from tatva_connect.access.surfaces import deals_enabled
+
+	offered = _subject_options()
+	if deals_enabled(vertical):
+		return offered
+	return [s for s in offered if s != _DEAL_SUBJECT]
 
 
 def _field(name, label, fieldtype, **kwargs):
@@ -1246,8 +1269,14 @@ def scoped_options(scope_kind, vertical=None, group=None, program=None, txt=None
 
 
 @frappe.whitelist()
-def node_types():
+def node_types(vertical=None):
 	"""The palette, the inspector and the validator's shared source, as plain data for the builder.
+
+	`vertical` is the product line the workflow being authored is scoped to. It gates exactly one option
+	list — the Trigger's Subject — because a Deal exists only where the line sells; omitted, the blank
+	axis is the wildcard and the question becomes "does any line sell", which is the answer a palette with
+	no workflow in front of it can honestly give. The authoritative per-grain gate is
+	`CRMWorkflow.validate`, which sees the declared vertical and the chosen subject together.
 
 	One endpoint: the frontend hardcodes no node type, no config field and no output name. A type added
 	here appears in the palette, renders its own inspector and validates itself, with no frontend change.
@@ -1263,19 +1292,27 @@ def node_types():
 	"""
 	from tatva_connect.channels import resolve
 
+	subjects = subject_options(vertical or "")
 	return [
 		{
 			"type": node_type,
 			"label": declared["label"],
 			"description": declared["description"],
 			"singleton": declared.get("singleton", False),
-			"config": [_wire(f, declared.get("outputs_by"))
+			"config": [_gated(_wire(f, declared.get("outputs_by")), subjects)
 			           for f in resolve.offered_fields(declared["config"], declared.get("channel"))],
 			"outputs": declared.get("outputs"),
 			"outcomes": outcomes_for(node_type),
 		}
 		for node_type, declared in NODE_TYPES.items()
 	]
+
+
+def _gated(field, subjects):
+	"""The Subject select is the ONE option list decided per REQUEST rather than at import — see `subject_options`."""
+	if field.get("name") != "subject_doctype":
+		return field
+	return {**field, "options": subjects}
 
 
 def _verb_node_types():
