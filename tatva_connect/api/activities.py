@@ -8,6 +8,7 @@ relabels stage changes legibly, and drops derived/auto-synced field noise — so
 as a per-lead audit. Derived on read, nothing stored. Registered via override_whitelisted_methods.
 """
 from collections import Counter
+from itertools import chain
 
 import frappe
 from crm.api.activities import _FILE_FIELDS, get_attachments
@@ -266,6 +267,14 @@ def _with_derived(doctype, picked, where):
 	return conditions
 
 
+def _scope(doctype, name):
+	"""The (doctype, name) records a surface answers for — a deal answers for itself AND its lead."""
+	if doctype != "CRM Deal":
+		return [(doctype, name)]
+	lead = frappe.db.get_value("CRM Deal", name, "lead")
+	return [(doctype, name), ("CRM Lead", lead)] if lead else [(doctype, name)]
+
+
 def _search_or_filters(kind, search):
 	term = (search or "").strip()
 	if not term:
@@ -365,7 +374,8 @@ def _attachment_page(lead, order_by, page_length, picked=None, search=None, doct
 	optimising the thing that is not the problem. If that ever stops being true the union belongs in the
 	timeline index, which already models exactly this shape.
 	"""
-	rows = get_attachments(doctype, lead)
+	# One call per record in scope: a deal shows its own files and its lead's, same rule as every other tab.
+	rows = [r for dt, n in _scope(doctype, lead) for r in get_attachments(dt, n)]
 	picked = {f: v for f, v in (picked or {}).items() if f in _FILTERABLE["attachment"]}
 	# Narrowed in Python for the same reason the page is sliced here: the set is a union, not a table.
 	for field_name, wanted in picked.items():
@@ -440,7 +450,13 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 	The history leg is fully materialised — eleven rows at most — so merging it in and slicing gives the
 	true top of the union, not an approximation, and the footer count stays exact.
 	"""
-	where = {"reference_doctype": doctype, "reference_name": lead}
+	# A deal's rail carries its lead's events too — the same both-records scope every other tab uses.
+	scoped = _scope(doctype, lead)
+	where = (
+		{"reference_doctype": doctype, "reference_name": lead}
+		if len(scoped) == 1
+		else {"reference_doctype": ["in", [dt for dt, _n in scoped]], "reference_name": ["in", [n for _dt, n in scoped]]}
+	)
 	field, direction = _order(order_by).split(" ")
 	pointers = frappe.get_all(
 		"CRM Timeline Event", filters=where,
@@ -456,13 +472,15 @@ def _rail_from_index(lead, page_length, order_by, doctype="CRM Lead"):
 	return rows[:page_length], frappe.db.count("CRM Timeline Event", where) + len(events)
 
 
-def _rail_from_merge(lead, page_length, order_by):
+def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 	"""The rail while the index is dormant — assembled from the existing whole-lead payload and sliced.
 
 	Same envelope, same row shape, so the client never learns which path served it. This is what makes
 	the index a switch an operator can flip rather than a deploy: off, the app behaves exactly as it did.
 	"""
-	activities, calls, notes, tasks, attachments = get_activities(lead)
+	# One payload per record in scope, so this path carries a deal's lead exactly as the index path does.
+	legs = [get_activities(n) for _dt, n in _scope(doctype, lead)]
+	activities, calls, notes, tasks, attachments = [list(chain(*parts)) for parts in zip(*legs, strict=True)]
 	rows = (
 		# The PURE events — a stage move, a comment, an email, a field change, the lead being created.
 		# They are what makes this an audit rather than a list of records, and dropping them would be a
@@ -507,7 +525,7 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 		rows, total = (
 			_rail_from_index(lead, page_length, order_by, doctype)
 			if is_enabled(timeline.TOGGLE)
-			else _rail_from_merge(lead, page_length, order_by)
+			else _rail_from_merge(lead, page_length, order_by, doctype)
 		)
 		return _envelope(rows, page_length, page_length_count, total)
 
@@ -518,6 +536,8 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 	if kind not in _TABS:
 		frappe.throw(_("Unknown activity kind {0}").format(kind))
 
+	# Captured before the unpack rebinds `doctype` to the CHILD doctype this tab lists.
+	scoped = _scope(doctype, lead)
 	doctype, link_field, fields = _TABS[kind]
 	# The lead scope is written LAST so a caller's filter can never displace it. Spread the other way and
 	# `filters={"reference_docname": "<someone else's lead>"}` returns that lead's rows to anyone who can
@@ -525,7 +545,8 @@ def lead_activity(lead: str, kind: str, page_length=20, page_length_count=20,
 	allowed = {f: v for f, v in picked.items() if f in _FILTERABLE.get(kind, ())}
 	# The lead scope AND the row predicate are written last: which rows are a comment or an email at all
 	# is declared once, in timeline.PREDICATES, and read here rather than restated.
-	where = _with_derived(doctype, picked, {**allowed, link_field: lead, **timeline.PREDICATES.get(doctype, {})})
+	anchor = scoped[0][1] if len(scoped) == 1 else ["in", [n for _dt, n in scoped]]
+	where = _with_derived(doctype, picked, {**allowed, link_field: anchor, **timeline.PREDICATES.get(doctype, {})})
 	matching = _search_or_filters(kind, search)
 	# `limit` internally, `page_length` on the wire: the param name matches get_data so the frontend is
 	# unchanged, while get_all takes the name frappe has not deprecated.

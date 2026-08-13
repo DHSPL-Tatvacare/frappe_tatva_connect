@@ -63,10 +63,9 @@ def field_changes(doctype: str, versions: list, is_lead: bool) -> list:
 	}
 	avoid = _AVOID_FIELDS.get(doctype, ())
 	out = []
-	for version in versions:
-		change = (json.loads(version.data).get("changed") or [None])[0]
-		if not change:
-			continue
+	# EVERY change a save recorded, not just the first: one save touching five fields is five lines, as crm's own loop produced.
+	changes = [(v, c) for v in versions for c in json.loads(v.data).get("changed") or []]
+	for version, change in changes:
 		field = fields.get(change[0])
 		if not field or change[0] in avoid or (not change[1] and not change[2]):
 			continue
@@ -109,7 +108,7 @@ def field_changes(doctype: str, versions: list, is_lead: bool) -> list:
 
 def creation_event(doctype: str, name: str) -> dict:
 	"""The first line every timeline ends on — the record being created."""
-	created, owner = frappe.db.get_value(doctype, name, ["creation", "owner"])
+	created, owner = frappe.db.get_value(doctype, name, ["creation", "owner"]) or (None, None)
 	return {
 		"activity_type": "creation",
 		"creation": created,
@@ -122,13 +121,12 @@ def creation_event(doctype: str, name: str) -> dict:
 def history(doctype: str, name: str) -> list:
 	"""Everything on a record's timeline that is not a record of its own: its creation and its edits.
 
-	Grouped by crm's own `handle_multiple_versions`, so a burst of edits by one person collapses into the
-	one line with a "and N more" the card already knows how to draw."""
-	from crm.api.activities import handle_multiple_versions
-
+	One line per field changed, never collapsed: crm's `handle_multiple_versions` groups a burst by owner
+	alone, which on a record one person edits hides every change but the first behind a count nobody opens.
+	The rail is paged, so the honest list costs nothing the grouping was protecting."""
 	rows = [
 		creation_event(doctype, name),
 		*field_changes(doctype, recent_versions(doctype, name), doctype == "CRM Lead"),
 	]
 	rows.sort(key=lambda r: str(r["creation"]), reverse=True)
-	return handle_multiple_versions(rows)
+	return rows
