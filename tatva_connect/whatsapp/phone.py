@@ -72,7 +72,10 @@ def dial_codes() -> list[dict]:
 	self-heal: an operator's edit shows up within a day without anyone clearing anything.
 
 	The picker is an aid for TYPING, not a field: it prefixes `+<code>` so the rep does not have to know
-	they must. Nothing stores it — once the number reads `+966…` it carries its own country for ever."""
+	they must. Nothing stores it — once the number reads `+966…` it carries its own country for ever.
+
+	`region` is the identity, not `dial`: two dozen countries answer to `+1`. `primary` is the region
+	libphonenumber names for a calling code, so a stored `+1…` reads back as the United States."""
 	default = region_default()
 	out = []
 	for row in frappe.get_all("Country", fields=["name", "code"], order_by="name"):  # authz-ok: public reference data, no business record — the country list every phone input needs
@@ -81,7 +84,8 @@ def dial_codes() -> list[dict]:
 		if not dial:
 			continue
 		out.append({"country": row.name, "region": code, "dial": f"+{dial}",
-					"default": int(code == default)})
+					"default": int(code == default),
+					"primary": int(code == phonenumbers.region_code_for_country_code(dial))})
 	return out
 
 
