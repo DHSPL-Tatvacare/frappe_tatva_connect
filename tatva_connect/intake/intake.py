@@ -8,6 +8,7 @@ needs only a new `CRM Intake Form` row — the builder makes its DocType + Web F
 import frappe
 
 from tatva_connect import automation
+from tatva_connect.propagate import fail_safe
 
 # The back-link the per-form submission row carries to its contract (set by the builder).
 _INTAKE_FORM_FIELD = "intake_form"
@@ -83,10 +84,20 @@ def route_submission(doc, method=None):
 		return
 	if not doc.get(_INTAKE_FORM_FIELD):
 		return
+	# The savepoint is taken in _route_one, never here: this guard runs on EVERY insert site-wide, and a mark+release pair on each one would charge the whole site two round trips per save.
+	_route_one(doc, method)
+
+
+# PROPAGATE (@fail_safe): the submission row IS the patient's answers — every mapped question is a column on it — so a fold lost to a deadlock or a duplicate key is rebuildable from the row, and `processed` stays 0 to say so. Unwrapped, the fold's exception rolled the row back too and there was nothing left to rebuild from.
+@fail_safe
+def _route_one(doc, method=None):
+	"""The fold, isolated behind the house savepoint: an accident is undone and logged, leaving the
+	submission row as the record of what was sent. A business refusal (`frappe.throw`) still surfaces —
+	the patient is on the page and can correct it, and a thank-you for a lead that was never created
+	would be worse than the error."""
 	cfg = frappe.get_cached_doc("CRM Intake Form", doc.get(_INTAKE_FORM_FIELD))
-	if not cfg.enabled:
-		return
-	_fold_submission_to_lead(doc, cfg)
+	if cfg.enabled:
+		_fold_submission_to_lead(doc, cfg)
 
 
 def _fold_submission_to_lead(doc, cfg):

@@ -55,18 +55,17 @@ def link(file_url, *, attached_to_doctype, attached_to_name, meta=None):
 	re-upload), so the file also shows in that record's attachments. Privacy is decided by the checkpoint
 	in FileOverride.before_insert, never by the caller (see save()).
 
-	`file_size` / `content_hash` are carried across from the row that already owns this URL. Core derives
-	them from bytes it writes, and a reference writes none, so it left them 0/None — a patient's
-	prescription then read "0.00 B" on the lead while the blob was whole. They describe the BLOB, not the
-	row, so copying them is the same fact restated for a second owner, never a measurement invented here.
+	`file_size` / `content_hash` are NOT passed from here, and must not be. They are permlevel 1, and frappe
+	enforces a permlevel by RESETTING the field rather than refusing the save — so a value sent from a caller
+	is indistinguishable from a forgery and is discarded, which is how a whole prescription read "0.00 B" on
+	the lead. They are derived from the blob, so they are decided where every other derivation is:
+	FileOverride.before_insert (`_inherit_blob_facts`).
 	"""
-	owned = frappe.db.get_value("File", {"file_url": file_url}, ["file_size", "content_hash"], as_dict=True)
 	return frappe.get_doc({
 		"doctype": "File",
 		"file_url": file_url,
 		"attached_to_doctype": attached_to_doctype,
 		"attached_to_name": attached_to_name,
-		**({"file_size": owned.file_size, "content_hash": owned.content_hash} if owned else {}),
 		**(meta or {}),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-b — the file front door; privacy floor is enforced by File doc_events
 

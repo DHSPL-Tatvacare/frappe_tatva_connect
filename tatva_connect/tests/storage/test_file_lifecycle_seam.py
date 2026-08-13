@@ -369,6 +369,49 @@ class TestEverySurfaceLandsPrivate(SeamCase):
 		self.assert_bytes_are_private(doc, content, "partner api attachment")
 
 
+class TestASecondOwnerCarriesTheBlobsFacts(SeamCase):
+	"""`file_manager.link` writes no bytes, so core derives no size or hash for the second owner — and
+	both fields are permlevel 1, which frappe enforces by RESETTING, so they cannot be handed in by the
+	caller either. The derivation belongs at this seam, and the outcome is what the lead displays."""
+
+	def test_a_reference_carries_the_size_and_hash_of_the_blob(self):
+		from tatva_connect.storage import file_manager
+
+		lead = self._lead("SEAM-REF")
+		stem, content = self._stem(), self._png()
+		src = self._insert(file_name=f"{stem}.png", content=content)
+		measured = frappe.db.get_value("File", src.name, ["file_size", "content_hash"], as_dict=True)
+
+		ref = file_manager.link(
+			src.file_url, attached_to_doctype="CRM Lead", attached_to_name=lead.name
+		)
+
+		row = frappe.db.get_value("File", ref.name, ["file_size", "content_hash"], as_dict=True)
+		self.assertEqual(row.file_size, len(content), "the lead reads 0 B for a blob that is whole")
+		self.assertEqual(row.file_size, measured.file_size, "the two owners disagree about one blob")
+		self.assertEqual(row.content_hash, measured.content_hash, "same blob, so the same hash")
+
+	def test_a_zero_source_is_never_the_measurement(self):
+		"""Reading any row on the url would copy an unmeasured 0 forward for ever — the shape that made
+		every later reference wrong once the first one was."""
+		from tatva_connect.storage import file_manager
+
+		lead = self._lead("SEAM-ZERO")
+		stem, content = self._stem(), self._png()
+		src = self._insert(file_name=f"{stem}.png", content=content)
+		zero = file_manager.link(src.file_url, attached_to_doctype="CRM Lead", attached_to_name=lead.name)
+		frappe.db.set_value("File", zero.name, "file_size", 0, update_modified=False)
+
+		ref = file_manager.link(
+			src.file_url, attached_to_doctype="CRM Lead", attached_to_name=lead.name
+		)
+		self.assertEqual(
+			frappe.db.get_value("File", ref.name, "file_size"),
+			len(content),
+			"a reference inherited the zero instead of the measurement",
+		)
+
+
 class TestScreeningPrecedesTheWrite(SeamCase):
 	"""V1.5, V1.6, V1.8, V1.11, V1.12.
 

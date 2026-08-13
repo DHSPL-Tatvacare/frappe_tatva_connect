@@ -68,7 +68,29 @@ class FileOverride(File):
 		self._screen_content()  # refuse bad bytes BEFORE core writes them
 		sent = {f: self.get(f) for f in _DERIVED}  # what the CALLER sent, before core derives its own answers
 		super().before_insert()  # core writes the bytes, now to the directory the checkpoint chose
+		self._inherit_blob_facts()  # core derives from bytes it writes, and a reference writes none — this is that derivation
 		self._derived = {f: self.get(f) for f in _DERIVED if self.get(f) != sent[f]}  # only what core itself changed — see _restore_derived
+
+	def _inherit_blob_facts(self):
+		"""Size and hash for a row that REFERENCES a blob someone else already wrote.
+
+		Core derives both from bytes it writes (file.py:780), so a reference derives nothing and lands at
+		0/None — a whole prescription read "0.00 B" on the lead. It belongs HERE and not at the call site
+		because both are permlevel 1, and frappe enforces a permlevel by RESETTING the field, so a value
+		passed in by a caller is discarded; set before the `_derived` snapshot it is banked as ours.
+		Only a source that already measured (`file_size > 0`) is read — a zero row would copy the gap on.
+		"""
+		if self.is_folder or self.file_size or not self.file_url:
+			return
+		owned = frappe.db.get_value(
+			"File",
+			{"file_url": self.file_url, "file_size": [">", 0]},
+			["file_size", "content_hash"],
+			as_dict=True,
+		)
+		if owned:
+			self.file_size = owned.file_size
+			self.content_hash = owned.content_hash
 
 	def _screen_content(self):
 		"""The ONE screening call site, for every channel — the channel itself is resolved in the screener.

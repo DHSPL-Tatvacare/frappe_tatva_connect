@@ -177,6 +177,46 @@ class TestIntakeBuilderSpine(FrappeTestCase):
 		self.assertEqual(lead.first_name, "Asha Spine")
 		self.assertEqual(lead.custom_city, "Bengaluru")
 
+	# --- a failed fold must not destroy what the patient sent ------------
+	def test_a_failing_fold_keeps_the_submission_row(self):
+		"""The fold runs in the submission's OWN transaction, so an exception used to roll the row back
+		with it — no lead, and no record of the answers either. @fail_safe undoes only the fold."""
+		builder.sync_form(self.cfg)
+
+		def boom(doc, cfg):
+			frappe.db.set_value(doc.doctype, doc.name, "patient_name", "ZZ HALF WRITTEN")
+			raise frappe.DuplicateEntryError("zz intake probe: the fold blew up")
+
+		original = intake._fold_submission_to_lead
+		intake._fold_submission_to_lead = boom
+		try:
+			sub = frappe.get_doc({
+				"doctype": self.dt,
+				"intake_form": self.cfg.name,
+				"phone": _PHONE,
+				"patient_name": "Asha Fold Fail",
+				"city_text": "Bengaluru",
+			})
+			sub.insert(ignore_permissions=True)  # must not raise
+		finally:
+			intake._fold_submission_to_lead = original
+
+		row = frappe.db.get_value(self.dt, sub.name, ["patient_name", "processed", "lead"], as_dict=True)
+		self.assertIsNotNone(row, "the submission row must survive a failed fold")
+		self.assertEqual(row.patient_name, "Asha Fold Fail", "the fold's half-write must be rolled back")
+		self.assertFalse(row.processed, "an unfolded submission must not read as processed")
+		self.assertFalse(row.lead)
+		self.assertIsNone(
+			frappe.db.get_value("CRM Lead", {"mobile_no": to_e164(_PHONE)}, "name"),
+			"no lead should exist — the point is that the ANSWERS survived, not that the fold did",
+		)
+		# The whole mitigation for a silent swallow: a row naming the hook, the doctype and the docname.
+		self.assertTrue(frappe.db.exists("Error Log", {
+			"method": ["like", "%propagate hook failed%_route_one%"], "reference_name": sub.name,
+		}))
+		# The transaction is still usable — a bare try/except would leave it poisoned.
+		frappe.db.set_value(self.dt, sub.name, "city_text", "Pune")
+
 	# --- cheap guard: a non-intake doctype is ignored -------------------
 	def test_router_ignores_non_intake_doctype(self):
 		builder.sync_form(self.cfg)

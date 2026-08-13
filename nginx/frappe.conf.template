@@ -15,6 +15,8 @@ map $http_x_forwarded_proto $proxy_x_forwarded_proto {
 server {
 	listen 8080;
 	server_name ${FRAPPE_SITE_NAME_HEADER};
+	absolute_redirect off;
+	server_tokens off;
 	root /home/frappe/frappe-bench/sites;
 
 	include /etc/nginx/snippets/security_headers.conf;
