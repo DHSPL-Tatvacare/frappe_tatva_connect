@@ -311,7 +311,7 @@ def entitled_grains_within(rule_grain, user=None):
 	}
 
 
-def users_entitled_to(rule_grain, txt=None, limit=20, scan=500):
+def users_entitled_to(rule_grain, txt=None, limit=20, scan=500, role=None):
 	"""The users a rule at this grain may legitimately name — the picker's answer.
 
 	Deliberately a FILTER over candidates rather than a reverse query over Assignment Rule rows: the
@@ -319,10 +319,22 @@ def users_entitled_to(rule_grain, txt=None, limit=20, scan=500):
 	would be a second matcher free to disagree with it — which is the defect class this brain exists to
 	remove. `scan` bounds the sweep so a picker can never walk an unbounded user table, and `txt` narrows
 	it the way an ordinary Link search does.
+
+	`role` narrows the SAME question by one clause — "entitled here AND holding this role" — rather than
+	being a second question with its own resolver. It is applied as a join on `Has Role` inside the one
+	candidate read, so a role-scoped picker costs no more round trips than an unscoped one, and never a
+	`get_roles` per candidate.
 	"""
-	filters = {"enabled": 1, "user_type": "System User"}
+	# The LIST form, not the dict: `txt` and `role` both narrow `name`, and a dict can hold only one
+	# condition per field — the second would silently replace the first.
+	filters = [["enabled", "=", 1], ["user_type", "=", "System User"]]
 	if txt:
-		filters["name"] = ["like", f"%{txt}%"]
+		filters.append(["name", "like", f"%{txt}%"])
+	if role:
+		# The role is a set membership, so it rides IN the candidate read rather than filtering after it:
+		# `scan` then bounds the users who could actually be offered, not the users we looked at.
+		filters.append(["name", "in", frappe.get_all(
+			"Has Role", filters={"role": role, "parenttype": "User"}, pluck="parent")])
 	found = []
 	for user in frappe.get_all("User", filters=filters, pluck="name", limit=scan, order_by="name asc"):
 		if grain_overlaps_entitlement(rule_grain, user=user):
