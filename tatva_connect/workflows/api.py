@@ -159,7 +159,8 @@ def save_draft(name, nodes, canvas_json=None, entry_node=None):
 	elif not doc.entry_node:
 		doc.entry_node = _trigger_node_id(name)
 	doc.save()  # after the nodes, so the header's derived trigger index reads the Trigger just written
-	return {"name": doc.name, "lifecycle_state": doc.lifecycle_state}
+	# The saved document IS the reload the canvas did next, so it is answered here rather than re-fetched.
+	return get_workflow(name)
 
 
 def _trigger_node_id(workflow):

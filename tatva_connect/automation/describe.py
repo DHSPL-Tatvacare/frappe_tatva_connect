@@ -11,6 +11,7 @@ accepted), so the UI and the validator can never drift from each other.
 import frappe
 
 from tatva_connect.automation import fields, rules
+from tatva_connect.taxonomy import picklist
 
 # Which operators are valid for a field of each schema type — the one catalog, consumed by describe()
 # (to offer), the rule controller (to reject), and the builder JS (to render).
@@ -59,7 +60,7 @@ def _descriptor(key, label, fieldtype, raw_options):
 		"type": ftype,
 		"operators": operators_for(ftype),
 		"options": _value_options(ftype, raw_options),
-		"pick": _pick_for(ftype, raw_options),
+		"pick": _pick_for(ftype, raw_options, key),
 	}
 
 
@@ -130,12 +131,23 @@ def activity_schema_fieldnames():
 	return set(activity_schema_fields())
 
 
-def _pick_for(fieldtype, raw_options):
+def _pick_for(fieldtype, raw_options, fieldname):
 	"""The typed pick-source for a v2 catalog entry: Link -> its target doctype; Select -> its option
-	lines; else None (plain typed field, no picker)."""
+	lines; else None (plain typed field, no picker).
+
+	A Link at CRM Picklist Value carries the target doctype AND the query that scopes it, because the
+	target alone is a search over the whole master: a workflow's Zone picker offered another category and
+	another business line. The resolver is NAMED rather than its rule restated — `picklist_query` owns
+	category, grain and the entitlement clamp, and is the query every lead form's picker already uses."""
 	if fieldtype == "Link":
 		target = (raw_options or "").strip()
-		return {"kind": "link", "target": target} if target else None
+		if not target:
+			return None
+		pick = {"kind": "link", "target": target}
+		if target == "CRM Picklist Value":
+			pick["query"] = "tatva_connect.taxonomy.picklist.picklist_query"
+			pick["filters"] = {"category": picklist.category_of(fieldname)}
+		return pick
 	if fieldtype == "Select":
 		options = [o.strip() for o in (raw_options or "").split("\n") if o.strip()]
 		return {"kind": "select", "options": options} if options else None
@@ -162,7 +174,7 @@ def field_catalog(doctype):
 				# kind="child" - so a child-table criterion renders a real Link/Select control, not a
 				# bare text box (Task-2 minor, Task 14 fix).
 				pick = {"kind": "child", "path": path}
-				inner = _pick_for(cf.fieldtype, cf.options)
+				inner = _pick_for(cf.fieldtype, cf.options, cf.fieldname)
 				if inner:
 					pick.update({k: v for k, v in inner.items() if k != "kind"})
 				out.append({
@@ -176,7 +188,7 @@ def field_catalog(doctype):
 			"key": df.fieldname,
 			"label": df.label or df.fieldname,
 			"type": df.fieldtype,
-			"pick": _pick_for(df.fieldtype, df.options),
+			"pick": _pick_for(df.fieldtype, df.options, df.fieldname),
 		})
 	return out
 
@@ -319,7 +331,7 @@ def _typed_catalog(doctype):
 				"key": r.fieldname,
 				"label": r.label or r.fieldname,
 				"type": r.fieldtype,
-				"pick": _pick_for(r.fieldtype, r.options),
+				"pick": _pick_for(r.fieldtype, r.options, r.fieldname),
 			})
 	return catalog
 
@@ -400,6 +412,19 @@ def coerces(value, ftype):
 	return True
 
 
+def _grain_scoped(descriptors, vertical, group, program):
+	"""The grain axes stamped onto every picker that already names a grain-scoped resolver.
+
+	`_pick_for` knows a field's category and nothing about WHERE the workflow sits, so the grain is added
+	by the one caller that knows it — the same three axes this contract is already scoped by. The rule
+	itself is not restated: these are arguments to `picklist_query`, which owns it."""
+	for descriptor in descriptors:
+		filters = (descriptor.get("pick") or {}).get("filters")
+		if filters is not None:
+			filters.update({"vertical": vertical or "", "group": group or "", "program": program or ""})
+	return descriptors
+
+
 @frappe.whitelist()
 def builder_schema(on_doctype=None, event=None, vertical=None, group=None, program=None):
 	"""THE one authoring contract: the Flow form's When/Then builder renders fields/operators/verbs from
@@ -407,11 +432,13 @@ def builder_schema(on_doctype=None, event=None, vertical=None, group=None, progr
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	return {
-		"fields": _criterion_fields(on_doctype, vertical, group, program),
+		"fields": _grain_scoped(_criterion_fields(on_doctype, vertical, group, program), vertical, group, program),
 		"operators_by_type": operators_by_type(),
 		"operator_shapes": operator_shapes(),
 		"verbs": builder_verbs(),
-		"set_targets": _settable_targets(on_doctype, vertical, group, program),
+		"set_targets": _grain_scoped(
+			_settable_targets(on_doctype, vertical, group, program), vertical, group, program
+		),
 	}
 
 

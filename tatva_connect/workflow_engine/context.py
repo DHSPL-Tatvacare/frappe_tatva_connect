@@ -93,6 +93,17 @@ def authoring_context(nodes):
 	}
 
 
+# Homed here, not in the registry: this is a question about a GRAPH's authoring contract, which is this module's subject, while the registry answers about node TYPES.
+@frappe.whitelist()
+def graph_context(nodes):
+	"""Everything the server knows about this graph, in one answer: what may leave each node, and what
+	each node may reference. Both were already derived from this exact argument."""
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	return {"outputs": registry.graph_outputs(nodes), "context": authoring_context(nodes)}
+
+
 @frappe.whitelist()
 def node_context(nodes, node_id):
 	"""The whole authoring contract for one node, in one response.
