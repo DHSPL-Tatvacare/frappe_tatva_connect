@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-08-01 00:00:00.000000",
- "description": "One card on one role's dashboard, and where it sits. A row here is a POINTER: the card itself is a CRM Dashboard Chart and everything it means lives there, so a card corrected once is corrected on every dashboard that places it. The grid is 12 columns wide; x is the column it starts at, w how many it spans, and y/h the same downward in rows of 60px. A chart tile must be at least h=6, because the chart renderer will not draw below 300px and a shorter tile clips it.",
+ "description": "The position of each card on a role's dashboard.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -16,7 +16,7 @@
  "fields": [
   {
    "columns": 4,
-   "description": "The card to place. It must already exist as a CRM Dashboard Chart.",
+   "description": "The card to place.",
    "fieldname": "chart",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -26,7 +26,7 @@
   },
   {
    "columns": 1,
-   "description": "Column it starts at, 0 to 11.",
+   "description": "The column the card starts at, 0 to 11.",
    "fieldname": "x",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -36,7 +36,7 @@
   },
   {
    "columns": 1,
-   "description": "Row it starts at, counting from the top.",
+   "description": "The row the card starts at, counting from the top.",
    "fieldname": "y",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -46,7 +46,7 @@
   },
   {
    "columns": 1,
-   "description": "How many of the 12 columns it spans.",
+   "description": "The number of the 12 columns the card spans.",
    "fieldname": "w",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -56,7 +56,7 @@
   },
   {
    "columns": 1,
-   "description": "How many 60px rows tall. A chart needs at least 6; a number card is fine at 2.",
+   "description": "The card's height in rows. A chart needs at least 6; a number card is fine at 2.",
    "fieldname": "h",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -68,7 +68,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-08-01 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Dashboard Placement",

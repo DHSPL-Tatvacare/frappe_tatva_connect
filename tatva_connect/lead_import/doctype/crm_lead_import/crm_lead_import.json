@@ -33,7 +33,7 @@
    "label": "1. Grain"
   },
   {
-   "description": "The grain every lead in this file is stamped with, and the field list the file is allowed to write. Only contracts the current user is entitled to are offered, and the grain is never taken from a column in the file.",
+   "description": "The contract every lead in this file is stamped with. It also decides which fields the file may fill, and only contracts you are entitled to are offered.",
    "fieldname": "contract",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -43,7 +43,7 @@
    "reqd": 1
   },
   {
-   "description": "Chosen only when the contract leaves programme open. One of the programmes the contract permits is picked here and applied to every row in the file.",
+   "description": "Chosen only when the contract leaves programme open. It is applied to every row in the file.",
    "fieldname": "program",
    "fieldtype": "Link",
    "label": "Programme",
@@ -59,7 +59,7 @@
    "label": "2. File"
   },
   {
-   "description": "The spreadsheet is attached here, as CSV or Excel. One row is one lead. Replacing the file clears the mapping and the validation result, because neither describes the new file.",
+   "description": "The spreadsheet, as CSV or Excel. One row is one lead. Replacing it clears the mapping and the validation result.",
    "fieldname": "import_file",
    "fieldtype": "Attach",
    "label": "Import File"
@@ -88,7 +88,7 @@
    "label": "3. Mapping"
   },
   {
-   "description": "One row per column found in the file. Each is pointed at a section and a field, or left blank to be skipped. A column mapped to a field this grain may not write is refused when the import is saved.",
+   "description": "One row per column in the file, pointed at the field it fills or left blank to be skipped.",
    "fieldname": "columns",
    "fieldtype": "Table",
    "label": "Columns",
@@ -101,7 +101,7 @@
   },
   {
    "default": "Draft",
-   "description": "Validation is mandatory and is always a dry run: every row is written through the live path and then rolled back, so what passes here is what will be written. Import stays unavailable until the current file has been validated.",
+   "description": "Validation is a rehearsal: every row is written and then undone, so what passes here is what will be imported. Import stays locked until the current file has been validated.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -111,14 +111,14 @@
    "read_only": 1
   },
   {
-   "description": "Counted by the last validation run.",
+   "description": "The number of rows that passed the last validation.",
    "fieldname": "valid_rows",
    "fieldtype": "Int",
    "label": "Rows That Passed",
    "read_only": 1
   },
   {
-   "description": "Their reasons are listed per row against the job, under Import Results.",
+   "description": "The number of rows refused. Their reasons are listed per row under Import Results.",
    "fieldname": "invalid_rows",
    "fieldtype": "Int",
    "label": "Rows Refused",
@@ -129,7 +129,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The file the last validation was run against. Import is refused when the attached file no longer matches it.",
+   "description": "The file the last validation ran on. Import is refused if the attached file has since changed.",
    "fieldname": "validated_against",
    "fieldtype": "Data",
    "label": "Validated Against",
@@ -152,7 +152,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-21 10:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Lead Import",
  "name": "CRM Lead Import",

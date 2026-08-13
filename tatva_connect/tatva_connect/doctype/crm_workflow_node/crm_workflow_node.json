@@ -22,7 +22,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Workflow",
-   "description": "The workflow this node belongs to. A node is a record, so it can be addressed, permissioned and moved on its own."
+   "description": "The campaign this step belongs to."
   },
   {
    "columns": 2,
@@ -31,7 +31,7 @@
    "in_list_view": 1,
    "reqd": 1,
    "label": "Node ID",
-   "description": "Identifies the node within its workflow. Edges point at it and a parked Run stores it as its cursor, so it must be stable."
+   "description": "The step's name within its campaign. It must stay stable, because paths and parked journeys point at it."
   },
   {
    "columns": 2,
@@ -40,35 +40,35 @@
    "in_list_view": 1,
    "reqd": 1,
    "label": "Node Type",
-   "description": "Which node type this is, named by the registry (W1). Data, not a Select: adding a node type is a registry entry, never a schema change."
+   "description": "The kind of step this is."
   },
   {
    "fieldname": "sequence",
    "fieldtype": "Int",
    "label": "Sequence",
    "in_list_view": 1,
-   "description": "Authoring order. The GRAPH is the edges; this only keeps the frozen payload deterministic."
+   "description": "The order the steps were authored in. The paths between steps are what actually decide the route."
   },
   {
    "fieldname": "config_json",
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Configuration",
-   "description": "This node type's own configuration, validated against the registry's declaration for it. One field instead of a column per node type's needs \u2014 a Branch's condition, a Wait's signal and mode, an Assign's mapping all lived as separate columns that every other node type carried empty."
+   "description": "This step's own settings."
   },
   {
    "fieldname": "edges",
    "fieldtype": "Table",
    "options": "CRM Workflow Edge",
    "label": "Edges",
-   "description": "Where this node goes, one row per named output the registry declares for its type."
+   "description": "The paths leaving this step, one row per outcome it can have."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-07-20 13:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Node",

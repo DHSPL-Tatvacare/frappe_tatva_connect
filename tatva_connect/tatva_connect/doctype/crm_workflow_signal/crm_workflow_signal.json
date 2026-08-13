@@ -21,7 +21,7 @@
    "label": "Subject DocType",
    "reqd": 1,
    "read_only": 1,
-   "description": "Identifies the doctype of the record the signal is delivered to."
+   "description": "The kind of record this event is delivered to."
   },
   {
    "fieldname": "subject_name",
@@ -32,7 +32,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Identifies the record the signal is delivered to."
+   "description": "The record this event is delivered to."
   },
   {
    "fieldname": "event_name",
@@ -42,21 +42,21 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Names the event being delivered; a Wait waiting on this name consumes the row."
+   "description": "The name of the event. A step waiting on this name takes it."
   },
   {
    "fieldname": "correlation",
    "fieldtype": "Data",
    "label": "Correlation",
    "read_only": 1,
-   "description": "Carries the token that ties this delivery to a specific wait, so a duplicate and a stale delivery are distinguishable and cannot wake the wrong loop iteration."
+   "description": "The token tying this delivery to the exact step waiting for it."
   },
   {
    "fieldname": "payload_json",
    "fieldtype": "Long Text",
    "label": "Payload (JSON)",
    "read_only": 1,
-   "description": "Carries the external payload; the receiving Wait merges only its declared accepts paths into Journey state."
+   "description": "The details the outside service sent."
   },
   {
    "fieldname": "status",
@@ -67,7 +67,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Every event is born Pending and ends in exactly one terminal state: Consumed when a Wait took it, Expired when the reaper aged it out. Only a Pending event can wake a run."
+   "description": "Pending until a waiting step takes it, then Consumed, or Expired if it aged out. Only a pending event can wake a journey."
   },
   {
    "fieldname": "consumed_by",
@@ -75,13 +75,13 @@
    "label": "Consumed By",
    "options": "CRM Workflow Journey",
    "read_only": 1,
-   "description": "Records the Journey that consumed this signal, for audit."
+   "description": "The journey that took this event."
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-07-20 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Signal",

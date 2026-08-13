@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "autoincrement",
  "creation": "2026-07-15 00:00:00.000000",
- "description": "Audit log: one row per node execution in a workflow Journey - node id, type, outcome, detail, duration. Written in the interpreter's transaction and committed at the suspension boundary with everything else. Retention by age.",
+ "description": "One row per step a campaign took for a patient, and what happened at it.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -27,7 +27,7 @@
    "in_list_view": 1,
    "read_only": 1,
    "reqd": 1,
-   "description": "The Journey this step belongs to."
+   "description": "The journey this step belongs to."
   },
   {
    "fieldname": "subject_name",
@@ -35,7 +35,7 @@
    "label": "Subject Name",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "The subject record the Journey is about - denormalised for quick filtering."
+   "description": "The patient the journey is about."
   },
   {
    "fieldname": "node_id",
@@ -43,14 +43,14 @@
    "label": "Node ID",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "The node that ran."
+   "description": "The step that ran."
   },
   {
    "fieldname": "node_type",
    "fieldtype": "Data",
    "label": "Node Type",
    "read_only": 1,
-   "description": "The node's type - Step, Branch, Assign, Wait, or Terminal."
+   "description": "The kind of step."
   },
   {
    "fieldname": "outcome",
@@ -58,14 +58,14 @@
    "label": "Outcome",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "What happened at this node. For a node that runs a verb this is the verb's own DECLARED output - sent, failed, succeeded, assigned, nobody - so the audit says whether the thing actually happened. For a control node it is ok, parked, resumed, done, or failed."
+   "description": "The result at this step - sent, failed, assigned or nobody; and for a control step, ok, parked, resumed or done."
   },
   {
    "fieldname": "channel",
    "fieldtype": "Data",
    "label": "Channel",
    "read_only": 1,
-   "description": "How the person was reached at this step - whatsapp, voice, email. Blank for a node that contacts nobody."
+   "description": "The way the patient was reached - WhatsApp, voice or email. Blank where the step contacts nobody."
   },
   {
    "fieldname": "contact",
@@ -73,27 +73,27 @@
    "label": "Contact",
    "read_only": 1,
    "search_index": 1,
-   "description": "The address actually used, in the CANONICAL stored form (whatsapp.phone.to_e164, +91...) - never the conformed form a provider takes on the wire. WATI is given 91... and Bolna +91...; logging what went out would write one patient as two people and the contact cap would count them separately and silently never fire."
+   "description": "The number or address actually used."
   },
   {
    "fieldname": "detail",
    "fieldtype": "Small Text",
    "label": "Detail",
    "read_only": 1,
-   "description": "Human-readable detail of the outcome, e.g. the branch taken or a failure message."
+   "description": "Readable detail of what happened, such as the branch taken or the failure message."
   },
   {
    "fieldname": "duration_ms",
    "fieldtype": "Int",
    "label": "Duration (ms)",
    "read_only": 1,
-   "description": "Wall-clock time the node took."
+   "description": "The time the step took, in milliseconds."
   }
  ],
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-08-01 12:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Step Log",

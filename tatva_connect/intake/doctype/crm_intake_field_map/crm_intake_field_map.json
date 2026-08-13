@@ -26,7 +26,7 @@
  "fields": [
   {
    "columns": 2,
-   "description": "The web-form field name (a plain identifier, e.g. patient_name). Becomes the submission column.",
+   "description": "The field name on the form, e.g. patient_name.",
    "fieldname": "source_field",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -36,7 +36,7 @@
   {
    "columns": 2,
    "default": "Data",
-   "description": "The web-form input type (same set as the native Web Form builder).",
+   "description": "The kind of input shown on the form.",
    "fieldname": "fieldtype",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -46,7 +46,7 @@
   },
   {
    "columns": 2,
-   "description": "Label shown on the public form (defaults to a title-cased Field name).",
+   "description": "The label the patient sees. Blank uses the field name.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -62,7 +62,7 @@
   {
    "columns": 2,
    "depends_on": "eval:doc.fieldtype=='Select' || doc.fieldtype=='Link'",
-   "description": "For Select: one option per line. For Link: the target DocType.",
+   "description": "For a dropdown, one option per line. For a lookup, the record type it points at.",
    "fieldname": "options",
    "fieldtype": "Small Text",
    "in_list_view": 1,
@@ -74,13 +74,13 @@
    "label": "Maps to Lead / Profile"
   },
   {
-   "description": "Where this field's value lands: a CRM Lead Section key (lead = CRM Lead; a child section = its matching child profile) or note = an FCRM Note. Leave blank for layout-only fields (Section/Column Break, HTML).",
+   "description": "The part of the lead this answer is saved into. Left blank, the field is layout only and its answer lands nowhere.",
    "fieldname": "target_table",
    "fieldtype": "Autocomplete",
    "label": "Target Table"
   },
   {
-   "description": "The fieldname on the resolved doctype the value lands in (for note: the Note title). One row must target lead → mobile_no (the lead's phone).",
+   "description": "The field the answer is saved into. One question must carry the patient's phone number.",
    "fieldname": "target_field",
    "fieldtype": "Autocomplete",
    "label": "Target Field"
@@ -90,13 +90,13 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Optional companion 'Other / enter manually' field, used when the pick is empty or 'Other'.",
+   "description": "An optional Other box, used when the patient's answer is not in the list.",
    "fieldname": "manual_field",
    "fieldtype": "Data",
    "label": "Manual Field"
   },
   {
-   "description": "If a manual value is used, auto-create this master record (so it joins the pick-list next time).",
+   "description": "When a manual value is entered, add it to this list so it is offered next time.",
    "fieldname": "master_doctype",
    "fieldtype": "Data",
    "label": "Master DocType"
@@ -107,7 +107,7 @@
    "label": "Show If (conditional visibility)"
   },
   {
-   "description": "Show this field only when another field meets the condition below (compiled to depends_on).",
+   "description": "Show this field only when another field holds the value below.",
    "fieldname": "show_if_field",
    "fieldtype": "Autocomplete",
    "label": "Show If Field"
@@ -123,7 +123,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The value to compare against (used only by the 'equals' operator).",
+   "description": "The value the field above must hold.",
    "fieldname": "show_if_value",
    "fieldtype": "Data",
    "label": "Show If Value"
@@ -132,7 +132,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-24 12:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Field Map",

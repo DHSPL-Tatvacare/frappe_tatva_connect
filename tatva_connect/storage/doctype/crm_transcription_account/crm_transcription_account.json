@@ -33,7 +33,7 @@
    "reqd": 1,
    "unique": 1,
    "in_list_view": 1,
-   "description": "What this transcription service is called here. It is also the row's name."
+   "description": "The name this transcription service is known by here."
   },
   {
    "fieldname": "provider",
@@ -43,7 +43,7 @@
    "default": "tatva",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "Which service speaks for this account. The row is the ONLY thing that names it — the webhook URL carries no vendor, so moving to another service is configuration rather than a deploy."
+   "description": "The service this account is with."
   },
   {
    "default": "0",
@@ -51,7 +51,7 @@
    "fieldtype": "Check",
    "label": "Enabled",
    "in_list_view": 1,
-   "description": "A disabled account's token does not authenticate, so the service cannot post against it. Off until an operator turns it on."
+   "description": "Off, the service cannot send anything in."
   },
   {
    "fieldname": "webhook_section_ingress",
@@ -63,13 +63,13 @@
    "fieldtype": "Password",
    "label": "Webhook Token",
    "no_copy": 1,
-   "description": "Generate one, save, then hand the URL from 'Copy Webhook URLs' to the transcription service. It proves the caller is that service and tells the CRM which account the transcript arrived on. Blank means inbound is off — the service has nowhere to post."
+   "description": "Generate one, save, then hand the URL from Copy Webhook URLs to the service. It proves the caller is that service. Blank means nothing can be received."
   },
   {
    "fieldname": "webhook_token_previous",
    "fieldtype": "Password",
    "label": "Previous Webhook Token",
-   "description": "Set during a rotation; both tokens authenticate until this one is cleared, so no call outcome is rejected mid-rotation."
+   "description": "Set while a token is being replaced. Both work until this is cleared, so nothing is rejected mid-change."
   },
   {
    "fieldname": "webhook_token_hash",
@@ -80,7 +80,7 @@
    "no_copy": 1,
    "read_only": 1,
    "search_index": 1,
-   "description": "Derived, never entered. A Password field cannot be indexed, so this digest is what makes authentication one read rather than a scan and decrypt of every account."
+   "description": "Filled in automatically. Never entered."
   },
   {
    "fieldname": "webhook_token_previous_hash",
@@ -102,7 +102,7 @@
    "fieldtype": "Select",
    "label": "Authentication",
    "options": "Token\nToken + HMAC",
-   "description": "The token is always enforced. HMAC is added when the service signs its payloads, which a service we run ourselves should."
+   "description": "The token is always required. Add signature checking when the service signs what it sends."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
@@ -110,14 +110,14 @@
    "fieldtype": "Password",
    "label": "HMAC Signing Secret",
    "length": 1000,
-   "description": "The shared secret the provider signs its payloads with."
+   "description": "The shared secret the service signs with."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
    "fieldname": "webhook_hmac_header",
    "fieldtype": "Data",
    "label": "Signature Header",
-   "description": "The header carrying the provider's signature, e.g. X-Signature."
+   "description": "The header carrying the signature, e.g. X-Signature."
   },
   {
    "default": "sha256",
@@ -126,7 +126,7 @@
    "fieldtype": "Select",
    "label": "Signature Algorithm",
    "options": "sha256\nsha512\nsha1",
-   "description": "The hash the provider signs with."
+   "description": "The hash the service signs with."
   },
   {
    "default": "Hex",
@@ -135,14 +135,14 @@
    "fieldtype": "Select",
    "label": "Signature Encoding",
    "options": "Hex\nBase64",
-   "description": "How the provider encodes the signature it sends."
+   "description": "The encoding the service uses for the signature it sends."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
    "fieldname": "webhook_hmac_prefix",
    "fieldtype": "Data",
    "label": "Signature Prefix",
-   "description": "Stripped before comparison, e.g. 'sha256='. Left blank when the provider sends a bare signature."
+   "description": "Removed before the signature is compared, e.g. sha256=. Blank when the service sends a bare signature."
   },
   {
    "fieldname": "webhook_section_ip",
@@ -154,19 +154,19 @@
    "fieldname": "webhook_enforce_ip",
    "fieldtype": "Check",
    "label": "Enforce IP Allowlist",
-   "description": "Rejects any posted transcript that does not come from an address listed below. A service on fixed addresses should have this on. It cannot be turned on while the list is empty."
+   "description": "Reject anything not sent from an address listed below. It cannot be turned on while the list is empty."
   },
   {
    "depends_on": "eval:doc.webhook_enforce_ip",
    "fieldname": "webhook_ip_allowlist",
    "fieldtype": "Small Text",
    "label": "Allowed Addresses",
-   "description": "One IP address or CIDR range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Anything after a # is ignored. Read only when Enforce IP Allowlist is ticked."
+   "description": "One address or range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Read only when the setting above is ticked."
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-28 00:00:00",
+ "modified": "2026-08-13 20:52:06.767561",
  "module": "Storage",
  "name": "CRM Transcription Account",
  "naming_rule": "By fieldname",

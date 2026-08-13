@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "field:chart_name",
  "creation": "2026-07-31 00:00:00.000000",
- "description": "One card on a dashboard, declared rather than programmed. The row says which list the number is counted from, what it is grouped by, which date column the dashboard's date range applies to and which rows are in scope before the range is applied — and one executor turns that into an ordinary list query. Because it is the SAME query the list itself runs, the number on the card and the number of rows behind it are the same answer, and every card is already narrowed to what the person looking at it is allowed to see. Nothing here grants or widens access. A chart is placed by a CRM Dashboard, which points at this one by name, so editing a chart once changes it for every role that shows it.",
+ "description": "One card on a dashboard - what it counts, how it is broken down, and which records it covers.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -31,7 +31,7 @@
  ],
  "fields": [
   {
-   "description": "The short name a CRM Dashboard points at, in lower case letters, digits and underscores — for example leads_by_source. It cannot be changed once saved, because every dashboard showing this card names it by this word and would be left pointing at nothing.",
+   "description": "The short name dashboards use to point at this card, in lower case with underscores. It cannot be changed once saved.",
    "fieldname": "chart_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -40,7 +40,7 @@
    "set_only_once": 1
   },
   {
-   "description": "The card's heading, in the words the person reading the dashboard uses. It is read from this row on every load, so renaming it moves the heading on every dashboard at once.",
+   "description": "The card's heading. Changing it moves the heading on every dashboard showing this card.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -48,14 +48,14 @@
    "reqd": 1
   },
   {
-   "description": "A line under the heading saying what the number counts. Optional; left blank the card shows the heading alone.",
+   "description": "A line under the heading saying what the number counts. Optional.",
    "fieldname": "subtitle",
    "fieldtype": "Data",
    "label": "Subtitle"
   },
   {
    "default": "1",
-   "description": "A card that is not ticked is skipped everywhere — it is on no dashboard and is never queried, even where a layout still names it. This is how a card is taken down without editing every layout that shows it.",
+   "description": "Unticked, the card is skipped everywhere, even where a dashboard still names it.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -63,14 +63,14 @@
    "label": "Enabled"
   },
   {
-   "description": "The kind of card and the list it reads. A fixed set of kinds and two lists, deliberately: everything a card can be is something the executor already knows how to run, so a saved chart can never fail in a way only the dashboard finds out about.",
+   "description": "The kind of card, and the list it counts.",
    "fieldname": "shape_section",
    "fieldtype": "Section Break",
    "label": "What It Is"
   },
   {
    "default": "number",
-   "description": "number is a single figure with no breakdown and must leave Group By Field, Split By and Time Bucket empty. Every other kind breaks one figure down along an axis and needs either a Group By Field or a Time Bucket: donut and bar show one axis; line draws it as a trend; stacked_bar adds a second dimension through Split By; heatmap crosses the two and requires Split By.",
+   "description": "Number is a single figure with no breakdown. Every other kind breaks the figure down, and needs either a Group By Field or a Time Bucket.",
    "fieldname": "chart_type",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -80,7 +80,7 @@
   },
   {
    "default": "CRM Lead",
-   "description": "The list the card counts. Leads and Tasks are the two the executor runs, and it is a fixed choice rather than a free one so a card can never be pointed at a list nobody checked it against.",
+   "description": "The list the card counts - leads or tasks.",
    "fieldname": "source_doctype",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -90,14 +90,14 @@
    "reqd": 1
   },
   {
-   "description": "The figure itself, and — for a donut or a bar — the column it is broken down by.",
+   "description": "The figure itself, and the column it is broken down by.",
    "fieldname": "measure_section",
    "fieldtype": "Section Break",
    "label": "What Is Measured"
   },
   {
    "default": "COUNT",
-   "description": "COUNT counts records and needs no column. SUM and AVG add up or average a numeric column, which then has to be named in Aggregate Field. DISTINCT counts how many DIFFERENT values a column holds — how many people appear as an owner, say — and is a single figure, so it belongs on a number card; which rows are counted is still Base Filters' to say, so a card that must not count the blank owner as a person narrows to the ones that are set.",
+   "description": "Count counts records. Sum and Average work over a numeric column, named below. Distinct counts how many different values a column holds.",
    "fieldname": "aggregate",
    "fieldtype": "Select",
    "label": "Aggregate",
@@ -106,7 +106,7 @@
   },
   {
    "depends_on": "eval:doc.aggregate != 'COUNT'",
-   "description": "The column SUM or AVG is taken over. Required for those two and ignored for COUNT, which always counts records.",
+   "description": "The column Sum or Average is taken over. Ignored by Count.",
    "fieldname": "aggregate_field",
    "fieldtype": "Data",
    "label": "Aggregate Field",
@@ -114,7 +114,7 @@
   },
   {
    "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "The column the card is broken down by, written as a plain column name of the source list with no dots in it. It is also the column the drill-down filters on, which is why it has to be a real column of that list and not a column reached through another record. A derived field of that list — one authored as a CRM Derived Field, such as Task Status — may be named here instead: it is no column at all, so the card is counted one of its buckets at a time. Leave it empty only where Time Bucket supplies the axis instead.",
+   "description": "The column the card is broken down by, and the column a click filters on. Leave empty only when a Time Bucket supplies the axis instead.",
    "fieldname": "group_by_field",
    "fieldtype": "Data",
    "label": "Group By Field",
@@ -122,7 +122,7 @@
   },
   {
    "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "A SECOND column, which turns the one line of the card into one line per value of this column — tasks a month, split by task type. This is a plain column name of the source list with no dots in it, exactly as Group By Field is, and a click on a cell filters on both. A derived field cannot be used here, because there is no column to group the cross on; group by it instead. Left empty the card has one dimension and reads exactly as it always did. A stacked_bar and a heatmap are what this is for, and a heatmap requires it.",
+   "description": "A second column, turning one line into one per value - tasks a month, split by task type. A heatmap requires it.",
    "fieldname": "split_by",
    "fieldtype": "Data",
    "label": "Split By",
@@ -131,19 +131,19 @@
   {
    "default": "10",
    "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "How many slices or bars the card shows, largest first. Ignored by a number card.",
+   "description": "The number of slices or bars shown, largest first. Ignored by a number card.",
    "fieldname": "row_limit",
    "fieldtype": "Int",
    "label": "Row Limit"
   },
   {
-   "description": "The rows in scope before anyone touches a filter, and whether the dashboard's date range applies to this card at all.",
+   "description": "The records the card covers, and whether the dashboard's date range applies to it at all.",
    "fieldname": "window_section",
    "fieldtype": "Section Break",
    "label": "Which Records Count"
   },
   {
-   "description": "The date column the dashboard's date range is applied to — creation, modified, due_date and so on. Different cards honestly date from different columns, so each one says which is its own.",
+   "description": "The date column the dashboard's date range is applied to.",
    "fieldname": "date_field",
    "fieldtype": "Data",
    "label": "Date Field"
@@ -151,7 +151,7 @@
   {
    "default": "none",
    "depends_on": "eval:doc.chart_type != 'number'",
-   "description": "Set to month, the card's axis becomes the month of its Date Field instead of a column, which is what a trend is — so a line or a stacked bar over months needs nothing named in Group By Field. The month is the month NUMBER, one to twelve, with the year folded away, so a range wider than a year adds two Januaries together; keep the date range inside a year for a card bucketed this way. A point on a month cannot be clicked through to a list, because no column and no date range names it.",
+   "description": "Set to month, the card's axis becomes the month instead of a column, which is what makes a trend. Keep the date range inside one year.",
    "fieldname": "time_bucket",
    "fieldtype": "Select",
    "label": "Time Bucket",
@@ -159,14 +159,14 @@
   },
   {
    "default": "1",
-   "description": "Ticked, the card answers for the chosen date range. Unticked it is a snapshot of right now and ignores the range entirely — which is what a card like Overdue Tasks means, and saying so here is what stops a dashboard quietly mixing the two.",
+   "description": "Ticked, the card answers for the dashboard's date range. Unticked, it always shows the position right now - which is what a card like Overdue Tasks means.",
    "fieldname": "honours_date_range",
    "fieldtype": "Check",
    "label": "Honours Date Range"
   },
   {
    "default": "{}",
-   "description": "The rows this card is about, as an ordinary filter object — {\"status\": [\"in\", [\"Backlog\", \"Todo\"]]}. Three words stand for the moment the dashboard is opened rather than the moment this row was saved: __TODAY__, __NOW__ and __SESSION_USER__. This narrows the card; it can never widen it, because what a person may see is decided before this is read.",
+   "description": "The records this card is about, before anyone touches a filter. It can only narrow the card, never widen it.",
    "fieldname": "base_filters",
    "fieldtype": "Code",
    "label": "Base Filters (JSON)",
@@ -179,7 +179,7 @@
   },
   {
    "default": "1",
-   "description": "Ticked, the card is clickable and opens the list holding exactly the records it counted. Unticked it is a figure and nothing more.",
+   "description": "Ticked, the card can be clicked to open the list of records behind the figure.",
    "fieldname": "drill_enabled",
    "fieldtype": "Check",
    "label": "Drill Enabled"
@@ -187,7 +187,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-01 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Dashboard Chart",

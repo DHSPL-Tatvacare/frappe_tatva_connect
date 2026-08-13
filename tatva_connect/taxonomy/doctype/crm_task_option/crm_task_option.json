@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-08-10 19:30:00.000000",
- "description": "One selectable value of one activity question, as a row — the shape CRM Lead Stage already uses for stages.",
+ "description": "One option offered by one question on one activity type.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -18,7 +18,7 @@
  ],
  "fields": [
   {
-   "description": "Scopes the value, as CRM Lead Stage.program scopes a stage. Carries vertical/group/program through the type.",
+   "description": "The activity type this option belongs to.",
    "fieldname": "task_type",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -29,7 +29,7 @@
    "search_index": 1
   },
   {
-   "description": "The question this value belongs to, by CRM Task Type Field.fieldname.",
+   "description": "The question this option is offered for.",
    "fieldname": "fieldname",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -43,7 +43,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The value exactly as LeadSquared spells it. Never normalised — the honour-LSQ rule.",
+   "description": "The value as it is saved. It is kept exactly as the source system spells it.",
    "fieldname": "option_value",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -51,7 +51,7 @@
    "reqd": 1
   },
   {
-   "description": "What a reader sees. Defaults to the value.",
+   "description": "The wording the reader sees. Blank shows the value itself.",
    "fieldname": "display_label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -59,13 +59,13 @@
   },
   {
    "default": "1",
-   "description": "Unticked retires a value from the picker without deleting the answers that already carry it.",
+   "description": "Unticked, the option is retired from the picker without affecting answers already given.",
    "fieldname": "selectable",
    "fieldtype": "Check",
    "label": "Selectable"
   },
   {
-   "description": "Order within the question, as declared.",
+   "description": "The order it appears in within the question.",
    "fieldname": "position",
    "fieldtype": "Int",
    "label": "Position"
@@ -73,7 +73,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-10 19:30:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Option",

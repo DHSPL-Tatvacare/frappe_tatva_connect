@@ -32,7 +32,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Records the workflow this execution is bound to."
+   "description": "The campaign this journey is running."
   },
   {
    "fieldname": "workflow_version",
@@ -42,7 +42,7 @@
    "reqd": 1,
    "read_only": 1,
    "search_index": 1,
-   "description": "Records the exact frozen version this execution runs. Pinned at start; the interpreter reads its graph, never the editable Definition."
+   "description": "The published version this journey follows. It is fixed at the start, so editing the campaign never re-routes a journey already running."
   },
   {
    "fieldname": "subject_doctype",
@@ -50,7 +50,7 @@
    "label": "Subject DocType",
    "reqd": 1,
    "read_only": 1,
-   "description": "Identifies the doctype of the record this journey is about - half of its journey key."
+   "description": "The kind of record this journey is about."
   },
   {
    "fieldname": "subject_name",
@@ -61,7 +61,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Identifies the record this journey is about - the other half of its journey key."
+   "description": "The record this journey is about."
   },
   {
    "fieldname": "current_node",
@@ -69,14 +69,14 @@
    "label": "Current Node",
    "read_only": 1,
    "in_list_view": 1,
-   "description": "Stores the node to run next; on resume the interpreter re-enters here."
+   "description": "The step to run next."
   },
   {
    "fieldname": "state_json",
    "fieldtype": "Long Text",
    "label": "State (JSON)",
    "read_only": 1,
-   "description": "Holds the single authoritative context every node reads and writes; a consumed signal's payload is merged here. Never indexed - promote a field to a column to query it."
+   "description": "Everything the journey has gathered so far, which every step reads and writes."
   },
   {
    "fieldname": "status",
@@ -88,7 +88,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "search_index": 1,
-   "description": "Records whether the execution is Running, Parked, Done, Failed, or Stopped. Stopped is terminal and deliberate - the subject left, so the journey was ended rather than allowed to fail."
+   "description": "Running, Parked, Done, Failed or Stopped. Stopped is deliberate - the patient left, so the journey was ended rather than allowed to fail."
   },
   {
    "fieldname": "stop_reason",
@@ -96,7 +96,7 @@
    "label": "Stop Reason",
    "read_only": 1,
    "depends_on": "eval:doc.status == 'Stopped'",
-   "description": "Records why a Stopped journey was ended, so a terminal row explains itself without a reader inferring it from timestamps."
+   "description": "Why a stopped journey was ended."
   },
   {
    "fieldname": "resume_at",
@@ -104,7 +104,7 @@
    "label": "Resume At",
    "read_only": 1,
    "search_index": 1,
-   "description": "Records when a clock-parked execution becomes due; the timer sweep wakes it at or after this."
+   "description": "When a waiting journey becomes due."
   },
   {
    "fieldname": "awaiting_signal",
@@ -112,14 +112,14 @@
    "label": "Awaiting Event",
    "read_only": 1,
    "search_index": 1,
-   "description": "Records the signal name a parked execution waits for; a matching delivery wakes it."
+   "description": "The event a waiting journey is waiting for."
   },
   {
    "fieldname": "awaiting_correlation",
    "fieldtype": "Data",
    "label": "Awaiting Correlation",
    "read_only": 1,
-   "description": "Records the per-iteration token a wait matches a signal on, so a reused signal name cannot wake the wrong loop iteration."
+   "description": "The token that ties a waiting step to the exact event that should wake it."
   },
   {
    "fieldname": "retry_count",
@@ -127,14 +127,14 @@
    "label": "Retry Count",
    "read_only": 1,
    "default": "0",
-   "description": "Counts transient-failure retries, so a repeatedly deadlocking execution eventually fails instead of retrying forever."
+   "description": "The number of times a step has been retried after a temporary failure."
   },
   {
    "fieldname": "active_key",
    "fieldtype": "Data",
    "label": "Active Key",
    "read_only": 1,
-   "description": "Holds a uniqueness key while live and NULL once terminal, so the database itself rejects a second live Journey for the same subject and workflow.",
+   "description": "Held while the journey is live, so the same patient cannot run this campaign twice at once.",
    "unique": 1
   },
   {
@@ -142,7 +142,7 @@
    "fieldtype": "Data",
    "label": "Trigger DocType",
    "read_only": 1,
-   "description": "The record whose save started this run - a Task, a File, or the lead itself. The SUBJECT is always the parent lead; this is what actually fired, and it is what a node configured to act on the trigger doc must be given."
+   "description": "The kind of record whose save started this journey. The patient is always the subject; this is what actually fired."
   },
   {
    "fieldname": "trigger_name",
@@ -150,13 +150,13 @@
    "label": "Trigger Name",
    "options": "trigger_doctype",
    "read_only": 1,
-   "description": "The record whose save started this run. Blank on a run started by the lead itself."
+   "description": "The record whose save started this journey. Blank when the patient's own record started it."
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-08-09 12:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Journey",

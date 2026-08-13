@@ -38,7 +38,7 @@
    "options": "CRM Program"
   },
   {
-   "description": "The account this grain dials out on, and the account its numbers belong to unless a row below overrides it.",
+   "description": "The account this product line dials out on, and the account its numbers belong to unless a row below overrides it.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -52,7 +52,7 @@
    "label": "Inbound Numbers"
   },
   {
-   "description": "The numbers patients dial to reach this grain. An inbound call on a number listed here is attributed to this grain; a call on a number listed nowhere is dropped, which is what keeps another business's traffic off a shared provider account out of this CRM. Left empty, the rule is outbound-only. Label names the number for people and routes nothing. Account Override is set only when a number sits on a different provider account from the one this rule dials out on. Open a row with the pencil for the full note on each column.",
+   "description": "The numbers patients dial to reach this product line. A call on a number listed nowhere is ignored. Leave empty for outbound only.",
    "fieldname": "dids",
    "fieldtype": "Table",
    "label": "DIDs (Direct Inward Dialing numbers)",
@@ -62,7 +62,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Routing",

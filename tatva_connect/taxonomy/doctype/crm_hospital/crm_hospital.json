@@ -57,7 +57,7 @@
   },
   {
    "default": "0",
-   "description": "Auto-added from an intake form; ops should confirm/merge.",
+   "description": "Added automatically from an enrolment form. Ops should confirm it or merge it into an existing record.",
    "fieldname": "review_pending",
    "fieldtype": "Check",
    "label": "Review Pending"
@@ -65,7 +65,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-12 14:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Hospital",

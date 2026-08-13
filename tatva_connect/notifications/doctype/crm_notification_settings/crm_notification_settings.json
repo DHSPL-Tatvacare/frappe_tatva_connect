@@ -18,7 +18,7 @@
   },
   {
    "default": "1 hour",
-   "description": "How far ahead of its due date a task is warned about. The reminder reaches only reps who opted into 'Task due soon', and only while the operator's Notify::Task::due-soon switch is on.",
+   "description": "The notice given before a task falls due. The reminder reaches only reps who asked for it.",
    "fieldname": "due_soon_lead",
    "fieldtype": "Select",
    "label": "Warn Before Due",
@@ -26,7 +26,7 @@
   },
   {
    "default": "7 days",
-   "description": "How far back an overdue task is still news. Without a floor, the first sweep after the switch is armed announces the site's entire historical backlog — every task ever left open — in one pass. Older tasks are not notified; they are still there, on the rep's list.",
+   "description": "The age beyond which an overdue task is no longer announced. Without it, the first run announces every task ever left open.",
    "fieldname": "overdue_floor",
    "fieldtype": "Select",
    "label": "Only Tell About Tasks Overdue Within",
@@ -37,7 +37,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-13 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Notifications",
  "name": "CRM Notification Settings",

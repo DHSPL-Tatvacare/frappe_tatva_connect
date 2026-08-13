@@ -35,7 +35,7 @@
    "label": "Last Seen"
   },
   {
-   "description": "FCM registration token for one browser/device. One row per device; unique.",
+   "description": "The device this rep receives pushes on. One row per device.",
    "fieldname": "fcm_token",
    "fieldtype": "Data",
    "label": "FCM Token",
@@ -47,7 +47,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Notifications",
  "name": "CRM Push Subscription",

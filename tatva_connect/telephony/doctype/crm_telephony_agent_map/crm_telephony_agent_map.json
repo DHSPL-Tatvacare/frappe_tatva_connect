@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "Prompt",
  "creation": "2026-07-12 00:00:00.000000",
- "description": "Only needed when a provider's agent identifier is NOT the rep's CRM login. An agent whose provider email already matches a CRM user resolves automatically and needs no row here.",
+ "description": "Links a calling agent to their CRM user, for providers that do not use the CRM login.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -20,7 +20,7 @@
  ],
  "fields": [
   {
-   "description": "The agent's identifier AS THE PROVIDER SENDS IT. Often a work email, but not always -- some agents are registered under personal addresses, which is exactly why this map exists.",
+   "description": "The agent's identifier as the provider sends it. Often a work email, but not always.",
    "fieldname": "agent_email",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -29,7 +29,7 @@
    "reqd": 1
   },
   {
-   "description": "The CRM user this agent is. Pick from the list -- never typed.",
+   "description": "The CRM user this agent is. Pick from the list.",
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -73,7 +73,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Optional. Used to flag an agent answering on a grain that is not theirs -- it never blocks the call.",
+   "description": "Optional. Flags an agent answering for a programme that is not theirs. It never blocks the call.",
    "fieldname": "program",
    "fieldtype": "Link",
    "label": "Program",
@@ -83,7 +83,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-12 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Agent Map",

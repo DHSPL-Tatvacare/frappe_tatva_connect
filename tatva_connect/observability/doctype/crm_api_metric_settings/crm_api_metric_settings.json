@@ -16,9 +16,9 @@
  ],
  "fields": [
   {"fieldname": "section_break_rollup", "fieldtype": "Section Break", "label": "Rollup State"},
-  {"fieldname": "last_rolled_until", "fieldtype": "Datetime", "label": "Last Rolled Until", "description": "High-water mark: raw rows strictly before this have been aggregated into 5-min buckets. Clear it to force a backfill (bounded by the ~7-day raw retention)."},
-  {"fieldname": "lag_seconds", "fieldtype": "Int", "label": "Lag (seconds)", "default": "300", "non_negative": 1, "description": "Never finalize a bucket newer than (now - this), so in-flight writes land first. 300s is safe; logging is synchronous so late arrivals are rare."},
-  {"fieldname": "fine_grain_retention_days", "fieldtype": "Int", "label": "5-min Retention (days)", "default": "90", "non_negative": 1, "description": "Delete 5-min rows older than this on each run. Hourly and daily rows are kept forever."},
+  {"fieldname": "last_rolled_until", "fieldtype": "Datetime", "label": "Last Rolled Until", "description": "Everything before this time has already been totalled up. Clear it to recalculate."},
+  {"fieldname": "lag_seconds", "fieldtype": "Int", "label": "Lag (seconds)", "default": "300", "non_negative": 1, "description": "The delay before a period is treated as finished, so calls still landing are counted. 300 is safe."},
+  {"fieldname": "fine_grain_retention_days", "fieldtype": "Int", "label": "5-min Retention (days)", "default": "90", "non_negative": 1, "description": "The age at which 5-minute totals are deleted. Hourly and daily totals are kept for good."},
   {"fieldname": "section_break_status", "fieldtype": "Section Break", "label": "Last Run"},
   {"fieldname": "last_run_at", "fieldtype": "Datetime", "label": "Last Run At", "read_only": 1},
   {"fieldname": "last_run_log", "fieldtype": "Small Text", "label": "Last Run Log", "read_only": 1}
@@ -26,7 +26,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "CRM API Metric Settings",

@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-08-10 12:00:00.000000",
- "description": "How fast a scheduled workflow gathers its cohort: this many patients are started, then the engine waits, then it starts that many again, until everyone matching has begun. The pace is deliberate - it is what keeps messages leaving at a rate the provider accepts and leaves the workers free for replies in between. A workflow that places CALLS can set a slower interval of its own.",
+ "description": "The pace at which a scheduled campaign starts patients, so messages leave at a rate the provider accepts.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -11,13 +11,13 @@
   "interval_seconds"
  ],
  "fields": [
-  {"fieldname": "chunk_size", "fieldtype": "Int", "label": "Patients started per batch", "default": "60", "non_negative": 1, "description": "Between 1 and 500. Also how often progress is saved, so a worker that dies mid-batch loses at most this many starts and picks up from the last one."},
-  {"fieldname": "interval_seconds", "fieldtype": "Int", "label": "Seconds before the next batch", "default": "60", "non_negative": 1, "description": "Between 10 and 3600. Batch size divided by this is the rate: 60 patients every 60 seconds is 60 a minute. A single workflow may override this on itself when it dials rather than messages."}
+  {"fieldname": "chunk_size", "fieldtype": "Int", "label": "Patients started per batch", "default": "60", "non_negative": 1, "description": "The number of patients started in one batch, between 1 and 500. Progress is saved after each batch, so a run that stops loses at most this many starts."},
+  {"fieldname": "interval_seconds", "fieldtype": "Int", "label": "Seconds before the next batch", "default": "60", "non_negative": 1, "description": "The wait before the next batch, between 10 and 3600 seconds. A batch of 60 every 60 seconds is 60 patients a minute."}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-10 12:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Cohort Pace Settings",

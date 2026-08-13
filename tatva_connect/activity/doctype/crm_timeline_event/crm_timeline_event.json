@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-07-27 00:00:00.000000",
- "description": "A POINTER, never a copy. One row per thing that happened on a lead — a call, a note, a task, a file, a comment, an email — holding only which record it was and when. The Activity rail reads this ONE indexed table instead of merging six source tables at read time, so a page costs one seek whatever the lead's age, and a new event type is a hook rather than a new query leg. Nothing here is a source of truth: every field is derivable from the source row, the card's content is hydrated from that row at read time, and the table can be rebuilt from source at any moment. Written only by tatva_connect.activity.timeline.",
+ "description": "One row per thing that happened on a lead - a call, note, task, file, comment or email - in the order it happened.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -16,17 +16,17 @@
   "source_name"
  ],
  "fields": [
-  {"fieldname": "reference_doctype", "fieldtype": "Link", "options": "DocType", "label": "Reference Doctype", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "The record the rail belongs to — CRM Lead today, CRM Deal when deals get the same rail."},
-  {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "The lead this event happened on. Not a Link: the target doctype varies, exactly as frappe's own Version and Comment do it."},
-  {"fieldname": "event_on", "fieldtype": "Datetime", "label": "Event On", "reqd": 1, "read_only": 1, "description": "When it happened — the source row's creation. The ONE column the rail sorts by, which is what lets every type share a single order."},
-  {"fieldname": "kind", "fieldtype": "Data", "label": "Kind", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "call / note / task / file / comment / email. What the rail renders it as."},
-  {"fieldname": "source_doctype", "fieldtype": "Link", "options": "DocType", "label": "Source Doctype", "reqd": 1, "read_only": 1, "description": "Where the real row lives. The rail hydrates the card from it, so this table never holds content that could go stale."},
-  {"fieldname": "source_name", "fieldtype": "Data", "label": "Source Name", "reqd": 1, "read_only": 1, "description": "Which row. Unique with source_doctype, which is what makes the backfill re-runnable and a double-fired hook a no-op."}
+  {"fieldname": "reference_doctype", "fieldtype": "Link", "options": "DocType", "label": "Reference Doctype", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "The kind of record this rail belongs to. Today, a lead."},
+  {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "The lead this happened on."},
+  {"fieldname": "event_on", "fieldtype": "Datetime", "label": "Event On", "reqd": 1, "read_only": 1, "description": "When it happened. The rail is ordered by this."},
+  {"fieldname": "kind", "fieldtype": "Data", "label": "Kind", "reqd": 1, "read_only": 1, "in_standard_filter": 1, "description": "The kind of thing that happened - a call, note, task, file, comment or email."},
+  {"fieldname": "source_doctype", "fieldtype": "Link", "options": "DocType", "label": "Source Doctype", "reqd": 1, "read_only": 1, "description": "The kind of record holding the full detail."},
+  {"fieldname": "source_name", "fieldtype": "Data", "label": "Source Name", "reqd": 1, "read_only": 1, "description": "The record holding the full detail. The card is read from it, so it never goes out of date."}
  ],
  "in_create": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-27 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Activity",
  "name": "CRM Timeline Event",

@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "format:{category}::{vertical}::{group}::{program}::{value}",
  "creation": "2026-06-26 00:00:00.000000",
- "description": "A grain-scoped picklist option. `category` groups options for one field (e.g. 'lead_source'); a blank grain axis (vertical/group/program) is a global/wildcard option visible in every grain. `value` is the stored token; `display_label` is shown in the picker. depends_on_field/value make this option appear only when another field on the form holds a given value (cascading picklists). Reached ONLY via the scoped picklist_query / grain-clamped list reads.",
+ "description": "One option a dropdown offers, and the product lines it is offered in.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -28,7 +28,7 @@
    "reqd": 1
   },
   {
-   "description": "The stored token written to the lead field.",
+   "description": "The value saved on the lead.",
    "fieldname": "value",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -36,7 +36,7 @@
    "reqd": 1
   },
   {
-   "description": "Human label shown in the picker (defaults to the value if blank).",
+   "description": "The wording the rep sees in the picker. Blank shows the value itself.",
    "fieldname": "display_label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -44,7 +44,7 @@
   },
   {
    "default": "",
-   "description": "Blank = global (visible in every grain). Stored as '' never NULL (not_nullable NOT-NULL DEFAULT '' column) — canonical so the scoped query and the permission_query_conditions match identically, even for raw INSERT IGNORE seeds that omit the column.",
+   "description": "Blank makes the option available in every product line.",
    "fieldname": "vertical",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -77,7 +77,7 @@
    "label": "Position"
   },
   {
-   "description": "Cascading picklist: this option appears only when the form field named here holds depends_on_value. Blank = always available.",
+   "description": "Show this option only when the field named here holds the value below. Blank always shows it.",
    "fieldname": "depends_on_field",
    "fieldtype": "Data",
    "label": "Depends On Field"
@@ -90,7 +90,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-26 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Picklist Value",

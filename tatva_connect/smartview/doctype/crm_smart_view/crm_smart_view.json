@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "hash",
  "creation": "2026-06-20 00:00:00.000000",
- "description": "A saved Smart View: a per-user or grain-standard tabbed list over leads or activities, with a chosen column set, a condition predicate, and a grain scope. Read-only surface (tatva_connect.smartview.api). Business views ship via db-seeds; only test views are seeded in code.",
+ "description": "A saved list of leads or activities with its own columns, filters and tabs.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -44,14 +44,14 @@
    "label": "Owner User",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "The user this view belongs to. Blank for a standard (grain-shared) view."
+   "description": "The user this view belongs to. Blank for a view shared with everyone in the same product line and group."
   },
   {
    "fieldname": "is_standard",
    "fieldtype": "Check",
    "label": "Is Standard",
    "in_list_view": 1,
-   "description": "A grain-standard view shown to every user in the grain (curated, ops-seeded)."
+   "description": "A shared view, shown to everyone in the same product line and group."
   },
   {
    "fieldname": "pinned",
@@ -70,7 +70,7 @@
    "label": "Base Object",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "Lead = one row per patient (CRM Lead). Activity = one row per activity (CRM Task of activity_type)."
+   "description": "Lead shows one row per patient. Activity shows one row per activity."
   },
   {
    "fieldname": "activity_type",
@@ -79,7 +79,7 @@
    "label": "Activity Type",
    "depends_on": "eval:doc.base_object=='Activity'",
    "mandatory_depends_on": "eval:doc.base_object=='Activity'",
-   "description": "The CRM Task Type driving an Activity view (required when base object is Activity)."
+   "description": "The activity type this view lists. Required when the view is an activity view."
   },
   {
    "fieldname": "vertical",
@@ -109,20 +109,20 @@
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Predicate (JSON)",
-   "description": "The condition tree (AND/OR groups of catalog-field conditions). Catalog fields only."
+   "description": "The conditions a record must meet to appear in this view."
   },
   {
    "fieldname": "columns",
    "fieldtype": "Code",
    "options": "JSON",
    "label": "Columns (JSON)",
-   "description": "Ordered catalog field_keys to project (the chosen column set)."
+   "description": "The columns shown, in order."
   },
   {
    "fieldname": "column_widths",
    "fieldtype": "JSON",
    "label": "Column Widths",
-   "description": "{field_key: css width} \u2014 what a rep dragged the grid to, remembered per view. Presentation only: it never reaches the query, and a key with no entry falls back to the width its fieldtype implies. Kept BESIDE `columns` rather than inside it so the column set stays a plain validated list of field keys."
+   "description": "The widths a rep dragged the columns to, remembered for this view."
   },
   {
    "fieldname": "presentation_section",
@@ -152,7 +152,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-20 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Smartview",
  "name": "CRM Smart View",

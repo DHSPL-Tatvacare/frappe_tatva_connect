@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "format:{vertical}::{group}::{program}::{type_name}",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "A task type is declared once here and read everywhere \u2014 the rep's form, the task list, Smart Views, automation and the workflow engine. It is configured top-down: grain, enforcement, fields, then rules.",
+ "description": "An activity type: what it is called, who may log it, what it asks, and when it counts as complete.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -35,13 +35,13 @@
    "reqd": 1
   },
   {
-   "description": "The name reps see, and the grain that scopes it. Every picker, permission and workflow offer is scoped by vertical \u00b7 group \u00b7 program, and a lead outside the grain is refused this activity at save.",
+   "description": "The name reps see, and who this activity is for. A lead outside the product line, group and programme named here cannot be given this activity.",
    "fieldname": "grain_section",
    "fieldtype": "Section Break",
    "label": "Identity & Grain"
   },
   {
-   "description": "Grain axis. Blank means any value on that axis. The composite key is vertical::group::program::type_name, so one type name can carry a different schema per grain.",
+   "description": "Blank means any product line.",
    "fieldname": "vertical",
    "fieldtype": "Link",
    "label": "Vertical",
@@ -65,27 +65,27 @@
    "label": "Description"
   },
   {
-   "description": "Everything that may block a bad save is declared here and nowhere else: when a location is demanded, whether submitting the form completes the task, and whether bulk completion is allowed.",
+   "description": "Everything that can block a bad save: when a location is required, whether submitting completes the task, and whether bulk completion is allowed.",
    "fieldname": "activity_section",
    "fieldtype": "Section Break",
    "label": "Enforcement"
   },
   {
-   "description": "In-Person marks the activity as a visit, which demands a location at save. Blank or Phone marks it as one that does not.",
+   "description": "In-Person marks this as a visit, which requires a location at save. Blank or Phone does not.",
    "fieldname": "visit_mode",
    "fieldtype": "Select",
    "label": "Visit Mode",
    "options": "\nIn-Person\nPhone\nNone"
   },
   {
-   "description": "Location is demanded at save when this field's answer satisfies the condition below. Only a question declared under Fields may be named. Left blank, Visit Mode alone decides.",
+   "description": "Require a location when this question's answer meets the condition below. Blank leaves Visit Mode to decide.",
    "fieldname": "location_condition_field",
    "fieldtype": "Select",
    "label": "Location Required When"
   },
   {
    "default": "is",
-   "description": "How the answer is compared. The same four operators the Rules grid offers, so a condition reads the same wherever it is declared.",
+   "description": "The comparison applied to the answer.",
    "fieldname": "location_operator",
    "fieldtype": "Select",
    "label": "Operator",
@@ -93,7 +93,7 @@
    "depends_on": "location_condition_field"
   },
   {
-   "description": "The answer compared against, offered from the chosen field's own options. Ignored by `is set` and `is not set`.",
+   "description": "The answer compared against. Ignored by is set and is not set.",
    "fieldname": "location_condition_value",
    "fieldtype": "Select",
    "label": "Value",
@@ -101,33 +101,33 @@
   },
   {
    "default": "1",
-   "description": "The task is completed the moment its form is submitted. Left off, the type is a plain open to-do.",
+   "description": "The task is completed as soon as its form is submitted. Off, it stays an open to-do.",
    "fieldname": "is_logged_complete",
    "fieldtype": "Check",
    "label": "Logged Complete"
   },
   {
    "default": "0",
-   "description": "Completion is forced through the form, one task at a time. The list's bulk action refuses a task of this type.",
+   "description": "Force completion through the form, one task at a time.",
    "fieldname": "disable_bulk_complete",
    "fieldtype": "Check",
    "label": "Disable Bulk Complete"
   },
   {
-   "description": "One row is added per question the form asks, and row order is form order. Source declares whose data is captured, Section and Target where the answer is filed, Required whether it is always mandatory.",
+   "description": "One row per question the form asks. Row order is form order.",
    "fieldname": "schema_section",
    "fieldtype": "Section Break",
    "label": "Fields"
   },
   {
-   "description": "Per-type form fields, rendered in order. Empty = the type is a plain task (no activity form).",
+   "description": "The questions this activity asks, in order. Empty means a plain task with no form.",
    "fieldname": "schema",
    "fieldtype": "Table",
    "label": "Schema",
    "options": "CRM Task Type Field"
   },
   {
-   "description": "One row declares one reaction of the form: when a field's answer matches, every listed target is shown, hidden or made mandatory. A blank When declares the form's opening state.",
+   "description": "One row per reaction: when an answer matches, the listed questions are shown, hidden or made mandatory. A blank When sets the form's opening state.",
    "fieldname": "rules_section",
    "fieldtype": "Section Break",
    "label": "Rules"
@@ -142,7 +142,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type",

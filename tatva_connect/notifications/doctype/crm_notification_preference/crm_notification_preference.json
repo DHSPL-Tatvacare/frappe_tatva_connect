@@ -22,7 +22,7 @@
    "unique": 1
   },
   {
-   "description": "One row per notification the rep has opted into. An absent row means not subscribed — every notification ships off. The rep's own Notifications panel writes these rows; this form is the storage behind it.",
+   "description": "One row per notification the rep has turned on. Written by the rep's own Notifications panel.",
    "fieldname": "subscriptions",
    "fieldtype": "Table",
    "label": "Subscriptions",
@@ -32,7 +32,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Notifications",
  "name": "CRM Notification Preference",

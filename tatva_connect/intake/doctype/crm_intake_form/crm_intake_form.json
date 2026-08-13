@@ -67,7 +67,7 @@
    "label": "Form Name",
    "reqd": 1,
    "unique": 1,
-   "description": "Names the form, and seeds both its public address and its submission table."
+   "description": "The form's name. It also sets the form's public web address."
   },
   {
    "default": "1",
@@ -75,7 +75,7 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled",
-   "description": "A form is built while disabled. It goes live only once it is enabled and then published."
+   "description": "A form is built while disabled. It goes live only once it is enabled and published."
   },
   {
    "fieldname": "description",
@@ -87,13 +87,13 @@
    "fieldname": "link_section",
    "fieldtype": "Section Break",
    "label": "Link",
-   "description": "Both values are filled in by the system on the first save. The route is the form's public address."
+   "description": "Filled in by the system on the first save. The route is the form's public address."
   },
   {
    "fieldname": "route",
    "fieldtype": "Data",
    "label": "Route",
-   "description": "Public URL path of the Web Form (derived from Form Name on first sync)."
+   "description": "The form's public web address."
   },
   {
    "fieldname": "column_break_link",
@@ -104,13 +104,13 @@
    "fieldtype": "Data",
    "label": "Submission DocType",
    "read_only": 1,
-   "description": "The per-form submission table the scaffolder created (set on Save)."
+   "description": "The table holding this form's submissions."
   },
   {
    "fieldname": "routing_section",
    "fieldtype": "Section Break",
    "label": "Fixed Routing (stamped on every lead from this form)",
-   "description": "The grain is chosen once, here, and is stamped on every lead this form creates. It is never read from an answer, so a submitter cannot influence where their lead lands."
+   "description": "The product line, group and programme stamped on every lead this form creates. A patient can never influence it."
   },
   {
    "fieldname": "source",
@@ -150,21 +150,21 @@
    "fieldname": "banner_image",
    "fieldtype": "Attach Image",
    "label": "Banner Image",
-   "description": "Shown centred ABOVE the form title (frappe's own banner slot)."
+   "description": "Shown above the form title."
   },
   {
    "fieldname": "client_script",
    "fieldtype": "Code",
    "options": "Javascript",
    "label": "Client Script",
-   "description": "Runs in the visitor's browser only. Never a permission gate."
+   "description": "Runs in the visitor's browser only. It is never a permission check."
   },
   {
    "fieldname": "custom_css",
    "fieldtype": "Code",
    "options": "CSS",
    "label": "Custom CSS",
-   "description": "Frappe's own Web Form CSS slot."
+   "description": "Extra styling for the form."
   },
   {
    "fieldname": "introduction",
@@ -175,7 +175,7 @@
    "fieldname": "mapping_section",
    "fieldtype": "Section Break",
    "label": "Web Form Fields & Mapping (submission -> lead/profile)",
-   "description": "Each question is pointed at a section and a field, and the list offered is what this form's grain is permitted to write. A question left unmapped is still collected, but it lands nowhere on the lead. Exactly one question must carry the phone, because leads are deduped on it."
+   "description": "Each question is pointed at where its answer is saved. Exactly one question must carry the phone number, because leads are matched on it."
   },
   {
    "fieldname": "mappings",
@@ -188,7 +188,7 @@
    "fieldname": "after_submit_section",
    "fieldtype": "Section Break",
    "label": "After Submit",
-   "description": "What the patient is shown once the form has been sent."
+   "description": "The message the patient is shown once the form has been sent."
   },
   {
    "fieldname": "success_title",
@@ -209,7 +209,7 @@
    "fieldname": "access_section",
    "fieldtype": "Section Break",
    "label": "Access",
-   "description": "Who may open the form, and whether it may be submitted more than once. These are the Web Form's own settings and are copied across on every save."
+   "description": "The rules on who may open the form, and whether it may be submitted more than once."
   },
   {
    "default": "1",
@@ -262,7 +262,7 @@
    "fieldname": "embed_section",
    "fieldtype": "Section Break",
    "label": "Embedding",
-   "description": "The domains permitted to embed this form in a page of their own. Copied to the Web Form on every save."
+   "description": "The websites allowed to embed this form in a page of their own."
   },
   {
    "fieldname": "allowed_embedding_domains",
@@ -273,7 +273,7 @@
    "fieldname": "chrome_section",
    "fieldtype": "Section Break",
    "label": "Chrome",
-   "description": "The page furniture drawn around the form. Copied to the Web Form on every save."
+   "description": "The page furniture drawn around the form."
   },
   {
    "fieldname": "hide_navbar",
@@ -299,7 +299,7 @@
    "fieldname": "meta_section",
    "fieldtype": "Section Break",
    "label": "SEO & Redirect",
-   "description": "How the form describes itself to search engines, and where the patient is sent after submitting. Copied to the Web Form on every save."
+   "description": "The form's description for search engines, and the page the patient is sent to after submitting."
   },
   {
    "fieldname": "meta_title",
@@ -319,7 +319,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-12 13:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

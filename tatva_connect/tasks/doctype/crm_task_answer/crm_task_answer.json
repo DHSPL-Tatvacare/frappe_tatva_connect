@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "creation": "2026-07-26 00:00:00.000000",
- "description": "One row per declared activity field, addressed by that field's own Fieldname — the key-value section, and the DEFAULT home for any field that does not carry a shape shared across many task types. What the field is called, its fieldtype and its options are declared once on CRM Task Type Field and are never restated here. This is the JSON payload made relational and queryable: a payload key becomes a row of the same fieldname, 1:1.",
+ "description": "One row per answer a rep gave on an activity form.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -20,7 +20,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Fieldname",
-   "description": "The declared CRM Task Type Field this row answers. It is the row's address: a write targets it and every consumer reads through it."
+   "description": "The question this row answers."
   },
   {
    "columns": 5,
@@ -28,7 +28,7 @@
    "fieldtype": "Small Text",
    "in_list_view": 1,
    "label": "Value",
-   "description": "The answer as given, always populated. A multi-select answer holds every value, joined with a comma."
+   "description": "The answer given. A multi-choice answer holds every value, separated by commas."
   },
   {
    "fieldname": "column_break_typed",
@@ -40,7 +40,7 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Value (Datetime)",
-   "description": "The same answer as a real Datetime when the declared fieldtype is one, so a filter or a sort compares dates rather than strings."
+   "description": "The same answer as a date, so dates sort and filter correctly."
   },
   {
    "columns": 2,
@@ -48,14 +48,14 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Value (Number)",
-   "description": "The same answer as a real number when the declared fieldtype is one, so a filter or a sort compares magnitudes rather than strings."
+   "description": "The same answer as a number, so numbers sort and filter correctly."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-26 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tasks",
  "name": "CRM Task Answer",

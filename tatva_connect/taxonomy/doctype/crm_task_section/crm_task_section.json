@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "field:section_key",
  "creation": "2026-07-25 00:00:00.000000",
- "description": "Where an activity's answers are stored. One row states which CRM Task table field holds them, whose columns they are, and how a single row is addressed. Form layout is declared on the task type instead.",
+ "description": "The place each activity's answers are stored.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -30,7 +30,7 @@
    "reqd": 1,
    "unique": 1,
    "in_list_view": 1,
-   "description": "The key a CRM Task Type Field names to say where its answer lands. Every field naming this section is routed by the row below."
+   "description": "The key an activity question names to say where its answer is stored."
   },
   {
    "fieldname": "title",
@@ -38,7 +38,7 @@
    "label": "Title",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "What these answers are called where no heading is present \u2014 a Smart View picker or a grid column. This names storage, not form layout."
+   "description": "The name these answers carry where no heading is shown."
   },
   {
    "fieldname": "display_order",
@@ -46,7 +46,7 @@
    "label": "Display Order",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "Ascending: the order sections are resolved in, and which one answers as the key-value default."
+   "description": "The order sections are resolved in."
   },
   {
    "fieldname": "column_break_target",
@@ -59,13 +59,13 @@
    "label": "Target DocType",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The doctype whose columns these fields are. Every field naming this section is resolved against it, so a field that is not one of its columns is refused."
+   "description": "The record type these answers are stored on."
   },
   {
    "fieldname": "child_table_field",
    "fieldtype": "Select",
    "label": "Child Table Field",
-   "description": "The Table field on CRM Task holding these rows, e.g. custom_engagement. Left blank the section IS the task row itself, and the target must then be CRM Task."
+   "description": "The table on the activity holding these rows. Left blank, the section is the activity record itself."
   },
   {
    "fieldname": "row_section",
@@ -77,45 +77,45 @@
    "fieldtype": "Check",
    "label": "Is Multi Row",
    "in_list_view": 1,
-   "description": "Not available to a task section and refused on save. An activity field is addressed by a column, never by a row key, so a question asked many times is declared in a key-value section instead."
+   "description": "Not available to an activity section. A question asked many times is declared in a section that stores one row per question instead."
   },
   {
    "fieldname": "row_key_field",
    "fieldtype": "Select",
    "label": "Row Key Field",
-   "description": "The column identifying one row. On a key-value section it carries the declared fieldname a row answers, and every consumer picks the latest row by it."
+   "description": "The field that identifies one row. Where Is Key Value is ticked, it holds the question a row answers."
   },
   {
    "fieldname": "is_key_value",
    "fieldtype": "Check",
    "label": "Is Key Value",
    "in_list_view": 1,
-   "description": "One row per declared field, addressed by its fieldname rather than by a named column. A new activity field is then a declaration row and never a schema change. Exclusive with Multi Row."
+   "description": "One row per question rather than one column per question, so a new question can be added without changing the database."
   },
   {
    "fieldname": "value_field",
    "fieldtype": "Select",
    "label": "Value Field",
-   "description": "The column holding a key-value row's answer, e.g. value. Required when key-value; every consumer reads the answer through it."
+   "description": "The field holding the answer. Required when Is Key Value is ticked."
   },
   {
    "fieldname": "label_field",
    "fieldtype": "Select",
    "label": "Label Field",
    "depends_on": "is_key_value",
-   "description": "The column holding what a key-value row is called. An activity field already carries its label on the task type, so a task section leaves this blank rather than storing a second copy."
+   "description": "The field holding what the answer is called. An activity's label lives on its activity type, so this is left blank."
   },
   {
    "fieldname": "question_field",
    "fieldtype": "Select",
    "label": "Question Field",
    "depends_on": "is_key_value",
-   "description": "The column holding the raw key a key-value row's identity was derived from, e.g. fieldname. Required when key-value: it is what a row says it was addressed by."
+   "description": "The field holding the question a row answers. Required when Is Key Value is ticked."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-26 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Section",

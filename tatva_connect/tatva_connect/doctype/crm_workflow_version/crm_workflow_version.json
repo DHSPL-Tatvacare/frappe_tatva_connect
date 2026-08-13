@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-07-15 00:00:00.000000",
- "description": "An IMMUTABLE, content-addressed snapshot of one CRM Workflow's graph, keyed by definition_hash. A running Run binds to a version, never to the mutable Workflow \u2014 so editing a Workflow can never re-route, duplicate or orphan a Run already executing it. Minted by workflow_engine.versions on save; runtime data, never seeded.",
+ "description": "A frozen copy of a campaign as it stood when published. Journeys already running follow it.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -25,7 +25,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Links the frozen definition to its workflow. Reporting only - the interpreter reads the payload, never this."
+   "description": "The campaign this frozen version belongs to."
   },
   {
    "fieldname": "version_no",
@@ -34,7 +34,7 @@
    "reqd": 1,
    "read_only": 1,
    "in_list_view": 1,
-   "description": "1, 2, 3 ... per workflow, to order its versions. For humans; identity is the content hash."
+   "description": "1, 2, 3 and so on, to order a campaign's versions."
   },
   {
    "fieldname": "is_current",
@@ -43,7 +43,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Marks the version a new Journey binds to. Exactly one per workflow; reverting a Definition re-flags that version rather than minting a duplicate."
+   "description": "The version new journeys start on. Exactly one per campaign."
   },
   {
    "fieldname": "node_count",
@@ -51,7 +51,7 @@
    "label": "Node Count",
    "read_only": 1,
    "in_list_view": 1,
-   "description": "Nodes in the frozen graph."
+   "description": "The number of steps in the frozen version."
   },
   {
    "fieldname": "definition_hash",
@@ -60,7 +60,7 @@
    "length": 64,
    "reqd": 1,
    "read_only": 1,
-   "description": "sha256 of the canonical payload; an unchanged save reuses the matching version instead of minting a duplicate. Unique per workflow."
+   "description": "The fingerprint of the frozen version. An unchanged save reuses the matching version instead of making a duplicate."
   },
   {
    "fieldname": "payload_json",
@@ -68,13 +68,13 @@
    "label": "Definition (JSON)",
    "reqd": 1,
    "read_only": 1,
-   "description": "Stores the immutable, canonical graph an Journey executes; a running Journey reads this, never the editable Definition."
+   "description": "The frozen campaign a journey follows."
   }
  ],
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-07-15 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Version",

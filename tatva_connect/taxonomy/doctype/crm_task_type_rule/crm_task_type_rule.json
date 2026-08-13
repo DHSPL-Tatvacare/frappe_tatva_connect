@@ -21,7 +21,7 @@
  "fields": [
   {
    "columns": 2,
-   "description": "Rule label is a free name used only for reading the grid.",
+   "description": "A free name, used only to read the grid.",
    "fieldname": "rule_label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -29,7 +29,7 @@
   },
   {
    "columns": 2,
-   "description": "The declared field whose answer this rule reacts to. Left blank, the rule declares the form's opening state and applies before anything is answered.",
+   "description": "The question this rule reacts to. Blank sets the form's opening state, before anything is answered.",
    "fieldname": "condition_field",
    "fieldtype": "Autocomplete",
    "in_list_view": 1,
@@ -38,7 +38,7 @@
   {
    "columns": 1,
    "default": "is",
-   "description": "How the answer is compared. `is set` and `is not set` ask only whether an answer exists and ignore the Value.",
+   "description": "The comparison applied to the answer. is set and is not set ignore the Value.",
    "fieldname": "operator",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -47,7 +47,7 @@
   },
   {
    "columns": 1,
-   "description": "The answer compared against. It is refused unless the When Field offers it as an option.",
+   "description": "The answer compared against. It must be one of that question's own options.",
    "fieldname": "condition_value",
    "fieldtype": "Autocomplete",
    "in_list_view": 1,
@@ -55,14 +55,14 @@
   },
   {
    "columns": 1,
-   "description": "A SECOND field the rule also reacts to. Both conditions must hold \u2014 this is AND, the `If All` LeadSquared offers. Left blank, the rule tests the first condition alone.",
+   "description": "A second question the rule also reacts to. Both must hold. Blank tests the first alone.",
    "fieldname": "condition_field_2",
    "fieldtype": "Autocomplete",
    "label": "And When Field"
   },
   {
    "default": "is",
-   "description": "How the second answer is compared.",
+   "description": "The comparison applied to the second answer.",
    "fieldname": "operator_2",
    "fieldtype": "Select",
    "label": "And Operator",
@@ -70,14 +70,14 @@
   },
   {
    "columns": 1,
-   "description": "The second answer compared against. Refused unless the And When Field offers it as an option.",
+   "description": "The second answer compared against. It must be one of that question's options.",
    "fieldname": "condition_value_2",
    "fieldtype": "Autocomplete",
    "label": "And Value"
   },
   {
    "columns": 2,
-   "description": "What happens when the condition holds. A hidden field is never required and its value is never accepted, so chained rules resolve without ordering.",
+   "description": "The effect when the condition holds. A hidden question is never required and its answer is never accepted.",
    "fieldname": "action",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -87,7 +87,7 @@
   },
   {
    "columns": 2,
-   "description": "The declared fieldnames the Action applies to, comma-separated. Add target below appends one without typing.",
+   "description": "The questions the action applies to, separated by commas.",
    "fieldname": "targets",
    "fieldtype": "Small Text",
    "in_list_view": 1,
@@ -95,14 +95,14 @@
    "reqd": 1
   },
   {
-   "description": "Add target appends a picked field to Targets and clears itself.",
+   "description": "Pick a question to add it to Targets.",
    "fieldname": "add_target",
    "fieldtype": "Autocomplete",
    "label": "Add Target"
   },
   {
    "depends_on": "eval:doc.action=='Set Value'",
-   "description": "The field whose answer is copied into the Targets. A declared question on this same task type \u2014 the copy is computed on the server and the Targets become read-only.",
+   "description": "The question whose answer is copied into the targets, which then become read-only.",
    "fieldname": "set_value",
    "fieldtype": "Autocomplete",
    "label": "Copy Value From",
@@ -113,7 +113,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-26 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type Rule",

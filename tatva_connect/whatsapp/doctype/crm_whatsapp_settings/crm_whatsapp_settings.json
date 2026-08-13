@@ -22,7 +22,7 @@
    "fieldname": "webhook_rate_limit_per_minute",
    "fieldtype": "Int",
    "label": "Webhook Rate Limit (per minute, per caller IP)",
-   "description": "Inbound deliveries accepted from one caller address in a minute, on each webhook endpoint. Past the cap the provider is answered 429 and backs off, and its own retry re-delivers the message, so nothing is dropped. Left at 0 the built-in default applies (600 for WhatsApp).",
+   "description": "The number of deliveries accepted from one address in a minute. Past the cap the provider is asked to back off and retries, so nothing is lost. 0 uses the default of 600.",
    "default": "600"
   },
   {
@@ -31,13 +31,13 @@
    "label": "Template Rate Caps (manual sends, per lead)"
   },
   {
-   "description": "Manual template sends allowed to one lead in a rolling hour — the chat-box picker only, so automated and rule-driven sends are never throttled. Left blank the default of 5 applies; an explicit 0 removes the cap.",
+   "description": "The most templates a rep may send one patient by hand in an hour. Blank allows 5; 0 removes the limit.",
    "fieldname": "template_cap_per_hour",
    "fieldtype": "Int",
    "label": "Template Cap / Hour"
   },
   {
-   "description": "The same cap over a rolling 24 hours, so a lead cannot be drip-messaged all day inside the hourly limit. Left blank the default of 10 applies; an explicit 0 removes the cap.",
+   "description": "The most templates a rep may send one patient by hand in a day, so a patient cannot be messaged all day within the hourly limit. Blank allows 10; 0 removes the limit.",
    "fieldname": "template_cap_per_day",
    "fieldtype": "Int",
    "label": "Template Cap / Day"
@@ -47,7 +47,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-02 18:51:55.816063",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "WhatsApp",
  "name": "CRM WhatsApp Settings",

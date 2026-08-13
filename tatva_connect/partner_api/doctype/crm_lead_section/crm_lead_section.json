@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "field:section_key",
  "creation": "2026-07-18 00:00:00.000000",
- "description": "The sections a lead's fields are grouped into (the `acq` in `acq:utm_campaign`). ONE row states everything a section is: which CRM Lead Table field holds its rows, whose columns they are, whether a lead may carry many of them, and which column addresses one. Every reader — the partner API, the Facebook fold, intake, Smart Views, the Data tab — asks this table; the answer is never restated on a CRM Lead API Field row.",
+ "description": "The groups a lead's fields are organised into, and where each group's values are stored.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -30,7 +30,7 @@
    "reqd": 1,
    "unique": 1,
    "in_list_view": 1,
-   "description": "The prefix in a field key: the `acq` in `acq:utm_campaign`. Every catalog field naming this section is routed by the row below."
+   "description": "The short key that names this section, e.g. lab."
   },
   {
    "fieldname": "title",
@@ -38,7 +38,7 @@
    "label": "Title",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The heading these fields are shown under, on the Data tab and in a partner's error messages."
+   "description": "The heading these fields are shown under."
   },
   {
    "fieldname": "display_order",
@@ -46,7 +46,7 @@
    "label": "Display Order",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "Ascending: a lower number sits higher on the page. Sections are rendered in this order."
+   "description": "The section's position on the page. A lower number sits higher."
   },
   {
    "fieldname": "column_break_target",
@@ -59,13 +59,13 @@
    "label": "Target DocType",
    "reqd": 1,
    "in_list_view": 1,
-   "description": "The doctype whose columns these fields are. Every field naming this section is resolved against it, so a field that is not one of its columns is refused."
+   "description": "The record type these fields belong to."
   },
   {
    "fieldname": "child_table_field",
    "fieldtype": "Data",
    "label": "Child Table Field",
-   "description": "The Table field on CRM Lead holding these rows, e.g. custom_lab_profile. Left blank the section IS the lead row itself, and the target must then be CRM Lead."
+   "description": "The table on the lead holding these rows. Left blank, the section is the lead record itself."
   },
   {
    "fieldname": "row_section",
@@ -77,45 +77,45 @@
    "fieldtype": "Check",
    "label": "Is Multi Row",
    "in_list_view": 1,
-   "description": "A lead may carry many of these rows — a lab report per date, a drug cycle per date. Ticked, a write upserts the row named by the Row Key Field and leaves every other row untouched; unticked, the one row is merged onto and a second incoming row is refused."
+   "description": "A lead may carry many of these rows - a lab report per date, a treatment cycle per date."
   },
   {
    "fieldname": "row_key_field",
    "fieldtype": "Data",
    "label": "Row Key Field",
-   "description": "The column identifying one row, e.g. report_date. Required when multi-row: it is the address a write is applied at, is always accepted even where a partner's grid has not ticked it, and is marked required in that section's schema. On a key-value section it is the column carrying the concept a row answers."
+   "description": "The field that identifies one row, such as report date. Required when the section is multi-row."
   },
   {
    "fieldname": "is_key_value",
    "fieldtype": "Check",
    "label": "Is Key Value",
    "in_list_view": 1,
-   "description": "One row per concept, where a catalog field's Fieldname addresses a ROW rather than naming a column. Ticked, the Row Key Field carries the concept and the Value Field carries the answer, so a new concept is a catalog row and never a schema change. Mutually exclusive with Multi Row."
+   "description": "The section stores one row per question rather than one column per question, so a new field can be added without changing the database."
   },
   {
    "fieldname": "value_field",
    "fieldtype": "Data",
    "label": "Value Field",
-   "description": "The column holding a key-value row's answer, e.g. value. Required when key-value; every consumer reads the answer through it."
+   "description": "The field holding the answer. Required when Is Key Value is ticked."
   },
   {
    "fieldname": "label_field",
    "fieldtype": "Data",
    "label": "Label Field",
    "depends_on": "is_key_value",
-   "description": "The column holding what a key-value row is CALLED, e.g. label. Required when key-value: the identity is a digest, so this is the only thing a person can read."
+   "description": "The field holding what the answer is called. Required when Is Key Value is ticked."
   },
   {
    "fieldname": "question_field",
    "fieldtype": "Data",
    "label": "Question Field",
    "depends_on": "is_key_value",
-   "description": "The column holding the raw key a key-value row's identity was derived from, e.g. question. Kept so a row can say what it was hashed from."
+   "description": "The field holding the original question key."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-20 21:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Partner API",
  "name": "CRM Lead Section",

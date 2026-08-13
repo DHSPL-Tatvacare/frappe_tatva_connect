@@ -45,7 +45,7 @@
    "label": "Provider",
    "options": "bolna",
    "in_list_view": 1,
-   "description": "The vendor this account speaks to. The channel is `voice`; the provider names which adapter carries it, so the doctype stays vendor-neutral."
+   "description": "The service this account calls through."
   },
   {
    "default": "0",
@@ -53,7 +53,7 @@
    "fieldtype": "Check",
    "label": "Enabled",
    "in_list_view": 1,
-   "description": "A voice send resolves this account only when it is enabled. Off, a routed lead takes the send's `failed` edge — never a call through a disabled account."
+   "description": "Off, a call is never placed through this account."
   },
   {
    "fieldname": "section_creds",
@@ -65,7 +65,7 @@
    "fieldtype": "Password",
    "label": "API Key",
    "reqd": 1,
-   "description": "Provider API key. Read server-side only (Password field) — never shipped to the client."
+   "description": "The provider's API key. Held on the server only."
   },
   {
    "default": "https://api.bolna.ai",
@@ -77,7 +77,7 @@
    "fieldname": "from_phone",
    "fieldtype": "Data",
    "label": "From Number (optional)",
-   "description": "The caller-id number the provider dials from, in full international form starting with the country code (for example +919876543210). Optional; a per-call override wins over this, this wins over the agent default."
+   "description": "The number the provider calls from, in full international form, e.g. +919876543210. Optional."
   },
   {
    "fieldname": "webhook_section_ingress",
@@ -89,13 +89,13 @@
    "fieldtype": "Password",
    "label": "Webhook Token",
    "no_copy": 1,
-   "description": "Generate one, save, then register the URL from 'Copy Webhook URLs' on the provider's agent. It proves the caller is the provider and tells the CRM which account the call arrived on. Blank means inbound is off — a placed call then has nothing to report its outcome back through."
+   "description": "Generate one, save, then register the copied URL with the provider. It proves the caller is the provider. Blank means call outcomes cannot be reported back."
   },
   {
    "fieldname": "webhook_token_previous",
    "fieldtype": "Password",
    "label": "Previous Webhook Token",
-   "description": "Set during a rotation; both tokens authenticate until this one is cleared, so no call outcome is rejected mid-rotation."
+   "description": "Set while a token is being replaced. Both work until this is cleared, so no outcome is rejected mid-change."
   },
   {
    "fieldname": "webhook_token_hash",
@@ -106,7 +106,7 @@
    "no_copy": 1,
    "read_only": 1,
    "search_index": 1,
-   "description": "Derived, never entered. A Password field cannot be indexed, so this digest is what makes authentication one read rather than a scan and decrypt of every account."
+   "description": "Filled in automatically. Never entered."
   },
   {
    "fieldname": "webhook_token_previous_hash",
@@ -128,7 +128,7 @@
    "fieldtype": "Select",
    "label": "Authentication",
    "options": "Token\nToken + HMAC",
-   "description": "The token is always enforced. HMAC is added only for a provider that signs its payloads, which Bolna does not."
+   "description": "The token is always required. Add signature checking only for a provider that signs what it sends, which Bolna does not."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
@@ -136,14 +136,14 @@
    "fieldtype": "Password",
    "label": "HMAC Signing Secret",
    "length": 1000,
-   "description": "The shared secret the provider signs its payloads with."
+   "description": "The shared secret the provider signs with."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
    "fieldname": "webhook_hmac_header",
    "fieldtype": "Data",
    "label": "Signature Header",
-   "description": "The header carrying the provider's signature, e.g. X-Signature."
+   "description": "The header carrying the signature, e.g. X-Signature."
   },
   {
    "default": "sha256",
@@ -161,14 +161,14 @@
    "fieldtype": "Select",
    "label": "Signature Encoding",
    "options": "Hex\nBase64",
-   "description": "How the provider encodes the signature it sends."
+   "description": "The encoding the provider uses for the signature it sends."
   },
   {
    "depends_on": "eval:doc.webhook_auth_mode=='Token + HMAC'",
    "fieldname": "webhook_hmac_prefix",
    "fieldtype": "Data",
    "label": "Signature Prefix",
-   "description": "Stripped before comparison, e.g. 'sha256='. Left blank when the provider sends a bare signature."
+   "description": "Removed before the signature is compared, e.g. sha256=. Blank when the provider sends a bare signature."
   },
   {
    "fieldname": "webhook_section_ip",
@@ -180,19 +180,19 @@
    "fieldname": "webhook_enforce_ip",
    "fieldtype": "Check",
    "label": "Enforce IP Allowlist",
-   "description": "Rejects any inbound call outcome that does not come from an address listed below. Leave it off unless the provider publishes fixed addresses — a wrong list silently drops every outcome. It cannot be turned on while the list is empty."
+   "description": "Reject any call outcome not sent from an address listed below. Leave it off unless the provider publishes fixed addresses. It cannot be turned on while the list is empty."
   },
   {
    "depends_on": "eval:doc.webhook_enforce_ip",
    "fieldname": "webhook_ip_allowlist",
    "fieldtype": "Small Text",
    "label": "Allowed Addresses",
-   "description": "One IP address or CIDR range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Anything after a # is ignored. Read only when Enforce IP Allowlist is ticked."
+   "description": "One address or range per line, e.g. 13.234.10.5 or 13.234.0.0/16. Read only when the setting above is ticked."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-28 00:00:00",
+ "modified": "2026-08-13 20:52:06.767561",
  "module": "Voice",
  "name": "CRM AI Voice Account",
  "naming_rule": "By fieldname",

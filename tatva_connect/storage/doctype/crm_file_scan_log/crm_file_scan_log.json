@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "autoincrement",
  "creation": "2026-07-10 00:00:00.000000",
- "description": "Raw, disposable per-upload verdict log for screened inbound files (magic-byte sniff + ClamAV), across every activated channel (intake forms, partner file API). Written out-of-band by storage.file_screening so a BLOCKED row survives the rollback that rejects the file. Auto-purged by Log Settings; the Storage::File::screening activator registers it.",
+ "description": "One row per uploaded file that was checked for viruses, and the verdict it was given.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -37,11 +37,11 @@
   {"fieldname": "web_form", "fieldtype": "Data", "label": "Web Form", "read_only": 1},
   {"fieldname": "attached_to_doctype", "fieldtype": "Data", "label": "Attached To Doctype", "read_only": 1},
   {"fieldname": "attached_to_name", "fieldtype": "Data", "label": "Attached To Name", "read_only": 1},
-  {"fieldname": "trace_id", "fieldtype": "Data", "label": "Trace ID", "read_only": 1, "search_index": 1, "description": "Frappe's own per-request id (frappe.monitor). Joins this verdict to the CRM API Request Log row of the call that carried the file, and to any Error Log row it raised."}
+  {"fieldname": "trace_id", "fieldtype": "Data", "label": "Trace ID", "read_only": 1, "search_index": 1, "description": "The reference shared with the call that carried this file, so the two are read together."}
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-10 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Storage",
  "name": "CRM File Scan Log",

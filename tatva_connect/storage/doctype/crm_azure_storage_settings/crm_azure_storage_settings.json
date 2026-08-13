@@ -20,20 +20,20 @@
    "label": "Behaviour"
   },
   {
-   "description": "Lifetime of a download (SAS) link, in seconds. Leave blank to use 900 (15 min).",
+   "description": "The time a download link stays valid, in seconds. Blank allows 900 (15 minutes).",
    "fieldname": "sas_ttl_seconds",
    "fieldtype": "Int",
    "label": "Download Link Validity (seconds)"
   },
   {
-   "description": "Delete the local copy after a successful upload (the point of offloading). You choose.",
+   "description": "Delete the local copy once the file has been safely uploaded.",
    "fieldname": "remove_local_after_upload",
    "fieldtype": "Check",
    "label": "Remove Local Copy After Upload"
   },
   {
    "default": "User\nContact\nCRM Organization\nFCRM Settings",
-   "description": "The only doctypes whose attachments may be PUBLIC, one per line. Everything else is private, whatever the uploader ticked in the upload dialog — a rep cannot make a patient's document public by choosing to. These four are here because their images are display assets a browser must fetch without permission on the record: profile photos, contact photos, organisation logos, and the brand logo and favicon (which the login page fetches with no session at all). Removing one does not break a save; it makes that image 403 for anyone who cannot read the record it hangs off.",
+   "description": "The only record types whose attachments may be public, one per line. Everything else is private, whatever the uploader chose.",
    "fieldname": "public_attachment_doctypes",
    "fieldtype": "Small Text",
    "label": "Public Attachment Doctypes"
@@ -53,7 +53,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-11 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Storage",
  "name": "CRM Azure Storage Settings",

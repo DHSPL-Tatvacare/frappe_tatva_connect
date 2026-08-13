@@ -25,104 +25,104 @@
  ],
  "fields": [
   {
-   "description": "Nothing on this page takes effect until a key is saved here. Two keys are used, for two different jobs: one is held by the server and never leaves it, the other is handed to the browser and must therefore be restricted.",
+   "description": "Nothing on this page works until a key is saved here. Two keys are used: one stays on the server, the other is sent to the browser and must be restricted.",
    "fieldname": "section_break_keys",
    "fieldtype": "Section Break",
    "label": "Google keys"
   },
   {
-   "description": "Used by the server alone. Addresses are looked up with it, and the small map pictures on task cards and pop-ups are fetched through it, so the key itself is never sent to a browser. While it is blank, addresses are not resolved and no map picture is drawn.",
+   "description": "Used by the server only, to look up addresses and draw the small maps on task cards. While blank, addresses are not resolved and no map picture is drawn.",
    "fieldname": "google_maps_api_key",
    "fieldtype": "Password",
    "label": "Google Maps API Key (server)"
   },
   {
-   "description": "Used by the Near Me map alone. That map is drawn in the browser, so this key is sent to the browser and must be a separate key restricted to the site's own domains (HTTP referrer). While it is blank, Near Me reports that the map is not configured, and the doctor list still works.",
+   "description": "Used by the Near Me map only. It is sent to the browser, so it must be a separate key restricted to this site's domains. While blank, Near Me reports that the map is not configured.",
    "fieldname": "google_maps_browser_key",
    "fieldtype": "Password",
    "label": "Google Maps Browser Key (Near Me)"
   },
   {
-   "description": "Required by the clustered pins on the Near Me map. A Map ID is created in Google Cloud Console under Maps > Map IDs, as the JavaScript type. While it is blank, Google's DEMO_MAP_ID is used, which draws a working but unstyled map and is not intended for production.",
+   "description": "Needed by the clustered pins on the Near Me map. While blank, an unstyled demo map is drawn.",
    "fieldname": "google_maps_map_id",
    "fieldtype": "Data",
    "label": "Google Maps Map ID (Near Me)"
   },
   {
-   "description": "An address is looked up with the saved server key and the result is shown here, which proves that the key, the billing account and the Geocoding API are all live. The page must be saved first.",
+   "description": "Looks up an address with the saved server key and shows the result, which proves the key and the billing account are live. Save the page first.",
    "fieldname": "check_connection",
    "fieldtype": "Button",
    "label": "Check Connection"
   },
   {
-   "description": "Where a doctor's clinic is searched for: the Desk 'Set Clinic Location' picker, and the search box on Near Me.",
+   "description": "The settings for the clinic address search, used by the Desk picker and the Near Me search box.",
    "fieldname": "section_break_address",
    "fieldtype": "Section Break",
    "label": "Address search"
   },
   {
    "default": "Google",
-   "description": "Addresses are always resolved by Google, whichever provider draws the maps below. Shown for information; it cannot be changed.",
+   "description": "Addresses are always resolved by Google. Shown for information; it cannot be changed.",
    "fieldname": "geocoding_provider",
    "fieldtype": "Data",
    "label": "Geocoding Provider",
    "read_only": 1
   },
   {
-   "description": "The two-letter country the address search is confined to, such as IN for India or AE for the United Arab Emirates. An address outside that country is not offered as a result, so this must name the country the doctors are actually in. While it is blank, the whole world is searched.",
+   "description": "The two-letter country the address search is limited to, such as IN. While blank, the whole world is searched.",
    "fieldname": "geocoding_region",
    "fieldtype": "Data",
    "label": "Address Search Country",
    "length": 2
   },
   {
-   "description": "Who draws each map. Only the small, still map pictures have a choice: Near Me is always a Google map, because it is interactive. OpenStreetMap costs nothing and needs no key; Google is charged per view and needs the server key above.",
+   "description": "The choice of who draws each map. Near Me is always a Google map, because it is interactive.",
    "fieldname": "section_break_display",
    "fieldtype": "Section Break",
    "label": "Map display"
   },
   {
-   "description": "Draws the small map on a task card, inside the task pop-up, and in the Desk activity list. While it is blank, OpenStreetMap is used.",
+   "description": "Draws the small map on task cards and in the activity list. Blank uses OpenStreetMap.",
    "fieldname": "thumbnail_map_provider",
    "fieldtype": "Select",
    "label": "Thumbnail Map Provider",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "Draws the larger map inside the visit pop-ups, where a capture is confirmed or an out-of-range visit is refused. While it is blank, Google is used.",
+   "description": "Draws the larger map inside the visit pop-ups. Blank uses Google.",
    "fieldname": "dialog_map_provider",
    "fieldtype": "Select",
    "label": "Dialog Map Provider",
    "options": "\nOpenStreetMap\nGoogle"
   },
   {
-   "description": "How closely the small map pictures are zoomed onto their pin. A higher number is closer. While it is blank, 16 is used.",
+   "description": "The zoom level of the small map pictures. A higher number sits closer to the pin. Blank uses 16.",
    "fieldname": "static_map_zoom",
    "fieldtype": "Int",
    "label": "Map Thumbnail Zoom",
    "non_negative": 1
   },
   {
-   "description": "Advanced. Where the OpenStreetMap maps above fetch their tiles, given as a {z}/{x}/{y} URL template. While it is blank, the free public tiles are used, which are rate-limited; under heavy traffic this should point at an owned or paid tile server.",
+   "description": "Advanced. Where OpenStreetMap fetches its map tiles. Blank uses the free public tiles, which are rate-limited.",
    "fieldname": "osm_tile_url",
    "fieldtype": "Data",
    "label": "OpenStreetMap Tile URL"
   },
   {
-   "description": "Which leads a visit is checked against, and who may correct a clinic's pin. This is what the location capture on an in-person activity is measured with.",
+   "description": "The leads whose visits are checked against a clinic, and the role allowed to correct a pin.",
    "fieldname": "section_break_triggers",
    "fieldtype": "Section Break",
    "label": "Visit location tracking"
   },
   {
-   "description": "The lead groups whose in-person visits must be logged at the doctor's clinic, each with the distance allowed from it. A lead outside every group listed here is never asked for a location. While the table is empty, no visit is checked.",
+   "description": "The lead groups whose in-person visits must be logged at the doctor's clinic, with the distance allowed. While empty, no visit is checked.",
    "fieldname": "location_tracked_grains",
    "fieldtype": "Table",
    "label": "Location-Tracked Grains",
    "options": "CRM Maps Tracked Grain"
   },
   {
-   "description": "The role allowed to move a clinic's pin once it has been set, which is how a wrong or outdated location is corrected. While it is blank, only System Manager may move a pin.",
+   "description": "The role allowed to move a clinic's pin once it is set. Blank allows System Manager only.",
    "fieldname": "manager_override_role",
    "fieldtype": "Link",
    "label": "Manager Override Role",
@@ -133,7 +133,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-15 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Location",
  "name": "CRM Maps Settings",

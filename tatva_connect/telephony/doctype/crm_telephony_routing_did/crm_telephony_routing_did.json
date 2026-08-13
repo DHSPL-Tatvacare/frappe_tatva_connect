@@ -14,7 +14,7 @@
  "fields": [
   {
    "columns": 3,
-   "description": "One number patients dial, e.g. 9240276210. Any format is accepted — it is stored and matched as its last 10 digits, because a provider sends the same number both ways ('9240276210' and '+919240276210'). One number per row, and a number may belong to only one rule.",
+   "description": "One number patients dial to reach this product line. Only the last 10 digits are matched, so any format may be entered.",
    "fieldname": "did_number",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -28,11 +28,11 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Label",
-   "description": "What this number is used for, e.g. 'Niva-Bupa hotline'. Read by people only; nothing routes on it."
+   "description": "The name this number is known by. Read by people only; nothing routes on it."
   },
   {
    "columns": 3,
-   "description": "Set only when this number lives on a DIFFERENT provider account from the one the rule dials out on — the case of one grain reached through two providers. Left blank, the rule's account carries it.",
+   "description": "Set only where this number sits on a different provider account from the one the rule dials out on.",
    "fieldname": "telephony_account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -46,14 +46,14 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled",
-   "description": "Unticked, an inbound call on this number is no longer attributed to this grain — it is dropped, as any unmapped number is."
+   "description": "Unticked, calls to this number are no longer attributed here - they are ignored, as any unmapped number is."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-12 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Routing DID",

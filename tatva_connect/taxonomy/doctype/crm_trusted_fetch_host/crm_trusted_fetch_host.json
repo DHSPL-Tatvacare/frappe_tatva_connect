@@ -12,7 +12,7 @@
  ],
  "fields": [
   {
-   "description": "Exact external hostname trusted for server-side fetches (e.g. live-mt-server.wati.io). Sub-domains of it are also trusted.",
+   "description": "An external website the server is allowed to fetch from, e.g. live-mt-server.wati.io. Its sub-domains are trusted too.",
    "fieldname": "host",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -29,7 +29,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-19 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Trusted Fetch Host",

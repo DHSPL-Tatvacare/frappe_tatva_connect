@@ -33,11 +33,11 @@
    "options": "Any\nInbound\nOutbound",
    "reqd": 1,
    "columns": 2,
-   "description": "Inbound is a call a patient placed; Outbound is one a rep placed from the CRM. Any matches both, and scores as the least specific."
+   "description": "Inbound is a call the patient placed; Outbound is one a rep placed. Any matches both."
   },
   {
    "default": "Dialer",
-   "description": "How the call was routed by the provider: Dialer is an agent-dialled leg, IVR a call that came through a menu or queue. Any matches both. Every human-answered call in 363 captured CDRs arrived as Dialer.",
+   "description": "The route the call took - Dialer is a call an agent handled, IVR one that came through a menu or queue. Any matches both.",
    "fieldname": "channel",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -48,7 +48,7 @@
   },
   {
    "default": "Capture",
-   "description": "Capture writes the call as a CRM Call Log. Ignore declines to — the raw payload is still stored and remains replayable. At equal specificity Ignore wins, so an exception can be carved out of a broader Capture row.",
+   "description": "Capture writes the call into the CRM; Ignore does not. Where two rows are equally specific, Ignore wins, so an exception can be carved out of a broader rule.",
    "fieldname": "action",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -64,14 +64,14 @@
    "in_list_view": 1,
    "label": "Enabled",
    "columns": 1,
-   "description": "Unticked, this row is not considered at all."
+   "description": "Unticked, this row is ignored."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-07-12 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Telephony",
  "name": "CRM Telephony Capture Rule",

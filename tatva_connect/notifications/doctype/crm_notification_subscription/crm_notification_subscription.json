@@ -18,7 +18,7 @@
    "label": "Event",
    "reqd": 1,
    "columns": 6,
-   "description": "The moment the rep is told about, e.g. Lead::Assignment::assigned. Written by the rep's Notifications panel from the notification catalog — a value typed by hand that is not in the catalog matches nothing and notifies no one."
+   "description": "The moment the rep is told about. Written by the rep's Notifications panel."
   },
   {
    "default": "live",
@@ -29,7 +29,7 @@
    "options": "live",
    "reqd": 1,
    "columns": 3,
-   "description": "live delivers in-app while the rep has the app open, and a mobile push when they are away."
+   "description": "Live delivers in the app while it is open, and a mobile push when it is not."
   },
   {
    "default": "0",
@@ -38,14 +38,14 @@
    "in_list_view": 1,
    "label": "Enabled",
    "columns": 1,
-   "description": "Unticked, the rep is not subscribed to this event."
+   "description": "Unticked, the rep is not subscribed to this."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Notifications",
  "name": "CRM Notification Subscription",

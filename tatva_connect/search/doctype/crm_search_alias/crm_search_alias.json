@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-07-26 12:00:00.000000",
- "description": "One word a rep types, and the value the CRM already holds that it stands for. Nothing is invented here: the value is checked against the live masters before the row saves, and a value that does not exist is refused with the closest one named. Aliases are read only while the Search::Query::vocabulary switch is on, under Automations, so a table filled in before that switch is turned on changes nothing. Only the closed sets are reachable — a stage, a status, a product line, a group, a program, a person. Patient names, numbers and ids are matched as text by the index itself and need no row here.",
+ "description": "A word a rep types into search, and the value already in the CRM that it stands for.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -14,15 +14,15 @@
   "target_name"
  ],
  "fields": [
-  {"fieldname": "term", "fieldtype": "Data", "label": "Term", "reqd": 1, "unique": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "The word a rep types. Stored lower-cased with punctuation as a space, because that is how a typed query is read; a phrase of several words is allowed and is preferred over any shorter word inside it. A word that is already a value in its own right is refused, since two meanings for one word narrow nothing."},
-  {"fieldname": "resolves_to", "fieldtype": "Data", "label": "Resolves To", "reqd": 1, "in_list_view": 1, "description": "The value the term stands for, written the way the CRM shows it. It is resolved on save: unknown is refused with the nearest declared value named, and a value held in two different places is refused until one of them is chosen."},
-  {"fieldname": "resolved_section", "fieldtype": "Section Break", "label": "Resolved", "description": "What the value above was understood to be. Filled in on save and never typed. The row points at the record rather than at its spelling, so a value renamed later is followed rather than lost."},
+  {"fieldname": "term", "fieldtype": "Data", "label": "Term", "reqd": 1, "unique": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "The word a rep types. A phrase of several words is allowed. A word that is already a value in its own right is refused."},
+  {"fieldname": "resolves_to", "fieldtype": "Data", "label": "Resolves To", "reqd": 1, "in_list_view": 1, "description": "The value the word stands for, written as the CRM shows it. An unknown value is refused, with the nearest one named."},
+  {"fieldname": "resolved_section", "fieldtype": "Section Break", "label": "Resolved", "description": "The record the value was understood to be. Filled in on save and never typed."},
   {"fieldname": "target_doctype", "fieldtype": "Link", "options": "DocType", "label": "Resolved Table", "read_only": 1, "no_copy": 1},
   {"fieldname": "target_name", "fieldtype": "Dynamic Link", "options": "target_doctype", "label": "Resolved Record", "read_only": 1, "no_copy": 1, "in_list_view": 1}
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-07-26 12:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Search",
  "name": "CRM Search Alias",

@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "autoincrement",
  "creation": "2026-08-06 00:00:00.000000",
- "description": "One generated marketing document for one lead - the record that OWNS the rendered PDF. It exists so the privacy checkpoint can classify a marketing document by its owning doctype without CRM Lead going on the operator's public allowlist and taking every clinical attachment with it.",
+ "description": "One marketing document generated for one patient, and the PDF it produced.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -24,7 +24,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "The lead this document was generated for. It is what the delete cascade keys on, so the document never outlives the person it is about."
+   "description": "The patient this document was generated for."
   },
   {
    "fieldname": "template",
@@ -33,7 +33,7 @@
    "options": "Web Template",
    "read_only": 1,
    "in_list_view": 1,
-   "description": "The pre-authored Web Template this document was rendered from. A pointer, never a copy of the markup - a template edit has nothing here to sync."
+   "description": "The template it was generated from."
   },
   {
    "default": "Queued",
@@ -44,7 +44,7 @@
    "read_only": 1,
    "in_list_view": 1,
    "search_index": 1,
-   "description": "Queued while the render is dispatched but not yet answered, Ready once the PDF is filed against this row, Failed when it never will be. Born Queued because the row is created before the render runs."
+   "description": "Queued while it is being made, Ready once the PDF is attached, Failed if it never will be."
   },
   {
    "fieldname": "document_file",
@@ -52,7 +52,7 @@
    "label": "Document File",
    "options": "File",
    "read_only": 1,
-   "description": "The rendered PDF. A pointer only - the bytes are owned by THIS row through the attachment bond, and they are reclaimed when it is deleted."
+   "description": "The generated PDF."
   },
   {
    "fieldname": "error",
@@ -60,14 +60,14 @@
    "label": "Error",
    "read_only": 1,
    "depends_on": "eval:doc.status == 'Failed'",
-   "description": "Why the render never produced a document, in words a human can act on. Blank on every other status."
+   "description": "Why the document could not be produced."
   }
  ],
  "index_web_pages_for_search": 0,
  "istable": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-08-06 00:00:00.000000",
+ "modified": "2026-08-13 20:52:06.767561",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Campaign Document",
