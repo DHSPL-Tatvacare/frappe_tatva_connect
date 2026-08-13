@@ -14,6 +14,7 @@
   "depends_on",
   "mandatory_depends_on",
   "source",
+  "read_only",
   "section",
   "target",
   "can_watch"
@@ -21,7 +22,7 @@
  "fields": [
   {
    "columns": 2,
-   "description": "What the rep is asked. A Column Break needs none; a Section Break or Tab Break uses it as the heading.",
+   "description": "The question the rep is asked. A section or tab break uses it as the heading instead.",
    "fieldname": "label",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -29,7 +30,7 @@
   },
   {
    "columns": 2,
-   "description": "Stable key this field is stored and addressed by, and the name a rule targets.",
+   "description": "The key this answer is stored under, and the name a rule points at.",
    "fieldname": "fieldname",
    "fieldtype": "Autocomplete",
    "in_list_view": 1,
@@ -38,7 +39,7 @@
   },
   {
    "columns": 1,
-   "description": "The control the rep is given. Tab Break, Section Break and Column Break are layout instead of questions: they store nothing and open a new tab, heading or column that the rows below them fall into.",
+   "description": "The kind of input the rep is given. Tab, Section and Column breaks are layout rather than questions.",
    "fieldname": "fieldtype",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -48,7 +49,7 @@
   },
   {
    "columns": 3,
-   "description": "Select: newline-separated options. Link: the target doctype.",
+   "description": "For a dropdown, one option per line. For a lookup, the record type it points at.",
    "fieldname": "options",
    "fieldtype": "Text",
    "label": "Options"
@@ -56,21 +57,21 @@
   {
    "columns": 1,
    "default": "0",
-   "description": "Mandatory on every save. A field required only under a condition is declared under Rules instead.",
+   "description": "Mandatory on every save. A question required only under a condition is declared under Rules instead.",
    "fieldname": "reqd",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Required"
   },
   {
-   "description": "Optional condition under which this field is shown, e.g. eval:doc.outcome=='Connected'. Any Rule naming this field replaces what is typed here, so a rule-driven field is left blank.",
+   "description": "Optional condition under which this question is shown. Leave blank where a rule already controls it.",
    "fieldname": "depends_on",
    "fieldtype": "Data",
    "label": "Depends On",
    "length": 1000
   },
   {
-   "description": "Compiled from the type's rules and not typed here. It carries the condition under which the field is required, and a hidden field is never required.",
+   "description": "Filled in from the rules. It is the condition under which this question is required.",
    "fieldname": "mandatory_depends_on",
    "fieldtype": "Data",
    "label": "Mandatory Depends On",
@@ -80,7 +81,7 @@
   {
    "columns": 1,
    "default": "Activity",
-   "description": "Whose record the value belongs to. Activity is answered by the rep and stored on the task; Lead is read from the patient record, shown read-only, and snapshotted as it stood that day.",
+   "description": "The owner of this information. Activity is answered by the rep; Lead is read from the patient record and kept as it stood that day.",
    "fieldname": "source",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -89,7 +90,16 @@
   },
   {
    "columns": 1,
-   "description": "The storage shape this answer is filed into, declared once on CRM Task Section. Left blank, the answer is filed in the answers store.",
+   "default": "0",
+   "description": "Show the answer but do not let the rep change it. On a Lead field this also stops the punch writing back to the patient record.",
+   "fieldname": "read_only",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Read Only"
+  },
+  {
+   "columns": 1,
+   "description": "The place the answer is stored. Blank stores it in the general answers store.",
    "fieldname": "section",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -98,7 +108,7 @@
   },
   {
    "columns": 1,
-   "description": "The column the answer occupies \u2014 a column of the Section's DocType, or a settable CRM Task column when no Section is named. Left blank, the answer is stored under its own fieldname.",
+   "description": "The column the answer occupies. Blank stores it under its own name.",
    "fieldname": "target",
    "fieldtype": "Autocomplete",
    "in_list_view": 1,
@@ -109,14 +119,14 @@
    "fieldtype": "Check",
    "default": "0",
    "label": "Automation: Watchable",
-   "description": "A change to this field may fire a workflow, which is meaningful only where the field names a Target column."
+   "description": "A change to this answer may start a campaign. It works only where the answer occupies a column."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-08 00:00:00.000000",
+ "modified": "2026-08-14 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type Field",

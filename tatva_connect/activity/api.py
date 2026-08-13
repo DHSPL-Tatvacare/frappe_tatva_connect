@@ -20,7 +20,7 @@ from frappe import _
 from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
-from tatva_connect.access import posture
+from tatva_connect.access import entitlement, posture
 from tatva_connect.storage import blob_store, file_names
 from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
@@ -51,8 +51,14 @@ RULE_ACTIONS = (RULE_SHOW, RULE_HIDE, RULE_MANDATORY, RULE_SET_VALUE)
 RULE_VALUE_OPERATORS = ("is", "is not")
 RULE_OPERATORS = (*RULE_VALUE_OPERATORS, "is set", "is not set")
 
-# A declared field's `source`: whose record the value belongs to. A lead-sourced field is the CONTEXT the activity was logged in — shown read-only, snapshotted onto the task as it stood that day, and never written back to the lead.
+# A declared field's `source`: whose record the value belongs to. A lead-sourced field opens prefilled with what the lead holds, snapshots onto the task as it stood at the punch, and an answer the rep CHANGES goes back to the lead through the Data tab's own write gate. Left alone it stays context.
 LEAD_SOURCE = "Lead"
+
+# The dotted path a `Link -> User` control hands `search_link` as its `query`. Spelled once.
+USER_QUERY = "tatva_connect.activity.api.user_query"
+
+# Which role a person field may offer. Read by the picker AND the save, so neither can disagree with the other.
+FIELD_ROLE = {"select_asm": "Sales Manager"}
 
 
 def field_target(f):
@@ -407,14 +413,25 @@ def _field_descriptor(f):
 		"target": f.target or "",
 		"section": (f.get("section") or ""),
 		"source": (f.get("source") or ""),
-		# What the SERVER answers the rep may not edit: a lead field is context the lead owns, and a Set Value
-		# target is copied by `copied_values` — `compute_activity` discards what the client sends for either.
-		"read_only": 1 if (f.get("source") or "") == LEAD_SOURCE else 0,
+		# Declared per field, so one form may take an answer where another only shows it. `_compiled_rows` also forces it on a Set Value target, which the server answers.
+		"read_only": int(f.get("read_only") or 0),
 		"depends_on": (f.get("depends_on") or ""),
 		"mandatory_depends_on": (f.get("mandatory_depends_on") or ""),
 		"copy_from": [],  # [{source, when}] — the Set Value rows naming this field; stamped by _compiled_rows
 		"container_depends_on": [],  # the conditions of the tab/section/column holding it; stamped by _layout
+		"link_query": _link_query(f),  # a Link -> User picker's scoped query; None leaves the native one
 	})
+
+
+def _link_query(f):
+	"""The scoped query a `Link -> User` picker asks, or None for any other Link (which keeps the native one).
+
+	Same seam and same reason as `lead.detail._link_query`: `search_link` reads the master through the generic
+	list path, so it demands User read — which `lockdown.BASELINE_ROLE_TRIMS` strips from every rep so nobody
+	can pull the staff directory. Left native, the picker answers with the one row frappe always allows: you."""
+	if not (f.fieldtype == "Link" and (f.options or "") == "User"):
+		return None
+	return {"query": USER_QUERY, "filters": {"fieldname": f.fieldname, "task_type": f.get("parent") or ""}}
 
 
 def _one_condition(field, operator, value):
@@ -568,7 +585,7 @@ def _compiled_copy_from(entry):
 	:1173, :1291`). Six of the seven copy a lead field onto its activity twin (`Discharge Summary LM` ->
 	`Discharge Summary AM`), which is a SNAPSHOT — and LSQ marks every one of those targets Make Read-Only
 	in the same rule set. So a Set Value target is derived, not answered: `compute_activity` computes it and
-	ignores whatever the client sends for it, exactly as it already does for a `source = Lead` field.
+	ignores whatever the client sends for it. A `source = Lead` field is the opposite — the rep may answer it.
 
 	A LIST, not the pair this shipped as: several rows may name one field, and returning the first row's
 	value beside the OR of every row's condition wrote rule A's value when only rule B's condition fired.
@@ -688,17 +705,41 @@ def get_schema(task_type):
 	return compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type))
 
 
-def _validate_asm(asm):
-	"""An ASM stamped onto an activity must hold the 'Sales Manager' role — keeps the audited ASM data
-	clean to actual Sales Managers. No-op when no ASM is set."""
-	if not asm:
+def _validate_person(f, val):
+	"""A person field may only name someone holding the role FIELD_ROLE declares for it.
+
+	The WRITE half of `_link_query`: both read the one declaration, over the same set of fields, so a value the
+	picker could not have offered is also a value the save will not take. Nothing is field-specific here — a
+	person field added tomorrow is guarded by declaring it, and by nothing else."""
+	role = FIELD_ROLE.get(f.fieldname)
+	if not (val and role and f.fieldtype == "Link" and (f.options or "") == "User"):
 		return
-	if "Sales Manager" not in frappe.get_roles(asm):
+	if role not in frappe.get_roles(val):
 		frappe.throw(
-			_("{0} is not a Sales Manager and cannot be set as ASM.").format(
-				frappe.db.get_value("User", asm, "full_name") or asm),
-			title=_("Invalid ASM"),
+			_("{0} is not a {1} and cannot be named in {2}.").format(
+				frappe.db.get_value("User", val, "full_name") or val, role, f.label),
+			title=_("Invalid {0}").format(f.label),
 		)
+
+
+@frappe.whitelist()
+def user_query(doctype, txt, searchfield, start, page_len, filters):
+	"""The people a `Link -> User` activity field may offer — `search_link`'s custom-query seam.
+
+	Answers ONE bounded question — who may be named in THIS field, on THIS task type, by THIS caller — so the
+	`Desk User` trim stands and no caller can turn it into a staff directory read. The guard is the one
+	`get_schema` already applies, the grain is the type's own, and the role is FIELD_ROLE's."""
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	task_type = filters.get("task_type")
+	posture.require("CRM Task Type", "read", doc=task_type)  # cannot open the form -> cannot query its picker
+	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	users = entitlement.users_entitled_to(
+		(tt.vertical, tt.group, tt.program),  # blank axis MEANS any — never back-filled
+		txt=txt, limit=cint(page_len) or 20, role=FIELD_ROLE.get(filters.get("fieldname") or ""),
+	)
+	names = dict(frappe.get_all("User", filters={"name": ["in", users]}, as_list=True,
+	                            fields=["name", "full_name"])) if users else {}
+	return [(u, names.get(u) or u) for u in users]  # one read for every label, never one per row
 
 
 def _field_visible(depends_on, values):
@@ -847,13 +888,18 @@ def compute_activity(lead, task_type, values, task=None):
 		values = {**values, **copied}
 	shown, live = _settled(schema, values)
 	promoted, staged = {}, {}
-	# The lead's OWN values, read on the server. A `source = Lead` answer is context, not something the
-	# client may assert: the submitted value is ignored entirely, so "at this punch the address was X"
-	# means what the lead actually held and cannot be forged by a caller.
+	# The lead's own values: what a `source = Lead` field falls back to when the rep leaves it alone.
 	lead_values = lead_field_values(lead, task_type) if any(
 		(f.source or "") == LEAD_SOURCE for f in schema) else {}
+	# Only a rep's own punch moves the lead on: a trusted caller is replaying history or holds its own lead endpoint.
+	lead_writes = None if posture.is_trusted() else {}
 	for f in schema:
-		val = lead_values.get(f.fieldname) if (f.source or "") == LEAD_SOURCE else values.get(f.fieldname)
+		val = values.get(f.fieldname)
+		if (f.source or "") == LEAD_SOURCE:
+			if val in (None, "") or f.read_only:
+				val = lead_values.get(f.fieldname)
+			elif lead_writes is not None and cstr(val) != cstr(lead_values.get(f.fieldname) or ""):
+				lead_writes[f.fieldname] = val
 		if f.fieldname not in shown:
 			# D22: a hidden field's value is inert. A form that never showed it cannot have collected it, so a
 			# value arriving for it is refused rather than quietly stored under a question nobody was asked.
@@ -863,14 +909,17 @@ def compute_activity(lead, task_type, values, task=None):
 			continue
 		if _required_here(f, shown, live) and (val is None or val == ""):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
+		_validate_person(f, val)  # a person field takes only who its picker could have offered
 		# Route by the ONE seam: a retained common column stays on the task row, every other value is its section row's. A lead-sourced field is routed like any other — what it means is snapshot, not answer, and the section it declares is where that snapshot lands.
 		section_key, column = field_target(f)
 		if section_key is None:
 			promoted[column] = val
 		_stage_section_value(staged, f, val)
 
-	# Keep the audited ASM data clean: an ASM must actually be a Sales Manager.
-	_validate_asm(promoted.get("custom_asm"))
+	# After the loop: nothing reaches the lead until every field has passed D22, required and the person guard.
+	if lead_writes:
+		from tatva_connect.lead.detail import write_lead_fields
+		write_lead_fields(lead, lead_writes)
 
 	fields = {
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
@@ -924,7 +973,8 @@ def compute_activity(lead, task_type, values, task=None):
 
 
 def lead_field_values(lead, task_type):
-	"""The lead's CURRENT answers to this type's `source=Lead` fields — what the form opens prefilled with.
+	"""The lead's CURRENT answers to this type's `source=Lead` fields — what the form opens prefilled with,
+	and what a field the rep left alone falls back to on save.
 
 	NOT whitelisted: it rides the `type_config` answer the form already fetches, so loading a form stays ONE
 	call however many lead fields it declares. Read through the lead detail brain (`lead.detail.lead_detail`),

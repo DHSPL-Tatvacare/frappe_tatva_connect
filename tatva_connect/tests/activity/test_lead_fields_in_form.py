@@ -3,25 +3,15 @@
 """A lead field asked inside an activity form — §4 of
 docs/plans/task-form-layer/2026-07-29-generic-activity-storage.md.
 
-LSQ mixes lead-sourced fields into an activity section: the section is layout, the source is whose record
-the value belongs to. A `CRM Task Type Field` declaring `source = Lead` is the CONTEXT the activity was
-logged in — shown so the rep can see the patient's details, snapshotted onto the activity as it stood that
-day, and never written back to the lead.
+A `CRM Task Type Field` declaring `source = Lead` is prefilled from the lead, routed onto the task like any
+other answer, and — when the rep changes it — written back to the lead through `lead.detail.write_lead_fields`.
 
-D11 IS REVERSED HERE, DELIBERATELY. Until 2026-07-29 a lead-sourced answer was written onto the LEAD and
-the task kept no copy, under a fill-once rule. That made *"at this order punch the address was X"*
-unanswerable: a live read shows today's address against a two-year-old order, which is a different and
-false claim. It also made migrated and live activities two different shapes — LSQ stores the value on the
-activity — so the app needed two code paths for one thing. §4.2 of the plan settles it the other way, and
-`write_lead_fields` / `lead_field_is_open` / `test_lead_fields_fill_once` are gone with it.
+Both earlier answers are recorded because this file has held each. Until 2026-07-29 the value went onto the
+LEAD only, which left "at this punch the address was X" unanswerable; §4.2 moved it onto the task and painted
+the field read-only, which left the lead stale because a rep logs a task and does not re-type the same facts
+into the Data tab. What ships now keeps §4.2's routing (so history still answers) and adds the lead leg.
 
-What this module holds:
-
-  * the PREFILL still rides the `type_config` answer the form already fetches, so a form with lead fields
-    loads in ONE call, and it is read through the lead detail brain — a field this viewer is not entitled
-    to see is not in the answer at all;
-  * the descriptor carries `source`, which is how the client knows which fields to prefill;
-  * the field is painted READ-ONLY, always.
+Where the value LANDS is asserted through the entry point a rep uses: `tests/activity/test_dual_write.py`.
 
 Where the value LANDS is the router's business and is asserted where every other routed shape is, through
 the entry point a rep uses: `tests/activity/test_dual_write.py`.
@@ -34,6 +24,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity import api as activity_api
+from tatva_connect.api._base import trusted_permissions
+from tatva_connect.lead import detail as lead_detail
 from tatva_connect.tests.activity import task_type_fixture
 from tatva_connect.tests.automation import field_allowlist
 
@@ -42,6 +34,7 @@ LEAD_FIELD = "job_title"
 
 ACTIVITY_FIELD = "zz_lf_note"
 PREFILLED = "ZZ already on the lead"
+CHANGED = "ZZ what the rep learnt on the call"
 
 
 class TestLeadFieldsInForm(FrappeTestCase):
@@ -106,17 +99,72 @@ class TestLeadFieldsInForm(FrappeTestCase):
 
 	# ---- the paint ------------------------------------------------------------------------------------
 
-	def test_a_lead_field_is_read_only_and_an_activity_field_beside_it_is_not(self):
-		"""The form shows context and collects answers. Nothing about the lead's state changes that, so
-		there is no state in which the box opens and none in which a rep is refused after typing."""
+	def test_a_lead_field_opens_editable_whatever_the_lead_holds(self):
+		"""A rep who learns the new value on the call has to be able to type it. Nothing about the lead's
+		state changes that, so there is no state in which the box is locked."""
 		for on_file in (None, PREFILLED):
 			with self.subTest(on_file=on_file):
 				frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, on_file)
 				fields = {f["fieldname"]: f
 						  for f in activity_api.type_config(self.task_type, lead=self.lead.name)["fields"]}
-				self.assertEqual(fields[LEAD_FIELD]["read_only"], 1, "a lead field opened editable")
+				self.assertEqual(fields[LEAD_FIELD]["read_only"], 0, "a lead field opened locked")
 				self.assertEqual(fields[ACTIVITY_FIELD]["read_only"], 0,
 								 "an ordinary activity field was painted read-only")
+
+	# ---- the write-back -------------------------------------------------------------------------------
+
+	def test_an_answer_the_rep_changes_goes_back_to_the_lead(self):
+		"""The point of the leg: one punch logs the task and updates the lead."""
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, PREFILLED)
+		activity_api.compute_activity(self.lead.name, self.task_type,
+									  {LEAD_FIELD: CHANGED, ACTIVITY_FIELD: "note"})
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), CHANGED,
+						 "the rep's answer never reached the lead")
+
+	def test_the_task_takes_the_answer_the_rep_gave(self):
+		"""§4.2's snapshot survives the new leg — the task stores the punch's value, not a live lead read."""
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, PREFILLED)
+		fields = activity_api.compute_activity(self.lead.name, self.task_type,
+											   {LEAD_FIELD: CHANGED, ACTIVITY_FIELD: "note"})
+		self.assertIn(CHANGED, frappe.as_json(fields), "the task kept no copy of the answer")
+
+	def test_a_field_the_rep_leaves_alone_writes_nothing(self):
+		"""An untouched form is not an edit, so every existing punch writes exactly what it wrote before."""
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, PREFILLED)
+		before = frappe.db.get_value("CRM Lead", self.lead.name, "modified")
+		activity_api.compute_activity(self.lead.name, self.task_type, {ACTIVITY_FIELD: "note"})
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), PREFILLED,
+						 "an untouched lead field was overwritten")
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, "modified"), before,
+						 "the lead was saved for a punch that changed nothing on it")
+
+	def test_a_trusted_caller_never_moves_the_lead(self):
+		"""The migration replays 856k historic punches through this same brain, and the partner API holds its
+		own lead endpoint. Either one writing here would rewrite the patient record from history."""
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, PREFILLED)
+		with trusted_permissions():
+			activity_api.compute_activity(self.lead.name, self.task_type,
+										  {LEAD_FIELD: CHANGED, ACTIVITY_FIELD: "note"})
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), PREFILLED,
+						 "a replayed activity rewrote the lead")
+
+	def test_a_read_only_lead_field_is_shown_but_never_written(self):
+		"""The declaration is the switch: `read_only` shows the answer for reference and stops the write leg."""
+		frappe.db.set_value("CRM Task Type Field", {"parent": self.task_type, "fieldname": LEAD_FIELD},
+							"read_only", 1)
+		frappe.db.set_value("CRM Lead", self.lead.name, LEAD_FIELD, PREFILLED)
+		fields = {f["fieldname"]: f
+				  for f in activity_api.type_config(self.task_type, lead=self.lead.name)["fields"]}
+		self.assertEqual(fields[LEAD_FIELD]["read_only"], 1, "the declaration was ignored")
+		activity_api.compute_activity(self.lead.name, self.task_type,
+									  {LEAD_FIELD: CHANGED, ACTIVITY_FIELD: "note"})
+		self.assertEqual(frappe.db.get_value("CRM Lead", self.lead.name, LEAD_FIELD), PREFILLED,
+						 "a read-only lead field still wrote to the lead")
+
+	def test_a_lead_field_the_catalog_does_not_make_writable_is_refused(self):
+		"""The Data tab's gate is the only gate — a form cannot write what `update_lead_detail` would refuse."""
+		with self.assertRaises(frappe.ValidationError):
+			lead_detail.write_lead_fields(self.lead.name, {"lead_name": "Forged"})
 
 	def test_the_descriptor_tells_the_form_which_fields_are_the_leads(self):
 		"""The client renders and submits from this one list, so `source` has to be on it — otherwise the
