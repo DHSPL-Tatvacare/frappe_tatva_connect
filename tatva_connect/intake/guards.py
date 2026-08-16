@@ -31,7 +31,7 @@ Config (rate caps) lives in the `CRM Intake Settings` Single; blanks fall back t
 """
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, format_duration, now_datetime
 
 from tatva_connect import automation
 from tatva_connect.whatsapp.phone import to_e164
@@ -136,10 +136,8 @@ def _bump(scope, ident, limit, window):
 	if not frappe.cache.get(key):
 		frappe.cache.setex(key, window, 0)
 	if frappe.cache.incrby(key, 1) > limit:
-		frappe.throw(
-			_("Too many enrolment submissions — please try again later."),
-			exc=frappe.RateLimitExceededError,
-		)
+		# Plain throw (417): frappe's uploader reads the server message only on 403/417, so a 429 reaches the rep as "the file might be corrupted"; the wait is formatted from `window`, never typed.
+		frappe.throw(_("Too many enrolment submissions — please try again in {0}.").format(format_duration(window)))
 
 
 def _submitted_phone(intake_form):
@@ -231,10 +229,7 @@ def upload_file():
 
 	# Call 1 (new bytes): bound the per-handle count before it lands. The real flood control is the per-IP rate limit above; this cap only stops an honest visitor's runaway form.
 	if len(urls) >= _int_cfg("files_per_handle"):
-		frappe.throw(
-			_("Upload limit reached for this form — please submit or start again."),
-			exc=frappe.RateLimitExceededError,
-		)
+		frappe.throw(_("The upload limit for this form has been reached — please try again in {0}.").format(format_duration(_HANDLE_TTL)))
 	result = _native()
 	new_url = getattr(result, "file_url", None)
 	if new_url:
@@ -281,7 +276,8 @@ def _reap_one(name):
 	if not f or f.owner != "Guest" or f.attached_to_doctype or f.attached_to_name or f.is_folder:
 		return
 	try:
-		frappe.delete_doc("File", name, ignore_permissions=True, delete_permanently=True)  # authz-ok: gate is owner==Guest AND unattached, re-checked immediately above
+		# authz-ok: tier-a — background sweep; gate is owner==Guest AND unattached, re-checked immediately above
+		frappe.delete_doc("File", name, ignore_permissions=True, delete_permanently=True)
 		frappe.db.commit()
 	except Exception:
 		frappe.db.rollback()

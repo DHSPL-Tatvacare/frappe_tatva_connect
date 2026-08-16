@@ -1,0 +1,20 @@
+/* The heading is painted inside the introduction, BELOW the logo, so frappe's own title is hidden — without this the form shows its name twice. Kept identical to the seed's FORM_CSS. */
+.web-form-title {
+	display: none;
+}
+
+.web-form-introduction {
+	margin-top: 0;
+}
+
+/* iOS zooms the page whenever a focused input renders under 16px, and frappe's .form-control is 14px (espresso/_typography.scss) — 16px removes the trigger without a viewport meta, so a rep can still pinch into the prescription they just attached. */
+/* --input-height moves with it: 28px less 6px padding each side leaves a 16px content box, which clips 16px text; the variable is overridden rather than .form-control's height so textareas (form.scss:19 min-height) follow the same number. */
+@media (max-width: 767px) {
+	:root {
+		--input-height: 36px;
+	}
+
+	.form-control {
+		font-size: 16px;
+	}
+}
