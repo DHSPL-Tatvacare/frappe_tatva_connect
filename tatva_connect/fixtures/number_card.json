@@ -2,7 +2,7 @@
  {
   "doctype": "Number Card",
   "name": "API Requests (24h)",
-  "label": "API \u00b7 Requests (24h)",
+  "label": "API · Requests (24h)",
   "module": "Observability",
   "is_standard": 0,
   "is_public": 1,
@@ -19,7 +19,7 @@
  {
   "doctype": "Number Card",
   "name": "API Errors (24h)",
-  "label": "API \u00b7 Errors (24h)",
+  "label": "API · Errors (24h)",
   "module": "Observability",
   "is_standard": 0,
   "is_public": 1,
@@ -36,29 +36,31 @@
  {
   "doctype": "Number Card",
   "name": "API Error Rate (24h)",
-  "label": "API \u00b7 Error Rate (24h)",
+  "label": "API · Error Rate (24h)",
   "module": "Observability",
   "is_standard": 0,
   "is_public": 1,
   "type": "Custom",
   "method": "tatva_connect.observability.analytics.error_rate_card",
-  "color": "#ED6396"
+  "color": "#ED6396",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Number Card",
   "name": "API p95 Latency (24h)",
-  "label": "API \u00b7 p95 Latency (24h)",
+  "label": "API · p95 Latency (24h)",
   "module": "Observability",
   "is_standard": 0,
   "is_public": 1,
   "type": "Custom",
   "method": "tatva_connect.observability.analytics.p95_card",
-  "color": "#FFC732"
+  "color": "#FFC732",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Number Card",
   "name": "Partner API Requests (24h)",
-  "label": "Partner API \u00b7 Requests (24h)",
+  "label": "Partner API · Requests (24h)",
   "module": "Tatva Connect",
   "is_standard": 0,
   "is_public": 1,
@@ -74,7 +76,7 @@
  {
   "doctype": "Number Card",
   "name": "Partner API Errors (24h)",
-  "label": "Partner API \u00b7 Errors (24h)",
+  "label": "Partner API · Errors (24h)",
   "module": "Tatva Connect",
   "is_standard": 0,
   "is_public": 1,

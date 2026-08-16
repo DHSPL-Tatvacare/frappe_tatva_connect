@@ -96,3 +96,48 @@ class TestThePostLoadManifest(_BundleCase):
 		# vacuously the day a folder is renamed — the same silence the manifest rename already bought.
 		self.assertIn(LAYOUT_SEED, [pathlib.PurePath(e).name for e in _entries(POST_LOAD)])
 		self.assertNotIn(LAYOUT_SEED, [pathlib.PurePath(e).name for e in _entries(PRE_LOAD)])
+
+
+# The per-grain split of the post-load set. A grain-at-a-time migration cannot run POST_LOAD, because that
+# seeds every grain's rules at once and the layout seed then lays out the grains not yet loaded as ruleless.
+# These five carry the SAME seeds, grouped by grain, and this class is what keeps them honest.
+GRAIN_MANIFESTS = (
+	"2a-tatvapractice.manifest",
+	"2b-goodflip.manifest",
+	"2c-anaya.manifest",
+	"2d-layout.manifest",
+	"2e-liver-forever.manifest",
+)
+
+
+class TestTheGrainSplitLosesNothing(_BundleCase):
+	def _split(self):
+		return [e for m in GRAIN_MANIFESTS for e in _entries(m)]
+
+	def test_the_split_is_the_whole_post_load_set_exactly(self):
+		"""Nothing added, nothing lost. A seed dropped here is a rule that never lands for a live grain,
+		and nothing downstream would say so — the forms would simply behave as if it had no rules."""
+		self.assertEqual(sorted(self._split()), sorted(_entries(POST_LOAD)))
+
+	def test_no_seed_appears_in_two_grain_manifests(self):
+		split = self._split()
+		twice = sorted({e for e in split if split.count(e) > 1})
+		self.assertEqual(twice, [], "a seed in two grain lists runs twice, once per grain that triggers it")
+
+	def test_each_grain_manifest_keeps_the_original_relative_order(self):
+		"""Several Anaya rule files UPDATE rows an earlier one writes, so a reshuffle matches zero rows and
+		exits clean. Order inside a grain is the order it held in the combined manifest."""
+		whole = _entries(POST_LOAD)
+		for manifest in GRAIN_MANIFESTS:
+			positions = [whole.index(e) for e in _entries(manifest)]
+			self.assertEqual(positions, sorted(positions), f"{manifest} reorders its seeds")
+
+	def test_the_layout_seed_is_alone_and_last(self):
+		"""It rewrites EVERY task type's layout and reads whether a type has rules, so it belongs in no
+		grain's list — only in the one that runs after the last of them."""
+		for manifest in GRAIN_MANIFESTS:
+			names = [pathlib.PurePath(e).name for e in _entries(manifest)]
+			if manifest == "2d-layout.manifest":
+				self.assertEqual(names, [LAYOUT_SEED], "2d carries the layout seed and nothing else")
+			else:
+				self.assertNotIn(LAYOUT_SEED, names, f"{manifest} would lay out grains not yet loaded")

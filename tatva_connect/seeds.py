@@ -16,7 +16,7 @@ gap never aborts the migrate/deploy (the gap shows up in Error Log instead).
 import frappe
 
 from tatva_connect import seed_side_effect_options
-from tatva_connect.patches import seed_india_cities
+from tatva_connect.patches import seed_india_cities, seed_india_states
 
 # Pure config-implementation mode: business/master DATA is NOT auto-seeded. It ships as
 # manual SQL in db-seeds/ (operator runs post-migrate, then activates via a Settings form).
@@ -24,7 +24,8 @@ from tatva_connect.patches import seed_india_cities
 # city+state list (ODbL) backing the State->City cascade, and the clinical Side Effect
 # vocabulary backing the side_effects_detail Table MultiSelect. Everything else (taxonomy,
 # partner-API catalog, lead stages, task types, UI layouts) lives in db-seeds/ (2026-06-11).
-_SEEDS = (seed_india_cities, seed_side_effect_options)
+# seed_india_states is here and not only in patches.txt: install-app BASELINES that file without running it, so a fresh site got the cities and never the states, and a Link to an empty master is a picker over nothing. Both read the same bundled file, so they cannot disagree on a spelling.
+_SEEDS = (seed_india_cities, seed_india_states, seed_side_effect_options)
 
 
 def seed_master_data():

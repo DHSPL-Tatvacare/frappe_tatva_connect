@@ -577,6 +577,8 @@ fixtures = [
 		"Automation Run Log by Outcome", "Automation Fires by Grain", "Automation Fires by Doctype",
 		"Automation Top Rules", "Automation Fires (Daily)", "Automation Health by Grain",
 		"Partner Leads by Vertical", "Errors by Reference Doctype",
+		"Journeys by Status", "API Requests by Channel", "Visits by Verdict",
+		"File Scans by Verdict", "Push Devices Registered",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
@@ -589,8 +591,10 @@ fixtures = [
 	{
 		"dt": "Custom Field",
 		# Full parity (schema-as-code): ship EVERY custom field we add to these native doctypes so a fresh migrate reproduces the entire schema; every Custom Field here is ours; workflow_state is Frappe-managed (excluded).
+		# The five lead child profiles are OUR OWN doctypes (module Lead, app tatva_connect), so a wholesale export cannot sweep another app's field — there is no other app writing to them. They belong here and not in the by-name list below, which exists only for doctypes somebody else owns.
 		"filters": [
-			["dt", "in", ["CRM Lead", "CRM Deal", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File", "CRM Dashboard"]],
+			["dt", "in", ["CRM Lead", "CRM Deal", "CRM Task", "CRM Program", "CRM Call Log", "CRM Telephony Agent", "WhatsApp Account", "File", "CRM Dashboard",
+			              "CRM Acquisition Profile", "CRM Care Providers Profile", "CRM Lab Profile", "CRM Lead Activity Metrics", "CRM Plan Profile"]],
 			["fieldname", "!=", "workflow_state"],
 		],
 	},
@@ -632,6 +636,23 @@ fixtures = [
 		"Lead Sync Source-facebook_app",
 		# Provenance of the stored Page token, not ownership: a Business owns Pages and apps alike.
 		"Facebook Page-facebook_app",
+		# What a SKU includes, so a plan's services are a property of the product and not typed per sale.
+		"CRM Product-custom_diet_services",
+		"CRM Product-custom_physio_services",
+		# The device a sale shipped and how it was paid — facts about the line, which crm's own row has nowhere to put.
+		"CRM Products-custom_cgm_brand",
+		"CRM Products-custom_sensor_count",
+		"CRM Products-custom_transmitter_count",
+		"CRM Products-custom_payment_id",
+		"CRM Products-custom_payment_date",
+		# The migrated note's id in the source system — the idempotency key beside custom_lsq_activity_id.
+		"FCRM Note-custom_external_id",
+		# The media half of a WhatsApp message: an image can arrive after the text or never, so the row carries the artifact's state and its retry clock.
+		"WhatsApp Message-custom_media_state",
+		"WhatsApp Message-custom_media_type",
+		"WhatsApp Message-custom_media_ref",
+		"WhatsApp Message-custom_media_attempts",
+		"WhatsApp Message-custom_media_next_attempt_at",
 	]]]},
 	# Field-property overrides on CRM data-model doctypes (option-less profile Select fields -> free-text, so form-written values store AND display).
 	{"dt": "Property Setter", "filters": [["name", "in", [
@@ -719,6 +740,14 @@ fixtures = [
 		"WhatsApp Notification-header_type-hidden",
 		"WhatsApp Notification-attach_from_field-hidden",
 		"WhatsApp Notification-button_fields-hidden",
+		# Insights stores a dashboard preview as a data URI, which overruns the Attach Image field it ships; Code holds it. Owned by the insights app, so it is named here and never swept.
+		"Insights Dashboard v3-preview_image-fieldtype",
+		# Email ships OFF like every other switch (invariant 6); frappe defaults all five to 1. A default decides what a NEW row is born with and never touches an existing one — patches/default_email_notifications_off baselines those, once, and the rep owns it after that.
+		"Notification Settings-enable_email_notifications-default",
+		"Notification Settings-enable_email_assignment-default",
+		"Notification Settings-enable_email_mention-default",
+		"Notification Settings-enable_email_share-default",
+		"Notification Settings-enable_email_event_reminders-default",
 	]]]},
 	# NOTE: only schema-as-code ships as fixtures (Custom Field columns + Property Setter overrides); business/master DATA is NOT seeded — it ships as manual db-seeds/ SQL the operator runs, so the app comes up DORMANT (CRM City is the one intrinsic exception, via seed_india_cities).
 	# WhatsApp capability roles — definitions only (name-filtered so export never vacuums other roles); ship DORMANT, assigned to nobody. Operator grants them. See tatva_connect.whatsapp.roles.

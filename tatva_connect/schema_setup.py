@@ -28,10 +28,12 @@ from tatva_connect.patches import (
 	add_crm_task_metrics_index,
 	add_dashboard_card_indexes,
 	add_integration_request_index,
+	add_integration_request_reference_index,
 	add_lead_dedup_unique_index,
 	add_lead_timeline_indexes,
 	add_observability_indexes,
 	add_step_log_contact_index,
+	add_step_log_journey_index,
 	add_task_answer_fieldname_index,
 	add_task_answer_question_index,
 	add_task_document_kind_index,
@@ -41,6 +43,7 @@ from tatva_connect.patches import (
 	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
+	drop_step_log_contact_index,
 	hash_name_transactional_doctypes,
 	migrate_webhook_tokens_to_password,
 	recreate_whatsapp_message_id_index_composite,
@@ -66,12 +69,18 @@ _STEPS = (
 	retire_activity_legacy_columns,
 	add_observability_indexes,
 	add_crm_task_metrics_index,
+	# (journey, creation, name) on CRM Workflow Step Log — a run's log is a seek plus an ordered range instead of a scan of every step ever written. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
+	add_step_log_journey_index,
+	# (reference_docname, creation) on Integration Request — the Activity rail now shows the Call API node's record, and this is the pair it reads by; frappe's shared outbound log carries no index that can serve it. Composite and a frappe-owned doctype, so not JSON-declarable.
+	add_integration_request_reference_index,
 	# (status, due_date) on CRM Task — every due-state predicate and every team_charts due count seek on
 	# that pair; the existing indexes lead with reference_docname and cannot serve it. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_task_due_state_index,
 	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_contact_index,
+	# ...and DROP the single-column contact_index the search_index flag built: by leftmost prefix the composite serves every read it could, and for the cap's own query it serves them better (the window filters inside the index). Two overlapping indexes cost a write each on the fastest-growing table and let the optimiser pick the worse plan.
+	drop_step_log_contact_index,
 	# (creation, status) and (status, modified) on CRM Task — the dashboard's activity cards group on a low-cardinality column over a date range, so the range seeks and the group column rides in the leaf to make the index covering. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_dashboard_card_indexes,
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.

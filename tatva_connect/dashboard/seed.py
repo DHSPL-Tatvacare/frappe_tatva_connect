@@ -102,7 +102,16 @@ def filters_shipped():
 	return (executor.DATE_RANGE, "user", *(c for c in grain.columns("CRM Lead") if c))
 
 
-# Exactly one layout ships. A role with no row here has no dashboard, which is the answer, not a gap.
+def _placed():
+	"""The shipped arrangement, as rows. One list, however many layouts read it — a second copy would drift."""
+	return [{"chart": name, "x": x, "y": y, "w": w, "h": h} for name, x, y, w, h in _PLACED]
+
+
+# A role with no row here has no dashboard, which is the answer, not a gap. Two ship, and they carry the
+# SAME cards on purpose: what separates a manager from an administrator is not the questions asked, it is
+# the rows the answers are drawn from, and that is already decided per viewer (access.visibility) rather
+# than per layout. `Sales Manager` sits above `Sales User` so the 56 people who hold both stop landing on
+# the rep's dashboard, and below `System Manager` so an administrator's own view is unchanged.
 _LAYOUTS = [
 	{
 		"role": "System Manager",
@@ -110,9 +119,17 @@ _LAYOUTS = [
 		"title": "System Manager Dashboard",
 		"enabled": 1,
 		"priority": 100,
-		"charts": [{"chart": name, "x": x, "y": y, "w": w, "h": h} for name, x, y, w, h in _PLACED],
+		"charts": _placed(),
 		"exposed_filters": json.dumps(list(filters_shipped())),
-	}
+	},
+	{
+		"role": "Sales Manager",
+		"title": "Sales Manager Dashboard",
+		"enabled": 1,
+		"priority": 75,
+		"charts": _placed(),
+		"exposed_filters": json.dumps(list(filters_shipped())),
+	},
 ]
 
 

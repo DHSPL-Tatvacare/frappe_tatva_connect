@@ -13,7 +13,8 @@
   "timespan": "Last Month",
   "time_interval": "Daily",
   "filters_json": "{\"metric\":\"Requests\",\"granularity\":\"day\"}",
-  "dynamic_filters_json": "[]"
+  "dynamic_filters_json": "[]",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Dashboard Chart",
@@ -29,7 +30,8 @@
   "timespan": "Last Month",
   "time_interval": "Daily",
   "filters_json": "{\"metric\":\"Errors\",\"granularity\":\"day\"}",
-  "dynamic_filters_json": "[]"
+  "dynamic_filters_json": "[]",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Dashboard Chart",
@@ -45,7 +47,8 @@
   "timespan": "Last Month",
   "time_interval": "Daily",
   "filters_json": "{\"metric\":\"Error Rate\",\"granularity\":\"day\"}",
-  "dynamic_filters_json": "[]"
+  "dynamic_filters_json": "[]",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Dashboard Chart",
@@ -61,7 +64,8 @@
   "timespan": "Last Month",
   "time_interval": "Daily",
   "filters_json": "{\"metric\":\"p95\",\"granularity\":\"day\"}",
-  "dynamic_filters_json": "[]"
+  "dynamic_filters_json": "[]",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Dashboard Chart",
@@ -77,7 +81,8 @@
   "timespan": "Last Week",
   "time_interval": "Daily",
   "filters_json": "{\"metric\":\"p95\",\"granularity\":\"hour\"}",
-  "dynamic_filters_json": "[]"
+  "dynamic_filters_json": "[]",
+  "document_type": "CRM API Metric"
  },
  {
   "doctype": "Dashboard Chart",
@@ -140,6 +145,86 @@
   "group_by_type": "Count",
   "number_of_groups": 0,
   "type": "Bar",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Journeys by Status",
+  "chart_name": "Journeys by Status",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Group By",
+  "document_type": "CRM Workflow Journey",
+  "group_by_based_on": "status",
+  "group_by_type": "Count",
+  "number_of_groups": 0,
+  "type": "Donut",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "API Requests by Channel",
+  "chart_name": "API Requests by Channel",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Group By",
+  "document_type": "CRM API Request Log",
+  "group_by_based_on": "channel",
+  "group_by_type": "Count",
+  "number_of_groups": 0,
+  "type": "Bar",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Visits by Verdict",
+  "chart_name": "Visits by Verdict",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Group By",
+  "document_type": "CRM Visit Audit",
+  "group_by_based_on": "verdict",
+  "group_by_type": "Count",
+  "number_of_groups": 0,
+  "type": "Donut",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "File Scans by Verdict",
+  "chart_name": "File Scans by Verdict",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Group By",
+  "document_type": "CRM File Scan Log",
+  "group_by_based_on": "verdict",
+  "group_by_type": "Count",
+  "number_of_groups": 0,
+  "type": "Donut",
+  "filters_json": "[]",
+  "dynamic_filters_json": "[]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Push Devices Registered",
+  "chart_name": "Push Devices Registered",
+  "module": "Tatva Connect",
+  "is_standard": 0,
+  "is_public": 1,
+  "chart_type": "Count",
+  "document_type": "CRM Push Subscription",
+  "based_on": "creation",
+  "time_interval": "Monthly",
+  "timespan": "Last Year",
+  "type": "Line",
   "filters_json": "[]",
   "dynamic_filters_json": "[]"
  }

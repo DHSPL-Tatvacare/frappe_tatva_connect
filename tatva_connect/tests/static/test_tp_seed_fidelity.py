@@ -15,21 +15,24 @@ Three things this locks, none of which a bench can tell you before the operator 
    before the LSQ setting was, and both under-capture. Every `location_condition_*` / `location_operator`
    assignment in the seed must therefore be NULL — a re-narrowing would otherwise pass unnoticed.
 
-3. THE SEED IS ACTUALLY REGISTERED, in `seeds.manifest` AND in `INDEX.md`. `2026-08-01-form-layout-breaks.sql`
+3. THE SEED IS ACTUALLY REGISTERED, in `1-before-load.manifest` AND in `INDEX.md`. `2026-08-01-form-layout-breaks.sql`
    was written, shipped to the VM, listed in no manifest, and never ran while the docs recorded its work as
    done. An unregistered seed is a seed that does not exist.
 
 Plus one on the layout seed: `Doctor Training Field Visit` is being STARVED by Phase 1, so a design aimed
-at it is a design for a form no rep will open. It is not repointed at `Doctor Training` — the two declare
-different fieldnames (`training_type` / `training_completed_date_time` vs `lsq_status`;
-`was_the_asm_along_with_you` vs `was_asm_along_with_you`) and the layout preflight would abort the run.
+at it is a design for a form no rep will open. The collapsed `Doctor Training` DOES carry a design now, and
+that is correct — all nineteen fields it names are declared on the type. Whether a design and its type
+agree is deliberately NOT asserted here: `notes` is declared by a blanket `INSERT ... SELECT` over every
+task type, so no offline scanner can see which types it reaches and any such lock would report a false
+break. The layout seed's own preflight is that gate, and it runs where the answer is knowable.
 
-And one on tp-06 itself: THE SIX NAMES ARE NOT RETYPED WITHOUT A CROSS-CHECK. Both seeds key their
+And one on the TYPES seed: THE SIX NAMES ARE NOT RETYPED WITHOUT A CROSS-CHECK. Both seeds key their
 `UPDATE`s on `name`, and a `name` that no longer exists matches zero rows and exits 0 — so a RENAME in
-`2026-07-26-tp-06-activity-rules.sql` alone leaves this file, the location seed and every assertion in
-lockstep and green while nothing at all is written. `seeds.manifest:52` records that class already
-happening once. So the set the location seed touches is asserted to sit INSIDE the set tp-06 declares,
-read out of tp-06 with the same scanner rather than typed again.
+the types seed alone leaves this file, the location seed and every assertion in lockstep and green while
+nothing at all is written. The manifest records that class already happening once. So the set the location
+seed touches is asserted to sit INSIDE the set the types seed declares, read out of it with the same
+scanner rather than typed again. That seed was tp-06; it is retired, and `2026-08-10-tp-activity-types.sql`
+replaced its types half, so the lock follows the writer.
 
 T-TP-4 is why `_strip_sql_comments` exists: a `--` comment in these files contains apostrophes and
 semicolons, and a naive scan reads them as SQL. Comments are stripped quote-aware BEFORE anything is read.
@@ -54,8 +57,10 @@ SEEDS = pathlib.Path(app_root(__file__)).parent / "docs" / "go-live" / "3-seed" 
 
 LOCATION_SEED = "2026-08-05-tp-location-capture.sql"
 LAYOUT_SEED = "2026-07-27-activity-form-layout.bench-console.py"
-RULES_SEED = "2026-07-26-tp-06-activity-rules.sql"
-MANIFEST = "seeds.manifest"
+# The seed that DECLARES the TP types and writes the two conditions the location seed clears. Was tp-06,
+# which is retired to 3-seed/archive/ — this file replaced its types half, so the lock follows the writer.
+TYPES_SEED = "2026-08-10-tp-activity-types.sql"
+MANIFEST = "1-before-load.manifest"
 INDEX = "INDEX.md"
 
 GRAIN = "Tatvapractice::India::Field-Sales"
@@ -78,12 +83,18 @@ _ASSIGN = re.compile(r"`(\w+)`\s*=\s*('[^']*'|NULL)", re.IGNORECASE)
 
 
 def _bundle(name):
-	"""One file of the go-live bundle. Gitignored by design, so a checkout without it skips rather than
-	lies — the same call `test_derived_head.py:52` makes."""
-	path = SEEDS / name
-	if not path.exists():
-		raise unittest.SkipTest(f"the go-live bundle is not in this checkout: {path}")
-	return path.read_text(encoding="utf-8")
+	"""One file of the go-live bundle, found wherever its phase folder is.
+
+	Named by BASENAME and resolved across the phase folders, never by a hard-coded path: the seeds were
+	split into `1-before-load/` and `2-after-load/` and every path here kept pointing at their old parent,
+	so all eight of these locks reported "not in this checkout" against a checkout that had the files —
+	skipping green for the whole of that window. A basename cannot go stale when a seed changes phase.
+	"""
+	for folder in (SEEDS, SEEDS / "1-before-load", SEEDS / "2-after-load"):
+		path = folder / name
+		if path.exists():
+			return path.read_text(encoding="utf-8")
+	raise unittest.SkipTest(f"the go-live bundle is not in this checkout: {SEEDS / name}")
 
 
 def _strip_sql_comments(sql):
@@ -133,17 +144,31 @@ def _declared_types(seed):
 def _manifest_entries():
 	"""The seed filenames `apply-seeds.sh` will actually run — commented lines are not run."""
 	lines = _bundle(MANIFEST).splitlines()
-	return [ln.split("#")[0].strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+	entries = [ln.split("#")[0].strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+	# Basenames: a manifest entry carries its phase folder, and every caller here names a seed by file.
+	return [e.rsplit("/", 1)[-1] for e in entries]
 
 
 def _designed_types():
-	"""The task types the layout seed hand-designs — its `DESIGNED` literal, read as data."""
+	"""The task types the layout seed hand-designs — the KEYS of its `DESIGNED` map.
+
+	Keys only, never the whole map: a value may name a shared heading constant, and evaluating it as a
+	literal then throws. What this lock asks is WHICH TYPES carry a design, so the keys are the answer and
+	the values are none of its business.
+	"""
+	return {ast.literal_eval(k) for k in _designed_node().keys if k is not None}
+
+
+def _designed_node():
+	"""The layout seed's `DESIGNED` dict node, so both readers parse the file the same way once."""
 	tree = ast.parse(_bundle(LAYOUT_SEED))
 	for node in ast.walk(tree):
 		if isinstance(node, ast.Assign) and any(
 			isinstance(t, ast.Name) and t.id == "DESIGNED" for t in node.targets
 		):
-			return set(ast.literal_eval(node.value))
+			if not isinstance(node.value, ast.Dict):
+				raise AssertionError(f"DESIGNED in {LAYOUT_SEED} is not a dict — this lock is watching nothing")
+			return node.value
 	raise AssertionError(f"no DESIGNED map in {LAYOUT_SEED} — this lock is watching nothing")
 
 
@@ -154,10 +179,10 @@ class TestTPLocationSeed(unittest.TestCase):
 	def test_it_touches_the_six_and_only_the_six(self):
 		self.assertEqual(_task_types(_strip_sql_comments(self.sql)), THE_SIX)
 
-	def test_every_type_it_touches_is_one_tp_06_really_declares(self):
-		"""Both seeds key on `name`, so a rename in tp-06 alone leaves this UPDATE matching zero rows
-		and exiting 0 — green everywhere, written nowhere (`seeds.manifest:52`)."""
-		self.assertLessEqual(_task_types(_strip_sql_comments(self.sql)), _declared_types(RULES_SEED))
+	def test_every_type_it_touches_is_one_the_types_seed_really_declares(self):
+		"""Both seeds key on `name`, so a rename in the types seed alone leaves this UPDATE matching zero
+		rows and exiting 0 — green everywhere, written nowhere."""
+		self.assertLessEqual(_task_types(_strip_sql_comments(self.sql)), _declared_types(TYPES_SEED))
 
 	def test_contact_type_is_never_named(self):
 		"""LSQ set TrackLocation = 0 on event 210 deliberately; declaring it here would overrule that."""
@@ -194,7 +219,7 @@ class TestTPLocationSeed(unittest.TestCase):
 
 	def test_it_runs_after_the_seed_that_wrote_the_conditions(self):
 		entries = _manifest_entries()
-		self.assertLess(entries.index(RULES_SEED), entries.index(LOCATION_SEED))
+		self.assertLess(entries.index(TYPES_SEED), entries.index(LOCATION_SEED))
 
 
 class TestLayoutSeedStarvesTheRetiredType(unittest.TestCase):
@@ -202,10 +227,6 @@ class TestLayoutSeedStarvesTheRetiredType(unittest.TestCase):
 		designed = _designed_types()
 		self.assertTrue(designed, "the DESIGNED map is empty")
 		self.assertNotIn(f"{GRAIN}::Doctor Training Field Visit", designed)
-
-	def test_the_design_is_not_repointed_at_the_collapsed_type(self):
-		"""The two declare different fieldnames, so a repoint would abort the layout preflight."""
-		self.assertNotIn(f"{GRAIN}::Doctor Training", _designed_types())
 
 
 class TestTheScannerItself(unittest.TestCase):

@@ -85,6 +85,18 @@
    "idx": 6
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "circle-dot",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Workflow Nodes",
+   "link_to": "CRM Workflow Node",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "link",
@@ -122,6 +134,18 @@
    "show_arrow": 0,
    "type": "Link",
    "idx": 9
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file-text",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Campaign Documents",
+   "link_to": "CRM Campaign Document",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
   },
   {
    "child": 0,
@@ -176,7 +200,7 @@
    "idx": 13
   }
  ],
- "modified": "2026-08-10 12:00:00.000000",
+ "modified": "2026-08-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",

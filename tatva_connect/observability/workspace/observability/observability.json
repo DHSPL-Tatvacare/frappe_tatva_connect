@@ -2,43 +2,11 @@
   "app": "tatva_connect",
   "charts": [
     {
-      "chart_name": "API Traffic (Daily)",
-      "label": "API Traffic (Daily)"
-    },
-    {
       "chart_name": "API Requests by Endpoint",
       "label": "API Requests by Endpoint"
-    },
-    {
-      "chart_name": "API Errors (Daily)",
-      "label": "API Errors (Daily)"
-    },
-    {
-      "chart_name": "API Error Rate (Daily)",
-      "label": "API Error Rate (Daily)"
-    },
-    {
-      "chart_name": "API p95 Latency (Daily)",
-      "label": "API p95 Latency (Daily)"
-    },
-    {
-      "chart_name": "API p95 Latency (Hourly)",
-      "label": "API p95 Latency (Hourly)"
-    },
-    {
-      "chart_name": "Automation Fires by Grain",
-      "label": "Automation Fires by Grain"
-    },
-    {
-      "chart_name": "Automation Health by Grain",
-      "label": "Automation Health by Grain"
-    },
-    {
-      "chart_name": "Errors by Reference Doctype",
-      "label": "Errors by Reference Doctype"
     }
   ],
-  "content": "[{\"id\":\"obs_hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Observability - Partner API &amp; Webhooks</b></span>\",\"col\":12}},{\"id\":\"obs_c1\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"API Requests (24h)\",\"col\":3}},{\"id\":\"obs_c2\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"API Errors (24h)\",\"col\":3}},{\"id\":\"obs_c3\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"API Error Rate (24h)\",\"col\":3}},{\"id\":\"obs_c4\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"API p95 Latency (24h)\",\"col\":3}},{\"id\":\"obs_ch1\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API Traffic (Daily)\",\"col\":12}},{\"id\":\"obs_ch2\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API Requests by Endpoint\",\"col\":6}},{\"id\":\"obs_ch3\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API Errors (Daily)\",\"col\":6}},{\"id\":\"obs_ch4\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API Error Rate (Daily)\",\"col\":6}},{\"id\":\"obs_ch5\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API p95 Latency (Daily)\",\"col\":6}},{\"id\":\"obs_ch6\",\"type\":\"chart\",\"data\":{\"chart_name\":\"API p95 Latency (Hourly)\",\"col\":12}},{\"id\":\"obs_ch8\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Errors by Reference Doctype\",\"col\":6}},{\"id\":\"obs_ch9\",\"type\":\"chart\",\"data\":{\"chart_name\":\"Automation Health by Grain\",\"col\":6}},{\"id\":\"obs_s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Metrics (raw)\",\"col\":4}},{\"id\":\"obs_s2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Request Log\",\"col\":4}},{\"id\":\"obs_s3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Metric Settings\",\"col\":4}},{\"id\":\"obs_s5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Error Log\",\"col\":4}},{\"id\":\"obs_s6\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Integration Requests\",\"col\":4}},{\"id\":\"obs_s7\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Webhook Log\",\"col\":4}}]",
+  "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Requests (24h)\", \"col\": 3}, \"id\": \"b1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors (24h)\", \"col\": 3}, \"id\": \"b2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 3}, \"id\": \"b3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 3}, \"id\": \"b4\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Endpoint\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every request the CRM serves or sends is measured here, and the rows behind each number are one click away.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Retention and the granularity metrics are rolled up at are set on Metric Settings.\", \"col\": 12}, \"id\": \"b8\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Traffic, error rate and latency are charted daily; the request log, error log and integration requests hold the individual rows.\", \"col\": 12}, \"id\": \"b10\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metrics (raw)\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metric Settings\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Log\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Requests\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Webhook Log\", \"col\": 4}, \"id\": \"b17\"}]",
   "creation": "2026-06-18 23:00:00.000000",
   "custom_blocks": [],
   "docstatus": 0,
@@ -50,26 +18,26 @@
   "is_hidden": 0,
   "label": "Observability",
   "links": [],
-  "modified": "2026-08-07 00:00:00.000000",
+  "modified": "2026-08-16 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Observability",
   "name": "Observability",
   "number_cards": [
     {
-      "label": "API · Requests (24h)",
-      "number_card_name": "API Requests (24h)"
+      "number_card_name": "API Requests (24h)",
+      "label": "API Requests (24h)"
     },
     {
-      "label": "API · Errors (24h)",
-      "number_card_name": "API Errors (24h)"
+      "number_card_name": "API Errors (24h)",
+      "label": "API Errors (24h)"
     },
     {
-      "label": "API · Error Rate (24h)",
-      "number_card_name": "API Error Rate (24h)"
+      "number_card_name": "API Error Rate (24h)",
+      "label": "API Error Rate (24h)"
     },
     {
-      "label": "API · p95 Latency (24h)",
-      "number_card_name": "API p95 Latency (24h)"
+      "number_card_name": "API p95 Latency (24h)",
+      "label": "API p95 Latency (24h)"
     }
   ],
   "owner": "Administrator",
@@ -82,7 +50,7 @@
       "role": "System Manager"
     },
     {
-      "role": "Sales Manager"
+      "role": "Automation Manager"
     }
   ],
   "sequence_id": 6.0,

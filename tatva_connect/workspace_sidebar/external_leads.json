@@ -78,6 +78,18 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "key-round",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Idempotency Keys",
+   "link_to": "CRM Partner API Idempotency",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "upload",
@@ -143,6 +155,18 @@
    "keep_closed": 0,
    "label": "Intake Forms",
    "link_to": "CRM Intake Form",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "settings",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Intake Settings",
+   "link_to": "CRM Intake Settings",
    "link_type": "DocType",
    "show_arrow": 0,
    "type": "Link"
@@ -219,7 +243,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-02 12:00:00.000000",
+ "modified": "2026-08-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "External Leads",

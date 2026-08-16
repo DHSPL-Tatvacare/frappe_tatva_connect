@@ -170,7 +170,7 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 
 	def test_the_sensitive_upstream_fields_are_at_permlevel_1(self):
 		"""`lockdown._PERMLEVEL_1_FIELDS`. At permlevel 0 these are readable by every role holding a plain
-		read: an Insights user would get connection strings and service-account keys, and a Wiki Approver
+		read: an Insights user would get connection strings and service-account keys, and a Wiki Manager
 		could write raw script into Head HTML, which every wiki page renders unescaped. Reads the
 		declaration, so a field added there is covered the day it is added."""
 		from tatva_connect.access.lockdown import _PERMLEVEL_1_FIELDS
@@ -222,9 +222,10 @@ class TestInstallAloneIsCorrect(FrappeTestCase):
 
 	def test_the_locked_doctypes_are_locked_on_a_freshly_installed_site(self):
 		"""`access.lockdown.apply`. Unapplied, the stock-open matrix stands and All/Guest keeps its grants."""
-		from tatva_connect.access.lockdown import LOCKED_MATRIX, effective_all_guest_grants
+		from tatva_connect.access.ledger import OPEN
+		from tatva_connect.access.lockdown import effective_all_guest_grants
 
-		bad = [grant for doctype in LOCKED_MATRIX for grant in effective_all_guest_grants(doctype)]
+		bad = [grant for doctype in OPEN for grant in effective_all_guest_grants(doctype)]
 		self.assertEqual(bad, [], f"{len(bad)} All/Guest grants survive on locked doctypes")
 
 

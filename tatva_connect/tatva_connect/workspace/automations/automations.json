@@ -1,7 +1,12 @@
 {
  "app": "tatva_connect",
- "charts": [],
- "content": "[{\"id\": \"h_title\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}}, {\"id\": \"p_intro\", \"type\": \"paragraph\", \"data\": {\"text\": \"Automation in tatva_connect is <b>one engine, one shape &mdash; a Flow</b>. A Flow is <b>Trigger &middot; When &middot; Then</b>: a trigger is an event on a record, the When is the criteria that must hold, and the Then is an ordered set of actions. A rule is a Flow that runs once; a journey is a Flow that waits and resumes. The sections below are configured in order &mdash; each one builds on the one before it.\", \"col\": 12}}, {\"id\": \"p_enable\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>Turn it on.</b> Everything ships dormant. Open <b>Engine Switches</b> and enable <code>Workflow::Engine::run</code> and tick <b>Enabled</b> on each Flow that should be live — until then, nothing fires.\", \"col\": 12}}, {\"id\": \"h_setup\", \"type\": \"header\", \"data\": {\"text\": \"<b>Setup</b>\", \"col\": 12}}, {\"id\": \"p_2\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>1. Action Groups.</b> A reusable bundle of effect actions is assembled here &mdash; for example <i>update a field on the lead</i>, then <i>create the next task</i>. A group is named once and then referenced by any Flow&rsquo;s step, so the same effect is built and corrected in one place.\", \"col\": 12}}, {\"id\": \"p_3\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>2. Flows.</b> The Flow is composed here as Trigger &middot; When &middot; Then: the trigger doctype and event are chosen, the When criteria are added from the fields this workflow's grain entitles, and the Then is arranged as an ordered graph of steps that run the Action Groups above. Every action runs after the record is saved — a Flow never blocks a rep's save. What a rep must fill before saving is declared on the Task Type, not here. Adding a Wait or a Branch turns the Flow into a journey that parks and resumes.\", \"col\": 12}}, {\"id\": \"p_4\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>3. Contact Limit.</b> A ceiling on how often one mobile number is contacted by the engine is set here. WhatsApp and voice count together against the same number, over a <b>rolling</b> window &mdash; the limit is about how often a person is contacted, not about which channel did it, and email is not counted because a ceiling enforced on a number cannot have an address folded into it. Every Flow is individually reasonable and one patient may be on six of them, so this is the only place that asks the question none of them can. It ships off: until it is enabled nothing is counted and nothing is refused.\", \"col\": 12}}, {\"id\": \"h_ref\", \"type\": \"header\", \"data\": {\"text\": \"<b>Reference</b>\", \"col\": 12}}, {\"id\": \"p_ref\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>Webhook Endpoints.</b> A Flow that calls an external system does so through a curated native <b>Webhook</b> &mdash; its URL, headers and secret are configured once here, and a Flow picks it by name, so no Flow ever holds a raw URL or a credential. Every configured endpoint an operator has set is listed here as the in-place reference; <b>Webhook Log</b> records each delivery.\", \"col\": 12}}, {\"id\": \"h_mon\", \"type\": \"header\", \"data\": {\"text\": \"<b>Monitor</b>\", \"col\": 12}}, {\"id\": \"p_mon\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>Journeys</b> shows every journey in flight &mdash; which lead it belongs to, the node it rests at, and whether it is running, parked, done or failed. <b>Signals</b> holds the external events (an API result, a review completion) waiting to resume a parked journey. <b>Execution Log</b> is one row per node executed &mdash; the audit trail of what each journey did.\", \"col\": 12}}, {\"id\": \"sp1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"c_setup\", \"type\": \"card\", \"data\": {\"card_name\": \"Setup\", \"col\": 6}}, {\"id\": \"c_ref\", \"type\": \"card\", \"data\": {\"card_name\": \"Reference\", \"col\": 6}}, {\"id\": \"c_mon\", \"type\": \"card\", \"data\": {\"card_name\": \"Monitor\", \"col\": 6}}]",
+ "charts": [
+  {
+   "chart_name": "Journeys by Status",
+   "label": "Journeys by Status"
+  }
+ ],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Status\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Automation runs as one shape \\u2014 a Flow of Trigger, When and Then \\u2014 and every Flow is composed, switched on and watched from here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Engine Switches arms the engine and each Flow; the contact ceiling and cohort pace are set beside it. Webhook endpoints and campaign documents are named once and referenced by any Flow.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Journeys shows what is in flight, Signals what is waiting to resume, and the execution log records one row per node executed.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"b8\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -114,7 +119,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-08 09:00:00.000000",
+ "modified": "2026-08-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",
@@ -129,7 +134,7 @@
    "role": "System Manager"
   },
   {
-   "role": "Sales Manager"
+   "role": "Automation Manager"
   }
  ],
  "sequence_id": 2.0,
