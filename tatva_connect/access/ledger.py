@@ -178,6 +178,7 @@ MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 
 _CRM_CORE = {
 	# Records a rep works on all day. Reps never delete; a manager clears duplicates and junk.
+	# Support reaches these through the roster's `Lead Viewer` add-on (Sales Manager), not through a helpdesk row: crm scopes Lead/Deal by SALES ownership, so an Agent grant here reads zero rows and would be a permission that grants nothing.
 	"CRM Lead": "OPERATIONAL",
 	"CRM Deal": "OPERATIONAL",
 	"CRM Task": "OPERATIONAL",
