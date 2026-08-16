@@ -4,10 +4,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import automation
 
-# Both attach paths stage an UNATTACHED file here until the mail is sent: it shows as a
-# composer chip, attaches to the mail on send, is deleted on discard — and because it's
-# unattached it never appears on the lead (no Attachments-tab / activity noise) and never
-# appears in the "from CRM" picker. Swept if a compose is abandoned.
+# THE staging folder for a file picked before anything exists to own it: unattached, so it shows nowhere until `file_events.bond_file` names an owner and moves it out. Swept if abandoned.
 DRAFT_FOLDER = "Home/Email Drafts"
 DRAFT_TTL_HOURS = 24
 
@@ -72,14 +69,14 @@ def stage_crm_file(reference_doctype, reference_name, source_file):
 
 
 def purge_draft_attachments():
-	"""Daily: drop staged draft files left after a send or an abandoned compose. Folder-scoped
-	and the on_trash ref-count keeps any shared blob alive for the sent copy / original."""
+	"""Daily: drop staged files left after a send or an abandoned compose — STILL UNATTACHED is the condition and not the folder, because staging is where a file waits for an owner and one that found an owner is somebody's document. The on_trash ref-count keeps any shared blob alive for the sent copy / original."""
 	if not automation.is_enabled("Storage::File::draft-cleanup"):
 		return
 	cutoff = add_to_date(now_datetime(), hours=-DRAFT_TTL_HOURS)
 	stale = frappe.get_all(
 		"File",
-		filters={"folder": DRAFT_FOLDER, "is_folder": 0, "creation": ["<", cutoff]},
+		filters={"folder": DRAFT_FOLDER, "is_folder": 0, "creation": ["<", cutoff],
+				 "attached_to_doctype": ["is", "not set"]},
 		pluck="name",
 	)
 	for name in stale:

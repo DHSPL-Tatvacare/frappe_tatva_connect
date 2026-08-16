@@ -118,7 +118,7 @@ def _assert_free(ref_doctype, ref_name) -> None:
 	if not ref_name:
 		return
 	cutoff = add_to_date(now_datetime(), minutes=-writer.OUTBOUND_MATCH_WINDOW_MIN)
-	rows = frappe.get_all(  # authz-ok: tier-b — gated: the caller passed has_permission on this very record above
+	rows = frappe.get_all(
 		"CRM Call Log",
 		filters={
 			"reference_doctype": ref_doctype,
@@ -129,6 +129,7 @@ def _assert_free(ref_doctype, ref_name) -> None:
 		},
 		fields=["caller"],
 		limit=1,
+		# authz-ok: tier-b — gated: the caller passed has_permission on this very record above
 		ignore_permissions=True,
 	)
 	if not rows:

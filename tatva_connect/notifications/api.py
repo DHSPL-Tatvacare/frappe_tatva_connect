@@ -96,6 +96,70 @@ def save_my_notification_prefs(prefs):
 	return {"ok": True}
 
 
+# ── Email prefs (a VIEW onto frappe's own per-user `Notification Settings`) ───────────
+
+_EMAIL_MASTER = "enable_email_notifications"
+# fieldname -> (label, description). This tuple IS the write allowlist.
+_EMAIL_FIELDS = (
+	("enable_email_assignment", "Assignments", "A lead or task is assigned to you."),
+	("enable_email_mention", "Mentions", "Someone @mentions you in a comment."),
+	("enable_email_share", "Documents shared with me", "Someone shares a record with you."),
+	("enable_email_event_reminders", "Event reminders", "A calendar event you are invited to is due."),
+)
+# `enabled` is out: it is the master for the bell and push too, not just email.
+# `enable_email_threads_on_assigned_document` is out: no reader in any installed app.
+
+
+def _my_notification_settings():
+	"""The caller's own row, created on first read so the doctype defaults decide its ship-state."""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+	if not frappe.db.exists("Notification Settings", user):
+		from frappe.desk.doctype.notification_settings.notification_settings import (
+			create_notification_settings,
+		)
+
+		create_notification_settings(user)
+	return frappe.get_doc("Notification Settings", user)
+
+
+@frappe.whitelist()
+def get_my_email_prefs():
+	"""The caller's email switches. No `available` key — email is the person's, never operator-gated."""
+	doc = _my_notification_settings()
+	return {
+		"master": {
+			"fieldname": _EMAIL_MASTER,
+			"label": frappe._("Email me"),
+			"description": frappe._("Send these to your inbox as well as the app."),
+			"enabled": bool(doc.get(_EMAIL_MASTER)),
+		},
+		"rows": [
+			{"fieldname": f, "label": frappe._(label), "description": frappe._(desc), "enabled": bool(doc.get(f))}
+			for f, label, desc in _EMAIL_FIELDS
+		],
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_my_email_prefs(prefs):
+	"""Persist the caller's email switches onto their OWN row.
+
+	No `ignore_permissions`, deliberately: Notification Settings.has_permission already answers
+	`doc.name == user`, so frappe's own layer enforces the rule and a second copy here would be weaker."""
+	if isinstance(prefs, str):
+		prefs = json.loads(prefs)  # ALLOWLIST 2026-08-15: keep raw — surfaces a clean error on a malformed payload; parse_json won't raise.
+
+	allowed = {_EMAIL_MASTER, *(row[0] for row in _EMAIL_FIELDS)}
+	doc = _my_notification_settings()
+	for fieldname, enabled in (prefs or {}).items():
+		if fieldname in allowed:
+			doc.set(fieldname, int(bool(enabled)))
+	doc.save()  # authz-ok: tier-c — rides frappe's own Notification Settings.has_permission (own row only)
+	return {"ok": True}
+
+
 # ── Device registration (FCM transport enrolment) ─────────────────────────────────────
 
 
