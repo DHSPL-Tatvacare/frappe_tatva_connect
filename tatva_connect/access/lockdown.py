@@ -277,7 +277,7 @@ def rebuild_targets():
 def declaration_hash(doctype):
 	"""A doctype's declared rows as one stable string — the key `apply()` decides on."""
 	declared = {"rows": ledger.rows_for(doctype), "extras": ledger.extra_ptypes_for(doctype)}
-	return hashlib.sha1(json.dumps(declared, sort_keys=True, default=list).encode()).hexdigest()
+	return hashlib.sha256(json.dumps(declared, sort_keys=True, default=list).encode()).hexdigest()
 
 
 def apply(*_args, **_kwargs):
