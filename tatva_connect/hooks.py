@@ -303,8 +303,12 @@ doc_events = {
 	"WhatsApp Message": {
 		# Re-pin the account-matched lead that crm's validate clobbers to first-by-phone; runs after crm validate, before db_insert; inbound-only (flag-gated).
 		"before_save": "tatva_connect.whatsapp.webhook.pin_inbound_reference",
-		# tell the rep a patient replied (crm writes the tray row itself; this adds only the live channel)
-		"after_insert": "tatva_connect.notifications.events.on_whatsapp_received",
+		"after_insert": [
+			# tell the rep a patient replied (crm writes the tray row itself; this adds only the live channel)
+			"tatva_connect.notifications.events.on_whatsapp_received",
+			"tatva_connect.activity.timeline.index_event",
+		],
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
 		# The inbound follow-up task is RETIRED here — WhatsApp Message is now an automation subject, so
 		# the follow-up is a user-built rule (On WhatsApp Message Created → Create Task). The wildcard
 		# router below carries the after_insert; no per-message code side-effect remains.
@@ -442,6 +446,10 @@ doc_events = {
 		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},
 	"Communication": {
+		"after_insert": "tatva_connect.activity.timeline.index_event",
+		"on_trash": "tatva_connect.activity.timeline.drop_event",
+	},
+	"Integration Request": {
 		"after_insert": "tatva_connect.activity.timeline.index_event",
 		"on_trash": "tatva_connect.activity.timeline.drop_event",
 	},

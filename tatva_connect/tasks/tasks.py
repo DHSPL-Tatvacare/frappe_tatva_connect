@@ -29,7 +29,7 @@ def on_lead_assignment(doc, method=None):
 	# Dormant until a grain seeds a Call Lead type — the same rule the first-activity mapping follows.
 	call_type = resolve_type_for_lead(doc.reference_name, CALL_LEAD_TYPE)
 	if call_type:
-		create_followup_task(
+		raise_followup_task(
 			lead=doc.reference_name,
 			task_type=call_type,
 			due_in_hours=24,
@@ -44,7 +44,7 @@ def on_lead_assignment(doc, method=None):
 	# Guard: a stale/renamed mapping must never abort the assignment ToDo insert.
 	if first_type and frappe.db.exists("CRM Task Type", first_type):
 		try:
-			create_followup_task(
+			raise_followup_task(
 				lead=doc.reference_name,
 				task_type=first_type,
 				due_in_hours=48,
@@ -230,7 +230,39 @@ def _refuse_disabled_bulk_complete(doctype, docnames, action, data):
 @frappe.whitelist()
 def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None,
                          throttle=True, node_token=None, priority=None, description=None):
-	"""Idempotent follow-up task. Throttle (default): ONE open task per lead per type — if one
+	"""THE HTTP ENDPOINT — `POST /api/method/tatva_connect.tasks.tasks.create_followup_task`.
+
+	A caller reaching this over the wire is a principal asking to write on someone's lead, so it is
+	asked to prove it. Everything after the check is `raise_followup_task`, which is what the SERVER's
+	own callers use — see there for why they do not come through here.
+	"""
+	if not frappe.db.exists("CRM Lead", lead):
+		from tatva_connect.api._base import throw_field
+
+		throw_field(_(
+			"No lead has the id `{0}`, so no follow-up can be raised against it. Check the value "
+			"against a lead_list response."
+		).format(lead), ["lead"], frappe.DoesNotExistError)
+	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
+	return raise_followup_task(lead, task_type, due_in_hours, assigned_to, title, due_at,
+	                           throttle, node_token, priority, description)
+
+
+def raise_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title=None, due_at=None,
+                        throttle=True, node_token=None, priority=None, description=None):
+	"""The SERVER's own entrypoint — not whitelisted, and deliberately not permission-gated.
+
+	A task the workflow engine raises is asked for by the OPERATOR who published the workflow, not by
+	whoever happened to trip it. That distinction is not academic: an intake form submits as `Guest`, so
+	gating on the triggering user meant every enrolment that should raise a task raised a PermissionError
+	instead — silently, on a real patient. The engine's own gates are unchanged and do the real work:
+	only a published workflow runs, its grain must match the lead, and `is_settable` clears every field
+	it writes. Assignment, inbound and Document Review are server-initiated in exactly the same way.
+
+	The wire path keeps its check, byte for byte, in `create_followup_task` above. Nothing a rep or a
+	partner can reach is widened by this; the two callers were never the same caller.
+
+	Idempotent follow-up task. Throttle (default): ONE open task per lead per type — if one
 	is already open, return it untouched. Otherwise create it (assigned + due at
 	`due_at` if given, else `due_in_hours` from now). Also the method the WhatsApp
 	inbound event calls.
@@ -271,12 +303,6 @@ def create_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, titl
 			"No lead has the id `{0}`, so no follow-up can be raised against it. Check the value "
 			"against a lead_list response."
 		).format(lead), ["lead"], frappe.DoesNotExistError)
-
-	# Gate the user-facing entrypoint: raising a follow-up task writes to the lead's record set, so the
-	# caller must hold lead write. Internal automations (assignment / engine / inbound) run in the
-	# triggering user's session and already hold it; the insert itself stays ignore_permissions so the
-	# follow-up lands assigned even where the child docperm is narrower than lead access (one gate).
-	frappe.has_permission("CRM Lead", "write", doc=lead, throw=True)
 
 	if not scope_applies_to_lead(task_type, lead):
 		throw_field(

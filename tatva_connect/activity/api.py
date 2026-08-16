@@ -21,7 +21,7 @@ from frappe.model import NO_VALUE_FIELDS
 from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datetime
 
 from tatva_connect.access import entitlement, posture
-from tatva_connect.storage import blob_store, file_names
+from tatva_connect.storage import blob_store, file_events, file_names
 from tatva_connect.taxonomy import grain, labels
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
@@ -144,6 +144,20 @@ def typed_column(fieldtype):
 	return spec[0] if spec else None
 
 
+def _blank(value):
+	"""No answer. A set-valued field arrives as a LIST, so an empty one is as unanswered as an empty string — the client agrees (`isEmpty`), or required and D22 would judge the two shapes differently."""
+	return value is None or value == "" or value == []
+
+
+def takes_a_set(f):
+	"""Does this declared field hold MANY values? Cardinality is the lead catalog's `is_multi_value` and is
+	asked HERE by the render, the write and the read-back alike — never re-derived, and never guessed from a
+	value's Python type. A set is stored the way the lead stores one: N rows at one address, no separator."""
+	from tatva_connect.lead import multi_value
+
+	return (f.get("source") or "") == LEAD_SOURCE and f.get("fieldname") in multi_value.fieldnames()
+
+
 def _row_values(section, address, fieldtype, value):
 	"""The columns ONE section row carries for one field: a key-value row is addressed by the field's own
 	fieldname and answers in the column the section DECLARES as its value field — always, because that is
@@ -160,6 +174,37 @@ def _row_values(section, address, fieldtype, value):
 	return row
 
 
+def _at_address(section, held, address):
+	"""The rows held at ONE address, in stored order — how a set is read back, and what replacing it drops."""
+	return [r for r in held if r.get(section.row_key_field) == address]
+
+
+def _set_rows(section, address, f, value):
+	"""The rows ONE set-valued answer becomes: `_row_values` per selection, blanks dropped. Both write legs
+	build their rows here, so create and complete cannot disagree about what a set is stored as."""
+	from tatva_connect.lead import multi_value
+
+	if not section.is_key_value:
+		frappe.throw(_("{0} takes more than one value and its section keeps one column per field.").format(f.label),
+					 title=_("Cannot store a set"))
+	return [_row_values(section, address, f.fieldtype, v) for v in multi_value.as_set(value) if v]
+
+
+def _put_section_set(doc, section, address, f, value):
+	"""REPLACE the rows a set-valued field holds at one address — the same words `multi_value.replace` keeps
+	on the lead, so both sides of the same answer are N rows and neither encodes a separator. Returns True
+	iff the stored set changed."""
+	wanted = _set_rows(section, address, f, value)
+	current = _at_address(section, doc.get(section.child_table_field) or [], address)
+	if [r.get(section.value_field) for r in current] == [r[section.value_field] for r in wanted]:
+		return False
+	for row in current:
+		doc.remove(row)
+	for row in wanted:
+		doc.append(section.child_table_field, row)
+	return True
+
+
 def _put_section_value(doc, f, value):
 	"""Dual-write leg for a live CRM Task: put ONE field's value in the new home field_target names,
 	upserting the row it addresses so a re-write never grows a second one. Returns True iff a row changed.
@@ -168,12 +213,14 @@ def _put_section_value(doc, f, value):
 	if section_key is None:
 		return False
 	section = frappe.get_cached_doc("CRM Task Section", section_key)
+	if takes_a_set(f):
+		return _put_section_set(doc, section, address, f, value)
 	values = _row_values(section, address, f.fieldtype, value)
 	rows = doc.get(section.child_table_field) or []
 	row = (next((r for r in rows if r.get(section.row_key_field) == address), None)
 		   if section.is_key_value else (rows[0] if rows else None))
 	# A blank earns no row: key-value drops the row (clearing it), a column row keeps its siblings and just blanks its own.
-	if value in (None, ""):
+	if _blank(value):
 		if row is None:
 			return False
 		if section.is_key_value:
@@ -198,9 +245,12 @@ def _stage_section_value(staged, f, value):
 	section = frappe.get_cached_doc("CRM Task Section", section_key)
 	# Same rule as `_put_section_value`, and simpler here: this task is being CREATED, so there is no earlier
 	# answer to clear — a blank of either shape just earns no row and no column.
-	if value in (None, ""):
+	if _blank(value):
 		return
 	rows = staged.setdefault(section.child_table_field, [])
+	if takes_a_set(f):
+		rows.extend(_set_rows(section, address, f, value))
+		return
 	values = _row_values(section, address, f.fieldtype, value)
 	if section.is_key_value or not rows:
 		rows.append(values)
@@ -733,6 +783,9 @@ def user_query(doctype, txt, searchfield, start, page_len, filters):
 	task_type = filters.get("task_type")
 	posture.require("CRM Task Type", "read", doc=task_type)  # cannot open the form -> cannot query its picker
 	tt = frappe.get_cached_doc("CRM Task Type", task_type)
+	# Read on CRM Task Type is flat, so the type bounds nothing: without this a rep walks every line's users.
+	if not entitlement.grain_overlaps_entitlement((tt.vertical, tt.group, tt.program)):
+		raise frappe.PermissionError(_("Not entitled to {0}").format(task_type))
 	users = entitlement.users_entitled_to(
 		(tt.vertical, tt.group, tt.program),  # blank axis MEANS any — never back-filled
 		txt=txt, limit=cint(page_len) or 20, role=FIELD_ROLE.get(filters.get("fieldname") or ""),
@@ -896,18 +949,20 @@ def compute_activity(lead, task_type, values, task=None):
 	for f in schema:
 		val = values.get(f.fieldname)
 		if (f.source or "") == LEAD_SOURCE:
-			if val in (None, "") or f.read_only:
+			# What the rep COULD have done decides what arrives: a field the form hid collected nothing, one it drew read-only is the lead's own value, and only one it drew writable can carry an answer worth writing back.
+			if f.fieldname not in shown:
+				val = None
+			elif f.read_only or _blank(val):
 				val = lead_values.get(f.fieldname)
 			elif lead_writes is not None and cstr(val) != cstr(lead_values.get(f.fieldname) or ""):
 				lead_writes[f.fieldname] = val
 		if f.fieldname not in shown:
-			# D22: a hidden field's value is inert. A form that never showed it cannot have collected it, so a
-			# value arriving for it is refused rather than quietly stored under a question nobody was asked.
-			if val not in (None, ""):
+			# D22 governs ANSWERS: a form that never showed a question cannot have collected one. A lead snapshot is not an answer and is dropped above, so this speaks for the activity's own fields.
+			if not _blank(val):
 				frappe.throw(_("{0} was not shown on this form and its value cannot be saved.").format(f.label),
 							 title=_("Hidden field"))
 			continue
-		if _required_here(f, shown, live) and (val is None or val == ""):
+		if _required_here(f, shown, live) and _blank(val):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
 		_validate_person(f, val)  # a person field takes only who its picker could have offered
 		# Route by the ONE seam: a retained common column stays on the task row, every other value is its section row's. A lead-sourced field is routed like any other — what it means is snapshot, not answer, and the section it declares is where that snapshot lands.
@@ -996,8 +1051,9 @@ def lead_field_values(lead, task_type):
 	out = {}
 	for section in lead_detail(lead)["sections"]:
 		for f in section["fields"]:
-			if f["fieldname"] in wanted and f["value"] not in (None, ""):
-				out[f["fieldname"]] = f["value"] if isinstance(f["value"], str) else cstr(f["value"])
+			if f["fieldname"] in wanted and not _blank(f["value"]):
+				# A set-valued field's answer IS a list and stays one: `cstr` would prefill the form with a Python repr.
+				out[f["fieldname"]] = f["value"] if isinstance(f["value"], (str, list)) else cstr(f["value"])
 	return out
 
 
@@ -1065,7 +1121,7 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		doc.update(own)
 		doc.update(fields)
 		doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-		return doc.name
+		return _bond_attachments(doc.name, task_type, values)
 
 	# title = the clean type_name (display), never the composite PK.
 	title = labels.label(task_type, TASK_TYPE)
@@ -1085,14 +1141,24 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 		# then insert once, fully formed.
 		shell.update(compute_activity(lead, task_type, values, task=None))
 		shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-		return shell.name
+		return _bond_attachments(shell.name, task_type, values)
 
 	shell.insert(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
 	fields = compute_activity(lead, task_type, values, task=shell.name)
 	doc = frappe.get_doc("CRM Task", shell.name)
 	doc.update(fields)
 	doc.save(ignore_permissions=trusted)  # authz-ok: tier-b — the posture seam; UI is ordinary, partner is pre-gated by mapping + grain
-	return doc.name
+	return _bond_attachments(doc.name, task_type, values)
+
+
+def _bond_attachments(task, task_type, values):
+	"""M1: the task that captured a file owns it, and this is the first moment it exists to — the same `bond_file` rule, sourced from the task type's schema because an answer is a routed value and CRM Task declares no Attach docfield. Returns the task name, every `save_activity` exit's last word."""
+	if isinstance(values, str):
+		values = frappe.parse_json(values) or {}
+	for f in compiled_fields(frappe.get_cached_doc("CRM Task Type", task_type)):
+		if f.fieldtype in ("Attach", "Attach Image"):
+			file_events.bond_file(values.get(f.fieldname), "CRM Task", task, f.fieldname)
+	return task
 
 
 
@@ -1220,7 +1286,27 @@ def type_config(task_type, lead=None):
 	if cfg is None:
 		frappe.throw(_("Task type {0} not found").format(task_type))
 	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
+	_stamp_lead_controls(lead, cfg["fields"])
 	return cfg
+
+
+# What a lead field IS, which the LEAD decides and a form must never restate — see `_stamp_lead_controls`.
+# `display` rides along because a read-only row is DRAWN as text, and a Link's raw value is its composite PK.
+LEAD_CONTROL_KEYS = ("fieldtype", "options", "link_query", "multi_value", "display")
+
+
+def _stamp_lead_controls(lead, fields):
+	"""Give each `source = Lead` descriptor the control `lead_detail` draws for that column — one brain, so a form cannot disagree with the Data tab about a Link's scoped picker or a multi-value field's set-ness. Rides `type_config` for the reason `lead_values` does: the answer is the LEAD's, and without one the declaration stands."""
+	wanted = {f.fieldname for f in fields if (f.get("source") or "") == LEAD_SOURCE} if lead else set()
+	if not wanted:
+		return
+	from tatva_connect.lead.detail import lead_detail
+
+	control = {row["fieldname"]: {k: row[k] for k in LEAD_CONTROL_KEYS if k in row}
+			   for section in lead_detail(lead)["sections"] for row in section["fields"]
+			   if row["fieldname"] in wanted}
+	for f in fields:
+		f.update(control.get(f.fieldname) or {})
 
 
 def _sections():
@@ -1284,8 +1370,10 @@ def _section_answer(f, task_row, rows, sections):
 		return None
 	held = rows.get(section.child_table_field) or []
 	if section.is_key_value:
-		row = next((x for x in held if x.get(section.row_key_field) == address), None)
-		return row.get(section.value_field) if row else None
+		at = _at_address(section, held, address)
+		if takes_a_set(f):
+			return [r.get(section.value_field) for r in at]
+		return at[0].get(section.value_field) if at else None
 	row = _latest(held, section.row_key_field)
 	return row.get(address) if row else None
 
@@ -1303,8 +1391,9 @@ def _task_values(r, cfg, rows=None):
 		for f in cfg["fields"]:
 			# A lead-sourced field is read at the SAME address every other one is: its snapshot row holds the lead's value as it stood that day, and re-reading the lead now would answer a different question.
 			value = _section_answer(f, r, rows, sections)
-			if value not in (None, ""):
-				vals[f["fieldname"]] = value if isinstance(value, str) else cstr(value)
+			if not _blank(value):
+				# A set stays a set; every other answer is the string the renderer reads.
+				vals[f["fieldname"]] = value if isinstance(value, (str, list)) else cstr(value)
 	if r.description:
 		vals.setdefault("notes", r.description)
 	return vals
@@ -1333,16 +1422,14 @@ def _blob_key(url):
 
 
 def _lead_files(lead):
-	"""blob_key -> {file_url, file_name} for every File on the lead (one query). The File holds the
-	real display name; the key links it back to the activity that captured it."""
+	"""blob_key -> {file_url, file_name} for every File the lead owns, read from the lead's own union and never a query of ours: an activity's attachment belongs to the TASK that captured it, so a filter on files parented to the lead reads back none of them."""
+	from crm.api.activities import get_attachments
+
 	files = {}
-	for f in frappe.get_all(
-		"File", filters={"attached_to_doctype": "CRM Lead", "attached_to_name": lead},
-		fields=["file_name", "file_url"],
-	):
-		key = _blob_key(f.file_url)
+	for f in get_attachments("CRM Lead", lead):
+		key = _blob_key(f["file_url"])
 		if key:
-			files[key] = {"file_url": f.file_url, "file_name": f.file_name}
+			files[key] = {"file_url": f["file_url"], "file_name": f["file_name"]}
 	return files
 
 

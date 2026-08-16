@@ -399,6 +399,26 @@ RAIL_EVENT_TYPES = (
 	"stage_moved", "changed", "added", "removed", "comment", "communication", "creation",
 )
 
+# Subjects that appear ONLY on the rail — no tab lists them, so there is no `_TABS` row to read their
+# shape from. Declared once, in the SAME (doctype, link_field, fields) shape a tab uses, and read by BOTH
+# suppliers: the index path hydrates through `_rail_fields` and the merge path queries through
+# `_rail_only_rows`. Two suppliers, one declaration, so flipping the index toggle cannot change the rail.
+# Which ROWS of these tables belong to a rail at all is `timeline.PREDICATES`, never restated here.
+_RAIL_ONLY = {
+	"whatsapp": (
+		"WhatsApp Message", "reference_name",
+		["name", "message", "message_type", "content_type", "to", "type", "status",
+		 "custom_workflow_correlation", "creation", "modified"],
+	),
+	# The Call API node's own record. `error` rides along because a failed outbound call is the whole
+	# reason a reader opens this row.
+	"api_call": (
+		"Integration Request", "reference_docname",
+		["name", "integration_request_service", "url", "status", "error", "creation", "modified"],
+	),
+}
+
+
 # What the rail hydrates for each kind, keyed by the source doctype the index points at. Same field lists
 # the single-kind tabs use, so a card renders identically whether it came from a tab or the rail.
 def _rail_fields(source_doctype):
@@ -407,7 +427,24 @@ def _rail_fields(source_doctype):
 	for _kind, (doctype, _link, fields) in _TABS.items():
 		if doctype == source_doctype:
 			return fields
+	for _kind, (doctype, _link, fields) in _RAIL_ONLY.items():
+		if doctype == source_doctype:
+			return fields
 	return ["name", "creation", "modified", "owner"]
+
+
+def _rail_only_rows(scoped, page_length, order_by):
+	"""The rail-only subjects, for the MERGE supplier — one query each, scoped to the lead and narrowed by
+	the same `timeline.PREDICATES` the index writer applies. Capped at the page length: a page can show no
+	more than that however many rows a subject holds."""
+	rows = []
+	for kind, (doctype, link_field, fields) in _RAIL_ONLY.items():
+		anchor = scoped[0][1] if len(scoped) == 1 else ["in", [n for _dt, n in scoped]]
+		where = {link_field: anchor, **timeline.PREDICATES.get(doctype, {})}
+		rows += [{**r, "kind": kind} for r in frappe.get_all(  # authz-ok: tier-b — scoped to records the caller was authorised for above
+			doctype, filters=where, fields=fields, order_by=_order(order_by), limit=page_length,
+		)]
+	return rows
 
 
 def _hydrate(pointers):
@@ -490,6 +527,9 @@ def _rail_from_merge(lead, page_length, order_by, doctype="CRM Lead"):
 		+ [{**r, "kind": "note"} for r in notes]
 		+ [{**r, "kind": "task"} for r in tasks]
 		+ [{**r, "kind": "file"} for r in attachments]
+		# The rail-only subjects. `get_activities` is crm's own and knows nothing about them, so the merge
+		# path asks for them directly — the index path gets them from its pointers and asks for nothing.
+		+ _rail_only_rows(_scope(doctype, lead), page_length, order_by)
 	)
 	field, direction = _order(order_by).split(" ")
 	rows.sort(key=lambda r: str(r.get(field) or r.get("creation") or ""), reverse=direction == "desc")

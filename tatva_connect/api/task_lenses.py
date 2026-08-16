@@ -39,6 +39,7 @@ Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-laye
 import frappe
 from frappe.model.document import get_controller
 
+from tatva_connect.lead import filters as lead_filters
 from tatva_connect.list_engine import derived, engine
 from tatva_connect.taxonomy import labels
 
@@ -61,6 +62,12 @@ def _link_queries(fields):
 		else f
 		for f in fields
 	]
+
+
+def _scoped(fields, doctype):
+	"""Both stamps a filter control needs: the query a composite master is searched by, and the values a
+	grain axis may offer. One call, so a menu can never carry the first and miss the second."""
+	return lead_filters.stamp_grain_options(_link_queries(fields), doctype)
 
 
 def declared_fields(doctype):
@@ -99,7 +106,7 @@ def _narrow(fields, doctype, surface):
 def get_filterable_fields(doctype: str):
 	from crm.api.doc import get_filterable_fields as _native
 
-	return _link_queries(_narrow(_native(doctype), doctype, derived.FILTER))
+	return _scoped(_narrow(_native(doctype), doctype, derived.FILTER), doctype)
 
 
 @frappe.whitelist()
@@ -156,14 +163,14 @@ def get_quick_filters(doctype: str, cached: bool = True):
 	declared = _declared_quick_filters(doctype)
 	chosen = _stored_choice(doctype)
 	if not declared or chosen is None:
-		return _link_queries(native)
+		return _scoped(native, doctype)
 
 	by_name = {f.get("fieldname"): f for f in native}
-	return _link_queries([
+	return _scoped([
 		declared[name] if name in declared else by_name[name]
 		for name in chosen
 		if name in declared or name in by_name
-	])
+	], doctype)
 
 
 @frappe.whitelist()

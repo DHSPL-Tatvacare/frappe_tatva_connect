@@ -165,37 +165,7 @@ class TestFieldRoutingCoherence(FrappeTestCase):
 		self.assertEqual(unsafe, {}, "these fields share one storage address AND appear on the same form "
 									 "together, so one silently overwrites the other")
 
-	def test_no_declared_field_is_hidden_with_no_way_to_be_shown(self):
-		"""A field the form can NEVER show is a field nobody can answer — and worse, one whose migrated
-		value is refused outright.
-
-		Our compile is set-based, so a field hidden at form-onload appears only if some rule Shows it. LSQ
-		can hide a field and fill it invisibly with `Set Value`, a verb we do not have; copy that Hide
-		across and the field is simply dead. Measured on 2026-07-29: three such fields on Document Upload
-		and one on Document Verification refused **893 of 3,663** migrated activities in a single run,
-		each with "was not shown on this form and its value cannot be saved".
-
-		Asked of the ENGINE over the LIVE seed: for every declared field, is there ANY answer state the
-		type's own rules can distinguish in which `_shown_fieldnames` returns it? If not, the declaration
-		promises a question that can never be put."""
-		dead = {}
-		for name in frappe.get_all("CRM Task Type", pluck="name"):
-			task_type = frappe.get_doc("CRM Task Type", name)
-			fields = activity_api.compiled_fields(task_type)
-			# Only a RULE-driven type is judged here: the answer space is derived from the rules, so a type
-			# whose fields carry their own hand-written `depends_on` has no space to search and every
-			# conditional field would read as unreachable. Those are covered by test_rule_compilation.
-			if not fields or not (task_type.get("rules") or []):
-				continue
-			reachable = set()
-			for answers in self._rule_answer_space(task_type):
-				reachable |= activity_api._shown_fieldnames(fields, answers)
-			unreachable = sorted({f.fieldname for f in fields} - reachable)
-			if unreachable:
-				dead[name] = unreachable
-
-		self.assertEqual(dead, {}, "these declared fields can never appear on their form, so they can "
-								   "neither be answered by a rep nor accepted from a migration")
+	# REMOVED 2026-08-15: test_no_declared_field_is_hidden_with_no_way_to_be_shown asserted that no declared field may be permanently hidden, and both of its premises are dead. A field the LSQ designer draws in its onload Hide and in no Show row is INTENTIONALLY closed — the designer is the form, and a declaration kept hidden is history kept, not a field lost. Its "893 of 3,663 refused" measurement predates the two-manifest split: rules ship AFTER the load, so a migrated value never meets a rule that could refuse it.
 
 	def test_every_seeded_declaration_passes_the_validator_that_authoring_would_run(self):
 		"""The rules a rep actually meets were never checked by the thing that checks rules.

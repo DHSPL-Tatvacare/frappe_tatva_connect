@@ -43,6 +43,12 @@ SOURCES = {
 	# Comment rows too, and only `Comment` is what a rep wrote.
 	"Comment": ("comment", "reference_name", "reference_doctype"),
 	"Communication": ("email", "reference_name", "reference_doctype"),
+	# A message the patient actually received. It had no rail presence at all, so a workflow could WhatsApp
+	# her and the audit said nothing happened.
+	"WhatsApp Message": ("whatsapp", "reference_name", "reference_doctype"),
+	# The Call API node's own record. `integration_request_service` is filtered in _matches: this is
+	# frappe's SHARED outbound log and whatsapp/voice/telephony write their transport rows here too.
+	"Integration Request": ("api_call", "reference_docname", "reference_doctype"),
 }
 
 # Whose rail this is. A deal carries the same link fields as a lead (reference_doctype + the same name
@@ -87,6 +93,9 @@ def _file_lead(doc):
 PREDICATES = {
 	"Comment": {"comment_type": "Comment"},
 	"Communication": {"communication_type": ("in", ("Communication", "Automated Message"))},
+	# ONE service belongs on a patient's rail. The others in this table are transport plumbing — whatsapp,
+	# voice and telephony each log every call they make here, and a rep must never read those.
+	"Integration Request": {"integration_request_service": "Workflow Call API"},
 }
 
 
