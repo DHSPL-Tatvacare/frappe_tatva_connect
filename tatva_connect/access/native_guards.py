@@ -484,7 +484,7 @@ def delete_member(user: str):
 
 
 @frappe.whitelist()
-def get_members(start: int = 0, search: str = None, role: str = "All"):
+def get_members(start: int = 0, search: str | None = None, role: str = "All"):
 	"""The Users tab: every enabled account on the site with its roles. Reading the roster is administration too."""
 	_require_platform()
 	from lms.lms.api import get_members as _native
