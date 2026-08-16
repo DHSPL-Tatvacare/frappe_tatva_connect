@@ -112,6 +112,16 @@ class TestSharingIsDocShare(_ShareCase):
 		smartview.unshare_view(self.view, FRIEND)
 		self.assertNotIn(self.view, self._tabs_for(FRIEND))
 
+	def test_the_owner_can_take_their_own_share_back(self):
+		"""Pressed by the owner — the test above runs as Administrator, which skips every gate."""
+		frappe.set_user(OWNER)
+		try:
+			smartview.share_view(self.view, FRIEND)
+			smartview.unshare_view(self.view, FRIEND)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertNotIn(self.view, self._tabs_for(FRIEND))
+
 	def test_a_shared_view_can_be_opened(self):
 		frappe.set_user("Administrator")
 		smartview.share_view(self.view, FRIEND)

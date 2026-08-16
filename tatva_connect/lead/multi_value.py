@@ -49,6 +49,18 @@ def declared():
 	return {(r.section, r.fieldname): r.field_key for r in rows}
 
 
+def fieldnames():
+	"""The FIELDNAMES the catalog declares multi-value — cardinality, asked once per request.
+
+	A form field names a lead field by fieldname alone (the same addressing `write_lead_fields` uses), so
+	this is the shape every consumer outside the Data tab needs. Cached per request because cardinality is
+	asked once per field on every render, save and read-back, and it is one small table."""
+	from tatva_connect.access import request_cache
+
+	return request_cache("_multi_value_fieldnames", "all",
+						 lambda: frozenset(fn for (_section, fn) in declared()))
+
+
 def declared_in(section):
 	"""{fieldname: field_key} for ONE section — the same declaration, narrowed."""
 	return {fn: fk for (sec, fn), fk in declared().items() if sec == section}
@@ -79,6 +91,13 @@ def read(lead, field_key, row_key):
 	return read_all(lead).get((cstr(field_key), cstr(row_key)), [])
 
 
+def as_set(values):
+	"""The selections a caller means, as a list. A bare value is a set of ONE — never the sequence it happens to iterate as."""
+	if values is None or values == "":
+		return []
+	return values if isinstance(values, (list, tuple, set)) else [values]
+
+
 def replace(lead, field_key, row_key, values):
 	"""Stage the selections at ONE address, dropping whatever was there. The caller saves the lead.
 
@@ -87,10 +106,13 @@ def replace(lead, field_key, row_key, values):
 	fields on one cycle, from overwriting each other.
 
 	Blanks are dropped and duplicates collapse, so a picker that sends the same value twice stores it
-	once — the address plus the value is the identity, and a second row of it means nothing."""
+	once — the address plus the value is the identity, and a second row of it means nothing.
+
+	ONE selection is a set of one. A caller holding a single value hands back a bare string, and a string
+	iterates as its own characters — which wrote a row per letter and failed the Link check on every one."""
 	address = (cstr(field_key), cstr(row_key))
 	kept = [r for r in (lead.get(TABLE) or [])
 	        if (cstr(r.field_key), cstr(r.row_key)) != address]
 	lead.set(TABLE, kept)
-	for value in dict.fromkeys(v for v in (values or []) if v):
+	for value in dict.fromkeys(v for v in as_set(values) if v):
 		lead.append(TABLE, {"field_key": field_key, "row_key": cstr(row_key), "value": value})

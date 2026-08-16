@@ -52,7 +52,7 @@ DUE_STATE = "due_state"
 # The shipped seed. Gitignored by design, so a checkout without the go-live bundle skips rather than lies.
 SEED_FILE = (
 	pathlib.Path(__file__).resolve().parents[3]
-	/ "docs/go-live/3-seed/db-seeds/2026-07-31-6b7cb13-derived-fields.sql"
+	/ "docs/go-live/3-seed/db-seeds/1-before-load/2026-07-31-6b7cb13-derived-fields.sql"
 )
 
 # The HbA1c case from the plan, on a REAL numeric column of a REAL second doctype. Half-open, so the row
@@ -526,7 +526,7 @@ class TestTheShippedDeclarationIsTheOneTheListServes(HeadCase):
 			"due_end_of_today": ("Backlog", f"{nowdate()} 23:59:59", "Due Today"),
 			"due_tomorrow": ("Todo", add_to_date(now, days=1), "Upcoming"),
 			"no_due_date": ("Todo", None, "No Due Date"),
-			"done_past_due": ("Done", add_to_date(now, days=-3), "History"),
+			"done_past_due": ("Done", add_to_date(now, days=-3), "Completed"),
 		}
 		self.names = {}
 		for label, (status, due, _value) in self.expected.items():
@@ -563,7 +563,7 @@ class TestTheShippedDeclarationIsTheOneTheListServes(HeadCase):
 		buckets = frappe.parse_json(re.search(r"'(\[.*\])'", self._seed_text(), re.S).group(1))
 		self.assertEqual(
 			[b["value"] for b in buckets],
-			["Overdue", "Due Today", "Upcoming", "No Due Date", "History"],
+			["Overdue", "Due Today", "Upcoming", "No Due Date", "Completed"],
 		)
 		# The colours are authored too, so the next field needs no renderer change to wear a badge.
 		self.assertEqual([b["theme"] for b in buckets], ["red", "orange", "blue", "gray", "green"])
@@ -600,7 +600,7 @@ class TestTheShippedDeclarationIsTheOneTheListServes(HeadCase):
 		for label, (_status, _due, value) in self.expected.items():
 			with self.subTest(label):
 				self.assertEqual(shown[self.names[label]], value)
-		for value in ("Overdue", "Due Today", "Upcoming", "No Due Date", "History"):
+		for value in ("Overdue", "Due Today", "Upcoming", "No Due Date", "Completed"):
 			with self.subTest(f"filter {value}"):
 				filtered = self._get_data(filters={"title": ["like", f"{PROBE}%"], DUE_STATE: value})
 				self.assertEqual(

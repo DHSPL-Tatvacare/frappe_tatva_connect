@@ -19,7 +19,11 @@ Run:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.lead.filters import grain_filter_fields, grain_filter_options
+from tatva_connect.lead.filters import (
+	grain_filter_fields,
+	grain_filter_options,
+	stamp_grain_options,
+)
 
 V_MINE, V_THEIRS = "ZZ Filter Vertical Mine", "ZZ Filter Vertical Theirs"
 G_MINE, G_THEIRS = "ZZ Filter Group Mine", "ZZ Filter Group Theirs"
@@ -169,6 +173,44 @@ class TestGrainFilterOptions(FrappeTestCase):
 		options = grain_filter_options()
 		self.assertNotIn(None, options["custom_current_program"])
 		self.assertNotIn("", options["custom_current_program"])
+
+	def test_a_record_type_with_no_grain_answers_nothing_rather_than_refusing(self):
+		"""The contract is TOTAL. A gate here named Lead and Deal, and every OTHER list page and activity
+		tab — Tasks, Notes, Calls — mounts the same shared filter, so each one asked and each one got a
+		500 on mount. A task carries no grain column, and the truthful answer to "which programmes may I
+		offer for a task" is none, not an exception. The derivation is the allowlist."""
+		for doctype in ("CRM Task", "FCRM Note", "CRM Call Log", "Contact"):
+			self.assertEqual(grain_filter_options(doctype), {}, f"{doctype} must answer, not throw")
+
+	def test_a_catalog_field_carries_its_own_scoped_values(self):
+		"""The values ride ON the field, stamped by `fieldname`, so a surface that keys its rows by
+		something else is scoped too. A Smart View calls this column `lead:program`; the fieldname match
+		this replaced could never reach it, and that surface served the whole programme master."""
+		self._both_worlds()
+		self._permit("CRM Vertical", V_MINE)
+		self._permit("CRM Group", G_MINE)
+		frappe.db.commit()
+
+		catalog = [
+			{"field_key": "lead:program", "fieldname": "custom_current_program", "fieldtype": "Link"},
+			{"field_key": "lead:owner", "fieldname": "lead_owner", "fieldtype": "Link"},
+		]
+		frappe.set_user(USER)
+		stamped = stamp_grain_options(catalog)
+		frappe.set_user("Administrator")
+
+		self.assertEqual(sorted(stamped[0]["grain_options"]), [P_MINE_1, P_MINE_2])
+		self.assertNotIn(P_THEIRS, stamped[0]["grain_options"])
+		# Not an axis: returned exactly as it came, so a control keeps whatever it already rendered.
+		self.assertNotIn("grain_options", stamped[1])
+
+	def test_a_stamp_never_mutates_the_catalog_it_was_given(self):
+		"""Native caches its catalog answer; stamping in place would write one caller's visible values
+		into a cache every caller reads."""
+		self._both_worlds()
+		field = {"fieldname": "custom_current_program", "fieldtype": "Link"}
+		stamp_grain_options([field])
+		self.assertNotIn("grain_options", field)
 
 	def test_every_grain_axis_is_answered(self):
 		"""Answered for EVERY grain axis the meta declares — asserted against the rule, not a list of

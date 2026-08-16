@@ -160,6 +160,15 @@ class TestLeadMultiValue(FrappeTestCase):
 		doc.save(ignore_permissions=True)
 		self.assertEqual(multi_value.read(self._reload(), self.field_key, ""), [self.values[0]])
 
+	def test_one_selection_handed_over_bare_is_a_set_of_one_and_not_its_characters(self):
+		"""A surface holding a single value hands back a bare string — an activity form's `source = Lead`
+		answer arrives exactly so. A string iterates as its own characters, so this wrote one row per
+		letter and every one of them failed the Link check ("Could not find Row #1: Value: s, ...")."""
+		doc = self._reload()
+		multi_value.replace(doc, self.field_key, "", self.values[0])
+		doc.save(ignore_permissions=True)
+		self.assertEqual(multi_value.read(self._reload(), self.field_key, ""), [self.values[0]])
+
 	# ---------------------------------------------------------------- flattening
 	def test_a_flattened_surface_shows_the_latest_rows_selections_and_not_the_union(self):
 		"""CLAUDE.md: a multi-row section shows exactly ONE row, the latest by its date, in EVERY

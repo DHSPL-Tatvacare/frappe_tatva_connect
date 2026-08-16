@@ -1,10 +1,12 @@
-"""Rebuild the Facebook columns our fieldtype Property Setters widen."""
+"""Rebuild the columns our fieldtype Property Setters widen."""
 import frappe
 
 # fieldname -> the information_schema data_type the Property Setter implies.
 _EXPECTED = {
 	"Facebook Lead Form Question": {"label": "text", "key": "text"},
 	"Facebook Page": {"access_token": "text"},
+	# An offloaded file's proxy URL runs past varchar(140); frappe's own File.file_url is Code for the same reason.
+	"Insights Dashboard v3": {"preview_image": "longtext"},
 }
 
 

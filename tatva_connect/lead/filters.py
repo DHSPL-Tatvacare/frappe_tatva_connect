@@ -25,9 +25,6 @@ would offer values that match nothing, and pointing a picker at the lead table w
 uncreatable. (Plan decision 7.)
 """
 import frappe
-from frappe import _
-
-from tatva_connect.access import visibility
 
 # The three masters that MAKE a field a grain axis. This is the one place the grain doctypes are named;
 # WHICH fields point at them is read off the meta below, so the two can never drift apart.
@@ -54,17 +51,18 @@ def grain_filter_fields(doctype: str = _DOCTYPE):
 def grain_filter_options(doctype: str = _DOCTYPE):
 	"""`{fieldname: [values]}` — the distinct values of every grain axis on the rows the CALLER can see.
 
-	Every grain field gets a key, even where no visible lead carries a value for it: the frontend reads
-	"the endpoint answered for this field" as "this field is scoped", so an omitted key would silently
-	hand that axis back to the unscoped master picker.
+	Every grain field gets a key, even where no visible lead carries a value for it, so `stamp_grain_options`
+	can tell "this axis has nothing to offer" from "this field is not an axis" — an omitted key would hand
+	that axis back to the unscoped master picker.
+
+	Total: a record type with no grain Link answers `{}`. The derivation IS the allowlist, so no caller can
+	name a table this refuses — a gate here refused `CRM Task` on every list page and activity tab that
+	mounts the shared filter, which is a question asked in the wrong room and not a caller to correct.
 
 	Read-only, and it grants nothing: every value returned is already on a row the caller can open. A
 	System Manager is not special-cased — their `get_list` is unscoped, so they get every value present
 	on any lead, which is the same rule applied to a wider set of rows rather than a second rule.
 	"""
-	# Only the records that CARRY a grain may be asked; anything else is a caller naming a table we never scope.
-	if doctype not in visibility.PARENT_DOCTYPES:
-		frappe.throw(_("Unsupported record type {0}").format(doctype))
 	out = {}
 	for fieldname in grain_filter_fields(doctype):
 		rows = frappe.get_list(
@@ -72,3 +70,23 @@ def grain_filter_options(doctype: str = _DOCTYPE):
 		)
 		out[fieldname] = sorted({row.get(fieldname) for row in rows if row.get(fieldname)})
 	return out
+
+
+def stamp_grain_options(fields, doctype: str = _DOCTYPE):
+	"""Every grain axis in a FIELD CATALOG, carrying the values its filter control may offer.
+
+	The catalog is where a field already says what control it needs — `link_query` is this same sentence for
+	a composite master — so the values ride ON the field. A consumer therefore asks the field, never a second
+	endpoint keyed on a fieldname it hopes matches: a Smart View names this same column `lead:program`, and a
+	fieldname match silently missed it and handed a rep the whole programme master.
+
+	Stamped by `fieldname`, which every catalog carries whatever it keys its rows by. A field this doctype
+	has no answer for is returned untouched, so a catalog of some other record type is unchanged.
+
+	A new dict per field rather than a stamp: native caches its catalog answer, and mutating those rows would
+	write one caller's visible values into a cache every caller reads."""
+	values = grain_filter_options(doctype)
+	return [
+		{**f, "grain_options": values[f.get("fieldname")]} if f.get("fieldname") in values else f
+		for f in fields
+	]

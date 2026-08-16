@@ -31,6 +31,7 @@ from pypika.terms import Function, PseudoColumn
 from tatva_connect import tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
+from tatva_connect.lead import filters as lead_filters
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.taxonomy import labels
@@ -349,7 +350,8 @@ def field_catalog(base_object, activity_type=None, vertical=None, group=None, pr
 			# The scoped link query this column's FILTER control must use — the same one decision the native lenses relay, so both surfaces offer a composite master's label once.
 			"link_query": labels.link_query(options) if fieldtype == "Link" else None,
 		})
-	return out
+	# A view keys its rows by `field_key` (`lead:program`), so a grain axis is scoped by its `fieldname`.
+	return lead_filters.stamp_grain_options(out, LEAD_DOCTYPE if base_object == "Lead" else TASK_DOCTYPE)
 
 
 # ---------------------------------------------------------------------------
@@ -1144,11 +1146,12 @@ def share_view(view, user, write=0):
 
 @frappe.whitelist()
 def unshare_view(view, user):
-	"""Take a share back. Same gate, same framework call."""
+	"""Take a share back, through frappe's own unshare — `remove()` refuses the owner (see share_view)."""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
 	if not sv_perms.can_write(d):
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
-	frappe.share.remove(SMART_VIEW_DT, view, user)
+	frappe.share.set_docshare_permission(SMART_VIEW_DT, view, user, "read", value=0,
+	                                     flags={"ignore_share_permission": True})
 	return shared_with(view)
 
 
