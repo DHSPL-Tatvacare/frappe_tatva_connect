@@ -35,6 +35,8 @@ override_doctype_class = {
 	"CRM Dashboard": "tatva_connect.dashboard.overrides.CRMDashboardOverride",
 	# An Insights invite may only reach an existing enabled login; upstream mints a User for ANY address and logs it in from the link.
 	"Insights User Invitation": "tatva_connect.access.insights_invitation.TatvaInsightsUserInvitation",
+	# The dashboard preview, written with its bytes at insert like every other app; upstream reserves an empty File and fills it later, so it never offloads.
+	"Insights Dashboard v3": "tatva_connect.storage.insights_preview.TatvaInsightsDashboardv3",
 	# Facebook discovery/crawl through our Graph layer: Meta's reason surfaces, no silent empty, no token in logs.
 	"Lead Sync Source": "tatva_connect.lead_sync.source.TatvaLeadSyncSource",
 	# A question maps to a catalog field_key, checked against the form's contract; upstream compares bare fieldnames and throws on every edit.

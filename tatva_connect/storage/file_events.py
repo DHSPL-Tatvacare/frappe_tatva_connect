@@ -26,6 +26,9 @@ from tatva_connect.storage import blob_store
 from tatva_connect.storage.blob_store import BlobStore
 from tatva_connect.utils import assert_safe_public_url
 
+# Where a file rests once it has an owner — core's own default, and the folder a staged upload leaves on bond.
+ATTACHMENT_FOLDER = "Home/Attachments"
+
 
 def _public_attachment_doctypes() -> set:
 	"""Operator-listed doctypes whose attachments may be public (config, empty by default)."""
@@ -177,6 +180,39 @@ def after_insert(doc, method=None):
 			)
 
 
+def bond_file(file_url, doctype, docname, fieldname):
+	"""M1: bond ONE free file to the record that names it — the whole rule once, for the two callers that name a file two ways: a doctype's Attach docfield (`link_attach_fields`) and a task type's schema (`activity.api._bond_attachments`), whose answers are routed values `doc.meta` cannot see."""
+	if not blob_store.blob_key_from_url(file_url):
+		return  # local /files value (core links it) or empty
+	if frappe.db.exists("File", {
+		"file_url": file_url,
+		"attached_to_name": docname,
+		"attached_to_doctype": doctype,
+		"attached_to_field": fieldname,
+	}):
+		return  # already bonded — idempotent, both callers ride every save
+	unattached = frappe.db.exists("File", {
+		"file_url": file_url,
+		"attached_to_name": None,
+		"attached_to_doctype": None,
+		"attached_to_field": None,
+		# Only the uploader may claim their own free row: bonding decides the owner, and the owner decides privacy, so claiming someone else's unattached file republishes it under a doctype the claimer chose.
+		"owner": frappe.session.user,
+	})
+	if not unattached:
+		return  # bond ONLY a free row: an email/comment alias of the same blob is already spoken for
+	# db.set_value, never save(): every row reaching here holds an Azure PROXY url, which is one of core's own URL_PREFIXES (file.py:44), so core's byte-mover handle_is_private_changed early-returns on is_remote_file (file.py:313) and moves nothing — a save would only buy a validate() pass that re-raises the enforce_public_file_restrictions 403, plus a modified bump and a Version row.
+	frappe.db.set_value("File", unattached, {
+		"attached_to_name": docname,
+		"attached_to_doctype": doctype,
+		"attached_to_field": fieldname,
+		# A file that has found its owner is no longer staged, so it leaves the staging folder as it leaves that state.
+		"folder": ATTACHMENT_FOLDER,
+		# The bond is the first moment the owner is known, so it is where the allowlist finally applies.
+		"is_private": 0 if may_be_public(doctype, docname) else 1,
+	}, update_modified=False)
+
+
 # PROPAGATE (@fail_safe): the bond is idempotent and rides EVERY save of the record, so a failed bond is
 # re-attempted on the next one; the bytes are already in Azure and the File row already exists either way.
 @fail_safe
@@ -186,33 +222,7 @@ def link_attach_fields(doc, method=None):
 	if doc.doctype == "File":
 		return
 	for df in doc.meta.get("fields", {"fieldtype": ["in", ["Attach", "Attach Image"]]}):
-		value = doc.get(df.fieldname)
-		if not blob_store.blob_key_from_url(value):
-			continue  # local /files value (core links it) or empty
-		if frappe.db.exists("File", {
-			"file_url": value,
-			"attached_to_name": doc.name,
-			"attached_to_doctype": doc.doctype,
-			"attached_to_field": df.fieldname,
-		}):
-			continue  # already bonded — idempotent, this hook rides every save
-		unattached = frappe.db.exists("File", {
-			"file_url": value,
-			"attached_to_name": None,
-			"attached_to_doctype": None,
-			"attached_to_field": None,
-			# Only the uploader may claim their own free row: bonding decides the owner, and the owner decides privacy, so claiming someone else's unattached file republishes it under a doctype the claimer chose.
-			"owner": frappe.session.user,
-		})
-		if unattached:  # bond ONLY a free row: an email/comment alias of the same blob is already spoken for
-			# db.set_value, never save(): every row reaching here holds an Azure PROXY url, which is one of core's own URL_PREFIXES (file.py:44), so core's byte-mover handle_is_private_changed early-returns on is_remote_file (file.py:313) and moves nothing — a save would only buy a validate() pass that re-raises the enforce_public_file_restrictions 403, plus a modified bump and a Version row.
-			frappe.db.set_value("File", unattached, {
-				"attached_to_name": doc.name,
-				"attached_to_doctype": doc.doctype,
-				"attached_to_field": df.fieldname,
-				# The bond is the first moment the owner is known, so it is where the allowlist finally applies.
-				"is_private": 0 if may_be_public(doc.doctype, doc.name) else 1,
-			}, update_modified=False)
+		bond_file(doc.get(df.fieldname), doc.doctype, doc.name, df.fieldname)
 
 
 def on_trash(doc, method=None):
