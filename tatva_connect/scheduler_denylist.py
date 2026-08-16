@@ -51,9 +51,26 @@ DENYLIST = [
 	("frappe.website.doctype.personal_data_deletion_request.personal_data_deletion_request.process_data_deletion_request", "GDPR portal deletion flow — zero rows; no-ops unless auto_account_deletion >= 1"),
 	("frappe.website.doctype.personal_data_deletion_request.personal_data_deletion_request.remove_unverified_record", "GDPR portal deletion flow — zero rows"),
 	("frappe.website.doctype.web_page.web_page.check_publish_status", "publishes/unpublishes Web Pages by date — zero Web Page rows"),
+	# frappe — Document Follow: a DESK-only email digest of changes to docs a user follows. All six switches
+	# live on User > More Information and every one ships 0, so nobody follows anything: measured 0 of 255
+	# users with any switch on, and 0 Document Follow rows. The SPA has no follow surface at all.
+	("frappe.desk.form.document_follow.send_daily_updates", "Document Follow digest — 0 followers, 0 rows; Desk-only feature the SPA never exposes"),
+	("frappe.desk.form.document_follow.send_hourly_updates", "Document Follow digest (hourly) — same, 0 followers"),
+	("frappe.desk.form.document_follow.send_weekly_updates", "Document Follow digest (weekly) — same, 0 followers"),
+	("frappe.desk.doctype.event.event.send_event_digest", "mails a digest of frappe's own calendar Events — zero Event rows; our work lives on CRM Task, a different doctype"),
+	("frappe.core.doctype.prepared_report.prepared_report.expire_stalled_report", "expires background-run Desk reports — zero Prepared Report rows"),
+	# helpdesk — the corpus is three NLTK language files (POS tagger, tokenizer, Brown corpus) for ticket
+	# search. It is a download, on the `All` cadence, reaching out to nltk's servers from a PHI site.
+	("helpdesk.search.download_corpus", "downloads NLTK language files on every `All` tick — outbound fetch from a PHI site; ticket search runs on what is already on disk"),
+	# insights — the scheduled-import timer, the same family as the CSV/Excel import that is switched off here.
+	("insights.insights.doctype.insights_table_import_job.insights_table_import_job.run_scheduled_imports", "timed Insights data imports — zero Import Job rows and file import is disabled on this site"),
 	# lms — features of the LMS we do not run (the rest of its jobs stay on).
 	("lms.job.doctype.job_opportunity.job_opportunity.update_job_openings", "LMS job board — not a feature we run"),
 	("lms.lms.doctype.lms_payment.lms_payment.send_payment_reminder", "LMS paid-course reminders — no paid courses"),
+	("lms.lms.doctype.lms_certificate_request.lms_certificate_request.schedule_evals", "books Google Meet slots for certificate evaluations — zero Certificate Request rows; internal training is not certified"),
+	("lms.lms.doctype.lms_certificate_request.lms_certificate_request.mark_eval_as_completed", "closes those evaluation slots — same, zero rows"),
+	("lms.lms.doctype.lms_live_class.lms_live_class.update_attendance", "pulls attendee lists back from ZOOM for a finished live class — zero Live Class rows, no Zoom account"),
+	("lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder", "mails students before a live class — same, zero rows"),
 	# insights — the alert mailer only; its three sibling jobs stay ON. Reverses the audit's "left ON" call, which was wrong.
 	("insights.insights.doctype.insights_alert.insights_alert.send_alerts", "Insights Alert mailer — validate() checks read at SAVE, then this runs the query from the scheduler as Administrator and mails the rows to free-text recipients; zero rows, not a CRM feature"),
 ]
