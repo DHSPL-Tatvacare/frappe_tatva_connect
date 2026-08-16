@@ -44,6 +44,8 @@ class TestGuardSignatureParity(AuthzTestCase):
 	def test_no_guard_is_stricter_than_the_native_it_replaces(self):
 		offenders = []
 		for native_path, ours_path in hooks.override_whitelisted_methods.items():
+			if "." not in native_path:
+				continue  # a bare handler alias (`upload_file`); its dotted twin is in this same map and is checked
 			native_params = inspect.signature(frappe.get_attr(native_path)).parameters
 			our_params = inspect.signature(frappe.get_attr(ours_path)).parameters
 

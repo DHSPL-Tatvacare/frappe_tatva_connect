@@ -55,7 +55,7 @@ REVIEWED_EXCEPTIONS = {
 	"LMS Programming Exercise Submission": {
 		"Course Creator": "the exercise author writes the reference solution",
 		"Batch Evaluator": "an evaluator reads and annotates a submission",
-		"Moderator": "moderates submissions",
+		"Moderator": "lms staff review submissions",
 		"LMS Student": "a student's own answer to a programming exercise IS code, and it is if_owner",
 	},
 }
@@ -146,13 +146,15 @@ class TestExecutableFieldsAreAdminOnly(FrappeTestCase):
 		self.assertFalse(readers,
 						 f"Custom HTML Block may be read by {sorted(readers)} — the doctype is dead")
 
-	def test_wiki_settings_javascript_is_not_writable_by_a_wiki_approver(self):
-		self.assertFalse(_writable_at_permlevel("Wiki Settings", "javascript", "Wiki Approver"))
-		self.assertFalse(_writable_at_permlevel("Wiki Settings", "head_html", "Wiki Approver"))
+	def test_wiki_settings_scripts_and_secrets_are_not_writable_by_a_wiki_manager(self):
+		"""The wiki's own manager holds level-0 write on this Single; the injection and credential fields are level 1."""
+		for fieldname in ("javascript", "head_html", "github_app_client_secret",
+						  "github_app_private_key", "github_webhook_secret"):
+			self.assertFalse(_writable_at_permlevel("Wiki Settings", fieldname, "Wiki Manager"), fieldname)
 
-	def test_lms_batch_script_fields_are_not_writable_by_a_moderator(self):
+	def test_lms_batch_script_fields_are_not_writable_by_a_batch_evaluator(self):
+		"""The evaluator holds level-0 write on the batch; the two fields that render to every learner are level 1."""
 		for fieldname in ("custom_script", "custom_component"):
-			self.assertFalse(_writable_at_permlevel("LMS Batch", fieldname, "Moderator"), fieldname)
 			self.assertFalse(_writable_at_permlevel("LMS Batch", fieldname, "Batch Evaluator"), fieldname)
 
 	def test_an_agent_may_read_but_not_author_a_ticket_template(self):

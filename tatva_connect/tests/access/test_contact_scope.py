@@ -9,6 +9,7 @@ What is asserted:
   * a contact whose linked User is a WEBSITE User is untouched, because a portal login is an external
     person and the naive "has a user" filter would have hidden a real customer;
   * a privileged caller still sees every contact, staff included;
+  * the rule is DORMANT until its switch is armed — off, the list is stock frappe's;
   * `get_contact_name()` still resolves a staff member's own contact for an unprivileged session, so
     frappe's user provisioning is unaffected by the condition;
   * the condition is ONE correlated predicate and never a list of staff names inlined from Python.
@@ -23,6 +24,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access.contact_scope import (
 	STAFF_USER_TYPE,
+	SWITCH,
 	get_contact_permission_query_conditions,
 )
 
@@ -69,6 +71,11 @@ class TestContactScope(FrappeTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.set_user("Administrator")
+		# The rule ships dormant, so every assertion about it arms it first — as the sibling visibility suites do.
+		self._arm(1)
+
+	def _arm(self, on):
+		frappe.db.set_value("CRM Tatva Automation", SWITCH, "enabled", on)
 
 	# ---- fixtures ----------------------------------------------------------------------------------
 
@@ -127,6 +134,15 @@ class TestContactScope(FrappeTestCase):
 		for email in (STAFF, MANAGER):
 			self.assertNotIn(email, condition,
 							 f"{email} was inlined into the clause, so it grows with every new login")
+
+	def test_the_rule_is_dormant_until_armed(self):
+		"""Off is stock frappe — no clause, and the staff contact the armed rule hides is back in the list."""
+		self._arm(0)
+		frappe.set_user(REP)
+		self.assertIsNone(get_contact_permission_query_conditions(),
+						  "the dormant rule still handed the caller a restriction to satisfy")
+		self.assertIn(self.staff_contact, self._visible_to(REP),
+					  "the switch was off and the contact list was still being filtered")
 
 	def test_a_privileged_caller_is_not_restricted_at_all(self):
 		"""None, never "" — an empty string is a condition frappe would still AND in, and it says nothing."""

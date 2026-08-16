@@ -174,16 +174,23 @@ def _internal_ticks():
 	the partner API reads, but for internal per-grain visibility. Request-cached; one build per request.
 	Seeded by access/internal_contract.py from the frozen GRAIN_FIELDS snapshot (the primary seed)."""
 	def build():
-		ticks = {}
-		for m in frappe.get_all(
+		# TWO queries whatever the number of contracts: the ticks are read once for every mapping and
+		# grouped here, not fetched per mapping. One query per contract meant a query per GRAIN.
+		mappings = frappe.get_all(
 			"CRM Lead API Mapping", filters={"is_internal": 1},
 			fields=["name", "vertical", "crm_group", "program"],
-		):
-			g = (m.vertical or "", m.crm_group or "", m.program or "")
-			ticks[g] = set(frappe.get_all(
-				"CRM Lead API Mapping Field", filters={"parent": m.name}, pluck="field",
-			))
-		return ticks
+		)
+		if not mappings:
+			return {}
+		rows = frappe.get_all(
+			"CRM Lead API Mapping Field", filters={"parent": ["in", [m.name for m in mappings]]},
+			fields=["parent", "field"],
+		)
+		by_parent = {}
+		for r in rows:
+			by_parent.setdefault(r.parent, set()).add(r.field)
+		return {(m.vertical or "", m.crm_group or "", m.program or ""): by_parent.get(m.name, set())
+		        for m in mappings}
 	return request_cache(_INTERNAL_TICKS_CACHE, "all", build)
 
 
@@ -411,14 +418,16 @@ def programs_under(vertical, group):
 
 
 def _restricted_keys(roles):
-	"""field_keys hidden from ANY of these roles (CRM Lead Field Restriction). Request-cached
-	per role. Read ONLY here — the partner API never consults this doctype."""
-	hidden = set()
-	for role in roles:
-		hidden |= request_cache(_RESTRICT_CACHE, role, lambda role=role: set(frappe.get_all(
-			"CRM Lead Field Restriction", filters={"role": role}, pluck="field",
-		)))
-	return hidden
+	"""field_keys hidden from ANY of these roles (CRM Lead Field Restriction). Read ONLY here — the
+	partner API never consults this doctype.
+
+	ONE query for the whole role set, never one per role: the question is already a union. Asked role by
+	role it cost a query for every role a caller happens to hold — 53 of the 120 an activity punch ran,
+	because that is how many an administrator has. Cached on the set, since a request has one user."""
+	key = tuple(sorted(roles))
+	if not key:
+		return set()
+	return request_cache(_RESTRICT_CACHE, key, lambda: set(frappe.get_all("CRM Lead Field Restriction", filters={"role": ["in", list(key)]}, pluck="field")))
 
 
 def restrict_fields(catalog_rows, roles):

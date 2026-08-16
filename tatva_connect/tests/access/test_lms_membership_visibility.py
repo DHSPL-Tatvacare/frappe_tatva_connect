@@ -99,7 +99,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		# than about the role. `author` is privileged and also the fixture's required instructor.
 		cls.outsider = _mk_user(f"{TAG}-outsider@example.com", ["LMS Student"])
 		cls.member = _mk_user(f"{TAG}-member@example.com", ["LMS Student"])
-		cls.author = _mk_user(f"{TAG}-author@example.com", ["Moderator"])
+		cls.author = _mk_user(f"{TAG}-author@example.com", ["Course Creator"])
 
 	@classmethod
 	def _purge(cls):
@@ -261,7 +261,7 @@ class TestLMSMembershipVisibility(FrappeTestCase):
 		self.assertIn("LMS Program", lockdown.FIELD_LEVELS)
 		self.assertEqual(
 			set(lockdown.FIELD_LEVELS["LMS Program"][1]),
-			{"System Manager", "Moderator", "Course Creator"},
+			{"System Manager", "Course Creator"},
 		)
 
 	def test_f5_student_cannot_read_an_arbitrary_quiz(self):

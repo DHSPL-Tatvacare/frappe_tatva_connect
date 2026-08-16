@@ -31,7 +31,7 @@ UPSTREAM_SAFE = {
 	"LMS Certificate Request": "controller forces member = session.user (throws first)",
 	"LMS Enrollment": "cured by TatvaLMSEnrollment (own class override, runs before upstream before_insert)",
 	"LMS Badge Assignment": "validate_owner requires Admin to assign to another user",
-	"LMS Batch Enrollment": "validate_owner requires Moderator/Batch Evaluator; self-enrol path only",
+	"LMS Batch Enrollment": "validate_owner requires a privileged role; self-enrol path only",
 }
 
 # Roles a non-privileged LMS user may hold — a create grant to any of these is a student-reachable surface.
@@ -137,7 +137,7 @@ class TestLMSMemberIDOR(AuthzTestCase):
 			self.assertEqual(doc.member, self.attacker)
 
 	def test_privileged_can_create_on_behalf(self):
-		"""PART B vector — a Moderator may still file a record for another member (not broken)."""
+		"""PART B vector — a privileged role may still file a record for another member (not broken)."""
 		if not self.lesson:
 			self.skipTest("no Course Lesson seeded")
 		with set_user("Administrator"):

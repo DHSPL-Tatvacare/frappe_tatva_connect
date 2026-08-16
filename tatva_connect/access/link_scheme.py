@@ -19,9 +19,9 @@ Operator-only fields (WhatsApp Account.url, telephony base_url, etc.) are NOT dr
 through here — they carry a different contract (internal API endpoints) and are gated by
 assert_safe_public_url in utils.py.
 """
-import frappe
+from urllib.parse import urlparse
 
-ALLOWED_PREFIXES = ("https://",)
+import frappe
 
 # A browser deletes tab/newline/return anywhere in a URL before reading the scheme.
 _BROWSER_DROPS = str.maketrans("", "", "\t\n\r")
@@ -31,23 +31,41 @@ def normalise(value):
 	return (value or "").translate(_BROWSER_DROPS).strip().lower()
 
 
-def is_safe_scheme(value):
-	"""True when `value` is empty or starts with ALLOWED_PREFIXES — emptied first,
-	normalised as the browser sees it."""
-	return not normalise(value) or normalise(value).startswith(ALLOWED_PREFIXES)
+def is_safe_scheme(value, *, allow_in_site_path=False):
+	"""True when `value` is empty, https://, or — where the field allows it — a path on this site.
+
+	Read with `urlparse`, the same reader frappe's own `validate_url` uses, because the dangerous values
+	are told apart by their PARTS and not by a prefix: `//evil.com` carries no scheme yet sends a browser
+	off-site, and `javascript:` carries one that frappe's helper accepts. A path on this site is the only
+	shape that is scheme-less AND host-less; everything else must name https.
+
+	`allow_in_site_path` is what a NAVIGATION target (a tile, a workspace link) needs — its normal value is
+	`/crm/leads`, so the https-only answer would reject every legitimate one. A field that is rendered as an
+	outbound address leaves it False and keeps the stricter rule.
+	"""
+	value = normalise(value)
+	if not value:
+		return True
+	parsed = urlparse(value)
+	if not parsed.scheme and not parsed.netloc:
+		return allow_in_site_path and value.startswith("/")
+	# A host is required with the scheme: `https:evil.com` and `https:/evil.com` name none, and a browser
+	# resolves both against the page it is already on rather than the address they appear to carry.
+	return parsed.scheme == "https" and bool(parsed.netloc)
 
 
-def assert_safe_scheme(value, label):
-	"""Raise ValidationError unless `value` is empty or https://"""
+def assert_safe_scheme(value, label, *, allow_in_site_path=False):
+	"""Raise ValidationError unless `value` passes `is_safe_scheme` for this field's rule."""
 	if not value or not value.strip():
 		return
-	if not is_safe_scheme(value):
-		frappe.throw(
-			frappe._("{0} must be a secure web address starting with https://").format(
-				frappe.bold(label)
-			),
-			title=frappe._("Invalid URL"),
-		)
+	if is_safe_scheme(value, allow_in_site_path=allow_in_site_path):
+		return
+	message = (
+		frappe._("{0} must be a path on this site or a secure https:// address")
+		if allow_in_site_path
+		else frappe._("{0} must be a secure web address starting with https://")
+	)
+	frappe.throw(message.format(frappe.bold(label)), title=frappe._("Invalid URL"))
 
 
 # -- doc_event handler — one entry per link-carrying field -------------------------------------
@@ -68,15 +86,27 @@ _LINK_FIELDS = {
 }
 
 
+# Navigation targets a person clicks: a tile, a workspace link. An in-site path is the normal value here.
+_NAVIGATION_FIELDS = {
+	"link": ("Desktop Icon",),
+	"logo_url": ("Desktop Icon",),
+	"external_link": ("Workspace",),
+}
+
+
 def guard_link_schemes(doc, method=None):
-	"""Validate every link field declared in _LINK_FIELDS for this doc's doctype.
+	"""Validate every link field declared for this doc's doctype, each by the rule its field carries.
 	Only CHANGED values are judged — a legacy row saved for an unrelated reason is never blocked."""
-	fieldnames = [f for f, doctypes in _LINK_FIELDS.items() if doc.doctype in doctypes]
-	for fieldname in fieldnames:
-		df = doc.meta.get_field(fieldname)
-		if not df:
-			continue
-		if not doc.has_value_changed(fieldname):
-			continue
-		value = doc.get(fieldname)
-		assert_safe_scheme(value, doc.meta.get_label(fieldname))
+	for fields, allow_in_site_path in ((_LINK_FIELDS, False), (_NAVIGATION_FIELDS, True)):
+		for fieldname, doctypes in fields.items():
+			if doc.doctype not in doctypes:
+				continue
+			if not doc.meta.get_field(fieldname):
+				continue
+			if not doc.has_value_changed(fieldname):
+				continue
+			assert_safe_scheme(
+				doc.get(fieldname),
+				doc.meta.get_label(fieldname),
+				allow_in_site_path=allow_in_site_path,
+			)

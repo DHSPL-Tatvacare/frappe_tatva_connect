@@ -34,6 +34,10 @@ WORKFLOW_SURFACE_SWITCH = "Workflow::Authoring::surface"
 # The surfaces the Deals liveness answer governs, each named by the doctype whose permission it asks.
 DEAL_SURFACES = (("deals", "CRM Deal"), ("contacts", "Contact"), ("organizations", "CRM Organization"))
 
+# The SPA's admin-only settings groups. `System Settings` is the platform's own doctype and is stock-locked
+# to System Manager, so it answers "is this a platform admin" without naming a role — same gate as Desk.
+SETTINGS_SURFACES = (("platform", "System Settings"),)
+
 
 def my_surfaces() -> dict:
 	"""Which surfaces this caller may see. Not whitelisted — it rides boot, it is never fetched."""
@@ -45,6 +49,10 @@ def my_surfaces() -> dict:
 	live = _answer(_deals_live)
 	for key, doctype in DEAL_SURFACES:
 		surfaces[key] = live and _answer(lambda dt=doctype: frappe.has_permission(dt, "read"))
+	surfaces["settings"] = {
+		key: _answer(lambda dt=doctype: frappe.has_permission(dt, "write"))
+		for key, doctype in SETTINGS_SURFACES
+	}
 	return surfaces
 
 

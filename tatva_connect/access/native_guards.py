@@ -16,7 +16,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime
 
-from tatva_connect.access import lms_visibility
+from tatva_connect.access import lms_visibility, visibility
 
 
 def _require_read(doctype, name):
@@ -266,6 +266,43 @@ def get_programs():
 	return data
 
 
+def _require_batch(batch):
+	"""Deny unless the caller is in this batch — the detail half of the rule `get_batches` already applies.
+
+	Native asks `published OR admin OR enrolled`, which is upstream's catalogue rule: published means public.
+	Ours is `assigned AND live` (access/lms_visibility), so the LIST hides a batch nobody assigned while the
+	DETAIL hands over its title, dates and course list to anyone who names it. Same rule, both halves."""
+	if not lms_visibility.can_see_batch(batch):
+		frappe.throw(_("You are not enrolled in this batch."), frappe.PermissionError)
+
+
+@frappe.whitelist()
+def get_batch_details(batch: str):
+	_require_batch(batch)
+	from lms.lms.utils import get_batch_details as _native
+
+	return _native(batch)
+
+
+@frappe.whitelist()
+def get_batch_courses(batch: str):
+	"""Native gates on nothing but `guest_access_allowed`, so any logged-in caller reads any batch's courses."""
+	_require_batch(batch)
+	from lms.lms.utils import get_batch_courses as _native
+
+	return _native(batch)
+
+
+@frappe.whitelist()
+def get_program_details(program_name: str):
+	"""Native asks `published OR member`; a published programme nobody assigned is not this site's to show."""
+	if not lms_visibility.can_see_program(program_name):
+		frappe.throw(_("You are not enrolled in this program."), frappe.PermissionError)
+	from lms.lms.utils import get_program_details as _native
+
+	return _native(program_name)
+
+
 @frappe.whitelist(allow_guest=True)  # guest-ok: mirrors native allow_guest; require_course denies a caller who is not in the course
 def get_reviews(course):
 	"""Native reads every review of ANY course through get_all with no gate at all — not published, not
@@ -415,6 +452,131 @@ def get_quiz_with_questions(quiz):
 	return data
 
 
+# --- LMS user administration -------------------------------------------------------------------
+def _require_platform():
+	"""Deny unless the caller is a platform administrator — the tier these five endpoints never asked for.
+
+	Native gates them on `Moderator`, which is not an administration tier here: it is lms's ONLY test for
+	"is this person staff" (`has_moderator_role`), so every course manager holds it. Granting a role,
+	deleting an account, reading the roster and shaping the site's navigation are platform acts. Native's
+	own `only_for` still runs underneath, so a caller needs BOTH — which the System Admin profile carries.
+	One spelling of "platform administrator" for the whole app, and it lives in `visibility`."""
+	if not visibility.is_privileged():
+		frappe.throw(_("Only a System Manager may administer users."), frappe.PermissionError)
+
+
+@frappe.whitelist()
+def save_role(user: str, role: str, value: int):
+	"""Native writes `Has Role` with ignore_permissions, so a Moderator could grant themselves any LMS role."""
+	_require_platform()
+	from lms.lms.api import save_role as _native
+
+	return _native(user, role, value)
+
+
+@frappe.whitelist()
+def delete_member(user: str):
+	"""Native calls `delete_doc("User", …, ignore_permissions=True)` — an account delete, reached from the LMS."""
+	_require_platform()
+	from lms.lms.api import delete_member as _native
+
+	return _native(user)
+
+
+@frappe.whitelist()
+def get_members(start: int = 0, search: str = None, role: str = "All"):
+	"""The Users tab: every enabled account on the site with its roles. Reading the roster is administration too."""
+	_require_platform()
+	from lms.lms.api import get_members as _native
+
+	return _native(start, search, role)
+
+
+@frappe.whitelist()
+def update_sidebar_item(webpage: str, icon: str):
+	"""The site's own navigation is platform shape, not course content."""
+	_require_platform()
+	from lms.lms.api import update_sidebar_item as _native
+
+	return _native(webpage, icon)
+
+
+@frappe.whitelist()
+def delete_sidebar_item(webpage: str):
+	_require_platform()
+	from lms.lms.api import delete_sidebar_item as _native
+
+	return _native(webpage)
+
+
+# --- Making an account exists in one tier, whichever app asks ------------------------------------
+@frappe.whitelist()
+def sent_invites(emails, send_welcome_mail_to_user: bool = True):
+	"""Helpdesk's Add Agent dialog, which INSERTS a `User` — an account, reached from an agent screen.
+
+	Native gates it on `is_agent`, so any agent could ask; the insert then failed on the `User` matrix with a
+	raw permission error and a dead button. The tier is named here so the refusal says what is actually wrong."""
+	_require_platform()
+	from helpdesk.api.agent import sent_invites as _native
+
+	return _native(emails, send_welcome_mail_to_user)
+
+
+@frappe.whitelist()
+def invite_by_email(emails, roles, redirect_to_path, app_name: str = "frappe", **kwargs):
+	"""The other door to the same act: an accepted invitation inserts the `User` with permissions ignored.
+
+	`UserInvitation.validate_role` reads the INVITING APP's own `user_invitation.allowed_roles` hook, which no
+	other app can override — helpdesk's names `Agent Manager`. Creating an account is a platform act here
+	whichever app asks, so the tier is asserted before native's own check rather than in place of it."""
+	_require_platform()
+	from frappe.core.api.user_invitation import invite_by_email as _native
+
+	return _native(emails, roles, redirect_to_path, app_name, **kwargs)
+
+
+@frappe.whitelist()
+def crm_invite_by_email(emails: str, role: str):
+	"""crm's own invite. Native admits a `Sales Manager` and caps them at inviting a `Sales User`."""
+	_require_platform()
+	from crm.api import invite_by_email as _native
+
+	return _native(emails, role)
+
+
+@frappe.whitelist()
+def invite_user(contact: str):
+	"""The widest door of all: native asks only for READ on the Contact, then inserts a Website User.
+
+	No role is named anywhere in it, so any caller who can open a contact record — every rep, every agent —
+	could mint an account. Gated on the tier, like every other way of making one."""
+	_require_platform()
+	from frappe.contacts.doctype.contact.contact import invite_user as _native
+
+	return _native(contact)
+
+
+@frappe.whitelist()
+def update_user_role(user: str, new_role: str):
+	"""crm writes `User.roles` directly here; native admits a `Sales Manager` and caps them at `Sales User`.
+
+	Roles are held through role profiles on this site, so a grant made here does not even survive the user's
+	next save (user.py:277) — which makes it a confusing half-grant as well as the wrong tier."""
+	_require_platform()
+	from crm.api.user import update_user_role as _native
+
+	return _native(user, new_role)
+
+
+@frappe.whitelist()
+def remove_crm_roles_from_user(user: str):
+	"""The revoking half of the same act, admitted to the same wrong tier."""
+	_require_platform()
+	from crm.api.user import remove_crm_roles_from_user as _native
+
+	return _native(user)
+
+
 # --- Wiki (internal handbook, login-only) -------------------------------------------------------
 @frappe.whitelist()
 def get_revisions(wiki_page_name):
@@ -428,6 +590,24 @@ def get_revisions(wiki_page_name):
 	return _native(wiki_page_name)
 
 
+@frappe.whitelist()
+def list_change_requests(wiki_space: str, status: str | None = None):
+	"""Every change request in a space — title, description and author — from `frappe.get_all` with no
+	gate at all, so the doctype matrix cannot reach it and any logged-in caller may name any space.
+
+	Gate on WRITE of the space, which is who the change-request flow belongs to here: a reader never
+	proposes, so a reader has no business listing what others proposed. No screen calls this."""
+	from wiki.permissions import can_write_space
+
+	if not can_write_space(wiki_space):
+		frappe.throw(_("You do not have access to this wiki space."), frappe.PermissionError)
+	from wiki.frappe_wiki.doctype.wiki_change_request.wiki_change_request import (
+		list_change_requests as _native,
+	)
+
+	return _native(wiki_space, status)
+
+
 # --- Insights (queries the SITE DB, so a leak here is a leak of every table) ---------------------
 _INSIGHTS_REWIND_ARGS = ("active_operation_idx",)  # replays a query BEFORE its own filters — the raw source table on the public path
 
@@ -436,8 +616,18 @@ def _insights_privileged(doctype, name):
 	"""True if the caller may natively READ the target doc — i.e. is not on Insights' public path.
 
 	The same shape as `_lms_privileged` above: a per-caller narrowing gate, not a deny. Fail-closed
-	on a malformed target (no doctype/name), which native rejects a moment later anyway."""
-	return bool(doctype and name and frappe.has_permission(doctype, "read", name))
+	on a malformed target (no doctype/name), which native rejects a moment later anyway.
+
+	A name the caller supplies need not be STORED yet — the SPA composes a query in the workbook and
+	runs it before it is saved, and native builds that doc from the payload rather than the row. Asking
+	`has_permission` for it would raise DoesNotExistError and fail a request native answers fine."""
+	if not (doctype and name):
+		return False
+	try:
+		return bool(frappe.has_permission(doctype, "read", name))
+	except frappe.DoesNotExistError:
+		# No stored row, so native's public branch is unreachable (`is_public` reads the DB) — nothing to narrow.
+		return True
 
 
 def _strip_rewind_args(args):

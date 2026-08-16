@@ -24,8 +24,8 @@ lms's own `can_modify_course` / `can_modify_batch` say an instructor runs the th
 endpoints let an author narrow to what they `created` — a filter that would otherwise reach past this
 rule rather than inside it.
 
-Privileged roles see everything, because they author and administer it. The set is DECLARED here and
-not imported from lms, even though lms spells the same four in `utils.PRIVILEGED_ROLES` and in
+Privileged roles see everything, because they author and administer it. The set is DECLARED here and not
+imported from lms, even though lms spells a similar set in `utils.PRIVILEGED_ROLES` and in
 `LMS Quiz.check_answer`: a security boundary of ours must not move when an upstream constant does.
 
 Membership is read with `frappe.get_all`, which bypasses the permission engine — deliberately, so
@@ -38,11 +38,12 @@ from frappe import _
 
 from tatva_connect.access import request_cache
 
+# Moderator is lms's own staff test (`has_moderator_role`), so our read boundary agrees with it or a Moderator is scoped like a learner on batches they administer.
 PRIVILEGED_ROLES = frozenset({"System Manager", "Moderator", "Course Creator", "Batch Evaluator"})
 
 
 def is_privileged(user=None):
-	"""Author, moderator, evaluator or administrator — sees every batch, program, course and quiz."""
+	"""Author, evaluator or administrator — sees every batch, program, course and quiz."""
 	user = user or frappe.session.user
 	return user == "Administrator" or bool(PRIVILEGED_ROLES & set(frappe.get_roles(user)))
 

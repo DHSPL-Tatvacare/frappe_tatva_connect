@@ -1,5 +1,5 @@
 <!-- AUTHORITATIVE permissions policy for tatva_connect / TatvaCare healthcare CRM.
-     Governs every doctype's `permissions[]` block and access/lockdown.py::LOCKED_MATRIX.
+     Governs access/ledger.py, the ONE declaration of every doctype-level permission on this site.
      The Desk Role Permission Manager is NEVER the source of truth — this document + the code are. -->
 
 # Permissions Policy — TatvaCare healthcare CRM
@@ -144,7 +144,7 @@ assignment, portal self-service). The fix is a **curated denylist**, doctype by 
 `lockdown.py`. (tatva_connect's own doctypes grant `All` **nowhere** — already compliant. The leaks are in
 stock apps you install.)
 
-**Current denylist (stock apps) — enforced in `lockdown.py::LOCKED_MATRIX`:**
+**Current denylist (stock apps) — declared in `ledger.py::OPEN`:**
 
 | Doctype(s) | App | Why | Lock to | Status |
 |---|---|---|---|---|
@@ -168,25 +168,25 @@ stock apps you install.)
 
 | Doctype kind | Declare permissions in | Notes |
 |---|---|---|
-| **Our custom parent doctypes** | the `permissions[]` array in their `.json` | applied on `bench migrate`; version-controlled |
+| **Any parent doctype we govern — ours or not** | `access/ledger.py::OPEN` | `after_migrate`, rebuilt only when the declaration's hash moves |
+| **A parent doctype not yet reviewed** | its `.json`, until it is added to the ledger | resolves to DENIED once its app is armed in `ENFORCED_APPS` |
 | **Our child tables** | nothing (`permissions: []`) | inherit parent |
-| **Stock / core / Helpdesk (not ours)** | `access/lockdown.py::LOCKED_MATRIX` | `after_migrate` rebuild, fail-closed, idempotent |
 | **Field-level** | `permlevel` on the field + one perm row at that level | for sensitive fields only |
 | **Fixtures** | Custom Fields & Property Setters **only** | ⚠️ never ship doctype perms as fixtures (loses parent, wipes originals) |
 
-**Desk Role Permission Manager** = experimentation only. In developer mode it writes back to the doctype
-JSON, so capture there; otherwise the change is lost on the next image build. **Never the source of truth.**
+**Desk Role Permission Manager** = a valid operator override. `apply()` is hash-gated, so a Desk change
+stands until the ledger entry itself changes. It is still not where a policy DECISION is recorded.
 
 ---
 
 ## 7. How to add / change (procedures)
 
-- **New custom doctype** → ask the one question (§4), paste the matching bucket block into its JSON
-  `permissions[]`. Child table → leave `[]`.
+- **New custom doctype** → ask the one question (§4), add it to `ledger.py::OPEN` with the matching
+  bucket name. Child table → leave `permissions: []`.
 - **New field that's sensitive** → set `"permlevel": 1` on the field; add one perm row at level 1 for the
   roles allowed to see/edit it.
-- **Lock a stock doctype** (you don't own it) → add a row to `LOCKED_MATRIX` in `access/lockdown.py`
-  listing *exactly* the roles allowed; the rebuild drops every other role incl. `All`.
+- **Lock a stock doctype** (you don't own it) → same lane: add it to `ledger.py::OPEN`. The rebuild
+  drops every other role incl. `All`. Ownership changes nothing about where you declare it.
 - **New capability** (like WhatsApp) → create a role, gate the doctype's perms on it, keep it out of the
   Sales bucket roles.
 - **Never** edit a stock doctype's JSON, and **never** add `All` to a business doctype.
@@ -208,5 +208,5 @@ Two checks, run after seeding:
 2. **"Permitted Documents for User" report** — pick one Sales User + one Sales Manager, tick *Show
    Permissions*. A rep must see CRM, **not** `HD Ticket` or any bucket-3 settings.
 
-> If either check surprises you, the doctype's `permissions[]` (or a `LOCKED_MATRIX` row) is wrong — fix
-> the **code**, never the Desk.
+> If either check surprises you, the doctype's `ledger.py` entry is wrong — fix the **code**. A Desk edit
+> now survives every migrate, so it is a valid operator override, never a way to fix a wrong declaration.

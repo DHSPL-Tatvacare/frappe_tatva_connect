@@ -1,14 +1,11 @@
 # Copyright (c) 2026, TatvaCare and Contributors
 # See license.txt
-"""The ledger's own invariants, and the proof that Phase 2 will be a no-op before it is a change.
+"""The ledger's own invariants — asserted on the declaration, with no site and no data.
 
-Three lenses, and the middle one is the reason this file exists at all:
+Two lenses:
 
   * THE LEDGER IS WELL-FORMED. Buckets resolve, tuples are the right shape, and no bucket hands `All`
     an unscoped write. A malformed row here becomes a wrong Custom DocPerm on every site.
-  * IT REPRODUCES LOCKED_MATRIX EXACTLY. `lockdown.apply()` still reads LOCKED_MATRIX; the ledger is
-    inert. Asserting the two agree is what makes swapping the reader in Phase 2 provably inert — so a
-    later diff is a decision somebody made, never a transcription slip made today.
   * THE DEFAULT IS CLOSED. An undeclared doctype resolves to DENIED. This is the inversion, and it is
     the single assertion that would fail if someone re-introduced an open default.
 
@@ -20,7 +17,6 @@ Run:
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.access import ledger
-from tatva_connect.access.lockdown import LOCKED_MATRIX
 
 
 def _pad(perms):
@@ -39,12 +35,12 @@ class TestLedger(FrappeTestCase):
 				self.assertTrue(entry, f"{doctype} declares an empty role map")
 
 	def test_every_tuple_is_well_formed(self):
-		"""Four to six flags, each 0 or 1. A malformed tuple becomes a wrong permission row on every site."""
+		"""Four to seven flags, each 0 or 1. A malformed tuple becomes a wrong permission row on every site."""
 		everything = list(ledger.BUCKETS.items()) + [(d, ledger.rows_for(d)) for d in ledger.OPEN]
 		for owner, rows in everything:
 			for role, perms in rows.items():
 				self.assertGreaterEqual(len(perms), 4, f"{owner}/{role} has fewer than 4 flags")
-				self.assertLessEqual(len(perms), 6, f"{owner}/{role} has more than 6 flags")
+				self.assertLessEqual(len(perms), 7, f"{owner}/{role} has more than 7 flags")
 				for flag in perms:
 					self.assertIn(flag, (0, 1), f"{owner}/{role} has a non-boolean flag")
 
@@ -72,23 +68,8 @@ class TestLedger(FrappeTestCase):
 		for role, perms in ledger.BUCKETS["DENIED"].items():
 			self.assertEqual(_pad(perms), (1, 0, 0, 0, 0), f"DENIED grants {role} more than read")
 
-	def test_ledger_reproduces_locked_matrix_exactly(self):
-		"""Phase 2 swaps lockdown's reader to the ledger; this is the proof that swap changes nothing."""
-		self.assertEqual(
-			sorted(ledger.OPEN),
-			sorted(LOCKED_MATRIX),
-			"the ledger and LOCKED_MATRIX cover different doctypes",
-		)
-		for doctype, want in LOCKED_MATRIX.items():
-			have = ledger.rows_for(doctype)
-			self.assertEqual(
-				{r: _pad(p) for r, p in want.items()},
-				{r: _pad(p) for r, p in have.items()},
-				f"{doctype} differs between LOCKED_MATRIX and the ledger",
-			)
-
 	def test_tier0_is_a_watchlist_not_a_grant(self):
-		"""Tier 0 names the escalation set. Phase 1 only REPORTS on it — an entry here must not open anything."""
+		"""Tier 0 names the escalation set — an entry here must not be opened without review."""
 		for doctype in ledger.TIER0:
 			self.assertFalse(
 				ledger.is_declared(doctype), f"{doctype} is Tier 0 and must not be opened without review"

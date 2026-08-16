@@ -180,8 +180,8 @@ class TestSurfaceGates(FrappeTestCase):
 		self._entitled_to(ARMED)
 		with patch("tatva_connect.near_me.api._can_access", side_effect=RuntimeError("gate exploded")):
 			answer = my_surfaces()
-		self.assertEqual(set(answer), {"near_me", "workflows", "deals", "contacts", "organizations"},
-						 "the map did not answer at all")
+		self.assertTrue({"near_me", "workflows", "deals", "contacts", "organizations"}.issubset(answer),
+						f"the map did not answer at all: {sorted(answer)}")
 		self.assertFalse(answer["near_me"], "a surface that could not answer was shown anyway")
 		self.assertTrue(answer["workflows"], "one broken gate took a healthy surface down with it")
 		self.assertTrue(answer["deals"], "one broken gate took a healthy surface down with it")

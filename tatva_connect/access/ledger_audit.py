@@ -130,22 +130,6 @@ def undeclared_ranked():
 	return rows
 
 
-def parity_with_locked_matrix():
-	"""Doctypes where the ledger and the live LOCKED_MATRIX disagree — must be empty before Phase 2.
-
-	This is the proof that swapping the reader is a no-op: same doctypes, same rows, so the first
-	enforcement run changes nothing and any later change is deliberate."""
-	from tatva_connect.access.lockdown import LOCKED_MATRIX
-
-	mismatched = []
-	for name in set(LOCKED_MATRIX) | set(ledger.OPEN):
-		want = _normalise(dict(LOCKED_MATRIX.get(name, {})))
-		have = _normalise(ledger.rows_for(name)) if name in ledger.OPEN else {}
-		if want != have:
-			mismatched.append(name)
-	return sorted(mismatched)
-
-
 def report():
 	"""Print the Phase 1 audit. Read-only; safe on any site, including production."""
 	rows = deltas()
@@ -159,9 +143,6 @@ def report():
 	print(f"  open to All/Guest    {len(open_now)}")
 	print(f"  carry executable fld {len([d for d in rows if d['executable']])}")
 
-	drift = parity_with_locked_matrix()
-	print(f"\nLOCKED_MATRIX parity   {'OK' if not drift else 'DRIFT: ' + ', '.join(drift)}")
-
 	print(
 		"\ntop undeclared by evidence (exec = Code field, allw = All/Guest write, narr = a hook narrows it)"
 	)
@@ -174,4 +155,4 @@ def report():
 			f"{(d['rows'] if d['rows'] is not None else '-'):>8}"
 		)
 	print(f"\n  ... {max(0, len(undeclared) - 40)} more\n")
-	return {"total": len(rows), "declared": len(declared), "undeclared": len(undeclared), "drift": drift}
+	return {"total": len(rows), "declared": len(declared), "undeclared": len(undeclared)}

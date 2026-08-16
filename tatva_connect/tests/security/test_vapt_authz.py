@@ -20,7 +20,7 @@ from typing import ClassVar
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.access import lockdown
+from tatva_connect.access import ledger, lockdown
 from tatva_connect.automation import seed
 
 JUNK_ROLE = "Purchase Master Manager"  # unused ERPNext role; reproduces "reads all" on Contact
@@ -154,7 +154,7 @@ class TestVAPTAuthz(FrappeTestCase):
 
 	# ---------- L4: drift guard ----------
 	def test_L4_locked_doctypes_have_no_all_or_guest_crud(self):
-		bad = [g for dt in lockdown.LOCKED_MATRIX for g in lockdown.effective_all_guest_grants(dt)]
+		bad = [g for dt in ledger.OPEN for g in lockdown.effective_all_guest_grants(dt)]
 		self.assertEqual(bad, [], f"L4 BREACH: locked doctype(s) still open to All/Guest: {bad}")
 
 	# ---------- L1: Helpdesk (agent-only internal) ----------

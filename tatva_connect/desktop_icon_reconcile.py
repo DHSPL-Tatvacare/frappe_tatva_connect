@@ -69,10 +69,12 @@ WHAT THIS MODULE FIXES, AND WHY A FIXTURE CANNOT
 import frappe
 
 # Workspace name -> roles it must carry (Has Role), mirroring who can create the underlying content:
-# LMS Course (Course Creator/Moderator/System Manager), Wiki Page (Wiki Approver/System Manager).
+# LMS Course (Course Creator/Batch Evaluator/Moderator/System Manager), Wiki Document (Wiki Manager/System Manager).
+# LMS Student is here for LANDING, not authoring: lms hardcodes its Desk tile to /desk/learning
+# (frontend/src/components/Sidebar/Apps.vue), so without the role every learner lands on an error page.
 _WORKSPACE_ROLES = {
-	"Learning": ["Course Creator", "Moderator", "System Manager"],
-	"Wiki": ["Wiki Approver", "System Manager"],
+	"Learning": ["Course Creator", "Batch Evaluator", "Moderator", "System Manager", "LMS Student"],
+	"Wiki": ["Wiki Manager", "System Manager"],
 }
 
 # Public workspaces we surface as branded Desktop Icon children; their auto-generated

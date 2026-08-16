@@ -24,8 +24,8 @@ from tatva_connect.access import lms_visibility
 def enforce_member(doc, method=None):
 	"""Reject a `member` that is not the caller, then pin it to the session user.
 
-	Privilege is the ONE brain (`lms_visibility.is_privileged`) — the same author/moderator/evaluator/admin
-	set every LMS read gate uses, so the write boundary can never drift from the read boundary."""
+	Privilege is the ONE brain (`lms_visibility.is_privileged`) — the same author/evaluator/admin set
+	every LMS read gate uses, so the write boundary can never drift from the read boundary."""
 	if lms_visibility.is_privileged():
 		return
 	if doc.get("member") and doc.member != frappe.session.user:

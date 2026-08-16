@@ -154,6 +154,7 @@
   },
   {
    "fieldname": "client_script",
+   "permlevel": 1,
    "fieldtype": "Code",
    "options": "Javascript",
    "label": "Client Script",
@@ -161,6 +162,7 @@
   },
   {
    "fieldname": "custom_css",
+   "permlevel": 1,
    "fieldtype": "Code",
    "options": "CSS",
    "label": "Custom CSS",

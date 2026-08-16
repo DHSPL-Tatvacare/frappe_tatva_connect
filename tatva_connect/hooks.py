@@ -50,6 +50,8 @@ override_doctype_class = {
 	"Error Log": "tatva_connect.observability.error_log.MaskedErrorLog",
 	# Audit Aug'26 F8 (IDOR): `member` names the SUBJECT and arrives from the request, while if_owner only guards the row the forger already owns. A controller, not a doc_event, because lms's own before_insert validates duplicates and eligibility against `member` and every hook lands after it (document.py:1580).
 	"LMS Enrollment": "tatva_connect.access.lms_enrollment.TatvaLMSEnrollment",
+	# A new batch names its creator as instructor, the line LMS Course already has and LMS Batch does not.
+	"LMS Batch": "tatva_connect.access.lms_batch.TatvaLMSBatch",
 	# The five listing declarations are ours, so they live here: get_controller is the ONE function the list payload, the saved-view seeder and the rep pickers all already call.
 	"CRM Lead": "tatva_connect.list_engine.columns.TatvaCRMLead",
 	"CRM Task": "tatva_connect.list_engine.columns.TatvaCRMTask",
@@ -87,6 +89,8 @@ override_whitelisted_methods = {
 	"crm.api.doc.update_quick_filters": "tatva_connect.api.task_lenses.update_quick_filters",
 	# The vite door to the boot bag; the rendered-page door is `update_website_context` below. A rep's field menus are cached with no expiry, so the declaration version is what retires them when an operator authors a field.
 	"crm.www.crm.get_context_for_dev": "tatva_connect.api.boot.get_context_for_dev",
+	# Agent Manager is a helpdesk role, not a site administrator — native hands out System Manager with it.
+	"helpdesk.helpdesk.doctype.hd_agent.hd_agent.update_agent_role": "tatva_connect.access.helpdesk_roles.update_agent_role",
 	# Saving a kanban board grouped by a derived field: native resolves its columns through frappe.get_meta, which has never heard of one; a real column_field reaches native untouched.
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create": "tatva_connect.list_engine.views.create",
 	"crm.fcrm.doctype.crm_view_settings.crm_view_settings.create_or_update_standard_view": "tatva_connect.list_engine.views.create_or_update_standard_view",
@@ -110,6 +114,8 @@ override_whitelisted_methods = {
 	# VAPT hardening — Wiki (internal handbook): legacy page history is allow_guest and reads through a
 	# permission-bypassing query, so the doctype matrix cannot reach it; the wrapper gates on the page.
 	"wiki.wiki.doctype.wiki_page_revision.wiki_page_revision.get_revisions": "tatva_connect.access.native_guards.get_revisions",
+	# Every change request in any space, from get_all with no gate — the doctype matrix cannot reach it.
+	"wiki.frappe_wiki.doctype.wiki_change_request.wiki_change_request.list_change_requests": "tatva_connect.access.native_guards.list_change_requests",
 	# VAPT hardening — Insights (reads the site DB): the guest doc-method door runs with permissions off
 	# for a published dashboard; the wrapper strips the arg that rewinds a query to its unfiltered source.
 	"insights.api.run_doc_method": "tatva_connect.access.native_guards.run_doc_method",
@@ -128,6 +134,10 @@ override_whitelisted_methods = {
 	"lms.lms.api.get_my_batches": "tatva_connect.access.native_guards.get_my_batches",
 	"lms.lms.utils.get_batches": "tatva_connect.access.native_guards.get_batches",
 	"lms.lms.utils.get_programs": "tatva_connect.access.native_guards.get_programs",
+	# The DETAIL half of the same rule: native shows a published batch/program to anyone, the list does not.
+	"lms.lms.utils.get_batch_details": "tatva_connect.access.native_guards.get_batch_details",
+	"lms.lms.utils.get_batch_courses": "tatva_connect.access.native_guards.get_batch_courses",
+	"lms.lms.utils.get_program_details": "tatva_connect.access.native_guards.get_program_details",
 	"lms.lms.api.get_job_details": "tatva_connect.access.native_guards.get_job_details",
 	# VAPT Aug'26: the certified-participant directory is cross-member PII (name/username/avatar/open_to) readable by any login; internal training staff only.
 	"lms.lms.api.get_certified_participants": "tatva_connect.access.native_guards.get_certified_participants",
@@ -145,6 +155,21 @@ override_whitelisted_methods = {
 	# a best-effort server-side timer (N6); get_quiz_with_questions stamps the open time the timer reads.
 	"lms.lms.doctype.lms_quiz.lms_quiz.submit_quiz": "tatva_connect.access.native_guards.submit_quiz",
 	"lms.lms.utils.get_quiz_with_questions": "tatva_connect.access.native_guards.get_quiz_with_questions",
+	# lms gates user administration on `Moderator`, its staff test rather than an admin tier — these five are platform.
+	"lms.lms.api.save_role": "tatva_connect.access.native_guards.save_role",
+	"lms.lms.api.delete_member": "tatva_connect.access.native_guards.delete_member",
+	"lms.lms.api.get_members": "tatva_connect.access.native_guards.get_members",
+	"lms.lms.api.update_sidebar_item": "tatva_connect.access.native_guards.update_sidebar_item",
+	"lms.lms.api.delete_sidebar_item": "tatva_connect.access.native_guards.delete_sidebar_item",
+	# An account is made by one tier, whichever app asks: helpdesk's Add Agent dialog inserts a User, and an accepted invitation inserts one with permissions ignored.
+	"helpdesk.api.agent.sent_invites": "tatva_connect.access.native_guards.sent_invites",
+	"frappe.core.api.user_invitation.invite_by_email": "tatva_connect.access.native_guards.invite_by_email",
+	"crm.api.invite_by_email": "tatva_connect.access.native_guards.crm_invite_by_email",
+	# `contact.invite_user` names no role at all — read on the Contact was the whole gate, so any rep or agent could mint a Website User.
+	"frappe.contacts.doctype.contact.contact.invite_user": "tatva_connect.access.native_guards.invite_user",
+	# Granting and revoking a role is the same tier as creating the account it rides on.
+	"crm.api.user.update_user_role": "tatva_connect.access.native_guards.update_user_role",
+	"crm.api.user.remove_crm_roles_from_user": "tatva_connect.access.native_guards.remove_crm_roles_from_user",
 	# A CRM Task Type carrying disable_bulk_complete refuses the list's bulk complete AT THE ENTRY POINT — core's _bulk_action swallows a per-doc validate throw into `failed` and the rep still sees success.
 	"frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs": "tatva_connect.tasks.tasks.submit_cancel_or_update_docs",
 	# Grain is an entitlement, not a free pick: the Create Lead form hides its three axis fields server-side (GrainSelect stamps them) and hides a section left with nothing visible.
@@ -315,6 +340,13 @@ doc_events = {
 	},
 	# osm_tile_url is rendered as the map tile src; operator-set, https-only. New key (no existing CRM Maps Settings block, so nothing to shadow).
 	"CRM Maps Settings": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
+	# A tile and a workspace link are navigation targets any Desk User may save; an in-site path is fine, a scheme is not.
+	"Desktop Icon": {
+		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
+	},
+	"Workspace": {
 		"validate": "tatva_connect.access.link_scheme.guard_link_schemes",
 	},
 	# A Custom Field's fieldname becomes a SQL column — reject an illegal one on before_validate (fires even under ignore_validate, document.py:1352), so a broken-schema/XSS fieldname cannot be planted via any ORM write.
@@ -495,8 +527,6 @@ after_migrate = [
 	"tatva_connect.storage.drift.assert_no_disk_reads",
 	# Layer-4 guard: fail the migrate if a locked doctype drifts open to All/Guest.
 	"tatva_connect.access.lockdown.assert_locked",
-	# The ledger now feeds apply(); LOCKED_MATRIX is the frozen reference it was seeded from. Retires when the first app is armed in ENFORCED_APPS.
-	"tatva_connect.access.lockdown.assert_ledger_parity",
 	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
 	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",
