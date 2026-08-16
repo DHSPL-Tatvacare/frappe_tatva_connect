@@ -48,6 +48,7 @@ lead is the thing being authorised.
 """
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Coalesce, Count, Sum
 
 from tatva_connect.access import visibility
 from tatva_connect.taxonomy import labels
@@ -69,6 +70,35 @@ _JOURNEY_FIELDS = [
 _STEP_FIELDS = ["name", "node_id", "node_type", "outcome", "channel", "contact", "detail", "duration_ms", "creation"]
 
 
+_EMPTY_TOTALS = {"step_count": 0, "total_ms": 0}
+
+
+def _totals_for(journey_names):
+	"""{journey: {step_count, total_ms}} — how big each run was, for a page of them.
+
+	Derived at answer time like everything else here (this module stores no counter), and as an AGGREGATE in
+	ONE query: the database returns one row per journey rather than every step of every one of them, so a
+	page of runs costs the same whether a run logged four steps or four hundred. The step log is indexed on
+	(journey, creation, name), so this is a seek per journey and not a scan of the table."""
+	if not journey_names:
+		return {}
+	log = frappe.qb.DocType(STEP_LOG_DT)
+	rows = (  # authz-ok: tier-b — every journey here came from the gated page above
+		frappe.qb.from_(log)
+		.select(
+			log.journey,
+			Count(log.name).as_("step_count"),
+			Sum(Coalesce(log.duration_ms, 0)).as_("total_ms"),
+		)
+		.where(log.journey.isin(journey_names))
+		.groupby(log.journey)
+	).run(as_dict=True)
+	return {
+		row.journey: {"step_count": int(row.step_count or 0), "total_ms": int(row.total_ms or 0)}
+		for row in rows
+	}
+
+
 @frappe.whitelist()
 def journeys_for_subject(subject_doctype, subject_name, limit=20, start=0):
 	"""Which journeys exist for one record, newest first, and where each one currently sits."""
@@ -85,7 +115,12 @@ def journeys_for_subject(subject_doctype, subject_name, limit=20, start=0):
 		limit=size + 1,
 		offset=offset,
 	)
-	return {"journeys": [_summary(row) for row in rows[:size]], "has_more": len(rows) > size}
+	page = rows[:size]
+	totals = _totals_for([row.name for row in page])
+	return {
+		"journeys": [dict(_summary(row), **totals.get(row.name, _EMPTY_TOTALS)) for row in page],
+		"has_more": len(rows) > size,
+	}
 
 
 @frappe.whitelist()

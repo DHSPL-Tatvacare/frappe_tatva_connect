@@ -311,7 +311,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 
 	When the trigger is a File and the raised type is Document Review, pin the file onto the review
 	task and mark the File Pending + linked (the review flow's on-upload step)."""
-	from tatva_connect.tasks.tasks import create_followup_task
+	from tatva_connect.tasks.tasks import raise_followup_task
 
 	lead = resolve_target(action, lead, trigger_doc)[1]  # declared `lead` — resolved, never assumed
 	# The token that ties this task back to the node that raised it. A Wait downstream correlates on the
@@ -348,7 +348,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		_pin_review_file(review, trigger_doc.name)
 		_stamp_workflow_token(review, token)
 		return
-	task = create_followup_task(
+	task = raise_followup_task(
 		lead=lead,
 		task_type=action.task_type,
 		title=_subject(action, context),
@@ -388,12 +388,12 @@ def _review_task_for_file(file_name, lead, action, context, assignee):
 	Idempotent on the File's own back-reference: if this File already links to an open review task,
 	reuse it; otherwise raise a fresh one with the per-lead-per-type throttle OFF so a second reviewable
 	document on the same lead gets its own task instead of collapsing onto the first."""
-	from tatva_connect.tasks.tasks import CLOSED_STATUSES, create_followup_task
+	from tatva_connect.tasks.tasks import CLOSED_STATUSES, raise_followup_task
 
 	existing = frappe.db.get_value("File", file_name, "custom_review_task")
 	if existing and frappe.db.get_value("CRM Task", existing, "status") not in CLOSED_STATUSES:
 		return existing  # this document already has an open review task — idempotent re-fire
-	return create_followup_task(
+	return raise_followup_task(
 		lead=lead,
 		task_type=action.task_type,
 		due_at=_due_at(action, context),

@@ -92,11 +92,21 @@ def _node_match(node, context, field_types):
 
 
 def _rule_match(rule, context, field_types):
-	"""One leaf. The field must be something the subject actually has, and the operator must be real."""
+	"""One leaf. The field must be something the subject DECLARES or the run has PRODUCED, and the
+	operator must be real.
+
+	Declared-or-present, never one alone. `field_types` is the subject's schema, so a field a record type
+	declares but this record left blank is a NON-MATCH, not a fault — that is what lets one Route branch
+	across several activity types, where each branch names a field only its own type answers to. The
+	context is the other half: a value an upstream node emitted or the trigger seeded is declared by no
+	doctype and is still a legitimate thing to test. Requiring only `field_types` rejected those; requiring
+	only the context turned every unanswered field into a dead journey.
+
+	A name in neither is still a typo, and still raises — which is the whole point of the check.
+	"""
 	if not rule.field:
 		raise PredicateError("a rule must name a field")
-	known = field_types or context
-	if rule.field not in known:
+	if rule.field not in (field_types or {}) and rule.field not in context:
 		raise PredicateError(
 			f"{rule.field!r} is not a field of this subject — a predicate cannot test what does not exist"
 		)

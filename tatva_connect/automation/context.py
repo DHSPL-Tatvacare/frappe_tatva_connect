@@ -34,15 +34,24 @@ def subject_axes(subject_doc):
 
 
 def diff_watched_fields(doc):
-	"""Return {fieldname: (old, new)} for every watched field whose value changed on this save. Mirrors
-	frappe Notification's Value Change event: skip new docs, cast both sides through the field's own
-	fieldtype, compare. The Watchable registry is read per-doctype and cached for the request."""
+	"""Return {fieldname: (old, new)} for every watched field whose value changed on this save. Casts both
+	sides through the field's own fieldtype before comparing. The Watchable registry is read per-doctype
+	and cached for the request.
+
+	AN INSERT DIFFS AGAINST AN EMPTY BEFORE — a task born `Done` has arrived at `Done`, which is what
+	`changed to` means. frappe runs `on_update` inside `insert()` (`document.py:493`), so the dispatcher
+	already reached these workflows; with no before-image every `changed to` in the product went deaf to an
+	activity logged ad hoc, because `save_activity` inserts the task already carrying its status.
+	`flags.in_insert` (set at `document.py:486`) is what tells an insert from a re-save that merely lost its
+	before-image; the latter still returns {}, unchanged."""
 	watched = watchable_fields_for(doc.doctype)
 	if not watched:
 		return {}
 	before = doc.get_doc_before_save()
 	if not before:
-		return {}  # no before-state (e.g. a migration re-save) - nothing to diff
+		if not doc.flags.get("in_insert"):
+			return {}  # no before-state and not an insert (e.g. a migration re-save) - nothing to diff
+		before = frappe._dict()  # every watched field moved from nothing; the loop below decides which
 	out = {}
 	for fieldname in watched:
 		df = doc.meta.get_field(fieldname)
@@ -58,7 +67,7 @@ def diff_watched_fields(doc):
 	return out
 
 
-def context_for(doc, changed):
+def context_for(doc, changed, lead=None):
 	"""The trigger context a criteria predicate reads — a `refs.Values`, NAMESPACED by the doc's own slug.
 
 	ONE VOCABULARY, IN BOTH PLACES A PREDICATE IS JUDGED. A predicate control is one control, and an author
@@ -90,7 +99,18 @@ def context_for(doc, changed):
 		values.setdefault(fieldname, value)
 	for fieldname, (old, _new) in changed.items():
 		values[f"{fieldname}{refs.BEFORE}"] = old
-	return refs.Values(buckets={refs.slug(doc.doctype): values})
+	built = refs.Values(buckets={refs.slug(doc.doctype): values})
+	# Offered LAZILY and a no-op when the doc IS the lead, so a trigger naming only its own record pays nothing.
+	if lead is not None:
+		built.offer_record(refs.slug("CRM Lead"), lambda: bucket_of(lead))
+	return built
+
+
+def bucket_of(doc):
+	"""One record's values in the shape a `Values` reads them from — what every record loader hands back."""
+	from tatva_connect.workflow_engine import refs
+
+	return context_for(doc, {}).buckets.get(refs.slug(doc.doctype), {})
 
 
 def activity_values(doc):
@@ -140,19 +160,20 @@ def section_values(doc):
 	return out
 
 
-def field_types_for(doctype):
-	"""{reference: schema type} for the trigger doctype, so criteria evaluate type-aware — and, because
-	`rules._rule_match` treats it as the DECLARATION of what may be referenced, in the SAME namespaced
-	vocabulary `context_for` builds. A bare map here would reject every predicate the picker offers.
+def field_types_for(*doctypes):
+	"""{reference: schema type} for the records a predicate may name, so criteria evaluate type-aware —
+	and, because `rules._rule_match` treats it as the DECLARATION of what may be referenced, in the SAME
+	namespaced vocabulary `context_for` builds. A bare map here would reject every predicate the picker
+	offers.
 
-	Reuses `refs.readable_for`, which delegates to `describe.fields_for_doctype` — the same brain the
-	builder, the validator and the value picker read, and the only one that knows CRM Task answers to its
-	activity-schema fields by LOGICAL name."""
+	Takes MORE than one doctype because a Route reads the triggering record AND the lead behind it, and
+	handing it only one made a rule on the other raise. `refs.readable_index` is the one walk and the one
+	cache; this is its type projection and holds no vocabulary of its own."""
 	from tatva_connect.workflow_engine import refs
 
-	# `readable_for` hands back the NAMESPACED `ref` (`crm_lead.mobile_no`) — the same vocabulary
+	# `readable_index` hands back the NAMESPACED `ref` (`crm_lead.mobile_no`) — the same vocabulary
 	# `context_for` keys by. Asking for the bare `key` it stopped emitting raised on every predicate.
-	return {f["ref"]: f["type"] for f in refs.readable_for(doctype)}
+	return {ref: found["type"] for ref, found in refs.readable_index(*doctypes).items()}
 
 
 def watchable_fields_for(doctype):

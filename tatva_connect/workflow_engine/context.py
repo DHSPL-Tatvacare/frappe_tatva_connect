@@ -67,7 +67,8 @@ def authoring_context(nodes):
 
 	from tatva_connect.automation import describe
 
-	schema = describe.builder_schema(on_doctype=subject, **_schema_grain(grain)) if subject else {}
+	axes = _schema_grain(grain)
+	schema = describe.builder_schema(on_doctype=subject, **axes) if subject else {}
 	return {
 		"subject": subject,
 		"grain": grain,
@@ -79,7 +80,8 @@ def authoring_context(nodes):
 		# would have nothing left to prepend. It stays a config key for the same reason it stays unfiltered:
 		# the moment the DISPATCHER selects on it, it needs an indexed column and a back-fill.
 		"working_set": trigger.get("working_set") or [],
-		"subject_fields": upstream.subject_fields_of(nodes),
+		# Stamped by the SAME helper `builder_schema` stamps its two lists with: a value a node READS is drawn from the same grain-scoped master as one it writes, and only this caller knows the grain.
+		"subject_fields": describe._grain_scoped(upstream.subject_fields_of(nodes), **axes),
 		"settable": schema.get("set_targets") or [],
 		"operators_by_type": schema.get("operators_by_type") or {},
 		"operator_shapes": schema.get("operator_shapes") or {},

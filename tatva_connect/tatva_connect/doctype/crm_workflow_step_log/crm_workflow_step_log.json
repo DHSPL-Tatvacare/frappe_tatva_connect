@@ -72,8 +72,7 @@
    "fieldtype": "Data",
    "label": "Contact",
    "read_only": 1,
-   "search_index": 1,
-   "description": "The number or address actually used."
+   "description": "The number or address actually used. NO search_index: the one reader is the contact cap, which counts a ROLLING window, and ix_contact_creation (contact, creation) serves that and every contact-only read the flag's single-column index could — leaving the flag on would rebuild a duplicate here on every migrate."
   },
   {
    "fieldname": "detail",
@@ -93,7 +92,7 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-08-15 03:40:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "CRM Workflow Step Log",

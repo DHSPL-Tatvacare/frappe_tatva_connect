@@ -384,23 +384,24 @@ def _json_problem(value):
 	return None
 
 
+def _predicate_rows_trees(rows):
+	"""The condition each of a LIST of predicate rows holds."""
+	return [row.get("condition") for row in rows or [] if isinstance(row, dict)]
+
+
 def _predicate_rows_keys(rows):
-	"""Every field a LIST of predicate rows references — `_predicate_fields` mapped over each row's
-	condition and unioned. Route declares this so the publish gate refuses a row whose condition reads a
-	value nothing upstream produces, the same reference the single-predicate `predicate` kind checks."""
+	"""Every field a LIST of predicate rows references — `_predicate_fields` over each row's condition."""
 	keys = set()
-	for row in rows or []:
-		if isinstance(row, dict):
-			keys |= _contract()._predicate_fields(row.get("condition"))
+	for tree in _predicate_rows_trees(rows):
+		keys |= _contract()._predicate_fields(tree)
 	return keys
 
 
-# WHICH NAMES a field of this kind references, and the check that kind carries. A field declares `reads`
-# only when its TYPE does not already imply one — see FIELD_TYPES.
+# WHICH NAMES a field of this kind references, its check, and — for a kind holding a PREDICATE — the trees inside it, so the value gate runs off this declaration and never off a per-type check. A field declares `reads` only when its TYPE does not already imply one — see FIELD_TYPES.
 READ_KINDS = {
 	"variable": {"keys": lambda v: {v} if isinstance(v, str) and v else set(), "check": None},
-	"predicate": {"keys": lambda v: _contract()._predicate_fields(v), "check": None},
-	"predicate_rows": {"keys": _predicate_rows_keys, "check": None},
+	"predicate": {"keys": lambda v: _contract()._predicate_fields(v), "check": None, "trees": lambda v: [v]},
+	"predicate_rows": {"keys": _predicate_rows_keys, "check": None, "trees": _predicate_rows_trees},
 	"expression": {"keys": lambda v: _contract()._expression_keys(v), "check": _expression_problem},
 	"ctx_json": {"keys": lambda v: _contract()._ctx_json_keys(v), "check": _json_problem},
 	"value_rows": {"keys": lambda v: _contract().value_row_keys(v), "check": None},
@@ -489,6 +490,14 @@ def validate_node(node_type, config, edge_outputs, mode=PUBLISH, graph_context=N
 			if found:
 				problems.append(problem(found, field["name"], code="field.reads-invalid",
 				                        fix=_("Fix {0} so it parses.").format(field["label"])))
+		# Graph-shaped like every `check` above, so it keeps their timing: context arrives at PUBLISH only.
+		if kind and READ_KINDS[kind].get("trees") and completeness:
+			problems.extend(
+				problem(m, field["name"], code="field.invalid",
+				        fix=_("Pick the value from the list rather than typing it."))
+				for tree in READ_KINDS[kind]["trees"](value)
+				for m in _unmatchable_values(tree, graph_context)
+			)
 		if field.get("writes") and WRITE_KINDS[field["writes"]]["check"]:
 			found = WRITE_KINDS[field["writes"]]["check"](config.get(field["name"]))
 			if found:
@@ -512,7 +521,8 @@ def _predicate_problems(value, field, config=None, context=None):
 	Shape only: whether a rule's FIELD exists is a question about the subject, and the subject is chosen
 	on the same node, so it is answered by the evaluator against a real context rather than guessed here.
 	What this catches is the malformed tree — an unknown node type, a `not` with two children, a rule
-	with no operator — none of which can be right for any subject.
+	with no operator — none of which can be right for any subject. A rule's VALUE is the `reads`
+	declaration's question, answered once for every kind holding a predicate — see READ_KINDS.
 	"""
 	if not value:
 		return []
@@ -521,6 +531,64 @@ def _predicate_problems(value, field, config=None, context=None):
 	except ValueError as bad:
 		return [str(bad)]
 	return []
+
+
+# `contains` is absent deliberately — a substring of a composite key tests one stage leaf across every programme, which is correct.
+_MATCHED_OPS = frozenset({"is", "is not", "is one of", "is not one of"})
+
+
+def _unmatchable_values(tree, context):
+	"""A predicate value that names no record of the grain-scoped master it is compared against.
+
+	A grain-scoped master's PK is a composite `::` string and its Link column holds THAT, not the word a
+	person says. `taxonomy.picklist` is the one seam that knows it and every other consumer resolves
+	through it; a predicate was the only one that never did, so a branch comparing Zone to `North`
+	published green and matched nobody for ever. A master row is config, not a runtime fact — the same
+	reading `_link_grain_problems` already takes at publish.
+	"""
+	if not tree or not context:
+		return []
+	index = refs.readable_index(context.get("subject") or "", "CRM Lead")
+	found = []
+	for rule in _contract()._predicate_rules(tree):
+		master = _composite_master(index.get(rule["field"]))
+		if not master or rule.get("operator") not in _MATCHED_OPS:
+			continue
+		found += [_unmatchable_message(one, master, rule["field"], context)
+		          for one in _value_items(rule.get("value"), rule["operator"])
+		          if not frappe.db.exists(master, one)]
+	return found
+
+
+def _value_items(value, operator):
+	"""One value, or a membership operator's list — split by the SAME rule the evaluator splits by."""
+	from tatva_connect.automation import rules as rules_brain
+
+	if not isinstance(value, str) or not value.strip():
+		return []
+	return rules_brain._split_list(value) if operator in rules_brain._MEMBERSHIP_OPS else [value]
+
+
+def _composite_master(descriptor):
+	"""The master a Link descriptor points at, when that master's keys are composite; else None."""
+	from tatva_connect.taxonomy import picklist
+
+	if not descriptor or descriptor.get("type") != "Link":
+		return None
+	master = (descriptor.get("pick") or {}).get("target") or descriptor.get("options")
+	return master if master in picklist._COMPOSITE_PK_MASTERS else None
+
+
+def _unmatchable_message(value, master, ref, context):
+	"""Says what is wrong, and — when the seam can resolve it — the key the author meant."""
+	from tatva_connect.taxonomy import picklist
+
+	fieldname = (refs.parse(ref) or ("", ref))[1].rsplit(".", 1)[-1]
+	grain = tuple((context.get("grain") or {}).get(axis) or "" for axis in _GRAIN_AXES)
+	meant = picklist.resolve_value(master, value, grain, fieldname)
+	if meant and meant != value:
+		return _("{0} is not a {1} — the column holds its key. Use {2}.").format(value, master, meant)
+	return _("{0} is not a {1}, so this condition can never match.").format(value, master)
 
 
 def _walk_predicate(node, label, depth=0):
@@ -943,9 +1011,7 @@ def _duration_problems(value, field, config, context):
 #   Code               no ROW check — it spans three semantics, so the parse belongs to its READ/WRITE
 #                      kind (`expression`, `ctx_json`, `payload_map`) and is already done there. A JSON
 #                      check here would refuse every valid `Set Variables.assign`.
-#   Link               no check YET — "is this value inside the workflow's grain" needs the Trigger's
-#                      grain, and `graph_config` is `{node_id: config}` with no node types, so the
-#                      Trigger cannot be found without guessing. Raised, not invented.
+#   Link               the value's own grain can overlap the workflow's (`_link_grain_problems`); a MISSING record is not refused here — for a grain-scoped master that half sits with the predicate below.
 #   Grain              no check — an axis is a link to a master and a BLANK axis means ANY, so there is
 #                      no wrong value to refuse; the master link is enforced by the Link field itself.
 #   Variable           no check — "does this resolve upstream" needs the whole graph and this node's
@@ -953,7 +1019,7 @@ def _duration_problems(value, field, config, context):
 #                      `upstream.available_map`; a row check would be a second implementation.
 #   Field Map          every named row is a field automation may write; the whole-graph half of that
 #                      question stays with `graph._write_target_problems`.
-#   Predicate          the tree is well formed and its operators exist.
+#   Predicate          the tree is well formed and its operators exist; whether a rule's VALUE can ever match is asked off the `reads` kind instead, so Route's ROWS inherit it too.
 #   Mapping            every captured name is a legal variable name.
 #   Value Map          no check — its rows are validated by the `value_rows` read kind.
 #   Button List        no check — a button is an id and a label; a duplicate id is caught where it

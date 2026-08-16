@@ -188,8 +188,9 @@ def _trigger_context(doc, event):
 	changed = ctx_build.diff_watched_fields(doc) if event == "Updated" else {}
 	return frappe._dict(
 		subject=subject.name,
-		context=ctx_build.context_for(doc, changed),
-		field_types=ctx_build.field_types_for(doc.doctype),
+		# Both records in both halves; the lead doc is the one `subject()` already loaded for the grain — no new read.
+		context=ctx_build.context_for(doc, changed, lead=subject),
+		field_types=ctx_build.field_types_for(doc.doctype, "CRM Lead"),
 		versions=[versions.current_name(d.name) for d in matched],
 	)
 

@@ -197,16 +197,19 @@ def resolve_row(mode, value, ctx, current=_NO_TARGET):
 	return value
 
 
+def _predicate_rules(tree, depth=0):
+	"""Every leaf rule of a predicate tree, at any depth — field, operator and value together."""
+	if depth > 20 or not isinstance(tree, dict):
+		return []
+	found = [tree] if tree.get("field") else []
+	for child in tree.get("children") or []:
+		found += _predicate_rules(child, depth + 1)
+	return found
+
+
 def _predicate_fields(tree, depth=0):
 	"""Every field a predicate tree tests, at any depth."""
-	if depth > 20 or not isinstance(tree, dict):
-		return set()
-	found = set()
-	if tree.get("field"):
-		found.add(tree["field"])
-	for child in tree.get("children") or []:
-		found |= _predicate_fields(child, depth + 1)
-	return found
+	return {rule["field"] for rule in _predicate_rules(tree, depth)}
 
 
 def _expression_keys(value):

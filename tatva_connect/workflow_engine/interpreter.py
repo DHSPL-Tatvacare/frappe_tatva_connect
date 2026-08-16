@@ -107,10 +107,8 @@ def _doc_loader(doctype, name):
 			return {}  # deleted mid-flight; the journey fails at its next real read, not while reading state
 		from tatva_connect.automation import context as ctx_build
 
-		doc = frappe.get_doc(doctype, name)
-		# The SAME builder the Trigger uses, unpacked back to this record's own bucket. A second walk here
-		# is how the two evaluators came to speak different languages in the first place.
-		return ctx_build.context_for(doc, {}).buckets.get(refs.slug(doctype), {})
+		# The SAME builder the Trigger uses — a second walk here is how the two evaluators drifted apart before.
+		return ctx_build.bucket_of(frappe.get_doc(doctype, name))
 
 	return load
 
@@ -261,7 +259,8 @@ def advance(journey):
 				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				nxt, detail = _next_control(node, state, journey.subject_name)  # the ONE control-flow step, shared with run_inline
+				nxt, detail = _next_control(node, state, journey.subject_name,  # the ONE control-flow step, shared with run_inline
+				                            _vocabulary(journey.trigger_doctype, journey.subject_doctype))
 				outcome = "ok"  # a control node declares no output; that it ran IS what happened at it
 			elif node.node_type == registry.TRIGGER:
 				# The dispatcher already matched and qualified; at execution the Trigger is a pass-through.
@@ -321,7 +320,22 @@ def _edge(node, output):
 	return None
 
 
-def _next_control(node, state, subject=None):
+def _vocabulary(*doctypes):
+	"""What a predicate at THIS node may name — `context.field_types_for`, the same map the Trigger is judged against.
+
+	A Route used to be handed no vocabulary at all, so `rules._rule_match` fell back to the CONTEXT and a
+	rule naming a field the triggering record did not happen to carry RAISED instead of simply not
+	matching. Every workflow that routes across several activity types died on the first punch: the
+	`Chemo Readiness` branch tests `connected_status`, an `Order Punch Status` task has no such answer,
+	and the journey failed before reaching its own branch. The identical predicate matched at the Trigger,
+	which is the Trigger/Route divergence this engine has already been bitten by once.
+	"""
+	from tatva_connect.automation import context as ctx_build
+
+	return ctx_build.field_types_for(*doctypes)
+
+
+def _next_control(node, state, subject=None, field_types=None):
 	"""Route/Sample/Assign — the ONE control-flow step, shared by `advance` and `run_inline` (one
 	interpreter, not two copies). Returns `(next_node_id, detail)` — `advance` logs the detail,
 	`run_inline` ignores it.
@@ -336,7 +350,7 @@ def _next_control(node, state, subject=None):
 	config = _config(node)
 	if node.node_type == "Route":
 		for row in config.get("routes") or []:
-			if rules.predicate_match(row.get("condition"), state):
+			if rules.predicate_match(row.get("condition"), state, field_types):
 				return _edge(node, row["id"]), row["id"]
 		return _edge(node, "otherwise"), "otherwise"
 	if node.node_type == "Sample":
@@ -460,7 +474,8 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 				                   channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)))
 				cursor = _edge(node, outcome)
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
-				cursor, detail = _next_control(node, state, lead_name)  # the ONE control-flow step, shared with advance
+				cursor, detail = _next_control(node, state, lead_name,  # the ONE control-flow step, shared with advance
+				                               _vocabulary(trigger_doc.doctype if trigger_doc else None, "CRM Lead"))
 				steps.append(_step(node, "ok", detail or ""))
 			elif node.node_type == registry.TRIGGER:
 				steps.append(_step(node, "ok", "entered"))

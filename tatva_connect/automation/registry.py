@@ -716,6 +716,22 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Contact::Contact::visibility",
+		fires_on="Permission",
+		trigger_detail="Contact · permission_query_conditions",
+		purpose=(
+			"The contact list shows customers rather than colleagues: frappe makes one contact for "
+			"every login it creates, so the team's own names sit in the list beside the patients. On, "
+			"a contact whose login is a staff login is hidden from everyone but an operator; a "
+			"customer holding a portal login is untouched, and so is a customer with no login at "
+			"all. Off, every rep reads the whole team's names as though they were customers, which "
+			"is how stock crm and helpdesk ship.\n"
+			"Example: a rep searching the contacts for a patient stops finding their own manager."
+		),
+		# Gated inside access/contact_scope.py, not a doc_event — backs is empty for the reason the four visibility rows above give.
+		backs=[],
+	),
+	Auto(
 		key="Workflow::Authoring::surface",
 		fires_on="Provider call",
 		trigger_detail="access/surfaces gate · the Workflows menu item and its direct URL",

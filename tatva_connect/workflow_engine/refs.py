@@ -186,6 +186,28 @@ def readable_for(doctype):
 	]
 
 
+def readable_index(*doctypes):
+	"""{ref: descriptor} for every record named, unioned — THE one answer to "what may a predicate here name".
+
+	Three callers were each walking `readable_for` and folding it into a map of their own: the publish
+	gate, the Route evaluator and the Trigger's field-type map. One walk, one cache, and the gate and the
+	runtime cannot disagree about what exists. First doctype wins a ref both declare, which is what makes
+	the subject's own field beat the lead's.
+
+	Request-cached, and that is not a nicety: `describe.activity_schema_fields` reads EVERY
+	`CRM Task Type Field` row, so an uncached call is a query per Route node per journey.
+	"""
+	key = tuple(dict.fromkeys(d for d in doctypes if d))
+	cache = frappe.flags.setdefault("_readable_index", {})
+	if key not in cache:
+		found = {}
+		for doctype in key:
+			for descriptor in readable_for(doctype):
+				found.setdefault(descriptor["ref"], descriptor)
+		cache[key] = found
+	return cache[key]
+
+
 # Every document answers to these and none of them is declared as a field on the doctype.
 _RECORD_KEYS = (
 	("name", "Data", "ID"),
