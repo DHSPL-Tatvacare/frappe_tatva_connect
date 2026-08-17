@@ -110,9 +110,11 @@ def _retry(row) -> bool:
 		frappe.log_error(title="WhatsApp media retry failed", message=frappe.get_traceback())
 		_spend(row)
 		return False
-	# The bubble said "Media unavailable" until this moment; the reader is told it changed.
+	# The bubble said "Media unavailable" until this moment; the reader is told it changed. after_commit: the sweep commits per row AFTER this returns, and a reader that reloads first still reads "unavailable".
 	frappe.publish_realtime(
-		"whatsapp_message", {"reference_doctype": "CRM Lead", "reference_name": row.reference_name}
+		"whatsapp_message",
+		{"reference_doctype": "CRM Lead", "reference_name": row.reference_name},
+		after_commit=True,
 	)
 	return True
 
