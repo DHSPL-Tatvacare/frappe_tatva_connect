@@ -42,10 +42,21 @@ _DETAIL_PREFIX = "execution_id="
 
 
 def sweep():
-	"""Poll every journey parked on a voice outcome past the grace window. The scheduler entry point.
+	"""The scheduler entry: book the poll on the `long` lane and return. Dormant with the switch off.
 
-	Dormant: with the switch off this is the whole function. Nothing is read, nothing is polled.
+	A cron entry runs on `default` with frappe's 300s default, and this batch is one provider round-trip per
+	journey; the `long` lane declares 1500s. `deduplicate` stops a slow pass being stacked by the next tick.
 	"""
+	if not channel.reconciler_enabled():
+		return 0
+	return frappe.enqueue(
+		_sweep, queue="long", job_id="voice-reconcile-sweep", deduplicate=True,
+		now=bool(frappe.flags.get("in_test")),
+	)
+
+
+def _sweep():
+	"""Poll every journey parked on a voice outcome past the grace window. The queued half of `sweep`."""
 	if not channel.reconciler_enabled():
 		return 0
 	reconciled = 0

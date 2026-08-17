@@ -16,6 +16,8 @@ from frappe.utils import add_to_date, now_datetime
 
 from tatva_connect import tabular
 from tatva_connect.api._base import (
+	_ASYNC_BULK,
+	ASYNC_BULK_QUEUE,
 	BulkDeadlock,
 	_cfg,
 	_classify,
@@ -28,6 +30,16 @@ from tatva_connect.automation import settings as automation
 
 _ASYNC_REAPER = "Partner::AsyncBulk::reaper"  # dormant toggle for the stranded-InProgress reaper
 _LINE_FORMATS = ("csv", "jsonl")  # payloads whose newline count bounds their record count
+
+
+def assert_lane_registered():
+	"""after_migrate: refuse a site that has opened the async bulk tier without registering its lane."""
+	from tatva_connect.workflow_engine import wakeups
+
+	wakeups.assert_lane(
+		ASYNC_BULK_QUEUE, _cfg()["async_job_timeout_seconds"], _ASYNC_BULK,
+		f"Register it, then run `bench worker --queue {ASYNC_BULK_QUEUE}`.",
+	)
 
 
 class PayloadRejected(Exception):

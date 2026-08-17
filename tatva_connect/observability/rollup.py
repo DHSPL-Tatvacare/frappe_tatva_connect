@@ -34,6 +34,11 @@ AGG = "tabCRM API Metric"
 SETTINGS = "CRM API Metric Settings"
 _JOB_METHOD = "tatva_connect.observability.rollup.run"
 
+# Hours one tick will finalize. A cold watermark (first run, or a site that has not rolled for weeks) would
+# otherwise aggregate the whole backlog in one job on a 300s scheduler budget; capped, the 6h cron catches
+# up over the next few runs and every window stays whole-hour aligned.
+MAX_WINDOW_HOURS = 24
+
 # Non-histogram additive columns, then the histogram bands. Order == every SELECT below.
 _BASE_COLS = (
 	"request_count", "count_2xx", "count_3xx", "count_4xx", "count_5xx", "error_count",
@@ -88,6 +93,8 @@ def run():
 		if not frm:
 			frm = frappe.db.sql(f"SELECT MIN(request_time) FROM `{RAW}`")[0][0]  # sqli-ok: constant table/column identifiers (_LOCK/RAW/AGG/_COL_LIST/_RAW_SELECT/_ON_DUP); all values bound via %()s
 		frm = get_datetime(frm) if frm else (now_datetime() - dt.timedelta(days=7))
+		# One bounded window per tick, floored like `to` above so both ends stay whole-hour aligned; the watermark carries the rest forward.
+		to = min(to, (frm + dt.timedelta(hours=MAX_WINDOW_HOURS)).replace(minute=0, second=0, microsecond=0))
 
 		log = f"nothing to do (window {frm} >= {to})"
 		if to > frm:

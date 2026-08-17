@@ -421,6 +421,7 @@ def trusted_permissions():
 _SETTINGS = "CRM Partner API Settings"
 _RATE_ENFORCEMENT = "Partner::RateLimit::enforcement"
 _ASYNC_BULK = "Partner::AsyncBulk::jobs"  # dormant master switch for the async bulk-job tier
+ASYNC_BULK_QUEUE = "partner_bulk"  # the bulkhead lane, named once: the submit enqueues onto it, the migrate guard asserts it
 
 DEFAULTS = {
 	"window_seconds": 60,

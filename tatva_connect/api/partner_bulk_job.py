@@ -20,6 +20,7 @@ from tatva_connect.api._base import (
 	ACTION_CREATED,
 	ACTION_FETCHED,
 	ACTION_UPDATED,
+	ASYNC_BULK_QUEUE,
 	_api,
 	_cfg,
 	_fail,
@@ -143,7 +144,7 @@ def submit_job(user, operation, fmt, payload, *, total=0, idempotency_key=None, 
 	            **(extra or {})})
 	job.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by the caller's own authz (_resolve_caller on the API lane, has_permission on the Desk lane)
 	_attach_payload(job.name, payload, fmt)
-	frappe.enqueue("tatva_connect.api.partner_bulk_worker.process_job", queue="partner_bulk",
+	frappe.enqueue("tatva_connect.api.partner_bulk_worker.process_job", queue=ASYNC_BULK_QUEUE,
 	               bulk_job_id=job.name, timeout=_cfg()["async_job_timeout_seconds"],
 	               enqueue_after_commit=True)
 	return job.name

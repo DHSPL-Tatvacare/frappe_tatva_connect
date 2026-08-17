@@ -539,6 +539,8 @@ after_migrate = [
 	"tatva_connect.access.lockdown.assert_locked",
 	# A site that ARMED the workflow engine without registering its `workflow` worker lane writes timer alarms into a queue nothing services — every run parks, every alarm is set, and none of them ever fires. Silent everywhere except here.
 	"tatva_connect.workflow_engine.wakeups.assert_lane_registered",
+	# Same guard, other lane: a site that OPENED the async bulk tier without its `partner_bulk` worker answers every submit with 202 and drains nothing.
+	"tatva_connect.api.partner_bulk_worker.assert_lane_registered",
 	"tatva_connect.form_scripts_seed.seed",
 	"tatva_connect.client_scripts_seed.seed",
 	"tatva_connect.api.email.ensure_draft_folder",

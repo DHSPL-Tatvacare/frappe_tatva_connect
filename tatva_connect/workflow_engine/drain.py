@@ -258,6 +258,11 @@ def run_cohort(workflow_name, chunk=None, respect_switch=True, book_next=True):
 		return 0
 
 	size, interval = _pace(workflow_name)
+	# The lane is already deep, so come back next interval rather than add to it: the claim is kept, the cursor is untouched, and a refused enqueue would have been a failed journey whose message never went.
+	if wakeups.lane_depth() >= thresholds.LANE_BUSY:
+		_pause(workflow_name, interval)
+		return 0
+
 	config = _trigger_config(workflow_name)
 	subject = config.get("subject_doctype") or "CRM Lead"
 

@@ -39,6 +39,11 @@ STOP_CHUNK = 200
 # Drains one sweep will start; more than a handful due in one minute is a misconfiguration, not load.
 MAX_DUE_PER_SWEEP = 20
 
+# Jobs waiting on the lane above which the drain stops feeding it: frappe throws QueueOverloaded at its own
+# ceiling, and a refused send is a failed journey whose message never went. Drawn at one `SWEEP_PAGE`, the
+# line `SCHEDULE_TO_DRAIN_HANDOVER` already uses, because the cohort resumes from its cursor either way.
+LANE_BUSY = 200
+
 
 # ── THE CLEANUP POSTURE ──────────────────────────────────────────────────────────────────────────
 # Everything ends. What cannot complete is CLOSED WITH A REASON, never deleted on the spot: closing is

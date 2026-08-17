@@ -314,7 +314,24 @@ def _set(call, values):
 # The sweep — the one genuinely new piece, because media has a time dimension.
 # ---------------------------------------------------------------------------
 def sweep():
-	"""Retry the recordings we are still owed. The scheduler entry point, DORMANT by default.
+	"""The scheduler entry, DORMANT by default: book the retry on the `long` lane and return.
+
+	A cron entry is enqueued by frappe on `default` with no timeout, which is 300s — a budget of six
+	seconds per row for a batch that fetches from a provider and uploads to Azure. The `long` lane declares
+	1500s, so the work is booked there and the tick itself stays instant. `deduplicate` is what stops a slow
+	pass being stacked by the next tick; the switch is read here as well as in the job, so a dormant sweep
+	queues nothing at all.
+	"""
+	if not settings.is_enabled(RETRY_SWITCH):
+		return 0
+	return frappe.enqueue(
+		_sweep, queue="long", job_id="call-media-sweep", deduplicate=True,
+		now=bool(frappe.flags.get("in_test")),
+	)
+
+
+def _sweep():
+	"""Retry the recordings we are still owed. The queued half of `sweep`.
 
 	WHAT IT RETRIES, AND WHAT IT DOES NOT. An Awaiting row carries the producer's URL exactly when the
 	producer has already published one and OUR fetch failed — a timeout, a 5xx, a bad hour at their end.

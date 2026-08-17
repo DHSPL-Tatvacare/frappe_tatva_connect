@@ -55,19 +55,26 @@ def assert_lane_registered():
 	`install-app` itself, since `workers` cannot be set before the app that needs it exists. The moment
 	an operator arms the engine, the lane stops being optional and the next migrate says so.
 	"""
-	if not automation.is_enabled(ENGINE_SWITCH):
+	assert_lane(
+		WAKE_QUEUE, thresholds.WAKE_JOB_TIMEOUT, ENGINE_SWITCH,
+		f"Register it, then run `{LANE_WORKER_COMMAND}` and `{LANE_SCHEDULER_COMMAND}`.",
+	)
+
+
+def assert_lane(queue, min_timeout, switch, remedy):
+	"""The lane check itself, shared: an armed tier must have the worker lane it enqueues to."""
+	if not automation.is_enabled(switch):
 		return
-	lane = (frappe.conf.get("workers") or {}).get(WAKE_QUEUE)
+	lane = (frappe.conf.get("workers") or {}).get(queue)
 	if not lane:
 		frappe.throw(
-			f"The workflow engine is armed but the `{WAKE_QUEUE}` lane is not registered in "
-			f"common_site_config `workers`. Timer alarms would be written and silently never execute. "
-			f"Register it, then run `{LANE_WORKER_COMMAND}` and `{LANE_SCHEDULER_COMMAND}`."
+			f"This tier is armed but the `{queue}` lane is not registered in common_site_config "
+			f"`workers`. Its jobs would be enqueued and silently never execute. {remedy}"
 		)
-	if (lane.get("timeout") or 0) < thresholds.WAKE_JOB_TIMEOUT:
+	if (lane.get("timeout") or 0) < min_timeout:
 		frappe.throw(
-			f"The `{WAKE_QUEUE}` lane's timeout is {lane.get('timeout')}s, below the declared "
-			f"{thresholds.WAKE_JOB_TIMEOUT}s a wake job may run. A long segment would be killed mid-flight."
+			f"The `{queue}` lane's timeout is {lane.get('timeout')}s, below the declared "
+			f"{min_timeout}s a job on it may run. A long job would be killed mid-flight."
 		)
 
 
@@ -162,6 +169,13 @@ def alarms_pending(queue=None):
 	from rq.registry import ScheduledJobRegistry
 
 	return ScheduledJobRegistry(queue=queue or get_queue(WAKE_QUEUE)).count
+
+
+def lane_depth(queue=None):
+	"""How many jobs are waiting on this lane — RQ's own count, asked, never modelled."""
+	from frappe.utils.background_jobs import get_queue
+
+	return get_queue(queue or WAKE_QUEUE).count
 
 
 def _as_utc(due):
