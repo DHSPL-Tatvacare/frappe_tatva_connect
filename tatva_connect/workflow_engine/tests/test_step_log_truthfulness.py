@@ -47,7 +47,6 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions, sends
-from tatva_connect.workflow_engine import interpreter
 from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.workflow_engine import history, interpreter
 from tatva_connect.workflow_engine.tests import fixtures as fx

@@ -14,7 +14,7 @@ try:
 	_install_record_access()
 except Exception as exc:  # pragma: no cover - crm absent during install, or any import-time fault
 	try:
-		import frappe  # noqa: F401
+		import frappe
 	except ImportError:
 		pass  # no site, no app: a lint or an AST test, nothing to warn about
 	else:

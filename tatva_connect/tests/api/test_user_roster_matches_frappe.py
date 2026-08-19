@@ -21,9 +21,8 @@ Run:
         --module tatva_connect.tests.api.test_user_roster_matches_frappe
 """
 import frappe
-from frappe.tests.utils import FrappeTestCase
-
 from crm.api.session import _roles_by_user, _telephony_agents, get_users
+from frappe.tests.utils import FrappeTestCase
 
 
 class TestTheRosterMatchesFrappe(FrappeTestCase):

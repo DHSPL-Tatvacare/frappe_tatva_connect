@@ -55,7 +55,7 @@ class TestTheDispatcherCanSeeAChange(FrappeTestCase):
 
 	def test_a_real_save_produces_a_before_value(self):
 		"""The whole chain: the catalog decides what is diffed, the diff produces the pair."""
-		doc, changed = self._changed(_FIELD, "__probe__")
+		_doc, changed = self._changed(_FIELD, "__probe__")
 		self.assertIn(_FIELD, changed, "the diff saw no change on a field that changed")
 		self.assertEqual(changed[_FIELD][1], "__probe__")
 

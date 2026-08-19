@@ -1237,7 +1237,7 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 	WHY IT NO LONGER ANSWERS WITH THE FILE. Building it inline cost ~41.7s of SQL for one real view and
 	one real Sales Manager, and died on the 120s gateway timeout. `tatva_connect.exports` says the rest.
 	"""
-	d, driving_name = _assert_may_export(view)
+	_assert_may_export(view)  # a gate, not a read: the queue path below asks it again for what it returns
 	fmt = (fmt or "csv").lower()
 	if fmt not in tabular.FORMATS:
 		frappe.throw(_("Unsupported export format {0}.").format(fmt))
