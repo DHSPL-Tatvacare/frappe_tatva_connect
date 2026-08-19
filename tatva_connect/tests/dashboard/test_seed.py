@@ -52,9 +52,20 @@ class TestTheSeedIsIdempotent(SeedCase):
 		stored = {row.name for row in frappe.get_list(CHART, fields=["name"], limit=0, ignore_permissions=True)}
 		self.assertEqual(declared - stored, set())
 
-	def test_exactly_one_layout_ships(self):
-		"""Every other role is left unconfigured on purpose, so the empty state is exercised on a real role."""
-		self.assertEqual([row["role"] for row in seed._LAYOUTS], ["System Manager"])
+	def test_the_layouts_that_ship_outrank_a_rep_and_leave_one_role_empty(self):
+		"""`Sales User` is left unconfigured on purpose, so the empty state is exercised on a real role.
+
+		TWO layouts, not one: the 56 people holding both `Sales User` and `Sales Manager` landed on the
+		rep's, which is the empty one. A manager's layout carries the SAME cards on purpose — what separates
+		a manager from an administrator is not the questions asked but the rows the answers are drawn from,
+		and that is decided per viewer. So the ORDER is the thing worth asserting, not the count: each sits
+		above the next, which is what makes a manager win over the rep and lose to an administrator.
+		"""
+		roles = [row["role"] for row in seed._LAYOUTS]
+		self.assertEqual(roles, ["System Manager", "Sales Manager"])
+		priorities = [row["priority"] for row in seed._LAYOUTS]
+		self.assertEqual(priorities, sorted(priorities, reverse=True), "a layout must outrank the one below it")
+		self.assertNotIn("Sales User", roles, "the empty state has to be exercised on a role somebody holds")
 
 
 class TestTheOperatorOwnsHowACardReads(SeedCase):
