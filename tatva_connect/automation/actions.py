@@ -24,7 +24,7 @@ from frappe import _
 from frappe.integrations.utils import create_request_log
 from frappe.utils import get_request_session, validate_url
 
-from tatva_connect.automation import fields, sends
+from tatva_connect.automation import fields, sends, subjects
 from tatva_connect.taxonomy import labels
 from tatva_connect.workflow_engine import document_render, refs
 
@@ -129,10 +129,47 @@ def reachable_targets(subject_doctype):
 	authoring vocabulary (`describe.builder_schema`) alike — two copies of "what can a write reach" is how
 	the picker came to offer lead fields under a `CRM Task` target.
 	"""
-	return [dt for dt in dict.fromkeys([fields.LEAD_DT, subject_doctype]) if dt]
+	return [dt for dt in dict.fromkeys([fields.LEAD_DT, subject_doctype, *subjects.WRITE_TARGETS]) if dt]
 
 
-def resolve_target(action, lead_name, trigger_doc):
+def writable_records(subject_doctype):
+	"""Every record a write may SET A FIELD on — deliberately wider than `reachable_targets`.
+
+	A Target names the record a verb acts on, and no Target may name a child section. But a child-row node
+	names its SECTION and sets that section's columns, so the lead's child sections ARE settable. Two
+	questions, two answers: `reachable_targets` is what a Target may resolve to, this is what a field may
+	be set on, and `_written_doctype` can return exactly these two shapes and no other.
+
+	Composed from the two existing readers rather than restated: `child_sections` is already the one place
+	nobody re-filters `CRM Lead Section` by hand, and it is request-cached. Read by the publish gate
+	(`registry._write_target_problems`) and by the authoring vocabulary (`describe._settable_targets`), so
+	the gate cannot refuse a write whose fields the picker offered.
+	"""
+	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
+
+	sections = [s.target_doctype for s in crm_lead_section.child_sections() if s.target_doctype]
+	return list(dict.fromkeys(reachable_targets(subject_doctype) + sections))
+
+
+def wrote_name(context, doctype):
+	"""The record of `doctype` THIS journey has already made, or None when it has made none.
+
+	THE one reader of `refs.WROTE`, so `resolve_target` and every caller asking "did we make one yet"
+	cannot answer it two ways. Keyed by `refs.slug` — frappe's own `scrub` — never a slugify of our own."""
+	return ((context or {}).get(refs.WROTE) or {}).get(refs.slug(doctype))
+
+
+def remember_wrote(context, doctype, name):
+	"""Record what this journey just made, under the ENGINE's bucket so a later node can see it.
+
+	Written through the door a handler already uses for `_engine.output`: a NAMESPACED ref is honoured as
+	written (`refs._WriterView.__setitem__`), where a bare key would land at `<node_id>.<slug>`. Read-copy-
+	write because the view exposes `get` and `__setitem__` and nothing else; `_storable` persists
+	`state.buckets` whole, so it survives a park."""
+	context[refs.WROTE] = {**(context.get(refs.WROTE) or {}), refs.slug(doctype): name}
+
+
+def resolve_target(action, lead_name, trigger_doc, context=None):
 	"""`(doctype, name)` of the record this node acts on — THE one answer, off the verb's declaration.
 
 	Four verbs used to answer this four different ways with nothing written down: Update Field honoured
@@ -158,6 +195,12 @@ def resolve_target(action, lead_name, trigger_doc):
 		return fields.LEAD_DT, lead_name
 	if trigger_doc is not None and doctype == trigger_doc.doctype:
 		return trigger_doc.doctype, trigger_doc.name
+	# A DECLARED write target names whatever THIS journey has already made, and nothing when it has made
+	# none yet — a missing name is the insert leg, not a fault. The name lives in the ENGINE's bucket
+	# because a handler's `context` is a `_WriterView` scoped to its own node (refs.py:365): a bare key
+	# would land at `<node_id>.<slug>` and the next node could never see it.
+	if doctype in subjects.WRITE_TARGETS:
+		return doctype, wrote_name(context, doctype)
 	raise ValueError(
 		f"{action.action_type} target {doctype} is not in this rule's scope "
 		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
@@ -179,11 +222,16 @@ def _save_target(tdoc, touched=None):
 	tdoc.save(ignore_permissions=True)  # authz-ok: tier-a — automation effect lane (after-commit); rules are operator-built
 
 
-def _resolve_write_target(action, lead_name, trigger_doc):
+def _resolve_write_target(action, lead_name, trigger_doc, context=None):
 	"""The record this verb writes to, loaded fresh in the current transaction. ONE decision
-	(`resolve_target`), one load — a handler never names its own doctype."""
-	doctype, name = resolve_target(action, lead_name, trigger_doc)
-	return frappe.get_doc(doctype, name)
+	(`resolve_target`), one load — a handler never names its own doctype.
+
+	A declared write target with no name yet is a NEW doc: `save()` branches to `insert()` itself
+	(document.py:558), so insert-or-update is one code path and nothing here asks which of the two
+	happened. The name is recorded by the handler after the save, which is what makes a second write
+	on the same target an update."""
+	doctype, name = resolve_target(action, lead_name, trigger_doc, context)
+	return frappe.get_doc(doctype, name) if name else frappe.new_doc(doctype)
 
 
 def _action_assign_to_user(action, lead, context, axes, trigger_doc):
@@ -448,9 +496,12 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 				f"{row['name']} on {action.target_doctype} is not entitled to this workflow's grain"
 			)
 	if any(row.get("mode") == refs.INCREMENT for row in rows):
-		doctype, name = resolve_target(action, lead, trigger_doc)
-		frappe.db.get_value(doctype, name, "name", for_update=True)
-	tdoc = _resolve_write_target(action, lead, trigger_doc)
+		doctype, name = resolve_target(action, lead, trigger_doc, context)
+		# Only a row that EXISTS can be locked. With no name this reads `WHERE name IS NULL`, which locks
+		# nothing while looking as though it did; on the insert leg there is no contender to lock against.
+		if name:
+			frappe.db.get_value(doctype, name, "name", for_update=True)
+	tdoc = _resolve_write_target(action, lead, trigger_doc, context)
 	for row in rows:
 		if tdoc.meta.get_field(row["name"]) is None:
 			raise ValueError(
@@ -462,6 +513,9 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
 		))
 	_save_target(tdoc)
+	# AFTER the save, because an insert has no name before it — which is what makes the next write an update.
+	if action.target_doctype in subjects.WRITE_TARGETS:
+		remember_wrote(context, action.target_doctype, tdoc.name)
 
 
 def _update_rows(action):
