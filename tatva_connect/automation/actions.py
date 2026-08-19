@@ -255,7 +255,14 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	from frappe.desk.form import assign_to
 
 	doctype, name = resolve_target(action, lead, trigger_doc)
-	user = _assignee(action, context)
+	# Pool assigns THROUGH frappe, so the record already has its holder by the time the tail runs: the
+	# `add` below is skipped because the user is already in `_current_assignees`, and the Reassign loop
+	# cannot run because `assign_mode` is hidden in this mode. The grain gate is the same one, not a second.
+	user = (
+		_pool_assignee(action, doctype, name)
+		if (action.assignee_mode or "User") == POOL
+		else _assignee(action, context)
+	)
 	_assert_entitled_to_act(user, axes)
 	# `assigned_to` is DECLARED emitted, so it is written on BOTH legs. A key that appears only when
 	# someone was found could not honestly be offered downstream at all: the publish gate would certify
@@ -318,6 +325,36 @@ def _current_assignees(doctype, name):
 	from frappe.desk.form import assign_to
 
 	return [row["owner"] for row in assign_to.get({"doctype": doctype, "name": name})]
+
+
+# The third way to name an assignee: frappe's own Assignment Rule picks, and keeps the rotation state.
+POOL = "Pool"
+
+
+def _pool_assignee(action, doctype, name):
+	"""Hand the record to frappe's Assignment Rule and report who it chose, or None.
+
+	`do_assignment` is the whole of it — it picks by the rule's own strategy (Round Robin, Load Balancing,
+	Based on Field, Weighted), writes the ToDo stamped with the rule, notifies, and advances `last_user`.
+	Calling `get_user()` and assigning ourselves would split frappe's pick from frappe's bookkeeping, so
+	round robin would never rotate and weighted would burn a slot per call.
+
+	It returns True/False rather than the user, so the holder is read back through `_current_assignees` —
+	frappe's own `assign_to.get`, the same reader the named-user leg uses. A rule off duty today, or one
+	that found nobody, is `None`: the caller leaves by `nobody`, which is a real outcome an author routes.
+	"""
+	if not action.assignment_rule:
+		return None
+	rule = frappe.get_cached_doc("Assignment Rule", action.assignment_rule)
+	if rule.is_rule_not_applicable_today():
+		return None
+	# `as_dict()`, because that is what frappe hands its own rules (assignment_rule.apply:296) and
+	# `do_assignment` renders the rule's description against it — a Document is not iterable and Jinja
+	# refuses it.
+	if not rule.do_assignment(frappe.get_doc(doctype, name).as_dict()):
+		return None
+	# `do_assignment` clears first and then adds exactly one, so this is that one.
+	return next(iter(_current_assignees(doctype, name)), None)
 
 
 def _assignee(action, context):
@@ -1016,16 +1053,22 @@ VERBS = {
 		"emits": [{"name": "assigned_to", "type": "Link", "about": "who now holds the lead"}],
 		"params": [
 			{"name": "assign_mode", "label": "Mode", "help": "Assign adds this person alongside anyone already on the record. Reassign clears the others first.", "type": "Select",
-			 "options": ["Assign", "Reassign"], "reqd": True},
-			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, or take whoever an earlier node worked out.", "type": "Select",
-			 "options": ["User", "From Variable"], "reqd": True},
+			 "options": ["Assign", "Reassign"], "reqd": True,
+			 # A pool always reassigns — `do_assignment` clears the record first — so the choice is not offered rather than offered and ignored.
+			 "depends_on_value": {"assignee_mode": ["User", "From Variable"]}},
+			{"name": "assignee_mode", "label": "Assign to", "help": "Name one person here, take whoever an earlier node worked out, or hand it to a pool and let its rota decide.", "type": "Select",
+			 "options": ["User", "From Variable", POOL], "reqd": True},
 			# `User` carries no grain axis, so the picker cannot be scoped by columns — it DECLARES the kind.
 			{"name": "assign_to_user", "label": "User", "help": "Only people entitled to this workflow's grain are offered — widen the Trigger's grain to see more.", "type": "Link", "link": "User",
 			 "scope": "entitled_users",
 			 "depends_on_value": {"assignee_mode": ["User"]}},
 			{"name": "assignee_variable", "label": "Take the user from", "help": "The value must hold a user's login id. Values come from the nodes above this one.", "type": "Variable",
 			 "depends_on_value": {"assignee_mode": ["From Variable"]}},
-			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them.", "type": "Data"},
+			{"name": "assignment_rule", "label": "Pool", "help": "Who is in the pool and whose turn it is are the rule's own settings, under Assignment Rule. This node only says when to draw from it.", "type": "Link", "link": "Assignment Rule",
+			 "depends_on_value": {"assignee_mode": [POOL]}},
+			# A pool writes the rule's OWN description on the ToDo (`do_assignment`), so a note here would be silently dropped.
+			{"name": "assign_note", "label": "Note", "help": "Optional line shown with the assignment, so the person knows why it reached them. A pool uses the rule's own description instead.", "type": "Data",
+			 "depends_on_value": {"assignee_mode": ["User", "From Variable"]}},
 		],
 	},
 	"Create Task": {
