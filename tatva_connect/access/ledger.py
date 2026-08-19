@@ -55,6 +55,7 @@ WIKI_USER = "Wiki User"                    # wiki latches this onto every new Us
 INSIGHTS_ADMIN = "Insights Admin"          # insights; authors dashboards, and `is_admin` already reads System Manager as one
 INSIGHTS_USER = "Insights User"            # insights; the app's front door — every endpoint defaults to this role
 ALL = "All"  # every authenticated login silently holds this — see POLICY §5
+DESK_USER = "Desk User"  # automatic (permissions.py:40) — ungrantable, but a DocPerm row naming it means "any staff login"
 
 # bucket -> {role: (r, w, c, d[, if_owner[, submit[, share]]])} — POLICY §4.
 BUCKETS = {
@@ -80,12 +81,16 @@ BUCKETS = {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 1, 1, 0),
 		SALES_USER: (1, 0, 0, 0),
+		AUTOMATION_MANAGER: (1, 0, 0, 0),
 	},
-	# 5 · the platform's shape; both sales roles READ, or the picker that renders them is empty.
+	# 5 · the platform's shape. Every role that authors a grain-scoped record reads it, or its picker is empty.
 	"PLATFORM_READ": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 0, 0, 0),
 		SALES_USER: (1, 0, 0, 0),
+		AUTOMATION_MANAGER: (1, 0, 0, 0),
+		WHATSAPP_ADMIN: (1, 0, 0, 0),
+		AGENT_MANAGER: (1, 0, 0, 0),
 	},
 	# 6 · credentials and site wiring; every runtime reader goes through db.get_value, which asks nothing.
 	"PLATFORM": {
@@ -251,6 +256,15 @@ _CRM_CORE = {
 	},
 	# media_for gates on the CALL LOG, so the modal needs no role grant here.
 	"CRM Call Media": "PLATFORM",
+	# Frappe core, admin-only as shipped, and our own menus offer each to another role. SPA Settings shows Assignment Rules to a Sales Manager; helpdesk's ticket rotation is Agent Manager's.
+	"Assignment Rule": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 1, 1, 1)},
+	# On the Automations / External Leads / Observability workspaces. A Call API node cannot publish until its Webhook exists, so that one is theirs to create; the rest are diagnostics.
+	"Webhook": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 1, 1, 1)},
+	"Webhook Request Log": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 0, 0, 0)},
+	"Integration Request": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 0, 0, 0)},
+	"Error Log": {SYSTEM_MANAGER: (1, 1, 1, 1), AUTOMATION_MANAGER: (1, 0, 0, 0)},
+	# A rep's tool, not site wiring. DESK_USER keeps frappe's own any-staff read, which a rebuild would drop.
+	"Email Template": {SYSTEM_MANAGER: (1, 1, 1, 1), SALES_MANAGER: (1, 1, 1, 1), DESK_USER: (1, 0, 0, 0)},
 	# Code execution in the viewer's session — killed.
 	"Custom HTML Block": "DENIED",
 }
@@ -374,10 +388,17 @@ _TATVA = {
 	"CRM Push Subscription": "PLATFORM",
 	"CRM Payment": "PLATFORM",
 	"CRM Maps Settings": "PLATFORM",
-	"CRM Lead Section": "PLATFORM",
+	# Nine rows naming the lead's sections, not wiring — admin-only refused every intake-form author who opened one.
+	"CRM Lead Section": "PLATFORM_READ",
 	"CRM Search Alias": "PLATFORM",
 	"CRM Lead Field Restriction": "PLATFORM",
-	"CRM Smart View": "PLATFORM",
+	# A rep BUILDS these; PLATFORM was wrong. `smartview/permissions.py` owns who sees which — this row only opens the door.
+	"CRM Smart View": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		SALES_MANAGER: (1, 1, 1, 1),
+		SALES_USER: (1, 1, 1, 1),
+		AUTOMATION_MANAGER: (1, 1, 1, 1),
+	},
 	"CRM Azure Storage Settings": "PLATFORM",
 	"CRM File Scan Log": "PLATFORM",
 	"CRM File Screening Settings": "PLATFORM",
