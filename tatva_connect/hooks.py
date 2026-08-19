@@ -255,11 +255,15 @@ doc_events = {
 		"after_insert": [
 			"tatva_connect.location.api.capture_on_create",
 		],
+		# the lead is gone, so every grant on it goes too — after_delete, because on_trash still sees the row
+		"after_delete": ["tatva_connect.access.record_access.on_subject_deleted"],
 		"on_update": [
 			# tell the rep the lead is assigned to that its stage moved (fires only on the save that moved it)
 			"tatva_connect.notifications.events.on_lead_stage_changed",
 			# the spotlight index denormalises the lead's owner into a permission column; restamp it + its child rows
 			"tatva_connect.search.index.reindex_on_lead_context_change",
+			# a new owner is a changed grant: the access index moves with the save, never after it
+			"tatva_connect.access.record_access.on_subject_saved",
 			# a lead that changed grain is a different population: its journeys end rather than carry on frozen against a grain it no longer has
 			"tatva_connect.workflow_engine.triggers.on_lead_grain_changed",
 		],
@@ -327,6 +331,11 @@ doc_events = {
 	# URL scheme safety: a user-facing field rendered as a link/redirect may only carry https://. Guarded at write time (validate), only changed values, so a legacy row saved for an unrelated reason is never blocked.
 	# CRM Lead and CRM Intake Form carry this guard inside their OWN blocks above/below — a second entry keyed by the same doctype does not merge, it SHADOWS, and Python keeps the last one silently.
 	"CRM Deal": {
+		# the deal owner is half of who may read it; the access index is written in the same transaction as the save
+		# on_update only: frappe runs it on insert too (document.py:429), so an after_insert twin would
+		# just do the same work a second time on every record created.
+		"on_update": ["tatva_connect.access.record_access.on_subject_saved"],
+		"after_delete": ["tatva_connect.access.record_access.on_subject_deleted"],
 		# a deal is the customer a lead became, so it is anchored to that lead and grained by it before anything reads the grain
 		"before_validate": [
 			"tatva_connect.deal.deals.require_lead",
@@ -397,7 +406,8 @@ doc_events = {
 		"on_trash": "tatva_connect.intake.intake.bust_intake_doctype_cache",
 	},
 	"CRM Call Log": {
-		# tell the rep an inbound call went unanswered (only the save that moves the status notifies)
+		# NO workflow trigger here: the engine dispatches from the `*` block, which frappe CONCATENATES with
+		# this one (document.py composer), so a second entry would start every journey twice.
 		"on_update": "tatva_connect.notifications.events.on_call_missed",
 		"after_insert": "tatva_connect.activity.timeline.index_event",
 		# The media row is a POINTER to this call's artifacts, so it dies with the call; the File and its blob are reclaimed by the call's own attachment cleanup (M1), never from here.
@@ -413,9 +423,22 @@ doc_events = {
 			"tatva_connect.notifications.events.on_lead_assigned",
 			# assignment is the second leg of the lead visibility predicate the spotlight index denormalises
 			"tatva_connect.search.index.reindex_on_assignment",
+			# the same assignment is the other half of the read grant
+			"tatva_connect.access.record_access.on_assignment",
 		],
-		"on_update": "tatva_connect.search.index.reindex_on_assignment_change",
-		"on_trash": "tatva_connect.search.index.reindex_on_assignment",
+		"on_update": [
+			"tatva_connect.search.index.reindex_on_assignment_change",
+			"tatva_connect.access.record_access.on_assignment_change",
+		],
+		"on_trash": [
+			"tatva_connect.search.index.reindex_on_assignment",
+		],
+		# after_delete, NOT on_trash: on_trash runs while the ToDo is still in the table, so recomputing
+		# there re-grants the assignment being revoked. The search index tolerates that (get_list gates
+		# every hit); a permission index does not.
+		"after_delete": [
+			"tatva_connect.access.record_access.on_assignment",
+		],
 	},
 	# crm shares a lead with its assigned agent, and a share is a row-level grant the spotlight index must carry.
 	"DocShare": {
@@ -522,6 +545,8 @@ after_migrate = [
 	"tatva_connect.seeds.seed_master_data",
 	# Dashboard cards + the one seeded role layout; after master data because a layout Links to a Role, and after fixtures because a card names custom_* columns that land in sync_fixtures.
 	"tatva_connect.dashboard.seed.ensure_rows",
+	# The TatvaPractice field-visit review as an Insights workbook; after the dashboard seed because both are read surfaces, and a no-op until the Site DB data source exists.
+	"tatva_connect.insights.field_visits.ensure_rows",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
@@ -675,6 +700,8 @@ fixtures = [
 		# P9: nivo_indication moved Plan -> Drug Program Profile; its free-text override follows the field (migration recreates here + drops the stale Plan ones).
 		"CRM Drug Program Profile-nivo_indication-fieldtype",
 		"CRM Drug Program Profile-nivo_indication-options",
+		# A partner filename past varchar(140) is refused by MariaDB as a 500 with nothing stored; 255 is the ceiling every filesystem enforces anyway, and storage.file_names.fit trims the rare name beyond it.
+		"File-file_name-length",
 		# Facebook question label/key are Data(140); live Goodflip forms carry 292-char qualification questions. The key is FB's slug of the label, so it is always the same length and widens with it — truncating it would silently stop the field_data match. See docs/plans/2026-07-16-facebook-lead-sync-remediation.md.
 		"Facebook Lead Form Question-label-fieldtype",
 		"Facebook Lead Form Question-key-fieldtype",
@@ -730,6 +757,11 @@ fixtures = [
 		"WhatsApp Account-url-description",
 		"WhatsApp Account-token-label",
 		"WhatsApp Account-token-description",
+		# `search_index` on CRM Lead.lead_owner — the column every non-privileged list read filters on. A
+		# Property Setter and not an index patch: frappe's schema sync DROPS a single-column index whose
+		# meta does not declare the flag (database/schema.py:311, matched by column and not by name), so a
+		# hand-built one would not survive. Declaring it in meta makes the sync maintain it instead.
+		"CRM Lead-lead_owner-search_index",
 		# Provider + url + token is the minimum that can send; gated on the provider so an account with no adapter is never forced to carry another provider's fields.
 		"WhatsApp Account-url-mandatory_depends_on",
 		"WhatsApp Account-token-mandatory_depends_on",
