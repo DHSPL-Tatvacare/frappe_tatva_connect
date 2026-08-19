@@ -530,7 +530,37 @@ def _predicate_problems(value, field, config=None, context=None):
 		_walk_predicate(value, field["label"])
 	except ValueError as bad:
 		return [str(bad)]
-	return []
+	return _unwatchable_transitions(value, field, context)
+
+
+def _unwatchable_transitions(tree, field, context):
+	"""`changed to` on a field that carries no before-value matches NOTHING, and said so nowhere.
+
+	Only a WATCHED field gets its `__before` captured (`context.diff_watched_fields`), so a transition
+	operator on any other field is dead on every record — published green, never fired. Four of the six
+	subjects have no field catalog at all, so every transition an author could build on them was silent.
+
+	`fields.is_watchable` was written for exactly this question and had no caller; this is it.
+	"""
+	from tatva_connect.automation import fields, rules
+
+	subject = (context or {}).get("subject")
+	if not subject:
+		return []
+	by_slug = {refs.slug(dt): dt for dt in (subject, "CRM Lead")}
+	found = []
+	for rule in _contract()._predicate_rules(tree):
+		if rule.get("operator") not in rules._CHANGE_OPS:
+			continue
+		parsed = refs.parse(rule.get("field") or "")
+		doctype = by_slug.get(parsed[0]) if parsed else None
+		if not doctype or fields.is_watchable(doctype, parsed[1]):
+			continue
+		found.append(
+			_("{0} tests whether {1} changed, but {2} is not watched — nothing records what it held before, "
+			  "so this can never match.").format(field["label"], parsed[1], doctype)
+		)
+	return found
 
 
 # `contains` is absent deliberately — a substring of a composite key tests one stage leaf across every programme, which is correct.
@@ -737,19 +767,11 @@ def _settable_problems(value, field, config, context):
 		return []
 	from tatva_connect.automation import actions, fields
 
-	if target not in set(actions.reachable_targets(context["subject"])) and not _child_doctype(target):
+	if target not in set(actions.writable_records(context["subject"])):
 		return []
 	if fields.is_set_declared(target, value):
 		return []
 	return [_("{0} is not a field automation is allowed to set on {1}.").format(value, target)]
-
-
-def _child_doctype(value):
-	"""True when `value` IS a lead child section's own doctype — asked of the section brain, never listed."""
-	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
-
-	section = crm_lead_section.section_for_child(value)
-	return bool(section) and section.target_doctype == value
 
 
 def _written_doctype(field, config):

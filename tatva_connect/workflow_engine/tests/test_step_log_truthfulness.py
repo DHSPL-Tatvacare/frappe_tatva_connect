@@ -47,6 +47,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions, sends
+from tatva_connect.workflow_engine import interpreter
 from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.workflow_engine import history, interpreter
 from tatva_connect.workflow_engine.tests import fixtures as fx
@@ -72,9 +73,9 @@ class _WalkHarness(FrappeTestCase):
 		cls.number = f"+9198000{int(hashlib.md5(cls.__name__.encode()).hexdigest(), 16) % 10**5:05d}"
 		for stale in frappe.get_all("CRM Lead", filters={"mobile_no": cls.number}, pluck="name"):
 			frappe.delete_doc("CRM Lead", stale, force=True, ignore_permissions=True)
-		cls.lead = fx.make_lead()
-		cls.lead.mobile_no = cls.number
-		cls.lead.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, through the document API (B11)
+		# AT INSERT, which is what `make_lead` asks for: the engine is already armed above, so creating the
+		# lead starts a journey that writes to it, and a second save then lost the timestamp race.
+		cls.lead = fx.make_lead(mobile_no=cls.number)
 		cls._made = []
 		frappe.db.commit()
 
@@ -128,20 +129,23 @@ class TestASendRecordsWhetherItReachedThePatient(_WalkHarness):
 		self.assertEqual(step["outcome"], "failed", "the audit said `ok` over a send that never happened")
 		self.assertIn("no WhatsApp routing", step["detail"], "the reason must survive beside the outcome")
 
-	def test_a_send_that_did_happen_records_sent(self):
-		"""The other direction, and the one that proves this is not a blanket rewrite to `failed`.
+	def test_a_dormant_send_records_suppressed_and_still_leaves_by_sent(self):
+		"""The two halves of a suppressed send, which this suite used to conflate.
 
-		A DORMANT send is the purest available success path: it patches NOTHING, reaches no provider, and
-		still leaves by the `sent` edge. The switch ships OFF, so this is the bench's real behaviour.
+		It asserted `sent` on a DORMANT run and called it the success path — the exact confusion the word
+		`suppressed` exists to end. Nothing reached the patient, so the AUDIT must not say a message was
+		sent; the EDGE must still be `sent`, or every bench (the switch ships OFF) would walk its
+		could-not-reach-the-patient branch and raise escalations for people nobody ever tried to contact.
 		"""
 		workflow = self._send_graph(f"{_WORKFLOW}-dormant")
 
 		run = self._walk(workflow)
 
 		step = self._steps(run)["wa"]
-		self.assertEqual(step["outcome"], "sent")
-		self.assertNotEqual(step["outcome"], "ok", "an effect node's outcome must be its declared output")
+		self.assertEqual(step["outcome"], sends.SUPPRESSED, "a suppressed send must not read as delivered")
+		self.assertNotEqual(step["outcome"], "ok", "an effect node's outcome is never the generic control word")
 		self.assertIn(sends.DORMANT_MARKER, step["detail"])
+		self.assertEqual(run.current_node, "sent_end", "the graph must not gain a branch when sends are off")
 
 	def test_the_control_flow_is_unchanged_by_the_audit_fix(self):
 		"""The guard that matters most: this chunk changes what is WRITTEN DOWN, never where the journey goes.
@@ -278,14 +282,11 @@ class TestTheVocabularyCannotDriftFromTheFrontend(unittest.TestCase):
 	visible failure rather than a silent pass.
 	"""
 
-	# The control-flow words the interpreter writes directly, which no verb declares.
-	_CONTROL = frozenset({"ok", "parked", "resumed", "done", "failed"})
-
 	def _declared_outputs(self):
-		words = set()
-		for spec in actions.VERBS.values():
-			words.update(spec.get("outputs") or [])
-		return words
+		"""Every word that can land in `outcome`, asked of the ENGINE — verb outputs plus the ones the
+		interpreter writes itself. A hand-typed control list lived here and is exactly the drift this
+		class exists to catch: `suppressed` was written by the engine and known to nobody."""
+		return interpreter.written_outcomes()
 
 	def _map_keys(self, filename, mapname):
 		source = (_FRONTEND / filename).read_text()
@@ -294,8 +295,10 @@ class TestTheVocabularyCannotDriftFromTheFrontend(unittest.TestCase):
 		return set(re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:", match.group(1), re.M))
 
 	def test_every_word_the_engine_can_write_is_known_to_the_history_dots(self):
-		unknown = self._declared_outputs() - self._map_keys("WorkflowHistory.vue", "OUTCOME_DOT")
-		self.assertEqual(unknown, set(), f"OUTCOME_DOT does not know {sorted(unknown)} — those steps render grey")
+		"""`journeyStatus.js`, not `WorkflowHistory.vue`: the run modal took the step log over and the map
+		moved with it. The lock kept reading the old file, found no map, and failed for the wrong reason."""
+		unknown = self._declared_outputs() - self._map_keys("journeyStatus.js", "OUTCOME_INK")
+		self.assertEqual(unknown, set(), f"OUTCOME_INK does not know {sorted(unknown)} — those steps render grey")
 
 	def test_every_word_the_engine_can_write_is_known_to_the_live_canvas_ring(self):
 		"""The consumers nobody remembers: the canvas ring AND its dot both read the SAME value off the
@@ -307,8 +310,8 @@ class TestTheVocabularyCannotDriftFromTheFrontend(unittest.TestCase):
 
 	def test_the_control_words_are_still_rendered_too(self):
 		"""The other half: fixing the verb words must not drop the control words the engine also writes."""
-		dots = self._map_keys("WorkflowHistory.vue", "OUTCOME_DOT")
-		for word in ("parked", "resumed", "done", "failed"):
+		dots = self._map_keys("journeyStatus.js", "OUTCOME_INK")
+		for word in interpreter.CONTROL_OUTCOMES:
 			self.assertIn(word, dots, f"{word} is written by the interpreter and must still be coloured")
 
 

@@ -15,8 +15,32 @@ from tatva_connect.workflow_engine import registry
 
 class CRMWorkflowNode(Document):
 	def validate(self):
+		self.keep_only_what_the_panel_shows()
 		self.validate_against_registry()
 		self.validate_unique_node_id()
+
+	def keep_only_what_the_panel_shows(self):
+		"""Store the settings the author can SEE, and drop the rest.
+
+		A gated field keeps its value after its gate shuts — switch Create Note from Expression to Literal
+		and the expression is still in the config, off screen. `contract.reads_of` walks every DECLARED
+		field, so publish then refuses on a reference the author cannot reach to fix: the panel says four
+		boxes, the config remembers six.
+
+		Saved is what was shown, which is the rule every form library and workflow builder settles on. The
+		author loses nothing while editing — the canvas holds the whole object, so toggling a mode and
+		coming back finds the value still there. It is only the WRITE that projects.
+
+		`registry.applied_fields` is the gate's one reader and the server's answer to the same question the
+		inspector asks, so the panel and this cannot disagree about which boxes exist.
+		"""
+		config = self.config()
+		if not config:
+			return
+		shown = {f["name"] for f in registry.applied_fields(self.node_type, config)}
+		kept = {name: value for name, value in config.items() if name in shown}
+		if len(kept) != len(config):
+			self.config_json = frappe.as_json(kept)
 
 	def config(self):
 		"""This node's configuration as a dict. Invalid JSON is a validation error, not a crash later —

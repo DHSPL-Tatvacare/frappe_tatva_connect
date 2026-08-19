@@ -92,8 +92,11 @@ class TestTargetAndFieldAreTableRows(FrappeTestCase):
 	def _messages(self, config):
 		return " | ".join(p["message"] for p in graph.problems(_graph(config), entry_node="trigger-1"))
 
+	# `CRM Organization` is the stand-in for out-of-scope: a REAL doctype that is neither the lead, the
+	# subject nor a declared write target. It used to be `Sales Invoice`, which is not installed here — so
+	# the gate raised DoesNotExistError before it could refuse, and the suite failed for the wrong reason.
 	def test_a_target_the_run_can_never_reach_is_refused(self):
-		self.assertIn("Sales Invoice", self._messages({"target_doctype": "Sales Invoice", "updates": [{"name": "x", "mode": "Literal", "value": ""}]}))
+		self.assertIn("CRM Organization", self._messages({"target_doctype": "CRM Organization", "updates": [{"name": "x", "mode": "Literal", "value": ""}]}))
 
 	def test_the_subject_is_a_reachable_target(self):
 		found = self._messages({"target_doctype": _SUBJECT, "updates": [{"name": "status", "mode": "Literal", "value": "New"}]})
@@ -139,7 +142,7 @@ class TestAContextlessCallerGetsNoInventedProblems(FrappeTestCase):
 
 	def test_no_graph_no_problems_from_the_context_dependent_rows(self):
 		found = registry.validate_node(
-			"Update Field", {"target_doctype": "Sales Invoice", "fieldname": "whatever"}, [],
+			"Update Field", {"target_doctype": "CRM Organization", "fieldname": "whatever"}, [],
 			mode=registry.PUBLISH, graph_context=None,
 		)
 		messages = " | ".join(p["message"] for p in found)
@@ -177,7 +180,7 @@ class TestANewTypeGetsAllThreeFree(FrappeTestCase):
 			{"name": "zz_fields", "label": "ZZ Fields", "type": "Field Map", "doctype_from": "zz_target"},
 			{"name": "zz_link", "label": "ZZ Link", "type": "Link", "link": "CRM Task Type"},
 		]
-		config = {"zz_target": "Sales Invoice", "zz_link": "nope",
+		config = {"zz_target": "CRM Organization", "zz_link": "nope",
 		          "zz_fields": [{"name": "nope", "mode": "Literal", "value": "x"}]}
 		with patch.dict(registry.NODE_TYPES, {"Update Field": self._declared(fields)}):
 			found = registry.validate_node(

@@ -20,7 +20,7 @@ module — never by a second comparison written here.
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.automation import actions, describe, fields
+from tatva_connect.automation import actions, describe, fields, subjects
 from tatva_connect.taxonomy import grain as taxonomy_grain
 from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.tests.automation import field_allowlist
@@ -119,15 +119,18 @@ class TestSettableRuleGrain(FrappeTestCase):
 		schema = describe.builder_schema(
 			on_doctype="CRM Task", vertical=fx.GRAIN["vertical"], group="", program="",
 		)
-		self.assertEqual(actions.reachable_targets("CRM Task"), ["CRM Lead", "CRM Task"])
+		self.assertEqual(actions.reachable_targets("CRM Task"), ["CRM Lead", "CRM Task", *subjects.WRITE_TARGETS])
 		self.assertIn(_LEAD_FIELD, _keys(schema["set_targets"], doctype="CRM Lead"))
 
 	def test_every_offered_field_says_which_record_it_belongs_to(self):
-		"""A flat list of names across two doctypes cannot be rendered under a Target without this."""
+		"""A flat list of names across several doctypes cannot be rendered under a Target without this. Asked of
+		`writable_records`, never `reachable_targets`: a field may be set on a child section that no Target may
+		name, and asserting the narrower one failed on every child-section field the picker rightly offers."""
 		schema = describe.builder_schema(on_doctype="CRM Task")
+		writable = actions.writable_records("CRM Task")
 		for descriptor in schema["set_targets"]:
 			with self.subTest(field=descriptor["key"]):
-				self.assertIn(descriptor.get("doctype"), actions.reachable_targets("CRM Task"))
+				self.assertIn(descriptor.get("doctype"), writable)
 
 	# --- the picker's last two lies ----------------------------------------------------------------------
 
@@ -145,11 +148,17 @@ class TestSettableRuleGrain(FrappeTestCase):
 
 	def test_the_duplicate_is_gone_from_the_rule_forms_picker_too(self):
 		"""`builder_schema` feeds the automation RULE form's Set-field picker through the SAME function,
-		so the duplicate was visible on a second surface. One source, one fix, both surfaces."""
-		schema = describe.builder_schema(on_doctype="CRM Lead", vertical=fx.GRAIN["vertical"])
-		keys = [d["key"] for d in schema["set_targets"]]
+		so the duplicate was visible on a second surface. One source, one fix, both surfaces.
 
-		self.assertEqual(sorted(keys), sorted(set(keys)), "the rule form still offers a field twice")
+		Once per RECORD, not once per answer: the list spans every reachable doctype and two of them may
+		legitimately own a field of the same name (`status` on the lead and on a write target). What must
+		never repeat is a field within the record it belongs to, which is the duplicate this locks.
+		"""
+		schema = describe.builder_schema(on_doctype="CRM Lead", vertical=fx.GRAIN["vertical"])
+		for doctype in {d["doctype"] for d in schema["set_targets"]}:
+			keys = [d["key"] for d in schema["set_targets"] if d["doctype"] == doctype]
+			with self.subTest(doctype=doctype):
+				self.assertEqual(sorted(keys), sorted(set(keys)), f"{doctype} is offered a field twice")
 
 	def test_a_tab_break_is_offered_by_no_picker(self):
 		"""A Tab Break is layout, not data. It was missing from `_STRUCTURAL_FIELDTYPES`, so a form's tab

@@ -65,7 +65,7 @@ def authoring_context(nodes):
 	subject = trigger.get("subject_doctype") or ""
 	grain = {axis: trigger.get(axis) for axis in _GRAIN_AXES if trigger.get(axis)}
 
-	from tatva_connect.automation import describe
+	from tatva_connect.automation import actions, describe
 
 	axes = _schema_grain(grain)
 	schema = describe.builder_schema(on_doctype=subject, **axes) if subject else {}
@@ -85,14 +85,32 @@ def authoring_context(nodes):
 		"settable": schema.get("set_targets") or [],
 		"operators_by_type": schema.get("operators_by_type") or {},
 		"operator_shapes": schema.get("operator_shapes") or {},
+		# The write targets a Target control may offer — the ONE declaration, so the canvas stops keeping its own copy.
+		"targets": actions.reachable_targets(subject),
 		"nodes": {
-			node_id: {
-				"emitted": upstream.emitted_at(nodes, node_id),
-				"emitters": upstream.emitters_at(nodes, node_id),
+			node.get("node_id"): {
+				"emitted": upstream.emitted_at(nodes, node.get("node_id")),
+				"emitters": upstream.emitters_at(nodes, node.get("node_id")),
+				# WHICH record this node writes, so a Field Map offers that record's fields and not every reachable one.
+				"writes_to": _writes_to(node),
 			}
-			for node_id in [n.get("node_id") for n in nodes if n.get("node_id")]
+			for node in nodes if node.get("node_id")
 		},
 	}
+
+
+def _writes_to(node):
+	"""The doctype a node's write controls belong to, resolved the way the PUBLISH GATE resolves it.
+
+	`registry._written_doctype` already answers it off a `doctype_from` sibling — a child-row node names a
+	`CRM Lead Section` and the record is that section's target. Asked here so the picker and the gate cannot
+	disagree about which record a Field Map fills.
+	"""
+	config = registry.config_of(node)
+	for field in registry.config_fields(node.get("node_type")):
+		if field.get("doctype_from"):
+			return registry._written_doctype(field, config)
+	return ""
 
 
 # Homed here, not in the registry: this is a question about a GRAPH's authoring contract, which is this module's subject, while the registry answers about node TYPES.
@@ -136,6 +154,8 @@ def for_node(answer, node_id):
 		else [],
 		"emitters": positional["emitters"] if positional else [],
 		"settable": answer["settable"],
+		"targets": answer["targets"],
+		"writes_to": positional["writes_to"] if positional else "",
 		"operators_by_type": answer["operators_by_type"],
 		"operator_shapes": answer["operator_shapes"],
 	}

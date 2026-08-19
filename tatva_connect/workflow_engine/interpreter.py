@@ -44,6 +44,20 @@ DONE = "Done"
 STOPPED = "Stopped"
 LIVE_STATES = ("Running", "Parked")
 
+# The outcomes the INTERPRETER writes itself, which no verb declares. Named here so the frontend lock reads
+# a declaration rather than a hand-typed copy — the drift it exists to prevent, committed by the lock.
+OK, DONE_STEP, PARKED, RESUMED, FAILED_STEP = "ok", "done", "parked", "resumed", "failed"
+CONTROL_OUTCOMES = (OK, DONE_STEP, PARKED, RESUMED, FAILED_STEP)
+
+
+def written_outcomes():
+	"""Every word that can land in a step log's `outcome` — the interpreter's own plus every verb's."""
+	from tatva_connect.automation import actions, sends
+
+	declared = {o for spec in actions.VERBS.values() for o in spec.get("outputs") or []}
+	return set(CONTROL_OUTCOMES) | declared | {sends.SUPPRESSED}
+
+
 MAX_HOPS = 100
 MAX_RETRIES = 5
 _EVENT_MODES = frozenset({"Until Event", "Event-or-Timeout"})
@@ -256,8 +270,8 @@ def advance(journey):
 				output = _verb_output(node, state)
 				nxt = _edge(node, output)
 				# `next` is the generic carry-on edge and names no result, so a verb that declares no outputs still records `ok` — it ran, and that is all that happened at it.
-				outcome = "ok" if output == "next" else output
 				detail = marker or "ran"  # a dormant send records its marker, never a live message
+				outcome = _audit_outcome(output, marker)
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
 				nxt, detail = _next_control(node, state, journey.subject_name,  # the ONE control-flow step, shared with run_inline
 				                            _vocabulary(journey.trigger_doctype, journey.subject_doctype))
@@ -465,14 +479,15 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 			seen.add(cursor)
 			if actions.lane_of(node.node_type) == "effect":
 				started = time.monotonic()
-				step_deferred, _marker = _run_verb(node, lead_name, trigger_doc, state, axes)
+				step_deferred, marker = _run_verb(node, lead_name, trigger_doc, state, axes)
 				deferred += step_deferred
-				outcome = _verb_output(node, state)
+				output = _verb_output(node, state)
 				# W12 — popped HERE, not at flush time: consuming it is what stops the next node inheriting
 				# a recipient that was never its own, exactly as `advance` does it.
-				steps.append(_step(node, outcome, duration_ms=int((time.monotonic() - started) * 1000),
+				steps.append(_step(node, _audit_outcome(output, marker), detail=marker or "",
+				                   duration_ms=int((time.monotonic() - started) * 1000),
 				                   channel=state.pop(refs.CHANNEL, None), contact=state.pop(refs.CONTACT, None)))
-				cursor = _edge(node, outcome)
+				cursor = _edge(node, output)
 			elif node.node_type in ("Route", "Sample", "Set Variables"):
 				cursor, detail = _next_control(node, state, lead_name,  # the ONE control-flow step, shared with advance
 				                               _vocabulary(trigger_doc.doctype if trigger_doc else None, "CRM Lead"))
@@ -534,6 +549,18 @@ def _flush_steps(journey, steps):
 # The audit a step carries, named ONCE. `_step_log` writes these one row at a time for the durable lane and
 # `_flush_steps` writes them in a single statement for the inline one; the SHAPE cannot differ between them.
 _STEP_FIELDS = ("node_id", "node_type", "outcome", "detail", "duration_ms", "channel", "contact")
+
+
+def _audit_outcome(output, marker):
+	"""What the RUN HISTORY records for a verb, which is not always the edge it left by. `next` names no
+	result, so a verb declaring no outputs records `ok`. A send made while the switch is off still leaves by
+	`sent` — the graph must not gain a branch — but nothing reached the patient, so the audit says
+	`suppressed`. THE one place that decision is made, for both lanes."""
+	from tatva_connect.automation import sends
+
+	if sends.was_suppressed(marker):
+		return sends.SUPPRESSED
+	return OK if output == "next" else output
 
 
 def _step(node, outcome, detail="", duration_ms=0, channel=None, contact=None):

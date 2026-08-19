@@ -58,7 +58,7 @@
    "label": "Outcome",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "The result at this step - sent, failed, assigned or nobody; and for a control step, ok, parked, resumed or done."
+   "description": "What happened at this step: a verb's own declared output (sent, assigned, queued, nobody, failed), `suppressed` when a send was made while the sends switch is off, or a control word the interpreter writes (ok, parked, resumed, done)."
   },
   {
    "fieldname": "channel",
@@ -72,7 +72,7 @@
    "fieldtype": "Data",
    "label": "Contact",
    "read_only": 1,
-   "description": "The number or address actually used. NO search_index: the one reader is the contact cap, which counts a ROLLING window, and ix_contact_creation (contact, creation) serves that and every contact-only read the flag's single-column index could — leaving the flag on would rebuild a duplicate here on every migrate."
+   "description": "The number or address actually used. NO search_index: the one reader is the contact cap, which counts a ROLLING window, and ix_contact_creation (contact, creation) serves that and every contact-only read the flag's single-column index could \u2014 leaving the flag on would rebuild a duplicate here on every migrate."
   },
   {
    "fieldname": "detail",
