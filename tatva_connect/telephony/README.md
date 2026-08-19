@@ -169,7 +169,11 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
 - **Recordings do not play, and the fault is Acefone's.** `recording_url` returns **404 HTML
   server-side** — unauthenticated, with a Bearer token, and even when the URL is handed to us by
   Acefone's own authenticated API. Six URLs tested, all 404. Call recording is most likely not enabled on
-  the account. With the provider.
+  the account. With the provider. The app no longer hides this: the CDR's URL goes to
+  `storage.call_media`, which fetches once, retries on the ladder and then settles the media row
+  `Abandoned` with the provider's own error on it — so an operator reads why there is no audio instead of
+  meeting a play button that 404s. The moment recording is enabled on the account, the same path stores
+  the bytes in Azure with no code change.
 - **The outbound `normalize()` branch has never seen a live payload.** No outbound webhook event was ever
   captured. It is written from the inbound corpus and the record API, not proven.
 - **`scheduled_reconcile` is not wired** to `hooks.scheduler_events`, deliberately: anything that runs by

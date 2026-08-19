@@ -127,12 +127,19 @@ class RecordingRef(tuple):
 	`headers` is whatever authentication the fetch needs (a bearer token, a signed header). Most providers
 	publish an unauthenticated URL and send none; a provider that needs one declares it here rather than
 	teaching the shared fetcher about its auth.
+
+	`allowed_hosts` is the same shape of declaration for the SSRF guard: the operator-configured hosts this
+	provider's recordings may be fetched from. It is DERIVED, never stored — a copy of operator config on a
+	data row would keep answering with the allowlist the operator has since narrowed. Empty means the
+	generic guard alone, which every hop runs regardless: http(s) only, and no host that resolves off the
+	public internet.
 	"""
 
 	__slots__ = ()
 
-	def __new__(cls, url=None, provider=None, headers=None, pending=False):
-		return tuple.__new__(cls, (url or None, provider or None, dict(headers or {}), bool(pending)))
+	def __new__(cls, url=None, provider=None, headers=None, pending=False, allowed_hosts=None):
+		return tuple.__new__(cls, (url or None, provider or None, dict(headers or {}), bool(pending),
+		                           tuple(allowed_hosts or ())))
 
 	@property
 	def url(self):
@@ -152,6 +159,11 @@ class RecordingRef(tuple):
 		return self[3]
 
 	@property
+	def allowed_hosts(self):
+		"""Hosts this recording may be fetched from, or empty for the generic public-internet guard alone."""
+		return self[4]
+
+	@property
 	def absent(self):
 		"""Settled: there is no audio for this call. Not the same as `pending`, and never guessed from a
 		missing URL alone — an adapter says this by answering `RecordingRef()` on a terminal payload."""
@@ -160,7 +172,8 @@ class RecordingRef(tuple):
 	def __repr__(self):
 		return (
 			f"RecordingRef(url={self.url!r}, provider={self.provider!r}, "
-			f"headers={sorted(self.headers)!r}, pending={self.pending!r})"
+			f"headers={sorted(self.headers)!r}, pending={self.pending!r}, "
+			f"allowed_hosts={list(self.allowed_hosts)!r})"
 		)
 
 

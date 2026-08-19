@@ -193,18 +193,22 @@ def _new_call_log(to_number, agent_number, account_name, ref_doctype, ref_name, 
 
 @frappe.whitelist()
 def get_call_log(name):
-	"""crm's get_call_log, plus a playable path for Acefone recordings.
+	"""crm's get_call_log, plus a playable path for a recording this app never stored.
 
-	Delegates to the original (Twilio/Exotel untouched), then for an Acefone call
-	with a recording, points `recording_url_path` at our streaming proxy so the
-	native inline "Listen" player works — no audio stored.
+	Delegates to the original (Twilio/Exotel untouched). A call whose audio IS ours needs nothing here:
+	the row points at our own file and the screen reads it through `call_media.media_for`, which is what
+	every stored recording — telephony and AI voice alike — plays from.
+
+	What is left is the LEGACY row: logged before the bytes were fetched, still carrying the provider's own
+	absolute URL, which is never put in the markup. Those keep the permission-gated streaming proxy, and
+	they stop needing it the moment the backfill adopts them.
 	"""
 	from crm.fcrm.doctype.crm_call_log.crm_call_log import get_call_log as crm_get_call_log
 
 	frappe.has_permission("CRM Call Log", "read", name, throw=True)
 	data = crm_get_call_log(name)
-	# crm always points recording_url_path at its own (Twilio/Exotel-only) proxy,
-	# so for an Acefone call we OVERWRITE it with our streaming proxy.
-	if data.get("recording_url") and frappe.db.get_value("CRM Call Log", name, "telephony_medium") == MEDIUM:
+	# `http`-prefixed means the row still holds the PROVIDER's URL; our own copy is a same-origin file path.
+	legacy = str(data.get("recording_url") or "").startswith("http")
+	if legacy and frappe.db.get_value("CRM Call Log", name, "telephony_medium") == MEDIUM:
 		data["recording_url_path"] = f"{RECORDING_ENDPOINT}?call_log={quote(name)}"
 	return data

@@ -84,6 +84,20 @@ def proxy_url(file_or_key):
 	return blob_store.download_url(key)
 
 
+def attachment_url(file_url):
+	"""The URL a Download control points at — the SAVE flavour of whatever route serves this file.
+
+	An offloaded file answers with its proxy URL flagged for attachment, because the proxy redirects off
+	this origin and `<a download>` stops applying the moment it does. A file still on local disk is served
+	same-origin by frappe itself, where the attribute works, so its own URL is already the right answer.
+
+	One question, one place: a consumer asks for the download URL rather than deciding from the shape of
+	the string what kind of file it is looking at.
+	"""
+	key = blob_key_from_url(file_url)
+	return blob_store.download_url(key, attachment=True) if key else file_url
+
+
 def fetch_url(file_doc):
 	"""The URL an OFF-SITE caller downloads from — fully qualified, and signed when it can be.
 

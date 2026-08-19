@@ -221,6 +221,44 @@ def _reconcile_one(row, account, dry_run, summary):
 	summary["existing" if known else "new"] += 1
 
 
+def backfill_recordings(limit: int = 200, dry_run: bool = True) -> dict:
+	"""Adopt the recordings of calls already logged — the one-time repair for rows written before the
+	bytes were fetched. Returns a count summary.
+
+	A legacy row carries the PROVIDER's own URL, which the provider will one day delete; this hands that
+	URL to the same door ingestion now uses, so the audio becomes ours and the row is repointed at our
+	copy. Nothing is re-implemented — `adapter.ref_for_url` builds the ref exactly as a live CDR does,
+	credential and host allowlist included, and `writer.adopt_recording` stores and repoints it.
+
+	Rows are selected by the shape of what they hold, not by a date: `recording_url` still absolute means
+	not yet adopted, and a row already adopted holds a same-origin path and is invisible to this. Re-running
+	it is therefore safe and picks up only what is left — including anything a failed attempt abandoned.
+
+	`dry_run=True` (the default) counts and touches nothing. Run in batches: each row is a fetch and an
+	upload, so `limit` is a real ceiling on how long one pass takes.
+	"""
+	rows = frappe.get_all(  # authz-ok: tier-a — operator repair run, no user context
+		CALL_LOG,
+		filters={"telephony_medium": adapter.PROVIDER, "recording_url": ["like", "http%"]},
+		fields=["name", "custom_telephony_account", "recording_url"],
+		order_by="creation desc",
+		limit=int(limit),
+	)
+	summary = {"ok": True, "scanned": len(rows), "adopted": 0, "left": 0, "dry_run": bool(dry_run)}
+	if dry_run:
+		return summary
+
+	for row in rows:
+		writer.adopt_recording(
+			row.name, adapter.ref_for_url(row.recording_url, row.custom_telephony_account)
+		)
+		adopted = not str(
+			frappe.db.get_value(CALL_LOG, row.name, "recording_url") or ""
+		).startswith("http")
+		summary["adopted" if adopted else "left"] += 1
+	return summary
+
+
 @frappe.whitelist()
 def refresh_calls(reference_name: str, dry_run=1) -> dict:
 	"""Manual entry — pull one lead's calls and write in anything the webhook missed.

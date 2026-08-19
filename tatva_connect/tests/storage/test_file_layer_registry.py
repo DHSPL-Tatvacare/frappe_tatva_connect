@@ -15,10 +15,12 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.storage.test_file_layer_registry
 """
+from urllib.parse import unquote
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from tatva_connect.storage import file_manager
+from tatva_connect.storage import blob_store, file_manager
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
 
 _REAL_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x08\x00\x00\x00\x08\x08\x02\x00\x00\x00Km)\xdc\x00\x00\x00&IDATx\x9cc`\x90\xb3\x89\xaa\x98\xb6\xe5\xd2\x07>\x1d\xaf\x8c\xb6%\x87\x1e\xfc\x93\xb1\x8a(\x9b\xb2\x89ahI\x00\x00\x0b\xb5Z\xc1\xce\x87\xae\xdd\x00\x00\x00\x00IEND\xaeB`\x82'
@@ -812,3 +814,45 @@ class TestHostileFileNames(FileLayerCase):
 
 		name = recording_file_name("acefone", "CALL-0001", "audio/mpeg")
 		self.assertFalse([c for c in self.UNSAFE + " " if c in name], f"generated name is unsafe: {name}")
+
+
+class TestTheDownloadFlavour(FileLayerCase):
+	"""A Download control must SAVE the file, wherever the bytes physically live.
+
+	THE DEFECT. An offloaded file is served by a permission-gated proxy that REDIRECTS onto blob storage,
+	which is another origin. The HTML `download` attribute is same-origin-only, so the browser dropped it
+	at the hop and navigated to the blob instead — the audio opened in a tab and nothing was ever saved.
+	Nothing in the app was wrong about permissions or bytes; the link simply could not say "save me".
+
+	The fix is one flavour of the SAME route: `download=1` mints a SAS carrying `Content-Disposition:
+	attachment`, which Azure applies because the signature covers it. No second endpoint, no proxying of
+	bytes through the bench, and the permission check is the one that was always there.
+	"""
+
+	def test_an_offloaded_file_answers_with_a_save_url(self):
+		doc, key = self.upload(file_name="save-me.png")
+		self.assert_in_azure(key, "download flavour")
+		url = file_manager.attachment_url(doc.file_url)
+		self.assertIn(f"{blob_store.DOWNLOAD_FLAG}=1", url)
+		self.assertEqual(blob_key_from_url(url), key, "the save URL must name the same blob")
+
+	def test_a_local_file_is_already_its_own_save_url(self):
+		"""Frappe serves it same-origin, where the attribute works — a flag there would be noise."""
+		self.assertEqual(file_manager.attachment_url("/private/files/x.png"), "/private/files/x.png")
+
+	def test_the_stored_url_never_carries_the_flag(self):
+		"""The URL on the row is the file's IDENTITY — `by_blob_key` matches it back. A second spelling
+		of it would orphan the row from its own blob."""
+		doc, key = self.upload(file_name="identity.png")
+		self.assertNotIn(f"&{blob_store.DOWNLOAD_FLAG}=1", doc.file_url)
+		self.assertEqual(file_manager.by_blob_key(key), doc.name)
+
+	def test_the_save_link_tells_azure_to_attach_and_the_play_link_does_not(self):
+		"""Both are minted for the same blob, and they must not be the same link."""
+		doc, key = self.upload(file_name="two-flavours.png")
+		inline = self.store.sas_url(key)
+		attached = self.store.sas_url(key, attachment_name=doc.file_name)
+		self.assertNotIn("rscd=", inline, "the player's link must not make the browser save the file")
+		self.assertIn("rscd=", attached)
+		self.assertIn("attachment", unquote(attached))
+		self.assertEqual(self.store.sas_url(key), inline, "the flavours shared a cache entry")

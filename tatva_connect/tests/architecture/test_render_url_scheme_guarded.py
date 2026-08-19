@@ -20,7 +20,7 @@ _FETCH_OR_INTERNAL = {
 	"base_url": "outbound provider endpoint — SSRF-guarded at the fetch site (voice/adapters/bolna._safe_base_url, api/telephony)",
 	"recording_ref_url": "outbound recording download — assert_safe_public_url before requests.get (call_media)",
 	"url": "operator provider base (WhatsApp Account) — outbound, host-allowlisted at fetch (whatsapp/transport)",
-	"recording_url": "provider recording URL — never sent raw to the browser; played through a permission-gated proxy",
+	"recording_url": "our own file path once the bytes are ours (call_media); a legacy row still holding a provider URL is fetch-guarded and played through a permission-gated proxy",
 }
 
 

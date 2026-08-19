@@ -24,7 +24,7 @@ import frappe
 from frappe.core.doctype.file.file import File
 from frappe.utils import cstr
 
-from tatva_connect.storage import file_screening
+from tatva_connect.storage import file_names, file_screening
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
 from tatva_connect.storage.file_events import apply_privacy_policy, assert_link_target_safe
 
@@ -64,6 +64,7 @@ class FileOverride(File):
 		(model/document.py:1576-1590), which is exactly why privacy-as-validate landed private files in
 		the public directory and screening-as-before_insert scanned bytes already on disk."""
 		self._inherit_file_name()  # before core's set_file_name() (file.py:112) carves a name out of the URL
+		self.file_name = file_names.fit(self.file_name)  # a name past the column is refused by MariaDB and the file is lost; the label is trimmed, identity is the row and the blob key
 		apply_privacy_policy(self)  # decide privacy BEFORE core reads it to pick the directory
 		self._screen_content()  # refuse bad bytes BEFORE core writes them
 		sent = {f: self.get(f) for f in _DERIVED}  # what the CALLER sent, before core derives its own answers

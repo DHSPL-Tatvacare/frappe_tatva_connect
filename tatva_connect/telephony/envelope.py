@@ -43,7 +43,7 @@ def build(
 	started_at=None,
 	ended_at=None,
 	duration_sec=0,
-	recording_url=None,
+	recording_ref=None,
 	raw=None,
 ) -> Envelope:
 	"""Assemble an envelope. Called by adapters; never constructed by hand."""
@@ -65,7 +65,8 @@ def build(
 		started_at=started_at,
 		ended_at=ended_at,
 		duration_sec=duration_sec,
-		recording_url=recording_url,
+		# Where this call's audio is, as the adapter's whole answer (`contract.RecordingRef`), never a URL string.
+		recording_ref=recording_ref,
 		raw=raw or {},
 	)
 

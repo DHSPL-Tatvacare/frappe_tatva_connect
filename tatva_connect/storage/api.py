@@ -12,10 +12,15 @@ from tatva_connect.storage.file_events import offload
 
 
 @frappe.whitelist(allow_guest=True)  # guest-ok: public file fetch (short-lived SAS link); PRIVATE files permission-gated inside (A.15)
-def download_file(file_name: str):
+def download_file(file_name: str, download: str | int | None = None):
 	"""Proxy for an offloaded File: enforce Frappe's own permission, then redirect to a
 	short-lived SAS link. `allow_guest` so public files work; private files are gated by
-	`File.is_downloadable()` exactly as core Frappe gates `/private/files`."""
+	`File.is_downloadable()` exactly as core Frappe gates `/private/files`.
+
+	`download=1` asks for a link the browser SAVES. It is a flavour of the same permission-gated route
+	and not a second one — the check above still runs, and the File's own name becomes the saved name.
+	It exists because the redirect leaves this origin: an `<a download>` is honoured only same-origin,
+	so without this a Download control opens the audio in a tab instead of saving it."""
 	from frappe.utils.response import download_private_file
 
 	name = file_manager.by_blob_key(file_name)
@@ -29,7 +34,9 @@ def download_file(file_name: str):
 		raise frappe.PermissionError
 
 	frappe.local.response["type"] = "redirect"
-	frappe.local.response["location"] = BlobStore().sas_url(file_name)
+	frappe.local.response["location"] = BlobStore().sas_url(
+		file_name, attachment_name=doc.file_name if frappe.utils.cint(download) else None
+	)
 
 
 @frappe.whitelist()

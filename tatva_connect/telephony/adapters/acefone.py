@@ -23,10 +23,12 @@ import frappe
 from frappe import parse_json
 
 from tatva_connect import phone
+from tatva_connect.channels import contract
 from tatva_connect.telephony import envelope as env
 from tatva_connect.telephony import resolve, writer
 
 PROVIDER = "Acefone"
+ACCOUNT_DT = "CRM Telephony Account"
 
 # `CRM Call Log.telephony_medium` stores the provider name; observability and reconcile call it the
 # medium. Aliased rather than duplicated.
@@ -115,6 +117,8 @@ def normalize(payload: dict, event=None, account=None):
 
 	direction, channel = _direction_channel(payload, event)
 	customer_number, did_number = _numbers(payload, direction)
+	# Read ONCE and passed on: `_status` warns about an unmapped status, and asking twice warns twice.
+	status = _status(payload, event)
 
 	return env.build(
 		provider=PROVIDER,
@@ -124,8 +128,9 @@ def normalize(payload: dict, event=None, account=None):
 		channel=channel,
 		customer_number=customer_number,
 		did_number=did_number,
-		status=_status(payload, event),
+		status=status,
 		connected=str(payload.get("call_connected") or "").strip() == "1",
+		recording_ref=recording_ref(payload, status, account),
 		# Read from both candidates, though neither ever returns: `custom_identifier` is not an
 		# Acefone webhook variable and `ref_id` was empty on all 363 captured CDRs.
 		correlation_key=(payload.get("custom_identifier") or payload.get("ref_id") or "").strip() or None,
@@ -136,9 +141,60 @@ def normalize(payload: dict, event=None, account=None):
 		# Total call time including the IVR, not talk time. Acefone exposes no agent talk-time field:
 		# `billsec` is empty on every answered call.
 		duration_sec=env.to_int(payload.get("duration")),
-		recording_url=payload.get("recording_url") or None,
 		raw=payload,
 	)
+
+
+def recording_ref(payload: dict, status: str, account=None):
+	"""WHERE THIS CALL'S AUDIO IS — the `recording` vocabulary's one function, and the whole of it.
+
+	Three answers and no fourth, exactly as `channels.contract.RecordingRef` defines them. Grounded in the
+	363-CDR capture rather than the documentation: `recording_url` is ON the hangup CDR — all 8 answered
+	calls carried one, and so did 130 of the 171 missed ones, because Acefone records the IVR greeting a
+	caller hears before nobody picks up. A missed call without one produced no audio and never will.
+
+	A still-live call is the only "not ready yet": the recording is published as part of the hangup the
+	terminal CDR reports, so a row parked here is answered by that CDR, not by us polling for it.
+
+	Nothing here fetches, owns, names, retries or serves anything — `storage.call_media` does all of it for
+	every producer, and learns this provider's name only as the string riding in on the ref.
+	"""
+	url = (payload.get("recording_url") or "").strip()
+	if url:
+		return ref_for_url(url, account)
+	if status == _ANSWERED_LIVE:
+		return contract.RecordingRef(pending=True)
+	return contract.RecordingRef()
+
+
+def ref_for_url(url: str, account=None):
+	"""A ref for a recording URL — from a live CDR, or from a row that already carries one.
+
+	The ONE place an Acefone ref is built, so the backfill of already-logged calls cannot describe a
+	recording differently from the way ingestion does.
+
+	The credential and the host allowlist are the SAME two the play-time proxy has always applied to this
+	URL, read off the same account row and carried on the ref rather than re-implemented at a second fetch
+	site. Both are DERIVED per fetch: an operator who narrows the allowlist narrows it for the next attempt
+	too, which a copy stored on a row could never do.
+	"""
+	acct = _account_doc(account)
+	token = acct.get_password("api_token", raise_exception=False) if acct else None
+	return contract.RecordingRef(
+		url=url,
+		provider=PROVIDER,
+		# `transfer.fetch_capped` drops this the moment a redirect changes host, so the credential never
+		# reaches whoever the provider's storage hop names.
+		headers={"Authorization": f"Bearer {token}"} if token else None,
+		allowed_hosts=[row.host for row in (acct.get("recording_host_allowlist") or [])] if acct else None,
+	)
+
+
+def _account_doc(account):
+	"""The receiving account, or None. A NAME comes in — the spine and the DID map both carry names."""
+	if not account or not frappe.db.exists(ACCOUNT_DT, account):
+		return None
+	return frappe.get_cached_doc(ACCOUNT_DT, account)
 
 
 def _direction_channel(payload: dict, event):

@@ -51,15 +51,24 @@ def download_query(blob_key: str) -> str:
 	return f"{QUERY_KEY}={blob_key}"
 
 
-def download_url(blob_key: str) -> str:
+# Asks the proxy for a link the browser SAVES rather than opens. Spelled once, read back in api.download_file.
+DOWNLOAD_FLAG = "download"
+
+
+def download_url(blob_key: str, attachment: bool = False) -> str:
 	"""The permission-gated proxy URL stored on offloaded File rows. ROOT-RELATIVE (like Frappe's
 	native /private/files URLs) so it always resolves to the host the user is browsing on. An absolute
 	URL froze the upload-time host, so a private file uploaded under one host (e.g. localhost) 403'd
 	as Guest when viewed under another (the site domain) — the session cookie is per-host.
 
 	The key needs no encoding because `new_key` slugs it — see there for why encoding is the wrong
-	tool for a value frappe core unquotes on every insert."""
-	return f"/api/method/{DOWNLOAD_METHOD}?{download_query(blob_key)}"
+	tool for a value frappe core unquotes on every insert.
+
+	`attachment=True` asks for the SAVE flavour of the same link, and is NEVER part of the URL stored on
+	a File row: the stored URL is the file's identity, matched back to it by `by_blob_key`, and a second
+	spelling of it would orphan the row. It is added by whoever renders a Download control."""
+	url = f"/api/method/{DOWNLOAD_METHOD}?{download_query(blob_key)}"
+	return f"{url}&{DOWNLOAD_FLAG}=1" if attachment else url
 
 
 def blob_key_from_url(file_url: str | None) -> str | None:
@@ -160,10 +169,21 @@ class BlobStore:
 		except ResourceNotFoundError:
 			pass
 
-	def sas_url(self, blob_key: str) -> str:
-		"""A short-lived read link, cached until just before it expires."""
+	def sas_url(self, blob_key: str, attachment_name: str | None = None) -> str:
+		"""A short-lived read link, cached until just before it expires.
+
+		`attachment_name` signs a `Content-Disposition: attachment` onto the link, which is the ONLY way a
+		browser saves a blob instead of opening it: the proxy redirects OFF this origin, and the HTML
+		`download` attribute is same-origin-only, so it is silently ignored the moment the hop lands on
+		Azure. Azure applies the header it was handed because the SAS covers it — nothing is proxied, and
+		the bytes still come straight from the container.
+
+		The disposition is part of the CACHE KEY. One cache for both flavours would hand the player a link
+		that makes the browser download the audio instead of playing it, depending only on who asked first.
+		"""
 		container = self._container_for_key(blob_key)
-		cache_key = f"{_SAS_CACHE_PREFIX}{container}::{blob_key}"
+		disposition = f'attachment; filename="{_slug(attachment_name)}"' if attachment_name else None
+		cache_key = f"{_SAS_CACHE_PREFIX}{container}::{blob_key}::{disposition or 'inline'}"
 		cached = frappe.cache().get_value(cache_key)
 		if cached:
 			return cached
@@ -178,6 +198,7 @@ class BlobStore:
 			account_key=self.service.credential.account_key,
 			permission=BlobSasPermissions(read=True),
 			expiry=frappe.utils.get_datetime_in_timezone("UTC") + timedelta(seconds=ttl),
+			content_disposition=disposition,
 		)
 		url = f"{self._blob(blob_key).url}?{token}"
 		frappe.cache().set_value(cache_key, url, expires_in_sec=max(ttl - _SAS_CACHE_SKEW, _SAS_CACHE_SKEW))

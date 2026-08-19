@@ -195,11 +195,16 @@ def _fetch(ref):
 	"no bytes" on every attempt for ever. `transfer.fetch_capped` follows the chain and vets EVERY hop,
 	which is what the SSRF guard could always have supported; it also drops our bearer token the moment
 	the host changes, so a provider's credential never reaches whoever its redirect names.
+
+	`ref.allowed_hosts` is the operator's own narrowing, applied on every hop alongside the generic guard —
+	the same allowlist a play-time proxy would have applied, asked here instead because this is now the one
+	place a producer's URL is ever fetched.
 	"""
 	content, content_type = transfer.fetch_capped(
 		ref.url,
 		timeout=FETCH_TIMEOUT,
 		headers=ref.headers or None,
+		allowed_hosts=ref.allowed_hosts or None,
 		chunk=_CHUNK,
 	)
 	if not content:
@@ -267,6 +272,9 @@ def media_for(call):
 
 	`recording.url` is present only when the bytes are OURS. The producer's URL is on the row and is not in
 	this answer: playback is stored-or-nothing, so a screen with no URL says so rather than reaching out.
+
+	`download_url` is the SAVE flavour of the same route, asked for here rather than assembled in a browser:
+	an offloaded file is served by a redirect off this origin, where `<a download>` stops applying.
 	"""
 	frappe.has_permission(CALL_DT, "read", call, throw=True)
 	row = frappe.db.get_value(
@@ -279,11 +287,13 @@ def media_for(call):
 		return {"call": call, "recording": None, "transcript": None}
 
 	recording = {"state": row.recording_state or None, "source": row.recording_source, "url": None,
-	             "file_name": None}
+	             "file_name": None, "download_url": None}
 	if row.recording_state == STORED and row.recording_file:
 		stored = frappe.db.get_value("File", row.recording_file, ["file_url", "file_name"], as_dict=True)
 		if stored:
-			recording.update(url=stored.file_url, file_name=stored.file_name)
+			# Two flavours of ONE route: the player streams it, a Download control saves it under its name.
+			recording.update(url=stored.file_url, file_name=stored.file_name,
+			                 download_url=file_manager.attachment_url(stored.file_url))
 		else:
 			# The row outlived its File. Say so plainly rather than claiming audio a screen cannot play.
 			recording["state"] = None
@@ -338,6 +348,10 @@ def _sweep():
 	Those are what this retries, with backoff, until the budget is spent. A row parked Awaiting by a
 	`pending` ref carries NO url and NO next attempt, so this never sees it: "not ready yet" is answered by
 	the producer's next delivery through the webhook spine, not by us polling a URL that does not exist yet.
+
+	A rebuilt ref carries the URL and the producer, and no operator allowlist — that is DERIVED from an
+	account at ingest and is deliberately not copied onto a row, so a retry runs on the generic guard alone
+	(http(s) only, every hop resolving to the public internet), which is the same guard it always ran on.
 
 	THE ADAPTER-RESOLUTION RULE, written down here so the next person does not add a column for it. If a
 	future producer ever has to be RE-ASKED rather than re-fetched, resolve its adapter the way the row's

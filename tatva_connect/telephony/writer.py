@@ -12,6 +12,7 @@ the whole job — the lead's Calls tab needs no UI work.
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
+from tatva_connect.storage import call_media
 from tatva_connect.telephony import resolve
 
 CALL_LOG = "CRM Call Log"
@@ -67,8 +68,34 @@ def write(cdr) -> str:
 		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + strict phone+grain attribution
 
 	frappe.db.commit()
+	adopt_recording(doc.name, cdr.get("recording_ref"))
 	_publish(doc)
 	return doc.name
+
+
+def adopt_recording(name, ref) -> None:
+	"""Hand the adapter's answer to the media layer, and point the row at OUR copy of the audio.
+
+	THE ROW NEVER HOLDS A PROVIDER'S URL AGAIN. A provider ages its recordings out and the link dies with
+	them, which is how a lead's Calls tab ends up with a play button that fetches a 404 from somebody
+	else's host. `store_recording` fetches the bytes once, owns them to this call, and Azure offload
+	follows from the File row like every other file in the app — none of which is re-implemented here.
+
+	Provider-blind, like the rest of this module: the ref is DATA the adapter built, so adding a telephony
+	provider still adds an adapter and nothing else. Called on the update path too, because a first CDR can
+	arrive before the recording is published and the hangup CDR is what carries it.
+
+	AFTER the call row is committed, and committed itself: the fetch reaches a provider over the network,
+	and a worker killed mid-fetch must still leave the call logged. A failure is not raised — it lands on
+	the media row with its reason and its next attempt, which is what the retry sweep reads.
+	"""
+	if ref is None:
+		return  # a row this app did not ingest from a CDR — the media layer does not invent state for it
+	ours = call_media.store_recording(name, ref)
+	if ours:
+		frappe.db.set_value(CALL_LOG, name, "recording_url", ours, update_modified=False)
+	# Committed whatever the answer was: Awaiting-with-a-next-attempt is the state the sweep retries from.
+	frappe.db.commit()
 
 
 def _publish(doc) -> None:
@@ -100,8 +127,6 @@ def _apply(doc, cdr) -> None:
 		doc.custom_telephony_account = cdr["account"]
 	if cdr.get("duration_sec"):
 		doc.duration = cdr["duration_sec"]
-	if cdr.get("recording_url"):
-		doc.recording_url = cdr["recording_url"]
 	if cdr.get("started_at"):
 		doc.start_time = cdr["started_at"]
 	if cdr.get("ended_at"):
