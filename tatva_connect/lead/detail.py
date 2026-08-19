@@ -127,17 +127,25 @@ def _docfield(target_doctype, fieldname):
 		return None
 
 
-def _is_readonly(section, fieldname, is_multi_value=False):
-	"""Read-only iff a protected routing field, the section's own row key, the docfield says so, or the
-	field is unknown (fail-closed: an unresolvable field is never writable).
+def _is_readonly(section, fieldname, is_multi_value=False, new_observation=False):
+	"""Read-only iff a protected routing field, the row key of a row being EDITED, the docfield says so,
+	or the field is unknown (fail-closed: an unresolvable field is never writable).
 
 	A multi-row section's row key is the row's ADDRESS, not a value on it: editing it re-keys the row, so
 	the next write naming the original key appends a duplicate instead of updating. Read off the section
 	that declares it, never restated here — a single-row section declares none and loses nothing.
 
+	BUT A NEW OBSERVATION HAS NO ADDRESS YET. `_stage_section` appends a fresh row for one, so there is
+	nothing to re-key and the danger above cannot arise — while refusing it there means a row is born with
+	a BLANK key, which no later write can ever target. That is not hypothetical: `Plan retool` asks the rep
+	for `Assign plan Date Time` and stars it, because that stamp IS how a plan row gets its identity, and
+	locking it turned the form into one nobody could submit.
+
 	A multi-value field has no column on the section's doctype ON PURPOSE, so the fail-closed branch is
 	not the right answer for it: what makes it writable is the catalog tick, and that is asked here."""
-	if fieldname in _PROTECTED_FIELDS or fieldname == (section.row_key_field or ""):
+	if fieldname in _PROTECTED_FIELDS:
+		return True
+	if fieldname == (section.row_key_field or "") and not new_observation:
 		return True
 	if is_multi_value:
 		return False
@@ -145,12 +153,17 @@ def _is_readonly(section, fieldname, is_multi_value=False):
 	return bool(df.read_only) if df else True
 
 
-def writable_keys(selected, is_readonly):
+def writable_keys(selected, is_readonly, new_observation=False):
 	"""The field_keys writable through update_lead_detail: those whose target field is not read-only.
-	Target doctype is read off the section brain; `is_readonly(target_doctype, fieldname)` is injected."""
+	Target doctype is read off the section brain; `is_readonly(target_doctype, fieldname)` is injected.
+
+	`new_observation` rides through because WHAT THE WRITE IS decides whether a row key may be set — see
+	`_is_readonly`. The Data tab edits the row it is showing and passes False; an activity punch is a fresh
+	observation and passes True."""
 	out = set()
 	for fk, row in selected.items():
-		if not is_readonly(_section_of(row), row.get("fieldname") or "", cint(row.get("is_multi_value"))):
+		if not is_readonly(_section_of(row), row.get("fieldname") or "",
+		                   cint(row.get("is_multi_value")), new_observation):
 			out.add(fk)
 	return out
 
@@ -698,7 +711,7 @@ def update_lead_detail(lead, changes, new_observation=False):
 		frappe.throw(_("Invalid changes payload"))
 	doc = frappe.get_doc("CRM Lead", lead)
 	selected = _select(doc)
-	writable = writable_keys(selected, _is_readonly)
+	writable = writable_keys(selected, _is_readonly, new_observation)
 	for fk in changes:
 		if fk not in writable:
 			frappe.throw(_("Field {0} is not editable here").format(fk))

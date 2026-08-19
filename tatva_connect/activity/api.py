@@ -22,7 +22,7 @@ from frappe.utils import cint, cstr, flt, format_datetime, formatdate, get_datet
 
 from tatva_connect.access import entitlement, posture
 from tatva_connect.storage import blob_store, file_events, file_names
-from tatva_connect.taxonomy import grain, labels
+from tatva_connect.taxonomy import grain, labels, picklist
 from tatva_connect.taxonomy.grain import resolve_scoped
 from tatva_connect.taxonomy.labels import TASK_TYPE
 
@@ -56,6 +56,8 @@ LEAD_SOURCE = "Lead"
 
 # The dotted path a `Link -> User` control hands `search_link` as its `query`. Spelled once.
 USER_QUERY = "tatva_connect.activity.api.user_query"
+# The SAME scoped query `lead.detail._link_query` names, for the same reason: a picklist picker read through the generic list path demands CRM Picklist Value read, which no rep holds.
+PICKLIST_QUERY = "tatva_connect.taxonomy.picklist.picklist_query"
 
 # Which role a person field may offer. Read by the picker AND the save, so neither can disagree with the other.
 FIELD_ROLE = {"select_asm": "Sales Manager"}
@@ -481,14 +483,39 @@ def _field_descriptor(f):
 
 
 def _link_query(f):
-	"""The scoped query a `Link -> User` picker asks, or None for any other Link (which keeps the native one).
+	"""The scoped query a Link picker asks, or None for a Link the framework can answer natively.
 
 	Same seam and same reason as `lead.detail._link_query`: `search_link` reads the master through the generic
-	list path, so it demands User read — which `lockdown.BASELINE_ROLE_TRIMS` strips from every rep so nobody
-	can pull the staff directory. Left native, the picker answers with the one row frappe always allows: you."""
-	if not (f.fieldtype == "Link" and (f.options or "") == "User"):
+	list path, so it demands read on that master — which `lockdown.BASELINE_ROLE_TRIMS` strips from every rep.
+	Left native, a User picker answers with the one row frappe always allows: you, and a picklist picker 403s.
+
+	A picklist Link also carries `depends_on_field` when its vocabulary cascades. The lead is NOT named here —
+	`_stamp_picklist_lead` adds it, because the descriptor is built per TYPE and the grain is per LEAD."""
+	if f.fieldtype != "Link":
 		return None
-	return {"query": USER_QUERY, "filters": {"fieldname": f.fieldname, "task_type": f.get("parent") or ""}}
+	options = f.options or ""
+	if options == "User":
+		return {"query": USER_QUERY, "filters": {"fieldname": f.fieldname, "task_type": f.get("parent") or ""}}
+	if options == "CRM Picklist Value":
+		category = picklist.category_of(f.fieldname)
+		q = {"query": PICKLIST_QUERY, "filters": {"category": category}}
+		parent = _cascade_parent(category)
+		if parent:
+			# The CLIENT owns the value: it changes as the rep answers, and `Link.vue` re-queries when its filters do.
+			q["depends_on_field"] = parent
+		return q
+	return None
+
+
+def _cascade_parent(category):
+	"""The question this category's options hang off, or None where the vocabulary is flat.
+
+	Declared BY the options themselves (`CRM Picklist Value.depends_on_field`) rather than beside them, so a
+	cascading vocabulary says so once and no second map can disagree with it — the rule `picklist_query`
+	already filters on. One indexed read per picklist Link per form open."""
+	return frappe.db.get_value(  # authz-ok: tier-a — reads one declaration column of a master, no lead or grain in it
+		"CRM Picklist Value", {"category": category, "depends_on_field": ("!=", "")}, "depends_on_field"
+	)
 
 
 def _one_condition(field, operator, value):
@@ -779,6 +806,71 @@ def _validate_person(f, val):
 		)
 
 
+# What a numeric answer must parse as. Spelled out because frappe's own caster is FORGIVING here —
+# `cast("Float", "pari@example.com")` is `0.0` and never raises — so a typed check cannot be built on it.
+_NUMERIC_FIELDTYPES = ("Int", "Float", "Currency", "Percent")
+
+
+def _validate_typed(f, val):
+	"""An answer must BE the type its question declares — the gate the framework does not provide.
+
+	`frappe.utils.cast` turns `pari@example.com` into `0.0` for a Float and `0` for an Int without a word.
+	The rep sees a saved form, the ACTIVITY keeps the text they typed and the LEAD keeps the zero, and the
+	two records disagree about the same answer with nobody told. Measured on a real punch: a snapshot
+	reading `pari@example.com` beside a lead column reading `0`.
+
+	Date and Datetime already raise on junk; they are caught here only so the rep reads their field's own
+	name instead of a dateutil traceback.
+
+	Blank is not judged — `_required_here` above owns whether an answer was needed at all. A `Check` is not
+	judged either: a checkbox cannot emit anything but its two values, and a gate nobody can trip is noise.
+	"""
+	if _blank(val) or not f.fieldtype:
+		return
+	if f.fieldtype in _NUMERIC_FIELDTYPES:
+		try:
+			float(cstr(val).strip().replace(",", ""))
+		except (TypeError, ValueError):
+			frappe.throw(
+				_("{0} takes a number, and {1} is not one.").format(f.label, val),
+				title=_("Invalid {0}").format(f.label),
+			)
+		return
+	if f.fieldtype in ("Date", "Datetime"):
+		try:
+			frappe.utils.cast(f.fieldtype, val)
+		except Exception:
+			frappe.throw(
+				_("{0} takes a date, and {1} is not one.").format(f.label, val),
+				title=_("Invalid {0}").format(f.label),
+			)
+
+
+def _validate_picklist(f, val, answers, axes):
+	"""A picklist field takes only a value its own picker could have offered — the WRITE half of `_link_query`.
+
+	It re-asks the picker's question, CASCADE INCLUDED: a plan belonging to another condition is refused even
+	though the row is real, because the rep who changed the driver was never shown it. Without this the
+	narrowing is advice, and a stale form, the partner API or a replay may ignore it. Grain is the lead's own,
+	matched the way `picklist._grain_filters` matches it so the read and the write clamp identical rows."""
+	if not (val and f.fieldtype == "Link" and (f.options or "") == "CRM Picklist Value"):
+		return
+	category = picklist.category_of(f.fieldname)
+	conds = {"name": val, "category": category}
+	conds.update(picklist._grain_filters(axes))
+	parent = _cascade_parent(category)
+	if parent:
+		# Blank is admitted so an ungated row still passes — the same `in [value, ""]` the query reads with.
+		conds["depends_on_value"] = ["in", [cstr(answers.get(parent) or ""), ""]]
+	if frappe.db.exists("CRM Picklist Value", conds):  # authz-ok: tier-a — existence of one row already clamped to the lead's grain
+		return
+	frappe.throw(
+		_("{0} is not an option this form offers for the {1} chosen.").format(f.label, parent or _("grain"))
+		if parent else _("{0} is not an option this form offers.").format(f.label),
+		title=_("Invalid {0}").format(f.label),
+	)
+
+
 @frappe.whitelist()
 def user_query(doctype, txt, searchfield, start, page_len, filters):
 	"""The people a `Link -> User` activity field may offer — `search_link`'s custom-query seam.
@@ -979,6 +1071,12 @@ def compute_activity(lead, task_type, values, task=None, new_observation=True):
 		if _required_here(f, shown, live) and _blank(val):
 			frappe.throw(_("{0} is required.").format(f.label), title=_("Missing field"))
 		_validate_person(f, val)  # a person field takes only who its picker could have offered
+		_validate_picklist(f, val, values, (vertical, group, program))  # and a picklist only what ITS picker could, cascade included
+		# A REP's answer must be the type it declares; a REPLAY's is not judged. The migration lands what
+		# LeadSquared recorded, junk included — history is not ours to rewrite, and a throw here would abort
+		# the load. Same carve-out `lead_writes` makes above, read off the same posture.
+		if lead_writes is not None:
+			_validate_typed(f, val)
 		# Route by the ONE seam: a retained common column stays on the task row, every other value is its section row's. A lead-sourced field is routed like any other — what it means is snapshot, not answer, and the section it declares is where that snapshot lands.
 		section_key, column = field_target(f)
 		if section_key is None:
@@ -1130,9 +1228,14 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 	own = _own_columns(task_fields)
 
 	if task:
-		# The ONE edit path: this punch already recorded its answers, so a lead field it writes CORRECTS
-		# the row it wrote and does not add another. Both paths below are new punches.
-		fields = compute_activity(lead, task_type, values, task=task, new_observation=False)
+		# An EDIT corrects the row this punch already wrote; a FIRST punch adds one. What separates them is
+		# whether this task has been punched before — NOT whether a task name was supplied. Every task the
+		# workflow engine raises exists before the rep opens it, so keying on `if task` classed every first
+		# punch as an edit: the lead write then corrected a row that was never written, and a multi-row
+		# section's row key — `Plan retool`'s `Assign plan Date Time`, which IS the plan row's identity —
+		# was refused as a re-key of a row that did not exist.
+		already_punched = frappe.db.get_value("CRM Task", task, "status") == "Done"
+		fields = compute_activity(lead, task_type, values, task=task, new_observation=not already_punched)
 		doc = frappe.get_doc("CRM Task", task)
 		doc.update(own)
 		doc.update(fields)
@@ -1303,7 +1406,22 @@ def type_config(task_type, lead=None):
 		frappe.throw(_("Task type {0} not found").format(task_type))
 	cfg["lead_values"] = lead_field_values(lead, task_type) if lead else {}
 	_stamp_lead_controls(lead, cfg["fields"])
+	_stamp_picklist_lead(lead, cfg["fields"])
 	return cfg
+
+
+def _stamp_picklist_lead(lead, fields):
+	"""Name the lead in every picklist picker's filters — `picklist_query` re-reads the grain off it, server-side.
+
+	Stamped per CALL and never in `_link_query`, for the reason `_stamp_lead_controls` is: the descriptor
+	belongs to the TYPE and the grain belongs to the LEAD. Without a lead the filters stay grainless and the
+	query answers nothing, which is the honest answer for a form opened against no patient."""
+	if not lead:
+		return
+	for f in fields:
+		lq = f.get("link_query")
+		if lq and lq.get("query") == PICKLIST_QUERY:
+			lq["filters"]["lead"] = lead
 
 
 # What a lead field IS, which the LEAD decides and a form must never restate — see `_stamp_lead_controls`.
