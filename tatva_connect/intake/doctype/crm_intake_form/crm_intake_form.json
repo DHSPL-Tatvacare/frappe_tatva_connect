@@ -198,8 +198,9 @@
    "label": "Success Title"
   },
   {
+   "description": "Plain text. Frappe escapes this on the public page, so a tag typed here is shown to the patient as a tag; line breaks work on their own.",
    "fieldname": "success_message",
-   "fieldtype": "Text Editor",
+   "fieldtype": "Small Text",
    "label": "Success Message"
   },
   {
@@ -321,7 +322,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-08-18 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Intake",
  "name": "CRM Intake Form",

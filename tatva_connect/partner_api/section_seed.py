@@ -7,7 +7,13 @@ _ROWS = [
 	{"section_key": "lead", "title": "Lead Details", "display_order": 10, "child_table_field": "", "target_doctype": "CRM Lead", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
 	# Multi-row: a patient is acquired more than once, so every campaign touch is its own row.
 	{"section_key": "acq", "title": "Acquisition", "display_order": 20, "child_table_field": "custom_acquisition_profile", "target_doctype": "CRM Acquisition Profile", "is_multi_row": 1, "row_key_field": "touch_at", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
-	{"section_key": "plan", "title": "Plan", "display_order": 30, "child_table_field": "custom_plan_profile", "target_doctype": "CRM Plan Profile", "is_multi_row": 0, "row_key_field": "", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
+	# Multi-row: a patient buys more than once, and a plan is what was bought. Single-row, the second Post
+	# Sales punch OVERWROTE the first — BCA Device, CGM, Nutraceuticals, Duration, Drug Name and Diagnostics
+	# all lost their earlier answer, while `products` beside it kept both purchases.
+	# Keyed on its own date, the same shape every other multi-row section uses: acq on `touch_at`, products
+	# on `custom_start_date`, lab on `report_date`, drug on `cycle_date`. Rows that predate the key are
+	# addressed by `stamp_plan_assigned_date`, exactly as `stamp_acquisition_touch_at` did for acq.
+	{"section_key": "plan", "title": "Plan", "display_order": 30, "child_table_field": "custom_plan_profile", "target_doctype": "CRM Plan Profile", "is_multi_row": 1, "row_key_field": "custom_plan_assigned_date", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
 	# Multi-row: a patient buys more than once, so every purchase is its own row. Keyed on the start date and never the SKU, which the rep must stay able to pick.
 	{"section_key": "products", "title": "Plan Purchased", "display_order": 35, "child_table_field": "products", "target_doctype": "CRM Products", "is_multi_row": 1, "row_key_field": "custom_start_date", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},
 	{"section_key": "lab", "title": "Lab", "display_order": 40, "child_table_field": "custom_lab_profile", "target_doctype": "CRM Lab Profile", "is_multi_row": 1, "row_key_field": "report_date", "is_key_value": 0, "value_field": "", "label_field": "", "question_field": ""},

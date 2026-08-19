@@ -3,9 +3,9 @@
 
 """Override of core `Assignment Rule`: gate CRM Lead assignment on grain.
 
-A grain-tagged rule (grain_vertical/group/program — fixtures, mandatory only for
-CRM Lead) may only fire on a lead whose grain matches every set axis. Stock for
-non-CRM-Lead rules and for rules with no grain set."""
+A grain-tagged rule may only fire on a lead whose grain matches every SET axis; a blank axis is a wildcard.
+Stock for non-CRM-Lead rules and for rules with no grain set. Vertical and group are mandatory on a CRM Lead
+rule, `grain_program` is not — one Anaya rule must serve Sigrima, Ujvira, Tukavo and Nivolumab."""
 
 from frappe.automation.doctype.assignment_rule.assignment_rule import AssignmentRule
 

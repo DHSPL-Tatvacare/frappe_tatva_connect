@@ -28,16 +28,29 @@ def sql_source(section):
 	return "child" if section.get("child_table_field") else "parent"
 
 
+_CHILD_SECTIONS_CACHE = "tatva_connect:child_sections"
+
+
 def child_sections():
 	"""Every section that lives in a child table, as section docs.
 
 	A caller wanting the ONE row a section resolves to passes each of these to
 	`lead.multirow.row_for_section` — the same rule the Data tab and a Smart View read through. Listed
-	here beside `sql_source` so nobody re-filters `CRM Lead Section` by hand."""
-	return [
-		frappe.get_cached_doc("CRM Lead Section", r.name)
-		for r in frappe.get_all("CRM Lead Section", filters={"child_table_field": ["!=", ""]}, fields=["name"])
-	]
+	here beside `sql_source` so nobody re-filters `CRM Lead Section` by hand.
+
+	Request-cached, and not as a nicety: `section_for_child` walks this list and both the publish gate and the
+	authoring answer ask it ONCE PER NODE, so a 25-node graph paid 25 identical `get_all`s for a set that
+	cannot change inside a request. The docs were already `get_cached_doc`; only the listing query was not.
+	"""
+	from tatva_connect.access import request_cache
+
+	def build():
+		return [
+			frappe.get_cached_doc("CRM Lead Section", r.name)
+			for r in frappe.get_all("CRM Lead Section", filters={"child_table_field": ["!=", ""]}, fields=["name"])
+		]
+
+	return request_cache(_CHILD_SECTIONS_CACHE, "all", build)
 
 
 def section_for_child(value):

@@ -419,22 +419,23 @@ def lead_detail(lead, doctype="CRM Lead"):
 	return {"sections": sections, "lead": lead, "read_only": doctype != "CRM Lead"}
 
 
-def _stage_write(doc, section, row, value):
-	"""Stage one field write onto the in-memory doc (parent field or child row). Goes through the
-	doc API only — never raw SQL.
+def _stage_section(doc, section, staged, new_observation=False):
+	"""Stage every write to ONE section onto ONE row, choosing that row once.
 
-	A multi-value field is staged at the SAME address it was read from (`_row_key`), so an edit lands on
-	the row the reader was looking at, and the lead's own save persists it with everything else."""
+	A multi-value field keeps its own address and is staged individually — the row it belongs to is its
+	own (`_row_key`), not this one."""
 	table = section.child_table_field
-	fieldname = row.get("fieldname")
-	if cint(row.get("is_multi_value")):
-		multi_value.replace(doc, row.get("field_key"), _row_key(doc, section), value or [])
-		return
-	if not table:
-		doc.set(fieldname, value)
-		return
-	child = _child_row(doc, section) or doc.append(table, {})
-	child.set(fieldname, value)
+	child = None
+	if table and any(not cint(r.get("is_multi_value")) for r, _v in staged):
+		fresh = new_observation and _is_multi_row(section)
+		child = doc.append(table, {}) if fresh else (_child_row(doc, section) or doc.append(table, {}))
+	for row, value in staged:
+		if cint(row.get("is_multi_value")):
+			multi_value.replace(doc, row.get("field_key"), _row_key(doc, section), value or [])
+		elif not table:
+			doc.set(row.get("fieldname"), value)
+		else:
+			child.set(row.get("fieldname"), value)
 
 
 def _entry(value, display, on, source):
@@ -681,10 +682,16 @@ def lead_detail_rows(lead, section, search=None, filters=None, order_by=None,
 
 
 @frappe.whitelist()
-def update_lead_detail(lead, changes):
+def update_lead_detail(lead, changes, new_observation=False):
 	"""Write path. `changes` is {field_key: value}. Only field_keys in the SERVER-BUILT writable
 	projection (entitled ∧ not read-only ∧ not protected) are accepted; anything else is rejected.
-	Persists via doc.save() so field perms, validate and doc_events all re-fire."""
+	Persists via doc.save() so field perms, validate and doc_events all re-fire.
+
+	`new_observation` says WHAT this write is, and only a MULTI-ROW section can tell the difference. The
+	Data tab edits the row it is showing — the latest, the same one every consumer flattens to — so it
+	leaves this False. An activity form's answers are a fresh observation with no row in hand, so they land
+	on a NEW row: a second payment is a second purchase, not an edit of the first. 30% of paying patients
+	have more than one payment, and updating the latest silently destroyed the earlier one."""
 	posture.require("CRM Lead", "write", doc=lead)
 	changes = frappe.parse_json(changes) if isinstance(changes, str) else (changes or {})
 	if not isinstance(changes, dict):
@@ -692,16 +699,23 @@ def update_lead_detail(lead, changes):
 	doc = frappe.get_doc("CRM Lead", lead)
 	selected = _select(doc)
 	writable = writable_keys(selected, _is_readonly)
-	for fk, value in changes.items():
+	for fk in changes:
 		if fk not in writable:
 			frappe.throw(_("Field {0} is not editable here").format(fk))
+	# Grouped by SECTION because a row is chosen once per write and not once per field: a payment id and
+	# its amount arriving together belong on ONE row, and staging them separately made two.
+	staged = {}
+	for fk, value in changes.items():
 		row = selected[fk]
-		_stage_write(doc, _section_of(row), row, value)
+		section = _section_of(row)
+		staged.setdefault(section.name, (section, []))[1].append((row, value))
+	for section, rows in staged.values():
+		_stage_section(doc, section, rows, new_observation)
 	doc.save()
 	return {"ok": True}
 
 
-def write_lead_fields(lead, values):
+def write_lead_fields(lead, values, new_observation=True):
 	"""`update_lead_detail` addressed by FIELDNAME — what an activity form's `source = Lead` answers write through. Address translation only: the gate, the staging and the save stay `update_lead_detail`'s."""
 	if not values:
 		return {}
@@ -713,4 +727,4 @@ def write_lead_fields(lead, values):
 			# None means no section declares it here; more than one means the fieldname names no single row.
 			frappe.throw(_("Field {0} has no single home on this lead").format(fieldname))
 		changes[found[0]] = value
-	return update_lead_detail(lead, changes)
+	return update_lead_detail(lead, changes, new_observation=new_observation)
