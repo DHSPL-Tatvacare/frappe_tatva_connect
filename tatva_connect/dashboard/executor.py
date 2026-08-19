@@ -22,7 +22,7 @@ import calendar
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, cint, flt, getdate, now, nowdate
+from frappe.utils import add_days, add_months, cint, flt, getdate, now, nowdate
 
 from tatva_connect import tokens
 from tatva_connect.access import visibility
@@ -33,7 +33,18 @@ from tatva_connect.taxonomy import labels
 _ROUTES = {"CRM Lead": "Leads", "CRM Task": "Tasks"}
 
 # This surface's own vocabulary; the walker that applies it is shared with the list engine (tokens.py).
-_TOKENS = {"__TODAY__": nowdate, "__NOW__": now, "__SESSION_USER__": lambda: frappe.session.user}
+# How far back "overdue" looks. A floor is not cosmetic: without one the filter reads `due_date > 1900`,
+# which matches 103,655 of 108,103 open tasks — 16% of the table — and at that share MariaDB correctly
+# refuses `ix_status_due_date` and scans all 646,026 rows. With the floor the same query is a range seek
+# over 17,131 rows. 90 days is the operator's call, not a technical constant.
+OVERDUE_FLOOR_DAYS = 90
+
+_TOKENS = {
+	"__TODAY__": nowdate,
+	"__NOW__": now,
+	"__SESSION_USER__": lambda: frappe.session.user,
+	"__OVERDUE_FLOOR__": lambda: add_days(nowdate(), -OVERDUE_FLOOR_DAYS),
+}
 
 # A filter IS a fieldname. These two are not: a period is no column at all, and `user` means a different column per list.
 DATE_RANGE = "date_range"

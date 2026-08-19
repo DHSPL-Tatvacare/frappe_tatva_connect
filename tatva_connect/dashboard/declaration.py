@@ -38,6 +38,12 @@ READ = PRESENTATION + STRUCTURAL
 
 LAYOUT_FIELDS = ("name", "role", "title", "priority", "exposed_filters")
 
+# A layout splits the same way a chart does. `title` is the operator's wording, seeded once and never
+# re-imposed; the rest is what this app's code depends on and is re-asserted on every migrate. Without
+# that split a layout created before a filter existed keeps offering none of them for ever — which is
+# exactly how one UAT dashboard ended up with `exposed_filters = []` and no way to heal itself.
+LAYOUT_STRUCTURAL = ("priority", "exposed_filters")
+
 PLACEMENT = ("chart", "x", "y", "w", "h")
 
 # Which of the schema's chart types the executor draws an axis for; `number` is the figure alone.

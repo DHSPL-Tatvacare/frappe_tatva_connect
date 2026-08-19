@@ -58,24 +58,40 @@ def _card(chart_name, label, subtitle, chart_type, source_doctype, **declared):
 
 
 _CHARTS = [
-	_card("total_leads", "Leads", "Created in range", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
-	_card("total_tasks", "Tasks", "Created in range", "number", "CRM Task", date_field="creation", honours_date_range=1),
-	# A snapshot, not a range: "still open" is a fact about now, and dating it by creation answers something else.
-	_card("pending_tasks", "Open Tasks", "Open right now", "number", "CRM Task", base_filters={"status": _OPEN}),
+	_card("total_leads", "Leads", "In selected period", "number", "CRM Lead", base_filters=_UNCONVERTED, date_field="creation", honours_date_range=1),
+	_card("total_tasks", "Tasks", "In selected period", "number", "CRM Task", date_field="creation", honours_date_range=1),
+	# Bound by DUE DATE, not creation: dating it by creation answers a different question ("opened this
+	# month"), but leaving it unbound asks an unbounded one on a screen that is a date range by nature —
+	# and unbounded means `status IN (3)` alone, which matches 16% of the table, so MariaDB scans all
+	# 646,026 rows rather than use an index. Due date is the column a rep acts on and the one indexed
+	# beside status. Only 3 of 108,103 open tasks carry no due date, so nothing meaningful is dropped.
+	_card("pending_tasks", "Open Tasks", "Due in selected period", "number", "CRM Task", base_filters={"status": _OPEN}, date_field="due_date", honours_date_range=1),
 	# `between` and not `<`: frappe compares as ifnull(due_date, ''), so `<` counts every task that has NO due date as overdue.
-	_card("overdue_tasks", "Overdue Tasks", "Past due date", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["1900-01-01", "__NOW__"]]}),
+	# NOT bound to the dashboard window, unlike its neighbours: the window's default runs to the END of the
+	# current month, and a task due later this month is not overdue — letting the range set the upper bound
+	# would count it. The cap stays `__NOW__` and the FLOOR does the narrowing instead, which is what makes
+	# `ix_status_due_date` usable: 646,026 rows scanned becomes 17,131 sought.
+	_card("overdue_tasks", "Overdue Tasks", f"Last {executor.OVERDUE_FLOOR_DAYS} days", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["between", ["__OVERDUE_FLOOR__", "__NOW__"]]}),
 	# CRM Task carries no completion date, so `modified` is the closest honest stamp for when it was closed.
-	_card("completed_tasks", "Completed Tasks", "Closed in range", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
+	_card("completed_tasks", "Completed Tasks", "In selected period", "number", "CRM Task", base_filters={"status": "Done"}, date_field="modified", honours_date_range=1),
 	# `timespan` is frappe's own relative-date operator (query.py:576 -> utils/data.py get_timespan_date_range).
-	_card("tasks_due_today", "Due Today", "Due before midnight", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
-	_card("leads_by_source", "Leads by Source", "Acquisition channel", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
-	_card("leads_by_vertical", "Leads by Product Line", "Product line split", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
-	_card("leads_by_substage", "Leads by Stage", "Current stage", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_substage", date_field="creation", honours_date_range=1),
-	_card("leads_by_owner", "Leads by Owner", "Ownership split", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
+	_card("tasks_due_today", "Tasks Due Today", "Today", "number", "CRM Task", base_filters={"status": _OPEN, "due_date": ["timespan", "today"]}),
+	_card("leads_by_source", "Leads by Source", "In selected period", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="source", date_field="creation", honours_date_range=1),
+	_card("leads_by_vertical", "Leads by Product Line", "In selected period", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_vertical", date_field="creation", honours_date_range=1),
+	_card("leads_by_substage", "Leads by Stage", "In selected period", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="custom_substage", date_field="creation", honours_date_range=1),
+	_card("leads_by_owner", "Leads by Owner", "In selected period", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
 	# The two task bars are the same records cut two ways, so each names its own cut and neither says "status".
-	_card("tasks_by_status", "Task Progress", "Workflow state", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
+	_card("tasks_by_status", "Tasks by Status", "In selected period", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
 	# A snapshot, like the two open-task cards: who is carrying what RIGHT NOW, not who was given work in a window.
-	_card("tasks_by_owner_and_status", "Workload by Owner", "Open tasks now", "heatmap", "CRM Task", group_by_field="assigned_to", split_by="status", base_filters={"status": _OPEN}),
+	_card("tasks_by_owner_and_status", "Tasks by Owner and Status", "Right now", "heatmap", "CRM Task", group_by_field="assigned_to", split_by="status", base_filters={"status": _OPEN}),
+	# `due_state` and `sla_state` are DERIVED fields, not columns — the executor resolves them through
+	# `list_engine.derived`, which is why a group_by can name one and no schema change is needed.
+	_card("tasks_by_due_state", "Tasks by Due State", "In selected period", "bar", "CRM Task", group_by_field="due_state", date_field="creation", honours_date_range=1, drill_enabled=1),
+	_card("leads_by_sla_state", "Leads by SLA State", "In selected period", "bar", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="sla_state", date_field="creation", honours_date_range=1, drill_enabled=1),
+	# A miss is a lead whose response was due and never came: `response_by` in the past AND no
+	# `first_responded_on`. Bounded by the window on `creation`, so the open-ended `response_by` floor
+	# costs nothing — the range has already narrowed the rows.
+	_card("leads_sla_missed_by_owner", "SLA Misses by Owner", "In selected period", "bar", "CRM Lead", base_filters={**_UNCONVERTED, "response_by": ["between", ["1900-01-01", "__NOW__"]], "first_responded_on": ["is", "not set"]}, group_by_field="lead_owner", date_field="creation", honours_date_range=1, drill_enabled=1),
 ]
 
 
@@ -92,7 +108,10 @@ _PLACED = (
 	("leads_by_owner", 0, 8, 6, 6),
 	("leads_by_substage", 6, 8, 6, 6),
 	("tasks_by_status", 0, 14, 6, 6),
+	("tasks_by_due_state", 6, 14, 6, 6),
 	("tasks_by_owner_and_status", 0, 20, 12, 6),
+	("leads_by_sla_state", 0, 26, 6, 6),
+	("leads_sla_missed_by_owner", 6, 26, 6, 6),
 )
 
 
@@ -151,6 +170,45 @@ def ensure_rows():
 			frappe.db.set_value(declaration.CHART, row["chart_name"], declared)  # authz-ok: tier-c — after_migrate, structural fields this app owns
 	for row in _LAYOUTS:
 		# Matched on the ROLE, never the name: the name is a title an operator may reword, and that is not a delete.
-		if not frappe.db.exists(declaration.LAYOUT, {"role": row["role"]}) and frappe.db.exists("Role", row["role"]):
-			frappe.get_doc({"doctype": declaration.LAYOUT, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
+		existing = frappe.db.get_value(declaration.LAYOUT, {"role": row["role"]}, "name")
+		if not existing:
+			if frappe.db.exists("Role", row["role"]):
+				frappe.get_doc({"doctype": declaration.LAYOUT, **row}).insert(ignore_permissions=True)  # authz-ok: tier-c — after_migrate, no session user
+			continue
+		# Re-asserted exactly as a chart's STRUCTURAL fields are: which filters the page offers is this
+		# app's behaviour, not the operator's wording, so a layout that predates a filter gets it.
+		declared = {field: row[field] for field in declaration.LAYOUT_STRUCTURAL}
+		stored = frappe.db.get_value(declaration.LAYOUT, existing, declaration.LAYOUT_STRUCTURAL, as_dict=True)
+		if any(cstr(stored[field]) != cstr(declared[field]) for field in declaration.LAYOUT_STRUCTURAL):
+			frappe.db.set_value(declaration.LAYOUT, existing, declared)  # authz-ok: tier-c — after_migrate, structural fields this app owns
 	frappe.db.commit()
+
+
+@frappe.whitelist()
+def restate_copy():
+	"""Push the DECLARED wording onto charts that already exist. A command, never part of the seed.
+
+	`PRESENTATION` (label, subtitle) is seeded once and deliberately never re-imposed, so an operator who
+	rewords a card keeps their words through every deploy. That rule is right, and it is also why editing
+	the wording in this file changes nothing on a site that already has the rows — there is no fresh site
+	any more. This is the explicit door: run it when the declared copy is meant to win.
+
+	    bench --site <site> execute tatva_connect.dashboard.seed.restate_copy
+
+	Touches only the charts this app declares. The three charts an operator built in the UI
+	(leads_by_sla_state, tasks_by_due_state, leads_sla_missed_by_owner) are theirs and are not named here,
+	so they are left exactly as written."""
+	changed = []
+	for row in _CHARTS:
+		name = row["chart_name"]
+		if not frappe.db.exists(declaration.CHART, name):
+			continue
+		declared = {field: row[field] for field in declaration.PRESENTATION}
+		stored = frappe.db.get_value(declaration.CHART, name, declaration.PRESENTATION, as_dict=True)
+		if any(cstr(stored[field]) != cstr(declared[field]) for field in declaration.PRESENTATION):
+			frappe.db.set_value(declaration.CHART, name, declared)
+			changed.append(name)
+	frappe.db.commit()
+	declaration.retire_cache()
+	print(frappe.as_json({"restated": changed, "unchanged": len(_CHARTS) - len(changed)}))
+	return changed
