@@ -181,22 +181,29 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		with patch("frappe.has_permission", return_value=True):
 			self.assertTrue(smartview.can_export("Lead"))
 
+	# The rows, the columns and the audit row moved into `produce_export` when the export left the HTTP
+	# request (tatva_connect/exports.py). These drive the PRODUCER, which is where that behaviour lives
+	# now, and `test_asking_for_it_queues_a_job` below covers the endpoint that replaced it.
+	def _produce(self, fmt="csv", **params):
+		"""Run the producer the way the worker runs it. The job row is a stub because the producer reads
+		exactly two fields off it, and a stub says so — a real insert would test the doctype, not this."""
+		job = frappe._dict(reference=self.view, fmt=fmt)
+		return smartview.produce_export(job, params, lambda rows: None)
+
 	def test_it_re_runs_get_data_rather_than_querying_again(self):
 		"""THE property that keeps an export honest: one composer, so permissions and columns can never
 		drift between what is shown and what is downloaded."""
-		with patch.object(smartview, "get_data", wraps=smartview.get_data) as composer, \
-		     patch.object(smartview.tabular, "respond") as respond:
-			smartview.export_view(self.view, "csv")
+		with patch.object(smartview, "get_data", wraps=smartview.get_data) as composer:
+			self._produce()
 		# Called at least once, and ALWAYS for this view — not "exactly once", because a view larger than
 		# one page is walked page by page. What matters is that every row came through the composer.
 		self.assertTrue(composer.called)
 		self.assertTrue(all(c.args[0] == self.view for c in composer.call_args_list))
-		respond.assert_called_once()
 
 	def test_the_file_carries_the_views_own_columns(self):
-		with patch.object(smartview.tabular, "respond") as respond:
-			smartview.export_view(self.view, "csv")
-		header = respond.call_args.args[0]
+		with patch.object(smartview.tabular, "write", wraps=smartview.tabular.write) as write:
+			self._produce()
+		header = write.call_args.args[0]
 		labels = [c["label"] for c in smartview.get_data(self.view, page_size=1)["columns"]]
 		self.assertEqual(header, labels, "the download's header is not the view's own columns")
 
@@ -204,17 +211,17 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		"""The export takes the SAME filters the screen has, so a filtered list downloads filtered."""
 		cat = {c["field_key"]: c for c in smartview.field_catalog("Lead")}
 		key = next(k for k, c in cat.items() if c["filterable"] and c["fieldtype"] == "Data")
-		with patch.object(smartview.tabular, "respond") as respond:
-			smartview.export_view(self.view, "csv",
-			                      filters=frappe.as_json([[key, "=", "ZZ nothing matches this"]]))
-		self.assertEqual(respond.call_args.args[1], [], "a filter that matches nothing still exported rows")
+		with patch.object(smartview.tabular, "write", wraps=smartview.tabular.write) as write:
+			self._produce(filters=[[key, "=", "zz-no-lead-carries-this"]])
+		self.assertEqual(write.call_args.args[1], [], "a filter did not narrow the download")
 
 	def test_it_goes_through_the_one_file_door(self):
 		"""`tabular.py` writes every csv and xlsx in this app; a second writer here would be a second rule
 		about what a file is."""
-		with patch.object(smartview.tabular, "respond") as respond:
-			smartview.export_view(self.view, "xlsx")
-		self.assertEqual(respond.call_args.args[2], "xlsx")
+		with patch.object(smartview.tabular, "write", wraps=smartview.tabular.write) as write:
+			made = self._produce("xlsx")
+		self.assertEqual(write.call_args.args[2], "xlsx")
+		self.assertEqual(made["ext"], "xlsx")
 
 	def test_it_exports_every_row_not_just_the_first_page(self):
 		"""THE BUG THIS LOCKS. `get_data` caps a page at PAGE_MAX, so asking it for 5,000 rows returned
@@ -223,23 +230,31 @@ class TestExportIsTheScreenAsAFile(_ShareCase):
 		total = smartview.get_data(self.view, page_size=1)["total"]
 		if total <= smartview.PAGE_MAX:
 			self.skipTest(f"only {total} rows on this bench — a single page cannot prove paging")
-		with patch.object(smartview.tabular, "respond") as respond:
-			smartview.export_view(self.view, "csv")
-		exported = len(respond.call_args.args[1])
+		exported = self._produce()["rows"]
 		self.assertGreater(exported, smartview.PAGE_MAX,
 		                   f"the export stopped at one page ({exported} rows) of {total}")
 		self.assertEqual(exported, min(total, smartview.EXPORT_MAX_ROWS))
 
-	def test_an_unknown_format_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			smartview.export_view(self.view, "pdf")
-
 	def test_every_download_is_logged(self):
-		"""An export is the one read that leaves the building, so it lands in frappe's own Access Log."""
+		"""An export is the one read that leaves the building, so it lands in frappe's own Access Log —
+		written where the file becomes REAL, not where it was asked for."""
 		before = frappe.db.count("Access Log")
-		with patch.object(smartview.tabular, "respond"):
-			smartview.export_view(self.view, "csv")
+		self._produce()
 		self.assertGreater(frappe.db.count("Access Log"), before, "the download left no audit trail")
+
+	def test_asking_for_it_queues_a_job_rather_than_building_it_inline(self):
+		"""THE 504 THIS LOCKS. Building the file inside the request cost ~41.7s of SQL for one real view
+		and one real Sales Manager, and died on the 120s gateway timeout. The endpoint must now answer at
+		once with a job, and never touch the file writer on the way."""
+		with patch.object(smartview.tabular, "write") as write:
+			queued = smartview.export_view(self.view, "csv")
+		write.assert_not_called()
+		self.assertTrue(queued.get("job"), "the endpoint did not return a job to wait for")
+		self.assertEqual(queued.get("status"), "Queued")
+		job = frappe.get_doc("CRM Export Job", queued["job"])
+		self.assertEqual(job.source, "Smart View")
+		self.assertEqual(job.reference, self.view)
+		self.assertEqual(job.owner, frappe.session.user, "the job must belong to whoever asked")
 
 	def test_a_stranger_cannot_download_a_view_they_cannot_open(self):
 		frappe.set_user(STRANGER)

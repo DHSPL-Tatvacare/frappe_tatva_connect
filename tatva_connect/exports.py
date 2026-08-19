@@ -1,0 +1,170 @@
+# Copyright (c) 2026, TatvaCare and Contributors
+# See license.txt
+"""THE export seam: a listing becomes a file in a worker, and the tab that asked is told when it is ready.
+
+WHY THIS EXISTS. Every export in the SPA built its file inside the HTTP request. Measured on prod for
+`rubina.jasmin@tatvacare.in` — Sales Manager, inside `CRM Sales Hierarchy`, two User Permissions — one
+Smart View export cost ~41.7s of SQL (25 pages x 1,085ms of count plus ~14.6s of rows) on top of ~25,000
+per-row permission round trips, and died on the 120s Azure Application Gateway timeout as a 504 HTML page.
+A row ceiling only buys headroom; the next wide view spends it. The request is the wrong place to do this.
+
+THE SHAPE. `queue(...)` writes a `CRM Export Job` and returns immediately. The row's `after_insert`
+enqueues `run` on the long lane. `run` resolves the producer, drains it, attaches the bytes to the row
+and publishes to the person who asked. Three realtime events and nothing else — no polling, no job UI.
+
+THE PRODUCER REGISTRY IS CLOSED. `source` is a Select and this map is the only way it becomes code, so a
+caller can never name a dotted path and have a worker import it. A new export surface is a row here.
+
+PERMISSIONS ARE THE CALLER'S, NOT THE WORKER'S. `frappe.enqueue` captures `{"user": frappe.session.user}`
+and `execute_job` calls `frappe.set_user(user)` (background_jobs.py:252), so a producer runs as the person
+who pressed Download and its own row gate applies unchanged. NOTHING in this file or in a producer may
+pass `ignore_permissions` to a read. The two `ignore_permissions` below are on the JOB ROW and the FILE,
+which are this seam's own scaffolding, never the exported data.
+"""
+import frappe
+from frappe import _
+
+DOCTYPE = "CRM Export Job"
+
+# Realtime events, spelled once so the worker and the SPA cannot drift; all three are `user=`-targeted.
+EVENT_PROGRESS = "crm_export_progress"
+EVENT_READY = "crm_export_ready"
+EVENT_FAILED = "crm_export_failed"
+
+# source -> producer; returns {"stem", "ext", "content", "rows", "truncated"}. Closed by construction.
+_PRODUCERS = {
+	"Smart View": "tatva_connect.smartview.api.produce_export",
+	"List": "tatva_connect.api.list_export.produce_export",
+}
+
+
+def queue(source, reference, fmt, params):
+	"""Record the request and hand it to a worker. The CALLER has already applied its own gates — this
+	seam does not know what "may export a Smart View" means and must not invent a second opinion."""
+	if source not in _PRODUCERS:
+		frappe.throw(_("Unknown export source {0}.").format(source))
+	job = frappe.get_doc({
+		"doctype": DOCTYPE,
+		"source": source,
+		"reference": reference,
+		"fmt": fmt,
+		"params": frappe.as_json(params or {}),
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — the seam's own row, gated by the caller; owner is the requester
+	return {"job": job.name, "status": job.status}
+
+
+def run(job):
+	"""The worker. Runs as the person who asked (see the module docstring), so every read inside the
+	producer is theirs."""
+	doc = frappe.get_doc(DOCTYPE, job)
+	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
+	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a minute must not hide it
+	try:
+		_drain(doc)
+	except Exception:
+		_fail(doc, frappe.get_traceback(with_context=True))
+
+
+def _drain(doc):
+	producer = frappe.get_attr(_PRODUCERS[doc.source])
+	params = frappe.parse_json(doc.params) if doc.params else {}
+	made = producer(doc, params, _progress(doc))
+
+	file = frappe.get_doc({
+		"doctype": "File",
+		"file_name": "{}-{}.{}".format(
+			frappe.scrub(made.get("stem") or "export"),
+			frappe.utils.now_datetime().strftime("%Y%m%d-%H%M%S"),
+			made.get("ext") or doc.fmt,
+		),
+		"attached_to_doctype": DOCTYPE,
+		"attached_to_name": doc.name,
+		"content": made["content"],
+		# `is_private` is NOT set here: `file_events.apply_privacy_policy` derives it. The caller never decides.
+	}).save(ignore_permissions=True)  # authz-ok: tier-a — the seam's own artefact; the job row above is its M1 owner and its gate
+	frappe.db.commit()  # the attach dirties this row; without ending the transaction the next write is a 1020
+
+	rows = made.get("rows")
+	truncated = bool(made.get("truncated"))
+	doc.reload()  # stale after the attach; `Prepared Report` reloads before recording a result for this reason
+	doc.db_set({"status": "Completed", "row_count": frappe.utils.cint(rows), "truncated": frappe.utils.cint(truncated)},
+	           update_modified=False)
+	frappe.db.commit()
+	_publish(EVENT_READY, doc, {"file_url": file.file_url, "file_name": file.file_name,
+	                            "rows": rows, "truncated": truncated})
+
+
+def _progress(doc):
+	"""The callback a producer calls as it drains. Rows so far, nothing else — a producer that cannot say
+	how many rows it will end with should not be made to guess a percentage."""
+	def publish(rows_so_far):
+		_publish(EVENT_PROGRESS, doc, {"rows": rows_so_far})
+
+	return publish
+
+
+def _publish(event, doc, payload):
+	frappe.publish_realtime(
+		event,
+		{"job": doc.name, "source": doc.source, "reference": doc.reference, **payload},
+		user=doc.owner,
+	)
+
+
+def _fail(doc, error):
+	"""The tab must hear about a failure, so this runs on a connection the failed drain may have dirtied:
+	roll back first, then record and publish. The traceback is logged, never published — it is for the
+	operator, and a stack trace is not something to put on a rep's screen."""
+	frappe.db.rollback()
+	doc.reload()  # same staleness as the success path: whatever failed may already have touched this row
+	doc.db_set({"status": "Error", "error_message": error}, update_modified=False)
+	frappe.db.commit()
+	frappe.log_error(error, f"export failed: {doc.source} / {doc.reference}")
+	_publish(EVENT_FAILED, doc, {"error": _("The export could not be prepared.")})
+
+
+def _job_id():
+	"""The RQ job currently executing, so deleting a queued export can stop it. None outside a worker."""
+	from rq import get_current_job
+
+	job = get_current_job()
+	return job.id if job else None
+
+
+@frappe.whitelist()
+def recent(limit=10):
+	"""This caller's own recent exports — how a finished file is recovered when the tab was closed before
+	the socket fired. `get_list` and not `get_all`: the doctype is `if_owner`, so the gate is the read."""
+	return frappe.get_list(
+		DOCTYPE,
+		fields=["name", "source", "reference", "fmt", "status", "row_count", "truncated", "creation"],
+		order_by="creation desc",
+		limit=frappe.utils.cint(limit) or 10,
+	)
+
+
+@frappe.whitelist()
+def status(job):
+	"""Where one export has got to, and its file once there is one.
+
+	THE SOCKET IS AN OPTIMISATION, NOT THE DELIVERY. A realtime event is lost whenever the tab was
+	reconnecting, the laptop slept, or socketio itself is down — and an export that silently never arrives
+	is the failure this whole change exists to remove. So the tab also polls this, slowly, and whichever
+	answers first wins. Reading the job row IS the gate: the doctype is `if_owner`, so another rep's job
+	is not readable and this cannot hand over a file the caller did not ask for.
+
+	The gate is ASKED, never assumed: `frappe.get_doc` does not check permissions, and relying on it to
+	throw is how a rep reaches another rep's export."""
+	frappe.has_permission(DOCTYPE, "read", doc=job, throw=True)
+	doc = frappe.get_doc(DOCTYPE, job)
+	out = {"job": doc.name, "status": doc.status, "rows": doc.row_count, "truncated": bool(doc.truncated)}
+	if doc.status == "Completed":
+		file = frappe.db.get_value(
+			"File", {"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name},
+			["file_url", "file_name"], as_dict=True,
+		)
+		out.update(file_url=file and file.file_url, file_name=file and file.file_name)
+	if doc.status == "Error":
+		# The traceback stays with the operator; a rep gets a sentence.
+		out["error"] = _("The export could not be prepared.")
+	return out

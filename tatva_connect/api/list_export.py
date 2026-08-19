@@ -39,6 +39,7 @@ from contextlib import contextmanager
 
 import frappe
 
+from tatva_connect import exports
 from tatva_connect.list_engine import derived
 from tatva_connect.list_engine.engine import ListRequest
 
@@ -110,10 +111,37 @@ def export_query():
 	form_params["as_list"] = True
 	csv_params = pop_csv_params(form_params)
 	# POPPED, not read — `get_form_params` leaves it in and it reached the query builder as an unknown keyword, 500ing every Desk export. Native pops it here for the same reason.
+	# Native's own flag, our delivery: its background branch EMAILS the file; the tab that asked wants it back.
 	if frappe.cint(form_params.pop("export_in_background", 0)):
-		return reportview.export_query()
+		return exports.queue(
+			"List", form_params.get("doctype"),
+			"xlsx" if form_params.get("file_format_type") == "Excel" else "csv",
+			{"form_params": dict(form_params), "csv_params": dict(csv_params)},
+		)
 	with _cells_are_never_formulas():
 		return reportview._export_query(form_params, csv_params)
+
+
+def produce_export(job, params, progress):
+	"""The native-list producer for `tatva_connect.exports` — see that module for the returned shape.
+
+	FRAPPE'S OWN `_export_query`, CALLED NOT REIMPLEMENTED. It already applies `can_export`, writes the
+	`Access Log` row, runs the query and formats the file, and it answers `(title, extension, content)`
+	when told not to populate the response. That is exactly a producer, which is why this is nine lines:
+	the whole point of this module is that native's export is never re-expressed here.
+
+	`progress` is not called. This producer is ONE query — there are no pages to report, and a callback
+	invented to look busy would be a lie about what the worker is doing.
+	"""
+	from frappe.desk import reportview
+
+	form_params = frappe._dict(params.get("form_params") or {})
+	csv_params = frappe._dict(params.get("csv_params") or {})
+	form_params["limit_page_length"] = row_cap()
+	form_params["as_list"] = True
+	with _cells_are_never_formulas():
+		title, extension, content = reportview._export_query(form_params, csv_params, populate_response=False)
+	return {"stem": title, "ext": extension, "content": content, "rows": None, "truncated": False}
 
 
 @frappe.whitelist()

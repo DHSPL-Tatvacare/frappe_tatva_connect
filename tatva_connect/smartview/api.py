@@ -28,7 +28,7 @@ from frappe.utils import cint, cstr
 from pypika.analytics import RowNumber
 from pypika.terms import Function, PseudoColumn
 
-from tatva_connect import tabular
+from tatva_connect import exports, tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
 from tatva_connect.lead import filters as lead_filters
@@ -699,7 +699,8 @@ def _link_master(r):
 
 @frappe.whitelist()
 @frappe.read_only()
-def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50, with_count=1):
+def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, page_size=50, with_count=1,
+             with_titles=1):
 	"""THE composer. Returns {columns, rows, total} for a saved CRM Smart View, PQC-scoped.
 	Read-only. One qb query for the rows + one for the count; both AND the PQC.
 
@@ -841,22 +842,37 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 	# A LEAD view's row IS the lead and its values are live, so the identity cell may be the same chip the
 	# native lists draw. An ACTIVITY view's name column is a snapshot of what it was at the punch (D-C), so
 	# it must keep showing that and never today's title.
-	if base_object == "Lead":
+	# A download has no cells, so `with_titles=0` skips the map entirely rather than paying for a chip nobody draws.
+	if base_object == "Lead" and cint(with_titles):
 		out["_link_titles"] = _lead_titles(r.get("name") for r in rows)
 	return out
 
 
 def _lead_titles(names):
-	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped."""
-	# `resolve_title` and not `labels`: a lead is a PERMISSIONED record and that resolver is the one gating on read.
-	from tatva_connect.api.list_link_titles import resolve_title
+	"""`{"CRM Lead::<id>": title}` — the map LeadCell already reads on every other list, deduped.
 
-	titles = {}
-	for name in {n for n in names if n}:
-		title = resolve_title(LEAD_DOCTYPE, name)
-		if title is not None:
-			titles[f"{LEAD_DOCTYPE}::{name}"] = title
-	return titles
+	ONE read for the whole page. It used to ask `resolve_title` per name, and that is a per-DOCUMENT
+	permission check: with the sales hierarchy on, crm's `has_lead_permission` runs its OWN select for
+	every name (org_hierarchy.py:74), so a 200-row page cost hundreds of round trips and an export
+	thousands. `get_list` asks the same question — the row gate — once, for every name at once."""
+	names = {cstr(n) for n in names if n}
+	if not names:
+		return {}
+	# The framework's own two gates, asked once instead of per name: the target opts in, and the read is scoped.
+	meta = frappe.get_meta(LEAD_DOCTYPE)
+	if not (meta.show_title_field_in_link and meta.title_field):
+		return {}
+	rows = frappe.get_list(
+		LEAD_DOCTYPE,
+		filters={"name": ["in", list(names)]},
+		fields=["name", meta.title_field],
+		limit_page_length=0,
+	)
+	return {
+		f"{LEAD_DOCTYPE}::{r.name}": r.get(meta.title_field)
+		for r in rows
+		if r.get(meta.title_field)
+	}
 
 
 def _label_links(rows, col_keys, cat):
@@ -1190,19 +1206,22 @@ EXPORT_MAX_ROWS = 5000
 
 @frappe.whitelist()
 def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=None):
-	"""Download this view exactly as it is on screen.
+	"""Ask for this view as a file. Returns AT ONCE; a worker drains it and the tab is told when it lands.
 
-	IT RE-RUNS `get_data`. Not a second query, not a raw dump — so the rows are the caller's own
-	(permission conditions), the columns are the caller's own (grain + role), and an export can never
-	show what the list would not. A separate query here is how an export starts leaking the day a rule
-	changes on one path and not the other.
+	IT STILL RE-RUNS `get_data`, in the worker. Not a second query, not a raw dump — so the rows are the
+	caller's own (permission conditions), the columns are the caller's own (grain + role), and an export
+	can never show what the list would not. A separate query here is how an export starts leaking the day
+	a rule changes on one path and not the other.
 
-	THREE GATES, all frappe's own:
+	THE GATES ARE UNCHANGED and are applied HERE, in the request, so a refusal is still an error the
+	person sees on the click rather than a job that fails silently a minute later:
 	  * the view must be readable — the same check that opens it;
-	  * the caller must hold the native EXPORT permission on the driving doctype, which is an ordinary
-	    role permission an operator ticks, not a concept invented here;
-	  * every download is written to frappe's `Access Log`, because an export is the one read that leaves
-	    the building.
+	  * the caller must hold the native EXPORT permission on the driving doctype, an ordinary role
+	    permission an operator ticks, not a concept invented here;
+	  * every download is written to frappe's `Access Log` — by the producer, once the file is real.
+
+	WHY IT NO LONGER ANSWERS WITH THE FILE. Building it inline cost ~41.7s of SQL for one real view and
+	one real Sales Manager, and died on the 120s gateway timeout. `tatva_connect.exports` says the rest.
 	"""
 	d = frappe.get_doc(SMART_VIEW_DT, view)
 	_assert_read(d)
@@ -1215,35 +1234,60 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 	if fmt not in tabular.FORMATS:
 		frappe.throw(_("Unsupported export format {0}.").format(fmt))
 
-	# PAGED, because `get_data` caps a page at PAGE_MAX — asking it for 5,000 rows silently returned 200
-	# and the download looked complete. An export that quietly drops 667 of 867 rows is worse than one
-	# that refuses, so it walks the pages the same way a reader would and stops at a stated ceiling.
+	return exports.queue("Smart View", view, fmt,
+	                     {"filters": filters, "search": search, "sort": sort, "columns": columns})
+
+
+def produce_export(job, params, progress):
+	"""The Smart View producer for `tatva_connect.exports` — see that module for the returned shape.
+
+	THE GATES ARE ASKED AGAIN. A job row outlives the request that made it, so entitlement may have moved
+	between the click and the drain; the worker re-reads rather than trusting a minute-old decision.
+
+	PAGED, because `get_data` caps a page at PAGE_MAX — asking it for 5,000 rows silently returned 200 and
+	the download looked complete. An export that quietly drops 667 of 867 rows is worse than one that
+	refuses, so it walks the pages the same way a reader would and stops at a stated ceiling.
+	"""
+	d = frappe.get_doc(SMART_VIEW_DT, job.reference)
+	_assert_read(d)
+	driving_name, _tbl = _driving(d.base_object)
+	if not frappe.has_permission(driving_name, "export"):
+		frappe.throw(
+			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
+		)
+
 	cols, rows = [], []
 	page = 1
 	while len(rows) < EXPORT_MAX_ROWS:
-		data = get_data(view, filters=filters, sort=sort, search=search, columns=columns,
-		                page=page, page_size=PAGE_MAX)
+		# No count, no titles: a wider window cannot change how many rows MATCHED, and a file has no cells to title.
+		data = get_data(job.reference, filters=params.get("filters"), sort=params.get("sort"),
+		                search=params.get("search"), columns=params.get("columns"),
+		                page=page, page_size=PAGE_MAX, with_count=0, with_titles=0)
 		cols = cols or data["columns"]
 		batch = data["rows"]
 		if not batch:
 			break
 		rows.extend([_export_cell(r.get(c["key"])) for c in cols] for r in batch)
+		progress(len(rows))
 		if len(batch) < PAGE_MAX:
 			break
 		page += 1
 	truncated = len(rows) >= EXPORT_MAX_ROWS
 	rows = rows[:EXPORT_MAX_ROWS]
-	header = [c["label"] for c in cols]
-	if truncated:
-		# Never silent: the operator's audit row says the file is a ceiling, not the whole answer.
-		frappe.msgprint(_("Only the first {0} rows were exported.").format(EXPORT_MAX_ROWS),
-		                indicator="orange", alert=True)
 
-	make_access_log(doctype=driving_name, file_type=fmt.upper(), report_name=d.label,
-	                filters=frappe.as_json({"smart_view": view, "filters": filters, "search": search,
-	                                        "rows": len(rows), "truncated": truncated}),
+	# Logged where the file becomes REAL: a queued export that produced nothing is not a read that left.
+	make_access_log(doctype=driving_name, file_type=job.fmt.upper(), report_name=d.label,
+	                filters=frappe.as_json({"smart_view": job.reference, "filters": params.get("filters"),
+	                                        "search": params.get("search"), "rows": len(rows),
+	                                        "truncated": truncated}),
 	                columns=frappe.as_json([c["key"] for c in cols]))
-	tabular.respond(header, rows, fmt, frappe.scrub(d.label or "smart-view"))
+	return {
+		"stem": d.label or "smart-view",
+		"ext": job.fmt,
+		"content": tabular.write([c["label"] for c in cols], rows, job.fmt),
+		"rows": len(rows),
+		"truncated": truncated,
+	}
 
 
 def _export_cell(value):
