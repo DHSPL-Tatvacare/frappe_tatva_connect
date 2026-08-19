@@ -451,7 +451,10 @@ def run_inline(version_name, lead_name, trigger_doc, seed_state, workflow=None):
 	state = seed_state if isinstance(seed_state, refs.Values) else refs.Values(buckets=seed_state or {})
 	# The lead this run is about, as a record — the same one `advance` carries, so both lanes resolve `crm_lead.…`.
 	if lead_name:
-		state.offer_record(refs.slug("CRM Lead"), _doc_loader("CRM Lead", lead_name))
+		# `use_record`, not `offer_record`: the trigger registered this same source as a closure over the lead
+		# document it was already holding, and offering politely alongside it left that snapshot in charge for
+		# the whole run. Executing is a different moment from dispatching — see `refs.Values.use_record`.
+		state.use_record(refs.slug("CRM Lead"), _doc_loader("CRM Lead", lead_name))
 	axes = rules_lead_axes(lead_name)
 	cursor = versions.entry_node_of(version)  # the ONE entry-resolution brain (shared with the durable start)
 	seen, hops, deferred, steps = set(), 0, [], []
@@ -803,6 +806,7 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 		# `<node_id>.order_id`. A verb is one verb reused by the rule lane and by both interpreter paths and
 		# must not know its node id; the interpreter does, so the scoping belongs here and only here.
 		result = handler(params, lead_name, state.writing_as(node.node_id), axes, trigger_doc)
+		_forget_written(params, lead_name, trigger_doc, state)
 		frappe.db.release_savepoint(save_point)
 	except Exception:
 		try:
@@ -814,6 +818,24 @@ def _run_verb(node, lead_name, trigger_doc, state, axes, journey_name=None):
 	if callable(result):
 		return [result], None
 	return [], result if isinstance(result, str) and result else None
+
+
+def _forget_written(params, lead_name, trigger_doc, state):
+	"""Drop the run's cached copy of the record this verb just wrote, so the next node reads it as it IS.
+
+	The record is the verb's OWN `resolve_target` answer — the SAME one the handler acted on — so what is
+	forgotten can never drift from what was written, and a verb added tomorrow is covered by declaring a
+	target rather than by a list here. A verb that names no record (Call API) forgets nothing.
+
+	A target that cannot resolve is not this function's error to raise: the handler has already run and
+	succeeded on it, so a raise here could only be a second opinion about a write that already happened.
+	"""
+	try:
+		doctype, _name = actions.resolve_target(params, lead_name, trigger_doc)
+	except Exception:  # nosec B110 — the handler already acted on this target; this is cache upkeep only
+		return
+	if doctype:
+		state.forget_record(refs.slug(doctype))
 
 
 def _axes(subject_doctype, subject_name):

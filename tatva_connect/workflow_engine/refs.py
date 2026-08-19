@@ -258,6 +258,24 @@ class Values:
 		if loader and source not in self.buckets:
 			self._loaders.setdefault(source, loader)
 
+	def use_record(self, source, loader):
+		"""Make THIS the loader for a source, replacing one an earlier caller offered.
+
+		`offer_record` is "read it this way if nothing else answers"; this is "the run is executing now, and
+		the database is the truth". The two are not the same question and had one answer, which is the bug:
+		the trigger registers the subject's PARENT LEAD as a closure over the document it already holds, and
+		`setdefault` then discarded the live re-reader the run installs a moment later. So an inline run read
+		the lead as it stood when the punch began — for its whole life. A node that BUMPED the RNR counter
+		and the node that TESTED it two steps on disagreed by exactly one, which is why six missed calls
+		dropped the lead on the seventh and every attempt ladder marked inactive on the fourth try.
+
+		A BUCKET STILL WINS, exactly as it does above. When the trigger IS the lead, its in-memory values are
+		the doc mid-save and no re-read can see them — replacing that would break a lead-triggered flow to
+		fix a task-triggered one.
+		"""
+		if loader and source not in self.buckets:
+			self._loaders[source] = loader
+
 	# --- reading ------------------------------------------------------------------------------------
 
 	def __getitem__(self, ref):
@@ -304,6 +322,20 @@ class Values:
 			return None
 		self._loaded[source] = loader() or {}
 		return self._loaded[source]
+
+	def forget_record(self, source):
+		"""Drop a loaded record so the NEXT reference re-reads it.
+
+		THE SECOND HALF OF `use_record`, and neither is sufficient alone. `use_record` decides WHERE a
+		record is read from; this decides WHEN it is read AGAIN. A record loads at most once per segment,
+		which is what lets a 30-day Wait read the lead as it is NOW — and inside one segment that same
+		cache makes a write invisible to a later read. With only `use_record`, a flow is correct when
+		nothing happens to read the record before the write and silently wrong when something does, which
+		is correctness by accident of node order.
+
+		Said by the WRITER, once, rather than defended against by every reader.
+		"""
+		self._loaded.pop(source, None)
 
 	def keys(self):
 		"""Every reference that currently answers. Records already loaded are included; an unloaded one is
