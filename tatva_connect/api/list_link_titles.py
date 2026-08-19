@@ -56,28 +56,27 @@ def _attach_link_titles(result, doctype=None):
 
 	titles = result.setdefault("_link_titles", {})
 
-	def add(dt, value):
-		# Dedup, then delegate to the ONE resolver. A Dynamic Link target can be a permissioned record,
-		# so resolve_title gates on read (a caller who sees the row but not the referenced lead must not
-		# get the lead's name); static masters (Stage/Picklist) read freely.
-		if not (dt and value):
-			return
-		key = f"{dt}::{value}"
-		if key in titles:
-			return
-		title = resolve_title(dt, value)
-		if title is not None:
-			titles[key] = title
+	# Every (target, value) the page needs is collected BEFORE any is resolved, so a target whose gate
+	# costs a query per value is asked once for all of them instead of once each.
+	wanted = {}
+
+	def want(dt, value):
+		if dt and value and f"{dt}::{value}" not in titles:
+			wanted.setdefault(dt, set()).add(value)
 
 	# Kanban columns are the group field's master rows, not row values, so they are not reachable from
 	# `data`. Each column is titled by its own `name`, which for a grain master is the composite key.
-	_add_kanban_columns(result, doctype, add)
+	_add_kanban_columns(result, doctype, want)
 
 	for row in rows:
 		for fieldname, target_dt in link_fields.items():
-			add(target_dt, row.get(fieldname))
+			want(target_dt, row.get(fieldname))
 		for fieldname, options_field in dynamic_fields.items():
-			add(row.get(options_field), row.get(fieldname))
+			want(row.get(options_field), row.get(fieldname))
+
+	for target_dt, values in wanted.items():
+		for value, title in _titles_for(target_dt, values).items():
+			titles[f"{target_dt}::{value}"] = title
 
 
 def _add_kanban_columns(result, doctype, add):
@@ -93,6 +92,45 @@ def _add_kanban_columns(result, doctype, add):
 		return
 	for column in columns:
 		add(df.options, column.get("name"))
+
+
+def _titles_for(target_dt, values):
+	"""`{value: title}` for one target doctype, gated exactly as `resolve_title` gates one value.
+
+	ONE read where a per-value read costs a query. A doctype that declares its own `has_permission`
+	answers every `frappe.has_permission(..., doc=...)` by loading the whole document — and for CRM Lead
+	that is eleven child tables — then runs the controller's own select on top. On the Task list, whose
+	rows carry a Dynamic Link to a lead, that was 293 queries for 20 rows. `get_list` puts the same row
+	gate in the WHERE clause and asks it once.
+
+	Everything else keeps the per-value path, deliberately. A master is small and answered from the doc
+	cache, so N cached reads cost no queries once warm, where one `name in (...)` would cost one on every
+	call, for every user, for ever."""
+	if not _is_row_gated(target_dt):
+		resolved = {}
+		for value in values:
+			title = resolve_title(target_dt, value)
+			if title is not None:
+				resolved[value] = title
+		return resolved
+
+	meta = frappe.get_meta(target_dt)
+	if not (meta.show_title_field_in_link and meta.title_field):
+		return {}
+	# Unreadable rows simply do not come back, which is the same answer resolve_title gives by returning
+	# None for them — the caller who sees a task but not its lead still gets no lead name.
+	rows = frappe.get_list(
+		target_dt,
+		filters={"name": ["in", list(values)]},
+		fields=["name", meta.title_field],
+		limit_page_length=0,
+	)
+	return {row.name: (row.get(meta.title_field) or row.name) for row in rows}
+
+
+def _is_row_gated(target_dt):
+	"""Whether reading ONE of these costs a query: frappe's own register of per-document gates."""
+	return bool(frappe.get_hooks("has_permission").get(target_dt))
 
 
 def resolve_title(target_dt, value):
