@@ -30,8 +30,10 @@ from tatva_connect.patches import (
 	add_integration_request_index,
 	add_integration_request_reference_index,
 	add_lead_dedup_unique_index,
+	add_lead_read_path_indexes,
 	add_lead_timeline_indexes,
 	add_observability_indexes,
+	add_record_access_index,
 	add_step_log_contact_index,
 	add_step_log_journey_index,
 	add_task_answer_fieldname_index,
@@ -40,6 +42,7 @@ from tatva_connect.patches import (
 	add_task_due_state_index,
 	add_task_lead_snapshot_index,
 	add_timeline_paging_indexes,
+	add_todo_assignment_index,
 	add_workflow_due_index,
 	backfill_webhook_token_digests,
 	build_lead_timeline_index,
@@ -83,6 +86,18 @@ _STEPS = (
 	drop_step_log_contact_index,
 	# (creation, status) and (status, modified) on CRM Task — the dashboard's activity cards group on a low-cardinality column over a date range, so the range seeks and the group column rides in the leaf to make the index covering. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_dashboard_card_indexes,
+	# `search_index` on CRM Lead.lead_owner — the column every non-privileged read filters on, and the
+	# subquery under six ViaParent-scoped list surfaces. A Property Setter and not DDL: schema.py:311
+	# drops a single-column index whose meta does not declare the flag, matching it BY COLUMN, so a
+	# hand-named index would not survive the next sync.
+	add_lead_read_path_indexes,
+	# (allocated_to, reference_type, status) on ToDo — the assignment half of the same predicate. Free at
+	# today's 31 rows; a second table-sized scan on every list read once the assignment migration lands.
+	# Composite and frappe-owned, so not JSON-declarable; composite is also why no sync can drop it.
+	add_todo_assignment_index,
+	# UNIQUE (user, reference_doctype, reference_name) on CRM Record Access — the access path AND the
+	# guard that keeps the permission index from holding a grant twice. Composite, so not JSON-declarable.
+	add_record_access_index,
 	# (service, status) on frappe's Integration Request — the DLQ replay and every Desk filter select on both, and frappe declares no index on a table it keeps for 90 days.
 	add_integration_request_index,
 	# UNIQUE (mobile_no, custom_vertical, custom_group) on CRM Lead — the partner API's dedup rule; a composite unique cannot be declared in crm's JSON, so this is its only fresh-install path.

@@ -1022,5 +1022,37 @@
   "property_type": "Text",
   "row_name": null,
   "value": "0"
+ },
+ {
+  "default_value": null,
+  "doc_type": "File",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "file_name",
+  "is_system_generated": 1,
+  "modified": "2026-08-18 12:00:00.000000",
+  "module": null,
+  "name": "File-file_name-length",
+  "property": "length",
+  "property_type": "Int",
+  "row_name": null,
+  "value": "255"
+ },
+ {
+  "default_value": null,
+  "doc_type": "CRM Lead",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "lead_owner",
+  "is_system_generated": 1,
+  "modified": "2026-08-18 00:00:00.000000",
+  "module": null,
+  "name": "CRM Lead-lead_owner-search_index",
+  "property": "search_index",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]
