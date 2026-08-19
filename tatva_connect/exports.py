@@ -132,18 +132,6 @@ def _job_id():
 
 
 @frappe.whitelist()
-def recent(limit=10):
-	"""This caller's own recent exports — how a finished file is recovered when the tab was closed before
-	the socket fired. `get_list` and not `get_all`: the doctype is `if_owner`, so the gate is the read."""
-	return frappe.get_list(
-		DOCTYPE,
-		fields=["name", "source", "reference", "fmt", "status", "row_count", "truncated", "creation"],
-		order_by="creation desc",
-		limit=frappe.utils.cint(limit) or 10,
-	)
-
-
-@frappe.whitelist()
 def status(job):
 	"""Where one export has got to, and its file once there is one.
 

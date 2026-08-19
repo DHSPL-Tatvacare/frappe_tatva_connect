@@ -11,6 +11,8 @@ WHAT IS ASSERTED HERE IS THE SEAM, NOT SOCKETIO. This app's responsibility ends 
 `frappe.publish_realtime` — delivery is frappe's own transport, already carrying notifications, telephony
 and workflow steps in production. So the event, its payload and its `user=` targeting are pinned, and the
 POLL path is pinned beside it, because that is what makes the file reachable when the socket is down.
+Recovery after a closed tab is Desk's own `if_owner` list on the job doctype, so there is no endpoint
+of ours to test for it.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
@@ -123,15 +125,5 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		try:
 			with self.assertRaises(frappe.PermissionError):
 				exports.status(job.name)
-		finally:
-			frappe.set_user("Administrator")
-
-	def test_recent_lists_only_the_callers_own(self):
-		"""How a finished file is recovered when the tab was closed before either path answered."""
-		job, _events = self._drained()
-		self.assertIn(job.name, [r.name for r in exports.recent()])
-		frappe.set_user(STRANGER)
-		try:
-			self.assertNotIn(job.name, [r.name for r in exports.recent()])
 		finally:
 			frappe.set_user("Administrator")
