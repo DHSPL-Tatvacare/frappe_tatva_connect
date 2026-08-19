@@ -32,8 +32,18 @@ USER = "zz-filter-rep@example.test"
 _LEAD_PREFIX = "ZZ-FILTER-"
 
 
+# The redis_cache key `grain_filter_options` is stored under, so a test can clear it for a NAMED user.
+_OPTIONS_CACHE_KEY = "tatva_connect.lead.filters.grain_filter_options"
+
+
 class TestGrainFilterOptions(FrappeTestCase):
 	def setUp(self):
+		# The options are CACHED PER USER, and every test here creates the leads it asserts on and drops
+		# them again in tearDown — so the fixture lifecycle is exactly what invalidates them. Cleared for
+		# BOTH callers by name: `clear_cache()` resolves its user from the SESSION, so it would only ever
+		# reach whichever of the two happened to be current and the other would carry a stale answer in.
+		for _caller in ("Administrator", USER):
+			frappe.cache.delete_keys(_OPTIONS_CACHE_KEY, user=_caller)
 		for doctype, fieldname, values in (
 			("CRM Vertical", "vertical_name", (V_MINE, V_THEIRS)),
 			("CRM Group", "group_name", (G_MINE, G_THEIRS)),

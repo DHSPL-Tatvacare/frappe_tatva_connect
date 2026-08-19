@@ -25,12 +25,18 @@ would offer values that match nothing, and pointing a picker at the lead table w
 uncreatable. (Plan decision 7.)
 """
 import frappe
+from frappe.utils.caching import redis_cache
 
 # The three masters that MAKE a field a grain axis. This is the one place the grain doctypes are named;
 # WHICH fields point at them is read off the meta below, so the two can never drift apart.
 GRAIN_MASTERS = ("CRM Vertical", "CRM Group", "CRM Program")
 
 _DOCTYPE = "CRM Lead"
+
+# How long a grain axis's values are held. `user=True` keys the entry by session user, so the scoping is
+# the cached value's own and no two callers can share one. An hour is arbitrary and safe: the three masters
+# hold a handful of rows and change quarterly, and `frappe.clear_cache()` on every migrate resets it anyway.
+_OPTIONS_TTL = 60 * 60
 
 
 def grain_filter_fields(doctype: str = _DOCTYPE):
@@ -48,6 +54,7 @@ def grain_filter_fields(doctype: str = _DOCTYPE):
 
 
 @frappe.whitelist()
+@redis_cache(ttl=_OPTIONS_TTL, user=True)
 def grain_filter_options(doctype: str = _DOCTYPE):
 	"""`{fieldname: [values]}` — the distinct values of every grain axis on the rows the CALLER can see.
 
