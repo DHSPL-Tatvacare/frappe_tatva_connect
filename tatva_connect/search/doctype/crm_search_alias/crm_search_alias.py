@@ -31,7 +31,7 @@ class CRMSearchAlias(Document):
 		# Exactly one reading is stamped; nothing is guessed, and the operator is told which case they are in.
 		if not matches:
 			near = vocabulary.suggest(self.resolves_to)
-			hint = _("Did you mean: {0}?").format(", ".join(near)) if near else _("Only a stage, status, product line, group, program or person may be aliased.")
+			hint = _("Did you mean: {0}?").format(", ".join(near)) if near else _("Only a stage, product line, group, program or person may be aliased.")
 			frappe.throw(_("{0} is not a value this CRM holds. {1}").format(frappe.bold(self.resolves_to), hint))
 		if len(matches) > 1:
 			where = ", ".join(sorted(m["doctype"] for m in matches))

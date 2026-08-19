@@ -4,13 +4,14 @@
 """Which words in a typed query are values the search index can actually filter on.
 
 The index filters ONLY on its own metadata columns (`CRMLeadSearch.INDEX_SCHEMA["metadata_fields"]`), and only
-five of those are closed sets: `status`, `vertical`, `lead_group`, `program`, `assignee`. The identifier columns
+five of those are closed sets: `stage`, `vertical`, `lead_group`, `program`, `assignee`. The identifier columns
 (`lead`, `phone`, …) grow with every patient — open sets — so they stay in the full-text lane and
 are absent here, and `file_url` is not a value anyone types.
 
 Every value offered is the value `prepare_document` really writes, derived from the declarations it reads: the
 master behind a column comes off the CRM Lead field itself, and the spelling mirrors `index.py:_read_lead_context`
-(the indexed `status` is a stage's `::` LEAF, never the composite PK — a PK would match nothing, silently).
+— which for `stage` means asking `taxonomy.labels.stage_label`, the same function the index asks, never the
+composite PK and never a split of it, because either would match nothing and say so to no one.
 
 An operator adds NICKNAMES for these same values as `CRM Search Alias` rows — `declined` -> Not Interested — so a
 word this team uses is understood without a deploy. An alias offers no value of its own: it points at a master row
@@ -24,7 +25,8 @@ import difflib
 import frappe
 from frappe.utils.caching import redis_cache
 
-from tatva_connect.search.index import CRMLeadSearch, leaf, normalise, tokens
+from tatva_connect.search.index import CRMLeadSearch, normalise, tokens
+from tatva_connect.taxonomy.labels import stage_label
 
 # A master bigger than this is an OPEN set by definition — it belongs in the full-text lane, not a dictionary.
 MASTER_MAX = 5000
@@ -37,10 +39,10 @@ _TTL = 600
 MIN_TERM_LEN = 2
 
 # Mirrors index.py:_read_lead_context — the CRM Lead field behind each CLOSED metadata column and how the index
-# spells its value: `name` = the master's PK, `leaf` = the PK's tail after `::`, `title` = the master's title field.
+# spells its value: `name` = the master's PK, `title` = the master's title field, `stage` = taxonomy's own reading.
+# `custom_stage` and `custom_substage` share one master, so one row walks every stage AND names the column "Stage".
 _SOURCES = (
-	("status", "custom_stage", "leaf"),
-	("status", "status", "name"),
+	("stage", "custom_stage", "stage"),
 	("vertical", "custom_vertical", "name"),
 	("lead_group", "custom_group", "name"),
 	("program", "custom_current_program", "name"),
@@ -157,12 +159,19 @@ def _values(master, spelling):
 	# frappe.get_all is unpermissioned by design: one site-wide vocabulary must not depend on who happened to build it.
 	if frappe.db.count(master) > MASTER_MAX:
 		return []
+	if spelling == "stage":
+		# Not a column read at all: a stage's label is `taxonomy.labels`' one reading, asked here so the word offered and the word the index stored are the same word by construction.
+		out = []
+		for pk in frappe.get_all(master, pluck="name", order_by="name asc", limit_page_length=0):
+			label, _color = stage_label(pk)
+			if label:
+				out.append((pk, label))
+		return out
 	column = frappe.get_meta(master).title_field if spelling == "title" else "name"
 	if not column:
 		return []
 	rows = frappe.get_all(master, fields=["name", f"`{column}` as value"], order_by="name asc", limit_page_length=0)
-	# `index.leaf` itself — a composite PK (`{program}::{stage}`) is indexed as its tail, never whole.
-	return [(r.name, leaf(str(r.value)) if spelling == "leaf" else str(r.value)) for r in rows if r.value]
+	return [(r.name, str(r.value)) for r in rows if r.value]
 
 
 def _longest(vocab, words, i):

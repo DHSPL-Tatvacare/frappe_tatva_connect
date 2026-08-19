@@ -181,8 +181,8 @@ def on_lead_stage_changed(doc, method=None):
 	before = doc.get_doc_before_save()
 	if not before or before.get("custom_substage") == doc.get("custom_substage"):
 		return
-	# The stored value is the composite key; this text lands on a rep's lock screen, so name the stage.
-	stage = labels.label(doc.get("custom_substage"), labels.LEAD_STAGE)
+	# The stored value is the composite key; this text lands on a rep's lock screen, so name the stage — the ONE naming, shared with the spotlight, the hover card and the audit trail. The guard below is why there is no fall back to the key here: a stage this app can no longer name is not worth a push notification.
+	stage = labels.stage_label(doc.get("custom_substage"))[0]
 	if not stage:
 		return
 	dispatch.notify(

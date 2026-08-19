@@ -45,6 +45,9 @@ _PERMISSION_TTL = 60
 # One tier of the doctype preference, wide enough to dominate every other factor in the scoring pipeline.
 _TIER_SPREAD = 100
 
+# How many leads one `IN (...)` lookup binds; far under this host's limit, and the limit is a property of the host.
+_IN_CHUNK = 500
+
 # How long SQLite waits on a locked index before giving up; frappe sets none, so its default of 0 raises on the first collision.
 _BUSY_TIMEOUT_MS = 500
 
@@ -242,8 +245,8 @@ class CRMLeadSearch(SQLiteSearch):
 	def is_search_enabled(self):
 		# OFF -> no index file, so every doc-event hook no-ops on index_exists(); that is the migration bulk guard.
 		# Read once per ENGINE, because `_status` and the framework's own `search()` (sqlite_search.py:245) both ask
-		# and one search builds one engine. Scoped to the instance and no wider: `automation.settings.is_enabled` is
-		# deliberately uncached so a flipped switch takes effect at once, and the next search reads it again.
+		# and one search builds one engine. Scoped to the instance and no wider: `is_enabled` reads a cached row that
+		# frappe invalidates on both write paths, so the next search still sees a flipped switch at once.
 		if self.__dict__.get("_enabled") is None:
 			self.__dict__["_enabled"] = is_enabled(TOGGLE)
 		return self.__dict__["_enabled"]
@@ -266,6 +269,17 @@ class CRMLeadSearch(SQLiteSearch):
 			super().remove_doc(doctype, docname)
 		except Exception:
 			frappe.log_error(title=_WRITE_ERROR, message=f"remove {doctype}:{docname}\n\n{frappe.get_traceback()}")
+
+	def rows_of_leads(self, leads):
+		# Every indexed row hanging off these leads, in ONE scan per chunk; `lead` is a stored column and not an FTS term, so a scan is what this costs however it is asked, and asking once per lead paid it once per lead.
+		rows = []
+		for start in range(0, len(leads), _IN_CHUNK):
+			chunk = leads[start : start + _IN_CHUNK]
+			placeholders = ",".join("?" for _ in chunk)
+			rows += self.sql(  # sqli-ok: the interpolation is the `?` list itself — every lead id is a bind parameter, which is frappe's own shape for an IN list (sqlite_search.py:1359)
+				f"SELECT doc_id FROM search_fts WHERE lead IN ({placeholders})", chunk, read_only=True
+			) or []
+		return rows
 
 	def index_is_readable(self):
 		"""Can the index file still be READ — the one lifecycle state the framework has no branch for.
@@ -596,22 +610,22 @@ def reindex_lead(lead):
 def reindex_leads(leads):
 	"""Restamp several leads in ONE job — the batch form of `reindex_lead`, same work per lead.
 
-	The engine and its two readiness checks are built once for the whole batch rather than once per lead,
-	which is the only difference: a job that restamps fifty leads costs one engine, not fifty.
+	The engine, its two readiness checks and the child-row lookup are done once for the whole batch rather
+	than once per lead. The lookup is the one that matters: `lead` is not an FTS term, so each `WHERE lead = ?`
+	was a full scan of the index AND a connection of its own, and under WAL every connection queues behind the
+	one writer a rep's save is already waiting on.
 	"""
 	engine = CRMLeadSearch()
 	if not (engine.is_search_enabled() and engine.index_exists()):
 		return
-	for lead in leads:
-		rows = engine.sql("SELECT doc_id FROM search_fts WHERE lead = ?", [lead], read_only=True) or []
-		targets = {("CRM Lead", lead)}
-		for row in rows:
-			doctype, _, name = row["doc_id"].partition(":")
-			if doctype in engine.doc_configs and name:
-				targets.add((doctype, name))
-		for doctype, name in sorted(targets):
-			# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
-			engine.index_doc(doctype, name)
+	targets = {("CRM Lead", lead) for lead in leads}
+	for row in engine.rows_of_leads(leads):
+		doctype, _, name = row["doc_id"].partition(":")
+		if doctype in engine.doc_configs and name:
+			targets.add((doctype, name))
+	for doctype, name in sorted(targets):
+		# No try/except: `index_doc` owns every write failure and logs it, so a second handler here would be unreachable.
+		engine.index_doc(doctype, name)
 
 
 # The transaction's collected leads; the attribute's ABSENCE is also the "nothing registered yet" marker.

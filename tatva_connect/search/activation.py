@@ -11,12 +11,13 @@ _CLASS = "tatva_connect.search.index.CRMLeadSearch"
 
 
 def apply(enabled):
-	# On enable, build once if missing; force because sqlite_search.build_index runs its body only `if is_continuation or force`, and the index is absent here so nothing live can be dropped.
+	# On enable, build once if missing; an index already there is left exactly as it is.
 	if not enabled:
 		return
-	if CRMLeadSearch().index_exists():
+	engine = CRMLeadSearch()
+	if engine.index_exists():
 		return
-	enqueue_build(force=True)
+	rebuild(engine)
 
 
 def reconcile_index_schema():
@@ -30,20 +31,32 @@ def reconcile_index_schema():
 		return
 	if engine.stored_fingerprint() == engine.schema_fingerprint():
 		return
+	rebuild(engine)
+
+
+def rebuild(engine):
+	"""THE way this app rebuilds: drop, then force. Both steps are load-bearing and neither works alone.
+
+	DROP, because `sqlite_search.build_index` takes its temp-file path only when the index is ABSENT (:309).
+	Left in place it builds into the live file — no atomic swap, an index that reads as incomplete for the
+	whole run, and if the worker dies a live index with no temp file, which is the one state neither frappe's
+	3-hourly check nor `sweep_index_health` will touch. Search then says `building` for ever.
+
+	FORCE, because that same function only builds when `is_continuation or force` (:1772), so the 3-hourly
+	`build_index_if_not_exists` (force=False) would never pick a dropped index back up.
+	"""
 	engine.drop_index()
-	# force=True is load-bearing: sqlite_search.build_index only builds when `is_continuation or force` (16.22.0
-	# line 1772), so the 3-hourly build_index_if_not_exists (force=False) never rebuilds a dropped index at all.
-	enqueue_build(force=True)
+	enqueue_build()
 
 
-def enqueue_build(force=False):
-	# The native full build, deduplicated by class path so a double-trigger cannot stack two.
+def enqueue_build():
+	# The native full build, deduplicated by the class path frappe's own `build_index_in_background` uses, so our trigger and frappe's collapse into one job instead of racing.
 	frappe.enqueue(
 		_BUILD,
 		queue="long",
 		timeout=2 * 60 * 60 + 600,
 		search_class_path=_CLASS,
-		force=force,
+		force=True,
 		deduplicate=True,
 		job_id=_CLASS,
 	)

@@ -196,6 +196,9 @@ def shown(doctype, fieldname, value):
 		return value
 	if not df or df.fieldtype != "Link" or not df.options:
 		return value
+	# A stage is named by `display_label or stage`, a rule that master owns and `title_field` alone cannot express; every other master is named by its title_field and is untouched here.
+	if df.options == LEAD_STAGE:
+		return stage_label(value)[0] or value
 	return label(value, df.options)
 
 
@@ -209,8 +212,8 @@ def stage_of(row):
 	with no stage read as "Nurture" in search and as nothing on the card.
 
 	Sub-stage wins: it is the leaf a rep actually picks, and `custom_stage` is the parent derived from it.
-	The label is the master's `title_field`, never a split of the primary key, and the colour is the
-	master's own `color` — operator data, blank until someone sets it, and never defaulted to a hue here.
+	WHICH stage a lead is at is this function's question; how one stage is SPELLED is `stage_label`'s, so a
+	caller holding a bare stage key asks that one and cannot arrive at a different spelling.
 
 	NO fallback to `status`. A lead status and a lead stage are different questions, and answering one
 	with the other is what made the two surfaces disagree.
@@ -220,6 +223,19 @@ def stage_of(row):
 	key = (row.get("custom_substage") if hasattr(row, "get") else None) or (
 		row.get("custom_stage") if hasattr(row, "get") else None
 	)
+	return stage_label(key)
+
+
+def stage_label(key):
+	"""THE reading of one stage's label and colour, given its key. Returns `(label, color)`, both "".
+
+	The label is the master's `display_label`, falling back to its `stage`; never a split of the primary key,
+	which is data and not a label. The colour is the master's own — operator data, blank until someone sets it.
+
+	`search.vocabulary` reads this to offer the same word the index stores, and `stage_of` to answer for a
+	lead. Two spellings of one stage is the failure this shape exists to make impossible: the vocabulary would
+	offer a word the index never wrote, and the query would silently return nothing.
+	"""
 	if not key:
 		return "", ""
 	stage = frappe.get_cached_value(LEAD_STAGE, key, ["display_label", "stage", "color"], as_dict=True)

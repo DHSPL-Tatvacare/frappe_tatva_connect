@@ -2,18 +2,20 @@
 # See license.txt
 """The vocabulary must offer the strings the INDEX really holds — not the strings a catalogue says exist.
 
-The trap this suite exists to catch: `prepare_document` writes a stage's `::` LEAF into `status`, a User's
+The trap this suite exists to catch: `prepare_document` writes a stage's own LABEL into `stage`, a User's
 `full_name` into `assignee`, and a master's PK into `vertical` / `lead_group`. A vocabulary built from a
 catalogue would hand P5 the composite stage PK and the owner's email, and the index would match neither —
 silently, with no error and no empty-state. So the load-bearing test here is the one-brain lock: drive the real
 `prepare_document` (and the real index file) and assert the vocabulary covers every value they produce.
 
-It is a lock, not a snapshot: change the spelling in `index.py:_read_lead_context` — drop the `::` split, index
-the owner's email instead of the full name, swap the master behind a column — and the lock goes red.
+It is a lock, not a snapshot: change the spelling in `index.py:_read_lead_context` — read a stage's key instead
+of its label, index the owner's email instead of the full name, swap the master behind a column — and the lock
+goes red. It went red for real once: the column was renamed `status` -> `stage` in the index and the vocabulary
+kept naming `status`, which is not a column the index has, so the whole stage lane silently offered nothing.
 
 No lead on this site carries a `custom_stage`, so one is minted here (written straight to the column the index
-reads, since `custom_stage` is DERIVED from `custom_substage` by `lead/leads.py`) — otherwise the `::` leaf path
-that owns the whole design would never be driven by data.
+reads, since `custom_stage` is DERIVED from `custom_substage` by `lead/leads.py`) — otherwise the composite-key
+path that owns the whole design would never be driven by data.
 
 Run:
     bench --site uatreplay.localhost run-tests --app tatva_connect \\
@@ -24,12 +26,13 @@ from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.search import vocabulary
 from tatva_connect.search.index import CRMLeadSearch
+from tatva_connect.taxonomy import labels
 
 PHONE_PREFIX = "+91610007"
 PHONE = f"{PHONE_PREFIX}0001"
 
 # The closed metadata columns this module claims; the identifier columns are open sets and must never appear.
-CLOSED = ("status", "vertical", "lead_group", "program", "assignee")
+CLOSED = ("stage", "vertical", "lead_group", "program", "assignee")
 OPEN = ("lead", "phone")
 
 
@@ -109,10 +112,11 @@ class TestVocabulary(FrappeTestCase):
 			self.assertEqual(missing, set(), f"prepare_document writes {column} values the vocabulary never offers")
 			self.assertTrue(seen[column], f"no lead produced a {column} value — the lock proved nothing")
 
-		# The minted lead is the only carrier of a composite stage; its LEAF, not its PK, is what was written.
+		# The minted lead is the only carrier of a composite stage; its LABEL, not its PK, is what was written.
 		locked = engine.prepare_document(frappe.get_doc("CRM Lead", self.lead))
-		self.assertEqual(locked["status"], self.stage.split("::")[-1])
-		self.assertIn(("status", locked["status"]), vocabulary.terms()[vocabulary.normalise(locked["status"])])
+		self.assertEqual(locked["stage"], labels.stage_label(self.stage)[0])
+		self.assertNotIn("::", locked["stage"])
+		self.assertIn(("stage", locked["stage"]), vocabulary.terms()[vocabulary.normalise(locked["stage"])])
 
 	def test_every_value_in_the_live_index_is_in_the_vocabulary(self):
 		"""The same lock read straight out of the index FILE — what the framework actually stored."""
@@ -125,19 +129,32 @@ class TestVocabulary(FrappeTestCase):
 			self.assertTrue(stored, f"the index holds no {column} value — the lock proved nothing")
 			self.assertEqual(stored - self._meanings_for(column), set(), f"the index holds unknown {column} values")
 
-	# --- the stage leaf, and the PK that must NOT resolve ------------------------------------------------
+	# --- the stage label, and the PK that must NOT resolve ------------------------------------------------
 
-	def test_a_stage_leaf_resolves_and_its_composite_pk_does_not(self):
+	def test_a_stage_label_resolves_and_its_composite_pk_does_not(self):
 		stages = frappe.get_all("CRM Lead Stage", filters={"name": ["like", "%::%"]}, pluck="name", order_by="name asc")
-		leaves = {s: s.split("::")[-1] for s in stages}
-		pk = next(s for s, leaf in leaves.items() if len(vocabulary.terms().get(vocabulary.normalise(leaf), ())) == 1)
-		self.assertEqual(vocabulary.match(leaves[pk]).matched, [("status", leaves[pk])])
+		labelled = {pk: labels.stage_label(pk)[0] for pk in stages}
+		# One whose label carries exactly one meaning, so the assertion below is about the stage lane and not ambiguity.
+		pk = next(
+			p for p, label in labelled.items()
+			if label and len(vocabulary.terms().get(vocabulary.normalise(label), ())) == 1
+		)
+		self.assertEqual(vocabulary.match(labelled[pk]).matched, [("stage", labelled[pk])])
 
 		# The composite PK is what a catalogue-built vocabulary would offer, and the index would match none of it.
 		self.assertNotIn(vocabulary.normalise(pk), vocabulary.terms())
 		self.assertEqual([v for _, v in vocabulary.match(pk).matched if "::" in v], [])
-		self.assertEqual([v for v in self._meanings_for("status") if "::" in v], [],
-		                 "a composite PK must never be offered as a status value")
+		self.assertEqual([v for v in self._meanings_for("stage") if "::" in v], [],
+		                 "a composite PK must never be offered as a stage value")
+
+	def test_the_vocabulary_only_ever_names_a_column_the_index_declares(self):
+		"""The defect this file missed: a column renamed in `index.py` leaves the vocabulary naming one that no
+		longer exists, `_spellings` drops it on the `column in declared` guard, and the lane goes quiet — no
+		error, no empty result, just a word that stops being understood."""
+		declared = set(CRMLeadSearch.INDEX_SCHEMA["metadata_fields"])
+		for column, _fieldname, _spelling in vocabulary._SOURCES:
+			self.assertIn(column, declared, f"{column} is not a column the index declares")
+		self.assertEqual(set(CLOSED), {column for column, _f, _s in vocabulary._SOURCES})
 
 	# --- one column per meaning --------------------------------------------------------------------------
 

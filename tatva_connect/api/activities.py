@@ -23,7 +23,6 @@ from tatva_connect.activity.lead_events import history
 from tatva_connect.automation.settings import is_enabled
 from tatva_connect.list_engine import derived
 from tatva_connect.taxonomy import labels
-from tatva_connect.taxonomy.labels import LEAD_STAGE
 
 # Lead field-changes we never surface in the audit: derived (custom_stage follows custom_substage).
 # The five headline mirrors left this set on 2026-08-10 with the sync that wrote them — nothing auto-writes them now, so a change to one is a real edit and belongs in the trail.
@@ -37,8 +36,13 @@ def _full_name(user):
 
 
 def _stage_label(pk):
-	"""A CRM Lead Stage PK (`{program}::{stage}`) to the stage a human reads."""
-	return labels.label(pk, LEAD_STAGE)
+	"""A CRM Lead Stage PK (`{program}::{stage}`) to the stage a human reads — `labels.stage_label`, the same
+	reading the spotlight index and the hover card use, so one stage is one word on every surface.
+
+	Falls back to the key only when the master row is gone: the generic `labels.label` fell back to it whenever
+	`display_label` was blank, which printed `GoodFlip::Consulted` here while the other two printed `Consulted`.
+	An audit row must not blank, and where the stage no longer exists its key is the only truth left."""
+	return labels.stage_label(pk)[0] or pk or ""
 
 
 def _activity_events(entries):

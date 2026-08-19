@@ -50,7 +50,7 @@ EMAIL = "zzshape.patient@example.com"
 HIDDEN = (ALT_PHONE, EMAIL)
 
 # The fields the row really draws, in the order it draws them; `ident` is the one place an ID may appear.
-DISPLAYED = ("title", "snippet", "status", "phone", "vertical", "group", "program", "assignee")
+DISPLAYED = ("title", "snippet", "stage", "phone", "vertical", "group", "program", "assignee")
 
 
 class TestRowShape(FrappeTestCase):

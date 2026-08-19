@@ -126,7 +126,11 @@ def _shape(r, query):
 def rebuild_index():
 	# Force a full background rebuild — the Rebuild button on the toggle's form; System Manager only, deduplicated.
 	frappe.only_for("System Manager")
-	from tatva_connect.search.activation import enqueue_build
+	from tatva_connect.search.activation import rebuild
 
-	enqueue_build(force=True)
+	engine = CRMLeadSearch()
+	# Dormant, the build returns before it does anything (sqlite_search.py:1765), so a drop would delete an index nothing then replaces.
+	if not engine.is_search_enabled():
+		return {"queued": False}
+	rebuild(engine)
 	return {"queued": True}
