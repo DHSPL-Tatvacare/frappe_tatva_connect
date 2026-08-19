@@ -48,12 +48,15 @@ class TestCaptureOnCreate(FrappeTestCase):
 		anchor.assert_not_called()
 
 	def test_the_hook_runs_before_the_wildcard(self):
-		"""Ordering is the reason this is a doctype hook: frappe composes doctype handlers before `*` (document.py:1598), so a Created-entry workflow reads a doctor that already has coordinates."""
+		"""Ordering is the reason this is a doctype hook: frappe composes doctype handlers before `*` (document.py:1598), so a Created-entry workflow reads a doctor that already has coordinates. The engine's entry point since moved to `on_update` — a later event still — so the coordinates land earlier than before, never later."""
 		from tatva_connect import hooks
 
 		lead_hooks = hooks.doc_events["CRM Lead"]["after_insert"]
 		self.assertEqual(lead_hooks, ["tatva_connect.location.api.capture_on_create"])
-		self.assertIn("tatva_connect.workflow_engine.triggers.on_created", hooks.doc_events["*"]["after_insert"])
+		self.assertIn("tatva_connect.workflow_engine.triggers.on_created", hooks.doc_events["*"]["on_update"])
+		self.assertNotIn(
+			"tatva_connect.workflow_engine.triggers.on_created", hooks.doc_events["*"]["after_insert"]
+		)
 
 
 class TestGrainProbe(FrappeTestCase):
