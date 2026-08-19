@@ -25,6 +25,10 @@ LEAD = "CRM Lead"
 STAGE = "CRM Lead Stage"
 
 
+def _titles_for_one(name):
+	return list_link_titles._titles_for(LEAD, {name}).get(name)
+
+
 class TestListTitlesAreOneReadPerTarget(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -78,6 +82,33 @@ class TestListTitlesAreOneReadPerTarget(FrappeTestCase):
 			self.assertEqual(set(titled), readable, "the batched door and the row gate disagree")
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_a_shared_record_is_titled_through_the_batched_door(self):
+		"""The edge the batched door could have lost. `has_permission` consults DocShare; the question is
+		whether `get_list` does too, because if it did not, a lead shared with someone who does not own it
+		would appear in their list with a blank name. It does — frappe puts the share condition in the same
+		match conditions — and this pins it, because the two doors must not diverge on a shared record."""
+		actor = frappe.db.get_value("User", {"enabled": 1, "user_type": "System User"}, "name")
+		lead = frappe.db.get_value(LEAD, {"lead_owner": ["not in", (actor, "")]}, "name")
+		if not (actor and lead):
+			self.skipTest("no lead owned by someone other than a real user on this bench")
+
+		frappe.set_user(actor)
+		self.assertIsNone(_titles_for_one(lead), "the fixture lead was already readable — proves nothing")
+		frappe.set_user("Administrator")
+
+		share = frappe.share.add(LEAD, lead, actor, read=1)
+		try:
+			frappe.set_user(actor)
+			self.assertEqual(
+				list_link_titles.resolve_title(LEAD, lead),
+				_titles_for_one(lead),
+				"a shared lead is named by one door and not the other",
+			)
+			self.assertIsNotNone(_titles_for_one(lead), "a shared lead lost its title in the list")
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("DocShare", share.name, force=True, ignore_permissions=True)
 
 	def test_both_doors_return_the_same_title_for_the_same_value(self):
 		"""`resolve_title` still serves the single-document surface, so the two must never diverge."""
