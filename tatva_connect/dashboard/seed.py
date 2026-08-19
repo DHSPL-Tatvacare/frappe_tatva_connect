@@ -82,8 +82,6 @@ _CHARTS = [
 	_card("leads_by_owner", "Leads by Owner", "In selected period", "donut", "CRM Lead", base_filters=_UNCONVERTED, group_by_field="lead_owner", date_field="creation", honours_date_range=1),
 	# The two task bars are the same records cut two ways, so each names its own cut and neither says "status".
 	_card("tasks_by_status", "Tasks by Status", "In selected period", "bar", "CRM Task", group_by_field="status", date_field="creation", honours_date_range=1),
-	# A snapshot, like the two open-task cards: who is carrying what RIGHT NOW, not who was given work in a window.
-	_card("tasks_by_owner_and_status", "Tasks by Owner and Status", "Right now", "heatmap", "CRM Task", group_by_field="assigned_to", split_by="status", base_filters={"status": _OPEN}),
 	# `due_state` and `sla_state` are DERIVED fields, not columns — the executor resolves them through
 	# `list_engine.derived`, which is why a group_by can name one and no schema change is needed.
 	_card("tasks_by_due_state", "Tasks by Due State", "In selected period", "bar", "CRM Task", group_by_field="due_state", date_field="creation", honours_date_range=1, drill_enabled=1),
@@ -109,9 +107,8 @@ _PLACED = (
 	("leads_by_substage", 6, 8, 6, 6),
 	("tasks_by_status", 0, 14, 6, 6),
 	("tasks_by_due_state", 6, 14, 6, 6),
-	("tasks_by_owner_and_status", 0, 20, 12, 6),
-	("leads_by_sla_state", 0, 26, 6, 6),
-	("leads_sla_missed_by_owner", 6, 26, 6, 6),
+	("leads_by_sla_state", 0, 20, 6, 6),
+	("leads_sla_missed_by_owner", 6, 20, 6, 6),
 )
 
 
