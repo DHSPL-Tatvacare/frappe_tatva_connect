@@ -112,9 +112,17 @@ def _offered(menu, doctype):
 	return [f.get("fieldname") for f in MENUS[menu](doctype)]
 
 
+# The two stamps this layer relays. Neither narrows native's ANSWER: `link_query` tells a Link at a
+# composite master which scoped query its control must use, and `grain_options` carries the values a
+# grain-keyed field may offer this caller. Each is asserted on its own — `link_query` in
+# test_quick_filters, `grain_options` in tests/lead/test_grain_filter_options — so taking both back off
+# here leaves a byte-identity check meaning what it meant: the FIELDS are native's, in native's order.
+RELAYED_STAMPS = ("link_query", "grain_options")
+
+
 def _without_relay(menu):
-	"""A menu with `link_query` taken back off, so a byte-identity check still means what it meant."""
-	return [{k: v for k, v in f.items() if k != "link_query"} for f in menu]
+	"""A menu with the relayed stamps taken back off, so a byte-identity check still means what it meant."""
+	return [{k: v for k, v in f.items() if k not in RELAYED_STAMPS} for f in menu]
 
 
 def _drop(dt, fieldname):

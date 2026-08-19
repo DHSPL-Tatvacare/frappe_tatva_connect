@@ -173,13 +173,15 @@ class QuickFilterBarCase(FrappeTestCase):
 		"""No cross-impact. CRM Lead names no derived field on this bar, so both endpoints are native's
 		answer and native's writes — asserted by running native itself, with a stored row and without.
 
-		`link_query` is the one thing this layer adds, and it is a relay, not a narrowing: a Link at a
-		composite master is told which scoped query its control must use, because the framework's own search
-		offers a repeated label once per grain. Compared with it stripped, and asserted separately, so the
-		byte-identity above still means what it meant."""
+		TWO STAMPS are what this layer adds, and neither is a narrowing of native's ANSWER: `link_query`
+		tells a Link at a composite master which scoped query its control must use, and `grain_options`
+		carries the values a grain-keyed field may offer this caller. Both are stripped here and asserted
+		separately — `link_query` below, `grain_options` in tests/lead/test_grain_filter_options — so the
+		byte-identity above still means what it meant: the FIELDS are native's, in native's order."""
 		self.assertIsNot(_dispatched(WRITE), _native(WRITE), "the write path is not ours at all")
 		before = ["status", "lead_name"]
-		relayed = lambda fields: [{k: v for k, v in f.items() if k != "link_query"} for f in fields]  # noqa: E731
+		stamps = ("link_query", "grain_options")
+		relayed = lambda fields: [{k: v for k, v in f.items() if k not in stamps} for f in fields]  # noqa: E731
 
 		for chosen in (None, before):
 			with self.subTest(stored=chosen):

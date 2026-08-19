@@ -27,9 +27,20 @@ uncreatable. (Plan decision 7.)
 import frappe
 from frappe.utils.caching import redis_cache
 
+from tatva_connect.taxonomy import labels
+
 # The three masters that MAKE a field a grain axis. This is the one place the grain doctypes are named;
 # WHICH fields point at them is read off the meta below, so the two can never drift apart.
 GRAIN_MASTERS = ("CRM Vertical", "CRM Group", "CRM Program")
+
+# Masters that are not a grain but are KEYED by one — `CRM Lead Stage` holds `Inside-Sales::New Patient`
+# beside `Nivolumab::New Patient`, so its picker offered a rep every other programme's stages. They are
+# scoped here because nothing else scopes them: `label_query` de-duplicates those keys into labels but
+# reads the whole master. `CRM Picklist Value` is deliberately ABSENT — it is composite too, and already
+# scoped twice over by `picklist_query` and its own permission_query_conditions, so naming it here would
+# replace a working type-ahead with a stamped Select and hide a filter the moment a rep's leads use none
+# of its values.
+GRAIN_KEYED = ("CRM Lead Stage",)
 
 _DOCTYPE = "CRM Lead"
 
@@ -39,17 +50,22 @@ _DOCTYPE = "CRM Lead"
 _OPTIONS_TTL = 60 * 60
 
 
+def is_axis(target: str) -> bool:
+	"""Whether a Link at `target` must be scoped HERE — because nothing else scopes it."""
+	return target in GRAIN_MASTERS or target in GRAIN_KEYED
+
+
 def grain_filter_fields(doctype: str = _DOCTYPE):
-	"""Every field on `doctype` that is a Link to a grain master, off the live meta.
+	"""Every field on `doctype` whose values are grain-keyed, off the live meta.
 
 	The rule, expressed once: the TARGET decides. Nothing here enumerates fieldnames, so
-	`custom_vertical`, `custom_group`, `custom_current_program` and the two history Links are covered by
-	the same sentence — and so is any grain Link added later, on either record that carries a grain.
+	`custom_vertical`, `custom_group`, `custom_current_program`, the two history Links and both stage
+	Links are covered by the same sentence — and so is any grain Link added later.
 	"""
 	return tuple(
 		field.fieldname
 		for field in frappe.get_meta(doctype).fields
-		if field.fieldtype == "Link" and field.options in GRAIN_MASTERS
+		if field.fieldtype == "Link" and is_axis(field.options)
 	)
 
 
@@ -70,12 +86,30 @@ def grain_filter_options(doctype: str = _DOCTYPE):
 	System Manager is not special-cased — their `get_list` is unscoped, so they get every value present
 	on any lead, which is the same rule applied to a wider set of rows rather than a second rule.
 	"""
+	fields = grain_filter_fields(doctype)
+	if not fields:
+		return {}
+	# ONE scan for every axis, not one per axis. Each of these asked the SAME question of the same rows —
+	# the caller's whole visible set, which no index can narrow because the row gate is a disjunction — so
+	# N axes were N full scans of one table. Distinct COMBINATIONS is the same answer in one pass and a
+	# far smaller result (199 rows for a manager seeing 108,879 leads). Measured on prod: 7 x 212ms -> 155ms.
+	rows = frappe.get_list(
+		doctype, fields=list(fields), distinct=True, limit_page_length=0, ignore_ifnull=True,
+	)
+	meta = frappe.get_meta(doctype)
 	out = {}
-	for fieldname in grain_filter_fields(doctype):
-		rows = frappe.get_list(
-			doctype, fields=[fieldname], distinct=True, limit_page_length=0, ignore_ifnull=True,
-		)
-		out[fieldname] = sorted({row.get(fieldname) for row in rows if row.get(fieldname)})
+	for fieldname in fields:
+		values = {row.get(fieldname) for row in rows if row.get(fieldname)}
+		target = meta.get_field(fieldname).options
+		if labels.is_composite(target):
+			# A composite master's control offers LABELS and `filter_on` reads a label back as every key it
+			# means, so the scoped answer is labels too — a key here would show a rep `Inside-Sales::New
+			# Patient` and filter on something the control never offered.
+			# `labels.labels` and not a batched read: `get_cached_value` answers from redis, so N distinct
+			# values cost N reads ONCE and nothing thereafter, where one `name in (...)` would cost a query
+			# on every call for every user, for ever. Measured: 40 keys, cold 40 vs 1, warm 0 vs 1.
+			values = set(labels.labels(values, target).values())
+		out[fieldname] = sorted(values)
 	return out
 
 

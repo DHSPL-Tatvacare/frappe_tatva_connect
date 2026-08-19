@@ -37,6 +37,8 @@ Plan: docs/plans/task-form-layer/2026-07-25-task-slots-to-sections-and-form-laye
 """
 
 import frappe
+from frappe import _
+from frappe.model import std_fields
 from frappe.model.document import get_controller
 
 from tatva_connect.lead import filters as lead_filters
@@ -160,42 +162,67 @@ def get_quick_filters(doctype: str, cached: bool = True):
 	from crm.api.doc import get_quick_filters as _native
 
 	native = _native(doctype, cached)
-	declared = _declared_quick_filters(doctype)
 	chosen = _stored_choice(doctype)
-	if not declared or chosen is None:
+	if chosen is None:
 		return _scoped(native, doctype)
 
+	declared = _declared_quick_filters(doctype)
 	by_name = {f.get("fieldname"): f for f in native}
-	return _scoped([
-		declared[name] if name in declared else by_name[name]
-		for name in chosen
-		if name in declared or name in by_name
-	], doctype)
+	resolved = (_resolve_choice(name, declared, by_name) for name in chosen)
+	return _scoped([field for field in resolved if field], doctype)
+
+
+def _resolve_choice(name, declared, by_name):
+	"""One chosen fieldname as a control, or None when nothing can answer for it. THREE sources, asked in
+	the order that keeps native's answer authoritative for every name native has one for."""
+	if name in declared:
+		return declared[name]
+	if name in by_name:
+		return by_name[name]
+	return _standard_field(name)
+
+
+def _standard_field(name):
+	"""A chosen STANDARD column, shaped exactly as native shapes a field.
+
+	`creation`, `modified` and `owner` are frappe's own columns and carry no DocField, so `meta.fields`
+	cannot see them: native resolves each chosen name against that list and drops what it cannot find,
+	special-casing only `name`. That is why Created On can be chosen and never appears. `frappe.model.
+	std_fields` is where frappe already says what these columns are, so the label and the fieldtype are
+	READ here and never written — a column frappe renames moves with it."""
+	field = next((f for f in std_fields if f["fieldname"] == name), None)
+	if not field:
+		return None
+	return {"label": _(field["label"]), "fieldname": field["fieldname"],
+	        "fieldtype": field["fieldtype"], "options": field.get("options")}
 
 
 @frappe.whitelist()
 def update_quick_filters(quick_filters: str, old_filters: str, doctype: str):
-	"""Recording the rep's choice is native's; stamping a Property Setter for a derived name is refused.
+	"""Recording the rep's choice is native's; stamping a Property Setter for a name with no DocField is not.
 
-	`update_in_standard_filter` writes `<doctype>-<field>-in_standard_filter` for a field that has no DocField
-	to carry it, and it fires unasked — the client seeds its list from this endpoint's answer, so a derived
-	name is in `new_filters` on the first ever save even if the rep never touched it. A derived name is
-	withheld from the pair native diffs, so every REAL fieldname keeps native's behaviour exactly — the
-	removal write included; the choice is then recorded WITH it, since that row is what `get_quick_filters`
-	resolves against.
+	`update_in_standard_filter` writes `<doctype>-<field>-in_standard_filter`, and it fires unasked — the
+	client seeds its list from this endpoint's answer, so such a name is in `new_filters` on the first ever
+	save even if the rep never touched it. Those names are withheld from the pair native diffs, so every
+	fieldname that HAS a DocField keeps native's behaviour exactly — the removal write included; the choice
+	is then recorded WITH them, since that row is what `get_quick_filters` resolves against.
 
-	The withheld set is EVERY derived name on the doctype, not the ones this surface offers: a Property
-	Setter describing a column that does not exist is wrong whichever menu the name reached the payload by."""
+	WHY A RULE AND NOT A LIST. It used to withhold the derived names. `creation` needs the same treatment
+	for the same reason, and so does `name`, which native has always stamped a junk Property Setter for.
+	Asking `meta.get_field` states the actual reason once — a Property Setter describing a column that does
+	not exist is wrong whichever menu the name reached the payload by."""
 	from crm.api.doc import create_update_global_settings
 	from crm.api.doc import update_quick_filters as _native
 
-	declared = set(derived.names(doctype))
-	if not declared:
-		return _native(quick_filters, old_filters, doctype)
-
 	chosen = frappe.parse_json(quick_filters) or []
-	real = lambda listed: frappe.as_json([n for n in listed if n not in declared])  # noqa: E731
-	_native(real(chosen), real(frappe.parse_json(old_filters) or []), doctype)
+	previous = frappe.parse_json(old_filters) or []
+	meta = frappe.get_meta(doctype)
+	# ONE rule, not a list of exceptions: native stamps `<doctype>-<field>-in_standard_filter`, and a name
+	# with no DocField has nothing to carry it. That is true of a derived field, of `creation` and of
+	# `name` alike, and `get_field` is where the framework already answers it — so a name added to either
+	# menu tomorrow is handled without a second list to remember.
+	carries = lambda listed: frappe.as_json([n for n in listed if meta.get_field(n)])  # noqa: E731
+	_native(carries(chosen), carries(previous), doctype)
 	create_update_global_settings(doctype, chosen)
 
 
