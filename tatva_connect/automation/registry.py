@@ -319,6 +319,20 @@ AUTOMATIONS = [
 		backs=[],  # the fork assigns off a field in crm_lead.py, not a doc_event; gated by lead/assignment.LeadAssignmentGate on the override class
 	),
 	Auto(
+		key="Lead::Assignment::from_rule",
+		fires_on="Doc Event",
+		trigger_detail="ToDo · after_insert (reference_type = CRM Lead)",
+		purpose=(
+			"A lead that nobody owns records the person an Assignment Rule just picked as its owner, so "
+			"the reports that read the owner column show it. A lead that already names an owner is never "
+			"changed. Off, the pick still stands and the rep still holds the lead — it is simply not "
+			"written to the owner column, so owner-grouped reports leave those leads blank.\n"
+			"Example: a patient submits the enrolment form, the rule hands the lead to a Care Specialist, "
+			"and that name appears in the Lead Owner column instead of an empty cell."
+		),
+		backs=["tatva_connect.lead.assignment.on_assignment_set_owner"],
+	),
+	Auto(
 		key="Task::Assignment::assignee",
 		fires_on="Doc Event",
 		trigger_detail="CRM Task · after_insert + validate (assigned_to changed)",

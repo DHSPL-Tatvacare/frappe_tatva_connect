@@ -24,6 +24,8 @@ an import goes quiet without this module knowing anything about imports.
 Mixed in ahead of the native class in `list_engine/columns.py`, which owns the `override_doctype_class`
 entry for both doctypes. The logic lives here because that file declares listing columns and nothing else.
 """
+import frappe
+
 from tatva_connect.automation import settings as automation
 
 LEAD_OWNER = "Lead::Assignment::owner"
@@ -56,3 +58,37 @@ class TaskAssignmentGate:
 		if not automation.is_enabled(TASK_ASSIGNEE):
 			return
 		super().assign_to()
+
+
+# Frappe's Assignment Rule records its pick as a ToDo and never touches `lead_owner`; a form-born lead
+# therefore lands ownerless while every reporting surface in this product reads that column.
+OWNER_FROM_RULE = "Lead::Assignment::from_rule"
+
+
+def on_assignment_set_owner(doc, method=None):
+	"""ToDo.after_insert — stamp `lead_owner` with the assignee, but ONLY when nobody owns the lead yet.
+
+	THE GAP THIS CLOSES. A lead has three births: the Create Lead modal names the creating rep
+	(LeadModal.vue), the LSQ load names the migrated owner (mapping.json `OwnerIdEmailAddress`), and a
+	public enrolment form names nobody. Only the third arrives ownerless, and it is exactly the traffic
+	the Anaya Assignment Rules serve. Visibility, notifications and the read grant all answer off the
+	ToDo and are unaffected — but `Leads by Owner`, `SLA Misses by Owner`, the Lead Owner list column and
+	the spotlight owner facet all name the COLUMN, so an ownerless lead reads blank on four surfaces.
+
+	FILL, NEVER OVERWRITE. An owner already on the record is somebody's decision — a rep's own lead, a
+	manager's hand-off, the migrated LSQ owner — and a round-robin pick must never displace it. The guard
+	is the empty column, not the switch.
+
+	`db.set_value` because it writes the column and fires NO document events: crm assigns off
+	`lead_owner` changing (crm_lead.py:86-96), so a `save()` here would raise a second ToDo and re-enter
+	this handler. The write is deliberately invisible to the document layer for that reason.
+	"""
+	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
+		return
+	if not automation.is_enabled(OWNER_FROM_RULE):
+		return
+	if frappe.db.get_value("CRM Lead", doc.reference_name, "lead_owner"):
+		return
+	frappe.db.set_value(
+		"CRM Lead", doc.reference_name, "lead_owner", doc.allocated_to, update_modified=False
+	)
