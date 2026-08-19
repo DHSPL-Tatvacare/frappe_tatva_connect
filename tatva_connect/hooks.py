@@ -380,12 +380,12 @@ doc_events = {
 		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",
-			# Workflow engine: run/start a Flow when a Created-entry Definition's grain + When match.
-			"tatva_connect.workflow_engine.triggers.on_created",
 		],
 		"on_update": [
 			# Bond an offloaded file to the record whose Attach field names it — core's linker skips remote URLs.
 			"tatva_connect.storage.file_events.link_attach_fields",
+			# Workflow engine: run/start a Flow when a Created-entry Definition's grain + When match. ON `on_update`, NOT `after_insert`, and the ONE reason is ORDER: frappe registers `assignment_rule.apply` on `on_update` only (frappe/hooks.py:155-166), and `after_insert` runs BEFORE `on_update` on an insert — so a Created flow hooked there raised its tasks before the lead had any owner, and every one of them landed unassigned. `on_created` guards on `in_insert`, so it still fires exactly once, at creation, exactly as an author reads it — assignment simply now happens first, which is the order LeadSquared itself used (Distribute is the first node of every automation, ahead of every Create Task).
+			"tatva_connect.workflow_engine.triggers.on_created",
 			"tatva_connect.workflow_engine.triggers.on_updated",
 			# Workflow engine: a CRM Task reaching a terminal status emits its outcome, correlated by the token its node stamped; dormant + in_workflow-guarded, cheap early-return otherwise.
 			"tatva_connect.workflow_engine.triggers.on_task_done",

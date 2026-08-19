@@ -53,6 +53,11 @@ def _engine_may_run() -> bool:
 # PROPAGATE (@fail_safe): these ride the WILDCARD, so an engine fault here breaks every save site-wide; a lost start is re-startable through the SAME `start_journey` the cohort drain uses, and `active_key` stops a double-run.
 @fail_safe
 def on_created(doc, method=None):
+	# Dispatched from `on_update`, which fires on the insert save too — this guard is what keeps "Created"
+	# meaning created. See the hooks.py note: the entry point moved so that frappe's Assignment Rule, which
+	# only ever runs on `on_update`, has already decided the owner by the time a Created flow acts.
+	if not doc.flags.in_insert:
+		return
 	_maybe_start(doc, "Created")
 
 
