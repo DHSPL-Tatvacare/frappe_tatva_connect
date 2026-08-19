@@ -1,0 +1,30 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-18 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": ["user", "reference_doctype", "reference_name"],
+ "fields": [
+  {"fieldname": "user", "fieldtype": "Link", "options": "User", "label": "User", "reqd": 1, "in_standard_filter": 1},
+  {"fieldname": "reference_doctype", "fieldtype": "Link", "options": "DocType", "label": "Reference Doctype", "reqd": 1, "in_standard_filter": 1},
+  {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name", "reqd": 1}
+ ],
+ "hide_toolbar": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Access",
+ "name": "CRM Record Access",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "role": "System Manager"}
+ ],
+ "quick_entry": 0,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 0
+}
