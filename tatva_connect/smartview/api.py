@@ -1204,6 +1204,20 @@ def set_public(view, value):
 EXPORT_MAX_ROWS = 5000
 
 
+def _assert_may_export(view):
+	"""The two gates a download passes, and the pair every caller needs after them: `(view doc, driving
+	doctype)`. Asked in the REQUEST so a refusal is an error on the click, and again in the WORKER because
+	a job row outlives the request that made it and entitlement can move in between."""
+	d = frappe.get_doc(SMART_VIEW_DT, view)
+	_assert_read(d)
+	driving_name, _tbl = _driving(d.base_object)
+	if not frappe.has_permission(driving_name, "export"):
+		frappe.throw(
+			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
+		)
+	return d, driving_name
+
+
 @frappe.whitelist()
 def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=None):
 	"""Ask for this view as a file. Returns AT ONCE; a worker drains it and the tab is told when it lands.
@@ -1223,13 +1237,7 @@ def export_view(view, fmt="csv", filters=None, search=None, sort=None, columns=N
 	WHY IT NO LONGER ANSWERS WITH THE FILE. Building it inline cost ~41.7s of SQL for one real view and
 	one real Sales Manager, and died on the 120s gateway timeout. `tatva_connect.exports` says the rest.
 	"""
-	d = frappe.get_doc(SMART_VIEW_DT, view)
-	_assert_read(d)
-	driving_name, _tbl = _driving(d.base_object)
-	if not frappe.has_permission(driving_name, "export"):
-		frappe.throw(
-			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
-		)
+	d, driving_name = _assert_may_export(view)
 	fmt = (fmt or "csv").lower()
 	if fmt not in tabular.FORMATS:
 		frappe.throw(_("Unsupported export format {0}.").format(fmt))
@@ -1248,13 +1256,7 @@ def produce_export(job, params, progress):
 	the download looked complete. An export that quietly drops 667 of 867 rows is worse than one that
 	refuses, so it walks the pages the same way a reader would and stops at a stated ceiling.
 	"""
-	d = frappe.get_doc(SMART_VIEW_DT, job.reference)
-	_assert_read(d)
-	driving_name, _tbl = _driving(d.base_object)
-	if not frappe.has_permission(driving_name, "export"):
-		frappe.throw(
-			_("You do not have permission to export {0}.").format(driving_name), frappe.PermissionError
-		)
+	d, driving_name = _assert_may_export(job.reference)
 
 	cols, rows = [], []
 	page = 1

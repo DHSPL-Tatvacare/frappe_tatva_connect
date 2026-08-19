@@ -135,10 +135,10 @@ def produce_export(job, params, progress):
 	"""
 	from frappe.desk import reportview
 
+	# The cap and the shape were set by `export_query` before this job was recorded; setting them a second
+	# time here would be a second place that decides what an export may carry.
 	form_params = frappe._dict(params.get("form_params") or {})
 	csv_params = frappe._dict(params.get("csv_params") or {})
-	form_params["limit_page_length"] = row_cap()
-	form_params["as_list"] = True
 	with _cells_are_never_formulas():
 		title, extension, content = reportview._export_query(form_params, csv_params, populate_response=False)
 	return {"stem": title, "ext": extension, "content": content, "rows": None, "truncated": False}

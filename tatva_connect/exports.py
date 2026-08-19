@@ -10,7 +10,8 @@ A row ceiling only buys headroom; the next wide view spends it. The request is t
 
 THE SHAPE. `queue(...)` writes a `CRM Export Job` and returns immediately. The row's `after_insert`
 enqueues `run` on the long lane. `run` resolves the producer, drains it, attaches the bytes to the row
-and publishes to the person who asked. Three realtime events and nothing else — no polling, no job UI.
+and publishes to the person who asked. The socket is the fast path; `status` is the one the tab falls
+back to, because a realtime event is lost whenever the tab was reconnecting or socketio is down.
 
 THE PRODUCER REGISTRY IS CLOSED. `source` is a Select and this map is the only way it becomes code, so a
 caller can never name a dotted path and have a worker import it. A new export surface is a row here.
@@ -23,6 +24,7 @@ which are this seam's own scaffolding, never the exported data.
 """
 import frappe
 from frappe import _
+from frappe.utils import cint, now_datetime
 
 DOCTYPE = "CRM Export Job"
 
@@ -70,11 +72,11 @@ def _drain(doc):
 	params = frappe.parse_json(doc.params) if doc.params else {}
 	made = producer(doc, params, _progress(doc))
 
-	file = frappe.get_doc({
+	frappe.get_doc({
 		"doctype": "File",
 		"file_name": "{}-{}.{}".format(
 			frappe.scrub(made.get("stem") or "export"),
-			frappe.utils.now_datetime().strftime("%Y%m%d-%H%M%S"),
+			now_datetime().strftime("%Y%m%d-%H%M%S"),
 			made.get("ext") or doc.fmt,
 		),
 		"attached_to_doctype": DOCTYPE,
@@ -84,14 +86,11 @@ def _drain(doc):
 	}).save(ignore_permissions=True)  # authz-ok: tier-a — the seam's own artefact; the job row above is its M1 owner and its gate
 	frappe.db.commit()  # the attach dirties this row; without ending the transaction the next write is a 1020
 
-	rows = made.get("rows")
-	truncated = bool(made.get("truncated"))
 	doc.reload()  # stale after the attach; `Prepared Report` reloads before recording a result for this reason
-	doc.db_set({"status": "Completed", "row_count": frappe.utils.cint(rows), "truncated": frappe.utils.cint(truncated)},
-	           update_modified=False)
+	doc.db_set({"status": "Completed", "row_count": cint(made.get("rows")),
+	            "truncated": cint(made.get("truncated"))}, update_modified=False)
 	frappe.db.commit()
-	_publish(EVENT_READY, doc, {"file_url": file.file_url, "file_name": file.file_name,
-	                            "rows": rows, "truncated": truncated})
+	_publish(EVENT_READY, doc, _result(doc))
 
 
 def _progress(doc):
@@ -119,8 +118,8 @@ def _fail(doc, error):
 	doc.reload()  # same staleness as the success path: whatever failed may already have touched this row
 	doc.db_set({"status": "Error", "error_message": error}, update_modified=False)
 	frappe.db.commit()
-	frappe.log_error(error, f"export failed: {doc.source} / {doc.reference}")
-	_publish(EVENT_FAILED, doc, {"error": _("The export could not be prepared.")})
+	frappe.log_error(f"export failed: {doc.source} / {doc.reference}", error)
+	_publish(EVENT_FAILED, doc, _result(doc))
 
 
 def _job_id():
@@ -144,7 +143,12 @@ def status(job):
 	The gate is ASKED, never assumed: `frappe.get_doc` does not check permissions, and relying on it to
 	throw is how a rep reaches another rep's export."""
 	frappe.has_permission(DOCTYPE, "read", doc=job, throw=True)
-	doc = frappe.get_doc(DOCTYPE, job)
+	return _result(frappe.get_doc(DOCTYPE, job))
+
+
+def _result(doc):
+	"""What an export IS, once or twice asked: the ready event publishes it and the poll returns it, so
+	the tab has one completion path and the two can never describe the same job differently."""
 	out = {"job": doc.name, "status": doc.status, "rows": doc.row_count, "truncated": bool(doc.truncated)}
 	if doc.status == "Completed":
 		file = frappe.db.get_value(
@@ -152,7 +156,6 @@ def status(job):
 			["file_url", "file_name"], as_dict=True,
 		)
 		out.update(file_url=file and file.file_url, file_name=file and file.file_name)
-	if doc.status == "Error":
-		# The traceback stays with the operator; a rep gets a sentence.
-		out["error"] = _("The export could not be prepared.")
+	elif doc.status == "Error":
+		out["error"] = _("The export could not be prepared.")  # the traceback stays with the operator
 	return out
