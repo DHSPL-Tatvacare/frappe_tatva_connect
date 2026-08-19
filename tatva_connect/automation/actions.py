@@ -549,10 +549,17 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 		tdoc.set(row["name"], contract.resolve_row(
 			row.get("mode"), row.get("value"), context, current=tdoc.get(row["name"]),
 		))
+	# Read BEFORE the save: a new doc has no name until `save()` inserts it, so afterwards the two legs
+	# are indistinguishable. The WRITE still does not branch — this is the audit's question, not the path's.
+	raised = not tdoc.get("name")
 	_save_target(tdoc)
 	# AFTER the save, because an insert has no name before it — which is what makes the next write an update.
 	if action.target_doctype in subjects.WRITE_TARGETS:
 		remember_wrote(context, action.target_doctype, tdoc.name)
+	# The step log said "ran", which was enough while this verb could only ever update the lead. It can now
+	# RAISE a record — a ticket a patient will be answered on — and an audit that cannot name it cannot be
+	# read back. `_audit_outcome` is unaffected: it tests `marker == DORMANT_MARKER` by exact equality.
+	return f"{'created' if raised else 'updated'} {tdoc.doctype} {tdoc.name}"
 
 
 def _update_rows(action):
