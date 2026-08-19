@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 """Native CRM Task columns the automation engine may read/watch/set — the Task resource's own-column
 brain (its per-task-type declared fields live on CRM Task Type Field). Grain derives from the task type,
-never stored here. can_watch implies can_read (enforced by the reader, automation/fields.py)."""
+never stored here. `can_set` is read by `activity.api.task_columns`, `can_watch` by the dispatcher's diff."""
 import frappe
 from frappe.model.document import Document
 

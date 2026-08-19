@@ -716,6 +716,31 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Access::Record::acl",
+		fires_on="Permission",
+		trigger_detail="CRM Lead / CRM Deal · permission_query_conditions",
+		purpose=(
+			"Lead and deal lists answer from a written-down index of who may see what, instead of "
+			"working it out row by row. Off, which is how it ships, crm's own rule runs unchanged: "
+			"correct, and on 172,923 leads it reads every one of them to return a rep's twenty. On, "
+			"the same rule is answered from CRM Record Access, so a read costs what the rep can see "
+			"rather than what the table holds. It changes NO ONE's access — the index is rebuilt from "
+			"crm's own two grants, an operator is never restricted by it, and any doubt falls back to "
+			"crm. Arm it only once record_access_audit reports zero divergence on this site.\n"
+			"Example: a rep who owns one lead opens their list and the server reads one row, not 169,733."
+		),
+		# The three handlers that keep the index current — on_assignment is wired to ToDo's after_delete
+		# and not on_trash, because on_trash still sees the row it is revoking. They are NOT gated by this switch and must not
+		# be: a permission index that only updates while armed is stale the moment it is armed. The switch
+		# gates the READ (record_access.condition); these keep the table honest either way.
+		backs=[
+			"tatva_connect.access.record_access.on_subject_saved",
+			"tatva_connect.access.record_access.on_assignment",
+			"tatva_connect.access.record_access.on_assignment_change",
+			"tatva_connect.access.record_access.on_subject_deleted",
+		],
+	),
+	Auto(
 		key="Contact::Contact::visibility",
 		fires_on="Permission",
 		trigger_detail="Contact · permission_query_conditions",

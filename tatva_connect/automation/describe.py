@@ -126,8 +126,7 @@ def activity_schema_fields():
 
 
 def activity_schema_fieldnames():
-	"""Just the names - what `crm_automation_field._require_real_field` checks a CRM Task can_read/
-	can_set row's fieldname against when the doctype meta itself doesn't carry it."""
+	"""Just the names — what a CRM Task field row is checked against when the doctype meta does not carry it."""
 	return set(activity_schema_fields())
 
 
@@ -235,23 +234,19 @@ def _settable_targets(subject, vertical, group, program):
 
 	It used to ask for `CRM Lead` whatever the workflow watched, so a Task-triggered workflow offered the
 	Target `CRM Task` and then listed LEAD fields underneath it — two controls describing different
-	records. The reachable set is read from the ONE declaration (`actions.reachable_targets`), the same
-	one `_resolve_write_target` enforces and the publish gate checks, so the three cannot drift.
+	records. The set is `actions.writable_records` — the ONE answer to what a write may set a FIELD on, and
+	the same one the publish gate asks, so the two cannot drift. It is deliberately NOT `reachable_targets`,
+	which answers the narrower question of what a `Target` may NAME: the lead's child sections are settable
+	(a child-row node names the section and sets its columns) while no Target may name one.
 
-	Each descriptor carries the `doctype` it belongs to: a flat list spanning two records cannot be
+	Each descriptor carries the `doctype` it belongs to: a flat list spanning several records cannot be
 	rendered under a chosen Target without it.
-
-	The lead's CHILD sections are reachable too — a child-row node names one and then sets its columns,
-	which is the same Field Map asking the same question about a different record. Listed from
-	`crm_lead_section.child_sections()`, so a section added tomorrow is offered with nothing to regenerate.
 	"""
 	from tatva_connect.automation import actions
-	from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 
-	targets = actions.reachable_targets(subject) + [s.target_doctype for s in crm_lead_section.child_sections()]
 	return [
 		descriptor
-		for dt in dict.fromkeys(targets)
+		for dt in actions.writable_records(subject)
 		for descriptor in _settable_fields(dt, vertical, group, program)
 	]
 

@@ -24,12 +24,24 @@ SUBJECTS = {
 	# A WhatsApp Message resolves to its linked lead via reference_name (NOT reference_docname — the
 	# WhatsApp Message field is reference_name); the guard pins it to a CRM Lead reference only.
 	"WhatsApp Message": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	# A call carries the same dynamic pair a Task does, so it resolves the same way and needs the same guard.
+	"CRM Call Log": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 }
+
+
+# What a workflow may WRITE beyond the lead and the doc that fired it — SUBJECTS' twin, and code for the
+# same reason: participation needs a deploy anyway, and a one-line PR is visible in review where a row is not.
+WRITE_TARGETS = ("HD Ticket",)
 
 
 def is_subject(doctype):
 	"""True if the engine can anchor a Field-Changed rule to this doctype (i.e. resolve its grain)."""
 	return doctype in SUBJECTS
+
+
+def is_write_target(doctype):
+	"""True if a workflow may create and write this doctype — `is_subject`'s twin, asked of the same brain."""
+	return doctype in WRITE_TARGETS
 
 
 def subject_doctypes():

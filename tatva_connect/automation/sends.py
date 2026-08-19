@@ -95,7 +95,15 @@ MOBILE_CHANNELS = (WHATSAPP, VOICE)
 # channel-reported outcome. Named beside SENT so the messaging and voice send verbs read one vocabulary.
 PLACED = "placed"
 
-DORMANT_MARKER = "suppressed: sends dormant"
+# What the AUDIT records when the sends switch is off — not an edge, so no published graph gains a branch.
+SUPPRESSED = "suppressed"
+
+DORMANT_MARKER = f"{SUPPRESSED}: sends dormant"
+
+
+def was_suppressed(marker):
+	"""Did this send return the dormant marker — the ONE test, so no reader matches on the string itself."""
+	return marker == DORMANT_MARKER
 
 
 def _correlated_step(correlation):

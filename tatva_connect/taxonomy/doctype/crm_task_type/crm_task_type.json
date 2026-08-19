@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "type_name",
+  "enabled",
   "grain_section",
   "vertical",
   "group",
@@ -33,6 +34,15 @@
    "in_list_view": 1,
    "label": "Task Type",
    "reqd": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Untick to RETIRE this form: it stops being offered to a rep, and everything it already recorded stays exactly as it is. A seed re-run never changes this \u2014 retiring is an operator act."
   },
   {
    "description": "The name reps see, and who this activity is for. A lead outside the product line, group and programme named here cannot be given this activity.",
@@ -142,7 +152,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-08-19 01:10:00.000000",
  "modified_by": "Administrator",
  "module": "Taxonomy",
  "name": "CRM Task Type",

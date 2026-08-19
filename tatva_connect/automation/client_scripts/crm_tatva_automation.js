@@ -7,8 +7,15 @@ frappe.ui.form.on("CRM Tatva Automation", {
 		// The search toggle owns a full-text index; a rebuild is offered on its own form so a drifted index can be recovered without the console.
 		if (frm.doc.name === "Search::Index::indexing") {
 			frm.add_custom_button(__("Rebuild Search Index"), () => {
-				frappe.call({ method: "tatva_connect.search.api.rebuild_index", freeze: true }).then(() => {
-					frappe.show_alert({ message: __("Search index rebuild queued"), indicator: "green" });
+				frappe.call({ method: "tatva_connect.search.api.rebuild_index", freeze: true }).then((r) => {
+					// The endpoint refuses while the switch is off, and saying "queued" for a rebuild that never runs is the one message an operator cannot recover from.
+					const queued = Boolean(r && r.message && r.message.queued);
+					frappe.show_alert({
+						message: queued
+							? __("Search index rebuild queued")
+							: __("Search indexing is off, so nothing was rebuilt"),
+						indicator: queued ? "green" : "orange",
+					});
 				});
 			});
 		}

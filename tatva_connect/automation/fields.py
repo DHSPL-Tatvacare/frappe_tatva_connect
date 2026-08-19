@@ -4,15 +4,18 @@
   • task fields     → `CRM Task Field` (NATIVE columns, e.g. status) + `CRM Task Type Field` (per-task-type
                       DECLARED fields) — two sources read as ONE, so a Task lookup sees both.
 
-WHAT AUTOMATION MAY TOUCH IS THE GRAIN, AND ONLY THE GRAIN. `can_read`/`can_set` were a second, weaker
-allowlist ticked per field on top of the internal contract, and every question they answered the contract
-already answered — so a field could be entitled to a grain and still unreachable, for no reason an operator
-could see. They are gone. A workflow reads and writes the columns of its subject that its grain entitles,
-and the SAME rows answer both, so a picker can never offer what execution refuses.
+WHAT AUTOMATION MAY TOUCH ON A LEAD IS THE GRAIN, AND ONLY THE GRAIN. `can_read`/`can_set` were a second,
+weaker allowlist ticked per field on top of the internal contract, and every question they answered the
+contract already answered — so a field could be entitled to a grain and still unreachable, for no reason an
+operator could see. A workflow reads and writes the columns of its subject that its grain entitles, and the
+SAME rows answer both, so a picker can never offer what execution refuses.
 
-  • can_watch — the one flag that survives, and it is not a permission: it is the dispatcher's diff list.
-    A watched field's before/after pair is captured on save, which is what `changed to` reads. Only a
-    watched field carries a before-value; every other field is read straight off the record.
+  • can_read, and can_set on the LEAD — gone, columns and all (`patches.drop_dead_automation_flag_columns`).
+  • can_set on `CRM Task Field` — not automation's own flag: `activity.api.task_columns` owns it, so a form
+    and a workflow decide a Task write on one answer (`_task_writable` below).
+  • can_watch — survives on both, and it is not a permission: it is the dispatcher's diff list. A watched
+    field's before/after pair is captured on save, which is what `changed to` reads. Only a watched field
+    carries a before-value; every other field is read straight off the record.
 
 WHAT THE GRAIN NARROWS IS THE PICKER, NOT THE GATE. `readable_rows_in_rule_grain` is what an author is
 OFFERED; the gate at publish and at run time is wider on purpose — run state falls through to the live
@@ -25,6 +28,9 @@ Lead child routing is DERIVED from `CRM Lead Section`; a native Task column's gr
 type — never stored twice (the AST lock forbids hardcoded child-table names outside the section seed).
 """
 import frappe
+from frappe.model import no_value_fields
+
+from tatva_connect.automation import subjects
 
 LEAD_DT = "CRM Lead"
 TASK_DT = "CRM Task"
@@ -46,6 +52,20 @@ def _task_writable(fieldname):
 	from tatva_connect.activity.api import task_columns
 
 	return fieldname in task_columns() or bool(frappe.db.exists("CRM Task Type Field", {"fieldname": fieldname}))
+
+
+# `read_only` is what makes this usable rather than dangerous: it leaves the fields a person could set by hand and drops the ones the app computes for itself.
+_WRITABLE = {"fieldtype": ["not in", no_value_fields], "read_only": 0, "is_virtual": 0}
+
+
+def _meta_writable_rows(doctype):
+	"""The fields a workflow may set on a declared write target, off its own meta — the shape the Task branch takes, which reads its catalog and asks the grain nothing. `default_fields` are not DocFields, so they need no exclusion."""
+	return [frappe._dict(fieldname=df.fieldname) for df in frappe.get_meta(doctype).get("fields", _WRITABLE)]
+
+
+def _meta_writable(doctype, fieldname):
+	"""Whether a declared write target admits this field — `_task_writable`'s twin, asked of the meta."""
+	return any(r.fieldname == fieldname for r in _meta_writable_rows(doctype))
 
 
 def _grain_key(axes):
@@ -84,6 +104,8 @@ def is_settable(doctype, fieldname, axes, child_table_field=""):
 
 	if doctype == TASK_DT:
 		return _task_writable(fieldname)
+	if subjects.is_write_target(doctype):
+		return _meta_writable(doctype, fieldname)
 	if doctype != LEAD_DT:
 		return False
 	grain = {_grain_key(axes)}
@@ -114,6 +136,8 @@ def is_set_declared(doctype, fieldname, child_table_field=""):
 	"""
 	if doctype == TASK_DT:
 		return _task_writable(fieldname)
+	if subjects.is_write_target(doctype):
+		return _meta_writable(doctype, fieldname)
 	section = _child_section(doctype)
 	if section:
 		child_table_field = section.child_table_field
@@ -146,6 +170,8 @@ def _settable_rows_for(doctype, ticked):
 
 		declared = frappe.get_all("CRM Task Type Field", pluck="fieldname", distinct=True)
 		return [frappe._dict(fieldname=f) for f in sorted(set(task_columns()) | set(declared))]
+	if subjects.is_write_target(doctype):
+		return _meta_writable_rows(doctype)
 	section = _child_section(doctype)
 	if section:
 		return [frappe._dict(fieldname=r.fieldname)

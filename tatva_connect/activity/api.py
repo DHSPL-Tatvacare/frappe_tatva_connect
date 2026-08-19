@@ -423,6 +423,10 @@ def list_types_for_lead(lead):
 	"""Activity types available to this lead's grain — the searchable picker source. Grain lives on the
 	PARENT (composite key); availability is the ONE shared `_grain_matches` predicate (same brain the
 	gate uses) — a set axis equals the lead's, a blank axis is a wildcard, an all-blank grain is dormant.
+
+	`enabled = 0` RETIRES a form. LeadSquared leaves a dead designer published for years — `Phone
+	Conversation` took 56,796 punches and none since 2026-03-20 — and its history has to stay readable
+	while the rep stops being offered it. So this is the ONLY reader of the flag: the picker.
 	Native `frappe.get_all` pre-filters to candidate grains (no raw SQL), then the predicate decides.
 	Value = the composite PK (`name`); label = the clean `type_name`."""
 	posture.require("CRM Lead", "read", doc=lead)
@@ -430,6 +434,9 @@ def list_types_for_lead(lead):
 	rows = frappe.get_all(
 		"CRM Task Type",
 		filters={
+			# A RETIRED form is not offered — and only here. Everything it already recorded still renders,
+			# because `type_config` and `task_detail` read the type by name and never ask this.
+			"enabled": 1,
 			"vertical": ["in", ["", vertical]],
 			"group": ["in", ["", group]],
 			"program": ["in", ["", program]],
@@ -908,7 +915,7 @@ def _required_here(f, shown, live):
 	return bool(f.reqd) or (bool(f.mandatory_depends_on) and _field_visible(f.mandatory_depends_on, live))
 
 
-def compute_activity(lead, task_type, values, task=None):
+def compute_activity(lead, task_type, values, task=None, new_observation=True):
 	"""The ONE brain that turns a submitted activity form into CRM Task field values: validates
 	grain + required, routes every answer by `field_target`, and runs the location guard (set/check the
 	clinic anchor, resolve the address). Returns a dict of CRM Task fieldname -> value (status,
@@ -920,7 +927,14 @@ def compute_activity(lead, task_type, values, task=None):
 	new-task create (the form script stamps these onto the doc before insert). No second writer.
 
 	`task` is the CRM Task name being completed (or the freshly-inserted shell for a new punch) — it
-	is stamped onto the location audit so every Accepted/Not Required row carries its exact task id."""
+	is stamped onto the location audit so every Accepted/Not Required row carries its exact task id.
+
+	`new_observation` says whether this is a NEW punch or an EDIT of one already recorded, and it cannot be
+	derived from `task`: a new punch on a location-tracked grain passes its freshly-inserted shell. Only
+	`save_activity` knows, so only it may say. It decides where a `source = Lead` answer lands on a
+	MULTI-ROW section — a new punch is a new observation and takes a new row (a second payment is a second
+	purchase), while an edit corrects the row that punch already wrote. Defaulted True because every other
+	caller is the native new-task path."""
 	if isinstance(values, str):
 		values = frappe.parse_json(values) or {}
 	vertical, group, program = _lead_axes(lead)
@@ -974,7 +988,7 @@ def compute_activity(lead, task_type, values, task=None):
 	# After the loop: nothing reaches the lead until every field has passed D22, required and the person guard.
 	if lead_writes:
 		from tatva_connect.lead.detail import write_lead_fields
-		write_lead_fields(lead, lead_writes)
+		write_lead_fields(lead, lead_writes, new_observation=new_observation)
 
 	fields = {
 		"status": "Done" if int(tt.is_logged_complete or 0) else "Todo",
@@ -1116,7 +1130,9 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 	own = _own_columns(task_fields)
 
 	if task:
-		fields = compute_activity(lead, task_type, values, task=task)
+		# The ONE edit path: this punch already recorded its answers, so a lead field it writes CORRECTS
+		# the row it wrote and does not add another. Both paths below are new punches.
+		fields = compute_activity(lead, task_type, values, task=task, new_observation=False)
 		doc = frappe.get_doc("CRM Task", task)
 		doc.update(own)
 		doc.update(fields)
