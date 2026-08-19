@@ -139,6 +139,18 @@ FIELD_LEVELS = {
 
 # Upstream fields reclassified to permlevel 1 via Property Setter (the non-fork way to change another app's field), paired with the FIELD_LEVELS grant above.
 _PERMLEVEL_1_FIELDS = {
+	# `User` at permlevel 0 is NOT a directory. Frappe puts the credentials there (api_key, api_secret,
+	# roles, restrict_ip) but leaves a colleague's phone, date of birth, last IP, last login and live
+	# sessions readable by anyone who may read the row at all. A picker needs a name, an email and an
+	# avatar; it does not need a rep's mobile number. These move up so the grant below can be a directory
+	# grant and nothing more — and they become admin-only for every role that reads User today, which is a
+	# reduction in exposure, not an addition.
+	"User": (
+		"mobile_no", "phone", "birth_date",
+		"last_ip", "last_login", "last_active", "last_password_reset_date",
+		"active_sessions", "simultaneous_sessions", "logout_all_sessions",
+		"bypass_restrict_ip_check_if_2fa_enabled", "new_password",
+	),
 	"LMS Test Case": ("input", "expected_output"),
 	"LMS Program Member": ("full_name", "progress"),
 	"Insights Data Source v3": (

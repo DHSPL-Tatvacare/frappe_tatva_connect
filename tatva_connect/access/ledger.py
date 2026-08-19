@@ -50,6 +50,7 @@ LMS_STUDENT = "LMS Student"                # lms; Moderator holds no doctype gra
 COURSE_CREATOR = "Course Creator"
 BATCH_EVALUATOR = "Batch Evaluator"
 AGENT_MANAGER = "Agent Manager"
+MODERATOR = "Moderator"                    # lms; holds exactly ONE grant — the directory read below
 WIKI_MANAGER = "Wiki Manager"              # wiki; Wiki Approver is deliberately absent — there is no review tier
 WIKI_USER = "Wiki User"                    # wiki latches this onto every new User (wiki/hooks.py after_insert)
 INSIGHTS_ADMIN = "Insights Admin"          # insights; authors dashboards, and `is_admin` already reads System Manager as one
@@ -180,6 +181,21 @@ EXECUTABLE_FIELDTYPES = ("Code",)
 MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 
 # --- OPEN · value = a bucket name, or explicit {role: tuple} when no bucket has the shape. ---
+
+# The platform's own user row. TIER0 still — nobody creates or edits a User but an administrator — but a
+# READ is not an edit, and two apps read this doctype DIRECTLY rather than through a gated method: helpdesk
+# resolves agents and LMS resolves discussion authors. CRM does not appear here because it never needed to:
+# `crm.api.session.get_users` is a whitelisted method with its own role gate, which is why the SPA's assignee
+# pickers work with no DocPerm at all — the pattern to copy when a third app wants a directory.
+#
+# `Desk User` is deliberately ABSENT. Frappe itself ships that row at 0 (core/doctype/user/user.json), so
+# granting it would widen past the platform's own default for every staff login, to serve two apps.
+#
+# Safe because the row a reader sees is a DIRECTORY: the credentials sit at permlevel 1 where frappe put
+# them, and `lockdown._PERMLEVEL_1_FIELDS["User"]` moves the PII and session columns up to join them.
+_PLATFORM_USER = {
+	"User": {SYSTEM_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 0, 0, 0), MODERATOR: (1, 0, 0, 0)},
+}
 
 _CRM_CORE = {
 	# Records a rep works on all day. Reps never delete; a manager clears duplicates and junk.
@@ -603,7 +619,7 @@ _INSIGHTS = {
 	"Insights Query Result": "DENIED",
 }
 
-OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, **_LMS}
+OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, **_LMS, **_PLATFORM_USER}
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
 EXTRA_PTYPES = {
