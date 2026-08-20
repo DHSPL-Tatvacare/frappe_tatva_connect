@@ -92,6 +92,19 @@ def _stage_moved(a):
 	}
 
 
+def _ungroup(activities):
+	"""crm collapses a BURST of edits by one owner into a single row and hangs the rest on `other_versions`
+	(crm/api/activities.py:handle_multiple_versions -> parse_grouped_versions), so on a record one person
+	edits, every change but the first is hidden behind a key nothing renders: four stage moves thirteen
+	seconds apart drew ONE line. The rail's INDEXED supplier never groups — it reads `lead_events` straight
+	— so expanding here is what makes the merged supplier and the Activity tab tell the same history."""
+	out = []
+	for a in activities:
+		out.append(a)
+		out.extend(a.pop("other_versions", None) or [])
+	return out
+
+
 def _curate_native(activities, doc_keys):
 	"""Keep the native rows that belong in the audit; transform/drop the rest:
 	- attachment_log for a file folded into an activity -> dropped (shown inside that activity);
@@ -153,7 +166,7 @@ def get_activities(name: str):
 	doc_keys.discard("")
 
 	activities = (
-		_curate_native(list(activities), doc_keys)
+		_curate_native(_ungroup(list(activities)), doc_keys)
 		+ _activity_events(logged)
 		+ _task_events(plain_tasks)
 	)
