@@ -13,7 +13,25 @@ from tatva_connect.access.custom_field_guard import guard_custom_field
 _PAYLOAD = 'charts<img src="0" onerror=alert(document.cookie)>'
 
 
+_PROBE = "custom_guard_probe"
+
+
 class TestCustomFieldGuard(FrappeTestCase):
+	def setUp(self):
+		"""Clear a probe a previous run left behind, so the suite survives being interrupted.
+
+		The probe below is inserted for real and removed by the test transaction's rollback — but a run
+		killed between the insert and the rollback leaves the Custom Field standing, and every run after
+		it then errors on "already exists" rather than testing the guard. That is the test failing to
+		describe the code, which is the one thing a test may never do. The probe is a Section Break, so
+		it owns no DB column and dropping the row drops nothing with it.
+		"""
+		super().setUp()
+		stale = frappe.db.exists("Custom Field", {"dt": "ToDo", "fieldname": _PROBE})
+		if stale:
+			frappe.delete_doc("Custom Field", stale, ignore_permissions=True, force=True)
+			frappe.db.commit()  # the leftover survived a rollback; removing it has to outlive one too
+
 	def test_illegal_fieldname_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			guard_custom_field(frappe._dict(fieldname=_PAYLOAD))
@@ -27,7 +45,7 @@ class TestCustomFieldGuard(FrappeTestCase):
 		stands between the poison and the DB. A plain `validate` hook (which ignore_validate skips) misses
 		this. Section Break => no DB column, so the probe leaves no schema behind."""
 		cf = frappe.get_doc({
-			"doctype": "Custom Field", "dt": "ToDo", "fieldname": "custom_guard_probe",
+			"doctype": "Custom Field", "dt": "ToDo", "fieldname": _PROBE,
 			"label": "Probe", "fieldtype": "Section Break",
 		}).insert(ignore_permissions=True)
 		cf.fieldname = _PAYLOAD

@@ -81,7 +81,16 @@ def mint_partner(email, ticks=()):
 		user.append("roles", {"role": "Partner API User"})
 		user.save(ignore_permissions=True)
 	# The contract is keyed on its grain composite, so it is found by the partner_user COLUMN, never by name.
-	if not frappe.db.exists(_MAPPING, {"partner_user": email}):
+	stale = frappe.db.exists(_MAPPING, {"partner_user": email})
+	if stale:
+		# ADOPT IT, do not just reuse it. "The fixture may not delete something it did not mint" is a rule
+		# about an OPERATOR's row — and this one is on a ZZ grain, a name this module reserves precisely so
+		# teardown is unambiguous, so it is ours from a run that was killed before teardown. Reusing it
+		# without recording it is what stranded an ENABLED partner grant on dev for fifteen days: the mint
+		# skipped the insert, `_MADE` stayed empty, and teardown had nothing to remove. Recording it here is
+		# what finally reclaims it.
+		_MADE.append((_MAPPING, stale))
+	else:
 		doc = frappe.get_doc({
 			"doctype": _MAPPING, "partner_user": email, "enabled": 1, "contract_name": email,
 			"vertical": VERTICAL, "crm_group": GROUP,
