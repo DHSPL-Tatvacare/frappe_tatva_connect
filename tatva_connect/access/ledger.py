@@ -198,14 +198,21 @@ MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 #
 # Safe because the row a reader sees is a DIRECTORY: the credentials sit at permlevel 1 where frappe put
 # them, and `lockdown._PERMLEVEL_1_FIELDS["User"]` moves the PII and session columns up to join them.
-# `Sales Manager` is the third reader and it is NOT a CRM grant: rebuilding this matrix deleted frappe's own
-# `Desk User: select` row, which is what resolved a colleague in every Link picker, so a manager who assigns
-# work had no way to name one. It replaces that floor for the one role that needs it, not for every login.
+# The readers below are NOT CRM grants: rebuilding this matrix deleted frappe's own `Desk User: select` row,
+# which is what resolved a colleague in every Link picker, so anyone who assigns or names a person had no way
+# to pick one — the list rendered empty for exactly the people who were given the form. This replaces that
+# floor for the roles that actually hold such a field and for no one else, which `test_ledger_reachability`
+# is the standing check on: a rep names an owner, an assignee, a caller and a contact's user (CRM Lead,
+# CRM Task, CRM Call Log, CRM Deal, Contact, CRM Smart View, CRM Telephony Agent, CRM View Settings), an
+# agent names one on five helpdesk forms, and Automation Manager names a partner user on a mapping.
 _PLATFORM_USER = {
 	"User": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
 		SALES_MANAGER: (1, 0, 0, 0),
+		SALES_USER: (1, 0, 0, 0),
+		AUTOMATION_MANAGER: (1, 0, 0, 0),
 		AGENT_MANAGER: (1, 0, 0, 0),
+		AGENT: (1, 0, 0, 0),
 		MODERATOR: (1, 0, 0, 0),
 	},
 }
