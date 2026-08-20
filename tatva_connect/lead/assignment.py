@@ -75,9 +75,13 @@ def on_assignment_set_owner(doc, method=None):
 	ToDo and are unaffected — but `Leads by Owner`, `SLA Misses by Owner`, the Lead Owner list column and
 	the spotlight owner facet all name the COLUMN, so an ownerless lead reads blank on four surfaces.
 
-	FILL, NEVER OVERWRITE. An owner already on the record is somebody's decision — a rep's own lead, a
-	manager's hand-off, the migrated LSQ owner — and a round-robin pick must never displace it. The guard
-	is the empty column, not the switch.
+	WHO ASSIGNED DECIDES WHETHER IT OVERWRITES. A round-robin pick must never displace an owner somebody
+	chose — a rep's own lead, a manager's hand-off, the migrated LSQ owner — so a rule only FILLS an empty
+	column. A person assigning is the opposite case: handing a lead to someone IS the decision, and a
+	sales desk expects the owner to move with it. The two are told apart by the SESSION, not by
+	`ToDo.assignment_rule`: a rule stamps that column, but the workflow engine's `Assign to User` node
+	does not, so reading it would let a Flow displace a manager's decision while a round robin correctly
+	could not. Everything automated runs as Administrator; a rep clicking Assign runs as themselves.
 
 	`db.set_value` because it writes the column and fires NO document events: crm assigns off
 	`lead_owner` changing (crm_lead.py:86-96), so a `save()` here would raise a second ToDo and re-enter
@@ -87,7 +91,20 @@ def on_assignment_set_owner(doc, method=None):
 		return
 	if not automation.is_enabled(OWNER_FROM_RULE):
 		return
-	if frappe.db.get_value("CRM Lead", doc.reference_name, "lead_owner"):
+	owner = frappe.db.get_value("CRM Lead", doc.reference_name, "lead_owner")
+	if owner == doc.allocated_to:
+		return
+	# NOTHING AUTOMATED DISPLACES AN OWNER SOMEBODY CHOSE; a person assigning IS the choice, and a sales
+	# desk means exactly that by "assign" — the lead moves to whoever it was handed to. The test is the
+	# SESSION, not `assignment_rule`: a rule stamps that column, but the workflow engine's `Assign to
+	# User` node calls `assign_to.add` with no rule name (automation/actions.py), so reading the column
+	# would let a Flow overwrite a manager's decision while a round robin correctly could not. TWO tests,
+	# because neither alone is complete: a wait-free Flow runs INLINE in the acting rep's session, so the
+	# session says "human" while the engine is the one assigning — `frappe.flags.in_workflow` (set around
+	# every effect the engine runs, triggers.py:207/361) is what names that case, and it is frappe's own
+	# convention for it. The session test then covers what carries no flag: the scheduler, a background
+	# job and the migration, all of which run as Administrator.
+	if owner and (frappe.flags.get("in_workflow") or frappe.session.user in ("Administrator", "Guest")):
 		return
 	frappe.db.set_value(
 		"CRM Lead", doc.reference_name, "lead_owner", doc.allocated_to, update_modified=False
