@@ -63,7 +63,15 @@ class TestWorkflowRowVisibility(FrappeTestCase):
 		hooked = set(hooks.permission_query_conditions) & set(hooks.has_permission)
 		# Leads/Deals are scoped by crm's own hierarchy, and the picklist clamp is a grain filter on a
 		# master, not row visibility. Neither belongs to this registry.
-		outside = {"CRM Picklist Value"}
+		#
+		# The three LMS tables are scoped, and scoped HARDER than a registry strategy: membership is a
+		# join through LMS Batch Student / LMS Program Member, not a column on the row, so `access.lms_permissions`
+		# owns both halves of the pair for them. They are exempt from the REGISTRY, never from the lock —
+		# `test_lms_membership_visibility` is the standing proof that the rule is enforced, and the pair
+		# itself is still asserted here, because dropping either hook would leave the other half open.
+		outside = {"CRM Picklist Value", "LMS Batch", "LMS Program", "LMS Quiz"}
+		for dt in ("LMS Batch", "LMS Program", "LMS Quiz"):
+			self.assertIn(dt, hooked, f"{dt} is exempt from the registry because lms_permissions scopes it — and it no longer does")
 		missing = sorted((hooked - outside) - set(visibility.SCOPED))
 		self.assertEqual(missing, [], f"hooked in hooks.py but never declared: {missing}")
 		unhooked = sorted(set(visibility.SCOPED) - hooked)

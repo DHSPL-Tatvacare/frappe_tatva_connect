@@ -43,13 +43,25 @@ REVIEWED_EXCEPTIONS = {
 	"Website Script": {"Website Manager": "owns the public site"},
 	"Website Settings": {"Website Manager": "owns the public site"},
 	"Website Theme": {"Website Manager": "owns the public site"},
-	"Assignment Rule": {"Agent Manager": "assignment conditions are the feature"},
+	"Assignment Rule": {
+		"Agent Manager": "assignment conditions are the feature",
+		# The ledger offers Assignment Rule to a Sales Manager because SPA Settings shows it to one, and a
+		# rule with no condition is not a rule. The expression is PythonExpression through frappe's
+		# safe_eval, not exec — the accepted surface is that sandbox, and it is accepted knowingly.
+		"Sales Manager": "SPA Settings offers assignment rules to a sales manager; the condition IS the rule",
+	},
 	"HD Form Script": {"Agent Manager": "helpdesk form scripting is the feature"},
 	"HD Service Level Agreement": {"Agent Manager": "SLA conditions are the feature"},
 	"CRM Form Script": {"Sales Manager": "CRM form scripting is the feature; live rows exist"},
 	"CRM Service Level Agreement": {"Sales Manager": "SLA conditions are the feature"},
 	"HD Ticket Template": {"Agent Manager": "template authoring is the manager's job; frontline Agent is read-only"},
 	"WhatsApp Notification": {"Script Manager": "notification conditions are the feature"},
+	# BOTH ENTRIES BELOW ARE SERVER-SIDE JINJA, and that is the reason they are written down rather than
+	# waved through: frappe renders them in its sandboxed environment, so the accepted surface is that
+	# sandbox holding. Neither grant is incidental — removing either breaks a shipped feature, so the
+	# decision is to accept and record it, and to revisit it here if the sandbox is ever the thing at issue.
+	"Webhook": {"Automation Manager": "a Call API node cannot publish until its webhook exists, so the payload is theirs to author"},
+	"Email Template": {"Sales Manager": "a rep's own template is the tool; it renders into an outgoing email, never into a desk session"},
 	"Insights Query": {"Insights User": "an analyst writing a query is the product"},
 	"Insights Table v3": {"Insights Admin": "import scripting is the feature"},
 	"LMS Programming Exercise Submission": {
