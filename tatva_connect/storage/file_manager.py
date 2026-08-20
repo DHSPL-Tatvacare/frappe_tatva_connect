@@ -123,15 +123,29 @@ def fetch_expires_at(file_doc):
 	return parse_qs(urlparse(fetch_url(file_doc)).query).get("se", [None])[0]
 
 
-def by_blob_key(blob_key):
-	"""Resolve a File from a blob key by its proxy URL — matched by KEY so a host change or an
-	absolute↔relative URL difference never orphans a download. The bond-breakage fix, in ONE place."""
-	exact = frappe.db.exists("File", {"file_url": blob_store.download_url(blob_key)})
-	if exact:
-		return exact
+def rows_for_blob(blob_key):
+	"""EVERY File row on a blob — matched by KEY so a host change or an absolute↔relative URL difference
+	never orphans a download. Several rows share one blob whenever a file reaches a record through more
+	than one surface (a comment, an email, a ticket), which `file_events.on_trash` already ref-counts, so
+	ANY caller that judges a blob must see all of them: picking one row made the answer depend on which
+	row MariaDB returned first. Ordered, so a caller that wants a representative row gets a stable one."""
+	names = frappe.get_all(
+		"File", filters={"file_url": blob_store.download_url(blob_key)}, pluck="name", order_by="creation asc"
+	)
+	if names:
+		return names
 	# The query comes from the ONE builder; escaping matters because an encoded key contains `%`, a LIKE wildcard.
 	esc = blob_store.download_query(blob_key).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-	return frappe.db.exists("File", {"file_url": ["like", f"%?{esc}"]})
+	return frappe.get_all(
+		"File", filters={"file_url": ["like", f"%?{esc}"]}, pluck="name", order_by="creation asc"
+	)
+
+
+def by_blob_key(blob_key):
+	"""ONE row for a blob — the file's IDENTITY (name, size, label), never its permission. Authorisation
+	reads every row (`file_access.may_read_blob`) because a blob's rows do not share a parent."""
+	names = rows_for_blob(blob_key)
+	return names[0] if names else None
 
 
 def rehome(file, attached_to_doctype, attached_to_name, *, meta=None):
