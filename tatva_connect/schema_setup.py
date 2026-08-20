@@ -40,6 +40,7 @@ from tatva_connect.patches import (
 	add_task_answer_question_index,
 	add_task_document_kind_index,
 	add_task_due_state_index,
+	add_lead_grain_index,
 	add_task_lead_snapshot_index,
 	add_timeline_paging_indexes,
 	add_todo_assignment_index,
@@ -80,6 +81,10 @@ _STEPS = (
 	# that pair; the existing indexes lead with reference_docname and cannot serve it. Composite, so not
 	# JSON-declarable, and install-app baselines its patch without running it.
 	add_task_due_state_index,
+	# (custom_vertical, custom_group, custom_current_program, modified) on CRM Lead — a grain-scoped Smart View's
+	# count was a full table scan on every page open; no existing index leads with the grain. Composite, so not
+	# JSON-declarable, and install-app baselines its patch without running it.
+	add_lead_grain_index,
 	# (contact, creation) on CRM Workflow Step Log — the contact cap counts one number over a rolling window, so the window has to ride in the leaf or the count seeks to the number and then scans every step ever logged against it. Composite, so not JSON-declarable, and install-app baselines its patch without running it.
 	add_step_log_contact_index,
 	# ...and DROP the single-column contact_index the search_index flag built: by leftmost prefix the composite serves every read it could, and for the cap's own query it serves them better (the window filters inside the index). Two overlapping indexes cost a write each on the fastest-growing table and let the optimiser pick the worse plan.
