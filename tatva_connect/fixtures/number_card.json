@@ -11,7 +11,7 @@
   "function": "Sum",
   "aggregate_function_based_on": "request_count",
   "filters_json": "[[\"CRM API Metric\",\"granularity\",\"=\",\"hour\"]]",
-  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"moment().subtract(24, 'hours').format('YYYY-MM-DD HH:mm:ss')\"]]",
   "color": "#449CF0",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
@@ -28,7 +28,7 @@
   "function": "Sum",
   "aggregate_function_based_on": "error_count",
   "filters_json": "[[\"CRM API Metric\",\"granularity\",\"=\",\"hour\"]]",
-  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "dynamic_filters_json": "[[\"CRM API Metric\",\"bucket_start\",\">=\",\"moment().subtract(24, 'hours').format('YYYY-MM-DD HH:mm:ss')\"]]",
   "color": "#E24C4C",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
@@ -68,7 +68,7 @@
   "document_type": "CRM API Request Log",
   "function": "Count",
   "filters_json": "[[\"CRM API Request Log\",\"channel\",\"=\",\"Partner API\"]]",
-  "dynamic_filters_json": "[[\"CRM API Request Log\",\"request_time\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "dynamic_filters_json": "[[\"CRM API Request Log\",\"request_time\",\">=\",\"moment().subtract(24, 'hours').format('YYYY-MM-DD HH:mm:ss')\"]]",
   "color": "#449CF0",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
@@ -84,7 +84,7 @@
   "document_type": "CRM API Request Log",
   "function": "Count",
   "filters_json": "[[\"CRM API Request Log\",\"channel\",\"=\",\"Partner API\"],[\"CRM API Request Log\",\"is_error\",\"=\",1]]",
-  "dynamic_filters_json": "[[\"CRM API Request Log\",\"request_time\",\">=\",\"frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-24)\"]]",
+  "dynamic_filters_json": "[[\"CRM API Request Log\",\"request_time\",\">=\",\"moment().subtract(24, 'hours').format('YYYY-MM-DD HH:mm:ss')\"]]",
   "color": "#E24C4C",
   "show_percentage_stats": 1,
   "stats_time_interval": "Daily"
