@@ -24,7 +24,7 @@ which are this seam's own scaffolding, never the exported data.
 """
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime
 
 DOCTYPE = "CRM Export Job"
 
@@ -32,6 +32,9 @@ DOCTYPE = "CRM Export Job"
 EVENT_PROGRESS = "crm_export_progress"
 EVENT_READY = "crm_export_ready"
 EVENT_FAILED = "crm_export_failed"
+
+# How many recent jobs `mine` answers with. A tab is catching up on its own exports, not browsing history.
+_RECENT = 10
 
 # source -> producer; returns {"stem", "ext", "content", "rows", "truncated"}. Closed by construction.
 _PRODUCERS = {
@@ -146,6 +149,29 @@ def status(job):
 	return _result(frappe.get_doc(DOCTYPE, job))
 
 
+@frappe.whitelist()
+def mine(minutes=15):
+	"""The caller's own recent exports — what a tab needs to catch up after it stopped listening.
+
+	A drain outlives the surface that asked for it: a route change unmounts the list, and the realtime
+	event then lands with nobody there. The job row is the record either way, so a tab coming back asks
+	this and resumes — still-running jobs are tracked again, and one that finished while it was away is
+	offered as a download rather than silently lost.
+
+	Filtered on `owner` because the endpoint is `mine`. The doctype's own `if_owner` already refuses
+	another rep's row; this is about what the question MEANS, since an operator's `if_owner=0` would
+	otherwise answer with everybody's exports."""
+	since = add_to_date(now_datetime(), minutes=-cint(minutes))
+	names = frappe.get_list(
+		DOCTYPE,
+		filters={"owner": frappe.session.user, "creation": [">", since]},
+		pluck="name",
+		order_by="creation desc",
+		limit=_RECENT,
+	)
+	return [_result(frappe.get_doc(DOCTYPE, name)) for name in names]
+
+
 def _result(doc):
 	"""What an export IS, once or twice asked: the ready event publishes it and the poll returns it, so
 	the tab has one completion path and the two can never describe the same job differently."""
@@ -155,7 +181,24 @@ def _result(doc):
 			"File", {"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name},
 			["file_url", "file_name"], as_dict=True,
 		)
-		out.update(file_url=file and file.file_url, file_name=file and file.file_name)
+		out.update(file_url=file and _saveable(file.file_url), file_name=file and file.file_name)
 	elif doc.status == "Error":
 		out["error"] = _("The export could not be prepared.")  # the traceback stays with the operator
 	return out
+
+
+def _saveable(file_url):
+	"""The SAVE flavour of an offloaded file's URL, which an export always wants.
+
+	An offloaded File's stored `file_url` is a proxy that REDIRECTS to Azure, and the HTML `download`
+	attribute is same-origin-only — so it is silently ignored the moment the hop leaves this origin, and
+	the tab gets a navigation instead of a file. `download_url(..., attachment=True)` signs a
+	`Content-Disposition: attachment` onto the SAS link, which `blob_store` states is the only way a
+	browser saves a blob rather than opening it. That flag is deliberately never stored on the File row
+	— it would orphan the row from `by_blob_key` — so it is added here, by the control doing the download.
+
+	A file still on local disk is same-origin already and is returned untouched."""
+	from tatva_connect.storage import blob_store
+
+	blob_key = blob_store.blob_key_from_url(file_url)
+	return blob_store.download_url(blob_key, attachment=True) if blob_key else file_url

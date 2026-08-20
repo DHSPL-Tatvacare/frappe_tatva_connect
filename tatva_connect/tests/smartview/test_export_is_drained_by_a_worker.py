@@ -118,6 +118,64 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		self.assertTrue(state["file_url"], "the poll path cannot reach the file")
 		self.assertTrue(state["file_name"])
 
+	def test_the_url_the_tab_gets_is_one_a_browser_SAVES(self):
+		"""FOUND ON PROD. The drain completed, the file was written, and the tab did nothing.
+
+		An offloaded File's stored `file_url` is a proxy that REDIRECTS to Azure, and the HTML `download`
+		attribute is same-origin-only — so it was silently ignored the moment the hop left this origin and
+		the click became a navigation instead of a save. `blob_store` states the cure and states that the
+		flag is never stored on the File row, because a second spelling would orphan it from
+		`by_blob_key`: it is added by whoever renders the download. This seam is that control.
+
+		Asserted on `_saveable` directly, so it holds whether or not this bench offloads to Azure."""
+		from tatva_connect.storage import blob_store
+
+		stored = blob_store.download_url("platform/crm_export_job/abc/x.xlsx")
+		saveable = exports._saveable(stored)
+
+		self.assertIn(f"&{blob_store.DOWNLOAD_FLAG}=1", saveable, "the tab was handed a link it cannot save")
+		self.assertEqual(
+			blob_store.blob_key_from_url(saveable),
+			blob_store.blob_key_from_url(stored),
+			"the save flavour names a different blob — the File row would be orphaned",
+		)
+
+	def test_a_file_still_on_local_disk_is_handed_back_untouched(self):
+		"""Same origin already, so `<a download>` works and there is no redirect to sign a header onto."""
+		self.assertEqual(exports._saveable("/private/files/x.xlsx"), "/private/files/x.xlsx")
+		self.assertIsNone(exports._saveable(None))
+
+	def test_a_tab_that_was_away_can_pick_its_own_exports_back_up(self):
+		"""THE recovery. A drain outlives the surface that asked for it — a route change or a reload leaves
+		the realtime event landing with nobody there — so a returning tab asks for its own recent jobs and
+		resumes. A finished one comes back WITH its file, because being told it exists and not being able
+		to fetch it is the same failure in a politer voice."""
+		job, _events = self._drained()
+		recent = exports.mine()
+
+		self.assertIn(job.name, [r["job"] for r in recent], "the tab cannot find the export it missed")
+		found = next(r for r in recent if r["job"] == job.name)
+		self.assertEqual(found["status"], "Completed")
+		self.assertTrue(found["file_url"], "a recovered export has no file to fetch")
+		self.assertTrue(found["file_name"])
+
+	def test_it_answers_with_the_callers_own_exports_and_nobody_elses(self):
+		"""`mine` means mine. The doctype's `if_owner` already refuses another rep's row, but an operator
+		holds `if_owner=0` — so without the owner filter this would hand an administrator the whole site's
+		exports and a tab would offer to download a file it never asked for."""
+		job, _events = self._drained()
+		frappe.set_user(STRANGER)
+		try:
+			self.assertEqual(exports.mine(), [], "a stranger was offered someone else's export")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn(job.name, [r["job"] for r in exports.mine()], "the owner lost their own export")
+
+	def test_the_window_is_honoured_so_a_tab_is_not_offered_last_week(self):
+		"""A returning tab is catching up on what it just missed, not browsing history."""
+		self._drained()
+		self.assertEqual(exports.mine(minutes=0), [], "a zero-minute window still answered")
+
 	def test_another_rep_cannot_reach_someone_elses_export(self):
 		"""`if_owner` is the gate on both the row and, through it, the file."""
 		job, _events = self._drained()
