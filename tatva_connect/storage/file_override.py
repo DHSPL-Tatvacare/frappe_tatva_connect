@@ -24,7 +24,7 @@ import frappe
 from frappe.core.doctype.file.file import File
 from frappe.utils import cstr
 
-from tatva_connect.storage import file_names, file_screening
+from tatva_connect.storage import blob_store, file_names, file_screening
 from tatva_connect.storage.blob_store import BlobStore, blob_key_from_url
 from tatva_connect.storage.file_events import apply_privacy_policy, assert_link_target_safe
 
@@ -67,10 +67,39 @@ class FileOverride(File):
 		self.file_name = file_names.fit(self.file_name)  # a name past the column is refused by MariaDB and the file is lost; the label is trimmed, identity is the row and the blob key
 		apply_privacy_policy(self)  # decide privacy BEFORE core reads it to pick the directory
 		self._screen_content()  # refuse bad bytes BEFORE core writes them
+		self._flag_existing_blob_reference()  # a reference re-writes nothing — core's own flag, set before core reads it
 		sent = {f: self.get(f) for f in _DERIVED}  # what the CALLER sent, before core derives its own answers
 		super().before_insert()  # core writes the bytes, now to the directory the checkpoint chose
 		self._inherit_blob_facts()  # core derives from bytes it writes, and a reference writes none — this is that derivation
 		self._derived = {f: self.get(f) for f in _DERIVED if self.get(f) != sent[f]}  # only what core itself changed — see _restore_derived
+
+	def _flag_existing_blob_reference(self):
+		"""A row that only REFERENCES bytes another row already owns must not make a second copy of them.
+
+		Core re-reads and re-SAVES any local `file_url` it is handed (file.py:134), and `get_content`
+		returns TEXT for a file that decodes — so the copy was hashed as a string and written under a new
+		name: `file_manager.link` left a second file on disk and a reference whose url and `content_hash`
+		both disagreed with the source it was supposed to be pointing at. Size was right, which is what
+		made it quiet.
+
+		Core has a flag for exactly this (`copy_from_existing_file`, file.py:121) and it is set here rather
+		than at the call site because every surface builds references — `file_manager.link`, crm's comment
+		`add_attachments`, helpdesk's `attach_file_with_doc` — and the rule belongs where the other file
+		decisions are, not repeated in three apps. It is read AFTER core's naming, type, extension and
+		private-access checks, so a reference is still validated exactly like any other upload; only the
+		byte-write and the duplicate-entry pass it makes redundant are skipped.
+
+		An OFFLOADED reference never reached this: a proxy url is one of core's own URL_PREFIXES, so
+		`is_remote_file` already sent it down the branch that writes nothing. That is why a site with
+		offload on could not see this, and why the seam test — which turns offload off to inspect the
+		bytes on disk — is what caught it.
+		"""
+		if self.is_folder or self.get("content") or not self.file_url:
+			return  # a folder, or bytes the caller actually sent: core writes those, and must
+		if not blob_store.is_local_url(self.file_url):
+			return  # remote/proxy: core's own is_remote_file branch already writes nothing
+		if frappe.db.exists("File", {"file_url": self.file_url}):
+			self.flags.copy_from_existing_file = True
 
 	def _inherit_blob_facts(self):
 		"""Size and hash for a row that REFERENCES a blob someone else already wrote.
