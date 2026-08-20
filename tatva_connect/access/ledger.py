@@ -60,11 +60,11 @@ DESK_USER = "Desk User"  # automatic (permissions.py:40) — ungrantable, but a 
 
 # bucket -> {role: (r, w, c, d[, if_owner[, submit[, share]]])} — POLICY §4.
 BUCKETS = {
-	# 1 · records a rep works on daily; reps never delete.
+	# 1 · records a rep works on daily; reps never delete. The 7th flag is `share`, which crm ships on all three roles: frappe's assign_to falls back to a DocShare whenever the assignee cannot already see the row, and that fallback runs as the ASSIGNER, so dropping it breaks assignment outright.
 	"OPERATIONAL": {
-		SYSTEM_MANAGER: (1, 1, 1, 1),
-		SALES_MANAGER: (1, 1, 1, 1),
-		SALES_USER: (1, 1, 1, 0),
+		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_USER: (1, 1, 1, 0, 0, 0, 1),
 	},
 	# 2 · masters/layouts a rep reads and a manager curates.
 	"CONFIG": {
@@ -174,6 +174,11 @@ TIER0 = (
 	"Client Script",
 )
 
+# The Tier 0 entries reviewed and deliberately opened — "without review" above is what this records.
+TIER0_REVIEWED = {
+	"User": "directory READ; credentials and PII sit at permlevel 1 (lockdown._PERMLEVEL_1_FIELDS)",
+}
+
 # --- R2 · executable by contract, so authorship is the only control ------------------------------
 EXECUTABLE_FIELDTYPES = ("Code",)
 
@@ -193,8 +198,16 @@ MARKUP_FIELDTYPES = ("HTML", "HTML Editor", "Text Editor", "Markdown Editor")
 #
 # Safe because the row a reader sees is a DIRECTORY: the credentials sit at permlevel 1 where frappe put
 # them, and `lockdown._PERMLEVEL_1_FIELDS["User"]` moves the PII and session columns up to join them.
+# `Sales Manager` is the third reader and it is NOT a CRM grant: rebuilding this matrix deleted frappe's own
+# `Desk User: select` row, which is what resolved a colleague in every Link picker, so a manager who assigns
+# work had no way to name one. It replaces that floor for the one role that needs it, not for every login.
 _PLATFORM_USER = {
-	"User": {SYSTEM_MANAGER: (1, 1, 1, 1), AGENT_MANAGER: (1, 0, 0, 0), MODERATOR: (1, 0, 0, 0)},
+	"User": {
+		SYSTEM_MANAGER: (1, 1, 1, 1),
+		SALES_MANAGER: (1, 0, 0, 0),
+		AGENT_MANAGER: (1, 0, 0, 0),
+		MODERATOR: (1, 0, 0, 0),
+	},
 }
 
 _CRM_CORE = {
@@ -208,9 +221,9 @@ _CRM_CORE = {
 	"CRM Organization": "OPERATIONAL",
 	# One person, two desks — a CRM contact becomes the customer helpdesk serves, so both roles hold it.
 	"Contact": {
-		SYSTEM_MANAGER: (1, 1, 1, 1),
-		SALES_MANAGER: (1, 1, 1, 1),
-		SALES_USER: (1, 1, 1, 0),
+		SYSTEM_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_MANAGER: (1, 1, 1, 1, 0, 0, 1),
+		SALES_USER: (1, 1, 1, 0, 0, 0, 1),
 		AGENT_MANAGER: (1, 1, 1, 1),
 		AGENT: (1, 1, 1, 1),
 	},

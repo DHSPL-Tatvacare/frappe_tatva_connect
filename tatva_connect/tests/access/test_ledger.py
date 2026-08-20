@@ -69,8 +69,10 @@ class TestLedger(FrappeTestCase):
 			self.assertEqual(_pad(perms), (1, 0, 0, 0, 0), f"DENIED grants {role} more than read")
 
 	def test_tier0_is_a_watchlist_not_a_grant(self):
-		"""Tier 0 names the escalation set — an entry here must not be opened without review."""
+		"""Tier 0 names the escalation set — an entry here must not be opened without a recorded review."""
 		for doctype in ledger.TIER0:
+			if doctype in ledger.TIER0_REVIEWED:
+				continue
 			self.assertFalse(
 				ledger.is_declared(doctype), f"{doctype} is Tier 0 and must not be opened without review"
 			)

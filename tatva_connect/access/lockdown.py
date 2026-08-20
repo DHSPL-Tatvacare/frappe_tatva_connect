@@ -68,6 +68,12 @@ UNPUBLISHED_WEB_FORMS = {
 # the lock usable: a rep SEES the lead's product line and group, only a manager may move the lead between
 # them, and neither depends on an automation switch being on.
 FIELD_LEVELS = {
+	# Frappe ships this row in user.json itself; our permlevel-0 rebuild makes the whole stock DocPerm ignored, so it has to be restated here or roles, modules, defaults and the API keys go dark for everyone.
+	"User": {
+		1: {
+			"System Manager": (1, 1),
+		}
+	},
 	# Copied verbatim into the Web Form the public fills in, so this script runs in an anonymous visitor's browser.
 	"CRM Intake Form": {
 		1: {
