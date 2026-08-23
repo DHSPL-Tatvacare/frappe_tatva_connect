@@ -117,8 +117,11 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 
 	grain = _resolve_grain(f)  # server-side; throws on an out-of-entitlement grain or unseeable lead
 
-	conds = {"category": category, "display_label": ["like", f"%{txt}%"]}
+	conds = {"category": category}
 	conds.update(_grain_filters(grain))
+
+	# A picker SEARCHES by label, but a closed control ASKS BY KEY — `search_link` sends the stored value as `txt` — so a label-only match answered nothing and the control fell back to printing the composite key at the rep.
+	by_text = {"name": txt, "display_label": ["like", f"%{txt}%"]} if txt else None
 
 	# Cascading picklist: when the form supplies the parent field's current value, keep only
 	# options that match it OR declare no dependency. The parent value is just a value test on
@@ -132,6 +135,7 @@ def picklist_query(doctype, txt, searchfield, start, page_len, filters):
 	return frappe.get_all(  # authz-ok: grain-clamped by _resolve_grain (entitlement + lead check_permission)
 		"CRM Picklist Value",
 		filters=conds,
+		or_filters=by_text,
 		fields=["name", "display_label"],
 		order_by="position asc, display_label asc",
 		limit=min(cint(page_len) or 20, _CAP),
