@@ -968,9 +968,11 @@ AUTOMATIONS = [
 		# route_submission = the wildcard brain for per-form sinks; bust_intake_doctype_cache = the
 		# guard-set cache invalidator (a CRM Intake Form on_update/on_trash doc_event, hence backed
 		# here too). Every intake form has its OWN per-form runtime sink — no shared legacy staging.
+		# canonicalise_phones shapes a submission's phones on validate, before the fold mutes the reason, and is ALWAYS ON — refused whether or not this switch is armed — so it has no switch of its own and is carried here for the drift lock, same shape as the always-on guards under Access::Desk::sanitize.
 		backs=[
 			"tatva_connect.intake.intake.route_submission",
 			"tatva_connect.intake.intake.bust_intake_doctype_cache",
+			"tatva_connect.intake.intake.canonicalise_phones",
 			# CRM Intake Form on_update -> scaffold/sync the per-form DocType + Web Form.
 			"tatva_connect.intake.builder.sync_form",
 		],
