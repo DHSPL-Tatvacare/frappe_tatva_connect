@@ -19,7 +19,8 @@
   "trace_id",
   "error_code",
   "error_message",
-  "error_detail"
+  "error_detail",
+  "request_payload"
  ],
  "fields": [
   {"fieldname": "request_time", "fieldtype": "Datetime", "label": "Request Time", "in_list_view": 1, "read_only": 1, "search_index": 1},
@@ -33,11 +34,12 @@
   {"fieldname": "trace_id", "fieldtype": "Data", "label": "Trace ID", "read_only": 1, "search_index": 1, "description": "The reference shared by this call, any file check it made and any error it raised, so all three can be read together."},
   {"fieldname": "error_code", "fieldtype": "Data", "label": "Error Code", "in_list_view": 1, "in_standard_filter": 1, "read_only": 1, "search_index": 1, "description": "The error code returned to the caller. Blank when the call succeeded."},
   {"fieldname": "error_message", "fieldtype": "Small Text", "label": "Error Message", "in_list_view": 1, "read_only": 1, "description": "The message returned to the caller - why it failed."},
-  {"fieldname": "error_detail", "fieldtype": "Code", "label": "Error Detail", "read_only": 1, "options": "JSON", "description": "The full detail behind the failure, exactly as the caller was told it."}
+  {"fieldname": "error_detail", "fieldtype": "Code", "label": "Error Detail", "read_only": 1, "options": "JSON", "description": "The full detail behind the failure, exactly as the caller was told it."},
+  {"fieldname": "request_payload", "fieldtype": "Code", "label": "Request Payload", "read_only": 1, "options": "JSON", "description": "The body this request arrived with, kept on a FAILED call so a refusal can be read against what was actually sent. Capped; a success stores nothing."}
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-08-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "CRM API Request Log",
