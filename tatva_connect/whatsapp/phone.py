@@ -11,6 +11,8 @@ mobile, that India strips a leading trunk `0`, and that `+39 06 …` is a Rome l
 version this replaces counted digits, so `09876543210` — what browser autofill hands you — became
 `+09876543210` and matched nothing, ever.
 """
+import unicodedata
+
 import frappe
 import phonenumbers
 from frappe import _
@@ -29,6 +31,37 @@ def region_default() -> str | None:
 	return code.upper() if code else None
 
 
+def _visible(raw: str) -> str:
+	"""The number without the characters that occupy no space — Unicode's own `Cf` (format) category.
+
+	WhatsApp, iOS Contacts and Excel wrap a phone number in bidi controls (U+202A and kin) so the digits
+	always render left to right, and a copy takes the wrapper with them. `Cf` is not whitespace, so
+	`str.strip()` keeps it and libphonenumber refuses the number — while the rep is shown a number that
+	looks perfectly correct and told it is invalid. Read from `unicodedata`, never a hand-listed range."""
+	return "".join(ch for ch in raw if unicodedata.category(ch) != "Cf")
+
+
+def _spellings(raw: str):
+	"""The number as given, then the readings a DOUBLED country code allows.
+
+	A `Phone` control stores `<isd>-<number>` and its picker has already supplied the code, so a rep who
+	pastes a number carrying its own `+91` submits both of them (`+91-+919876543210`).
+
+	The value as given is always yielded FIRST, so a number the library already accepts is never rewritten;
+	a fallback is reached only when the original does not parse to a valid number, and is itself accepted
+	only if it does. libphonenumber stays the judge — nothing here decides what a real number looks like."""
+	yield raw
+	# Two plus signs: the field's own code and the pasted one. A number carrying `+` names its own country.
+	if raw.count("+") > 1:
+		yield raw[raw.rindex("+") :]
+	# The same paste without a second plus, so the seam is the only thing separating the two codes.
+	head, sep, rest = raw.partition("-")
+	code = head[1:] if head.startswith("+") else ""
+	digits = "".join(ch for ch in rest if ch.isdigit())
+	if sep and code.isdigit() and digits.startswith(code):
+		yield head + "-" + digits[len(code) :]
+
+
 def to_e164(number: str, region: str | None = None, fieldname: str | None = None) -> str:
 	"""THE stored form of a phone number: `+<country code><national number>`, or a refusal.
 
@@ -41,16 +74,20 @@ def to_e164(number: str, region: str | None = None, fieldname: str | None = None
 
 	Callers whose job is to LOOK SOMETHING UP rather than store it catch this: a search for a malformed
 	number should find nothing, not fail."""
-	raw = cstr(number).strip()
+	# Invisible first: a value that is NOTHING but invisible characters is a blank, not a bad number.
+	raw = _visible(cstr(number)).strip()
 	if not raw:
 		return ""
-	try:
-		parsed = phonenumbers.parse(raw, region or region_default())
+	region = region or region_default()
+	for candidate in _spellings(raw):
+		try:
+			parsed = phonenumbers.parse(candidate, region)
+		except phonenumbers.NumberParseException:
+			continue
 		if phonenumbers.is_valid_number(parsed):
 			return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-	except phonenumbers.NumberParseException:
-		pass
 	# Frappe's own wording for this refusal, so the message a rep sees here is the message core gives.
+	# The VISIBLE number is named: quoting the raw one prints a number that reads as correct.
 	frappe.throw(
 		_("Phone Number {0} set in field {1} is not valid.").format(raw, fieldname or _("Phone")),
 		title=_("Invalid Phone Number"),

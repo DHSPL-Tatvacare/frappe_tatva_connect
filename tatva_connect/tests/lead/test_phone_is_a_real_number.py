@@ -15,6 +15,10 @@ that India drops a leading trunk `0`. There is no regex here to keep up to date.
 What is asserted:
 
   * an Indian number in any spelling a person uses lands on the SAME stored value;
+  * a number a rep PASTED lands there too — carrying the invisible bidi wrapper WhatsApp and iOS add, or
+    the second country code the `Phone` picker's own prefix creates, or both at once;
+  * the number as given is always read FIRST, so no spelling the library already accepts is ever rewritten;
+  * a refusal names the number the rep can SEE, and is raised where `mute_messages` cannot eat its reason;
   * a foreign number is stored as its own country says and is NEVER rewritten to India;
   * a number that is not real anywhere is REFUSED on save, naming the field the rep is looking at;
   * the refusal is a WRITE rule — a partner searching by a malformed number gets no results, not a 500;
@@ -58,8 +62,23 @@ FOREIGN = {
 	"+44 20 7946 0958": "+442079460958",      # London
 }
 
-# Not a number anywhere on earth.
-JUNK = ["hello", "12345", "1111111111", "+91987654321", "99999999999999999"]
+# The SAME number again, as it arrives when a rep pastes rather than types. A `Phone` control stores
+# `<isd>-<number>` and its picker has already supplied the code, so a pasted number brings a second one;
+# WhatsApp and iOS add a bidi wrapper (U+202A) that occupies no space and survives `str.strip()`.
+# Written as escapes on purpose: a literal U+202A in this file would be as invisible here as it is on a form.
+PASTED = [
+	"+91-\u202a9876543210",       # the picker's own code in front of a pasted number: the shape that fails
+	"\u202a9876543210",           # pasted into an empty field
+	"\u202b9876543210\u202c",     # the right-to-left wrapper and its terminator
+	"\ufeff9876543210",           # a byte-order mark, which a spreadsheet paste carries
+	"+91-+919876543210",          # pasted WITH its own country code
+	"+91-+91 98765 43210",        # the same, spaced the way a person writes it
+	"+91-91 98765 43210",         # the same again, with no second plus to mark the seam
+	"+91-\u202a+919876543210",    # both defects at once
+]
+
+# Not a number anywhere on earth. `+91-+91hello` is here so a doubled code is never a licence to guess.
+JUNK = ["hello", "12345", "1111111111", "+91987654321", "99999999999999999", "+91-+91hello"]
 
 
 class TestPhoneIsARealNumber(FrappeTestCase):
@@ -91,6 +110,52 @@ class TestPhoneIsARealNumber(FrappeTestCase):
 			with self.subTest(typed=typed):
 				self.assertEqual(store.to_e164(typed), STORED,
 								 f"{typed!r} did not land on the one stored form")
+
+	def test_a_pasted_number_lands_on_the_same_stored_form(self):
+		"""RED before the change: every one of these was refused. The invisible ones are the cruel half —
+		the number printed back at the rep beside the word "invalid" reads exactly like a correct one."""
+		for pasted in PASTED:
+			with self.subTest(pasted=pasted):
+				self.assertEqual(store.to_e164(pasted), STORED,
+								 f"{pasted!r} did not land on the one stored form")
+
+	def test_a_value_that_is_only_invisible_characters_is_blank(self):
+		"""Nothing visible was given, so nothing was given — a blank, not a bad number."""
+		self.assertEqual(store.to_e164("\u202a\u202c\ufeff"), "")
+
+	def test_a_doubled_country_code_is_recovered_whatever_the_country(self):
+		"""The seam is read off the value itself, so this is not an India rule wearing a general name."""
+		self.assertEqual(store.to_e164("+1-+14155552671"), "+14155552671")
+		self.assertEqual(store.to_e164("+966-+966501234567"), "+966501234567")
+
+	def test_the_number_as_given_is_always_read_first(self):
+		"""The invariant that protects every number that already works: a fallback spelling is REACHED only
+		when the original does not parse, and ACCEPTED only when libphonenumber calls it valid. Without this
+		ordering a real national number opening with its own country's digits would be silently cut."""
+		for typed in (*ONE_INDIAN_NUMBER, *FOREIGN, *PASTED):
+			with self.subTest(typed=typed):
+				self.assertEqual(next(iter(store._spellings(typed))), typed,
+								 "a rewriting was tried before the number the rep actually gave")
+
+	def test_the_refusal_names_the_number_the_rep_can_see(self):
+		"""Quoting the raw value printed a number that looks correct next to the word "invalid"."""
+		with self.assertRaises(frappe.ValidationError) as caught:
+			store.to_e164("\u202a12345")
+		self.assertNotIn("\u202a", str(caught.exception),
+						 "the refusal quoted a number carrying the very character it is refusing")
+		self.assertIn("12345", str(caught.exception))
+
+	def test_the_phone_is_shaped_before_the_fold_can_mute_the_reason(self):
+		"""`_fold_submission_to_lead` mutes messages so no internal notice reaches a patient, and frappe
+		raises WITHOUT recording the message under that flag (`utils/messages.py:61`) — so a refusal raised
+		inside the fold arrives as an empty dialog and the rep is told nothing. Shaping is declared on
+		`validate`, which frappe runs before the `after_insert` that folds, so the wording survives."""
+		from tatva_connect import hooks
+
+		wildcard = hooks.doc_events["*"]
+		self.assertIn("tatva_connect.intake.intake.canonicalise_phones", wildcard["validate"],
+					  "the shaping left the seam that runs before the mute")
+		self.assertIn("tatva_connect.intake.intake.route_submission", wildcard["after_insert"])
 
 	def test_a_foreign_number_keeps_its_own_country(self):
 		"""The default country applies ONLY to a number with no `+`. A Saudi patient stays Saudi."""
