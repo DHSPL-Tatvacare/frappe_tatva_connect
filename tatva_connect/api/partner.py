@@ -190,9 +190,11 @@ def clear_catalog_cache(doc=None, method=None):
 		return
 	frappe.cache().delete_value(_CATALOG_CACHE_KEY)
 
-# Forced from entitlement for partners, accepted from a trusted System Manager. Never a
-# partner-WRITABLE field — _build_catalog skips these so they can be Smart-View catalog rows
-# (read/filter/column on Product Line / Group / Program) without entering a partner's lead_schema.
+# Forced from entitlement for partners, accepted from a trusted System Manager. Kept OUT of the
+# writable catalog by _build_catalog so they can be Smart-View catalog rows (read/filter/column on
+# Product Line / Group / Program) without entering a partner's lead_schema. `source` is the one
+# exception and it is granted per-caller in _caller_fields: forced while the mapping names one, the
+# caller's own once that box is cleared. The three grain axes are never writable.
 ROUTING_FIELDS = ("source", "custom_vertical", "custom_group", "custom_current_program")
 
 # All numeric caps (bulk size, list page sizes) live on the CRM Partner API Settings
@@ -416,9 +418,18 @@ def _split_keys(keys):
 
 
 def _caller_fields():
-	"""(user, mp, is_sysmgr, parent_fields, child_allow) for the resolved caller."""
+	"""(user, mp, is_sysmgr, parent_fields, child_allow) for the resolved caller.
+
+	`source` is the ONE routing field a partner may own: a mapping that names a source FORCES it (the
+	grid never sees it, exactly as before), and a mapping that leaves it blank hands the field to the
+	caller. The operator's switch is that one box — filled locks the partner down, cleared lets them
+	stamp their own channel. The grain axes are not on this door and never become writable: they are
+	the entitlement boundary, `source` is a label. Granted here and not in `_build_catalog` because the
+	catalog is a SITE-WIDE cache and this answer is per-caller."""
 	user, mp, is_sysmgr = _resolve_caller()
 	parent_fields, child_allow = _split_keys(_allowed_keys(user, bool(mp)))
+	if mp and not mp.source:
+		parent_fields.append("source")
 	return user, mp, is_sysmgr, parent_fields, child_allow
 
 
@@ -638,6 +649,26 @@ def _apply_parent(doc, parent):
 	_stage_multi_values(doc, PARENT_SECTION, parent, "")
 
 
+def _ensure_lead_source(parent):
+	"""A caller-supplied source names their own channel, so the master row is created on first sight.
+
+	`CRM Lead Source` autonames on the value itself, so the row IS the string and there is nothing to
+	map. Without this, `_validate_links` refuses a source the site has not seen before and a partner is
+	400ed for naming a channel we simply had no row for — the same rejection class the gender and age
+	group Selects were softened out of. Whitespace is trimmed so ` WEB` and `WEB` cannot become two rows;
+	nothing else is normalised, because case and spelling are the caller's to state and ours to report on."""
+	value = cstr(parent.get("source")).strip()
+	if not value:
+		return
+	parent["source"] = value
+	if frappe.db.exists("CRM Lead Source", value):
+		return
+	try:
+		frappe.get_doc({"doctype": "CRM Lead Source", "source_name": value}).insert(ignore_permissions=True)  # authz-ok: tier-b — partner is a role-less user by design, already authorized by the mapping gate
+	except frappe.DuplicateEntryError:
+		pass  # a concurrent create won the race; the row is what we wanted either way
+
+
 def _force_routing(doc, mp):
 	"""Stamp the partner's fixed routing — they can never set or change it."""
 	if mp.source:
@@ -804,6 +835,8 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
 	parent[LEAD_IDENTITY] = mobile
+	# Before the doc exists: frappe validates a Link on save, so the row has to be there by then.
+	_ensure_lead_source(parent)
 
 	program = _resolve_program(item, mp, allowed_programs)
 	# "List mode" key (mapping program blank, e.g. Anaya): the caller supplies
@@ -887,6 +920,8 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 	doc = frappe.get_doc("CRM Lead", _scoped_lead(name, mp, is_sysmgr))
 	validate_external_id("CRM Lead", item.get("external_id"))
 	parent, children = _collect(item, parent_fields, child_allow, allow_routing=bool(is_sysmgr and not mp))
+	# An update may move the source too, and `doc.save` below validates the Link exactly as a create does.
+	_ensure_lead_source(parent)
 
 	# Program is a MUTABLE ATTRIBUTE, so an update transitions it — through the SAME resolver the
 	# create uses, so both paths validate against the key's allowed_programs identically. An update
