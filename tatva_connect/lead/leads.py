@@ -58,9 +58,8 @@ def stamp_entitled_grain(doc, method=None):
 			frappe.PermissionError,
 		)
 
-	# Entitlement is a REGION; a lead is a POINT. A region that wildcards an axis has to be resolved to
-	# one leaf before the lead can be filed. Flag OFF → skipped entirely, so the path below is today's.
-	if len(grains) == 1 and automation.is_enabled(REGISTRY_FLAG):
+	# Entitlement is a REGION and a lead is a POINT, so a wildcard axis is resolved to one leaf — at CREATE only, because filing is what this answers and an existing lead was filed long ago; `grain_entitled` below still clamps an update.
+	if doc.is_new() and len(grains) == 1 and automation.is_enabled(REGISTRY_FLAG):
 		_resolve_wildcard_axes(doc, next(iter(grains)))
 
 	if not any(doc.get(f) for f in ROUTING_FIELDS):
@@ -204,6 +203,29 @@ def dedup_guard(doc, method=None):
 			["mobile_no"], title=_("Duplicate lead"),
 		)
 
+def _same_group(group, *programs):
+	"""Are all these programmes declared under `group` in the CRM Grain registry — the one place a programme's group is declared?"""
+	if not group:
+		return False
+	return all(frappe.db.exists("CRM Grain", {"group": group, "program": p}) for p in programs)
+
+
+def _carry_stage(doc, stage, program):
+	"""The same stage label under `program`, or None if that programme does not declare it.
+
+	Two programmes of ONE group are one lifecycle: an Anaya patient changing regimen has not moved
+	within it, so the stage they stand at carries across rather than refusing the save that moves them.
+	The group is what makes that true — Field-Sales and Inside-Sales share the label `Wrong Number` and
+	nothing else, so a label match alone would move a lead nobody moved.
+
+	Asked per-label and NOT by comparing the two programmes' whole stage lists, because those lists
+	drift (the seed declared 60, prod carries 61): equality holds today and would silently stop carrying
+	anything the first time an operator adds a stage to one drug and not its siblings.
+	"""
+	if not _same_group(doc.custom_group, stage.program, program):
+		return None
+	return frappe.db.get_value("CRM Lead Stage", {"program": program, "stage": stage.stage}, "name")
+
 
 def validate_stage(doc, method=None):
 	"""Single combined Stage pick: custom_substage links one selectable leaf of
@@ -227,10 +249,17 @@ def validate_stage(doc, method=None):
 
 	program = doc.custom_current_program
 	if program and stage.program != program:
-		throw_field(
-			_("Stage {0} belongs to the {1} programme and this lead is on {2}. Set custom_substage to a "
-			  "stage of {2}.").format(doc.custom_substage, stage.program, program),
-			["custom_substage"], title=_("Stage not on this programme"),
+		# The lead already stands here legitimately, so carry it to the same label under the new programme — a mismatch left by earlier data heals on the next save instead of freezing the lead.
+		carried = _carry_stage(doc, stage, program)
+		if not carried:
+			throw_field(
+				_("Stage {0} belongs to the {1} programme and this lead is on {2}. Set custom_substage to a "
+				  "stage of {2}.").format(doc.custom_substage, stage.program, program),
+				["custom_substage"], title=_("Stage not on this programme"),
+			)
+		doc.custom_substage = carried
+		stage = frappe.db.get_value(
+			"CRM Lead Stage", carried, ["program", "stage", "substage_of", "selectable"], as_dict=True
 		)
 	if not stage.selectable:
 		throw_field(

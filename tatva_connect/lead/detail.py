@@ -41,10 +41,8 @@ from tatva_connect.access import entitlement, posture
 from tatva_connect.lead import keyvalue, multi_value, multirow
 from tatva_connect.taxonomy import grain, labels, picklist
 
-# Identity/routing fields: shown (informative) but NEVER editable on this panel. Identity
-# (vertical/group) is the dedup anchor; program transitions happen via deliberate routing
-# flows, not a casual field edit. Forced read-only regardless of catalog/property-setter state.
-_PROTECTED_FIELDS = frozenset({"custom_vertical", "custom_group", "custom_current_program"})
+# Identity: vertical/group is the dedup anchor, so moving a lead between them is a merge, not an edit — forced read-only whatever the catalog says. custom_current_program is NOT identity and is editable: a patient changing programme is routine business, and `stamp_entitled_grain` clamps the new grain on save.
+_PROTECTED_FIELDS = frozenset({"custom_vertical", "custom_group"})
 
 _CATALOG_FIELDS = [
 	"field_key", "label", "fieldname", "section", "is_multi_value",
