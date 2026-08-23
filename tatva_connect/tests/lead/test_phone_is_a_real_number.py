@@ -18,7 +18,7 @@ What is asserted:
   * a number a rep PASTED lands there too — carrying the invisible bidi wrapper WhatsApp and iOS add, or
     the second country code the `Phone` picker's own prefix creates, or both at once;
   * the number as given is always read FIRST, so no spelling the library already accepts is ever rewritten;
-  * a refusal names the number the rep can SEE, and is raised where `mute_messages` cannot eat its reason;
+  * a refusal names the number the rep can SEE, not the raw one carrying the character being refused;
   * a foreign number is stored as its own country says and is NEVER rewritten to India;
   * a number that is not real anywhere is REFUSED on save, naming the field the rep is looking at;
   * the refusal is a WRITE rule — a partner searching by a malformed number gets no results, not a 500;
@@ -144,18 +144,6 @@ class TestPhoneIsARealNumber(FrappeTestCase):
 		self.assertNotIn("\u202a", str(caught.exception),
 						 "the refusal quoted a number carrying the very character it is refusing")
 		self.assertIn("12345", str(caught.exception))
-
-	def test_the_phone_is_shaped_before_the_fold_can_mute_the_reason(self):
-		"""`_fold_submission_to_lead` mutes messages so no internal notice reaches a patient, and frappe
-		raises WITHOUT recording the message under that flag (`utils/messages.py:61`) — so a refusal raised
-		inside the fold arrives as an empty dialog and the rep is told nothing. Shaping is declared on
-		`validate`, which frappe runs before the `after_insert` that folds, so the wording survives."""
-		from tatva_connect import hooks
-
-		wildcard = hooks.doc_events["*"]
-		self.assertIn("tatva_connect.intake.intake.canonicalise_phones", wildcard["validate"],
-					  "the shaping left the seam that runs before the mute")
-		self.assertIn("tatva_connect.intake.intake.route_submission", wildcard["after_insert"])
 
 	def test_a_foreign_number_keeps_its_own_country(self):
 		"""The default country applies ONLY to a number with no `+`. A Saudi patient stays Saudi."""

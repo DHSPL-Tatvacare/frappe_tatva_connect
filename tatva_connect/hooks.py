@@ -377,8 +377,6 @@ doc_events = {
 		# Frappe's own XSS filter skips a tag that never closes (html_utils.py:162); this re-runs it without that skip.
 		"validate": [
 			"tatva_connect.access.xss_guard.sanitize_unterminated_tags",
-			# Shape an intake submission's phone answers HERE, before the fold mutes messages and a refusal loses its reason.
-			"tatva_connect.intake.intake.canonicalise_phones",
 		],
 		"after_insert": [
 			"tatva_connect.intake.intake.route_submission",

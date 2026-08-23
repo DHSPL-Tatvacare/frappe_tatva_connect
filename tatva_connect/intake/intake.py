@@ -72,27 +72,6 @@ def bust_intake_doctype_cache(doc=None, method=None):
 	frappe.cache().delete_value(_INTAKE_DOCTYPES_CACHE_KEY)
 
 
-def canonicalise_phones(doc, method=None):
-	"""Shape a submission's phone answers BEFORE the fold, so a refusal still carries its reason.
-
-	`_fold_submission_to_lead` sets `frappe.flags.mute_messages` so no internal notice ever reaches a
-	patient, and frappe raises WITHOUT recording the message under that flag (`utils/messages.py:61`). A
-	number libphonenumber could not read was therefore refused into an empty dialog — the rep saw a failure
-	and no reason, which is what made a pasted number look like a broken form. `validate` runs before the
-	`after_insert` that folds, so the same refusal raised here keeps its own wording.
-
-	WHICH answers are phones is read off the doctype, never off a fieldname: `guards.py` lost its
-	per-phone throttle the day a form named the question something other than `phone`."""
-	if not doc.get(_INTAKE_FORM_FIELD):
-		return
-	from tatva_connect.whatsapp.phone import to_e164
-
-	for field in doc.meta.get("fields", {"fieldtype": "Phone"}):
-		raw = doc.get(field.fieldname)
-		if raw:
-			doc.set(field.fieldname, to_e164(raw, fieldname=frappe._(field.label or field.fieldname)))
-
-
 def route_submission(doc, method=None):
 	"""Wildcard after_insert (doc_events["*"]) — the ONE brain for EVERY per-form intake
 	sink. Fires site-wide, so it early-returns cheaply for any doctype that is not an
