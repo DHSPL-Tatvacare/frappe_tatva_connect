@@ -35,7 +35,11 @@ _PAYLOAD_MAX = 20000
 
 
 def _payload_snapshot():
-	"""The body this request arrived with, as JSON, for the log row.
+	"""The body this request arrived with, as JSON, for the log row — on every call, not just a failed one.
+
+	A refusal is unreadable without what was sent, and a delete is unanswerable without it: the row is
+	gone and the payload is the only record of what asked for that. Retention is the Log Settings row
+	this module already registers, not a rule here.
 
 	Read off `form_dict` rather than the raw stream: by after_request the body has already been parsed
 	once, and re-reading a consumed stream returns empty. Masked through `utils.mask_secrets` — the ONE
@@ -118,8 +122,7 @@ def log_request(response=None, request=None):
 			"error_message": (error.get("message") or "")[:500] or None,
 			# Bounded upstream: _stamp_bulk_failures caps its failure list at _BULK_FAILURE_SAMPLE, so a 5000-record all-fail batch cannot write a multi-megabyte row on this hot path.
 			"error_detail": frappe.as_json(detail) if detail else None,
-			# Errored rows only: a refusal is unreadable without what was sent, a success explains itself.
-			"request_payload": _payload_snapshot() if (code >= 400 or error) else None,
+			"request_payload": _payload_snapshot(),
 		}).insert(ignore_permissions=True)  # authz-ok: tier-a — observability rows, background worker / activator
 		# Commit the log row explicitly. By the time after_request runs, Frappe has already
 		# committed (success) or rolled back (error) the handler's own transaction, so the
