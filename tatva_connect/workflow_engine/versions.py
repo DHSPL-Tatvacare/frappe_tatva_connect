@@ -128,6 +128,22 @@ def current_name(workflow_name):
 	return name or ensure_version(frappe.get_doc("CRM Workflow", workflow_name))
 
 
+def current_names(workflow_names):
+	"""`current_name` asked of MANY workflows in ONE read — the dispatcher asks it per matched workflow on
+	every save, so the cost of a save grew with each workflow authored. Minting stays in `current_name`;
+	order follows the caller's list."""
+	names = list(workflow_names)
+	if not names:
+		return []
+	current = {
+		row.workflow: row.name
+		for row in frappe.get_all(
+			DOCTYPE, filters={"workflow": ["in", names], "is_current": 1}, fields=["name", "workflow"]
+		)
+	}
+	return [current.get(name) or current_name(name) for name in names]
+
+
 def entry_node_of(version):
 	"""Where a new journey begins: the declared Start node (entry_node), falling back to the first node. The ONE entry-resolution brain — both the durable
 	start (triggers._start_one) and the ephemeral run (interpreter.run_inline) call this, never their own
@@ -137,11 +153,15 @@ def entry_node_of(version):
 
 def load(version_name):
 	"""The frozen graph as `_dict(workflow, entry_node, nodes)`, nodes rehydrated as `frappe._dict` so a
-	missing key reads as None exactly like a doc. Request-cached: the payload is immutable."""
+	missing key reads as None exactly like a doc. `get_cached_doc` spares the READ across requests (the
+	payload is immutable and frappe drops that cache on both write paths, `database.py:993`); the request
+	dict spares the PARSE, which the document cache cannot."""
 	cache = frappe.flags.setdefault("_workflow_version_cache", {})
 	if version_name not in cache:
-		row = frappe.db.get_value(DOCTYPE, version_name, ["workflow", "payload_json"], as_dict=True)
-		if not row:
+		try:
+			row = frappe.get_cached_doc(DOCTYPE, version_name)
+		except frappe.DoesNotExistError:
+			frappe.clear_last_message()
 			frappe.throw(_("Workflow version {0} no longer exists.").format(version_name))
 		payload = frappe.parse_json(row.payload_json)
 		cache[version_name] = frappe._dict(

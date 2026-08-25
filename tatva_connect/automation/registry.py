@@ -1099,21 +1099,6 @@ AUTOMATIONS = [
 		backs=["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
 	),
 	Auto(
-		key="Activity::Metrics::rollup",
-		fires_on="Doc Event",
-		trigger_detail="CRM Task · on_update/on_submit/on_cancel/on_trash",
-		purpose=(
-			"A lead's per-activity counts — demo visits, courtesy calls and the rest — are kept true "
-			"by recomputing the affected count from the task table whenever an activity task changes. "
-			"The recompute is absolute rather than incremental, so a count heals itself and cannot "
-			"drift. Off, the counts stand as they were loaded, and loading activities fires no per-row "
-			"work.\n"
-			"Example: a 'Demo Visit' task is marked Done, and the lead's Demo Visit count settles at "
-			"the true number of completed demo visits."
-		),
-		backs=["tatva_connect.tasks.metrics.refresh_for_lead"],
-	),
-	Auto(
 		key="Observability::Requests::logging",
 		fires_on="Provider call",
 		trigger_detail="after_request · partner-API + inbound-webhook endpoints",
@@ -1141,20 +1126,6 @@ AUTOMATIONS = [
 		backs=["tatva_connect.observability.rollup.run"],
 		requires="Observability::Requests::logging",
 		activator="tatva_connect.observability.rollup.apply_rollup",
-	),
-	Auto(
-		key="Observability::Monitor::log-sweep",
-		fires_on="Schedule",
-		trigger_detail="daily 03:30",
-		purpose=(
-			"Trims the request monitor's log file each night, to whichever limit is reached first: 1 GB "
-			"or 30 days. It is the one log frappe never rotates, because it is written with a plain "
-			"append rather than through the rotating logger. Off, the file grows without bound on the "
-			"app server's disk.\n"
-			"Example: a night on which logs/monitor.json.log has passed 1 GB, it is compressed to an "
-			"archive and emptied, and archives older than 30 days are deleted."
-		),
-		backs=["tatva_connect.observability.monitor_log.sweep"],
 	),
 	Auto(
 		key="Learning::Course Lesson::office-embeds",

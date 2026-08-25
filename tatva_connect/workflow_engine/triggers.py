@@ -117,8 +117,7 @@ _TASK_OUTCOMES = {"Done": "task.completed", "Completed": "task.completed", "Clos
                   "Cancelled": "task.cancelled"}
 
 
-# PROPAGATE (@fail_safe): a lost emission leaves the journey Parked exactly where it was, and this fires on
-# EVERY update of a terminal-status task — so the next save of that task re-emits the same correlated signal.
+# PROPAGATE (@fail_safe): a lost emission leaves the journey Parked exactly where it was, and the signal is the TRANSITION into a terminal status, so a task saved again while Done emits nothing.
 @fail_safe
 def on_task_done(doc, method=None):
 	"""Wildcard `doc_events["*"]["on_update"]`: a CRM Task reaching a terminal status emits its outcome.
@@ -129,6 +128,9 @@ def on_task_done(doc, method=None):
 	cheap shape check runs before the gates, because this fires on every doctype's update.
 	"""
 	if doc.doctype != "CRM Task":
+		return
+	# The TRANSITION emits, not the state: every re-save of a Done task inserted another inbox row and enqueued another resume, and a bulk touch multiplied both onto the workflow queue.
+	if not doc.has_value_changed("status"):
 		return
 	outcome = _TASK_OUTCOMES.get(doc.get("status") or "")
 	if not outcome:
@@ -196,7 +198,7 @@ def _trigger_context(doc, event):
 		# Both records in both halves; the lead doc is the one `subject()` already loaded for the grain — no new read.
 		context=ctx_build.context_for(doc, changed, lead=subject),
 		field_types=ctx_build.field_types_for(doc.doctype, "CRM Lead"),
-		versions=[versions.current_name(d.name) for d in matched],
+		versions=versions.current_names([d.name for d in matched]),
 	)
 
 

@@ -141,10 +141,10 @@ def section_values(doc):
 	nothing to read without this. The meta carries the Table field and never its columns, which is why the
 	vocabulary needs the mirror union in `describe.fields_for_doctype`.
 
-	Every section resolves through `multirow.row_for_section` — a singleton gives its one row, a multi-row
-	section its latest. That is the row the Data tab and a Smart View already show, so a column means the
-	same reading wherever it is read; a rule that could see nothing would break that as surely as one that
-	picked a different row."""
+	Every section resolves through `multirow.current_for_section` — a singleton gives its one row, a multi-row
+	section its current reading (per column, the newest row that has a value). That is what the Data tab and a
+	Smart View already show, so a column means the same thing wherever it is read; a rule that could see
+	nothing would break that as surely as one that read a different value."""
 	if doc.doctype != "CRM Lead":
 		return {}
 	from tatva_connect.lead import multirow
@@ -152,10 +152,10 @@ def section_values(doc):
 
 	out = {}
 	for section in crm_lead_section.child_sections():
-		row = multirow.row_for_section(doc, section)
+		row = multirow.current_for_section(doc, section)
 		if row is None:
 			continue
-		for fieldname, value in row.get_valid_dict().items():
+		for fieldname, value in row.items():
 			out[f"{section.child_table_field}.{fieldname}"] = value
 	return out
 

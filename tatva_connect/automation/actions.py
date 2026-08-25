@@ -440,7 +440,7 @@ def _action_create_task(action, lead, context, axes, trigger_doc):
 		due_at=_due_at(action, context),
 		assigned_to=assignee,
 		priority=action.get("priority") or None,
-		description=action.get("description") or None,
+		description=_description(action, context),
 		# The author's control, inverted at the seam: the param asks "allow duplicates", the helper asks
 		# "throttle". One negation here keeps the author's word plain and the helper's contract unchanged.
 		throttle=not action.get("allow_duplicate_tasks"),
@@ -959,7 +959,8 @@ def _action_generate_document(action, lead, context, axes, trigger_doc):
 	context[refs.OUTPUT] = "queued"
 	frappe.enqueue(
 		"tatva_connect.workflow_engine.document_render.render_document",
-		queue="workflow",
+		# The LONG lane, never `workflow`: a render is seconds of pdfkit subprocess and the engine's own lane is where every journey is walked.
+		queue="long",
 		enqueue_after_commit=True,
 		timeout=document_render.RENDER_TIMEOUT_SECONDS,
 		campaign_document=row.name,
@@ -1104,7 +1105,15 @@ VERBS = {
 			 "depends_on_value": {"subject_mode": [refs.EXPRESSION]}},
 			{"name": "priority", "label": "Priority", "help": "How urgent this is on the rep's list. Leave it unset and the task keeps the priority the record itself defaults to.", "type": "Select",
 			 "options": _priority_options()},
-			{"name": "description", "label": "Note", "help": "A line of instruction shown under the subject, e.g. \"Patient has not uploaded the documents\". Leave it blank and the task carries no note.", "type": "Small Text"},
+			# The note trio, the subject trio's twin — one shape for "write some text", wherever it is written.
+			# It DEFAULTS to Literal where the subject's mode does not, and that default is what keeps every
+			# note authored before this trio existed on screen: those configs carry `description` and no mode.
+			{"name": "description_mode", "label": "Note Mode", "help": "Type the note, or build it from values the run is carrying.", "type": "Select",
+			 "options": [refs.LITERAL, refs.EXPRESSION], "default": refs.LITERAL},
+			{"name": "description", "label": "Note", "help": "A line of instruction shown under the subject, e.g. \"Patient has not uploaded the documents\". Leave it blank and the task carries no note.", "type": "Small Text",
+			 "depends_on_value": {"description_mode": [refs.LITERAL]}},
+			{"name": "description_expression", "label": "Note Expression", "help": "Must produce text, e.g. \"Replied: \" + ctx[\"whatsapp_message.message\"].", "type": "Small Text", "reads": "expression",
+			 "depends_on_value": {"description_mode": [refs.EXPRESSION]}},
 			# Duplicate suppression, exposed. `create_followup_task` throttles by default — one OPEN task
 			# per lead per type, narrowed by this node's token — and that default is preserved by leaving
 			# this unticked. Tick it and every fire raises its own task, which is what LeadSquared does.
@@ -1417,6 +1426,29 @@ def verbs_in_lane(lane):
 # -- value + child helpers ---------------------------------------------------
 
 
+def _authored_text(action, context, control, *, mode, literal, expression):
+	"""Text the author either typed or built from the run — the ONE resolver behind both of Create Task's
+	pairs, so the subject and the note cannot answer "how is text written" two different ways.
+
+	Field names are passed rather than derived from a prefix: the note's literal box is `description`,
+	the name every config written before the mode existed already carries, and renaming it to fit a
+	pattern would blank the note on every workflow in flight.
+
+	An unset mode reads the literal box, which is what makes those older configs behave exactly as they
+	did. Blank resolves to None — the caller's own default then stands.
+	"""
+	from tatva_connect.automation import expr
+
+	if action.get(mode) == refs.EXPRESSION:
+		text = expr.resolve_expression(action.get(expression), context)
+		# A non-string is author error and says so; nothing at all degrades to the default, as a blank box already does.
+		if text is not None and not isinstance(text, str):
+			raise ValueError(f"Create Task {control} expression did not evaluate to a string")
+	else:
+		text = action.get(literal)
+	return (text or "").strip() or None
+
+
 def _subject(action, context):
 	"""The line a rep reads on their list, or None for the task type's own name.
 
@@ -1424,16 +1456,18 @@ def _subject(action, context):
 	built from what the run is carrying. Blank is a real answer and it is today's behaviour — the helper
 	then labels the task after its type, which is also what keeps the composite task_type key off a screen.
 	"""
-	from tatva_connect.automation import expr
+	return _authored_text(action, context, "subject",
+	                      mode="subject_mode", literal="subject_text", expression="subject_expression")
 
-	if action.get("subject_mode") == refs.EXPRESSION:
-		text = expr.resolve_expression(action.get("subject_expression"), context)
-		# A non-string is author error and says so; nothing at all degrades to the type's name, as a blank subject already does.
-		if text is not None and not isinstance(text, str):
-			raise ValueError("Create Task subject expression did not evaluate to a string")
-	else:
-		text = action.get("subject_text")
-	return (text or "").strip() or None
+
+def _description(action, context):
+	"""The note under the subject, or None for no note — the subject's twin, resolved the one way.
+
+	The literal box is `description` and the mode is new, so a node authored before the mode existed
+	takes the literal leg and writes exactly the note it wrote yesterday.
+	"""
+	return _authored_text(action, context, "note",
+	                      mode="description_mode", literal="description", expression="description_expression")
 
 
 def _due_at(action, context):

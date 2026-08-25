@@ -203,9 +203,9 @@ def readable_rows_in_rule_grain(doctype, axes):
 	addresses the table itself, so `settable_rows_in_rule_grain` stays parent-only; a READ just needs the
 	value, and the counters LeadSquared routes on live in a child row.
 
-	A MULTI-ROW section is included and resolves to its latest row (`context.section_values`, via
-	`multirow.row_for_section`) — the same row the Data tab and a Smart View show, so a column means the
-	same reading wherever it is read.
+	A MULTI-ROW section is included and resolves to its current reading (`context.section_values`, via
+	`multirow.current_for_section`) — the same value the Data tab and a Smart View show, so a column means
+	the same thing wherever it is read.
 
 	A TASK narrows by nothing: its grain IS its type, so every field it carries — `custom_task_type` and
 	`status` included — already belongs to the grain that reached it. Narrowing it by the write list left

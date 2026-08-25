@@ -51,6 +51,7 @@ _CAPTURE_SWITCH = "Location::Google::capture"
 _FIRST_NAME = "Zzzz Probe"
 _REPORT_DATE = "2027-03-15"
 _SUBJECT = "Call about the lab report"
+_NOTE = "Patient has not uploaded the documents"
 _PRIORITY = "High"
 
 
@@ -304,6 +305,39 @@ class TestTheSubjectTheAuthorWrites(_CreateTaskBase):
 		self.assertEqual(task.title, _TYPE_NAME)
 
 
+class TestTheNoteTheAuthorWrites(_CreateTaskBase):
+	"""The subject's twin — the same two modes, and the note every workflow in flight already carries."""
+
+	def test_a_typed_note_lands_under_the_subject(self):
+		task = self._raise({"description_mode": refs.LITERAL, "description": _NOTE})
+
+		self.assertEqual(task.description, _NOTE)
+
+	def test_a_note_built_from_the_run_lands_resolved(self):
+		"""What the mode exists for: the rep reads the patient's own words, never `ctx[...]`.
+
+		Read back off the lead rather than compared to the constant it was born with: this site's own
+		Active workflows fire on the probe lead too, and a note that resolved perfectly then failed on a
+		name somebody else had edited would read as a defect in this node."""
+		task = self._raise({
+			"description_mode": refs.EXPRESSION,
+			"description_expression": '"Replied: " + ctx["crm_lead.first_name"]',
+		})
+
+		first_name = frappe.db.get_value("CRM Lead", self.lead.name, "first_name")
+		self.assertEqual(task.description, f"Replied: {first_name}")
+
+	def test_a_note_authored_before_the_mode_existed_still_writes(self):
+		"""THE COMPATIBILITY TEST. Every note in flight was seeded as `description` with no mode
+		(2026-08-09-anaya-all-workflows writes exactly this shape). An unset mode reads the literal box."""
+		task = self._raise({"description": _NOTE})
+
+		self.assertEqual(task.description, _NOTE)
+
+	def test_no_note_is_still_no_note(self):
+		self.assertFalse(self._raise({}).description)
+
+
 class TestThePriorityTheAuthorPicks(_CreateTaskBase):
 	"""Item 4 — set when given, left alone when not."""
 
@@ -469,6 +503,19 @@ class TestTheNodeOffersWhatAnAuthorNeeds(FrappeTestCase):
 		self.assertEqual(params["subject_mode"]["options"], [refs.LITERAL, refs.EXPRESSION])
 		self.assertEqual(params["subject_expression"]["reads"], "expression",
 		                 "a subject expression the gates cannot read is one publish never checks")
+
+	def test_the_author_can_write_a_note_the_same_way_they_write_a_subject(self):
+		"""One shape for "write some text", and a `Literal` DEFAULT the subject does not need: a note
+		authored before the mode existed carries no mode, and the default is what keeps its box on screen."""
+		params = self._params()
+
+		self.assertEqual(params["description_mode"]["options"], [refs.LITERAL, refs.EXPRESSION])
+		self.assertEqual(params["description_mode"]["default"], refs.LITERAL)
+		self.assertEqual(params["description_expression"]["reads"], "expression",
+		                 "a note expression the gates cannot read is one publish never checks")
+		on_panel = [f["name"] for f in registry.applied_fields("Create Task", {"description": _NOTE})]
+		self.assertIn("description", on_panel,
+		              "a note with no mode must stay on the panel, or the save that drops it is silent")
 
 	def test_the_author_can_set_a_priority_from_the_records_own_vocabulary(self):
 		"""Not a typed triple: add a priority to `CRM Task` and the node offers it on the next read."""

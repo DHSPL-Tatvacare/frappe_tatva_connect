@@ -178,8 +178,9 @@ class TestSingletonInvariants(_ChildCounterBase):
 
 	def test_a_keyed_section_writes_its_latest_row_and_never_a_second(self):
 		"""The match map is gone and the section decides instead: a multi-row section resolves through
-		`lead.multirow.row_for_section` — the row the Data tab and every Smart View already show — so an
-		upsert UPDATES it rather than appending a rival row nobody sees."""
+		`lead.multirow.row_for_section` — the WRITE address, the one real latest row — so an upsert UPDATES
+		it rather than appending a rival row nobody sees. What a reader displays is that row's twin,
+		`current_for_section`; an increment must read the cell it is about to overwrite, not the twin."""
 		tdoc = frappe.get_doc("CRM Lead", self.lead.name)
 		tdoc.set("custom_acquisition_profile", [])
 		tdoc.append("custom_acquisition_profile", {"touch_at": "2026-01-01 10:00:00", "utm_source": "old"})

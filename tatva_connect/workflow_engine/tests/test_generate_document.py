@@ -266,7 +266,8 @@ class TestTheRenderIsDispatchedOnTheLongLane(FrappeTestCase):
 		)
 		self.assertEqual(emitted, enqueue.call_args[1].get("campaign_document"),
 		                 "the journey and the job must be pointed at the SAME row")
-		self.assertIn(emitted, marker, "the step log must say which document was queued")
+		# `str`: the row is autoincrement-named, so the pointer is an int and the marker is text.
+		self.assertIn(str(emitted), marker, "the step log must say which document was queued")
 		self.assertIsNone(values.get(f"{_NODE}.document_file"),
 		                  "the file is not knowable yet — the render reports it on the outcome")
 
@@ -377,7 +378,8 @@ class TestTheOutcomeCarriesPointersAndNeverAUrl(FrappeTestCase):
 		self.assertTrue(row.document_file, "a ready document that names no file is not a document")
 		attachment = frappe.get_doc("File", row.document_file)
 		self.assertEqual(attachment.attached_to_doctype, document_render.CAMPAIGN_DOCUMENT_DT)
-		self.assertEqual(attachment.attached_to_name, self.row)
+		# `str`: the row is autoincrement-named, so its docname is an int and `attached_to_name` is a text column.
+		self.assertEqual(attachment.attached_to_name, str(self.row))
 		self.assertTrue(attachment.file_name.endswith(".pdf"),
 		                "a document that downloads with no extension opens in nothing")
 
