@@ -283,21 +283,12 @@ doc_events = {
 			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
 			"tatva_connect.tasks.tasks.enforce_activity_logged",
 		],
-		# Metrics rollup: recompute the lead's count for this task's type (absolute, self-healing, gated, injection-safe).
 		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
 		"on_update": [
-			"tatva_connect.tasks.metrics.refresh_for_lead",
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
 			"tatva_connect.tasks.review_mirror.mirror_review_outcome",
 		],
-		"on_submit": [
-			"tatva_connect.tasks.metrics.refresh_for_lead",
-		],
-		"on_cancel": [
-			"tatva_connect.tasks.metrics.refresh_for_lead",
-		],
 		"on_trash": [
-			"tatva_connect.tasks.metrics.refresh_for_lead",
 			"tatva_connect.activity.timeline.drop_event",
 		],
 		# Push: ping the assignee's devices when a task lands on them (gated, enqueued).
@@ -485,28 +476,26 @@ doc_events = {
 # Safety-net: re-sync every account's templates every 6h so the local mirror stays current (the manual Sync button stays real-time).
 scheduler_events = {
 	"cron": {
-		# Every 6h: template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
-		"0 */6 * * *": [
+		# Every 6h, offset off :00 so it never queues alongside SWEEP_CRON: template mirror refresh + roll the raw API/webhook log into the immortal CRM API Metric table (observability plane).
+		"3 */6 * * *": [
 			"tatva_connect.whatsapp.templates_sync.scheduled_sync_all",
 			"tatva_connect.observability.rollup.run",
 		],
 		# Every 15 min, OFFSET off the quarter-hour: re-ask for media a message is still owed, on a widening backoff (dormant — gated on WhatsApp::Channel::media-retry). A bare `*/15` would collide with workflow_thresholds.SWEEP_CRON, and a duplicate dict key silently deletes whichever entry is written first.
 		"5,20,35,50 * * * *": ["tatva_connect.whatsapp.media_retry.sweep"],
-		# Daily: sweep abandoned email-draft staging files.
-		"30 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
+		# Daily, offset off :30 so it never queues alongside SWEEP_CRON: sweep abandoned email-draft staging files.
+		"38 2 * * *": ["tatva_connect.api.email.purge_draft_attachments"],
 		# Hourly: delete Guest-uploaded intake files never bonded to a record, past the 30-min TTL (dormant — gated on Intake::RateLimit::enforcement); bounded batch, drains across ticks.
 		"25 * * * *": ["tatva_connect.intake.guards.reap_guest_orphans"],
-		# Daily: trim logs/monitor.json.log — the one log frappe appends to without rotating (1 GB or 30 days, whichever first).
-		"30 3 * * *": ["tatva_connect.observability.monitor_log.sweep"],
-		# Daily: drop expired partner-API idempotency records.
-		"0 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
-		# Hourly: fail any async bulk job stranded InProgress past its worker timeout (worker died); and drop a search index that can no longer be READ, which is the one damaged state frappe's own 3-hourly check cannot see (it asks whether the file exists, not whether it opens).
-		"45 * * * *": [
+		# Daily, offset off :00 so it never queues alongside SWEEP_CRON: drop expired partner-API idempotency records.
+		"3 4 * * *": ["tatva_connect.api._base.purge_idempotency_keys"],
+		# Hourly, offset off :45 so it never queues alongside SWEEP_CRON: fail any async bulk job stranded InProgress past its worker timeout (worker died); and drop a search index that can no longer be READ, which is the one damaged state frappe's own 3-hourly check cannot see (it asks whether the file exists, not whether it opens).
+		"8 * * * *": [
 			"tatva_connect.api.partner_bulk_worker.reap_stranded_jobs",
 			"tatva_connect.search.index.sweep_index_health",
 		],
-		# Daily: purge finished async bulk jobs + results + payload past the retention window.
-		"15 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
+		# Daily, offset off :15 so it never queues alongside SWEEP_CRON: purge finished async bulk jobs + results + payload past the retention window.
+		"23 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
 		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
 		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",
@@ -514,13 +503,13 @@ scheduler_events = {
 			"tatva_connect.workflow_engine.drain.sweep",
 			"tatva_connect.storage.call_media.sweep",
 		],
-		# Every 5 min: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
-		"*/5 * * * *": [
+		# Every 5 min, offset off the quarter-hour so it never queues alongside SWEEP_CRON: warn about a task falling due, and tell a rep about one already overdue (the operator's lead time goes as low as 5 min; both switches are read per pass).
+		"2-57/5 * * * *": [
 			"tatva_connect.notifications.events.sweep_due_soon",
 			"tatva_connect.notifications.events.sweep_overdue",
 		],
-		# Nightly: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
-		"0 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
+		# Nightly, offset off :00 so it never queues alongside SWEEP_CRON: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
+		"3 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	},
 }
 
