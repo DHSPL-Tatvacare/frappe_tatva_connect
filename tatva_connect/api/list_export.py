@@ -42,6 +42,7 @@ import frappe
 from tatva_connect import exports
 from tatva_connect.list_engine import derived
 from tatva_connect.list_engine.engine import ListRequest
+from tatva_connect.taxonomy import labels
 
 # What frappe's own `max_report_rows` field defaults to, for a site that has never set it.
 DEFAULT_ROW_CAP = 100_000
@@ -57,9 +58,31 @@ def _as_text(value):
 	return value
 
 
+def _composite_columns(doctype, fields):
+	"""Column index -> fieldname, for the exported columns holding a composite key. `_export_query` builds
+	every row as `Sr` then one cell per field, which is what the index counts; frappe's own
+	`get_field_info` resolves each field, so no expression is parsed here."""
+	from frappe.desk.reportview import get_field_info
+
+	return {
+		index: info["fieldname"]
+		for index, info in enumerate(get_field_info(list(fields or []), doctype), start=1)
+		if info.get("fieldtype") == "Link" and labels.is_composite(info.get("options"))
+	}
+
+
 @contextmanager
-def _cells_are_never_formulas():
-	"""Neutralise formula-leading cells in BOTH export formats, for the duration of one export.
+def _cells_read_as_the_app_does(doctype=None, fields=None):
+	"""A cell leaves as the screen shows it, and never as a formula — both rules, one pass, one export.
+
+	A Link at a grain master holds `programme::Archived` and the list renders the label beside it, so an
+	export that dumped the column gave a manager a spreadsheet the CRM never showed. `labels.shown` is the
+	app's ONE answer to how a value reads and is asked here exactly as notifications and rule previews ask
+	it; the header row is left alone and every other column passes through untouched.
+
+	NAME A DOCTYPE TO GET THAT, and only the SPA's export does. Desk's own export is left dumping keys,
+	because an operator round-trips it back through Data Import and a label is not a key — the formula
+	guard below still applies to both, because that one neutralises a payload rather than reading a value.
 
 	`title` on a lead or a task is free text a partner or a rep supplies, and nothing on the way in or the
 	way out treats it as dangerous — frappe has no formula guard anywhere (`csvutils`, `xlsxutils` and
@@ -77,13 +100,26 @@ def _cells_are_never_formulas():
 	from frappe.utils import xlsxutils
 
 	native_csv, native_xlsx = desk_utils.get_csv_bytes, xlsxutils.make_xlsx
+	composite = _composite_columns(doctype, fields)
+	# One label read per DISTINCT value per column: a hundred thousand rows of six stages cost six reads.
+	seen = {}
+
+	def cell(index, value, is_header):
+		if is_header or index not in composite:
+			return _as_text(value)
+		if (index, value) not in seen:
+			seen[(index, value)] = labels.shown(doctype, composite[index], value)
+		return _as_text(seen[(index, value)])
+
+	def read(data):
+		return [[cell(i, v, not n) for i, v in enumerate(row)] for n, row in enumerate(data)]
 
 	# *args/**kwargs deliberately: the wrapper touches the ROWS and nothing else, so an upstream signature change cannot silently drop an argument.
 	def safe_csv(data, *args, **kwargs):
-		return native_csv([[_as_text(v) for v in row] for row in data], *args, **kwargs)
+		return native_csv(read(data), *args, **kwargs)
 
 	def safe_xlsx(data, *args, **kwargs):
-		return native_xlsx([[_as_text(v) for v in row] for row in data], *args, **kwargs)
+		return native_xlsx(read(data), *args, **kwargs)
 
 	desk_utils.get_csv_bytes, xlsxutils.make_xlsx = safe_csv, safe_xlsx
 	try:
@@ -118,7 +154,8 @@ def export_query():
 			"xlsx" if form_params.get("file_format_type") == "Excel" else "csv",
 			{"form_params": dict(form_params), "csv_params": dict(csv_params)},
 		)
-	with _cells_are_never_formulas():
+	# No labels on this path: it is Desk's own export, and an operator round-trips it back through Data Import, which reads keys.
+	with _cells_read_as_the_app_does():
 		return reportview._export_query(form_params, csv_params)
 
 
@@ -139,7 +176,7 @@ def produce_export(job, params, progress):
 	# time here would be a second place that decides what an export may carry.
 	form_params = frappe._dict(params.get("form_params") or {})
 	csv_params = frappe._dict(params.get("csv_params") or {})
-	with _cells_are_never_formulas():
+	with _cells_read_as_the_app_does(form_params.get("doctype"), form_params.get("fields")):
 		title, extension, content = reportview._export_query(form_params, csv_params, populate_response=False)
 	return {"stem": title, "ext": extension, "content": content, "rows": None, "truncated": False}
 
