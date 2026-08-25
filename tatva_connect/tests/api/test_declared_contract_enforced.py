@@ -16,7 +16,8 @@ Four claims a live proof run caught the partner API making that it could not sta
   3. Frappe's own `ValidationError.http_status_code` is 417, so a request the FRAMEWORK refused
      before dispatch came back as `server_error`. A plain GET carrying `Content-Type:
      application/json` — which most HTTP clients set by default — hit it on a perfectly valid read.
-  4. Stage is set by reps in the CRM, never by a partner, and nothing said so.
+  4. Stage was unsendable by every partner however the operator configured the contract, because it
+     sat in RESERVED_FIELDS. It is now an ordinary catalog field: ticked means sendable.
 
 Run:
     bench --site dev.localhost run-tests --app tatva_connect \
@@ -243,26 +244,31 @@ class TestFrameworkRefusalsAreClientErrors(unittest.TestCase):
 			self.assertEqual((code, http), (expected, status), status)
 
 
-class TestStageIsNotPartnerWritable(unittest.TestCase):
-	"""Stage is set by reps in the CRM. RESERVED_FIELDS is the existing structural pattern for
-	exactly this — an API-layer concept only, touching no permlevel and no docfield flag."""
+class TestStageIsPartnerWritable(unittest.TestCase):
+	"""Stage is a business fact a partner system owns as much as the CRM does, so `custom_substage` is an
+	ORDINARY catalog field: a contract that ticks it may send it, one that does not cannot.
 
-	def test_custom_substage_is_reserved(self):
-		self.assertIn("custom_substage", _base.RESERVED_FIELDS)
+	It used to sit in RESERVED_FIELDS beside `lead_owner`, which made it unsendable by everyone however
+	the operator configured the contract. `lead_owner` stays there — the Assignment Rule owns it — and
+	that is what these assert apart."""
 
-	def test_custom_substage_is_not_writable(self):
-		self.assertFalse(_base.is_writable("custom_substage"))
+	def test_custom_substage_is_not_reserved(self):
+		self.assertNotIn("custom_substage", _base.RESERVED_FIELDS)
 
-	def test_custom_substage_is_advertised_output_only(self):
+	def test_custom_substage_is_writable(self):
+		self.assertTrue(_base.is_writable("custom_substage"))
+
+	def test_custom_substage_is_advertised_as_sendable(self):
 		d = _base.field_descriptor("custom_substage", "Lead Stage", "Link", required=True)
-		self.assertEqual(d["behavior"], _base.BEHAVIOR_OUTPUT_ONLY)
-		self.assertFalse(d["required"])
+		self.assertNotEqual(d["behavior"], _base.BEHAVIOR_OUTPUT_ONLY)
 
 	def test_lead_owner_the_precedent_is_still_reserved(self):
+		"""Removing one field from the set must not empty it: assignment is still nobody's to send."""
 		self.assertIn("lead_owner", _base.RESERVED_FIELDS)
+		self.assertFalse(_base.is_writable("lead_owner"))
 
 	def test_no_docfield_flag_is_touched(self):
-		# The claim being pinned: reps are unaffected because nothing here reads or writes meta.
+		# Unchanged claim: this was an API-layer concept both before and after, so reps are unaffected either way.
 		field = frappe.get_meta("CRM Lead").get_field("custom_substage")
 		self.assertFalse(field.read_only, "reserving an API field must not read_only the docfield")
 		self.assertEqual(field.permlevel or 0, 0)

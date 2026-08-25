@@ -150,10 +150,10 @@ def stamp_external_id(doctype, name, external_id):
 # may never send these (Frappe sets the audit and identity stamps, the Assignment Rule sets the
 # owner). OUTPUT_ONLY means discoverable in a schema but ignored on write. Sourced from Frappe's
 # own field lists so new standard fields are covered automatically, plus the domain field lead_owner.
-# custom_substage joins lead_owner on the same grounds: a rep in the CRM decides stage, and this stays API-layer only — no permlevel, no Property Setter, no docfield flag, so nothing a rep does changes.
+# custom_substage is NOT here: stage is a business fact a partner system owns as much as the CRM does, so it is an ordinary catalog field — a contract that ticks it may send it, one that does not cannot.
 RESERVED_FIELDS = frozenset(default_fields) | frozenset(optional_fields) | frozenset(
 	child_table_fields
-) | {"lead_owner", "custom_substage"}
+) | {"lead_owner"}
 
 BEHAVIOR_REQUIRED = "REQUIRED"
 BEHAVIOR_OPTIONAL = "OPTIONAL"

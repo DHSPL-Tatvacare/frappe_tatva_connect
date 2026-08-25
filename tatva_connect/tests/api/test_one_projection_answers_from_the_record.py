@@ -31,7 +31,9 @@ VERTICAL, GROUP = "Goodflip-Care", "Anaya"
 
 _LAB = "custom_lab_profile"
 _LAB_KEY = "report_date"
-_STAGE = "custom_substage"
+# The domain field that is still OUTPUT_ONLY. Stage used to stand here; it is now an ordinary
+# catalog field a contract may tick, so the rule is pinned on the one field that still holds it.
+_OUTPUT_ONLY = "lead_owner"
 
 
 class ProjectionCase(unittest.TestCase):
@@ -140,21 +142,23 @@ class TestOutputOnlyIsReadableNotInvisible(ProjectionCase):
 			"a field lead_schema advertises OUTPUT_ONLY is carried by no response",
 		)
 
-	def test_a_stored_stage_is_readable(self):
-		"""The regression: reserving stage made it unwritable, and must not have made it unreadable."""
-		if _STAGE not in {a["fieldname"] for a in partner._build_catalog()["audit"]}:
-			self.skipTest("stage is not catalogued on this bench")
+	def test_a_stored_output_only_field_is_readable(self):
+		"""The regression: making a field unwritable must not have made it unreadable."""
+		if _OUTPUT_ONLY not in {a["fieldname"] for a in partner._build_catalog()["audit"]}:
+			self.skipTest(f"{_OUTPUT_ONLY} is not catalogued on this bench")
 		created = self.create(mobile_no="+919812300407")
-		# Written the way a rep's own save would leave it, bypassing the API entirely.
-		frappe.db.set_value("CRM Lead", created["name"], _STAGE, "ZZ Fixture Stage",
+		# Written the way the assignment rule's own save would leave it, bypassing the API entirely.
+		frappe.db.set_value("CRM Lead", created["name"], _OUTPUT_ONLY, "zz-fixture-owner@example.test",
 		                    update_modified=False)
-		self.assertEqual(self.read(created["name"])[_STAGE], "ZZ Fixture Stage")
+		self.assertEqual(self.read(created["name"])[_OUTPUT_ONLY], "zz-fixture-owner@example.test")
 
 	def test_readable_never_means_writable(self):
-		"""The other half: a partner sending stage is still ignored, exactly as lead_owner is."""
-		created = self.create(mobile_no="+919812300408", **{_STAGE: "ZZ Partner Sent Stage"})
+		"""The other half: a partner sending an OUTPUT_ONLY field is ignored, not obeyed."""
+		created = self.create(mobile_no="+919812300408",
+		                      **{_OUTPUT_ONLY: "zz-partner-sent@example.test"})
 		self.assertNotEqual(
-			frappe.db.get_value("CRM Lead", created["name"], _STAGE), "ZZ Partner Sent Stage",
+			frappe.db.get_value("CRM Lead", created["name"], _OUTPUT_ONLY),
+			"zz-partner-sent@example.test",
 			"an OUTPUT_ONLY field must stay unwritable however it is projected",
 		)
 
