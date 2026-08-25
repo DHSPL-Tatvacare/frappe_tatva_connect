@@ -233,9 +233,9 @@ class TestSectionRowsEndpoint(FrappeTestCase):
 		self.assertIn("utm_source", columns, "still a column, and still filterable")
 
 	def test_a_stored_zero_counts_as_filled(self):
-		"""One answer about emptiness: `_is_empty` calls 0 a real value, and COUNT(col) counts non-NULL,
-		so a measurement recorded as 0 stays sortable. The two cannot drift because neither is a copy."""
-		self.assertFalse(detail._is_empty(0))
+		"""One answer about emptiness: `multirow.is_blank` calls 0 a real value, and COUNT(col) counts
+		non-NULL, so a measurement recorded as 0 stays sortable. Neither is a copy, so they cannot drift."""
+		self.assertFalse(multirow.is_blank(0))
 
 	def test_search_does_not_match_a_measurement_by_coincidence_of_digits(self):
 		"""RED before the fix: a leading-wildcard LIKE ran on every column, so `%7%` hit a triglyceride
@@ -318,16 +318,18 @@ class TestSectionRowsEndpoint(FrappeTestCase):
 
 	# -- hideEmpty -------------------------------------------------------------
 
-	def test_a_field_blank_on_the_latest_row_survives_hide_empty(self):
-		"""RED before the fix: `empty` was `_is_empty(value)` on the LATEST row alone, so the panel (with
-		hideEmpty ON by default) dropped the field and the only door to its history with it."""
+	def test_a_field_blank_on_the_latest_row_shows_the_answer_the_lead_still_has(self):
+		"""Two fixes, one field. `empty` was `_is_empty(value)` on the LATEST row alone, so the panel (with
+		hideEmpty ON by default) dropped the field and the door to its history with it. The VALUE was read
+		the same narrow way and showed a hole, which is what `multirow.current_for_section` now closes: the
+		flag and the value are two halves of one rule and must not disagree."""
 		lead = frappe.get_doc("CRM Lead", self.lead.name)
-		latest = multirow.latest_child_row(lead.get(self.section.child_table_field), self.section.row_key_field)
-		latest.set(FIELDNAME, "")
+		rows = multirow.sorted_child_rows(lead.get(self.section.child_table_field), self.section.row_key_field)
+		rows[0].set(FIELDNAME, "")
 		lead.save(ignore_permissions=True)
 		field = self._panel_field(FIELD_KEY)
-		self.assertTrue(detail._is_empty(field["value"]), "the displayed value really is blank")
-		self.assertFalse(field["empty"], "blank on the latest row but filled earlier is not 'nothing to show'")
+		self.assertEqual(field["value"], rows[1].get(FIELDNAME), "the newest row that HAS an answer")
+		self.assertFalse(field["empty"], "and the flag that would hide it agrees")
 
 	def test_a_field_blank_in_every_row_stays_empty(self):
 		"""The tidiness half: widening `empty` must not drag every never-filled field onto the panel."""

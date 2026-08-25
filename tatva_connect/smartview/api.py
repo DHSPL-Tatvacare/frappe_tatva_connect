@@ -23,15 +23,16 @@ import frappe
 from frappe import _
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder import DocType
+from frappe.model import numeric_fieldtypes
 from frappe.query_builder.functions import Count
 from frappe.utils import cint, cstr
-from pypika.analytics import RowNumber
-from pypika.terms import Function, PseudoColumn
+from pypika.analytics import FirstValue, RowNumber
+from pypika.terms import Case, Function, PseudoColumn
 
 from tatva_connect import exports, tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.lead import filters as lead_filters
+from tatva_connect.lead import filters as lead_filters, multirow
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.taxonomy import labels
@@ -484,6 +485,33 @@ def _predicate_keys(node, acc):
 		acc.add(node["field"])
 
 
+# A number or a date coerces `''` to zero in MariaDB, so testing emptiness as `''` there would call a
+# stored 0 empty — exactly what `multirow.is_blank` refuses. Only a text column is blank as `''`.
+_BLANK_ONLY_AS_NULL = set(numeric_fieldtypes) | {"Date", "Datetime", "Time"}
+
+
+def _blank_last(inner, child_dt, column):
+	"""1 when a column says nothing, 0 when it does — the SQL spelling of `multirow.is_blank`, and the only
+	reason that rule needs a second rendering at all: the database cannot call the Python one."""
+	col = inner[column]
+	df = frappe.get_meta(child_dt).get_field(column)
+	blank = col.isnull() if df and df.fieldtype in _BLANK_ONLY_AS_NULL else (col.isnull() | (col == ""))
+	return Case().when(blank, 1).else_(0)
+
+
+def _current_column(inner, child_dt, column, row_key_field):
+	"""ONE column's current value as a window — `multirow.current_values` in SQL: the newest row where the
+	column is not blank, blank rows sorted last, ties broken by `multirow.order_keys` and nothing else.
+
+	FIRST_VALUE and not LAST_VALUE deliberately: with an ORDER BY present the default frame ends at the
+	current row, so FIRST_VALUE reads the partition's first row and needs no frame clause to be correct."""
+	window = FirstValue(inner[column]).over(inner.parent).orderby(
+		_blank_last(inner, child_dt, column), order=frappe.qb.asc)
+	for field in multirow.order_keys(row_key_field):
+		window = window.orderby(inner[field], order=frappe.qb.desc)
+	return window
+
+
 def _joins(needed_keys, cat, driving_table, driving_name):
 	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, order_field).
 	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
@@ -496,7 +524,7 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 	and sorts as a date. Everywhere else the compared term is the projected one."""
 	field_terms = {}
 	compare_terms = {}  # only where a row is compared somewhere other than where it is read (D17)
-	join_specs = {}  # alias -> (aliased child table, order_field, child doctype)
+	join_specs = {}  # alias -> (aliased child table, row_key_field, child doctype, columns to resolve)
 	answer_specs = {}  # alias -> the catalog row whose field this join answers
 	for key in needed_keys:
 		r = cat.get(key)
@@ -518,12 +546,16 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 		child_dt = (r.target_doctype or "").strip()
 		if not child_dt:
 			continue
-		order_field = (r.row_key_field or "creation").strip()  # multi-row child ordered by its row key; else creation
-		alias = f"{child_dt}__{order_field}".replace(" ", "_")
+		row_key = (r.row_key_field or "").strip()  # multi-row child ordered by its row key; blank -> creation
+		alias = f"{child_dt}__{row_key or 'creation'}".replace(" ", "_")
 		child_tbl = join_specs.get(alias, (None,))[0]
 		if child_tbl is None:
 			child_tbl = DocType(child_dt).as_(alias)
-			join_specs[alias] = (child_tbl, order_field, child_dt)
+			join_specs[alias] = (child_tbl, row_key, child_dt, set())
+		# The join resolves exactly the columns this view asks of it, because each one needs its own window;
+		# `parent` is selected regardless and would collide with a second copy of itself.
+		if r.fieldname != "parent":
+			join_specs[alias][3].add(r.fieldname)
 		# A real Field off the aliased child table -> .as_(field_key) aliases correctly,
 		# so the row dict is keyed by field_key (never the bare fieldname).
 		field_terms[key] = child_tbl[r.fieldname]
@@ -550,21 +582,24 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			query = query.left_join(sub).on(
 				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 			)
-		# Every child join yields ONE row per parent — the newest by its order field (blank -> creation).
-		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1;
-		# a plain join would multiply the parent for a multi-row child, inflating rows AND the count.
-		for spec_alias, (_child_tbl, order_field, spec_child_dt) in join_specs.items():
-			inner = DocType(spec_child_dt)
-			rn = (
-				RowNumber()
-				.over(inner.parent)
-				.orderby(inner[order_field], order=frappe.qb.desc)
-				.orderby(inner.creation, order=frappe.qb.desc)
-				.orderby(inner.name, order=frappe.qb.desc)
-			)
+		# Every child join yields ONE row per parent carrying the section's CURRENT reading — per column, the
+		# newest row that HAS a value (`_current_column`). A plain join would multiply the parent for a
+		# multi-row child, inflating rows AND the count; the row number just keeps one of the identical rows
+		# the windows produce, so it needs no ordering of its own.
+		for spec_alias, (_child_tbl, row_key, spec_child_dt, columns) in join_specs.items():
+			# The source table is ALIASED so every column inside the windows is qualified. Unqualified, an
+			# ordering column resolves to the SELECT alias of the same name — which is itself a window —
+			# and MariaDB refuses: "Window function is not allowed in window specification". A view
+			# selecting its section's own row key (`cycle_date`) is enough to hit it.
+			inner = DocType(spec_child_dt).as_("_tc_src")
+			rn = RowNumber().over(inner.parent)
 			ranked = (
 				frappe.qb.from_(inner)
-				.select(inner.star, rn.as_("_tc_rn"))
+				.select(
+					inner.parent,
+					*[_current_column(inner, spec_child_dt, col, row_key).as_(col) for col in sorted(columns)],
+					rn.as_("_tc_rn"),
+				)
 				.where(inner.parenttype == driving_name)
 			)
 			sub = (
@@ -950,30 +985,29 @@ def _hydrate(rows, keys, cat, driving_name):
 			if target is not None and key:
 				target[key] = answer.get(value_field)
 
-	# The newest row per parent wins — the same ordering the query's ROW_NUMBER applied, now read over the
-	# page's parents instead of the table. A single-row section trivially has one row and needs no branch.
-	for (doctype, order_field), fields in child_buckets.items():
+	# The section's CURRENT reading per parent — the same rule the query's windows apply, now read over the
+	# page's parents instead of the table. Rows arrive newest-first and every key was seeded to None above,
+	# so the first row that HAS a value for a column is the one that fills it and later rows leave it alone.
+	# A single-row section trivially has one row and needs no branch.
+	for (doctype, row_key), fields in child_buckets.items():
 		if not doctype:
 			continue
-		# The section's own ordering column, asked of the DATABASE — `creation` when it names nothing real.
-		order_field = order_field if frappe.db.has_column(doctype, order_field) else "creation"
-		seen = set()
+		# The section's own ordering column, asked of the DATABASE — dropped when it names nothing real, which
+		# leaves `multirow.order_keys` on creation, then name.
+		row_key = row_key if frappe.db.has_column(doctype, row_key) else ""
 		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
 			doctype,
 			filters={"parent": ["in", names], "parenttype": driving_name},
 			fields=["parent", *fields],
-			order_by=f"{order_field} desc, creation desc, name desc",
+			order_by=multirow.order_by(row_key),
 			limit_page_length=0,
 		):
-			parent = cstr(child.get("parent"))
-			if parent in seen:
-				continue
-			seen.add(parent)
-			target = by_name.get(parent)
+			target = by_name.get(cstr(child.get("parent")))
 			if target is None:
 				continue
 			for fieldname, key in fields.items():
-				target[key] = child.get(fieldname)
+				if multirow.is_blank(target.get(key)):
+					target[key] = child.get(fieldname)
 
 
 # ---------------------------------------------------------------------------

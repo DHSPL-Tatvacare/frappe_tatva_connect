@@ -70,16 +70,6 @@ def dedup_rows(rows):
 	return [chosen[k] for k in order]
 
 
-def _is_empty(value):
-	if value is None:
-		return True
-	if isinstance(value, str):
-		return value.strip() == ""
-	if isinstance(value, (list, tuple, dict)):
-		return len(value) == 0
-	return False  # 0 / False are real values, never "empty"
-
-
 def empty_everywhere(values):
 	"""The panel's "nothing to show here" flag — NOT a predicate on the ONE displayed value.
 
@@ -88,7 +78,7 @@ def empty_everywhere(values):
 	made unreachable. Empty means empty in EVERY row the field is kept in; decided on the SERVER because
 	the flag the panel filters on is served, and a second opinion in the client would be a rival brain.
 	One rule, both shapes: each branch hands it the rows it keeps."""
-	return all(_is_empty(v) for v in values)
+	return all(multirow.is_blank(v) for v in values)
 
 
 _SECTION_SEPARATORS = re.compile(r"[:#]")
@@ -182,9 +172,15 @@ def _select(doc):
 
 
 def _child_row(doc, section):
-	"""The single child row a child-section field reads from — `multirow.row_for_section`, the ONE rule
-	the Data tab, the headline sync and a workflow criterion all read through."""
+	"""The single child row an EDIT lands on — `multirow.row_for_section`, the ONE write address the panel,
+	`_stage_section` and a workflow's Upsert Child Row all take."""
 	return multirow.row_for_section(doc, section)
+
+
+def _current(doc, section):
+	"""What a child section currently SAYS — `multirow.current_for_section`, the ONE reading the Data tab, an
+	activity form's prefill and a Smart View column all display. Its twin above is where a write goes."""
+	return multirow.current_for_section(doc, section)
 
 
 def _is_multi_row(section):
@@ -245,12 +241,30 @@ def _multi_values(doc, section, row):
 	        for child in doc.get(section.child_table_field) or []]
 
 
+def _multi_value_now(doc, section, field_key):
+	"""A set-valued field's CURRENT selections — the newest ADDRESS holding any, or [].
+
+	Its own address because selections are not a column: they hang off the row key rather than sitting in the
+	row. Walking the addresses newest-first is the same rule `multirow.current_values` walks a column by, so a
+	set answered two cycles ago shows exactly where a scalar answered then would."""
+	held = multi_value.read_all(doc)
+	if not _is_multi_row(section):
+		return held.get((field_key, _row_key(doc, section))) or []
+	for child in multirow.sorted_child_rows(doc.get(section.child_table_field), section.row_key_field):
+		values = held.get((field_key, cstr(child.get(section.row_key_field))))
+		if values:
+			return values
+	return []
+
+
 def _value(doc, section, row):
+	"""THE value a field shows — read through `_current`, never `_child_row`: what the section says, not what
+	its newest row happens to carry."""
 	if cint(row.get("is_multi_value")):
-		return multi_value.read(doc, row.get("field_key"), _row_key(doc, section))
+		return _multi_value_now(doc, section, row.get("field_key"))
 	if section.child_table_field:
-		child = _child_row(doc, section)
-		return None if child is None else child.get(row.get("fieldname"))
+		current = _current(doc, section)
+		return None if current is None else current.get(row.get("fieldname"))
 	return doc.get(row.get("fieldname"))
 
 
@@ -341,13 +355,20 @@ def _link_query(df, fieldname, lead):
 	filter would drop every blank-axis global option.
 
 	The fieldname is the CATALOG's, not the docfield's: a multi-value field is stored in a column called
-	`value` and its own name — the one the category is derived from — lives on the catalog row alone."""
-	if not (df and df.fieldtype == "Link" and df.options == "CRM Picklist Value"):
+	`value` and its own name — the one the category is derived from — lives on the catalog row alone.
+
+	A PROGRAMME Link is scoped to the group's declared programmes: the native picker lists the whole master, and an Anaya patient offered `Field-Sales` earns a refusal naming a grain the rep never chose."""
+	if not (df and df.fieldtype == "Link"):
 		return None
-	return {
-		"query": "tatva_connect.taxonomy.picklist.picklist_query",
-		"filters": {"category": picklist.category_of(fieldname), "lead": lead},
-	}
+	if df.options == "CRM Picklist Value":
+		return {
+			"query": "tatva_connect.taxonomy.picklist.picklist_query",
+			"filters": {"category": picklist.category_of(fieldname), "lead": lead},
+		}
+	if df.options == "CRM Program":
+		vertical, group, _ = grain.of("CRM Lead", lead)
+		return {"filters": {"name": ["in", entitlement.programs_under(vertical, group)]}}
+	return None
 
 
 # The record types whose Data tab this projection serves; a Deal is served its lead's panel, never its own.
@@ -452,7 +473,7 @@ def _stage_section(doc, section, staged, new_observation=False):
 def _entry(value, display, on, source):
 	"""THE history entry shape: `on` is when the row is stamped, `source` where it came from (a
 	key-value row names the form the patient answered on)."""
-	return {"value": value, "display": display, "empty": _is_empty(value), "on": on, "source": source}
+	return {"value": value, "display": display, "empty": multirow.is_blank(value), "on": on, "source": source}
 
 
 def _key_value_history(doc, section, identity):
@@ -466,7 +487,9 @@ def _key_value_history(doc, section, identity):
 	return {
 		"label": (newest[0].get(section.label_field) if newest else "") or _("(no question)"),
 		"entries": [
-			_entry(r.get(section.value_field), None, r.get("creation"), r.get("form"))
+			# The form names a Facebook row, as it always has; `origin` is what a row carries when nothing else asked it — a partner's own page, and every row written before the column existed.
+			_entry(r.get(section.value_field), None, r.get("creation"),
+			       r.get("form") or r.get(keyvalue.ORIGIN_FIELD))
 			for r in newest
 		],
 	}
@@ -535,7 +558,7 @@ def _filled_columns(section, columns, owned):
 	D5: never offer a sort on a column the data does not populate, or it orders by the tiebreaker while
 	looking authoritative. This is a fact about the data, which only the server can know; it decides what
 	is SORTABLE, never what a reader may look at (the picker owns that, and it is offered every column).
-	`COUNT(col)` counts non-NULL, so a stored 0 counts as filled — the same answer `_is_empty` gives."""
+	`COUNT(col)` counts non-NULL, so a stored 0 counts as filled — the same answer `multirow.is_blank` gives."""
 	if not columns:
 		return set()
 	counts = frappe.get_all(

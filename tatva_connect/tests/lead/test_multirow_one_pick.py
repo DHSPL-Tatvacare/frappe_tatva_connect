@@ -66,24 +66,21 @@ class TestConsumersAgreeOnTie(FrappeTestCase):
 
 
 class TestSmartviewOrderMatches(FrappeTestCase):
-	"""The Smart View SQL must rank child rows by the SAME keys the Python rule uses:
-	row_key DESC, creation DESC, name DESC — so its flattened row equals the other consumers'."""
+	"""The Smart View SQL must order child rows by the SAME keys the Python rule uses: row_key DESC,
+	creation DESC, name DESC — so what it reads equals what the other consumers read.
 
-	def test_join_sql_orders_by_key_creation_name_desc(self):
+	Asserted against the builder the composer actually calls, never against a window this test wrote
+	itself: a test that ranks its own rows proves the test can rank rows, and nothing about production."""
+
+	def test_the_child_window_orders_by_key_creation_name_desc(self):
 		from frappe.query_builder import DocType
-		from pypika.analytics import RowNumber
+
+		from tatva_connect.smartview import api
 
 		order_field = frappe.get_cached_doc("CRM Lead Section", "lab").row_key_field
-		inner = DocType("CRM Lab Profile")
-		rn = (
-			RowNumber()
-			.over(inner.parent)
-			.orderby(inner[order_field], order=frappe.qb.desc)
-			.orderby(inner.creation, order=frappe.qb.desc)
-			.orderby(inner.name, order=frappe.qb.desc)
-		)
-		sql = frappe.qb.from_(inner).select(rn.as_("_tc_rn")).get_sql().lower()
-		# the three ordering keys, all DESC, appear in the ranked window
-		self.assertIn(order_field.lower(), sql)
-		self.assertIn("creation", sql)
+		inner = DocType("CRM Lab Profile").as_("_tc_src")
+		window = api._current_column(inner, "CRM Lab Profile", "hba1c", order_field)
+		sql = frappe.qb.from_(inner).select(window.as_("v")).get_sql().lower()
+		for field in multirow.order_keys(order_field):
+			self.assertIn(f"`{field}` desc", sql)
 		self.assertRegex(sql, r"order by.*desc")
