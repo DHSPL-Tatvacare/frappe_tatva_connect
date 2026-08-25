@@ -23,16 +23,16 @@ import frappe
 from frappe import _
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder import DocType
-from frappe.model import numeric_fieldtypes
 from frappe.query_builder.functions import Count
 from frappe.utils import cint, cstr
-from pypika.analytics import FirstValue, RowNumber
-from pypika.terms import Case, Function, PseudoColumn
+from pypika.analytics import RowNumber
+from pypika.terms import Function, PseudoColumn
 
 from tatva_connect import exports, tabular
 from tatva_connect.access import entitlement, visibility
 from tatva_connect.activity import api as activity_brain
-from tatva_connect.lead import filters as lead_filters, multirow
+from tatva_connect.lead import filters as lead_filters
+from tatva_connect.lead import multirow
 from tatva_connect.partner_api.doctype.crm_lead_section import crm_lead_section
 from tatva_connect.smartview import permissions as sv_perms
 from tatva_connect.taxonomy import labels
@@ -485,33 +485,6 @@ def _predicate_keys(node, acc):
 		acc.add(node["field"])
 
 
-# A number or a date coerces `''` to zero in MariaDB, so testing emptiness as `''` there would call a
-# stored 0 empty — exactly what `multirow.is_blank` refuses. Only a text column is blank as `''`.
-_BLANK_ONLY_AS_NULL = set(numeric_fieldtypes) | {"Date", "Datetime", "Time"}
-
-
-def _blank_last(inner, child_dt, column):
-	"""1 when a column says nothing, 0 when it does — the SQL spelling of `multirow.is_blank`, and the only
-	reason that rule needs a second rendering at all: the database cannot call the Python one."""
-	col = inner[column]
-	df = frappe.get_meta(child_dt).get_field(column)
-	blank = col.isnull() if df and df.fieldtype in _BLANK_ONLY_AS_NULL else (col.isnull() | (col == ""))
-	return Case().when(blank, 1).else_(0)
-
-
-def _current_column(inner, child_dt, column, row_key_field):
-	"""ONE column's current value as a window — `multirow.current_values` in SQL: the newest row where the
-	column is not blank, blank rows sorted last, ties broken by `multirow.order_keys` and nothing else.
-
-	FIRST_VALUE and not LAST_VALUE deliberately: with an ORDER BY present the default frame ends at the
-	current row, so FIRST_VALUE reads the partition's first row and needs no frame clause to be correct."""
-	window = FirstValue(inner[column]).over(inner.parent).orderby(
-		_blank_last(inner, child_dt, column), order=frappe.qb.asc)
-	for field in multirow.order_keys(row_key_field):
-		window = window.orderby(inner[field], order=frappe.qb.desc)
-	return window
-
-
 def _joins(needed_keys, cat, driving_table, driving_name):
 	"""LEFT JOIN every child table referenced by `needed_keys`, once per (doctype, order_field).
 	Returns (query-mutator, {field_key: pypika Field}, {field_key: the Field a predicate compares}).
@@ -582,24 +555,25 @@ def _joins(needed_keys, cat, driving_table, driving_name):
 			query = query.left_join(sub).on(
 				PseudoColumn(f"`{spec_alias}`.`parent` = `{driving_tbl}`.`name`")  # sqli-ok: join on constant/validated identifiers (alias + driving table/name), no user value
 			)
-		# Every child join yields ONE row per parent carrying the section's CURRENT reading — per column, the
-		# newest row that HAS a value (`_current_column`). A plain join would multiply the parent for a
-		# multi-row child, inflating rows AND the count; the row number just keeps one of the identical rows
-		# the windows produce, so it needs no ordering of its own.
-		for spec_alias, (_child_tbl, row_key, spec_child_dt, columns) in join_specs.items():
-			# The source table is ALIASED so every column inside the windows is qualified. Unqualified, an
-			# ordering column resolves to the SELECT alias of the same name — which is itself a window —
-			# and MariaDB refuses: "Window function is not allowed in window specification". A view
-			# selecting its section's own row key (`cycle_date`) is enough to hit it.
-			inner = DocType(spec_child_dt).as_("_tc_src")
+		# Every child join yields ONE row per parent — the newest by `multirow.order_keys`.
+		# ROW_NUMBER() OVER (PARTITION BY parent ORDER BY …), keep rn=1; a plain join would multiply the
+		# parent for a multi-row child, inflating rows AND the count.
+		#
+		# This is the LATEST ROW, deliberately, and NOT the per-column reading `multirow.current_for_section`
+		# gives every other consumer. A window per selected column measured 1.4x-6x on the child subquery and
+		# the cost grows with the column count, which a list over 173k leads cannot pay. The list's DISPLAYED
+		# values do not come through here at all — `_hydrate` fills them page-scoped, in Python, under the
+		# shared rule — so this join decides only what a view FILTERS and SORTS on. A view filtering on a
+		# column whose value sits on an earlier row can therefore miss those rows; a narrower gap than the
+		# latency, and the one place in the app where the two readings are knowingly allowed to differ.
+		for spec_alias, (_child_tbl, row_key, spec_child_dt, _columns) in join_specs.items():
+			inner = DocType(spec_child_dt)
 			rn = RowNumber().over(inner.parent)
+			for field in multirow.order_keys(row_key):
+				rn = rn.orderby(inner[field], order=frappe.qb.desc)
 			ranked = (
 				frappe.qb.from_(inner)
-				.select(
-					inner.parent,
-					*[_current_column(inner, spec_child_dt, col, row_key).as_(col) for col in sorted(columns)],
-					rn.as_("_tc_rn"),
-				)
+				.select(inner.star, rn.as_("_tc_rn"))
 				.where(inner.parenttype == driving_name)
 			)
 			sub = (
@@ -993,8 +967,9 @@ def _hydrate(rows, keys, cat, driving_name):
 		if not doctype:
 			continue
 		# The section's own ordering column, asked of the DATABASE — dropped when it names nothing real, which
-		# leaves `multirow.order_keys` on creation, then name.
+		# leaves `multirow.order_keys` on idx, then name.
 		row_key = row_key if frappe.db.has_column(doctype, row_key) else ""
+		types = {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields}
 		for child in frappe.get_all(  # authz-ok: tier-a — the page's rows already passed the composer's PQC
 			doctype,
 			filters={"parent": ["in", names], "parenttype": driving_name},
@@ -1006,7 +981,7 @@ def _hydrate(rows, keys, cat, driving_name):
 			if target is None:
 				continue
 			for fieldname, key in fields.items():
-				if multirow.is_blank(target.get(key)):
+				if multirow.is_blank(target.get(key), types.get(fieldname)):
 					target[key] = child.get(fieldname)
 
 

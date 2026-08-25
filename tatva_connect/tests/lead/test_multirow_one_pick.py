@@ -66,21 +66,14 @@ class TestConsumersAgreeOnTie(FrappeTestCase):
 
 
 class TestSmartviewOrderMatches(FrappeTestCase):
-	"""The Smart View SQL must order child rows by the SAME keys the Python rule uses: row_key DESC,
-	creation DESC, name DESC — so what it reads equals what the other consumers read.
+	"""The Smart View join must rank child rows by the SAME keys the Python rule uses — it takes them from
+	`multirow.order_keys`, so a date tie resolves identically there and here."""
 
-	Asserted against the builder the composer actually calls, never against a window this test wrote
-	itself: a test that ranks its own rows proves the test can rank rows, and nothing about production."""
-
-	def test_the_child_window_orders_by_key_creation_name_desc(self):
-		from frappe.query_builder import DocType
+	def test_the_join_takes_its_ordering_from_the_one_declaration(self):
+		import io
 
 		from tatva_connect.smartview import api
 
-		order_field = frappe.get_cached_doc("CRM Lead Section", "lab").row_key_field
-		inner = DocType("CRM Lab Profile").as_("_tc_src")
-		window = api._current_column(inner, "CRM Lab Profile", "hba1c", order_field)
-		sql = frappe.qb.from_(inner).select(window.as_("v")).get_sql().lower()
-		for field in multirow.order_keys(order_field):
-			self.assertIn(f"`{field}` desc", sql)
-		self.assertRegex(sql, r"order by.*desc")
+		source = open(api.__file__, encoding="utf-8").read()
+		self.assertIn("for field in multirow.order_keys(row_key):", source)
+		self.assertEqual(multirow.order_keys("report_date"), ("report_date", "idx", "name"))

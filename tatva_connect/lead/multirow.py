@@ -6,7 +6,7 @@ consumer picked "latest" its own way (three different tiebreaks), so two rows sh
 a DIFFERENT row per surface — a direct break of the CLAUDE.md invariant "one row ... in EVERY consumer".
 
 The ordering is declared once in `order_keys` and every rendering is built from it: newest by the
-section's `row_key_field`, ties broken by `creation`, then by `name` — deterministic and identical whether
+section's `row_key_field`, ties broken by `idx`, then by `name` — deterministic and identical whether
 resolved by a Python sorter, by a DB `order_by`, or by a SQL window. The rows modal is a different LAYER
 but not a different rule: it asks the DB for that same order, so the table opens on the reading the panel
 is already showing.
@@ -23,14 +23,20 @@ a hole where the lead had an answer, while `detail.empty_everywhere` said the ve
 empty; `current_for_section` is that judgement applied to the value instead of only to the flag.
 """
 import frappe
-from frappe.utils import cstr
+from frappe.utils import cint, cstr
 
 
 def order_keys(row_key_field):
-	"""THE ordering, declared ONCE as field names, newest-first on each: row key, then creation, then
-	name. Every rendering below is built from this tuple, so a Python sorter and a DB `order_by` cannot
-	drift — there is nothing to keep in step. A section with no row key falls to creation, then name."""
-	return tuple(f for f in (cstr(row_key_field), "creation", "name") if f)
+	"""THE ordering, declared ONCE as field names, newest-first on each: row key, then `idx`, then name.
+	Every rendering below is built from this tuple, so a Python sorter and a DB `order_by` cannot drift —
+	there is nothing to keep in step. A section with no row key falls to `idx`, then name.
+
+	`idx` and NOT `creation`: frappe stamps a child row with its PARENT's creation, so every row of one lead
+	carries the same timestamp and the tiebreak fell through to `name`, a random id. A lead's newest punch
+	therefore ranked below an older one whenever the ids happened to sort that way. `idx` is the row's
+	position in its table — frappe's own record of which row was appended later — set on every row of every
+	child table, and unique within a parent."""
+	return tuple(f for f in (cstr(row_key_field), "idx", "name") if f)
 
 
 def order_by(row_key_field):
@@ -39,9 +45,16 @@ def order_by(row_key_field):
 	return ", ".join(f"{field} desc" for field in order_keys(row_key_field))
 
 
+def _sort_value(row, field):
+	"""One ordering key as the sorter compares it. `idx` is a NUMBER and is compared as one — read as text,
+	row 10 sorts below row 9, which is the very drift `order_keys` exists to prevent (SQL orders it
+	numerically, so a text compare here would disagree with every DB rendering)."""
+	return cint(row.get(field)) if field == "idx" else cstr(row.get(field))
+
+
 def _rank(row, row_key_field):
 	"""THE ordering key for an in-memory sorter — the same fields `order_by` names, in the same order."""
-	return tuple(cstr(row.get(field)) for field in order_keys(row_key_field))
+	return tuple(_sort_value(row, field) for field in order_keys(row_key_field))
 
 
 def sorted_child_rows(rows, row_key_field):
@@ -59,18 +72,27 @@ def latest_child_row(rows, row_key_field):
 	return ordered[0] if ordered else None
 
 
-def is_blank(value):
-	"""THE notion of blank the fallback below walks past — a cell that says NOTHING, never one that says zero.
+# A column that cannot store NULL cannot say "not asked". Frappe declares Int/Long Int/Float/Percent as
+# NOT NULL DEFAULT 0, so a form that never asked the question stores 0 — on those, zero IS silence. A Check's
+# 0 is "No" and a Currency's 0 is free of charge; both are answers a rep gave, so those keep their zero.
+ZERO_IS_SILENCE = frozenset({"Int", "Long Int", "Float", "Percent"})
 
-	0 and False are answers and stay; None, an all-whitespace string and an empty set are silence. The panel's
-	`detail.empty_everywhere` reads this same function, so the value a field shows and the flag that hides it
-	can never disagree, and `smartview._blank_last` is its SQL spelling."""
+
+def is_blank(value, fieldtype=None):
+	"""THE notion of blank the fallback below walks past — a cell that says NOTHING.
+
+	None, an all-whitespace string and an empty set are silence. A zero is silence only where the schema
+	left no way to say otherwise (`ZERO_IS_SILENCE`); told no fieldtype, this keeps zero as an answer, which
+	is the safe reading for a caller that cannot say what it is holding. The panel's `detail.empty_everywhere`
+	reads this same function, so the value a field shows and the flag that hides it can never disagree."""
 	if value is None:
 		return True
 	if isinstance(value, str):
 		return value.strip() == ""
 	if isinstance(value, (list, tuple, dict)):
 		return len(value) == 0
+	if fieldtype in ZERO_IS_SILENCE:
+		return not value
 	return False
 
 
@@ -114,7 +136,15 @@ def row_for_section(doc, section):
 	return rows[0]
 
 
-def current_values(rows, row_key_field):
+def _fieldtypes(doctype):
+	"""{fieldname: fieldtype} for a child doctype, so `is_blank` can tell a zero that means nothing from one
+	that means zero. Empty when the caller names no doctype — every zero then counts as an answer."""
+	if not doctype:
+		return {}
+	return {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields}
+
+
+def current_values(rows, row_key_field, doctype=None):
 	"""THE reading of a multi-row section: per column, the value from the newest row that HAS one.
 
 	Keys are the newest row's, so the shape is exactly what one row gives and a column blank in every row
@@ -123,10 +153,11 @@ def current_values(rows, row_key_field):
 	ordered = sorted_child_rows(rows, row_key_field)
 	if not ordered:
 		return None
+	types = _fieldtypes(doctype)
 	current = frappe._dict(_cells(ordered[0]))
-	for field in [f for f, value in current.items() if is_blank(value)]:
+	for field in [f for f, value in current.items() if is_blank(value, types.get(f))]:
 		for row in ordered[1:]:
-			if not is_blank(row.get(field)):
+			if not is_blank(row.get(field), types.get(field)):
 				current[field] = row.get(field)
 				break
 	return current
@@ -142,5 +173,5 @@ def current_for_section(doc, section):
 	if not rows:
 		return None
 	if _has_ordering(section):
-		return current_values(rows, section.get("row_key_field"))
+		return current_values(rows, section.get("row_key_field"), section.get("target_doctype"))
 	return frappe._dict(_cells(rows[0]))

@@ -56,12 +56,22 @@ class TestSortedChildRows(FrappeTestCase):
 		ordered = multirow.sorted_child_rows([mid, old, new], "report_date")
 		self.assertEqual([r.name for r in ordered], ["ccc", "bbb", "aaa"])
 
-	def test_a_tie_on_the_key_falls_to_creation_then_name(self):
-		a = _row(report_date="2026-01-10", creation="2026-01-10 09:00:00", name="aaa")
-		b = _row(report_date="2026-01-10", creation="2026-01-10 09:00:00", name="zzz")
-		c = _row(report_date="2026-01-10", creation="2026-01-10 18:00:00", name="mmm")
+	def test_a_tie_on_the_key_falls_to_idx_then_name(self):
+		"""RED before the fix, and what a rep saw: `creation` was the tiebreak, but frappe stamps a child
+		row with its PARENT's creation, so every row of one lead carries the same timestamp and the tie fell
+		through to `name` — a random id. A patient's newest punch ranked below an older one whenever the ids
+		sorted that way. `idx` is frappe's own record of which row was appended later."""
+		a = _row(report_date="2026-01-10", idx=1, name="aaa")
+		b = _row(report_date="2026-01-10", idx=2, name="zzz")
+		c = _row(report_date="2026-01-10", idx=3, name="mmm")
 		self.assertEqual([r.name for r in multirow.sorted_child_rows([a, b, c], "report_date")],
 		                 ["mmm", "zzz", "aaa"])
+
+	def test_idx_is_compared_as_a_number_not_as_text(self):
+		"""Read as text, row 10 sorts below row 9 — and the DB, which orders it numerically, would then
+		disagree with the Python sorter about which row is current."""
+		rows = [_row(report_date="2026-01-10", idx=i, name=f"r{i}") for i in (2, 9, 10)]
+		self.assertEqual(multirow.latest_child_row(rows, "report_date").idx, 10)
 
 	def test_latest_child_row_is_exactly_the_head_of_the_sorted_list(self):
 		"""B7's divergence lock: `latest_child_row` is DEFINED as the head, so a change to either rule
@@ -80,12 +90,12 @@ class TestSortedChildRows(FrappeTestCase):
 	def test_the_python_sorter_and_the_db_order_by_name_the_same_fields_in_the_same_order(self):
 		"""The divergence lock: `order_keys` is the ONE declaration and both renderings are built from
 		it, so a Python reader and a DB reader cannot disagree about which row is newer."""
-		self.assertEqual(multirow.order_keys("report_date"), ("report_date", "creation", "name"))
+		self.assertEqual(multirow.order_keys("report_date"), ("report_date", "idx", "name"))
 		self.assertEqual(multirow.order_by("report_date"),
 		                 ", ".join(f"{f} desc" for f in multirow.order_keys("report_date")))
 
-	def test_a_section_with_no_row_key_falls_to_creation_then_name(self):
-		self.assertEqual(multirow.order_keys(""), ("creation", "name"))
+	def test_a_section_with_no_row_key_falls_to_idx_then_name(self):
+		self.assertEqual(multirow.order_keys(""), ("idx", "name"))
 		self.assertNotIn("`", multirow.order_by("report_date"), "frappe rejects backticked order_by")
 
 	def test_no_rows_is_an_empty_list_and_no_latest(self):

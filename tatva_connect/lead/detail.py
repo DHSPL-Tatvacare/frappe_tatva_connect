@@ -34,7 +34,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.model import NO_VALUE_FIELDS
+from frappe.model import NO_VALUE_FIELDS, child_table_fields, default_fields
 from frappe.utils import cint, cstr
 
 from tatva_connect.access import entitlement, posture
@@ -70,7 +70,7 @@ def dedup_rows(rows):
 	return [chosen[k] for k in order]
 
 
-def empty_everywhere(values):
+def empty_everywhere(values, fieldtype=None):
 	"""The panel's "nothing to show here" flag — NOT a predicate on the ONE displayed value.
 
 	`hideEmpty` is ON by default and the panel drops whatever it is told is empty, taking the field's More
@@ -78,7 +78,7 @@ def empty_everywhere(values):
 	made unreachable. Empty means empty in EVERY row the field is kept in; decided on the SERVER because
 	the flag the panel filters on is served, and a second opinion in the client would be a rival brain.
 	One rule, both shapes: each branch hands it the rows it keeps."""
-	return all(multirow.is_blank(v) for v in values)
+	return all(multirow.is_blank(v, fieldtype) for v in values)
 
 
 _SECTION_SEPARATORS = re.compile(r"[:#]")
@@ -426,9 +426,11 @@ def lead_detail(lead, doctype="CRM Lead"):
 			"options": (df.options or "") if df else "",
 			"value": value,
 			"display": _display_label(df, value),   # clean title_field label for Link/composite-PK values
+			# The fieldtype rides along so the flag and the value read a zero the same way — see `multirow.is_blank`.
 			"empty": empty_everywhere(
 				_multi_values(doc, section, row) if is_multi
-				else _field_values(doc, section, row.get("fieldname"), value)
+				else _field_values(doc, section, row.get("fieldname"), value),
+				None if is_multi else (df.fieldtype if df else None),
 			),
 			"read_only": _is_readonly(section, row.get("fieldname"), is_multi),
 			# order = the field's position in its target doctype (operator-controlled); a multi-value field holds none, so it lands where an unknown one does
@@ -451,6 +453,30 @@ def lead_detail(lead, doctype="CRM Lead"):
 	return {"sections": sections, "lead": lead, "read_only": doctype != "CRM Lead"}
 
 
+# Frappe's own system columns, never a value a section carries: a fresh row gets its own from the framework.
+_SYSTEM_COLUMNS = frozenset(default_fields) | frozenset(child_table_fields)
+
+
+def carried_forward(doc, section):
+	"""The values a NEW observation row is born holding — the section's CURRENT reading, which is what the
+	form showed the rep and what a field they left alone still means.
+
+	A punch answers a handful of a section's columns, so a row staged from the answers alone came out a line
+	of dashes beside one value, and the rows table read as if the patient had no history. The row is the state
+	AS SUBMITTED: every column the lead already answers for, with this punch's answers staged over it.
+
+	Read-only and hidden fields are not a question here — nothing crosses the write allowlist. These are the
+	lead's OWN stored values being carried onto its own new row, never caller input.
+
+	The ROW KEY is deliberately not carried: it is the row's address, and a second row wearing the first's
+	address is not a new observation — it is a collision (`_row_key` addresses multi-value selections by it)."""
+	current = multirow.current_for_section(doc, section)
+	if not current:
+		return {}
+	skip = _SYSTEM_COLUMNS | {cstr(section.row_key_field)}
+	return {k: v for k, v in current.items() if k not in skip and not multirow.is_blank(v)}
+
+
 def _stage_section(doc, section, staged, new_observation=False):
 	"""Stage every write to ONE section onto ONE row, choosing that row once.
 
@@ -460,7 +486,8 @@ def _stage_section(doc, section, staged, new_observation=False):
 	child = None
 	if table and any(not cint(r.get("is_multi_value")) for r, _v in staged):
 		fresh = new_observation and _is_multi_row(section)
-		child = doc.append(table, {}) if fresh else (_child_row(doc, section) or doc.append(table, {}))
+		child = (doc.append(table, carried_forward(doc, section)) if fresh
+		         else (_child_row(doc, section) or doc.append(table, {})))
 	for row, value in staged:
 		if cint(row.get("is_multi_value")):
 			multi_value.replace(doc, row.get("field_key"), _row_key(doc, section), value or [])

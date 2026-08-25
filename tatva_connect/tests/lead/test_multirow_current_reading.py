@@ -21,6 +21,8 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \
         --module tatva_connect.tests.lead.test_multirow_current_reading
 """
+import io
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
@@ -53,12 +55,27 @@ class TestIsBlank(FrappeTestCase):
 	def test_an_empty_set_is_blank(self):
 		self.assertTrue(multirow.is_blank([]))
 
-	def test_zero_and_false_are_answers(self):
-		"""A dosage of 0 and an unticked Check are recorded facts. Calling them blank would carry a stale
-		number forward over a real one — the whole failure this change exists to prevent, inverted."""
+	def test_a_zero_is_an_answer_when_the_caller_cannot_say_what_it_holds(self):
+		"""Told no fieldtype, zero stays an answer — the safe reading."""
 		for value in (0, 0.0, False):
 			with self.subTest(value=value):
 				self.assertFalse(multirow.is_blank(value))
+
+	def test_a_number_that_cannot_hold_null_says_nothing_with_a_zero(self):
+		"""RED before the fix, and what a rep saw: `custom_vivitra_order_cycle_number` is `int(11) NOT NULL
+		DEFAULT 0`, so a form that never asked the question stored 0 and the picker showed 0 over the 8 the
+		rep had entered on an earlier cycle. The schema left no other way to say "not asked"."""
+		for fieldtype in ("Int", "Long Int", "Float", "Percent"):
+			with self.subTest(fieldtype=fieldtype):
+				self.assertTrue(multirow.is_blank(0, fieldtype))
+				self.assertFalse(multirow.is_blank(8, fieldtype))
+
+	def test_a_check_and_a_currency_keep_their_zero(self):
+		"""An unticked box is "No" and a zero price is free of charge — both answers a rep gave. Falling back
+		would resurrect an old "Yes", or an old price over a genuinely free cycle."""
+		for fieldtype in ("Check", "Currency"):
+			with self.subTest(fieldtype=fieldtype):
+				self.assertFalse(multirow.is_blank(0, fieldtype))
 
 	def test_the_panel_flag_is_this_same_function(self):
 		self.assertFalse(detail.empty_everywhere([None, "spring"]))
@@ -92,10 +109,17 @@ class TestCurrentValues(FrappeTestCase):
 		             ("2026-06-01", "b", {FIELDNAME: None}))
 		self.assertTrue(multirow.is_blank(multirow.current_values(rows, KEY)[FIELDNAME]))
 
-	def test_a_stored_zero_on_the_newest_row_is_not_a_hole(self):
+	def test_a_stored_zero_on_a_text_column_is_not_a_hole(self):
 		rows = _rows(("2026-01-01", "old", {"utm_source": 7}),
 		             ("2026-06-01", "new", {"utm_source": 0}))
 		self.assertEqual(multirow.current_values(rows, KEY)["utm_source"], 0)
+
+	def test_an_int_column_falls_back_past_a_zero_the_schema_forced(self):
+		"""The rep's own case: 0 on the newest cycle, 8 on the one before."""
+		rows = _rows(("2026-01-01", "old", {"custom_vivitra_order_cycle_number": 8}),
+		             ("2026-06-01", "new", {"custom_vivitra_order_cycle_number": 0}))
+		current = multirow.current_values(rows, KEY, "CRM Drug Program Profile")
+		self.assertEqual(current["custom_vivitra_order_cycle_number"], 8)
 
 	def test_columns_resolve_independently_of_one_another(self):
 		"""The reading is per column, so one field's silence never drags another field's answer back."""
@@ -148,92 +172,68 @@ class TestTheTwoQuestionsStayTwo(FrappeTestCase):
 		self.assertIsNone(multirow.current_for_section(empty, self.section))
 
 
-class TestSqlMirrorsPython(FrappeTestCase):
-	"""The rule's only other rendering. It is generated from `multirow.order_keys`, so the ordering cannot
-	drift; what CAN drift is the notion of blank, which is why it is asserted here in both directions."""
+class TestTheSmartViewListIsTheOneKnOWnException(FrappeTestCase):
+	"""The list's FILTER/SORT join keeps the latest-row rule on purpose, and this records why.
 
-	def _sql(self, doctype, column):
-		"""Rendered INSIDE a query, the way the composer renders it — a bare term quotes nothing, so
-		asserting on one would assert about a shape production never emits."""
-		from frappe.query_builder import DocType
+	A window per selected column measured 1.4x-6x on the child subquery, growing with the column count —
+	a list over 173k leads cannot pay it. What the list DISPLAYS is unaffected: those values are filled
+	page-scoped in Python by `_hydrate`, under the shared rule. So the only gap is that a view filtering
+	on a column whose value sits on an earlier row can miss those rows."""
 
+	def test_the_join_ranks_by_the_shared_ordering(self):
 		from tatva_connect.smartview import api
 
-		inner = DocType(doctype).as_("_tc_src")
-		window = api._current_column(inner, doctype, column, KEY)
-		return frappe.qb.from_(inner).select(window.as_("v")).get_sql().lower()
+		self.assertIn("multirow.order_keys", open(api.__file__, encoding="utf-8").read(),
+		              "the join must take its ordering from the one declaration, not restate it")
 
-	def test_it_is_a_first_value_window_partitioned_by_parent(self):
-		"""FIRST_VALUE and not LAST_VALUE: with an ORDER BY the default frame ends at the current row, so
-		FIRST_VALUE reads the partition's first row and needs no frame clause to be correct."""
-		sql = self._sql("CRM Acquisition Profile", FIELDNAME)
-		self.assertIn("first_value", sql)
-		self.assertIn("partition by `_tc_src`.`parent`", sql)
-
-	def test_blank_rows_sort_last_then_the_shared_ordering(self):
-		sql = self._sql("CRM Acquisition Profile", FIELDNAME)
-		self.assertIn("case when", sql, "blank-last is the first ordering term")
-		for field in multirow.order_keys(KEY):
-			self.assertIn(f"`{field}` desc", sql)
-
-	def test_every_column_in_the_window_is_table_qualified(self):
-		"""RED before the fix, and fatal: unqualified, an ordering column resolves to the SELECT alias of
-		the same name — itself a window — and MariaDB raises 4016. A view selecting its own row key hit it."""
-		sql = self._sql("CRM Acquisition Profile", KEY)
-		self.assertNotIn("order by case when `touch_at`", sql, "the CASE must name the source table")
-		self.assertIn("`_tc_src`.`touch_at`", sql)
-
-	def test_a_text_column_is_blank_as_null_or_empty_string(self):
-		self.assertIn("=''", self._sql("CRM Acquisition Profile", FIELDNAME))
-
-	def test_a_number_is_blank_only_as_null(self):
-		"""MariaDB coerces '' to zero, so testing it on a number would call a stored 0 empty — exactly what
-		`is_blank` refuses. RED if the SQL ever tests emptiness the same way on every fieldtype."""
-		doctype, column = "CRM Lab Profile", "weight_kg"
-		self.assertIn(frappe.get_meta(doctype).get_field(column).fieldtype,
-		              ("Float", "Int", "Currency", "Percent", "Long Int", "Check"))
-		self.assertNotIn("=''", self._sql(doctype, column))
-
-	def test_the_database_and_python_agree_over_real_rows(self):
-		"""The one that would catch a real divergence: every multi-row section on this bench that has a lead
-		with more than one row, read both ways, column by column. Not a fixture — the shapes that actually
-		exist (a blank text cell, a stored zero, a null date) are exactly what a hand-built row would miss."""
-		from frappe.model import NO_VALUE_FIELDS
-		from frappe.query_builder import DocType
-
+	def test_the_page_fill_uses_the_shared_reading(self):
+		"""The DISPLAY path is the shared rule — that is what keeps the list's values right."""
 		from tatva_connect.smartview import api
 
-		checked = []
-		for section in frappe.get_all("CRM Lead Section", filters={"is_multi_row": 1},
-		                              fields=["name", "target_doctype", "row_key_field"]):
-			doctype, key = section.target_doctype, section.row_key_field
-			if not (doctype and key):
-				continue
-			parents = [r[0] for r in frappe.db.sql(
-				"""select parent from `tab{0}` where parenttype = 'CRM Lead'
-				   group by parent having count(*) > 1 limit 10""".format(doctype))]  # sqli-ok: a doctype name
-			if not parents:
-				continue
-			columns = [df.fieldname for df in frappe.get_meta(doctype).fields
-			           if df.fieldtype not in NO_VALUE_FIELDS][:8]
-			if not columns:
-				continue
-			inner = DocType(doctype).as_("_tc_src")
-			query = (
-				frappe.qb.from_(inner)
-				.select(inner.parent,
-				        *[api._current_column(inner, doctype, col, key).as_(col) for col in columns])
-				.where((inner.parenttype == "CRM Lead") & inner.parent.isin(parents))
-			)
-			from_sql = {r["parent"]: r for r in frappe.db.sql(query.get_sql(), as_dict=True)}
-			for parent, sql_row in from_sql.items():
-				rows = frappe.get_all(doctype, filters={"parent": parent, "parenttype": "CRM Lead"},
-				                      fields=["name", "creation", key, *columns], limit_page_length=0)
-				current = multirow.current_values(rows, key)
-				for col in columns:
-					with self.subTest(doctype=doctype, parent=parent, column=col):
-						self.assertEqual(sql_row[col], current[col],
-						                 "the window and the sorter must read the same answer")
-			checked.append(doctype)
-		if not checked:
-			self.skipTest("no lead on this bench keeps two rows of any multi-row section")
+		source = open(api.__file__, encoding="utf-8").read()
+		self.assertIn("multirow.is_blank", source)
+		self.assertIn("multirow.order_by", source)
+
+
+class TestANewObservationRowIsBornComplete(FrappeTestCase):
+	"""The write half of the same philosophy: a punch answers a handful of a section's columns, so a row
+	staged from the answers alone came out one value beside a line of dashes and the rows table read as if
+	the patient had no history. The row is the state AS SUBMITTED — every column the lead already answers
+	for, with the punch's own answers over it."""
+
+	def setUp(self):
+		self.section = frappe.get_cached_doc("CRM Lead Section", SECTION)
+		self.doc = frappe._dict({self.section.child_table_field: _rows(
+			("2026-01-01", "old", {FIELDNAME: "spring", "utm_source": "google"}),
+			("2026-06-01", "new", {FIELDNAME: None, "utm_source": "meta"}),
+		)})
+
+	def test_it_carries_the_sections_current_reading(self):
+		carried = detail.carried_forward(self.doc, self.section)
+		self.assertEqual(carried[FIELDNAME], "spring", "the newest row that HAS an answer")
+		self.assertEqual(carried["utm_source"], "meta")
+
+	def test_it_never_carries_the_row_key(self):
+		"""The key is the row's ADDRESS. A second row wearing the first's address is not a new observation,
+		it is a collision — `_row_key` addresses multi-value selections by it."""
+		self.assertNotIn(KEY, detail.carried_forward(self.doc, self.section))
+
+	def test_it_never_carries_frappe_s_own_columns(self):
+		carried = detail.carried_forward(self.doc, self.section)
+		for column in ("name", "creation", "modified", "owner", "idx", "parent", "parenttype", "parentfield"):
+			self.assertNotIn(column, carried)
+
+	def test_a_column_blank_in_every_row_is_not_carried_as_blank(self):
+		doc = frappe._dict({self.section.child_table_field: _rows(
+			("2026-01-01", "a", {FIELDNAME: ""}), ("2026-06-01", "b", {FIELDNAME: None}))})
+		self.assertNotIn(FIELDNAME, detail.carried_forward(doc, self.section))
+
+	def test_a_section_with_no_rows_carries_nothing(self):
+		self.assertEqual(detail.carried_forward(frappe._dict({self.section.child_table_field: []}), self.section), {})
+
+	def test_the_row_is_only_born_this_way_for_a_fresh_multi_row_observation(self):
+		"""`_stage_section` decides that with `new_observation and _is_multi_row(section)` — a Data tab edit
+		passes False and a single-row section answers False, so both keep the row they already have. That
+		gate is unchanged by this work; the real-document paths are exercised by `test_section_history`."""
+		self.assertFalse(detail._is_multi_row(frappe.get_cached_doc("CRM Lead Section", "lead")))
+		self.assertTrue(detail._is_multi_row(self.section))
