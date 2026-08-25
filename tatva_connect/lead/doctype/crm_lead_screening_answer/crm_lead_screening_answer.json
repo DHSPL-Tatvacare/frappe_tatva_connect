@@ -12,7 +12,8 @@
   "column_break_origin",
   "question",
   "question_hash",
-  "form"
+  "form",
+  "origin"
  ],
  "fields": [
   {"fieldname": "label", "fieldtype": "Small Text", "label": "Question", "in_list_view": 1, "description": "The question as the patient saw it."},
@@ -20,12 +21,13 @@
   {"fieldname": "column_break_origin", "fieldtype": "Column Break"},
   {"fieldname": "question", "fieldtype": "Small Text", "label": "Question Key", "description": "The question key the form sent."},
   {"fieldname": "question_hash", "fieldtype": "Data", "length": 64, "label": "Question Hash", "read_only": 1, "description": "The short identity this question is matched on. Set automatically."},
-  {"fieldname": "form", "fieldtype": "Link", "options": "Facebook Lead Form", "label": "Form", "description": "The form this answer was given on."}
+  {"fieldname": "form", "fieldtype": "Link", "options": "Facebook Lead Form", "label": "Form", "description": "The form this answer was given on."},
+  {"fieldname": "origin", "fieldtype": "Small Text", "label": "Origin", "read_only": 1, "description": "Where this answer came from, as the sender named itself. Set automatically."}
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-08-25 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Lead",
  "name": "CRM Lead Screening Answer",

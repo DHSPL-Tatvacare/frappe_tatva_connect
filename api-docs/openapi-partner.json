@@ -310,6 +310,13 @@
             },
             "description": "Lab values, vitals, conditions, and scores, sent as an array. Discover the exact fields via `lead_schema`."
           },
+          "custom_screening_answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScreeningAnswer"
+            },
+            "description": "Form answers, as question-and-answer pairs. Available only to a key granted the section \u2014 `lead_schema` lists it when yours is. Nothing is registered in advance: send whatever your form asks, and add or change questions whenever you like. An answer that differs from the last one given to the same question is added and becomes the current one, so history is kept; an identical one changes nothing."
+          },
           "custom_care_providers_profile": {
             "type": "array",
             "items": {
@@ -355,6 +362,45 @@
           "name": {
             "type": "string",
             "description": "The row's unique id (read-only; present when a lead is read back)."
+          }
+        }
+      },
+      "ScreeningAnswer": {
+        "type": "object",
+        "description": "One answer to one question. The question identifies the row, so nothing is declared in advance and no answer is ever edited or deleted \u2014 sending a different answer to the same question adds it and it becomes the current one.",
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Your own stable id for the question. It identifies the question for good, so never change it once it has been sent; snake_case is conventional.",
+            "example": "condition_managing"
+          },
+          "label": {
+            "type": "string",
+            "description": "The question as the person saw it. Free to reword at any time \u2014 it is never the identity, so a change does not split the history.",
+            "example": "Which condition are you managing?"
+          },
+          "value": {
+            "description": "The answer. One value, or a list of values for a multi-choice question, which is stored joined by a comma and a space. Keep a list in your form's own option order: a reordered resend reads as a changed answer.",
+            "example": "Type 2 Diabetes",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "The row's unique id (read-only; present when a lead is read back).",
+            "readOnly": true
           }
         }
       },

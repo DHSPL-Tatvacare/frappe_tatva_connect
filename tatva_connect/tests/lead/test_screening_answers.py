@@ -183,7 +183,11 @@ class TestScreeningAnswers(FrappeTestCase):
 		lead = self._sync("fb-1", {RAW_HBA1C: ["7.5-9"]})
 		self.assertIn((RAW_HBA1C, "7.5-9"), self._rows(lead))
 		self.assertFalse(
-			frappe.db.exists("CRM Lead API Field", {"section": "screening"}),
+			# The section-grant row is not a question: it says WHICH CONTRACT may send answers, never which
+			# question may be sent. A row naming a question is the mapping step growing back, and is what
+			# this refuses.
+			frappe.db.exists("CRM Lead API Field",
+			                 {"section": "screening", "fieldname": ("!=", partner.SECTION_GRANT)}),
 			"a screening question is declared nowhere; if a row appeared, the mapping step grew back",
 		)
 

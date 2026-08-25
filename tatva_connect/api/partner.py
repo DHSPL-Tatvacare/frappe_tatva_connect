@@ -87,6 +87,8 @@ _CATALOG_CACHE_KEY = "tatva_connect:lead_api_catalog"
 # Backstop TTL: the Partner::Catalog::cache toggle evicts instantly on edit when ON; this bounds staleness to 60 min even if that hook never fires (toggle off, or a missed event) — self-heals.
 _CATALOG_CACHE_TTL_SEC = 60 * 60
 PARENT_SECTION = "lead"
+# The catalog row that grants a whole KEY-VALUE section rather than one of its questions: its questions are unbounded and authored by whoever asks them, so there is nothing per-question to tick.
+SECTION_GRANT = "*"
 
 
 def _sections() -> dict:
@@ -107,6 +109,8 @@ def _build_catalog() -> dict:
 	Returns a dict (everything below is derived from these keys):
 	  keys           ordered list of writable `section:fieldname` (sort_field=field_key)
 	  key_set        set(keys)
+	  section_grant_keys  set of the keys that grant a whole key-value section (opt-in ONLY — see
+	                 _allowed_keys, which keeps them out of the empty-grid fallthrough)
 	  labels         {field_key: label}  the catalog's own label, so no reader invents one
 	  audit          [{fieldname, label}] reserved OUTPUT_ONLY lead fields, shown in the
 	                 schema (marked) but never writable (see _base.RESERVED_FIELDS)
@@ -124,7 +128,7 @@ def _build_catalog() -> dict:
 	its table, its target, its row key and its title, and no field row restates any of them.
 	"""
 	sections = _sections()
-	keys, read_only, audit, field_labels = [], [], [], {}
+	keys, read_only, audit, field_labels, grants = [], [], [], {}, set()
 	# Which fields are multi-value is `lead.multi_value`'s to say — this only projects that answer onto the section keys, cached because `_column_values` asks it once per incoming row.
 	multi = {}
 	for (section, fieldname), field_key in multi_value.declared().items():
@@ -155,15 +159,20 @@ def _build_catalog() -> dict:
 				audit.append({"fieldname": r.fieldname, "label": r.label or r.fieldname})
 			continue
 		field_labels[r.field_key] = r.label or r.fieldname
-		# A key-value row is READ-ONLY: cataloguing a screening question shows it, it never grants a write.
+		# A key-value row addressing ONE question only ever shows it; the section-grant row addresses the whole section and is the only one that grants a write.
 		if sections[r.section].is_key_value:
-			read_only.append(r.field_key)
+			if r.fieldname == SECTION_GRANT:
+				keys.append(r.field_key)
+				grants.add(r.field_key)
+			else:
+				read_only.append(r.field_key)
 			continue
 		keys.append(r.field_key)
 	return {
 		"keys": keys,
 		"key_set": set(keys),
 		"read_only_keys": read_only,
+		"section_grant_keys": grants,
 		"labels": field_labels,
 		"audit": audit,
 		"section_doctype": {k: s.target_doctype for k, s in sections.items()},
@@ -370,7 +379,10 @@ def _allowed_keys(user, has_mapping):
 		if picked:
 			picked.add("lead:mobile_no")
 			return [k for k in cat["keys"] if k in picked]
-	return list(cat["keys"])
+	# A section grant is opt-in ONLY. An empty grid means "the whole catalog", and a grant riding that
+	# fallthrough would reach every contract that never asked for one — including a trusted caller with
+	# no grid at all. It is granted by being ticked, and by nothing else.
+	return [k for k in cat["keys"] if k not in cat["section_grant_keys"]]
 
 
 def _allowed_programs(user, has_mapping):
@@ -466,9 +478,10 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 			continue
 		rows = cast_declared("CRM Lead", cf, rows)
 		child_doctype = lead_meta.get_field(cf).options
-		if _child_key_value(cf):
+		key_value = _child_key_value(cf)
+		if key_value:
 			# The section is the unit of grant: a key-value answer is identified by the question itself.
-			children[cf] = [cast_declared_row(child_doctype, r) for r in rows if r]
+			children[cf] = _key_value_incoming(data, cf, key_value, rows, child_doctype)
 			continue
 		# The key_field of a multi-row child is the row's address: always keep it
 		# (even if the partner's grid didn't tick it) plus the explicit _delete flag,
@@ -599,7 +612,7 @@ def _already_present(rows, incoming):
 	)
 
 
-def _apply_key_value(doc, cf, incoming, identity_field, section):
+def _apply_key_value(doc, cf, incoming, section):
 	"""key-value child: an answer is kept whenever it DIFFERS from what the question already holds, and
 	every re-read that says the same thing changes nothing.
 
@@ -607,16 +620,23 @@ def _apply_key_value(doc, cf, incoming, identity_field, section):
 	question on a second campaign, with no record it had ever been different. A changed answer is itself
 	the clinical fact, so it is appended and the readers show the newest. Re-reading a form is therefore
 	idempotent: the row is only touched when the patient actually said something new."""
-	value_field = _child_key_value(cf).value_field
+	kv = _child_key_value(cf)
+	value_field = kv.value_field
 	for row in incoming:
 		rows = doc.get(cf) or []
-		identity = cstr((row or {}).get(identity_field))
-		answered = [r for r in rows if identity and cstr(r.get(identity_field)) == identity]
+		# Derived from the question, never read off the wire: an incoming row has not been saved yet, so it carries no identity of its own until the row stamps one on validate.
+		question = cstr((row or {}).get(kv.question_field))
+		identity = keyvalue.identity_of(question) if question else ""
+		answered = [r for r in rows if identity and cstr(r.get(kv.row_key_field)) == identity]
 		newest = keyvalue.newest_first(answered)[0] if answered else None
 		if newest is not None and cstr(newest.get(value_field)) == cstr((row or {}).get(value_field)):
 			continue  # left alone, never merged: a merge rewrote which form asked it
 		if identity or not _already_present(rows, row):
-			doc.append(cf, _column_values(section, row))
+			columns = _column_values(section, row)
+			if identity:
+				# Stamped HERE: frappe runs `validate` on the parent only, so the row never derives its own on a parent save, and this is the one engine both the partner lane and the Facebook fold write through.
+				columns[kv.row_key_field] = identity
+			doc.append(cf, columns)
 
 
 def _apply_children(doc, children):
@@ -629,7 +649,7 @@ def _apply_children(doc, children):
 		section = _section_of_child(cf)
 		key_value = _child_key_value(cf)
 		if key_value:
-			_apply_key_value(doc, cf, incoming, key_value.row_key_field, section)
+			_apply_key_value(doc, cf, incoming, section)
 			continue
 		key_field = _child_key_field(cf)
 		title = catalog_section_title(cf)
@@ -696,29 +716,92 @@ def _key_value_columns(section):
 	return (section.question_field, section.label_field, section.value_field)
 
 
-def _key_value_descriptor(public_name, df):
-	"""One KEY_VALUE_VIEW field, typed from the column it is read out of and marked never-writable."""
-	d = field_descriptor(public_name, df.label if df else public_name, df.fieldtype if df else "Data")
-	d["behavior"] = BEHAVIOR_OUTPUT_ONLY
-	d["required"] = False
+def _origin_of(data):
+	"""Where an answer came from, frozen onto its row: what the sender named itself in THIS payload, else
+	its source, else the key that sent it.
+
+	Frozen because the lead's own `custom_source_origin` moves on to whatever wrote last — a row reading
+	it back later would name the wrong sender, which is exactly the question History has to answer."""
+	return cstr(data.get("custom_source_origin") or data.get("source") or frappe.session.user)
+
+
+def _key_value_incoming(data, cf, section, rows, child_doctype):
+	"""A key-value section's incoming rows as the COLUMNS they write.
+
+	A caller sends the section's PUBLIC view (`KEY_VALUE_VIEW`) — the same three names `lead_schema`
+	publishes and `_curate` returns — so what a partner is told, sends and reads back is one language.
+
+	Two columns are never authored. The identity is derived from the question, by the row itself on
+	validate, so a caller can neither invent one nor answer under a question it does not ask; the origin
+	is stamped from the payload that carried the answer. Both are dropped if they arrive."""
+	columns = dict(zip(KEY_VALUE_VIEW, _key_value_columns(section), strict=True))
+	server_owned = (section.row_key_field, keyvalue.ORIGIN_FIELD)
+	origin, seen, out = _origin_of(data), set(), []
+	for r in rows:
+		if not r:
+			continue
+		row = {columns.get(k, k): v for k, v in r.items() if columns.get(k, k) not in server_owned}
+		question = cstr(row.get(section.question_field))
+		if not question:
+			throw_field(_(
+				"A row of `{0}` names no question, so there is nothing for its answer to be an answer to. "
+				"Send `{1}` on every row."
+			).format(cf, KEY_VALUE_VIEW[0]), [cf])
+		if question in seen:
+			throw_field(_(
+				"`{0}` answers `{1}` twice in one payload, and a question holds one answer. Send a "
+				"multi-choice answer once, as a list of values in `{2}`."
+			).format(cf, question, KEY_VALUE_VIEW[2]), [cf])
+		seen.add(question)
+		row[section.value_field] = _key_value_answer(row.get(section.value_field), cf, question)
+		row[keyvalue.ORIGIN_FIELD] = origin
+		out.append(cast_declared_row(child_doctype, row))
+	return out
+
+
+def _key_value_answer(value, cf, question):
+	"""One answer from what the caller sent: a scalar as it stands, several selections joined by the ONE
+	rule that joins them. A nested value is refused rather than stored as its own repr."""
+	nested = isinstance(value, dict) or (
+		isinstance(value, (list, tuple)) and any(isinstance(v, (list, tuple, dict)) for v in value)
+	)
+	if nested:
+		throw_field(_(
+			"`{0}` on `{1}` holds a nested value. An answer is one value, or a list of values for a "
+			"multi-choice question."
+		).format(KEY_VALUE_VIEW[2], question), [cf])
+	return keyvalue.answer_of(value)
+
+
+def _key_value_descriptor(public_name, df, writable=False):
+	"""One KEY_VALUE_VIEW field, typed from the column it is read out of.
+
+	Writable only for a contract granted the whole section, and then the question is the required one:
+	a row is addressed by it, and an answer to nothing cannot be stored."""
+	required = writable and public_name == KEY_VALUE_VIEW[0]
+	d = field_descriptor(public_name, df.label if df else public_name,
+	                     df.fieldtype if df else "Data", required)
+	if not writable:
+		d["behavior"] = BEHAVIOR_OUTPUT_ONLY
+		d["required"] = False
 	return d
 
 
-def _catalogued_answers(doc, cf, section):
+def _key_value_rows(doc, cf, section, granted):
 	"""A key-value section's rows, read the way the section says to read them.
 
-	Only the questions an operator has CATALOGUED are returned — that row is the grant, and it is the
-	only one there can be, because a key-value field addresses a row rather than a column and so can
-	never enter a partner's own field grid. Read-only by construction: `keys` does not carry them, so
-	nothing here is writable by anybody."""
-	shown = {k.partition(":")[2] for k in _catalog()["read_only_keys"]}
-	if not shown:
+	A contract GRANTED the section reads every answer on the lead: the rows hang off a lead it is already
+	entitled to, and a question it may write is one it may read back. Without the grant only the questions
+	an operator has CATALOGUED are returned — that row is the only per-question grant there can be,
+	because a key-value field addresses a row rather than a column and so can never enter a field grid."""
+	shown = None if granted else {k.partition(":")[2] for k in _catalog()["read_only_keys"]}
+	if shown is not None and not shown:
 		return []
 	source = _key_value_columns(section)
 	return [
 		dict(zip(KEY_VALUE_VIEW, [row.get(c) for c in source], strict=True), name=row.get("name"))
 		for row in (doc.get(cf) or [])
-		if row.get(section.row_key_field) in shown
+		if shown is None or row.get(section.row_key_field) in shown
 	]
 
 
@@ -777,11 +860,13 @@ def _curate(doc, parent_fields, child_allow):
 	})
 	for section_key, section in _catalog()["section_key_value"].items():
 		cf = _catalog()["section_child"].get(section_key)
-		answers = _catalogued_answers(doc, cf, section) if cf else []
+		answers = _key_value_rows(doc, cf, section, bool(child_allow.get(cf))) if cf else []
 		if answers:
 			out[cf] = answers
 	for cf, allowed in child_allow.items():
-		if allowed:
+		# A key-value table is projected above, through the section's own columns. The generic projection
+		# would address its rows by fieldname and hand back the grant key instead of an answer.
+		if allowed and not _child_key_value(cf):
 			# Return the caller's allowed fields + our row id (name) + the key field (the row's address per the contract — always present even if not ticked).
 			key_field = _child_key_field(cf)
 			section = _section_of_child(cf)
@@ -1012,24 +1097,27 @@ def lead_schema(**_kwargs):
 
 	cat = _catalog()
 	children = {}
-	# A key-value section is advertised exactly as `_curate` returns it: the catalogued questions, read
-	# through the columns the section names, every one OUTPUT_ONLY. Nothing to send, so no key_field.
+	# A key-value section is advertised exactly as `_curate` returns it: read through the columns the
+	# section names. A granted contract may send them; anyone else sees the catalogued questions,
+	# OUTPUT_ONLY. Never a key_field — the identity is derived from the question, never sent.
 	for section_key, section in cat["section_key_value"].items():
 		cf = cat["section_child"].get(section_key)
-		if not (cf and cat["read_only_keys"]):
+		granted = bool(child_allow.get(cf))
+		if not (cf and (granted or cat["read_only_keys"])):
 			continue
 		meta = frappe.get_meta(section.target_doctype)
 		children[cf] = {
 			"multi_row": True,
 			"key_field": None,
 			"fields": [
-				_key_value_descriptor(public, meta.get_field(column))
+				_key_value_descriptor(public, meta.get_field(column), granted)
 				for public, column in zip(KEY_VALUE_VIEW, _key_value_columns(section), strict=True)
 			],
 		}
 	for section, cf in cat["section_child"].items():
 		allowed = child_allow.get(cf)
-		if not allowed:
+		# Advertised above through the section's own columns; here it would advertise the grant key.
+		if not allowed or cat["section_key_value"].get(section):
 			continue
 		key_field = cat["section_key_field"].get(section)
 		# The key_field addresses a multi-row child: surface it in the schema even if

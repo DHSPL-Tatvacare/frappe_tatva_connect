@@ -9,6 +9,5 @@ from tatva_connect.lead import keyvalue
 
 class CRMLeadScreeningAnswer(Document):
 	def validate(self):
-		# Derived here rather than by the caller: the identity is a pure function of the question, and a
-		# writer that computed it separately could store a row answering under a question it does not ask.
+		# The guard for a row saved on its own: frappe runs `validate` on the parent, so a row written through a lead is stamped by the write engine (`api/partner.py::_apply_key_value`) by the same rule.
 		self.question_hash = keyvalue.identity_of(self.question)

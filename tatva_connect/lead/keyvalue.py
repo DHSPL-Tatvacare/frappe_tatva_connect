@@ -12,12 +12,26 @@ question therefore hashes alike across every form, which is what makes one quest
 anybody declaring that it is. `api/_base.py` and `workflow_engine/versions.py` key rows the same way.
 
 WHERE each part of a row lives is not here: `CRM Lead Section` names the identity, answer, label and
-question columns, and every reader asks it. This module holds the two RULES that are nobody else's —
-how an identity is derived, and which answer is the current one.
+question columns, and every reader asks it. This module holds the three RULES that are nobody else's —
+how an identity is derived, which answer is the current one, and how several selections become one answer.
 """
 import hashlib
 
-from frappe.utils import cint
+from frappe.utils import cint, cstr
+
+# A checkbox question answers with several values and every one of them is the record; the joined string is what a person reading the answer would write down.
+ANSWER_JOIN = ", "
+# The one column of a key-value row the SECTION does not name, because no caller authors it: the server stamps where the answer came from. Named here so the writer and the history reader share one name.
+ORIGIN_FIELD = "origin"
+
+
+def answer_of(value):
+	"""Several selections as ONE answer. A scalar is its own answer, so a caller that already joined its
+	own multi-select is unchanged; a list is joined in the order it was sent, because the order is the
+	form's option order and sorting it would make a re-send look like a changed answer."""
+	if isinstance(value, (list, tuple)):
+		return ANSWER_JOIN.join(cstr(v) for v in value)
+	return value
 
 
 def identity_of(question: str) -> str:

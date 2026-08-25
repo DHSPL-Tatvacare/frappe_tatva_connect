@@ -6,12 +6,12 @@ from crm.lead_syncing.doctype.lead_sync_source.facebook import FacebookSyncSourc
 from crm.lead_syncing.doctype.lead_sync_source.lead_sync_source import LeadSyncSource
 from frappe.utils import (
 	convert_utc_to_system_timezone,
-	cstr,
 	get_datetime,
 	get_system_timezone,
 	now_datetime,
 )
 
+from tatva_connect.lead import keyvalue
 from tatva_connect.lead_sync.contract import (
 	allowed_field_keys,
 	allowed_programs,
@@ -23,10 +23,6 @@ from tatva_connect.lead_sync.discovery import fetch_and_store_pages
 from tatva_connect.lead_sync.drift import report_form_drift
 from tatva_connect.lead_sync.graph import graph_get, redact_tokens
 from tatva_connect.lead_sync.token import app_for, page_of_form, refresh_credential
-
-# A checkbox question answers with several values and every one of them is the record; the joined string
-# is what a person reading the answer would write down.
-ANSWER_JOIN = ", "
 
 # The drift check lists every form on the Page; marketing publishes one every few weeks, not every crawl.
 DRIFT_CHECK_CACHE = "tatva_connect:drift_checked"
@@ -40,7 +36,7 @@ def answers(lead):
 	nothing; a question answered blank comes back with an empty list and is kept, because absent and blank
 	are different facts about a patient and only one of them is a gap in what we asked."""
 	return [
-		(a["name"], ANSWER_JOIN.join(cstr(v) for v in a["values"]))
+		(a["name"], keyvalue.answer_of(a["values"]))
 		for a in lead.get("field_data") or []
 		if "values" in a
 	]

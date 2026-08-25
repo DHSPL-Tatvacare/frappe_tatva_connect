@@ -2,7 +2,6 @@
 import frappe
 
 from tatva_connect.api.partner import _catalog
-from tatva_connect.lead import keyvalue
 
 CONTRACT = "CRM Lead API Mapping"
 
@@ -42,9 +41,9 @@ def stage(item, field_key, value, question=None, label=None, form=None):
 	a key-value answer as its own row.
 
 	A key-value answer is built HERE rather than by the caller: this is where the section is already
-	resolved, and the section is what names the column each part of a row lands in. The identity is
-	derived from the question by the one rule that derives it, and the row re-derives it on validate —
-	so a caller can neither name a column nor invent an identity."""
+	resolved, and the section is what names the column each part of a row lands in. The identity is not
+	set here at all — the row derives its own from the question on validate — so a caller can neither
+	name a column nor invent an identity."""
 	cat = _catalog()
 	section, _, fieldname = field_key.partition(":")
 	child_table = cat["section_child"].get(section)
@@ -54,7 +53,6 @@ def stage(item, field_key, value, question=None, label=None, form=None):
 			key_value.value_field: value,
 			key_value.question_field: question,
 			key_value.label_field: label,
-			key_value.row_key_field: keyvalue.identity_of(question),
 			"form": form,
 		})
 	elif child_table:
