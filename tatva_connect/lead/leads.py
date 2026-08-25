@@ -157,6 +157,9 @@ def normalize_lead_phones(doc, method=None):
 		return
 	meta = frappe.get_meta(doc.doctype)
 	for f in PHONE_FIELDS:
+		# Only a number that MOVED needs shaping: `has_value_changed` is True on insert, so a new lead is still shaped in full.
+		if not doc.has_value_changed(f):
+			continue
 		val = doc.get(f)
 		if val:
 			label = (meta.get_field(f) or frappe._dict()).label or f
@@ -181,6 +184,13 @@ def dedup_guard(doc, method=None):
 	if not automation.is_enabled("Lead::CRM Lead::dedup"):
 		return
 	if not doc.mobile_no:
+		return
+	# The anchor is mobile+vertical+group; a save that moved none of them cannot have made this lead a duplicate.
+	if not (
+		doc.has_value_changed("mobile_no")
+		or doc.has_value_changed("custom_vertical")
+		or doc.has_value_changed("custom_group")
+	):
 		return
 
 	mobile = to_e164(doc.mobile_no)  # compare on the canonical form (stored leads are canonical)
