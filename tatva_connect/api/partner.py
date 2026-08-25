@@ -48,6 +48,7 @@ from tatva_connect.api._base import (
 	EXTERNAL_ID_FIELD,
 	_api,
 	_bulk_read,
+	_echo,
 	_list_ok,
 	_norm_phone,
 	_ok,
@@ -505,24 +506,55 @@ def _collect(data, parent_fields, child_allow, allow_routing):
 	return parent, children
 
 
-def _resolve_picklists(parent, children, grain):
+def _refuse_unresolved(doctype, sent, resolved, grain):
+	"""A picklist value the grain's vocabulary does not hold is REFUSED, naming what may be sent.
+
+	`resolve_row_links` fails OPEN — it drops the value and keeps the record, because on the Facebook
+	fold and the intake lane one unmatched value must never cost a whole lead. An API caller is a
+	different case: `lead_schema` publishes the exact values it may send, so a value outside them is the
+	caller's mistake and telling them beats a 200 that quietly changed nothing."""
+	from tatva_connect.taxonomy import picklist
+
+	gone = [fn for fn, v in sent.items() if fn not in resolved and v not in (None, "")]
+	if not gone:
+		return
+	meta = frappe.get_meta(doctype)
+	field = meta.get_field(gone[0])
+	allowed = picklist.values_for(field.options, grain, gone[0]) if field else []
+	throw_field(_(
+		"`{0}` reads {1}, which is not one of the values it takes here.{2}"
+	).format(gone[0], _echo(sent[gone[0]]),
+	         _(" Send one of: {0}.").format(", ".join(allowed)) if allowed else ""), gone)
+
+
+def _resolve_picklists(parent, children, grain, strict=False):
 	"""Translate human picklist VALUES -> grain-scoped composite PKs on the collected parent + child
 	dicts BEFORE they reach the doc. This is the ONE correct place: Frappe runs _validate_links()
 	before any before_validate hook on insert/save, so a doc_event can't fix a Link — the ingestion
 	path must resolve first. Rides the SAME taxonomy.picklist brain the lead_schema discovery
 	advertises, so what a partner is TOLD they may send is exactly what is ACCEPTED. Shared by
-	create + update. A multi-value field's LIST rides the same call, one value at a time."""
+	create + update. A multi-value field's LIST rides the same call, one value at a time.
+
+	`strict` refuses a value that did not resolve instead of dropping it — see `_refuse_unresolved`.
+	The API endpoints pass it; the folds do not, and their fail-open behaviour is unchanged."""
 	from tatva_connect.taxonomy import picklist
 
 	cm = frappe.get_meta("CRM Lead")
-	parent = _resolve_multi_values(PARENT_SECTION, picklist.resolve_row_links("CRM Lead", parent, grain), grain)
-	children = {
-		cf: [_resolve_multi_values(_section_of_child(cf),
-		                           picklist.resolve_row_links(cm.get_field(cf).options, r, grain), grain)
-		     for r in rows]
-		for cf, rows in children.items()
-	}
-	return parent, children
+	linked = picklist.resolve_row_links("CRM Lead", parent, grain)
+	if strict:
+		_refuse_unresolved("CRM Lead", parent, linked, grain)
+	parent = _resolve_multi_values(PARENT_SECTION, linked, grain)
+	out = {}
+	for cf, rows in children.items():
+		child_doctype = cm.get_field(cf).options
+		resolved_rows = []
+		for r in rows:
+			linked_row = picklist.resolve_row_links(child_doctype, r, grain)
+			if strict:
+				_refuse_unresolved(child_doctype, r, linked_row, grain)
+			resolved_rows.append(_resolve_multi_values(_section_of_child(cf), linked_row, grain))
+		out[cf] = resolved_rows
+	return parent, out
 
 
 def _child_error(message, field):
@@ -909,7 +941,7 @@ def _scoped_lead(name, mp, is_sysmgr):
 
 # -- per-record core (shared by singular + bulk) -----------------------------
 
-def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None):
+def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs=None, strict_values=False):
 	"""Create-or-upsert one lead from a dict. Returns (doc, action)."""
 	mobile = _norm_phone(item.get(LEAD_IDENTITY))
 	if not mobile:
@@ -935,7 +967,7 @@ def _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_program
 	# Resolve human picklist VALUES -> grain composite PKs now the grain is known, before the doc
 	# is built (Frappe validates Links before any hook). Covers the partner API AND the intake fold.
 	parent, children = _resolve_picklists(
-		parent, children, (anchor_vertical or "", anchor_group or "", program or "")
+		parent, children, (anchor_vertical or "", anchor_group or "", program or ""), strict=strict_values
 	)
 	anchor = {"mobile_no": mobile, "custom_vertical": anchor_vertical, "custom_group": anchor_group}
 	existing = frappe.db.get_value("CRM Lead", anchor, "name")
@@ -1020,7 +1052,7 @@ def _update_one(name, item, mp, is_sysmgr, parent_fields, child_allow, allowed_p
 		(mp.crm_group if mp else doc.custom_group) or "",
 		(program or doc.custom_current_program or ""),
 	)
-	parent, children = _resolve_picklists(parent, children, grain)
+	parent, children = _resolve_picklists(parent, children, grain, strict=True)
 	_apply_parent(doc, parent)
 	_apply_children(doc, children)
 	if mp:
@@ -1235,7 +1267,8 @@ def lead_create(**_kwargs):
 	full record, including the `name` to address it by from now on."""
 	user, mp, is_sysmgr, parent_fields, child_allow = _caller_fields()
 	allowed_programs = _allowed_programs(user, bool(mp))
-	doc, action = _upsert_one(frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
+	doc, action = _upsert_one(frappe.form_dict, mp, is_sysmgr, parent_fields, child_allow, allowed_programs,
+	                          strict_values=True)
 	_ok(action=action, data=_curate(doc, parent_fields, child_allow))
 
 
@@ -1276,7 +1309,8 @@ def lead_create_bulk(**_kwargs):
 def bulk_creator(user, mp, is_sysmgr, parent_fields, child_allow, allowed_programs):
 	"""The per-record create closure, shared by the sync bulk endpoint and the async worker (one brain)."""
 	def one(i, item):
-		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs)
+		doc, action = _upsert_one(item, mp, is_sysmgr, parent_fields, child_allow, allowed_programs,
+		                          strict_values=True)
 		return {"index": i, "status": "success", "action": action,
 		        "data": _curate(doc, parent_fields, child_allow)}
 	return one
