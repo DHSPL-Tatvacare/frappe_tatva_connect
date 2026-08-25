@@ -47,8 +47,12 @@ def _payload_snapshot():
 	data.pop("cmd", None)  # frappe's own routing key, already stored as `endpoint` — not masking, de-duplication
 	if not data:
 		return None
-	text = mask_secrets(frappe.as_json(data))
-	return text if len(text) <= _PAYLOAD_MAX else text[:_PAYLOAD_MAX] + "\u2026 [truncated]"
+	# Cap BEFORE masking, never after: a 5000-record bulk is megabytes and mask_secrets runs two regex
+	# passes over whatever it is handed — on the request tail, for a call that has already failed.
+	text = frappe.as_json(data)
+	if len(text) > _PAYLOAD_MAX:
+		text = text[:_PAYLOAD_MAX] + "\u2026 [truncated]"
+	return mask_secrets(text)
 
 
 def _method_prefix(module):
