@@ -156,11 +156,15 @@ class ChannelWhatsAppMessage(WhatsAppMessage):
 			)
 		return super().notify(data)
 
+	@frappe.whitelist()
 	def send_read_receipt(self):
 		"""No-Meta backstop: upstream POSTs a read receipt to Meta's Graph API.
 
 		No adapter on our contract exposes a read-receipt endpoint, so for an adapter-backed account
 		this is a no-op — never fall through to super() (which would reach Meta).
+
+		The decorator is carried, not inherited: `frappe.whitelist` registers the FUNCTION OBJECT, so an
+		override that drops it un-whitelists the method the chat tab calls on every conversation open.
 		"""
 		if self._channel_account() is not None:
 			return None
