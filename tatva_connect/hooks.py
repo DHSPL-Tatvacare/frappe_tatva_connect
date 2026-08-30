@@ -496,6 +496,8 @@ scheduler_events = {
 		],
 		# Daily, offset off :15 so it never queues alongside SWEEP_CRON: purge finished async bulk jobs + results + payload past the retention window.
 		"23 4 * * *": ["tatva_connect.api.partner_bulk_job.purge_expired_jobs"],
+		# Daily, offset off :45 so it never queues alongside SWEEP_CRON: drop READ bell-tray rows past the retention floor, the only thing that ever deletes one (dormant — gated on Notifications::Tray::retention).
+		"43 3 * * *": ["tatva_connect.notifications.retention.purge_read_notifications"],
 		# Every 15 min: wake due-timer Flow Instances + reconcile lost wakeups (F5); chase up voice calls whose outcome webhook never arrived (dormant — gated on AI Voice::Channel::reconcile). Cadence DECLARED in workflow_engine.thresholds (W4.3), never restated here.
 		workflow_thresholds.SWEEP_CRON: [
 			"tatva_connect.workflow_engine.wakeups.sweep",

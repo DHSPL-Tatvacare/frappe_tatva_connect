@@ -152,6 +152,21 @@ AUTOMATIONS = [
 		backs=[],
 	),
 	Auto(
+		key="Notifications::Tray::retention",
+		fires_on="Schedule",
+		trigger_detail="operator-armed · daily purge of read tray rows",
+		purpose=(
+			"Read notifications older than the retention floor are deleted from the bell tray, which is "
+			"otherwise append-only: a row is written when a rep is told something and never removed, so "
+			"the table and every tray read grow without bound. An UNREAD row is never purged however old "
+			"— it is an outstanding work item, and age is not consent. The row is dormant and unscheduled "
+			"by default.\n"
+			"Example: an assignment a rep read four months ago stops being fetched every time they open "
+			"the bell."
+		),
+		backs=["tatva_connect.notifications.retention.purge_read_notifications"],
+	),
+	Auto(
 		key="WhatsApp::Channel::messaging",
 		fires_on="Provider call",
 		trigger_detail="whatsapp/api gate · WhatsApp Message · before_save",
@@ -304,6 +319,24 @@ AUTOMATIONS = [
 			"tapped to call one or get directions."
 		),
 		backs=[],
+	),
+	Auto(
+		key="Lead::BulkActions::async",
+		fires_on="Provider call",
+		trigger_detail="bulk_actions.run_or_queue gate · CRM Lead list-view multi-select",
+		purpose=(
+			"A list-view bulk action — Assign, Clear Assignment, Bulk Edit, Bulk Delete — on 20 or more "
+			"selected leads moves to a background job instead of running inside the browser's request, "
+			"and the rep is told when it finishes rather than left staring at a tab that may time out on "
+			"a large selection. Off, the action still runs inline, but not exactly as it did before this "
+			"seam existed: frappe's own per-action thresholds (Bulk Edit's own 20-row enqueue point, Bulk "
+			"Delete's own 10-row enqueue point) are bypassed regardless of the switch, replaced by one "
+			"uniform 500-row cap above which the selection is refused outright, with no background "
+			"offload while the switch stays off.\n"
+			"Example: a rep selects 200 leads and clicks Assign; the browser is freed immediately and a "
+			"toast reports 197 assigned, 3 skipped once the job finishes."
+		),
+		backs=["tatva_connect.bulk_actions.run_or_queue"],
 	),
 	Auto(
 		key="Lead::Assignment::owner",
