@@ -422,10 +422,13 @@ RAIL_EVENT_TYPES = (
 # `_rail_only_rows`. Two suppliers, one declaration, so flipping the index toggle cannot change the rail.
 # Which ROWS of these tables belong to a rail at all is `timeline.PREDICATES`, never restated here.
 _RAIL_ONLY = {
+	# `profile_name` and `owner` are the row's two candidate ACTORS, and both are needed: with neither
+	# fetched, the rail's `getUser(undefined)` fell back to the SESSION user, so every reader saw their
+	# own name on every message. `from` is the fallback label for a patient WATI sent no display name for.
 	"whatsapp": (
 		"WhatsApp Message", "reference_name",
-		["name", "message", "message_type", "content_type", "to", "type", "status",
-		 "custom_workflow_correlation", "creation", "modified"],
+		["name", "message", "message_type", "content_type", "from", "to", "type", "status",
+		 "profile_name", "owner", "custom_workflow_correlation", "creation", "modified"],
 	),
 	# The Call API node's own record. `error` rides along because a failed outbound call is the whole
 	# reason a reader opens this row.
