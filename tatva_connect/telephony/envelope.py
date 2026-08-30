@@ -11,15 +11,14 @@ Direction is carried, never inferred from the registered URL. That inference sil
 `from`/`to` whenever a webhook was pointed at the wrong endpoint.
 """
 import re
-from datetime import datetime, timezone
 
-from frappe.utils import convert_utc_to_system_timezone, get_datetime
+# The two timestamp dialects are not telephony's — a WhatsApp history item speaks the same pair. One
+# parser in the channel layer, re-exported here so `env.parse_timestamp` keeps naming it.
+from tatva_connect.channels.event import parse_timestamp
 
 # Below this a value is a provider glitch or an internal extension, not a subscriber number.
 # Suffix-matching on it would match a large slice of the lead table, so it is rejected instead.
 PHONE_MIN_DIGITS = 10
-
-_EPOCH_MIN_DIGITS = 9
 
 
 class Envelope(dict):
@@ -69,25 +68,6 @@ def build(
 		recording_ref=recording_ref,
 		raw=raw or {},
 	)
-
-
-def parse_timestamp(value):
-	"""Parse a provider timestamp, or None when it cannot be read. Never guessed."""
-	if value in (None, "", "0"):
-		return None
-	text = str(value).strip()
-	# Epoch seconds, which the Acefone dashboard offers as an alternative to a formatted stamp. Read as
-	# UTC and converted to the SITE's timezone -- `datetime.fromtimestamp` would use whatever timezone
-	# the worker container happens to run in, which is not a property of the call.
-	if text.isdigit() and len(text) >= _EPOCH_MIN_DIGITS:
-		try:
-			return convert_utc_to_system_timezone(datetime.fromtimestamp(int(text), tz=timezone.utc))
-		except (ValueError, OSError, OverflowError):
-			return None
-	try:
-		return get_datetime(text)
-	except Exception:
-		return None
 
 
 def to_int(value) -> int:

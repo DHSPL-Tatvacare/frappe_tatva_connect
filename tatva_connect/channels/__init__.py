@@ -17,7 +17,14 @@ An adapter is reached one way — `resolve.adapter_for(account)` — and its dec
 `adapter_for(account).DECLARATION`. Nobody re-derives it and nobody keeps a second copy.
 """
 from tatva_connect.channels.contract import CAPABILITIES, Declaration, SendResult
-from tatva_connect.channels.event import KINDS, OUTCOMES, ChannelEvent, build, event_name
+from tatva_connect.channels.event import (
+	KINDS,
+	OUTCOMES,
+	ChannelEvent,
+	build,
+	event_name,
+	parse_timestamp,
+)
 from tatva_connect.channels.resolve import adapter_for, adapter_for_channel, has_adapter
 
 __all__ = [
@@ -32,4 +39,5 @@ __all__ = [
 	"build",
 	"event_name",
 	"has_adapter",
+	"parse_timestamp",
 ]

@@ -19,6 +19,13 @@ one was edited in flight — a status quietly rewritten between the screen and t
 cannot have.
 """
 
+from datetime import datetime, timezone
+
+from frappe.utils import convert_utc_to_system_timezone, get_datetime
+
+# Below this many digits a numeric stamp is a provider glitch, not an epoch.
+_EPOCH_MIN_DIGITS = 9
+
 # The canonical outcome vocabulary. An adapter declares the subset it can TRUTHFULLY emit. The first six
 # are messaging outcomes; the last three are what a VOICE provider can report about a call it placed —
 # added when the voice channel arrived, the only new vocabulary that chunk allowed. `failed` is shared.
@@ -151,6 +158,29 @@ def build(
 		at=at,
 		raw=raw or {},
 	)._freeze()
+
+
+def parse_timestamp(value):
+	"""Parse a provider timestamp, or None when it cannot be read. Never guessed.
+
+	Shared by every channel because every provider speaks the same two dialects: epoch seconds (WATI's
+	`timestamp`, Acefone's `start_stamp`) and a formatted stamp (WATI's `created`, Acefone's two).
+	"""
+	if value in (None, "", "0"):
+		return None
+	text = str(value).strip()
+	# Epoch seconds. Read as UTC and converted to the SITE's timezone -- `datetime.fromtimestamp`
+	# would use whatever timezone the worker container happens to run in, which is not a property of
+	# the event.
+	if text.isdigit() and len(text) >= _EPOCH_MIN_DIGITS:
+		try:
+			return convert_utc_to_system_timezone(datetime.fromtimestamp(int(text), tz=timezone.utc))
+		except (ValueError, OSError, OverflowError):
+			return None
+	try:
+		return get_datetime(text)
+	except Exception:
+		return None
 
 
 def event_name(event) -> str | None:

@@ -27,7 +27,9 @@ from unittest import mock
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import get_datetime
 
+from tatva_connect.channels.event import parse_timestamp
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.whatsapp import media as media_module
 from tatva_connect.whatsapp import transport
@@ -309,6 +311,30 @@ class TestWATIAdapterCharacterisation(FrappeTestCase):
 		# NOTE: believed-buggy, pinned deliberately — an inbound row is written with NO status at all, while an ingested outbound row gets one. The tab has nothing to render for inbound.
 		self.assertFalse(row.status)
 
+	def test_handle_inbound_dates_the_row_by_the_providers_clock_not_ours(self):
+		# CHANGED 2026-08-27: was frappe's insert time. `creation` is the ONLY timestamp this doctype has and the chat tab both sorts and renders by it, so a history pull stamped every pulled message "now" — a three-week-old thread landed at today's time, out of order.
+		src = _payload("message:text")
+		adapter.handle(src, None, self.account)
+		row = self._rows(reference_name=self.lead)[0]
+		# The parser answers in the site's timezone, tz-AWARE; the column stores the same wall clock, naive.
+		self.assertEqual(get_datetime(row.creation), parse_timestamp(src["timestamp"]).replace(tzinfo=None))
+
+	def test_handle_inbound_row_is_owned_by_the_system_not_by_whoever_asked_for_it(self):
+		# CHANGED 2026-08-27: was frappe.session.user. A refresh runs in a job carrying the user who clicked it, so every pulled row was owned by that rep — and the Activity rail, which takes its actor from the owner, then read "<rep> received a WhatsApp" on a patient's own message.
+		was = frappe.session.user
+		frappe.set_user("Guest")
+		try:
+			adapter.handle(_payload("message:text"), None, self.account)
+		finally:
+			frappe.set_user(was)
+		self.assertEqual(self._rows(reference_name=self.lead)[0].owner, "Administrator")
+
+	def test_an_unreadable_provider_time_leaves_the_row_dated_by_the_insert(self):
+		# A stamp we cannot read is never guessed at: the row keeps frappe's own time rather than landing in 1970.
+		src = _payload("message:text", timestamp="not a time", created=None)
+		adapter.handle(src, None, self.account)
+		self.assertTrue(self._rows(reference_name=self.lead)[0].creation)
+
 	def test_handle_inbound_image_attaches_the_media_and_keeps_the_caption_as_the_message(self):
 		get_media, ensure = self._stub_media()
 		with get_media, ensure:
@@ -419,6 +445,14 @@ class TestWATIAdapterCharacterisation(FrappeTestCase):
 		self.assertEqual(row.reference_name, self.lead)
 		# No eventType mapping for sessionMessageSent_v2 -> the status falls back to statusString.
 		self.assertEqual(row.status, "sent")
+
+	def test_handle_outbound_echo_is_dated_by_the_provider_too(self):
+		# CHANGED 2026-08-27: was frappe's insert time. A message typed in the provider's portal is filed here after the fact exactly as an inbound one is, and it lands in the same thread — dating one by the provider and the other by the insert would interleave them wrongly.
+		src = _payload("sessionMessageSent_v2")
+		adapter.handle(src, None, self.account)
+		row = self._rows(reference_name=self.lead)[0]
+		# The parser answers in the site's timezone, tz-AWARE; the column stores the same wall clock, naive.
+		self.assertEqual(get_datetime(row.creation), parse_timestamp(src["timestamp"]).replace(tzinfo=None))
 
 	def test_handle_template_sent_v2_from_the_portal_lands_as_a_valid_content_type(self):
 		# CHANGED 2026-07-19 (defect 5): used to RAISE ValidationError and lose the message. A templateMessageSent_v2 for a message this CRM did not send (typed in the portal, or sent by another API client) was copied with content_type = payload `type` = "template", which is not one of the doctype's Select options — so the insert blew up in the worker after `screen` had already said it wanted it. The provider's type vocabulary is not this field's vocabulary; anything the doctype will not accept lands as plain text, and the message survives.

@@ -19,6 +19,7 @@ import frappe
 from frappe import _
 
 from tatva_connect.channels import resolve
+from tatva_connect.channels.event import parse_timestamp
 from tatva_connect.whatsapp import media as media_module
 from tatva_connect.whatsapp import media_retry, routing
 
@@ -170,6 +171,28 @@ def _apply_media(doc, event, lead, media):
 		media_retry.park(doc, event)
 
 
+def _stamp_provenance(doc, event) -> None:
+	"""Correct the row's bookkeeping to the PROVIDER's truth, after the insert that guessed it.
+
+	Frappe stamps `creation` and `owner` from the moment and the session that wrote the row
+	(`document.set_user_and_timestamp`, which runs before any hook of ours and overwrites an
+	assignment made earlier). That is right for a document a user authors and wrong for one we file on
+	someone else's behalf. On the live webhook the guess is close enough to hide the difference; on a
+	history backfill it is not — a three-week-old reply landed at today's time, in the middle of the
+	thread, owned by whoever clicked Refresh, and the Activity rail then read "<rep> received a
+	WhatsApp" on a patient's message.
+
+	`creation` is the ONLY timestamp this doctype has — the chat tab both sorts and renders by it — so
+	the provider's own stamp goes there. And an ingested row is filed by the system, never authored by
+	a rep, so it is owned by Administrator on every path in.
+	"""
+	values = {"owner": "Administrator"}
+	at = parse_timestamp(event.at)
+	if at:  # a stamp we cannot read is never guessed at — the row keeps frappe's own time
+		values["creation"] = at
+	frappe.db.set_value("WhatsApp Message", doc.name, values, update_modified=False)
+
+
 # ---------------------------------------------------------------------------
 # Inbound — the customer wrote to us.
 # ---------------------------------------------------------------------------
@@ -258,6 +281,7 @@ def _insert_inbound_row(event, lead, media) -> None:
 		doc.flags.name_set = True
 	doc.flags.tatva_pinned_lead = lead  # restored in before_save (see pin_inbound_reference)
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + phone+account attribution
+	_stamp_provenance(doc, event)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +341,7 @@ def _insert_outbound_row(event, lead, media) -> None:
 	doc.flags.name_set = True
 	doc.flags.tatva_ingested = True  # a mirror of an existing message — the controller must not re-send
 	doc.insert(ignore_permissions=True)  # authz-ok: tier-b — webhook: token-authenticated + phone+account attribution
+	_stamp_provenance(doc, event)
 
 
 # ---------------------------------------------------------------------------
