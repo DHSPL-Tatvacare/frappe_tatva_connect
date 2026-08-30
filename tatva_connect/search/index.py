@@ -15,6 +15,7 @@ from crm.permissions.org_hierarchy import (
 )
 from frappe import _
 from frappe.search.sqlite_search import MIN_WORD_LENGTH, SQLiteSearch
+from frappe.utils import now
 from frappe.utils.caching import redis_cache, request_cache
 
 from tatva_connect.access.visibility import parent_of
@@ -56,6 +57,15 @@ _WRITE_ERROR = "Search Index Error"
 
 # A repaired index is its own event, not _WRITE_ERROR: a dropped write is noise, a dropped INDEX is not.
 _REPAIR_NOTICE = "Search Index Repaired"
+
+# Drift is its own event again: it says the index and the database had DIVERGED, which no other check can see.
+_DRIFT_NOTICE = "Search Index Drift"
+
+# How many rows one reconcile pass repairs per doctype, each way. Far above the real hourly change rate, so a healthy site does nothing and a site behind after an outage drains across ticks instead of in one long job.
+_RECONCILE_BATCH = 2000
+
+# Where a doctype's reconcile progress lives, in the same one-table home as the schema fingerprint.
+_WATERMARK_KEY = "reconciled_upto"
 
 # `quick_check` catches page damage — the whole failure mode of a half-written file — at 5 ms against integrity_check's 20 ms on a real 3.3 MB index; both detect the same scribbled page, and only the hourly sweep pays it.
 _HEALTH_PRAGMA = "PRAGMA quick_check"
@@ -127,6 +137,11 @@ def normalise(text):
 def leaf(value):
 	# A stage PK is composite (`{program}::…::{stage}`); the LEAF is the only part a human types or reads.
 	return (value or "").split("::")[-1]
+
+
+def _rowid(doc_id):
+	# A row's identity as the INTEGER sqlite already keys on, derived from the doc_id so nothing has to be kept in step.
+	return int.from_bytes(hashlib.blake2b(doc_id.encode(), digest_size=8).digest(), "big") >> 1
 
 
 def _phone_keys(num):
@@ -256,17 +271,44 @@ class CRMLeadSearch(SQLiteSearch):
 		super()._set_pragmas(cursor, is_read)
 		cursor.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS};")
 
+	def _index_documents(self, documents):
+		# One REPLACE keyed on the rowid, where frappe pays a DELETE on `doc_id` — an FTS5 UNINDEXED column no index can answer, so that delete scans the whole file (62 ms against 0.01 ms by rowid on a 200k-row index) while holding the one WAL writer, which is the whole of `database is locked`.
+		if not documents:
+			return
+		text_fields = self.schema["text_fields"]
+		columns = ["doc_id", *text_fields, *self.schema["metadata_fields"]]
+		column_sql = ",".join(columns)
+		placeholders = ",".join("?" * (len(columns) + 1))
+		replace_sql = f"INSERT OR REPLACE INTO search_fts (rowid, {column_sql}) VALUES ({placeholders})"
+		rows = []
+		for doc in documents:
+			if not doc.get("doctype") or not doc.get("name"):
+				self._warn_invalid_document(doc, "missing doctype/name")
+				continue
+			missing = [field for field in text_fields if doc.get(field) is None]
+			if missing:
+				self._warn_missing_text_fields(doc["doctype"], doc["name"], missing)
+				continue
+			doc_id = doc.get("id") or f"{doc['doctype']}:{doc['name']}"
+			rows.append((_rowid(doc_id), doc_id, *(doc.get(field, "") for field in columns[1:])))
+		if rows:
+			self._with_connection(lambda cursor: cursor.executemany(replace_sql, rows))
+
 	def index_doc(self, doctype, docname):
 		# Runs INLINE in the caller's save (`update_doc_index` is a `*` on_update event, wrapped in nothing), so a failed write leaves a stale row and an Error Log entry instead of costing a rep their work; `_visible_rows` gates every hit through get_list, so a stale row can never be shown.
 		try:
 			super().index_doc(doctype, docname)
+		except frappe.DoesNotExistError:
+			# The row named a document that is gone, which is the index reporting its own row as junk: drop it rather than log it every time the lead is touched again.
+			self.remove_doc(doctype, docname)
 		except Exception:
 			frappe.log_error(title=_WRITE_ERROR, message=f"index {doctype}:{docname}\n\n{frappe.get_traceback()}")
 
 	def remove_doc(self, doctype, docname):
-		# The same rule on the delete leg (`delete_doc_index`, a `*` on_trash event): a deletion the user asked for is never refused because the index would not take it.
+		# The same rule on the delete leg (`delete_doc_index`, a `*` on_trash event): a deletion the user asked for is never refused because the index would not take it. By rowid, for the reason `_index_documents` gives.
 		try:
-			super().remove_doc(doctype, docname)
+			self.raise_if_not_indexed()
+			self.sql("DELETE FROM search_fts WHERE rowid = ?", (_rowid(f"{doctype}:{docname}"),), commit=True)
 		except Exception:
 			frappe.log_error(title=_WRITE_ERROR, message=f"remove {doctype}:{docname}\n\n{frappe.get_traceback()}")
 
@@ -318,23 +360,72 @@ class CRMLeadSearch(SQLiteSearch):
 		payload = json.dumps({"schema": self.schema, "doctypes": self.INDEXABLE_DOCTYPES}, sort_keys=True)
 		return hashlib.sha256(payload.encode()).hexdigest()
 
-	def stored_fingerprint(self):
-		# What the live index file was really built from; None means no index, or one built before the stamp existed.
+	def _meta_read(self, key):
+		# None means no index, or one written before this key existed — both read as "nothing recorded yet".
 		if not self.index_exists() or not self._table_exists("search_meta"):
 			return None
-		rows = self.sql("SELECT value FROM search_meta WHERE key = ?", [_FINGERPRINT_KEY], read_only=True)
+		rows = self.sql("SELECT value FROM search_meta WHERE key = ?", [key], read_only=True)
 		return rows[0]["value"] if rows else None
 
-	def _stamp_fingerprint(self):
-		# One tiny table beside the framework's own, created on first stamp; the index file is its only home.
+	def _meta_write(self, key, value):
+		# One tiny table beside the framework's own, created on first write; the index file is its only home.
 		def write(cursor):
 			cursor.execute("CREATE TABLE IF NOT EXISTS search_meta (key TEXT PRIMARY KEY, value TEXT)")
-			cursor.execute(
-				"INSERT OR REPLACE INTO search_meta (key, value) VALUES (?, ?)",
-				(_FINGERPRINT_KEY, self.schema_fingerprint()),
-			)
+			cursor.execute("INSERT OR REPLACE INTO search_meta (key, value) VALUES (?, ?)", (key, value))
 
 		self._with_connection(write)
+
+	def stored_fingerprint(self):
+		# What the live index file was really built from.
+		return self._meta_read(_FINGERPRINT_KEY)
+
+	def _stamp_fingerprint(self):
+		self._meta_write(_FINGERPRINT_KEY, self.schema_fingerprint())
+
+	def reconcile(self):
+		"""Repair the index against the database, both ways, and report what was wrong.
+
+		THE GAP THIS CLOSES. Every write here is best-effort: `index_doc` and `remove_doc` log a failure and
+		move on, and frappe reindexes only when a DECLARED field changed — so a write lost to a lock, a rolled
+		back transaction, or a field nobody declared leaves a row wrong for ever. Nothing else in this file
+		compares the index to the database, which is why 649 leads went missing with no trace in any log.
+
+		FORWARD asks what the database changed since this doctype was last reconciled and restamps it, so a
+		lost write is repaired whether or not anything noticed it failing. REVERSE asks which indexed rows name
+		a document that is gone and drops them, which is `index_doc`'s reap without waiting to be provoked.
+
+		Bounded both ways and per doctype, so a site behind after an outage drains across ticks. The watermark
+		is only advanced over rows actually walked, and the window is inclusive, so a row on the batch boundary
+		is repeated rather than skipped — an index write is idempotent, a missed one is not.
+		"""
+		reindexed = removed = 0
+		indexed = {row["doc_id"] for row in self.sql("SELECT doc_id FROM search_fts", read_only=True) or []}
+		for doctype in self.doc_configs:
+			key = f"{_WATERMARK_KEY}::{doctype}"
+			watermark = self._meta_read(key)
+			if not watermark:
+				# A freshly built index has nothing to catch up on; record the floor and let the next pass work.
+				self._meta_write(key, now())
+			else:
+				changed = frappe.get_all(
+					doctype,
+					filters={"modified": [">=", watermark]},
+					fields=["name", "modified"],
+					order_by="modified asc",
+					limit=_RECONCILE_BATCH,
+				)
+				for row in changed:
+					self.index_doc(doctype, row.name)
+				if changed:
+					self._meta_write(key, str(changed[-1].modified))
+					reindexed += len(changed)
+			prefix = f"{doctype}:"
+			live = set(frappe.get_all(doctype, pluck="name", limit_page_length=0))
+			named = (doc_id[len(prefix) :] for doc_id in indexed if doc_id.startswith(prefix))
+			for name in [name for name in named if name not in live][:_RECONCILE_BATCH]:
+				self.remove_doc(doctype, name)
+				removed += 1
+		return reindexed, removed
 
 	def search(self, query, title_only=False, filters=None):
 		# `total_matches` is counted off the RAW candidate rows, i.e. before _process_search_results drops the
@@ -543,14 +634,17 @@ def build_index():
 
 
 def sweep_index_health():
-	"""Hourly: throw away an index that can no longer be read, so the framework rebuilds it.
+	"""Hourly: reconcile an index that still reads, and throw away one that no longer does.
+
+	Two states, one job, because they are the same question asked at two depths — a file that cannot be READ
+	and a file that reads but is WRONG. `reconcile` owns the second and documents itself; the rest is the first.
 
 	THE GAP THIS CLOSES. Frappe's own 3-hourly `build_index_if_not_exists` recovers exactly two states — a
 	build interrupted midway (a temp file survives) and no index at all. A file that exists but is DAMAGED
 	passes both tests, so it is never repaired: search returns nothing for ever, the failures go to the Error
 	Log, and no check ever looks at them. That is the disease; the log entries were the symptom.
 
-	IT REBUILDS NOTHING ITSELF. Dropping the file is the whole of this function, and the rebuild is handed
+	IT REBUILDS NOTHING ITSELF. Dropping the file is all this does about damage, and the rebuild is handed
 	straight back to `build_index_in_background`, frappe's own entry point — which enqueues on the long queue
 	under a `job_id` with `deduplicate=True` (`sqlite_search.py:1794-1803`). So there is ONE builder, one job
 	id, and frappe's next health pass collapses into the same job rather than racing it. A second builder here
@@ -577,6 +671,10 @@ def sweep_index_health():
 	if os.path.exists(engine._get_db_path(is_temp=True)):
 		return  # a build owns the index right now; let it finish or let frappe continue it
 	if engine.index_is_readable():
+		reindexed, removed = engine.reconcile()
+		# Logged only when there WAS drift, so the title is a signal and its absence is the healthy state.
+		if reindexed or removed:
+			frappe.log_error(title=_DRIFT_NOTICE, message=f"reindexed {reindexed}, removed {removed}")
 		return
 
 	engine.drop_index()  # frappe's own, so the file is removed exactly as a rebuild expects to find it
