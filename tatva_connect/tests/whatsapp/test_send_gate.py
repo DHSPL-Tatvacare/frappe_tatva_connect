@@ -37,6 +37,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import sends
+from tatva_connect.channels import contract
 from tatva_connect.tests.authz.grains import GRAINS, assert_masters_exist
 from tatva_connect.whatsapp import channel, notification, transport, wati
 
@@ -176,6 +177,79 @@ class _GateHarness(FrappeTestCase):
 			if callable(deferred):
 				deferred()
 		return output, deferred, enqueued.get("to_number")
+
+
+class TestASendThatNeverLeftIsRecorded(_GateHarness):
+	"""A send the provider refused, or never answered, wrote NOTHING anywhere — the message a patient did
+	not get existed only as a dead RQ job nobody reads. The positive half matters as much: a send that
+	succeeds must write exactly what it wrote before, one row, unchanged."""
+
+	def _rows(self, lead):
+		return frappe.get_all(
+			"WhatsApp Message", filters={"reference_name": lead.name},
+			fields=["name", "status", "custom_failed_reason", "message_id", "bulk_message_reference"],
+		)
+
+	def _deliver(self, lead, outcome):
+		"""Run the deferred delivery with the adapter's answer replaced by `outcome` — a SendResult, or an
+		exception instance to raise. Nothing reaches the wire."""
+		def _answer(*_a, **_kw):
+			if isinstance(outcome, Exception):
+				raise outcome
+			return outcome
+
+		with patch.object(wati, "send_template", _answer), \
+		     patch.object(channel, "is_enabled", return_value=True):
+			sends._deliver_whatsapp(self.account, _WIRE, self.template, [], lead.name, None)
+
+	def test_a_refused_send_is_filed_on_the_lead_with_the_provider_s_reason(self):
+		# CHANGED 2026-08-31: was nothing at all. The row is the only place a rep or an operator can see that this patient was not reached.
+		lead = self._lead(_CANONICAL)
+		with self.assertRaises(Exception):
+			self._deliver(lead, contract.SendResult(False, error="rate limited"))
+		rows = self._rows(lead)
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].status, sends.FAILED)
+		self.assertEqual(rows[0].custom_failed_reason, "rate limited")
+
+	def test_a_provider_that_raises_is_filed_too(self):
+		# A 429 or a dropped connection raises out of the adapter; that lost the message just as silently.
+		lead = self._lead(_CANONICAL)
+		with self.assertRaises(Exception):
+			self._deliver(lead, RuntimeError("connection reset"))
+		rows = self._rows(lead)
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].status, sends.FAILED)
+		self.assertIn("connection reset", rows[0].custom_failed_reason)
+
+	def test_the_failure_row_can_never_be_re_sent(self):
+		"""crm's bulk retry selects on `bulk_message_reference` AND status "Failed" — this row carries
+		neither, and its lowercase status is the channel's word, not that bucket. It also carries no
+		`message_id`, so no status event can tick it into looking delivered."""
+		lead = self._lead(_CANONICAL)
+		with self.assertRaises(Exception):
+			self._deliver(lead, contract.SendResult(False, error="refused"))
+		row = self._rows(lead)[0]
+		self.assertFalse(row.bulk_message_reference)
+		self.assertFalse(row.message_id)
+		self.assertNotEqual(row.status, "Failed")
+
+	def test_an_unknown_outcome_is_still_not_filed_as_a_failure(self):
+		"""No answer from the wire is NOT a refusal — the template may already be on the patient's phone.
+		Filing it as failed would tell an operator a message did not arrive when it may well have."""
+		lead = self._lead(_CANONICAL)
+		self._deliver(lead, contract.SendResult(False, unknown=True, error="timeout"))
+		self.assertEqual(self._rows(lead), [])
+
+	def test_a_successful_send_still_writes_exactly_one_row_and_no_failure(self):
+		"""The half that guards production: the success path must be untouched by any of the above."""
+		lead = self._lead(_CANONICAL)
+		self._deliver(lead, contract.SendResult(True, correlation_id="probe-ok", wamid="wamid.probe"))
+		rows = self._rows(lead)
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].status, sends.SENT)
+		self.assertEqual(rows[0].message_id, "probe-ok")
+		self.assertFalse(rows[0].custom_failed_reason)
 
 
 class TestABareNumberIsRefusedOnEverySurface(_GateHarness):

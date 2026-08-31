@@ -79,6 +79,7 @@ SENDS_SWITCH = "Workflow::Engine::sends"
 # The table an AI call lands in, and the one `origin.AUTOMATION_STAMP` names the stamp column for.
 CALL_LOG_DT = "CRM Call Log"
 _RECORD_SAVEPOINT = "automation_whatsapp_record"
+_FAILURE_SAVEPOINT = "automation_whatsapp_failure"
 
 # The two edges a send leaves by. Declared here, beside the code that CHOOSES between them, and read by
 # `actions.VERBS` — so the names the canvas draws and the names the sender returns cannot drift apart.
@@ -429,13 +430,18 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 
 	account = frappe.get_doc("WhatsApp Account", account_name)
 	adapter = resolve.adapter_for(account)
-	result = adapter.send_template(
-		account,
-		to_number,
-		template,
-		parameters,
-		broadcast_name=f"automation_{frappe.scrub(template)}",
-	)
+	try:
+		result = adapter.send_template(
+			account,
+			to_number,
+			template,
+			parameters,
+			broadcast_name=f"automation_{frappe.scrub(template)}",
+		)
+	except Exception as exc:
+		# A provider that raises (429, 5xx, a dropped connection) left this send with no trace anywhere but a dead RQ record. File it, then fail the job exactly as before.
+		_record_failed_message(account_name, to_number, template, parameters, lead, correlation, str(exc))
+		raise
 	if result.unknown:
 		# No answer from the wire — the template may already be on the patient's phone. A throw here puts the job on the failed registry, and a re-run re-sends the provider call. Recorded, not retried.
 		frappe.log_error(
@@ -446,7 +452,9 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 	if not result.accepted:
 		# REFUSED — `SendResult`'s third outcome, and the only one the ceiling gives a slot back for.
 		contact_cap.void(*_correlated_step(correlation))
-		frappe.throw(f"Send WhatsApp failed for lead {lead}: {result.error or 'unknown provider error'}")
+		reason = result.error or "unknown provider error"
+		_record_failed_message(account_name, to_number, template, parameters, lead, correlation, reason)
+		frappe.throw(f"Send WhatsApp failed for lead {lead}: {reason}")
 
 	# The message is on the wire: nothing below may raise — execute_job re-runs this whole function, the provider call included, on frappe.db.InternalError (deadlock/lock-wait), which is a second message to a patient.
 	try:
@@ -461,6 +469,49 @@ def _deliver_whatsapp(account_name, to_number, template, parameters, lead, corre
 			)
 		except Exception:  # nosec B110 — a re-raise here re-opens the deadlock log_error reports
 			pass  # log_error is itself a DB insert and can deadlock the same way — an escape here re-opens the hole it reports
+
+
+def _record_failed_message(account_name, to_number, template, parameters, lead, correlation, reason):
+	"""File a send that never left, as a row on the lead. The failure path recorded NOTHING, so a message the patient did not get existed only as a dead RQ job nobody reads.
+
+	COMMITTED before the caller raises: the throw that follows rolls this job's transaction back, and an
+	unwritten record of a failure is the failure twice.
+
+	It can never be re-sent or ticked: `tatva_ingested` short-circuits the controller, it carries no
+	`message_id` for a status event to match, and no `bulk_message_reference` — half of what crm's bulk
+	retry selects on. And it never raises: a record OF a failure must not become a second one.
+	"""
+	try:
+		frappe.db.savepoint(_FAILURE_SAVEPOINT)
+		doc = frappe.get_doc({
+			"doctype": "WhatsApp Message",
+			"type": "Outgoing",
+			"message_type": "Template",
+			"use_template": 1,
+			"template": template,
+			"template_parameters": frappe.as_json([p["value"] for p in parameters]) if parameters else None,
+			"message": frappe.db.get_value("WhatsApp Templates", template, "template") or "",
+			"content_type": "text",
+			"to": to_number,
+			"status": FAILED,  # the channel's own word, lowercase — upstream's capitalised "Failed" is the bucket its bulk retry re-sends
+			"custom_failed_reason": reason,
+			"whatsapp_account": account_name,
+			"reference_doctype": "CRM Lead",
+			"reference_name": lead,
+			"custom_workflow_correlation": correlation,
+		})
+		doc.flags.tatva_ingested = True  # never on the wire and never to be put there — the controller must not send it
+		doc.insert(ignore_permissions=True)  # authz-ok: tier-b — background job, no user context; the send was already gated by routing + adapter.assert_enabled
+		frappe.db.commit()  # nosemgrep: the caller raises next, and a rolled-back failure record is no record at all
+	except Exception:
+		try:
+			frappe.db.rollback(save_point=_FAILURE_SAVEPOINT)
+			frappe.log_error(
+				title="automation: WhatsApp send failed and could not be recorded",
+				message=f"lead={lead} account={account_name} template={template} reason={reason}",
+			)
+		except Exception:  # nosec B110 — a re-raise here would replace the provider's error with this one
+			pass
 
 
 def _record_sent_message(account_name, to_number, template, parameters, message_id, lead, correlation=None, wamid=None):
