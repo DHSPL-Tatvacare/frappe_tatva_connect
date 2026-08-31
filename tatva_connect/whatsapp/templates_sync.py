@@ -14,7 +14,7 @@ from tatva_connect.whatsapp import channel, roles
 
 @frappe.whitelist()
 def sync_templates(account_name=None):
-	"""Reflect approved provider templates into WhatsApp Templates. Returns per-account counts.
+	"""Reflect approved provider templates into WhatsApp Templates. Returns a per-account summary line.
 
 	With no `account_name`, syncs EVERY account (each tenant has its own template namespace).
 	Records are keyed per account so two tenants can share a template name without clobbering
@@ -34,7 +34,19 @@ def sync_templates(account_name=None):
 	for acc in accounts:
 		totals[acc] = _sync_one(acc)
 	frappe.db.commit()
-	return totals
+	return _summary(totals)
+
+
+def _summary(totals) -> str:
+	"""What the caller is handed: a STRING, because the list view passes it straight to
+	`frappe.msgprint`, which searches it for a newline. A dict threw in the browser BEFORE
+	`listview.refresh()` ran, so a sync that had already written every row looked like it had failed."""
+	lines = [
+		f"<b>{acc}</b>: {c['created']} added, {c['updated']} updated"
+		+ (f", {c['skipped']} skipped" if c["skipped"] else "")
+		for acc, c in totals.items()
+	]
+	return "<br>".join(lines) if lines else frappe._("No templates found.")
 
 
 def scheduled_sync_all():
