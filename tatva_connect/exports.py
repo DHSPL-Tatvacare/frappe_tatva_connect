@@ -175,7 +175,8 @@ def mine(minutes=15):
 def _result(doc):
 	"""What an export IS, once or twice asked: the ready event publishes it and the poll returns it, so
 	the tab has one completion path and the two can never describe the same job differently."""
-	out = {"job": doc.name, "status": doc.status, "rows": doc.row_count, "truncated": bool(doc.truncated)}
+	out = {"job": doc.name, "status": doc.status, "rows": doc.row_count, "truncated": bool(doc.truncated),
+	       "creation": doc.creation, "source": doc.source, "reference": doc.reference}
 	if doc.status == "Completed":
 		file = frappe.db.get_value(
 			"File", {"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name},

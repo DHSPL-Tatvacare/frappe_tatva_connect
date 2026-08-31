@@ -1,0 +1,165 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-08-27 00:00:00.000000",
+ "description": "One bulk list-view action (Assign, Clear Assignment, Bulk Edit, Bulk Delete) on 20+ rows, drained by a worker instead of inside the HTTP request.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "action",
+  "target_doctype",
+  "status",
+  "column_break_state",
+  "total",
+  "succeeded",
+  "failed",
+  "job_id",
+  "docnames_section",
+  "docnames",
+  "params",
+  "failed_names",
+  "error_section",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "options": "Assign\nClear Assignment\nBulk Edit\nBulk Delete",
+   "label": "Action",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Which executor runs it. A closed set, resolved through the registry in bulk_actions.py — never a caller-supplied dotted path."
+  },
+  {
+   "fieldname": "target_doctype",
+   "fieldtype": "Data",
+   "label": "Target Doctype",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Queued\nStarted\nCompleted\nError",
+   "default": "Queued",
+   "label": "Status",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Int",
+   "label": "Total",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "succeeded",
+   "fieldtype": "Int",
+   "label": "Succeeded",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "failed",
+   "fieldtype": "Int",
+   "label": "Failed",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "job_id",
+   "fieldtype": "Data",
+   "label": "Job ID",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "docnames_section",
+   "fieldtype": "Section Break",
+   "label": "The Selection"
+  },
+  {
+   "fieldname": "docnames",
+   "fieldtype": "Long Text",
+   "label": "Docnames",
+   "read_only": 1,
+   "description": "The rows selected when the action was triggered, as a JSON array."
+  },
+  {
+   "fieldname": "params",
+   "fieldtype": "Long Text",
+   "label": "Params",
+   "read_only": 1,
+   "description": "Action-specific arguments as JSON — the assignee for Assign, the field/value for Bulk Edit, etc."
+  },
+  {
+   "fieldname": "failed_names",
+   "fieldtype": "Long Text",
+   "label": "Failed Names",
+   "read_only": 1,
+   "description": "Which of the selected rows did NOT succeed, as a JSON array — the completion message reads this, never a bare count alone."
+  },
+  {
+   "fieldname": "error_section",
+   "fieldtype": "Section Break",
+   "label": "Error",
+   "depends_on": "eval:doc.status=='Error'"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Long Text",
+   "label": "Error Message",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Tatva Connect",
+ "name": "CRM List Action Job",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "if_owner": 1,
+   "read": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "if_owner": 1,
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "action",
+ "track_changes": 0
+}

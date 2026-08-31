@@ -176,6 +176,20 @@ class TestExportIsDrainedByAWorker(FrappeTestCase):
 		self._drained()
 		self.assertEqual(exports.mine(minutes=0), [], "a zero-minute window still answered")
 
+	def test_status_carries_creation_source_and_reference(self):
+		"""The panel sorts a merged list of bulk jobs and exports by time and shows a human title from
+		`source`/`reference`, so `_result` must carry all three on a real, completed job."""
+		job, _events = self._drained()
+
+		out = exports.status(job.name)
+		self.assertIn("creation", out)
+		self.assertIsNotNone(out["creation"])
+		self.assertEqual(out["creation"], job.creation)
+		self.assertEqual(out["source"], "Smart View")
+		self.assertEqual(out["source"], job.source)
+		self.assertEqual(out["reference"], job.reference)
+		self.assertIsNotNone(out["reference"])
+
 	def test_another_rep_cannot_reach_someone_elses_export(self):
 		"""`if_owner` is the gate on both the row and, through it, the file."""
 		job, _events = self._drained()
