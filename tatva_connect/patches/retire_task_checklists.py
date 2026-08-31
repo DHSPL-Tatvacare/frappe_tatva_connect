@@ -6,9 +6,8 @@ checklist in the CRM app's frontend and no writer anywhere but the seeder, so a 
 have made every task of that type permanently unclosable. It stayed harmless only because the switch that
 gated both was off and no template was ever authored: 0 templates, 0 template items, 0 checklist rows.
 
-`Task::CRM Task::guards` and the two guards under it are untouched — `enforce_location` and
-`enforce_activity_logged` back the save paths `activity.api.save_activity` does not own, and only the
-checklist half of that switch is retired here.
+`Task::CRM Task::guards` retires in the same change for its own reason, recorded in the registry: the
+task TYPE declares what a completion demands and `activity.api.compute_activity` already enforces it.
 
 Three end states declared here: no `CRM Task` carries a checklist field, the three doctypes and their
 tables are gone, and the Field Operations sidebar no longer offers Checklist Templates. The doctype
