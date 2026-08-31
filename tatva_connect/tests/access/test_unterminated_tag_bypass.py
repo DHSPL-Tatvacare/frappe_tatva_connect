@@ -70,10 +70,10 @@ class TestUnterminatedTagBypass(FrappeTestCase):
 			{
 				"doctype": "CRM Task",
 				"title": "ZZ child row probe",
-				"custom_checklist": [{"item": "ZZ item<img src=x onerror=alert(1)", "required": 1}],
+				"custom_engagement": [{"reasons": "ZZ item<img src=x onerror=alert(1)"}],
 			}
 		).insert()
 		self.addCleanup(frappe.delete_doc, "CRM Task", doc.name, force=True)
-		stored = frappe.db.get_value("CRM Task Checklist Item", {"parent": doc.name}, "item")
+		stored = frappe.db.get_value("CRM Task Engagement", {"parent": doc.name}, "reasons")
 		self.assertNotIn("<img", stored)
 		self.assertNotIn("onerror", stored)

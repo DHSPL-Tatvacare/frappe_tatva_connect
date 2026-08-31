@@ -3,7 +3,7 @@
 """A3.1 — `reconstruct_values` is not a second reader any more.
 
 `activity/automation.py:reconstruct_values` is what the fail-closed location backstop
-(`tasks/tasks.py:enforce_location` -> `location/api.py:location_required`) asks "what did this activity
+(`automation/context.py:activity_values`) asks "what did this activity
 form say?". It used to answer that itself: the JSON payload, merged with `doc.get(f.target)` for every
 schema field carrying a target. That is a private copy of a rule `activity/api.py:_task_values` already
 owns, and the constitution forbids exactly that copy.
@@ -31,14 +31,12 @@ Run:
     bench --site dev.localhost run-tests --app tatva_connect \\
         --module tatva_connect.tests.activity.test_reconstruct_values_one_brain
 """
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.activity import api as activity_api
 from tatva_connect.activity.automation import reconstruct_values
-from tatva_connect.tasks import tasks as tasks_module
 from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ Reconstruct One Brain Probe"
@@ -148,30 +146,18 @@ class TestReconstructValuesOneBrain(FrappeTestCase):
 
 	# ---- ...and the guard that reads it gets what it needs -------------------------------------------
 
-	def test_the_location_guard_receives_the_fresh_answers(self):
-		"""Driven through `tasks.enforce_location` itself — its import, its reconstruction, the dict it
-		hands the gate — because that is the only caller and the only thing this change can break. The gate
-		is spied, not stubbed away: it returns None (no location needed) so nothing throws, and the values
-		it was asked about are the assertion."""
+	def test_the_automation_context_receives_the_fresh_answers(self):
+		"""Driven through `automation.context.activity_values`, the reader `reconstruct_values` is for now
+		that the validate backstop is retired: a criterion is authored against the SCHEMA fieldname, so the
+		context must hand the engine what the rep actually answered."""
+		from tatva_connect.automation import context
+
 		name = activity_api.save_activity(self.lead.name, self.task_type, self.submitted)
-		doc = frappe.get_doc("CRM Task", name)
-		doc.status = tasks_module.DONE_STATUS
-
-		seen = {}
-
-		def spy(task_type, lead, values):
-			seen.update(values or {})
-			return None  # no location required, so the backstop returns without touching the doc
-
-		# Phase 11 deleted the workflow stand-down: the backstop now always runs, so there is nothing to
-		# patch off. What this test is about is unchanged — WHICH values the guard is handed.
-		with patch("tatva_connect.tasks.tasks.automation.is_enabled", return_value=True), \
-			 patch("tatva_connect.location.api.location_required", side_effect=spy):
-			tasks_module.enforce_location(doc)
+		seen = context.activity_values(frappe.get_doc("CRM Task", name))
 
 		self.assertEqual(seen.get(self.f_common), FRESH_COMMON,
-						 "the guard no longer sees a retained common column's answer")
+						 "a retained common column's answer did not reach the context")
 		self.assertEqual(seen.get(self.f_section), FRESH_SECTION,
-						 "the guard no longer sees an answer that lives on its section's column")
+						 "an answer that lives on its section's column did not reach the context")
 		self.assertEqual(seen.get(self.f_slot), FRESH_SLOT,
-						 "the guard no longer sees an answer that lives in a key-value row")
+						 "an answer that lives in a key-value row did not reach the context")

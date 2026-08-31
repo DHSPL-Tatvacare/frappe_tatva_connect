@@ -15,7 +15,7 @@ That is a second brain over a rule the record's own doctype already owns, and it
 decides whether IT runs, never whether a rep may save. What each verb demanded is said instead on the
 Trigger's `predicate` — `is set` / `is not set` already ship (`automation/rules.py:_PRESENCE_OPS`) — and
 the location rule stays declared once on the task type (`visit_mode` plus the location condition), enforced by
-`location.api` off `activity.api.compute_activity` with `tasks.enforce_location` as its backstop.
+`location.api` off `activity.api.compute_activity`, the one writer that demands a fix.
 """
 import json
 

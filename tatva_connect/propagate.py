@@ -10,7 +10,7 @@ side-effect is not the work; the record is.
 
 THREE CATEGORIES OF HOOK, and only the third one is wrapped:
 
-  GATE       enforces a business rule (`dedup_guard`, `enforce_location`, `normalize_lead_phones`).
+  GATE       enforces a business rule (`dedup_guard`, `normalize_lead_phones`).
              It MUST still block — a refused save is the whole point of it.
   DERIVE     fills fields on the document being saved (`stamp_entitled_grain`, `pin_inbound_reference`,
              `sync_headline_metrics`). A half-filled document is worse than a refused save.

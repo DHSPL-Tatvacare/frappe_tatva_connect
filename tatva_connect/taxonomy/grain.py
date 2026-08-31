@@ -4,9 +4,9 @@ A candidate carries a (vertical, group, program) scope. A SET axis must equal th
 lead's value; a BLANK axis is a wildcard. Most-specific wins (program=4, group=2,
 vertical=1); an exact tie at the top score is ambiguous -> raise. No match -> None.
 
-Every grain-scoped config resolves through here: checklist templates
-(tasks.resolve_template), activity-type availability (activity.api), and any future
-grain config. Candidates are plain dicts exposing `vertical` / `group` / `program`.
+Every grain-scoped config resolves through here: activity-type availability
+(activity.api) and any future grain config. Candidates are plain dicts exposing
+`vertical` / `group` / `program`.
 """
 import frappe
 from frappe import _

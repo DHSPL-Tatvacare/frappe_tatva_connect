@@ -1,170 +1,13 @@
-"""CRM Task automations: seed + enforce checklists, the bulk-complete gate, idempotent follow-up helper."""
+"""CRM Task automations: the bulk-complete gate and the idempotent follow-up helper."""
 import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
 from tatva_connect import automation
-from tatva_connect.taxonomy import grain, labels
+from tatva_connect.taxonomy import labels
 
 DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
-# A type_name, never a PK — resolved to this lead's grain-scoped type by the ONE resolver.
-CALL_LEAD_TYPE = "Call Lead"
-
-
-def on_lead_assignment(doc, method=None):
-	"""ToDo.after_insert — when a CRM Lead is assigned to an agent, raise ONE open
-	'Call Lead' task for that agent (the on-lead-create follow-up). Fires after the
-	Assignment Rule sets the owner; gated by the master switch (OFF by default)."""
-	from tatva_connect.activity.api import resolve_type_for_lead
-
-	if doc.reference_type != "CRM Lead" or not doc.allocated_to:
-		return
-	if not automation.is_enabled("Task::Assignment::followup"):
-		return
-	lead = frappe.db.get_value(
-		"CRM Lead", doc.reference_name, ["lead_name", "custom_current_program"], as_dict=True
-	) or frappe._dict()
-	lead_name = lead.lead_name or doc.reference_name
-	# Dormant until a grain seeds a Call Lead type — the same rule the first-activity mapping follows.
-	call_type = resolve_type_for_lead(doc.reference_name, CALL_LEAD_TYPE)
-	if call_type:
-		raise_followup_task(
-			lead=doc.reference_name,
-			task_type=call_type,
-			due_in_hours=24,
-			assigned_to=doc.allocated_to,
-			title=_("Call lead — {0}").format(lead_name),
-		)
-	# Field-sales: if the lead's program names a first activity type (config), raise ONE open
-	# activity-task of it (reuses the same idempotent throttle). Dormant when the mapping is unset.
-	first_type = lead.custom_current_program and frappe.db.get_value(
-		"CRM Program", lead.custom_current_program, "custom_first_activity_type"
-	)
-	# Guard: a stale/renamed mapping must never abort the assignment ToDo insert.
-	if first_type and frappe.db.exists("CRM Task Type", first_type):
-		try:
-			raise_followup_task(
-				lead=doc.reference_name,
-				task_type=first_type,
-				due_in_hours=48,
-				assigned_to=doc.allocated_to,
-				title=_("{0} — {1}").format(first_type, lead_name),
-			)
-		except Exception:
-			frappe.log_error("on_lead_assignment: first activity-task creation failed")
-
-
-def seed_checklist(doc, method=None):
-	"""Fill a task's checklist from the most-specific template for the linked lead's
-	(Product Line / Group / Program) + the task's type. Runs at creation, or when a
-	type is first set on an existing task. No type / no matching template -> no
-	checklist (task closes freely). Never overwrites a caller-supplied checklist."""
-	if not automation.is_enabled("Task::CRM Task::guards"):
-		return
-	if doc.custom_checklist or not doc.custom_task_type:
-		return
-	if not doc.is_new():
-		before = doc.get_doc_before_save()
-		if before and before.custom_task_type == doc.custom_task_type:
-			return  # type unchanged on an existing task — nothing to seed
-
-	tmpl = resolve_template(doc.custom_task_type, *_lead_axes(doc))
-	if not tmpl:
-		return
-	for row in tmpl.items:
-		doc.append("custom_checklist", {"item": row.item, "required": row.required, "done": 0})
-
-
-def enforce_checklist(doc, method=None):
-	"""Block marking a task Done while a required checklist item is unticked. Fires
-	on both close paths (modal save and the quick status dropdown both run validate)."""
-	if not automation.is_enabled("Task::CRM Task::guards"):
-		return
-	if doc.status != DONE_STATUS:
-		return
-	pending = [r.item for r in (doc.custom_checklist or []) if r.required and not r.done]
-	if pending:
-		from tatva_connect.api._base import throw_by_audience
-
-		throw_by_audience(
-			_("Cannot mark Done — {0} checklist item(s) still pending: {1}").format(
-				len(pending), ", ".join(pending)
-			),
-			_("This activity's checklist has {0} required item(s) still open: {1}. A checklist is "
-			  "ticked by the assigned rep, so leave `status` as it is until they close it.").format(
-				len(pending), ", ".join(pending)
-			),
-			["status"],
-			title=_("Checklist incomplete"),
-		)
-
-
-def enforce_location(doc, method=None):
-	"""Fail-closed BACKSTOP for the location guard (VAPT, A.1/S.3): guarantees coordinates on every save
-	the rep's own form path (`activity.api.compute_activity` → `location.api.set_or_check_anchor`) does not
-	cover — API / import / scripted saves. The gate lives once in `location.api.location_required`, fed by
-	the reconstructed submitted values (one brain — same reconstruction the automation engine uses).
-
-	It used to stand down when an authored 'Require Location' workflow covered the same save. That verb is
-	gone (Phase 11) — a workflow decides whether IT runs, never whether a rep may save — and with it the
-	only reason this backstop ever consulted the workflow engine. Location is declared once on the task
-	type (`visit_mode` plus the location condition) and enforced here and in `compute_activity`, nowhere else."""
-	from tatva_connect.activity.automation import reconstruct_values
-	from tatva_connect.location.api import location_required
-
-	if not automation.is_enabled("Task::CRM Task::guards"):
-		return
-	# Location is captured when the visit is LOGGED (Done), not while the task is an open to-do.
-	# An open/assigned in-person task legitimately has no coordinates yet — only block on completion.
-	if doc.status != DONE_STATUS:
-		return
-	if doc.reference_doctype != "CRM Lead" or not doc.reference_docname:
-		return
-	values = reconstruct_values(doc)
-	if location_required(doc.custom_task_type, doc.reference_docname, values) is None:
-		return
-	if not (doc.custom_location_latitude and doc.custom_location_longitude):
-		from tatva_connect.api._base import throw_by_audience
-
-		# ONE rule, two readers: a rep has a Tasks list and a capture button, an HTTP caller has neither
-		# and cannot send coordinates at all (they are not a writable activity field), so it is told the
-		# only thing it CAN do. The audience is decided once, in throw_by_audience.
-		throw_by_audience(
-			_("Capture your location at the doctor's site to complete this visit — mark it Done from the "
-			  "Tasks list or open the task."),
-			_("A {0} activity records where the visit happened, and coordinates are captured by the "
-			  "field app on the device — they cannot be sent over the API. Leave `status` as it is and "
-			  "let the assigned rep complete the visit, or ask the operator to clear `Location When` on "
-			  "this activity type.").format(labels.label(doc.custom_task_type, labels.TASK_TYPE)),
-			["status"],
-			title=_("Location required"),
-		)
-	if not doc.custom_location_captured_at:
-		doc.custom_location_captured_at = now_datetime()
-
-
-def enforce_activity_logged(doc, method=None):
-	"""Fail-closed guarantee: a form-activity task cannot be completed (Done) without its details
-	logged. Holds on EVERY save path — the quick status dropdown / API / import all run validate,
-	not just the Form-view controller. The clean UX (the client opens the activity form on
-	completion) sits on top of this; if that UX ever breaks, completion degrades to a clear block,
-	never a silent empty activity. One brain: activity.api.activity_is_unlogged owns the rule."""
-	from tatva_connect.activity.api import activity_is_unlogged
-
-	if not automation.is_enabled("Task::CRM Task::guards"):
-		return
-	if activity_is_unlogged(doc):
-		from tatva_connect.api._base import throw_by_audience
-
-		throw_by_audience(
-			_("Log this activity's details before marking it Done — open the task and fill its form."),
-			_("This activity carries no logged details, so it cannot be marked Done. Send its fields "
-			  "under `values` in the same call that sets `status` — activity_schema lists the fields "
-			  "{0} takes.").format(labels.label(doc.custom_task_type, labels.TASK_TYPE)),
-			["values"],
-			title=_("Activity not logged"),
-		)
 
 
 @frappe.whitelist()
@@ -187,12 +30,16 @@ def submit_cancel_or_update_docs(doctype, docnames, action="submit", data=None, 
 	"""
 	from frappe.desk.doctype.bulk_update.bulk_update import submit_cancel_or_update_docs as _native
 
-	_refuse_disabled_bulk_complete(doctype, docnames, action, data)
+	refuse_disabled_bulk_complete(doctype, docnames, action, data)
 	return _native(doctype, docnames, action, data, task_id)
 
 
-def _refuse_disabled_bulk_complete(doctype, docnames, action, data):
+def refuse_disabled_bulk_complete(doctype, docnames, action, data):
 	"""Refuse the whole bulk call when any selected task's type forbids bulk completion.
+
+	Called by every bulk DOOR and by no other kind of caller: this wrapper, which Desk's own list view
+	reaches through `override_whitelisted_methods`, and `bulk_actions.run_or_queue`, which the CRM app
+	reaches instead. One rule, asked at each entrance, for the reason the wrapper above gives.
 
 	The whole call, not the offending rows: a partial bulk that silently skipped some of the selection is
 	how a rep comes to believe an activity was logged when no form was ever filled. `frappe.get_all` (not
@@ -369,31 +216,3 @@ def raise_followup_task(lead, task_type, due_in_hours=4, assigned_to=None, title
 		task.description = description
 	task.insert(ignore_permissions=True)  # authz-ok: tier-b — gated by frappe.has_permission on the task before the write
 	return task.name
-
-
-# -- helpers -----------------------------------------------------------------
-
-
-def _lead_axes(doc):
-	"""(vertical, group, program) of the linked lead, or blanks if not lead-linked."""
-	if doc.reference_doctype == "CRM Lead" and doc.reference_docname:
-		return grain.of("CRM Lead", doc.reference_docname)
-	return "", "", ""
-
-
-def resolve_template(task_type, vertical, group, program):
-	"""Most-specific-wins checklist template for the lead's grain — a thin caller of
-	the shared grain brain (taxonomy.grain.resolve_scoped). No global default; a set
-	axis must match, a blank axis is a wildcard; an exact tie -> raise; no match -> None."""
-	from tatva_connect.taxonomy.grain import resolve_scoped
-
-	candidates = [
-		{"name": c.name, "vertical": c.vertical, "group": c.psp_group, "program": c.program}
-		for c in frappe.get_all(
-			"CRM Task Checklist Template",
-			filters={"task_type": task_type, "enabled": 1},
-			fields=["name", "vertical", "psp_group", "program"],
-		)
-	]
-	winner = resolve_scoped(candidates, vertical, group, program)
-	return frappe.get_doc("CRM Task Checklist Template", winner["name"]) if winner else None

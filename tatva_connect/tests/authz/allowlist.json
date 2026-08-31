@@ -948,14 +948,6 @@
 		},
 		{
 			"role": "Sales User",
-			"doctype": "CRM Task Checklist Template",
-			"r": 1,
-			"w": 0,
-			"c": 0,
-			"d": 0
-		},
-		{
-			"role": "Sales User",
 			"doctype": "CRM Task Type",
 			"r": 1,
 			"w": 0,

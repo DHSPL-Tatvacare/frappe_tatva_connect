@@ -275,14 +275,6 @@ doc_events = {
 		],
 	},
 	"CRM Task": {
-		# seed first (fills checklist from template), then enforce (gates Done); enforce_location is the fail-closed backstop guaranteeing coords on every save path.
-		"validate": [
-			"tatva_connect.tasks.tasks.seed_checklist",
-			"tatva_connect.tasks.tasks.enforce_checklist",
-			"tatva_connect.tasks.tasks.enforce_location",
-			# fail-closed: an activity task can't be marked Done with its form unfilled (any path).
-			"tatva_connect.tasks.tasks.enforce_activity_logged",
-		],
 		# (Automation engine fires from the wildcard router below - doc_events["*"] - not a per-doctype hook.)
 		"on_update": [
 			# Review flow: copy a Document Review task's Approved/Rejected verdict onto its File (badge).
@@ -407,10 +399,9 @@ doc_events = {
 			"tatva_connect.storage.call_media.drop_for_call",
 		],
 	},
-	# Lead assigned to an agent -> raise a "Call Lead" follow-up task AND push the assignment to the rep's devices (gated, enqueued).
+	# Lead assigned to an agent -> push the assignment to the rep's devices (gated, enqueued).
 	"ToDo": {
 		"after_insert": [
-			"tatva_connect.tasks.tasks.on_lead_assignment",
 			# a rule's pick is a ToDo; `lead_owner` is what four reporting surfaces read, so stamp it when blank
 			"tatva_connect.lead.assignment.on_assignment_set_owner",
 			"tatva_connect.notifications.events.on_lead_assigned",

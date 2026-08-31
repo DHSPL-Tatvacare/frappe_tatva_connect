@@ -6,7 +6,7 @@
    "label": "Visits by Verdict"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Field Operations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"What a rep is asked to do in the field, and the proof that it was done there, are defined here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"A task type declares its form, its sections and its checklist; product lines name the business the task belongs to.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Visit audit records the location verdict of every completion attempt, accepted or refused.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Product Lines\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b11\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Field Operations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Visits by Verdict\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"What a rep is asked to do in the field, and the proof that it was done there, are defined here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"A task type declares its form and its sections; product lines name the business the task belongs to.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Visit audit records the location verdict of every completion attempt, accepted or refused.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Types\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Task Sections\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Product Lines\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Visit Audit\", \"col\": 4}, \"id\": \"b11\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -18,7 +18,7 @@
  "is_hidden": 0,
  "label": "Field Operations",
  "links": [],
- "modified": "2026-08-16 12:00:00.000000",
+ "modified": "2026-08-31 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Field Operations",

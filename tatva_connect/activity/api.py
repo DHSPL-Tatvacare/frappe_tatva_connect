@@ -348,54 +348,6 @@ def resolve_type_for_lead(lead, type_name):
 	return winner["name"] if winner else None
 
 
-def _type_has_schema(task_type):
-	"""True if the type carries a form schema (≥1 field) — i.e. completing it must log details."""
-	return bool(task_type and frappe.db.exists(
-		"CRM Task Type Field", {"parent": task_type, "parenttype": "CRM Task Type"}
-	))
-
-
-def _stored_answers(doc, schema):
-	"""A saved task's answers in the {fieldname: value} shape a SUBMITTED form has, read at the ONE address
-	`field_target` names and nowhere else — so the form's own question can be put to what is actually stored.
-
-	This is why the guard never asks `task_columns()`: that answers "which column may be written" and is
-	co-owned by the automation engine. Ticking `description` there once disarmed the backstop outright."""
-	sections = {s.name: s for s in _sections()}
-	rows = _rows_of(doc)
-	return {f.fieldname: _section_answer(f, doc, rows, sections) for f in schema}
-
-
-def activity_is_unlogged(doc):
-	"""True if this is a form-activity task being MARKED Done with its form unfilled. The single definition
-	of 'an activity completed empty' — used by the validate backstop (one brain) so the rule holds on every
-	save path, not just the Form-view controller.
-
-	Asked on the TRANSITION, never on every save of a Done task: the rule in English is *do not MARK it Done
-	empty*, and 3,043 already-Done migrated tasks must not start being refused the next time anything touches
-	one. `has_value_changed` answers True when there is no before-save doc (frappe document.py:684-685), so a
-	task born Done is still judged — and `_save` loads that doc at document.py:565, before the validate hooks
-	at :573."""
-	if (doc.status or "") != "Done":
-		return False
-	if not doc.has_value_changed("status"):
-		return False
-	if not _type_has_schema(doc.custom_task_type):
-		return False
-	schema = compiled_fields(frappe.get_cached_doc("CRM Task Type", doc.custom_task_type))
-	values = _stored_answers(doc, schema)
-	# The FORM's own question, on the same fixpoint `compute_activity` refuses a submission by: a field the
-	# form shows and demands, carrying nothing, means this activity was not logged. The guard used to answer
-	# a weaker question of its own — any one declared field non-empty — so a task carrying only a description
-	# passed a payload the form itself refuses, measured on 8 of 8 types that home a field at `description`.
-	shown, live = _settled(schema, values)
-	if any(_required_here(f, shown, live) and values.get(f.fieldname) in (None, "") for f in schema):
-		return True
-	# And the floor the backstop was built for, which the question above cannot answer for the 58 of 66 live
-	# types that demand no field at all: nothing was captured anywhere.
-	return all(values.get(f.fieldname) in (None, "") for f in schema)
-
-
 @frappe.whitelist()
 def open_activity_tasks(lead):
 	"""Open (not Done/Canceled) activity tasks on a lead — lets the client map a Tasks-tab row to
@@ -1206,7 +1158,7 @@ def save_activity(lead, task_type, values, task=None, task_fields=None):
 	`task_fields` is the CRM Task's own columns the calling form edited beside the answers, and they are
 	applied in the SAME `doc.update` as the computed ones so an activity is ONE write. It used to be a
 	`frappe.client.set_value` call the client made first, and that fork was three defects: `status: Done`
-	committed before any answer existed, so the `enforce_activity_logged` backstop refused a rep who had
+	committed before any answer existed, so the completion backstop of the day refused a rep who had
 	just filled the form; and every refusal after it left the task half-updated, because the standard edits
 	were already in. One update, one save, one transaction — a throw now rolls the whole thing back.
 	The computed fields are applied LAST, so the type's declaration still decides `status` and every routed

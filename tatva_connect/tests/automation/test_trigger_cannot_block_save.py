@@ -24,13 +24,11 @@ easiest assertion in the world to pass by accident:
      succeeds and the workflow acts only when the demand is met. This one is a CONTROL: predicates already
      worked. It is here because a suite that only proved "the block is gone" would not prove the capability
      survived it, which is the difference between a fix and a deletion.
-  4. NO HOLE LEFT BEHIND — the location backstop used to STAND DOWN when a workflow declared
-     `Require Location`, on the promise that the workflow's guard would block instead. With the verb gone
-     that promise is worthless, so a task with no coordinates must be refused whatever a workflow declares.
-     This is the one that catches the dangerous half of the change.
+The fourth item — the location backstop must not stand down for a workflow — retired with
+`tasks.enforce_location` itself: `activity.api.compute_activity` refuses an in-person activity with no fix
+on the one write there is, so there is no second guard left to stand down.
 
 `arm_engine(cls)` refuses a bench that is already armed and always restores OFF — dormant is the resting
-state. The task-guards switch is handled the same way, by a registered cleanup rather than a remembered
 value.
 """
 from unittest.mock import patch
@@ -45,9 +43,7 @@ from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _LEGACY_WORKFLOW = "phase11-legacy-requirement"
 _PREDICATE_WORKFLOW = "phase11-predicate-replacement"
-_LOCATION_WORKFLOW = "phase11-legacy-location-requirement"
 
-_GUARD_SWITCH = "Task::CRM Task::guards"
 
 # The predicate narrows to this marker so an unrelated lead saved by another suite cannot satisfy it.
 _MARKED = "PHASE11"
@@ -62,19 +58,6 @@ def _probe_mobile():
 
 # What the deleted verbs demanded, in the namespaced reference vocabulary the trigger context speaks.
 _REQUIRED_FIELD = "crm_lead.mobile_no"
-
-
-def _arm_task_guards(cls):
-	"""Enable the CRM Task guard hooks for the duration of a class, restoring OFF — never "what it was".
-
-	Same reasoning as `fx.arm_engine`: restoring the previous value is what propagates a poisoned baseline
-	(one suite leaves it on, the next records `1` as the original and puts it back). Dormant is the only
-	correct resting state of a bench, so the cleanup is registered BEFORE the write and always writes 0.
-	"""
-	cls.addClassCleanup(frappe.db.set_value, "CRM Tatva Automation", _GUARD_SWITCH, "enabled", 0)
-	cls.addClassCleanup(frappe.db.commit)
-	frappe.db.set_value("CRM Tatva Automation", _GUARD_SWITCH, "enabled", 1)
-	frappe.db.commit()
 
 
 def _store_requirements(workflow_name, requirements):
@@ -257,84 +240,3 @@ class TestThePredicateIsTheReplacement(FrappeTestCase):
 			len(self._runs_for(lead.name)), 1,
 			"the condition held, so exactly one journey must have started",
 		)
-
-
-class TestTheLocationBackstopNeverStandsDown(FrappeTestCase):
-	"""The dangerous half of Phase 11.
-
-	`tasks.enforce_location` used to ask the workflow engine whether an authored `Require Location` Flow
-	covered this exact save, and stand down if it did — so the two would not double-throw. With the verb
-	deleted, standing down means NOBODY guards: the workflow's requirement is inert and the backstop has
-	stepped aside for it. A task with no coordinates would be completed silently.
-
-	`location.api.location_required` is patched to demand a radius, exactly as
-	`tests/activity/test_dormant_location.py` already does — the location config is grain-scoped operator
-	data and a test that read it off a dev site would assert the seed, not the code.
-	"""
-
-	@classmethod
-	def setUpClass(cls):
-		assert_masters_exist()
-		fx.purge(_LOCATION_WORKFLOW)
-		# On CRM Task Updated, no predicate — the widest possible cover, which is the worst case for the
-		# hole this closes: today's `covering_location_guard` matches every task save on the grain.
-		cls.workflow = fx.make_workflow(_LOCATION_WORKFLOW, [
-			fx.trigger(to="end", subject_doctype="CRM Task", event="Updated"),
-			fx.node("end", "Terminal"),
-		])
-		_store_requirements(
-			_LOCATION_WORKFLOW, [{"verb": "Require Location", "params": {"geofence_meters": 200}}]
-		)
-		fx.arm_engine(True, cls)
-		_arm_task_guards(cls)
-		frappe.db.commit()
-
-	@classmethod
-	def tearDownClass(cls):
-		fx.purge(_LOCATION_WORKFLOW)
-		_clear_probe_leads()
-		frappe.db.commit()
-
-	def setUp(self):
-		self.lead = frappe.get_doc({
-			"doctype": "CRM Lead", "first_name": _MARKED, "lead_name": _PROBE_NAME, "status": "New",
-			"mobile_no": _probe_mobile(),
-			"custom_vertical": fx.GRAIN["vertical"], "custom_group": fx.GRAIN["group"],
-			"custom_current_program": fx.GRAIN["program"],
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
-		self.task = frappe.get_doc({
-			"doctype": "CRM Task", "title": "Phase 11 location probe", "status": "Todo",
-			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
-
-	def tearDown(self):
-		_clear_probe_leads()
-
-	def _complete(self):
-		doc = frappe.get_doc("CRM Task", self.task.name)
-		doc.status = "Done"
-		return doc.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
-
-	def test_completing_without_coordinates_is_refused_whatever_a_workflow_declares(self):
-		"""An armed workflow declares Require Location over this very save. The backstop must still be the
-		one that refuses it — before Phase 11 it stood aside and the task closed with no location at all."""
-		with patch("tatva_connect.location.api.location_required", return_value=200):
-			with self.assertRaises(frappe.exceptions.ValidationError):
-				self._complete()
-
-		self.assertEqual(
-			frappe.db.get_value("CRM Task", self.task.name, "status"), "Todo",
-			"the completion was refused, so the task must still be open",
-		)
-
-	def test_completing_with_coordinates_still_goes_through(self):
-		"""The gate must refuse a missing location, not completion — otherwise the case above would pass
-		against a backstop that simply blocks everything."""
-		with patch("tatva_connect.location.api.location_required", return_value=200):
-			doc = frappe.get_doc("CRM Task", self.task.name)
-			doc.status = "Done"
-			doc.custom_location_latitude = 12.9716
-			doc.custom_location_longitude = 77.5946
-			doc.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
-
-		self.assertEqual(frappe.db.get_value("CRM Task", self.task.name, "status"), "Done")

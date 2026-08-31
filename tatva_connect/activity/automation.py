@@ -1,7 +1,7 @@
 """Activity value reconstruction — the name the location backstop calls the ONE reader by.
 
 `reconstruct_values` answers "what did this activity form say?", keyed by SCHEMA fieldname, for the
-fail-closed location guard (`tasks.tasks.enforce_location` -> `location.api.location_required`).
+automation context (`automation.context.activity_values`).
 
 It used to answer that itself: the JSON payload merged with `doc.get(f.target)` for every schema field
 carrying a target. That was a second reader of a rule `activity.api._task_values` already owned, and it

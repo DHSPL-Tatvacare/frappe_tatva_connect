@@ -79,7 +79,6 @@ OPERATIONAL = (
 	"custom_location_captured_at",
 	"custom_location_geo",
 	"custom_asm",
-	"custom_checklist",
 )
 
 # Plan §6's rep-facing set, verbatim. The declaration must name every one of these or a rep loses a

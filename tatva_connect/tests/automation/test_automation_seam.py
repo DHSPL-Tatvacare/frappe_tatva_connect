@@ -183,7 +183,6 @@ class TestAutomationSeam(FrappeTestCase):
 			"WhatsApp::Channel::templates",
 			"Storage::Azure::offload",
 			"Location::Google::capture",
-			"Task::Assignment::followup",
 		}
 
 		if not os.path.exists(_ENABLE_SQL):

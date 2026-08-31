@@ -43,8 +43,7 @@ from tatva_connect.workflow_engine.tests import fixtures as fx
 _TYPE_NAME = "ZZ WF Follow Up Probe"
 _VISIT_TYPE_NAME = "ZZ WF Visit Probe"
 
-# The operator switches the completion guards hang off. Armed for the shell suite, restored OFF.
-_GUARD_SWITCH = "Task::CRM Task::guards"
+# Armed for the shell suite, restored OFF.
 _CAPTURE_SWITCH = "Location::Google::capture"
 
 # Deliberately unparseable as a date: it is the "nonsense value" the due-date resolver must degrade on.
@@ -60,8 +59,8 @@ class _CreateTaskBase(FrappeTestCase):
 
 	The type is minted on `fx.GRAIN` because Create Task grain-gates every task it raises — a type on any
 	other grain would simply never be created and every assertion below would be about nothing. Its schema
-	is EMPTY on purpose: a type that declares fields brings `enforce_activity_logged` into the picture, and
-	this suite is about what Create Task does, not about what completing an activity demands.
+	is EMPTY on purpose: this suite is about what Create Task does, not about what completing an
+	activity demands.
 	"""
 
 	@classmethod
@@ -442,15 +441,10 @@ class TestACreatedTaskIsAShell(_CreateTaskBase):
 		)
 		_arm_location(cls)
 
-	def test_a_location_required_task_is_created_and_still_cannot_be_completed_without_one(self):
-		"""Both halves, deliberately in one test — they are one rule seen from two ends.
-
-		RED-on-old-code is not the point here; this is the lock that keeps items 2-5 from breaking it. Break
-		the creation half (make the shell run the form layer) and the first assertion goes red; break the
-		completion half (let a workflow-raised task skip the guard) and the last one does.
-		"""
-		from tatva_connect.location.api import location_required
-
+	def test_a_location_required_task_is_created_as_a_plain_shell(self):
+		"""Creation asks nothing. The completion half moved to `compute_activity`, which is where the fix
+		is demanded now — `tasks.enforce_location` retired with its switch, so there is no second refusal
+		for this suite to pin."""
 		task_name = self._raise({}, task_type=self.visit_type).name
 
 		row = frappe.db.get_value(
@@ -460,22 +454,6 @@ class TestACreatedTaskIsAShell(_CreateTaskBase):
 		self.assertEqual(row.status, "Todo", "a raised task is an open to-do, never a logged activity")
 		self.assertFalse(row.custom_location_latitude, "creation must capture no coordinates")
 		self.assertFalse(row.custom_location_longitude, "creation must capture no coordinates")
-
-		# Premise: without a live guard the refusal below would be proving nothing at all.
-		self.assertIsNotNone(
-			location_required(self.visit_type, self.lead.name, {}),
-			"the location guard is not live for this type on this lead — the refusal cannot be tested",
-		)
-
-		doc = frappe.get_doc("CRM Task", task_name)
-		doc.status = "Done"
-		with self.assertRaises(frappe.ValidationError) as refused:
-			doc.save(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
-
-		self.assertIn("location", str(refused.exception).lower(),
-		              "the refusal must be the location one, not some other validation")
-		self.assertEqual(frappe.db.get_value("CRM Task", task_name, "status"), "Todo",
-		                 "the refused save must have left the task open")
 
 	def test_the_journey_walked_on_after_raising_it(self):
 		"""A location-required type must not park or fail the journey either — the node ran, and that is all
@@ -602,8 +580,6 @@ def _arm_location(cls):
 	cls.addClassCleanup(frappe.db.commit)
 	cls.addClassCleanup(_untrack_grains, before)
 	cls.addClassCleanup(frappe.db.set_value, "CRM Tatva Automation", _CAPTURE_SWITCH, "enabled", 0)
-	cls.addClassCleanup(frappe.db.set_value, "CRM Tatva Automation", _GUARD_SWITCH, "enabled", 0)
-	frappe.db.set_value("CRM Tatva Automation", _GUARD_SWITCH, "enabled", 1)
 	frappe.db.set_value("CRM Tatva Automation", _CAPTURE_SWITCH, "enabled", 1)
 	settings.append("location_tracked_grains", {
 		"vertical": fx.GRAIN["vertical"], "group": fx.GRAIN["group"], "program": fx.GRAIN["program"],

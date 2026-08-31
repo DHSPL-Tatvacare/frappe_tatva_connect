@@ -244,7 +244,6 @@ _CRM_CORE = {
 	"CRM Picklist Value": "MASTER",
 	"CRM Task Option": "MASTER",
 	"CRM Task Type": "MASTER",
-	"CRM Task Checklist Template": "MASTER",
 	"CRM Task Section": "MASTER",
 	"CRM Task Field": "MASTER",
 	"CRM Lead Stage": "MASTER",

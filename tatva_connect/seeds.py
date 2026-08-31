@@ -3,7 +3,7 @@
 `bench install-app` BASELINES patches.txt (marks them applied) WITHOUT running it,
 so master data seeded via patches never lands on a brand-new DB — a fresh-VM /
 disaster-recovery rebuild comes up with no India cities, no lead stages, an empty
-partner-API catalog, no intake config, and a checklist layout without the checklist.
+partner-API catalog and no intake config.
 
 Run the seeds on after_migrate instead. after_migrate fires AFTER fixtures (so the
 masters these seeds Link to — Vertical/Group/Program/Lead Source — already exist) and

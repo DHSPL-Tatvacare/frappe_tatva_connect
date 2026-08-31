@@ -5,10 +5,10 @@
 It used to be two. The modal called `frappe.client.set_value` with the standard CRM Task fields, and then
 `save_activity` with the answers — and that fork was three defects at once:
 
-  1. `status: Done` committed BEFORE any answer existed, so `enforce_activity_logged` (the fail-closed
-     backstop, one brain with `activity_is_unlogged`) refused the rep who had just filled the form:
-     *"Log this activity's details before marking it Done"*. A typed activity could not be completed
-     from the screen built to complete it.
+  1. `status: Done` committed BEFORE any answer existed, so the completion backstop of the day refused
+     the rep who had just filled the form: *"Log this activity's details before marking it Done"*. A
+     typed activity could not be completed from the screen built to complete it. (That backstop is
+     retired — `compute_activity` asks the same question on the one write this module pins.)
   2. The payload builder appended `notes` OUTSIDE the visibility loop, so a `notes` a rule had hidden was
      still submitted and `compute_activity` correctly refused it. On Document Verification Status, `notes`
      shows for 3 of 7 statuses — the other 4 were unsaveable from the SPA while the same payload went
@@ -37,9 +37,6 @@ from tatva_connect.tests.activity import task_type_fixture
 
 TYPE_NAME = "ZZ One Write Probe"
 
-# The operator switch the `enforce_activity_logged` backstop hangs off. Armed for this class, restored OFF
-# — never "what it was": restoring the previous value is what propagates a poisoned baseline.
-GUARD_SWITCH = "Task::CRM Task::guards"
 
 STATUS = "zz_dv_status"
 NOTES = "notes"
@@ -74,8 +71,6 @@ class TestOneWritePerSave(FrappeTestCase):
 		frappe.db.set_value("CRM Task Type", cls.task_type, "is_logged_complete", 1)
 		frappe.db.commit()
 		cls.addClassCleanup(frappe.db.commit)
-		cls.addClassCleanup(frappe.db.set_value, "CRM Tatva Automation", GUARD_SWITCH, "enabled", 0)
-		frappe.db.set_value("CRM Tatva Automation", GUARD_SWITCH, "enabled", 1)
 		frappe.db.commit()
 
 	@classmethod
@@ -101,17 +96,6 @@ class TestOneWritePerSave(FrappeTestCase):
 		}).insert(ignore_permissions=True)
 
 	# ---- the premise ------------------------------------------------------------------------------
-
-	def test_the_guard_that_used_to_refuse_the_rep_is_actually_armed(self):
-		"""With the switch off there is no refusal to prevent, and every assertion below is vacuous."""
-		from tatva_connect.automation import settings
-
-		self.assertTrue(settings.is_enabled(GUARD_SWITCH), "the activity-logged backstop is dormant")
-		unlogged = frappe.get_doc("CRM Task", self.task.name)
-		unlogged.status = "Done"
-		self.assertTrue(activity_api.activity_is_unlogged(unlogged),
-						"a fresh typed task with no answers does not read as unlogged — "
-						"symptom 1 cannot be reproduced")
 
 	def test_the_declared_notes_field_is_hidden_at_one_status_and_shown_at_the_other(self):
 		"""Symptom 2 is about a field a RULE hid; a fixture that shows it always would prove nothing."""

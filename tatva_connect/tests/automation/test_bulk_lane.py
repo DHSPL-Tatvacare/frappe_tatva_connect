@@ -25,7 +25,7 @@ from tatva_connect.automation import settings
 from tatva_connect.lead.assignment import LEAD_OWNER, TASK_ASSIGNEE
 
 BULK_JOB = "tatva_connect.api.partner_bulk_worker.process_job"
-KEY = "Task::Assignment::followup"  # a real row; any switch would do — the lane is key-agnostic
+KEY = "Task::Review::mirror"  # a real row; any switch would do — the lane is key-agnostic
 
 
 def _as_job(method=BULK_JOB):

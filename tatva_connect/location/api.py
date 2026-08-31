@@ -6,7 +6,7 @@ Two layers, one brain:
   • The activity location guard — `location_guard_applies` is the door-first probe (pure visit_mode
     == In-Person AND the lead grain is location-tracked, grain-scoped via taxonomy.grain), while
     `location_required` adds the declared-condition branch enforced at save. The activity
-    writer (compute_activity) and the validate backstop (tasks.enforce_location) key off
+    writer (compute_activity) keys off
     `location_required`; `set_or_check_anchor` owns the clinic-anchor + radius rule. (Phase B consolidated
     the v1 task-type trigger — `location_required` + task_location.js — into this; see archive/.)
 
@@ -142,10 +142,9 @@ def _condition_holds(tt, values):
 	string returned False — a DECLARED condition that silently meant "location not required", with a visit
 	audit row recorded as "Not Required" to match.
 
-	The answers are SETTLED here, once, so every caller judges the same bag. `compute_activity` passes the
-	raw submission and the `enforce_location` backstop passes values reconstructed from storage; settling
-	inside this function is what makes those two arrive at the same answer, and it is what makes a HIDDEN
-	field's value inert for this gate exactly as D22 makes it inert for every rule. A condition on a field
+	The answers are SETTLED here, once, so every caller judges the same bag — `compute_activity` passes the
+	raw submission, and settling inside this function is what makes a HIDDEN field's value inert for this
+	gate exactly as D22 makes it inert for every rule. A condition on a field
 	the form did not show reads blank and does not fire.
 
 	Only a field the TYPE DECLARES can be asked about — that is enforced when the type is saved

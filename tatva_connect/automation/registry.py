@@ -378,22 +378,7 @@ AUTOMATIONS = [
 		),
 		backs=[],  # as above: crm_task.py assigns off a field; gated by lead/assignment.TaskAssignmentGate
 	),
-	Auto(
-		key="Task::Assignment::followup",
-		fires_on="Doc Event",
-		trigger_detail="ToDo · after_insert",
-		purpose=(
-			"A 'Call Lead' follow-up task is raised the moment a lead is assigned, so an assigned "
-			"lead never goes cold. Off, the assignment stands on its own and no task is created.\n"
-			"Example: a lead is assigned to a rep, and a 'Call Lead' task due in 24 hours appears on "
-			"their list."
-		),
-		# The WhatsApp inbound reply-task was retired here (folded into a user-built rule on the new
-		# WhatsApp Message automation subject), so this toggle now backs only the assignment follow-up.
-		backs=[
-			"tatva_connect.tasks.tasks.on_lead_assignment",
-		],
-	),
+	# RETIRED 2026-08-31 — Task::Assignment::followup. Predated the workflow engine's own Create Task node (2026-08-10) by two months, which does the same job authored per program instead of one hardcoded rule; the go-live checklist always listed it under switches to confirm OFF, never one to turn on.
 	Auto(
 		key="Task::Review::mirror",
 		fires_on="Doc Event",
@@ -629,24 +614,7 @@ AUTOMATIONS = [
 		),
 		backs=["tatva_connect.lead_sync.discovery.refresh_all_sources"],
 	),
-	Auto(
-		key="Task::CRM Task::guards",
-		fires_on="Doc Event",
-		trigger_detail="CRM Task · validate",
-		purpose=(
-			"Task completion is backstopped: the checklist is seeded from the template that matches "
-			"the task, and the task cannot be marked Done until its checklist, its location and its "
-			"activity log are all satisfied. Off, a task closes with none of them filled in.\n"
-			"Example: a visit task is closed without the activity logged, and the save is blocked "
-			"until it is."
-		),
-		backs=[
-			"tatva_connect.tasks.tasks.seed_checklist",
-			"tatva_connect.tasks.tasks.enforce_checklist",
-			"tatva_connect.tasks.tasks.enforce_location",
-			"tatva_connect.tasks.tasks.enforce_activity_logged",
-		],
-	),
+	# RETIRED 2026-08-31 — Task::CRM Task::guards. Both guards were a second reading of the task TYPE, which `activity.api.compute_activity` already enforces on the only writers there are: it refuses a missing required field ("{0} is required.") and an in-person activity with no fix, then `set_or_check_anchor` throws out of range. Bulk complete is `refuse_disabled_bulk_complete`, which carries no switch and gates both bulk doors. Dormant in prod since go-live with every one of these working, which is the proof the form layer owns them.
 	Auto(
 		key="Access::Desk::sanitize",
 		fires_on="Doc Event",
