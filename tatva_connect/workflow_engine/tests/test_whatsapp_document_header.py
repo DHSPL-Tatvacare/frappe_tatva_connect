@@ -68,6 +68,9 @@ _FILLED = "Probe"
 _HEADER = "pdfLink"
 # The same unassigned number the number-format suite uses — a shape, never a subscriber.
 _NUMBER = "+91-9876543210"
+
+# What `frappe.enqueue` consumes itself and never passes to the job it starts.
+_ENQUEUE_ONLY = {"queue", "enqueue_after_commit", "job_id", "deduplicate", "timeout", "now", "at_front"}
 _REF = "gen.document_file"
 
 
@@ -159,8 +162,11 @@ class _Harness(FrappeTestCase):
 			posted.update(body)
 			return {"result": True, "message": {"localMessageId": "document-header-probe"}}
 
+		# `enqueue` is captured whole, so its own kwargs (`queue`, `enqueue_after_commit`) ride along in the
+		# dict — they address the LANE, not the delivery, and the job frappe starts never receives them.
+		payload = {k: v for k, v in enqueued.items() if k not in _ENQUEUE_ONLY}
 		with patch.object(transport, "_post", _capture):
-			sends._deliver_whatsapp(**enqueued)
+			sends._deliver_whatsapp(**payload)
 		return posted
 
 	def _header_value(self, body):

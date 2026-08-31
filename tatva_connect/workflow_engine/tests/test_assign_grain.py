@@ -69,12 +69,27 @@ def _make_rule(name, user, grain):
 def _forget_grains():
 	"""Entitlement is request-cached; a test that creates a rule must drop the memo it invalidates."""
 	setattr(frappe.local, _GRAINS_CACHE, None)
+	setattr(frappe.local, entitlement._REGISTRY_FLAG_CACHE, None)
+
+
+def _set_registry(enabled):
+	"""Arm or disarm the switch that CHOOSES which entitlement source is read, and drop its memo."""
+	frappe.db.set_value("CRM Tatva Automation", entitlement.REGISTRY_FLAG, "enabled",
+	                    1 if enabled else 0, update_modified=False)
+	setattr(frappe.local, entitlement._REGISTRY_FLAG_CACHE, None)
 
 
 class TestAssignGrain(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		assert_masters_exist()
+		# This suite grants entitlement through Assignment Rules, which is what `entitled_grains` reads
+		# while `Access::Grain::registry` is dormant; armed, it reads native User Permission instead and
+		# never reaches the roll-up, so every rule seeded here would grant nothing. The switch is pinned
+		# to the path being exercised and restored afterwards — a bench that has it armed is testing the
+		# other mechanism, not a broken one.
+		cls._registry_was = frappe.db.get_value("CRM Tatva Automation", entitlement.REGISTRY_FLAG, "enabled")
+		_set_registry(0)
 		cls.entitled = _make_user(_ENTITLED)
 		cls.foreign = _make_user(_FOREIGN)
 		_make_rule(f"{_RULE_PREFIX} Home", cls.entitled, fx.GRAIN)
@@ -93,6 +108,7 @@ class TestAssignGrain(FrappeTestCase):
 		for email in (_ENTITLED, _FOREIGN):
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+		_set_registry(cls._registry_was)
 		frappe.db.commit()
 		_forget_grains()
 

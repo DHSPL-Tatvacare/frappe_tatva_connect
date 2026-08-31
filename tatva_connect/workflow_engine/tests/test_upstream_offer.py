@@ -252,8 +252,13 @@ class TestNoInspectorListIsBuiltFromTheRawGraph(FrappeTestCase):
 		if not self._CANVAS.exists():
 			self.skipTest("frontend not mounted in this container")
 		source = (self._CANVAS / "WorkflowCanvas.vue").read_text()
-		self.assertIn("authoring_context", source)
-		self.assertIn("resolveContext(graphNodes.value)", source, "the backend is no longer asked about the live graph")
+		# The canvas asks `context.graph_context`, which is `authoring_context` plus the graph's outputs —
+		# one round trip for both. What this lock is about is the canvas ASKING rather than re-deciding.
+		self.assertIn("workflow_engine.context.graph_context", source)
+		# The resolver is debounced now (`resolveGraphContextSoon`) and awaited directly where an answer is
+		# needed before a write; both take the live graph, which is what this asserts.
+		self.assertIn("resolveGraphContext", source, "the backend is no longer asked about the live graph")
+		self.assertIn("graphNodes.value", source, "the graph handed over is no longer the live one")
 
 
 class TestBothPickersHangOnTheWIRE(FrappeTestCase):

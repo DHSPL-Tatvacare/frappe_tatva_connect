@@ -103,9 +103,15 @@ class TestTheHeaderCarriesWhatTheDrainWillQuery(FrappeTestCase):
 		self.assertEqual(row.trigger_mode, registry.MODE_SCHEDULE)
 		self.assertIsNotNone(row.trigger_next_run_at, "the drain finds a due workflow by this column alone")
 
-	def test_changing_the_schedule_moves_the_next_run(self):
+	def test_the_next_run_tracks_the_schedule_the_node_carries(self):
+		"""Re-saving after an edit re-computes the column from the node, rather than leaving the value the
+		previous schedule produced.
+
+		Asserted against `next_run_at` itself and NOT as "it differs from before": no two frequencies are
+		collision-proof at every anchor — on the last day of a month, Monthly and Daily are both tomorrow —
+		so a difference check is green on 30 days and red on the 31st.
+		"""
 		wf = self._scheduled(schedule="Monthly")
-		monthly = frappe.db.get_value("CRM Workflow", wf.name, "trigger_next_run_at")
 		node = frappe.get_doc("CRM Workflow Node", frappe.get_all(
 			"CRM Workflow Node", filters={"workflow": wf.name, "node_id": "start"}, pluck="name")[0])
 		config = frappe.parse_json(node.config_json)
@@ -113,7 +119,11 @@ class TestTheHeaderCarriesWhatTheDrainWillQuery(FrappeTestCase):
 		node.config_json = frappe.as_json(config)
 		node.save(ignore_permissions=True)
 		frappe.get_doc("CRM Workflow", wf.name).save(ignore_permissions=True)
-		self.assertNotEqual(frappe.db.get_value("CRM Workflow", wf.name, "trigger_next_run_at"), monthly)
+		self.assertEqual(
+			frappe.db.get_value("CRM Workflow", wf.name, "trigger_next_run_at"),
+			cohort.next_run_at(config),
+			"the stored due time no longer agrees with the schedule the node carries",
+		)
 
 	def test_the_due_query_is_one_indexed_read(self):
 		"""The index is the whole reason these columns exist. Declared in `schema_setup._STEPS` as well as

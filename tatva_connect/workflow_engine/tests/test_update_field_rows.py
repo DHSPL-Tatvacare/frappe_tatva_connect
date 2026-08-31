@@ -301,8 +301,10 @@ class TestIncrementAddsInsteadOfOverwriting(_CounterBase):
 			self.assertEqual(contract.resolve_row(renamed, 1, {}, current=2), 3)
 
 	def test_increment_is_offered_only_where_there_is_a_field_to_add_to(self):
-		"""The declaration half. `Update Field.updates` offers four modes; every other `value_rows` field
-		keeps the pair, because a template slot has no target."""
+		"""The declaration half. Increment is offered exactly where a CURRENT value exists to add to — the
+		lead's own field, and the row an upsert writes into. Everywhere else keeps the plain modes: a
+		template slot has no target at all, and an append creates a new row, which has nothing to add to.
+		"""
 		from tatva_connect.workflow_engine import registry
 
 		offered = {}
@@ -310,12 +312,20 @@ class TestIncrementAddsInsteadOfOverwriting(_CounterBase):
 			for field in entry["config"]:
 				if registry.read_kind_of(field) == "value_rows":
 					offered[(entry["type"], field["name"])] = field.get("modes")
-		self.assertEqual(offered[("Update Field", "updates")],
-		                 [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT])
+		for key in _WRITES_OVER_A_CURRENT_VALUE:
+			with self.subTest(field=key):
+				self.assertEqual(offered[key],
+				                 [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT])
 		for key, modes in offered.items():
-			if key != ("Update Field", "updates"):
+			if key not in _WRITES_OVER_A_CURRENT_VALUE:
 				with self.subTest(field=key):
 					self.assertNotIn(refs.INCREMENT, modes)
+
+
+# The two fields whose write lands on a value that already exists — the only place adding to it means
+# anything. `Upsert Child Row` qualifies because it writes the lead's EXISTING row in a section; `Append
+# Child Row` does not, because the row it makes has no current value.
+_WRITES_OVER_A_CURRENT_VALUE = {("Update Field", "updates"), ("Upsert Child Row", "set_fields")}
 
 
 class TestASendVerbRefusesIncrement(_RowsBase):

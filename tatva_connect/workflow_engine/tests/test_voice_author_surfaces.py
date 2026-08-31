@@ -39,6 +39,14 @@ from tatva_connect.voice.adapters import bolna
 _ACCOUNT = "Voice-author-surface-probe"
 _CONNECTION = {"api_key": "probe-key", "base_url": "https://api.example.invalid", "from_phone": ""}
 
+# `assert_safe_public_url` refuses a host that does not resolve, and a `.invalid` host never can — that is
+# what the TLD is for. This suite is about what a voice call SENDS, not about URL safety, so the guard is
+# stood down for it and asserted on its own elsewhere. Patched at the boundary, never disabled globally.
+def _reachable():
+	# Patched where it is USED: the adapter imports the guard by name, so rebinding it on `utils` would
+	# leave the name already bound in this module untouched.
+	return patch.object(bolna, "assert_safe_public_url", lambda *a, **kw: None)
+
 
 def _voice_params():
 	"""What an author really gets — `params_of`, the one reader, not the raw declaration."""
@@ -188,7 +196,7 @@ class TestTheCallingHoursBypassIsAProviderCapability(FrappeTestCase):
 	def test_a_call_that_did_not_ask_for_it_sends_no_such_key(self):
 		"""An absent key and a `false` mean the same to Bolna, and the absent one cannot be misread off a
 		captured request as a deliberate choice to skip a patient's calling window."""
-		with patch.object(bolna.requests, "post", return_value=_Response()) as post:
+		with _reachable(), patch.object(bolna.requests, "post", return_value=_Response()) as post:
 			bolna.place_call(_CONNECTION, "+919876543210", "agent-1", None, "journey::node")
 
 		self.assertNotIn("bypass_call_guardrails", post.call_args.kwargs["json"])
@@ -197,7 +205,7 @@ class TestTheCallingHoursBypassIsAProviderCapability(FrappeTestCase):
 		"""The two paths differ by Bolna's own contract: `/call` takes a JSON body, `/batches` takes
 		multipart form fields where the same flag is the string "true". Getting this backwards sends a
 		truthy string into a JSON bool, or a Python `True` into a form field."""
-		with patch.object(bolna.requests, "post", return_value=_Response()) as post:
+		with _reachable(), patch.object(bolna.requests, "post", return_value=_Response()) as post:
 			bolna.place_call(_CONNECTION, "+919876543210", "agent-1", None, "journey::node",
 			                 bypass_guardrails=True)
 
@@ -207,7 +215,7 @@ class TestTheCallingHoursBypassIsAProviderCapability(FrappeTestCase):
 		"""The boundary the channel contract exists to draw: `bypass_guardrails` is the one author-facing
 		word, `bypass_call_guardrails` is Bolna's spelling, and the translation happens in the adapter."""
 		self.assertIn("bypass_guardrails", bolna.place_call.__code__.co_varnames)
-		with patch.object(bolna.requests, "post", return_value=_Response()) as post:
+		with _reachable(), patch.object(bolna.requests, "post", return_value=_Response()) as post:
 			bolna.place_call(_CONNECTION, "+919876543210", "agent-1", None, "journey::node",
 			                 bypass_guardrails=True)
 
@@ -305,6 +313,10 @@ class TestTheCallerIdIsStoredCanonical(FrappeTestCase):
 		self.assertIn("+91", message, "and the shape it wanted, which nothing on the form said")
 
 	def test_the_form_itself_states_the_format(self):
-		"""Conforming is half the fix; the field said nothing about the format it silently required."""
+		"""Conforming is half the fix; the field said nothing about the format it silently required.
+
+		Asserted on the WORKED EXAMPLE rather than any particular wording — "in full international form"
+		and "with the country code" are the same instruction, and an operator copies the example.
+		"""
 		description = frappe.get_meta("CRM AI Voice Account").get_field("from_phone").description or ""
-		self.assertIn("country code", description)
+		self.assertIn("+91", description, "the field must show the shape it silently requires")

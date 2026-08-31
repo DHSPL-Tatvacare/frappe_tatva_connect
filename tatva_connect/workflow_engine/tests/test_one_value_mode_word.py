@@ -123,7 +123,15 @@ class TestWhatAnAuthorIsOfferedIsTheDeclarationItself(FrappeTestCase):
 		return set(param.get("options") or ()) | set(param.get("modes") or ())
 
 	def _declared(self):
-		return {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT}
+		"""Every mode word a control may put in front of an author, READ from where each is declared.
+
+		`refs` holds the value vocabulary. `Create Task`'s scheduling word is declared beside the verb
+		that owns it (`actions.DUE_AFTER_DELAY`) because it addresses WHEN a task is due, not how a value
+		is resolved. Both are read, never retyped — a literal here would let a typo in a config pass.
+		"""
+		from tatva_connect.automation import actions
+
+		return {refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT, actions.DUE_AFTER_DELAY}
 
 	def test_the_rows_verb_is_in_scope_of_this_lock(self):
 		"""Named, because the detector is structural and a structural detector can silently stop matching.

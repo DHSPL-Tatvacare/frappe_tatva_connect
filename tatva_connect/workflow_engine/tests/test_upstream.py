@@ -142,10 +142,11 @@ class TestUpstream(FrappeTestCase):
 		second operator vocabulary — the existing one emits symbols the evaluator rejects outright."""
 		always = {"ref", "label", "type", "source", "source_label", "emitted"}
 		for value in upstream.available_at(_graph(), "b1"):
-			# `options` is the ONE conditional key and `_shaped` says why: a Select carries its choices so
-			# the predicate becomes a dropdown, and a node-emitted value declares none and must not claim to.
-			# Spelling the key set as exactly `always` made this red for every Select the subject has.
-			self.assertEqual(set(value) - {"options"}, always, value)
+			# Two conditional keys, both carried only by a value that HAS choices: `options` is the list
+			# itself, and `pick` is how the control should offer them. A node-emitted value declares
+			# neither and must not claim to. Spelling the key set as exactly `always` made this red for
+			# every Select the subject has.
+			self.assertEqual(set(value) - {"options", "pick"}, always, value)
 			self.assertTrue(value["label"], "a value must be nameable to a person")
 			self.assertTrue(value["source_label"], "a value must say, in words, where it came from")
 

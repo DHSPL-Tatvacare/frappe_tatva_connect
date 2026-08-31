@@ -79,7 +79,14 @@ class TestCallApiPreview(FrappeTestCase):
 		self.assertEqual(answer["status"], 0, "an unroutable host cannot answer, which is the point")
 		self.assertIsInstance(answer["sent"], dict, "the record itself went out — the preview must show it")
 		self.assertEqual(answer["sent"].get("name"), self.lead_a.name)
-		self.assertEqual(answer["sent"].get("first_name"), "Preview A")
+		self.assertEqual(answer["sent"].get("first_name"), self._name_of(self.lead_a))
+
+	def _name_of(self, lead):
+		"""The lead's first name AS IT STANDS. Asserted rather than spelled: these probes carry the shared
+		fixture grain, so any workflow armed on this bench may legitimately have rewritten the name, and
+		what this suite is about is WHICH record went on the wire — not what it is called.
+		"""
+		return frappe.db.get_value("CRM Lead", lead.name, "first_name")
 
 	def test_the_preview_shows_the_resolved_body_when_the_author_wrote_one(self):
 		"""CUSTOM MODE, unchanged in what it reports and rewired in how it gets there.
@@ -93,7 +100,7 @@ class TestCallApiPreview(FrappeTestCase):
 		self.assertEqual(answer["sent"]["model"], "probe", "a literal is left alone")
 		self.assertEqual(answer["sent"]["metadata"]["lead"], self.lead_a.name, "a nested reference resolves")
 		self.assertEqual(
-			answer["sent"]["messages"][0]["content"], "Preview A",
+			answer["sent"]["messages"][0]["content"], self._name_of(self.lead_a),
 			"a reference inside a LIST of objects resolves — where every real API body puts it",
 		)
 
@@ -130,9 +137,9 @@ class TestCallApiPreview(FrappeTestCase):
 
 		self.assertEqual(first["lead"], self.lead_a.name)
 		self.assertEqual(second["lead"], self.lead_b.name)
-		self.assertEqual(first["sent"]["first_name"], "Preview A")
+		self.assertEqual(first["sent"]["first_name"], self._name_of(self.lead_a))
 		self.assertEqual(
-			second["sent"]["first_name"], "Preview B",
+			second["sent"]["first_name"], self._name_of(self.lead_b),
 			"B is also the newest lead here, so only A's payload proves the argument was honoured",
 		)
 

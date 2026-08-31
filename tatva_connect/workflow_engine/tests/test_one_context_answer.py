@@ -66,9 +66,17 @@ class TestTheSliceEqualsTheOldAnswer(FrappeTestCase):
 				"subject": answer["subject"],
 				"grain": answer["grain"],
 				"working_set": answer["working_set"],
-				"variables": upstream.available_at(graph, node_id),
+				# Assembled the way the contract assembles it: the node's emitted values joined to the
+				# subject's fields, which are asked ONCE for the graph rather than per node.
+				"variables": upstream.with_subject_fields(
+					(answer["nodes"].get(node_id) or {}).get("emitted", []), answer["subject_fields"],
+				),
 				"emitters": upstream.emitters_at(graph, node_id),
 				"settable": answer["settable"],
+				# Shared half, asked once for the whole graph — the same object every node's slice carries.
+				"targets": answer["targets"],
+				# Positional: WHERE this node writes. Per-node like `emitters`, not schema like `settable`.
+				"writes_to": (answer["nodes"].get(node_id) or {}).get("writes_to", ""),
 				"operators_by_type": answer["operators_by_type"],
 				"operator_shapes": answer["operator_shapes"],
 			}
@@ -114,7 +122,7 @@ class TestTheSubjectHalfIsAskedOnce(FrappeTestCase):
 		self.assertIn("subject_fields", answer)
 		for node_id, positional in answer["nodes"].items():
 			self.assertEqual(
-				sorted(positional.keys()), ["emitted", "emitters"],
+				sorted(positional.keys()), ["emitted", "emitters", "writes_to"],
 				f"{node_id} carries more than its position — the schema is travelling per node again",
 			)
 

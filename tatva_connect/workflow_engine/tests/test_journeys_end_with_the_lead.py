@@ -37,6 +37,20 @@ _WF_A = "ZZ Journeys End A"
 _WF_B = "ZZ Journeys End B"
 
 
+# Deleting the probe lead is this suite's SCAFFOLDING, not its subject — what it asserts is what happens
+# to the journeys. A bench with workflows armed may legitimately have hung a task off the probe, and the
+# link check would then refuse the delete and fail a test about something else entirely. Journeys are
+# deliberately NOT ignored: ending them is the behaviour under test.
+_ATTACHED_BY_AUTOMATION = ["CRM Task"]
+
+
+def _delete_lead(name):
+	for doctype in _ATTACHED_BY_AUTOMATION:
+		for row in frappe.get_all(doctype, filters={"reference_docname": name}, pluck="name"):
+			frappe.delete_doc(doctype, row, force=True, ignore_permissions=True)
+	frappe.delete_doc("CRM Lead", name, ignore_permissions=True)
+
+
 class TestJourneysEndWithTheLead(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -89,7 +103,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 	# ---- the lead is deleted ------------------------------------------------------------------
 	def test_deleting_a_lead_stops_every_journey_across_every_workflow(self):
 		"""Two workflows, two parked journeys, one delete. Neither may be left parked."""
-		frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+		_delete_lead(self.lead.name)
 		for run in self.runs:
 			self._assert_stopped(run.name, "Lead deleted")
 
@@ -99,7 +113,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		for run in self.runs:
 			self.assertIn(run.name, due_before, "the fixture must be genuinely due, or this proves nothing")
 
-		frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+		_delete_lead(self.lead.name)
 
 		due_after = set(wakeups._due_parked())
 		for run in self.runs:
@@ -154,7 +168,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		frappe.db.set_value(JOURNEY_DT, done.name, {"status": "Done", "active_key": None}, update_modified=False)
 		frappe.db.commit()
 
-		frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+		_delete_lead(self.lead.name)
 
 		state = self._state(done.name)
 		self.assertEqual(state.status, "Done", "a terminal journey was transitioned a second time")
@@ -166,7 +180,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		bystander = fixtures.make_lead()
 		bystander_run = self._park(self.workflows[0], bystander.name)
 
-		frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+		_delete_lead(self.lead.name)
 
 		self.assertEqual(self._state(bystander_run.name).status, "Parked", "a bystander's journey was stopped")
 
@@ -184,7 +198,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		parked on a lead that no longer exists is neither, however the switch happens to be set."""
 		fixtures.arm_engine(False)
 		try:
-			frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+			_delete_lead(self.lead.name)
 		finally:
 			fixtures.arm_engine(True)
 		for run in self.runs:
@@ -206,7 +220,7 @@ class TestJourneysEndWithTheLead(FrappeTestCase):
 		"""What the gate really cost: not merely parked, but left DUE — so the sweep is asked for real."""
 		fixtures.arm_engine(False)
 		try:
-			frappe.delete_doc("CRM Lead", self.lead.name, ignore_permissions=True)
+			_delete_lead(self.lead.name)
 		finally:
 			fixtures.arm_engine(True)
 

@@ -42,7 +42,30 @@ def _enqueue_calls():
 				owner = getattr(getattr(target, "value", None), "id", None)
 				if name != "enqueue" or owner != "frappe":
 					continue
-				yield path.name, node.lineno, {kw.arg: kw.value for kw in node.keywords}
+				method = node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else None
+				yield path.name, node.lineno, method, {kw.arg: kw.value for kw in node.keywords}
+
+
+def _named_lane(node):
+	"""The lane a call site names, whether it spells it or reads the shared constant.
+
+	`queue=wakeups.WAKE_QUEUE` is the SAME answer as `queue="workflow"` and a better way to write it —
+	one that cannot drift from the constant every other site compares against. A lock that only reads
+	string literals calls the safer spelling an offence.
+	"""
+	if isinstance(node, ast.Constant):
+		return node.value
+	if isinstance(node, ast.Attribute) and node.attr == "WAKE_QUEUE":
+		return wakeups.WAKE_QUEUE
+	return None
+
+
+# The one job that belongs on ANOTHER lane, named by the method it starts so the exception survives the
+# line moving. A document render is seconds of a pdfkit subprocess; the engine's lane is where every
+# journey is walked, and one render there stalls all of them.
+_OFF_LANE_BY_DESIGN = {
+	"tatva_connect.workflow_engine.document_render.render_document": "long",
+}
 
 
 class TestEveryEngineEnqueueNamesTheWorkflowLane(unittest.TestCase):
@@ -50,9 +73,10 @@ class TestEveryEngineEnqueueNamesTheWorkflowLane(unittest.TestCase):
 
 	def test_no_engine_job_is_left_on_a_starved_lane(self):
 		offenders = []
-		for filename, lineno, kwargs in _enqueue_calls():
-			queue = kwargs.get("queue")
-			named = queue.value if isinstance(queue, ast.Constant) else None
+		for filename, lineno, method, kwargs in _enqueue_calls():
+			named = _named_lane(kwargs.get("queue"))
+			if named == _OFF_LANE_BY_DESIGN.get(method):
+				continue
 			if named != wakeups.WAKE_QUEUE:
 				offenders.append(f"{filename}:{lineno} queue={named!r}")
 		self.assertEqual(
@@ -68,9 +92,9 @@ class TestEveryEngineEnqueueNamesTheWorkflowLane(unittest.TestCase):
 		"""A computed queue name would defeat the check above by being unreadable at rest. Every site
 		spells the lane, and the test above is what makes them one answer by comparing each to
 		`wakeups.WAKE_QUEUE`."""
-		for filename, lineno, kwargs in _enqueue_calls():
+		for filename, lineno, _method, kwargs in _enqueue_calls():
 			with self.subTest(site=f"{filename}:{lineno}"):
-				self.assertIsInstance(kwargs.get("queue"), ast.Constant)
+				self.assertIsNotNone(_named_lane(kwargs.get("queue")))
 
 
 class TestTheJobsStayLosable(unittest.TestCase):
@@ -79,7 +103,7 @@ class TestTheJobsStayLosable(unittest.TestCase):
 
 	def test_every_engine_enqueue_still_fires_only_after_commit(self):
 		offenders = []
-		for filename, lineno, kwargs in _enqueue_calls():
+		for filename, lineno, _method, kwargs in _enqueue_calls():
 			after_commit = kwargs.get("enqueue_after_commit")
 			if not (isinstance(after_commit, ast.Constant) and after_commit.value is True):
 				offenders.append(f"{filename}:{lineno}")
