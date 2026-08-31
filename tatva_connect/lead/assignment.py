@@ -34,6 +34,13 @@ LEAD_OWNER = "Lead::Assignment::owner"
 TASK_ASSIGNEE = "Task::Assignment::assignee"
 
 
+def _cancel_todo(todo_name):
+	"""Cancel one ToDo through a real save, not a raw column write, so its own on_update hooks (search index, access grant) fire exactly as a native unassign's do — minus only notify_assignment, which native remove() calls as a separate explicit line after the save, never as a side effect of the save itself."""
+	todo = frappe.get_doc("ToDo", todo_name)
+	todo.status = "Cancelled"
+	todo.save(ignore_permissions=True)
+
+
 def silent_assign(doctype, name, new_owner):
 	"""Move one record's SOLE assignment to new_owner without frappe's own notify (no off-switch exists for it, checked in assign_to.py directly) — closes whoever else holds it. For a single-assignee field like CRM Task.assigned_to; CRM Lead is multi-assignee and uses silent_add_assignee instead, which never closes anyone else."""
 	todos = frappe.get_all(
@@ -42,7 +49,7 @@ def silent_assign(doctype, name, new_owner):
 	)
 	for todo in todos:
 		if todo.allocated_to != new_owner:
-			frappe.db.set_value("ToDo", todo.name, "status", "Cancelled", update_modified=False)
+			_cancel_todo(todo.name)
 	if not any(t.allocated_to == new_owner for t in todos):
 		silent_add_assignee(doctype, name, new_owner)
 	elif frappe.get_meta(doctype).get_field("assigned_to"):
@@ -64,10 +71,9 @@ def silent_add_assignee(doctype, name, new_owner):
 
 def silent_unassign(doctype, name, user):
 	"""Close one user's assignment on a record without frappe's own notify — same Cancelled status value and assigned_to clear native remove() writes, minus that call. For bulk Clear Assignment, which should never tell the person losing it."""
-	frappe.db.set_value(
-		"ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": user, "status": "Open"},
-		"status", "Cancelled", update_modified=False,
-	)
+	todo_name = frappe.db.get_value("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": user, "status": "Open"})
+	if todo_name:
+		_cancel_todo(todo_name)
 	if frappe.get_meta(doctype).get_field("assigned_to") and frappe.db.get_value(doctype, name, "assigned_to") == user:
 		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
 
