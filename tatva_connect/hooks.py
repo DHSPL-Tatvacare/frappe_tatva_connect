@@ -531,8 +531,6 @@ after_migrate = [
 	"tatva_connect.seeds.seed_master_data",
 	# Dashboard cards + the one seeded role layout; after master data because a layout Links to a Role, and after fixtures because a card names custom_* columns that land in sync_fixtures.
 	"tatva_connect.dashboard.seed.ensure_rows",
-	# The TatvaPractice field-visit review as an Insights workbook; after the dashboard seed because both are read surfaces, and a no-op until the Site DB data source exists.
-	"tatva_connect.insights.field_visits.ensure_rows",
 	# Automation control plane: seed the catalog rows, then assert no doc_event/scheduler path drifts out of the registry (catalog after schema, drift after rows exist).
 	"tatva_connect.automation.seed.sync_catalog",
 	# Sync toggle-owned infrastructure (log-clear registration, scheduled-job stopped flag) to each row's state.
