@@ -521,10 +521,14 @@ def _preview_gate(lead, values):
 
 	`values` arrives as JSON text from the browser and as a list from a test — parsed once, here, so
 	neither preview has to know which caller it has.
+
+	BLANK is a state, not a fault: a panel whose slots are not mapped yet sends an empty string, and
+	`parse_json` refuses an empty document. Left unguarded it 500s the very panel the author is still
+	filling in — the case the filler below already takes care to report rather than raise.
 	"""
 	if not frappe.has_permission("CRM Workflow", "write"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-	rows = frappe.parse_json(values) if isinstance(values, str) else values
+	rows = frappe.parse_json(values) if isinstance(values, str) and values.strip() else values
 	doc, ctx = _preview_context(lead)
 	if not doc:
 		return None, None, None, {"error": frappe._("There is no lead to build a preview from yet.")}
