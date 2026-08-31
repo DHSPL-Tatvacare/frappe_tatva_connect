@@ -95,11 +95,15 @@ def _notify_batch_assigned(assignees, count):
 		})
 
 
+def edit_values(params):
+	# Bulk Edit's params as the {fieldname: value} a document update takes. Read at the door for the `disable_bulk_complete` refusal and here for the write, so the two can never judge different values.
+	return {params["field"]: params["value"]}
+
+
 def run_bulk_edit(doctype, docnames, params):
 	from frappe.desk.doctype.bulk_update.bulk_update import _bulk_action
 
-	data = {params["field"]: params["value"]}
-	failed = _bulk_action(doctype, docnames, "update", data) or []
+	failed = _bulk_action(doctype, docnames, "update", edit_values(params)) or []
 	succeeded = [d for d in docnames if d not in failed]
 	return _summary(docnames, succeeded, failed)
 

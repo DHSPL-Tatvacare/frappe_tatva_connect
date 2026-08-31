@@ -13,7 +13,6 @@ that knows whether the request is an ordinary Desk one (ask the engine) or a ser
 second answer to that question and is locked out by tests/architecture/test_permission_checks_one_seam.py.
 """
 import json
-from collections import Counter
 
 import frappe
 from frappe import _

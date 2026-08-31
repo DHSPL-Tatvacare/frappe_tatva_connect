@@ -31,7 +31,6 @@ on the one write there is, so there is no second guard left to stand down.
 `arm_engine(cls)` refuses a bench that is already armed and always restores OFF — dormant is the resting
 value.
 """
-from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase

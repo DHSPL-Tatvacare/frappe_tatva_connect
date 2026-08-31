@@ -32,6 +32,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
+from tatva_connect import bulk_actions_run
 from tatva_connect.automation import settings as automation
 from tatva_connect.tasks import tasks
 
@@ -78,7 +79,7 @@ def run_or_queue(action, doctype, docnames, params=None):
 
 	# At the DOOR, because neither lane can carry a refusal any later: `_bulk_action` swallows a per-row throw, and a queued batch would reach the rep as a failed count with no reason.
 	if action == "Bulk Edit":
-		tasks.refuse_disabled_bulk_complete(doctype, docnames, "update", {params["field"]: params["value"]})
+		tasks.refuse_disabled_bulk_complete(doctype, docnames, "update", bulk_actions_run.edit_values(params))
 
 	if not automation.is_enabled(AUTOMATION_KEY) or len(docnames) < THRESHOLD:
 		result = _run(action, doctype, docnames, params)
