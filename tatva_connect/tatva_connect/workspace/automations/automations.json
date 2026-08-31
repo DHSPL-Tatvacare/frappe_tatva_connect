@@ -2,12 +2,36 @@
  "app": "tatva_connect",
  "charts": [
   {
-   "chart_name": "Journeys by Status",
-   "label": "Journeys by Status"
+   "chart_name": "Journeys per Day",
+   "label": "Journeys per Day"
+  },
+  {
+   "chart_name": "Runs by Flow",
+   "label": "Runs by Flow"
+  },
+  {
+   "chart_name": "Failures by Flow",
+   "label": "Failures by Flow"
+  },
+  {
+   "chart_name": "Node Outcomes",
+   "label": "Node Outcomes"
+  },
+  {
+   "chart_name": "WhatsApp Outcomes",
+   "label": "WhatsApp Outcomes"
+  },
+  {
+   "chart_name": "Sends by Template",
+   "label": "Sends by Template"
+  },
+  {
+   "chart_name": "Automation Tasks by Type",
+   "label": "Automation Tasks by Type"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Status\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Automation runs as one shape \\u2014 a Flow of Trigger, When and Then \\u2014 and every Flow is composed, switched on and watched from here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Engine Switches arms the engine and each Flow; the contact ceiling and cohort pace are set beside it. Webhook endpoints and campaign documents are named once and referenced by any Flow.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Journeys shows what is in flight, Signals what is waiting to resume, and the execution log records one row per node executed.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"b8\"}]",
- "creation": "2026-06-18 23:00:00.000000",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Today\", \"col\": 3}, \"id\": \"nc0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Today\", \"col\": 3}, \"id\": \"nc1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Raised Today\", \"col\": 3}, \"id\": \"nc2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 3}, \"id\": \"nc3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Parked Now\", \"col\": 3}, \"id\": \"nc4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Flows\", \"col\": 3}, \"id\": \"nc5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Webhooks\", \"col\": 3}, \"id\": \"nc6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 3}, \"id\": \"nc7\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys per Day\", \"col\": 12}, \"id\": \"ch0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Runs by Flow\", \"col\": 12}, \"id\": \"ch1\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failures by Flow\", \"col\": 6}, \"id\": \"ch2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Node Outcomes\", \"col\": 6}, \"id\": \"ch3\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Outcomes\", \"col\": 6}, \"id\": \"ch4\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}, \"id\": \"ch5\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Tasks by Type\", \"col\": 12}, \"id\": \"ch6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"sp1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Automation runs as one shape \\u2014 a Flow of Trigger, When and Then \\u2014 and every Flow is composed, switched on and watched from here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Engine Switches arms the engine and each Flow; the contact ceiling and cohort pace are set beside it. Webhook endpoints and campaign documents are named once and referenced by any Flow.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Journeys shows what is in flight, Signals what is waiting to resume, and the execution log records one row per node executed.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"b8\"}]",
+ "creation": "2026-06-18 23:00:00",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -23,8 +47,6 @@
    "is_query_report": 0,
    "label": "Setup",
    "link_count": 2,
-   "link_to": null,
-   "link_type": null,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -53,8 +75,6 @@
    "is_query_report": 0,
    "label": "Reference",
    "link_count": 2,
-   "link_to": null,
-   "link_type": null,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -83,8 +103,6 @@
    "is_query_report": 0,
    "label": "Monitor",
    "link_count": 3,
-   "link_to": null,
-   "link_type": null,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -119,11 +137,44 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-16 12:00:00.000000",
+ "modified": "2026-08-26 19:01:28.462972",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Journeys Today",
+   "number_card_name": "Journeys Today"
+  },
+  {
+   "label": "Failed Today",
+   "number_card_name": "Failed Today"
+  },
+  {
+   "label": "Tasks Raised Today",
+   "number_card_name": "Tasks Raised Today"
+  },
+  {
+   "label": "WhatsApp Sent Today",
+   "number_card_name": "WhatsApp Sent Today"
+  },
+  {
+   "label": "Parked Now",
+   "number_card_name": "Parked Now"
+  },
+  {
+   "label": "Active Flows",
+   "number_card_name": "Active Flows"
+  },
+  {
+   "label": "Stuck Webhooks",
+   "number_card_name": "Stuck Webhooks"
+  },
+  {
+   "label": "WhatsApp Failed 30d",
+   "number_card_name": "WhatsApp Failed 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -144,7 +195,6 @@
    "doc_view": "",
    "label": "Engine Switches",
    "link_to": "CRM Tatva Automation",
-   "stats_filter": null,
    "type": "DocType"
   }
  ],

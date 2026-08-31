@@ -2,12 +2,32 @@
  "app": "tatva_connect",
  "charts": [
   {
+   "chart_name": "API Requests per Day",
+   "label": "API Requests per Day"
+  },
+  {
+   "chart_name": "API Errors per Day",
+   "label": "API Errors per Day"
+  },
+  {
    "chart_name": "API Requests by Channel",
    "label": "API Requests by Channel"
+  },
+  {
+   "chart_name": "Errors by Endpoint",
+   "label": "Errors by Endpoint"
+  },
+  {
+   "chart_name": "External Leads by Source",
+   "label": "External Leads by Source"
+  },
+  {
+   "chart_name": "Inbound Deliveries by Status",
+   "label": "Inbound Deliveries by Status"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner API Requests (24h)\", \"col\": 3}, \"id\": \"b1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner API Errors (24h)\", \"col\": 3}, \"id\": \"b2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Channel\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every source that writes a lead from outside the CRM \\u2014 partner API, spreadsheet import, web intake and Facebook \\u2014 is configured and watched here.\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"A contract fixes the grain a source stamps and the fields it may write, and nothing is accepted without one. Each source stays dormant until it is enabled.\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b8\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Request log, import results and lead sync failures record every refusal with its reason.\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Fields\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Mappings\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Imports\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Import Results\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Sources\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Lead Forms\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Apps\", \"col\": 4}, \"id\": \"b19\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Failures\", \"col\": 4}, \"id\": \"b20\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bulk Jobs\", \"col\": 4}, \"id\": \"b21\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Requests\", \"col\": 4}, \"id\": \"b22\"}]",
- "creation": "2026-06-18 23:00:00.000000",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>External Leads</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Requests Today\", \"col\": 3}, \"id\": \"nc0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors Today\", \"col\": 3}, \"id\": \"nc1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Requests 7d\", \"col\": 3}, \"id\": \"nc2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors 30d\", \"col\": 3}, \"id\": \"nc3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"External Leads Today\", \"col\": 3}, \"id\": \"nc4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"External Leads 7d\", \"col\": 3}, \"id\": \"nc5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"External Leads 30d\", \"col\": 3}, \"id\": \"nc6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Inbound\", \"col\": 3}, \"id\": \"nc7\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests per Day\", \"col\": 12}, \"id\": \"ch0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Errors per Day\", \"col\": 12}, \"id\": \"ch1\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Channel\", \"col\": 6}, \"id\": \"ch2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by Endpoint\", \"col\": 6}, \"id\": \"ch3\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"External Leads by Source\", \"col\": 6}, \"id\": \"ch4\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Inbound Deliveries by Status\", \"col\": 6}, \"id\": \"ch5\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"sp1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every source that writes a lead from outside the CRM \\u2014 partner API, spreadsheet import, web intake and Facebook \\u2014 is configured and watched here.\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"A contract fixes the grain a source stamps and the fields it may write, and nothing is accepted without one. Each source stays dormant until it is enabled.\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b8\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Request log, import results and lead sync failures record every refusal with its reason.\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"sp2\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Fields\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"API Mappings\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Imports\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Import Results\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Sources\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Lead Forms\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Facebook Apps\", \"col\": 4}, \"id\": \"b19\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Lead Sync Failures\", \"col\": 4}, \"id\": \"b20\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bulk Jobs\", \"col\": 4}, \"id\": \"b21\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Requests\", \"col\": 4}, \"id\": \"b22\"}]",
+ "creation": "2026-06-18 23:00:00",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -18,18 +38,42 @@
  "is_hidden": 0,
  "label": "External Leads",
  "links": [],
- "modified": "2026-08-16 12:00:00.000000",
+ "modified": "2026-08-26 19:10:30.149557",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "External Leads",
  "number_cards": [
   {
-   "number_card_name": "Partner API Requests (24h)",
-   "label": "Partner API Requests (24h)"
+   "label": "API Requests Today",
+   "number_card_name": "API Requests Today"
   },
   {
-   "number_card_name": "Partner API Errors (24h)",
-   "label": "Partner API Errors (24h)"
+   "label": "API Errors Today",
+   "number_card_name": "API Errors Today"
+  },
+  {
+   "label": "API Requests 7d",
+   "number_card_name": "API Requests 7d"
+  },
+  {
+   "label": "API Errors 30d",
+   "number_card_name": "API Errors 30d"
+  },
+  {
+   "label": "External Leads Today",
+   "number_card_name": "External Leads Today"
+  },
+  {
+   "label": "External Leads 7d",
+   "number_card_name": "External Leads 7d"
+  },
+  {
+   "label": "External Leads 30d",
+   "number_card_name": "External Leads 30d"
+  },
+  {
+   "label": "Stuck Inbound",
+   "number_card_name": "Stuck Inbound"
   }
  ],
  "owner": "Administrator",
