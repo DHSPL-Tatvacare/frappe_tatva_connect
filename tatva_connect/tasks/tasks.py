@@ -10,6 +10,37 @@ DONE_STATUS = "Done"
 CLOSED_STATUSES = ("Done", "Canceled")
 
 
+def on_lead_reassignment_handover(doc, method=None):
+	"""ToDo.after_insert — a lead's open tasks move to whoever the lead is now assigned to. Two separate lines, never crossed: whether this becomes a real ToDo follows Task::Assignment::assignee, the SAME line a manual reassignment already follows; notification is a wholly different line (Notify::Task::assigned) this function never touches either way. Guarded whole so a failure here can never fail the real assignment."""
+	from tatva_connect.lead.assignment import TASK_ASSIGNEE, silent_assign
+
+	try:
+		if doc.reference_type != "CRM Lead" or not doc.allocated_to:
+			return
+		new_owner = doc.allocated_to
+		open_tasks = frappe.get_all(
+			"CRM Task",
+			filters={
+				"reference_doctype": "CRM Lead",
+				"reference_docname": doc.reference_name,
+				"status": ["not in", CLOSED_STATUSES],
+				"assigned_to": ["!=", new_owner],
+			},
+			pluck="name",
+		)
+		real = automation.is_enabled(TASK_ASSIGNEE)
+		for task in open_tasks:
+			try:
+				if real:
+					silent_assign("CRM Task", task, new_owner)
+				else:
+					frappe.db.set_value("CRM Task", task, "assigned_to", new_owner, update_modified=False)
+			except Exception:
+				frappe.log_error(f"lead reassignment task handover failed: {task} -> {new_owner}")
+	except Exception:
+		frappe.log_error("on_lead_reassignment_handover aborted before touching any task")
+
+
 @frappe.whitelist()
 def submit_cancel_or_update_docs(doctype, docnames, action="submit", data=None, task_id=None):
 	"""Frappe's own bulk-update entry, gated by ONE refusal: a `CRM Task Type` carrying

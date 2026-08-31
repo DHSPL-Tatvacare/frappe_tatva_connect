@@ -25,11 +25,51 @@ Mixed in ahead of the native class in `list_engine/columns.py`, which owns the `
 entry for both doctypes. The logic lives here because that file declares listing columns and nothing else.
 """
 import frappe
+from frappe import _
+from frappe.utils import nowdate
 
 from tatva_connect.automation import settings as automation
 
 LEAD_OWNER = "Lead::Assignment::owner"
 TASK_ASSIGNEE = "Task::Assignment::assignee"
+
+
+def silent_assign(doctype, name, new_owner):
+	"""Move one record's SOLE assignment to new_owner without frappe's own notify (no off-switch exists for it, checked in assign_to.py directly) — closes whoever else holds it. For a single-assignee field like CRM Task.assigned_to; CRM Lead is multi-assignee and uses silent_add_assignee instead, which never closes anyone else."""
+	todos = frappe.get_all(
+		"ToDo", filters={"reference_type": doctype, "reference_name": name, "status": "Open"},
+		fields=["name", "allocated_to"],
+	)
+	for todo in todos:
+		if todo.allocated_to != new_owner:
+			frappe.db.set_value("ToDo", todo.name, "status", "Cancelled", update_modified=False)
+	if not any(t.allocated_to == new_owner for t in todos):
+		silent_add_assignee(doctype, name, new_owner)
+	elif frappe.get_meta(doctype).get_field("assigned_to"):
+		frappe.db.set_value(doctype, name, "assigned_to", new_owner, update_modified=False)
+
+
+def silent_add_assignee(doctype, name, new_owner):
+	"""Add new_owner as an assignee without frappe's own notify — purely additive, exactly like assign_to.add() itself: never touches any other assignee already on the record. For CRM Lead, which is legitimately multi-assignee."""
+	if frappe.db.exists("ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": new_owner, "status": "Open"}):
+		return
+	frappe.get_doc({
+		"doctype": "ToDo", "allocated_to": new_owner, "reference_type": doctype,
+		"reference_name": name, "description": _("Assignment for {0} {1}").format(doctype, name),
+		"status": "Open", "date": nowdate(), "assigned_by": frappe.session.user,
+	}).insert(ignore_permissions=True)
+	if frappe.get_meta(doctype).get_field("assigned_to"):
+		frappe.db.set_value(doctype, name, "assigned_to", new_owner, update_modified=False)
+
+
+def silent_unassign(doctype, name, user):
+	"""Close one user's assignment on a record without frappe's own notify — same Cancelled status value and assigned_to clear native remove() writes, minus that call. For bulk Clear Assignment, which should never tell the person losing it."""
+	frappe.db.set_value(
+		"ToDo", {"reference_type": doctype, "reference_name": name, "allocated_to": user, "status": "Open"},
+		"status", "Cancelled", update_modified=False,
+	)
+	if frappe.get_meta(doctype).get_field("assigned_to") and frappe.db.get_value(doctype, name, "assigned_to") == user:
+		frappe.db.set_value(doctype, name, "assigned_to", None, update_modified=False)
 
 
 class LeadAssignmentGate:

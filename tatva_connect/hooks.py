@@ -404,6 +404,8 @@ doc_events = {
 		"after_insert": [
 			# a rule's pick is a ToDo; `lead_owner` is what four reporting surfaces read, so stamp it when blank
 			"tatva_connect.lead.assignment.on_assignment_set_owner",
+			# a lead's open tasks move with it, silently — no per-task notification
+			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
 			"tatva_connect.notifications.events.on_lead_assigned",
 			# assignment is the second leg of the lead visibility predicate the spotlight index denormalises
 			"tatva_connect.search.index.reindex_on_assignment",

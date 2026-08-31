@@ -363,7 +363,11 @@ AUTOMATIONS = [
 			"Example: a patient submits the enrolment form, the rule hands the lead to a Care Specialist, "
 			"and that name appears in the Lead Owner column instead of an empty cell."
 		),
-		backs=["tatva_connect.lead.assignment.on_assignment_set_owner"],
+		# on_lead_reassignment_handover rides the same ToDo.after_insert — always on, no switch of its own (task handover is a correctness fix, not an optional automation), covered here so the drift lock passes.
+		backs=[
+			"tatva_connect.lead.assignment.on_assignment_set_owner",
+			"tatva_connect.tasks.tasks.on_lead_reassignment_handover",
+		],
 	),
 	Auto(
 		key="Task::Assignment::assignee",
