@@ -592,12 +592,27 @@ fixtures = [
 		"Partner Leads by Vertical", "Errors by Reference Doctype",
 		"Journeys by Status", "API Requests by Channel", "Visits by Verdict",
 		"File Scans by Verdict", "Push Devices Registered",
+		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
+		"API Requests per Day", "API Errors per Day", "FB Leads per Day",
+		"FB Sync Failures per Day", "Web Form Leads per Day", "Web Form Rejections per Day",
+		"External Leads by Source", "Errors by Endpoint", "Journeys per Day",
+		"Failed Journeys per Day", "Tasks Raised per Day", "WhatsApp Sent per Day",
+		"WhatsApp Failed per Day", "Sends by Template", "Runs by Flow",
+		"Node Outcomes",
+		"Failed Journeys by Flow",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
 		"Automation Fires Today", "Automation Enabled Rules", "Automation Failed Fires (7d)",
 		"Partner API Requests (24h)", "Partner API Errors (24h)",
 		"Automation Active Grains", "Automation Failure Rate (7d)",
+		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
+		"Leads In Today", "Leads In 7d", "Leads In 30d",
+		"API Errors Today", "API Errors 7d", "API Errors 30d",
+		"Journeys Run Today", "Journeys Run 7d", "Journeys Run 30d",
+		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
+		"Sync Failures 30d", "Stuck Inbound", "Parked Now",
+		"Stuck Webhooks", "Active Flows",
 	]]]},
 	# Workspace-P2: the grain x log-source heatmap was a Custom HTML Block; retired. Health-by-grain
 	# is now a native Dashboard Chart (chart_type=Custom, source "Automation Health by Grain").

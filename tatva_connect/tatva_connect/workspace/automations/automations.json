@@ -6,31 +6,39 @@
    "label": "Journeys per Day"
   },
   {
-   "chart_name": "Runs by Flow",
-   "label": "Runs by Flow"
+   "chart_name": "Failed Journeys per Day",
+   "label": "Failed Journeys per Day"
   },
   {
-   "chart_name": "Failures by Flow",
-   "label": "Failures by Flow"
+   "chart_name": "Tasks Raised per Day",
+   "label": "Tasks Raised per Day"
   },
   {
-   "chart_name": "Node Outcomes",
-   "label": "Node Outcomes"
+   "chart_name": "WhatsApp Sent per Day",
+   "label": "WhatsApp Sent per Day"
   },
   {
-   "chart_name": "WhatsApp Outcomes",
-   "label": "WhatsApp Outcomes"
+   "chart_name": "WhatsApp Failed per Day",
+   "label": "WhatsApp Failed per Day"
   },
   {
    "chart_name": "Sends by Template",
    "label": "Sends by Template"
   },
   {
-   "chart_name": "Automation Tasks by Type",
-   "label": "Automation Tasks by Type"
+   "chart_name": "Journeys by Status",
+   "label": "Journeys by Status"
+  },
+  {
+   "chart_name": "Failed Journeys by Flow",
+   "label": "Failed Journeys by Flow"
+  },
+  {
+   "chart_name": "Runs by Flow",
+   "label": "Runs by Flow"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Today\", \"col\": 3}, \"id\": \"nc0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Today\", \"col\": 3}, \"id\": \"nc1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Tasks Raised Today\", \"col\": 3}, \"id\": \"nc2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 3}, \"id\": \"nc3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Parked Now\", \"col\": 3}, \"id\": \"nc4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Flows\", \"col\": 3}, \"id\": \"nc5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Webhooks\", \"col\": 3}, \"id\": \"nc6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 3}, \"id\": \"nc7\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys per Day\", \"col\": 12}, \"id\": \"ch0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Runs by Flow\", \"col\": 12}, \"id\": \"ch1\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failures by Flow\", \"col\": 6}, \"id\": \"ch2\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Node Outcomes\", \"col\": 6}, \"id\": \"ch3\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Outcomes\", \"col\": 6}, \"id\": \"ch4\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}, \"id\": \"ch5\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Automation Tasks by Type\", \"col\": 12}, \"id\": \"ch6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"sp1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Automation runs as one shape \\u2014 a Flow of Trigger, When and Then \\u2014 and every Flow is composed, switched on and watched from here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Engine Switches arms the engine and each Flow; the contact ceiling and cohort pace are set beside it. Webhook endpoints and campaign documents are named once and referenced by any Flow.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Journeys shows what is in flight, Signals what is waiting to resume, and the execution log records one row per node executed.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"b8\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Automations</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"A workflow is the design; a journey is one patient's run through it; a step is one node that journey passed.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys run</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run Today\", \"col\": 4}, \"id\": \"b3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 7d\", \"col\": 4}, \"id\": \"b4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Run 30d\", \"col\": 4}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys failed</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed Today\", \"col\": 4}, \"id\": \"b7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 7d\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Journeys Failed 30d\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Right now</b></span>\", \"col\": 12}, \"id\": \"b10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Parked Now\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Stuck Webhooks\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Flows\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Journeys</b></span>\", \"col\": 12}, \"id\": \"b14\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys per Day\", \"col\": 6}, \"id\": \"b15\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys per Day\", \"col\": 6}, \"id\": \"b16\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Tasks raised</b></span>\", \"col\": 12}, \"id\": \"b17\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Tasks Raised per Day\", \"col\": 12}, \"id\": \"b18\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp</b></span>\", \"col\": 12}, \"id\": \"b19\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}, \"id\": \"b20\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}, \"id\": \"b21\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 12}, \"id\": \"b22\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>What ran, and how reliably</b></span>\", \"col\": 12}, \"id\": \"b23\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Journeys by Status\", \"col\": 6}, \"id\": \"b24\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Failed Journeys by Flow\", \"col\": 6}, \"id\": \"b25\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Runs by Flow\", \"col\": 12}, \"id\": \"b26\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b27\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b28\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Engine Switches arms the engine and each Flow; the contact ceiling and cohort pace are set beside it. Webhook endpoints and campaign documents are named once and referenced by any Flow.\", \"col\": 12}, \"id\": \"b29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b30\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Journeys shows what is in flight, Signals what is waiting to resume, and the execution log records one row per node executed.\", \"col\": 12}, \"id\": \"b31\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b32\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Engine Switches\", \"col\": 4}, \"id\": \"b33\"}]",
  "creation": "2026-06-18 23:00:00",
  "custom_blocks": [],
  "docstatus": 0,
@@ -137,42 +145,46 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-26 19:01:28.462972",
+ "modified": "2026-08-31 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Automations",
  "number_cards": [
   {
-   "label": "Journeys Today",
-   "number_card_name": "Journeys Today"
+   "label": "Journeys Run Today",
+   "number_card_name": "Journeys Run Today"
   },
   {
-   "label": "Failed Today",
-   "number_card_name": "Failed Today"
+   "label": "Journeys Run 7d",
+   "number_card_name": "Journeys Run 7d"
   },
   {
-   "label": "Tasks Raised Today",
-   "number_card_name": "Tasks Raised Today"
+   "label": "Journeys Run 30d",
+   "number_card_name": "Journeys Run 30d"
   },
   {
-   "label": "WhatsApp Sent Today",
-   "number_card_name": "WhatsApp Sent Today"
+   "label": "Journeys Failed Today",
+   "number_card_name": "Journeys Failed Today"
+  },
+  {
+   "label": "Journeys Failed 7d",
+   "number_card_name": "Journeys Failed 7d"
+  },
+  {
+   "label": "Journeys Failed 30d",
+   "number_card_name": "Journeys Failed 30d"
   },
   {
    "label": "Parked Now",
    "number_card_name": "Parked Now"
   },
   {
-   "label": "Active Flows",
-   "number_card_name": "Active Flows"
-  },
-  {
    "label": "Stuck Webhooks",
    "number_card_name": "Stuck Webhooks"
   },
   {
-   "label": "WhatsApp Failed 30d",
-   "number_card_name": "WhatsApp Failed 30d"
+   "label": "Active Flows",
+   "number_card_name": "Active Flows"
   }
  ],
  "owner": "Administrator",
