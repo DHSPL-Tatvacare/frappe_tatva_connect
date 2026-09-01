@@ -82,23 +82,46 @@ def apply_historical(event) -> None:
 # ---------------------------------------------------------------------------
 # Attribution — which leads own this conversation. One brain: whatsapp.routing.
 # ---------------------------------------------------------------------------
-def _targets(event):
+def _targets(event, enrol_unknown=False):
 	"""The leads this event belongs to: on this number AND routing to the receiving account.
 
 	Strict by design. No hit -> DROP with a one-line log; never best-guess to a lead on another
 	account, because that is a patient's conversation appearing under another programme.
+
+	`enrol_unknown` lets a caller answer the drop differently: rather than losing the sender, mint the
+	lead the conversation is about and file the message on it. Off for every caller but live inbound —
+	an outbound echo means a number we messaged, and a campaign sent from the provider's own portal must
+	never mint a lead per recipient. Dormant even there; see `enrol.lead_for_event` for both gates.
 	"""
 	number = event.subject_number
 	if not number or not event.account:
 		return []
 	candidates = routing.candidates_for_number("+" + number)
 	targets = routing.leads_for_number_and_account(candidates, event.account)
+	if not targets and enrol_unknown and (lead := _enrol(event)):
+		targets = [lead]
 	if not targets:
 		frappe.log_error(
 			title=f"{event.channel} {event.kind} dropped: no lead routes to the receiving account",
 			message=f"number={number} account={event.account} provider={event.provider}",
 		)
 	return targets
+
+
+def _enrol(event):
+	"""The lead minted for an unknown sender, or None — and never on a message out of the past.
+
+	`in_workflow` is `apply_historical`'s own suppressor, already honoured by the notification handler
+	for exactly this class of decision. A backfill re-reads months of conversations, and every stranger
+	in them would otherwise be enrolled today as though they had just written in: hundreds of leads
+	born at once, each firing assignment and whatever a Created flow does. Filing an old message must
+	never look like a new patient.
+	"""
+	if frappe.flags.get("in_workflow"):
+		return None
+	from tatva_connect.whatsapp import enrol
+
+	return enrol.lead_for_event(event)
 
 
 def fetch_media(event):
@@ -199,7 +222,7 @@ def _stamp_provenance(doc, event) -> None:
 def _ingest_inbound(event) -> None:
 	# Before the lead lookup: the wamid names the exact message we sent, which beats resolving a lead by the number a tap came from.
 	_wake_workflow(event, rows_for_reply_context(event))
-	targets = _targets(event)
+	targets = _targets(event, enrol_unknown=True)
 	if not targets:
 		return
 	media = fetch_media(event)

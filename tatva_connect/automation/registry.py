@@ -243,6 +243,24 @@ AUTOMATIONS = [
 		requires="WhatsApp::Channel::messaging",
 	),
 	Auto(
+		key="WhatsApp::Channel::enrolment",
+		fires_on="Provider call",
+		trigger_detail="live inbound only · unknown sender · per-account tick",
+		purpose=(
+			"A person who writes to a programme's WhatsApp number and is not yet on the CRM becomes a "
+			"lead, so their message lands on a record instead of being dropped. The grain is read back "
+			"out of the routing rules that already point at that number, so the new lead routes to the "
+			"very account it wrote to; the number is the identity, so a second message from the same "
+			"person joins the same lead rather than making another. Each account is ticked "
+			"individually, and only live traffic enrols — a history backfill files old messages without "
+			"inventing today's patients. Off, an unknown sender is dropped exactly as before.\n"
+			"Example: someone messages the programme's number asking how to join, and a rep finds them "
+			"on the CRM with the question already on their WhatsApp tab."
+		),
+		backs=[],
+		requires="WhatsApp::Channel::messaging",
+	),
+	Auto(
 		key="Telephony::Channel::calls",
 		fires_on="Provider call",
 		trigger_detail="telephony/api gate",

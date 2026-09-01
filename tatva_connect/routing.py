@@ -24,6 +24,19 @@ from frappe import _
 _PROGRAM_W, _GROUP_W, _VERTICAL_W = 4, 2, 1
 
 
+def _specificity(rule) -> int:
+	"""How tightly a rule is scoped. Read forwards to pick the best match for a lead and backwards to
+	pick an account's broadest catchment, so it is named once — two copies of a weighting are two things
+	to keep in step, and the weights being powers of two is load-bearing: a score names exactly WHICH
+	axes a rule sets, which is why two rules matching one lead at one score must be the same triple.
+	"""
+	return (
+		(_PROGRAM_W if rule.program else 0)
+		+ (_GROUP_W if rule.psp_group else 0)
+		+ (_VERTICAL_W if rule.vertical else 0)
+	)
+
+
 def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, active_names):
 	"""Return the account name a lead routes to, or None if no rule matches.
 
@@ -58,11 +71,7 @@ def resolve_account_for_lead(lead, *, routing_doctype, account_link_field, activ
 			continue
 		if rule.vertical and rule.vertical != vertical:
 			continue
-		score = (
-			(_PROGRAM_W if rule.program else 0)
-			+ (_GROUP_W if rule.psp_group else 0)
-			+ (_VERTICAL_W if rule.vertical else 0)
-		)
+		score = _specificity(rule)
 		if score > best_score:
 			best, best_score, tie = account, score, False
 		elif score == best_score and account != best:
@@ -108,3 +117,35 @@ def leads_for_number_and_account(
 			frappe.log_error(title="routing: lead account resolve failed", message=frappe.get_traceback())
 			continue
 	return out
+
+
+def grain_for_account(account, *, routing_doctype, account_link_field):
+	"""The grain a lead must carry to route BACK to `account` — `resolve_account_for_lead` read backwards.
+
+	A lead born from an inbound message has no grain of its own to resolve, so one has to be chosen for
+	it. Choosing it is not a second decision: the routing rules already say which grain reaches this
+	account, and reading them is what makes "the lead routes back to the number it wrote to" true by
+	construction rather than by an operator typing the same three values into a second place. A grain
+	configured beside the rules can disagree with them, and a lead created at a grain that resolves
+	elsewhere is an orphan — its own message cannot attach to it.
+
+	The LEAST specific rule wins, the mirror of resolution's most-specific: a rule that pins a programme
+	describes one corner of the account's traffic, while the broadest rule is the account's whole
+	catchment, which is the only honest thing to say about a stranger whose programme nobody knows yet.
+
+	Returns `(vertical, group, program)` with `""` for an axis the rule leaves open, or `None` when the
+	account has no rule or two equally-broad rules disagree — fail-closed, because inventing a grain is
+	exactly the guess this reads the rules to avoid.
+	"""
+	scored = []
+	for rule in frappe.get_all(
+		routing_doctype,
+		filters={account_link_field: account},
+		fields=["program", "psp_group", "vertical"],
+	):
+		scored.append((_specificity(rule), (rule.vertical or "", rule.psp_group or "", rule.program or "")))
+	if not scored:
+		return None
+	broadest = min(score for score, _ in scored)
+	grains = {grain for score, grain in scored if score == broadest}
+	return grains.pop() if len(grains) == 1 else None

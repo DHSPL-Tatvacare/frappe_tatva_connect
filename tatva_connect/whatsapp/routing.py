@@ -133,3 +133,20 @@ def lead_has_route(reference_doctype=None, reference_name=None):
 	except Exception:
 		frappe.log_error(title="WhatsApp lead_has_route failed", message=frappe.get_traceback())
 		return {"has_route": False, "account": None}
+
+
+def grain_for_account(account):
+	"""The grain a lead must carry to route back to `account`, or None. Thin wrapper over the shared
+	engine, plus this channel's active-account rule.
+
+	The active check is not decoration. An inactive account is skipped by `_active_account_names` on the
+	way IN, so `leads_for_number_and_account` returns nothing for it and every one of its messages looks
+	like a stranger. Without this, a decommissioned tenant would answer that stranger by minting a lead
+	at a grain no active rule resolves — an orphan whose own message still cannot attach to it."""
+	if account not in _active_account_names():
+		return None
+	return engine.grain_for_account(
+		account,
+		routing_doctype=_ROUTING_DOCTYPE,
+		account_link_field=_ACCOUNT_LINK_FIELD,
+	)
