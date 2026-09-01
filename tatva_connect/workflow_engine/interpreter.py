@@ -197,10 +197,14 @@ def open_journey(workflow, version_name, lead_name, seed_context, trigger_ref=No
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, entry trigger
 	# Stamped HERE, where a journey is born, so both lanes carry it — a list view cannot join to the
 	# journey table, so these two are the only way the workflow list can say when it last ran and how often.
-	frappe.db.set_value(_WORKFLOW_DT, workflow, {
-		"last_journey_at": journey.creation,
-		"journeys_started": (frappe.db.get_value(_WORKFLOW_DT, workflow, "journeys_started") or 0) + 1,
-	}, update_modified=False)
+	# ONE atomic UPDATE, not read-then-write, so two journeys opening the same workflow at once cannot race a stale read into a QueryDeadlockError.
+	wf = frappe.qb.DocType(_WORKFLOW_DT)
+	(
+		frappe.qb.update(wf)
+		.set(wf.last_journey_at, journey.creation)
+		.set(wf.journeys_started, wf.journeys_started + 1)
+		.where(wf.name == workflow)
+	).run()
 	return journey
 
 
