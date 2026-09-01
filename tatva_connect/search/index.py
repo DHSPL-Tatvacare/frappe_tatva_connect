@@ -418,7 +418,12 @@ class CRMLeadSearch(SQLiteSearch):
 					self.index_doc(doctype, row.name)
 				if changed:
 					self._meta_write(key, str(changed[-1].modified))
-					reindexed += len(changed)
+					# COUNT WHAT WAS MISSING, not what was walked. Every changed row is restamped either way —
+					# an index write is idempotent and cheap, and re-stamping is what makes a lost write heal
+					# whether or not anything noticed it fail. But the NUMBER is a health signal, and counting
+					# the walk made it report the hour's edit volume: it climbed 4 -> 286 across a working day
+					# on a healthy site and read as an index falling apart. `indexed` is already in hand.
+					reindexed += sum(1 for row in changed if f"{doctype}:{row.name}" not in indexed)
 			prefix = f"{doctype}:"
 			live = set(frappe.get_all(doctype, pluck="name", limit_page_length=0))
 			named = (doc_id[len(prefix) :] for doc_id in indexed if doc_id.startswith(prefix))
@@ -516,6 +521,33 @@ class CRMLeadSearch(SQLiteSearch):
 			)
 		except frappe.PermissionError:
 			return set()
+
+	def get_documents_paginated(self, doctype, limit=1000, last_indexed_modified=None, last_indexed_name=None):
+		"""Never hand the builder a batch it will reject in full — that is an infinite loop, not a slow build.
+
+		THE TRAP. `prepare_document` returns None for a row with no lead: there is no patient to title it
+		with and no grain to scope it by, so it must not be indexed. But frappe's builder advances its
+		cursor ONLY inside `if documents:` (sqlite_search.py:404). A batch where every row is rejected
+		leaves the cursor where it was, so the very same rows are read again, for ever. Measured here: 161
+		lead-less CRM Deals filled the batch and the build looped 718,562 times and never finished, which
+		is why this bench had no index at all and every sweep stood off behind a week-old temp file.
+
+		Filtering per doctype in `INDEXABLE_DOCTYPES` was the first fix and is the wrong shape: the
+		condition has to mirror `_lead_of` exactly or it only narrows the odds, and File's — attached to a
+		lead, or to a row that references one — is not a filter at all. Skipping forward here fixes every
+		doctype at once, in the one place that already knows the rule, and asks `_lead_of`, which
+		`prepare_document` calls first anyway.
+
+		Returning [] still means "this doctype is done", which is what the caller does with an empty batch.
+		"""
+		while True:
+			docs = super().get_documents_paginated(doctype, limit, last_indexed_modified, last_indexed_name)
+			if not docs or any(self._lead_of(doc) for doc in docs):
+				return docs
+			# Every row here would be rejected. Step the cursor over them, exactly as the builder would
+			# have, and look at the next page instead of handing back a batch that cannot move it.
+			last_indexed_modified = docs[-1].get("creation") or docs[-1].get("modified")
+			last_indexed_name = docs[-1]["name"]
 
 	def prepare_document(self, doc):
 		# Every row's title is the parent patient's name; content is composed; metadata carries the lead + grain.
@@ -662,30 +694,43 @@ def sweep_index_health():
 	import os
 
 	from frappe.search.sqlite_search import build_index_in_background
+	from frappe.utils.synchronization import filelock
 
 	if frappe.flags.in_migrate or frappe.flags.in_install:
 		return
-	engine = CRMLeadSearch()
-	if not (engine.is_search_enabled() and engine.index_exists()):
-		return
-	if os.path.exists(engine._get_db_path(is_temp=True)):
-		return  # a build owns the index right now; let it finish or let frappe continue it
-	if engine.index_is_readable():
-		reindexed, removed = engine.reconcile()
-		# Logged only when there WAS drift, so the title is a signal and its absence is the healthy state.
-		if reindexed or removed:
-			frappe.log_error(title=_DRIFT_NOTICE, message=f"reindexed {reindexed}, removed {removed}")
-		return
+	# ONE SWEEP AT A TIME. Frappe dedups a scheduled job only while it SITS IN THE QUEUE
+	# (`ScheduledJobType.is_job_in_queue`), so once this one is running a second can be enqueued on top of
+	# it — measured in prod, two passes 74ms apart reading the same watermark and writing the same index.
+	# Two writers on a WAL file is the contention this module exists to remove. The second waits, then finds
+	# the watermark already advanced and does nothing; a wait long enough to expire means something is
+	# genuinely stuck, and frappe logging THAT is correct.
+	with filelock("crm_search_index_sweep", timeout=60):
+		engine = CRMLeadSearch()
+		if not (engine.is_search_enabled() and engine.index_exists()):
+			return
+		if os.path.exists(engine._get_db_path(is_temp=True)):
+			return  # a build owns the index right now; let it finish or let frappe continue it
+		if engine.index_is_readable():
+			reindexed, removed = engine.reconcile()
+			# The Error Log is for a fault. A pass that found nothing wrong is routine and goes to the log
+			# file, the shape `activity/timeline.py` already uses; frappe's own Scheduled Job Log records
+			# that the pass ran, so nothing is lost by staying quiet here.
+			message = f"reindexed {reindexed}, removed {removed}"
+			if reindexed or removed:
+				frappe.log_error(title=_DRIFT_NOTICE, message=message)
+			else:
+				frappe.logger("search").info(f"search index reconciled: {message}")
+			return
 
-	engine.drop_index()  # frappe's own, so the file is removed exactly as a rebuild expects to find it
-	build_index_in_background()
-	# Logged, never silent: a site repairing this repeatedly has an infrastructure fault no rebuild will cure.
-	frappe.log_error(
-		title=_REPAIR_NOTICE,
-		message="The lead search index could not be read and was dropped; a rebuild is enqueued.\n\n"
-				"Search returns nothing until it finishes. A repeat means writes are being interrupted — "
-				"look for the worker being killed, the host restarting, or the volume filling up.",
-	)
+		engine.drop_index()  # frappe's own, so the file is removed exactly as a rebuild expects to find it
+		build_index_in_background()
+		# Logged, never silent: a site repairing this repeatedly has an infrastructure fault no rebuild will cure.
+		frappe.log_error(
+			title=_REPAIR_NOTICE,
+			message="The lead search index could not be read and was dropped; a rebuild is enqueued.\n\n"
+					"Search returns nothing until it finishes. A repeat means writes are being interrupted — "
+					"look for the worker being killed, the host restarting, or the volume filling up.",
+		)
 
 
 def reindex_lead(lead):
