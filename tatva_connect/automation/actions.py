@@ -254,6 +254,8 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 	"""
 	from frappe.desk.form import assign_to
 
+	from tatva_connect.lead.assignment import as_workflow_operator
+
 	doctype, name = resolve_target(action, lead, trigger_doc)
 	# Pool assigns THROUGH frappe, so the record already has its holder by the time the tail runs: the
 	# `add` below is skipped because the user is already in `_current_assignees`, and the Reassign loop
@@ -272,18 +274,19 @@ def _action_assign_to_user(action, lead, context, axes, trigger_doc):
 		context[refs.OUTPUT] = "nobody"
 		return "no assignee resolved"
 
-	if (action.assign_mode or "Assign") == "Reassign":
-		for holder in _current_assignees(doctype, name):
-			if holder != user:
-				assign_to.remove(doctype, name, holder)  # Cancelled, never Closed
+	with as_workflow_operator():
+		if (action.assign_mode or "Assign") == "Reassign":
+			for holder in _current_assignees(doctype, name):
+				if holder != user:
+					assign_to.remove(doctype, name, holder)  # Cancelled, never Closed
 
-	if user not in _current_assignees(doctype, name):
-		assign_to.add({
-			"doctype": doctype,
-			"name": name,
-			"assign_to": [user],
-			"description": action.assign_note or _("Assigned by a workflow"),
-		})
+		if user not in _current_assignees(doctype, name):
+			assign_to.add({
+				"doctype": doctype,
+				"name": name,
+				"assign_to": [user],
+				"description": action.assign_note or _("Assigned by a workflow"),
+			})
 	context[refs.OUTPUT] = "assigned"
 	return f"assigned to {user}"
 
