@@ -24,6 +24,8 @@ an import goes quiet without this module knowing anything about imports.
 Mixed in ahead of the native class in `list_engine/columns.py`, which owns the `override_doctype_class`
 entry for both doctypes. The logic lives here because that file declares listing columns and nothing else.
 """
+from contextlib import contextmanager
+
 import frappe
 from frappe import _
 from frappe.utils import nowdate
@@ -32,6 +34,23 @@ from tatva_connect.automation import settings as automation
 
 LEAD_OWNER = "Lead::Assignment::owner"
 TASK_ASSIGNEE = "Task::Assignment::assignee"
+
+
+@contextmanager
+def as_workflow_operator():
+	"""Elevate to Administrator for a native assign call the workflow engine makes on the operator's
+	behalf, restored right after — outside `in_workflow` this is a no-op, so a real person's own action
+	keeps their own session and its own permissions. Shared by every native assign the engine reaches,
+	so the reasoning tasks.raise_followup_task argues for one caller applies identically to all of them."""
+	if not frappe.flags.in_workflow:
+		yield
+		return
+	current_user = frappe.session.user
+	frappe.set_user("Administrator")
+	try:
+		yield
+	finally:
+		frappe.set_user(current_user)
 
 
 def _cancel_todo(todo_name):
@@ -98,12 +117,17 @@ class TaskAssignmentGate:
 
 	`unassign_from_previous_user` is deliberately NOT gated: removing a stale assignment is cleanup, and
 	gating it would strand a ToDo pointing at the person who no longer holds the task. Only the CREATING
-	direction is governed."""
+	direction is governed.
+
+	`as_workflow_operator` runs this as Administrator when the engine is the one assigning: the native
+	assign call checks the CURRENT SESSION's permission on the task, and an intake form's session is
+	Guest, who holds none."""
 
 	def assign_to(self):
 		if not automation.is_enabled(TASK_ASSIGNEE):
 			return
-		super().assign_to()
+		with as_workflow_operator():
+			super().assign_to()
 
 
 # Frappe's Assignment Rule records its pick as a ToDo and never touches `lead_owner`; a form-born lead
