@@ -10,12 +10,16 @@ from tatva_connect.automation import registry
 
 class TestBulkActionsSeam(IntegrationTestCase):
 	def test_under_threshold_runs_inline_even_when_enabled(self):
+		before = frappe.db.count("CRM List Action Job")
 		with patch.object(bulk_actions.automation, "is_enabled", return_value=True), \
 		     patch.object(bulk_actions, "_run", return_value={"total": 3, "succeeded": 3, "failed": 0, "failed_names": []}) as run:
 			out = bulk_actions.run_or_queue("Assign", "CRM Lead", json.dumps(["a", "b", "c"]), "{}")
 		self.assertFalse(out["queued"])
 		run.assert_called_once()
-		self.assertEqual(frappe.db.count("CRM List Action Job"), 0)
+		# What this asserts is that the INLINE path wrote no job row — not that the table is empty. The
+		# absolute count only ever held on a site that had never queued anything, so it failed the moment
+		# one was run by hand.
+		self.assertEqual(frappe.db.count("CRM List Action Job"), before)
 
 	def test_disabled_runs_inline_even_over_threshold(self):
 		docnames = json.dumps([f"CRM-LEAD-{i:04d}" for i in range(25)])

@@ -48,8 +48,12 @@ MAX_ROWS = 500
 # Dormant until an operator turns this on (tatva_connect/automation/seed.py ships every new row enabled=0).
 AUTOMATION_KEY = "Lead::BulkActions::async"
 
-# Realtime events, spelled once so the worker and the SPA cannot drift; all three are `user=`-targeted.
-EVENT_PROGRESS = "crm_bulk_progress"
+# Realtime events, spelled once so the worker and the SPA cannot drift; all four are `user=`-targeted.
+# A job announces itself at BIRTH and again at each state change, the way `crm_notification` does — the
+# panel used to hear only READY/FAILED, so a queued job was invisible for the whole window a person is
+# actually watching it and only appeared after a page refresh re-ran `mine`.
+EVENT_QUEUED = "crm_bulk_queued"
+EVENT_STARTED = "crm_bulk_started"
 EVENT_READY = "crm_bulk_ready"
 EVENT_FAILED = "crm_bulk_failed"
 
@@ -93,6 +97,7 @@ def run_or_queue(action, doctype, docnames, params=None):
 		"params": frappe.as_json(params),
 		"total": len(docnames),
 	}).insert(ignore_permissions=True)  # authz-ok: tier-a — the seam's own row, gated by the caller; owner is the requester
+	_publish(EVENT_QUEUED, job, _result(job), after_commit=True)
 	return {"queued": True, "job": job.name, "status": job.status}
 
 
@@ -103,6 +108,7 @@ def run(job):
 	frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")  # same lever as partner_bulk_worker.process_job — disarms the gap-locks that deadlock against concurrent writers; connection is fresh per RQ job so this can't leak to another job on the `long` queue
 	doc.db_set({"status": "Started", "job_id": _job_id()}, update_modified=False)
 	frappe.db.commit()  # the tab is watching this row's status; a drain that runs for a while must not hide it
+	_publish(EVENT_STARTED, doc, _result(doc))
 	try:
 		result = _run(doc.action, doc.target_doctype, frappe.parse_json(doc.docnames), frappe.parse_json(doc.params))
 		doc.reload()
@@ -128,8 +134,24 @@ def _run(action, doctype, docnames, params):
 	return executor(doctype, docnames, params)
 
 
-def _publish(event, doc, payload):
-	frappe.publish_realtime(event, {"job": doc.name, "action": doc.action, **payload}, user=doc.owner)
+def _publish(event, doc, payload, after_commit=False):
+	"""Every event carries `running`, the way `crm_notification` carries `unread`: the panel's badge moves
+	on the payload alone and only refetches the list when it is open.
+
+	`after_commit` for the QUEUED one: `run_or_queue` is a whitelisted method, so its insert is not
+	committed until the request ends. Announced any earlier, the panel reloads `mine` on a connection
+	that cannot see the row yet and draws exactly the blank list this event exists to prevent. The
+	worker's own events already publish after its explicit commits."""
+	frappe.publish_realtime(
+		event,
+		{"job": doc.name, "action": doc.action, "running": _running(doc.owner), **payload},
+		user=doc.owner,
+		after_commit=after_commit,
+	)
+
+
+def _running(user):
+	return frappe.db.count(DOCTYPE, {"owner": user, "status": ("in", ("Queued", "Started"))})
 
 
 def _job_id():
