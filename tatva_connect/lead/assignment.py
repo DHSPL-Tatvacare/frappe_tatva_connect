@@ -42,7 +42,7 @@ def as_workflow_operator():
 	behalf, restored right after — outside `in_workflow` this is a no-op, so a real person's own action
 	keeps their own session and its own permissions. Shared by every native assign the engine reaches,
 	so the reasoning tasks.raise_followup_task argues for one caller applies identically to all of them."""
-	if not frappe.flags.in_workflow:
+	if not frappe.flags.get("in_workflow"):
 		yield
 		return
 	current_user = frappe.session.user
