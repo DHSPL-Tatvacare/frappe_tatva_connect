@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
-from tatva_connect.telephony import providers, routing, writer
+from tatva_connect.telephony import providers, resolve, routing, writer
 from tatva_connect.utils import spend_rate_limit
 
 MEDIUM = "Acefone"
@@ -158,10 +158,8 @@ def _reference_for_number(number):
 
 
 def _agent_number(account):
-	"""Caller's own Acefone line if set, else the account's default."""
-	number = frappe.db.get_value(
-		"CRM Telephony Agent", {"user": frappe.session.user}, "acefone_number"
-	) or account.agent_number
+	"""Caller's own provider seat if set, else the account's default. The seat table is `resolve`'s."""
+	number = resolve.seat_for_user(frappe.session.user) or account.agent_number
 	if not number:
 		frappe.throw(_("No telephony agent number set for you or the account."))
 	return number

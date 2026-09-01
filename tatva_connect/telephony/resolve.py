@@ -24,6 +24,10 @@ from tatva_connect.telephony import envelope as env
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
 AGENT_MAP_DOCTYPE = "CRM Telephony Agent Map"
+# crm's own agent table and the seat column we add to it. ONE owner: the seat answers both "whose phone
+# do we ring" (outbound) and "who answered" (inbound), and two readers of one column would drift.
+AGENT_DOCTYPE = "CRM Telephony Agent"
+SEAT_FIELD = "acefone_number"
 SETTINGS = "CRM Telephony Settings"
 
 # The same three axes, spelled two ways: the maps say vertical/psp_group/program, a CRM Lead says
@@ -182,15 +186,33 @@ def user_for(cdr, grain=None):
 	"""The rep who handled a call, or None.
 
 	Resolved in three steps: the provider's agent email is a CRM user; else an operator declared the
-	translation in the agent map; else the rep is left blank and the call is still logged.
+	translation in the agent map; else the provider named the agent only by SEAT, and the extension
+	the operator already stores to place that rep's calls identifies them. Failing all three the rep
+	is left blank and the call is still logged.
 
 	The map is not optional in practice. Of 24 agents in a live capture, one used a corporate
 	address, twenty a partner company's domain, and three personal Gmail accounts — nothing can
-	infer a CRM user from the last of those.
+	infer a CRM user from the last of those. The seat step is not optional either: a tenant may send
+	no email at all, and on the 2026 Acefone account `answered_agent` carries a seat and nothing else.
 	"""
 	email = (cdr.get("agent_key") or "").strip().casefold()
-	if not email:
+	seat = (cdr.get("agent_extension") or "").strip()
+	if not email and not seat:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
+
+	user = _user_by_email(email, cdr, grain) or user_for_seat(seat)
+	if not user:
+		frappe.logger("telephony").warning(
+			f"telephony: agent {email or seat} on account {cdr.get('account')} maps to no CRM user; "
+			f"call {cdr.get('call_key')} logged unattributed"
+		)
+	return user
+
+
+def _user_by_email(email, cdr, grain):
+	"""The rep whose provider email this is — a CRM user directly, else through the operator's agent map."""
+	if not email:
+		return None
 
 	user = frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
 	if user:
@@ -203,19 +225,28 @@ def user_for(cdr, grain=None):
 		as_dict=True,
 	)
 	if not mapping:
-		frappe.logger("telephony").warning(
-			f"telephony: agent {email} on account {cdr.get('account')} maps to no CRM user; "
-			f"call {cdr.get('call_key')} logged unattributed"
-		)
 		return None
 
 	if grain and _grain_mismatch(mapping, grain):
-		# Not fatal — the call belongs to the lead either way — but an agent working outside their
-		# grain is worth surfacing on a shared account.
+		# Not fatal — the call belongs to the lead either way — but an agent outside their grain is worth surfacing on a shared account.
 		frappe.logger("telephony").warning(
 			f"telephony: agent {email} answered on grain {grain} but is mapped elsewhere; attributed anyway"
 		)
 	return mapping["user"]
+
+
+def seat_for_user(user):
+	"""The provider seat to ring for a rep, or None. The outbound half of the seat table."""
+	return frappe.db.get_value(AGENT_DOCTYPE, {"user": user}, SEAT_FIELD)
+
+
+def user_for_seat(seat):
+	"""The rep holding a provider seat, or None. The inbound half, and matched WHOLE: a seat is not a
+	phone number, and suffix-matching one against a phone column is the collision this app was already
+	burned by."""
+	if not seat:
+		return None
+	return frappe.db.get_value(AGENT_DOCTYPE, {SEAT_FIELD: seat}, "user")
 
 
 def _grain_mismatch(mapping, grain) -> bool:

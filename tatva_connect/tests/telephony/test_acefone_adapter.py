@@ -93,7 +93,7 @@ class TestAcefoneCorpus(unittest.TestCase):
 		"""Acefone echoes nothing: `ref_id` was empty on all 179. Outbound correlation therefore
 		cannot rely on it — the writer falls back to number+recency. If this ever starts
 		failing, Acefone changed and outbound correlation just got easier."""
-		self.assertTrue(all(c["correlation_key"] is None for c in self.cdrs))
+		self.assertTrue(all(c["correlation_keys"] == () for c in self.cdrs))
 
 	def test_direction_comes_from_the_payload_not_the_url(self):
 		"""Feed every CDR through the OPPOSITE URL trigger. Direction must not budge — it is
@@ -122,7 +122,7 @@ class TestAcefoneParsing(unittest.TestCase):
 		"""A garbage number must NOT become a 2-digit suffix: `mobile_no LIKE '%5'` matches a
 		large slice of the lead table."""
 		self.assertEqual(phone.match_digits("55", last=10), "")
-		self.assertEqual(phone.match_digits("+91 99112 32686", last=10), "9000300202")
+		self.assertEqual(phone.match_digits("+91 99112 32686", last=10), "9911232686")
 		self.assertEqual(phone.match_digits("9000300202", last=10), "9000300202")
 
 	def test_agent_extension_is_never_treated_as_a_phone(self):
@@ -135,6 +135,8 @@ class TestAcefoneParsing(unittest.TestCase):
 			"answered_agent_name": "Rep",
 		}, event="inbound_complete")
 		self.assertIsNone(cdr["agent_key"])
+		# Carried as a SEAT, matched whole against the agent table — never fed to a phone matcher.
+		self.assertEqual(cdr["agent_extension"], "0602141810347")
 
 	def test_transferred_call_attributes_to_the_final_agent(self):
 		"""On a transfer `answered_agent` carries every agent that touched the call; the rep who
@@ -148,6 +150,50 @@ class TestAcefoneParsing(unittest.TestCase):
 			],
 		}, event="inbound_complete")
 		self.assertEqual(cdr["agent_key"], "final@example.com")
+
+	def test_click_to_call_is_outbound_and_keeps_its_numbers_the_right_way_round(self):
+		"""THE live outbound payload, 2026-09-01. `direction` is `clicktocall` — a word absent from
+		Acefone's docs and from the 2026-07 capture. The old parser matched only on the substring
+		"outbound", so this read as INBOUND, `_numbers` swapped customer and DID, and every
+		click-to-call was declined as "DID <the customer's mobile> is not mapped to a grain"."""
+		cdr = acefone.normalize({
+			"call_id": "SRVINF-BGN-SRV108-T15-1788265388.67524", "direction": "clicktocall",
+			"call_status": "answered", "caller_id_number": "8065992471",
+			"call_to_number": "919059067327", "custom_identifier": "eb5b9d1e2c63",
+			"ref_id": "35658efc-c63f-48da-aeb1-1cccadd9cf8c",
+		}, event="outbound_complete")
+		self.assertEqual(cdr["direction"], "outbound")
+		self.assertEqual(cdr["channel"], "Dialer")
+		self.assertEqual(cdr["did_number"], "8065992471")
+		self.assertEqual(cdr["customer_number"], "9059067327")
+		# BOTH ids are offered: the bridge stamps one of them on the row and which one is not knowable here.
+		self.assertEqual(cdr["correlation_keys"],
+		                 ("eb5b9d1e2c63", "35658efc-c63f-48da-aeb1-1cccadd9cf8c"))
+
+	def test_unknown_direction_defers_to_the_url_trigger_never_to_a_guess(self):
+		"""The failure mode `clicktocall` exposed: an unrecognised word must not silently pick a
+		direction, because picking wrong inverts `from`/`to` and drops the call."""
+		for event, expected in (("outbound_complete", "outbound"), ("inbound_complete", "inbound")):
+			cdr = acefone.normalize({
+				"call_id": "x", "direction": "some-new-word-acefone-invented",
+				"call_status": "answered", "caller_id_number": "8065992471",
+				"call_to_number": "919059067327",
+			}, event=event)
+			self.assertEqual(cdr["direction"], expected, event)
+
+	def test_agent_seat_identifies_the_rep_when_no_email_is_sent(self):
+		"""`answered_agent` on the 2026 account is an OBJECT carrying a seat and no email at all, so
+		email-only resolution leaves every call unattributed. The seat is carried instead, and it is
+		the same value the operator already stores to place that rep's calls."""
+		cdr = acefone.normalize({
+			"call_id": "x", "direction": "clicktocall", "call_status": "answered",
+			"caller_id_number": "8065992471", "call_to_number": "919059067327",
+			"answered_agent": {"agent_number": "+919611706150", "id": "0502417430016",
+			                   "name": "Revathi-Extension", "number": "0602417430016"},
+			"answered_agent_number": "0602417430016",
+		}, event="outbound_complete")
+		self.assertIsNone(cdr["agent_key"])
+		self.assertEqual(cdr["agent_extension"], "0602417430016")
 
 	def test_cdr_without_a_key_is_dropped_not_invented(self):
 		self.assertIsNone(acefone.normalize({"call_status": "missed"}, event="inbound_complete"))

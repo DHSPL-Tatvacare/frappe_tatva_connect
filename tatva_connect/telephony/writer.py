@@ -157,10 +157,14 @@ def _apply(doc, cdr) -> None:
 def _find_row(cdr):
 	"""The existing row a CDR updates, or None for a fresh one.
 
-	Matched on the call key, then on a correlation id the provider echoed back, then — outbound only
-	— on the most recent still-Initiated row placed to this number inside the match window. The last
-	fallback exists because Acefone echoes nothing: the `custom_identifier` sent on a click-to-call
-	never returns. Without it an outbound CDR would create a second row and orphan the Initiated one.
+	Matched on the call key, then on any correlation id the provider echoed back, then — outbound only
+	— on the most recent still-Initiated row placed to this number inside the match window.
+
+	ALL the echoed ids are tried, not the first. Acefone returns its own `ref_id` from the click-to-call
+	POST and repeats both that and our `custom_identifier` on the CDR; the bridge stamps whichever the
+	POST answered onto the row. Trying one id matched the row only when that guess agreed with what the
+	bridge stamped, and otherwise fell through to the window — which expires, and then writes a second
+	row and orphans the Initiated one.
 
 	Both key lookups read the provider-call-id column, never the row's `name`.
 	"""
@@ -171,9 +175,10 @@ def _find_row(cdr):
 	if cdr["direction"] != "outbound":
 		return None
 
-	correlated = row_for_key(cdr.get("correlation_key"))
-	if correlated:
-		return correlated
+	for key in cdr.get("correlation_keys") or ():
+		correlated = row_for_key(key)
+		if correlated:
+			return correlated
 
 	phone = cdr.get("customer_number")
 	if not phone:

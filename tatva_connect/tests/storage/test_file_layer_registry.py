@@ -815,6 +815,16 @@ class TestHostileFileNames(FileLayerCase):
 		name = recording_file_name("acefone", "CALL-0001", "audio/mpeg")
 		self.assertFalse([c for c in self.UNSAFE + " " if c in name], f"generated name is unsafe: {name}")
 
+	def test_a_content_type_listing_synonyms_still_names_the_audio(self):
+		"""Acefone answers a recording with a LIST of synonyms in one header. Cutting only on `;`
+		left the whole string as the type, which matches nothing and fell through to `.bin` — an
+		extension frappe refuses, so the audio was fetched and then thrown away at the file layer."""
+		from tatva_connect.storage.call_media import recording_file_name
+
+		listed = "audio/mp3, audio/x-mpeg, audio/x-mpeg-3, audio/mpeg3,audio/mpeg"
+		self.assertTrue(recording_file_name("acefone", "CALL-0002", listed).endswith(".mp3"))
+		self.assertTrue(recording_file_name("acefone", "CALL-0003", "audio/wav; charset=binary").endswith(".wav"))
+
 
 class TestTheDownloadFlavour(FileLayerCase):
 	"""A Download control must SAVE the file, wherever the bytes physically live.

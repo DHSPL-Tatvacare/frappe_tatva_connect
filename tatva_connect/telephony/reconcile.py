@@ -52,23 +52,38 @@ def _webhook_direction(row: dict, direction: str) -> str:
 	adapter's one parser derives the channel for both paths — otherwise the same call would be Dialer
 	when pushed and IVR when pulled, and a channel-scoped capture rule would treat them differently.
 	"""
-	return f"Dialer ({direction})" if str(row.get("call_hint") or "").casefold() == "dialer" else direction
+	hint = str(row.get("call_hint") or "").casefold()
+	# A click-to-call is its own word on the webhook, and the adapter reads channel from it, so the pull emits that word too.
+	if hint == "clicktocall":
+		return "clicktocall"
+	return f"Dialer ({direction})" if hint == "dialer" else direction
 
 
 def _agents_from_flow(row: dict) -> list:
 	"""The agents who touched the call, in the webhook's `answered_agent` shape.
 
-	A record's `call_flow` carries Agent entries with the agent's EMAIL, which is the only identifier
-	that resolves to a CRM user. It is the same email the webhook sends, so a reconciled call attributes
-	its rep exactly as a live one does.
+	A record's `call_flow` carries Agent entries with the agent's EMAIL where the tenant publishes one,
+	and always with the SEAT. Both are the identifiers the webhook sends, under the same keys, so a
+	reconciled call attributes its rep exactly as a live one does. `num` is deliberately NOT carried:
+	it is the agent's follow-me phone, and the webhook's `number` slot holds the seat.
+
+	ONLY the agents who ANSWERED. A queue rings several people and the flow records every one of them,
+	so reading the whole flow credits a call to whoever it merely rang: across 348 live inbound calls
+	that put a rep on 84 calls nobody picked up, and named the wrong rep on 2 that a colleague answered
+	after them. The webhook never had this defect — `answered_agent` is empty on a missed call — so this
+	is also what keeps the pull agreeing with the push.
 	"""
 	agents = []
 	for entry in row.get("call_flow") or []:
 		if not isinstance(entry, dict) or entry.get("type") != "Agent":
 			continue
+		if str(entry.get("dialst") or "").casefold() != "answered":
+			continue
 		email = (entry.get("email") or "").strip()
-		if email:
-			agents.append({"name": entry.get("name"), "email": email, "number": entry.get("num")})
+		seat = (entry.get("extension") or "").strip()
+		# An outbound flow marks the CUSTOMER leg answered too; it carries neither identifier, so it never lands here.
+		if email or seat:
+			agents.append({"name": entry.get("name"), "email": email, "number": seat})
 	return agents
 
 
@@ -105,9 +120,13 @@ def _report_to_payload(row: dict, direction: str) -> dict:
 		"start_stamp": f"{row.get('date')} {row.get('time')}".strip() if row.get("date") else None,
 		"end_stamp": row.get("end_stamp"),
 		"recording_url": row.get("recording_url"),
+		# Echoed back on a call WE placed; without it a pulled outbound call cannot find the Initiated row the bridge minted, and writes a second one.
+		"ref_id": row.get("ref_id"),
 		"answered_agent": _agents_from_flow(row),
 		"answered_agent_name": row.get("agent_name"),
-		"answered_agent_number": row.get("agent_number"),
+		# The SEAT: `agent_number` on a record is the rep's follow-me phone, not an identifier. Left empty on an
+		# inbound record, where the adapter reads the seat off `answered_agent` exactly as it does on a webhook.
+		"answered_agent_number": row.get("extension_c2c"),
 	}
 
 

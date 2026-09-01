@@ -75,6 +75,27 @@ class TestReconcileMapping(unittest.TestCase):
 		self.assertEqual(ivr["channel"], "IVR")
 		self.assertEqual(ivr["direction"], "inbound")
 
+	def test_only_the_agent_who_ANSWERED_is_credited(self):
+		"""A REAL transferred call, 2026-09-01. The queue rang Prakash, Revathi picked up, and she
+		passed it to Om Gupta. Reading every Agent entry credits whoever the call merely RANG — across
+		348 live inbound calls that put a rep on 84 nobody answered and named the wrong rep on 2 more."""
+		flow = [
+			{"type": "Agent", "dialst": "Dialed", "name": "Prakash", "extension": "0602417430015"},
+			{"type": "Agent", "dialst": "Dialed", "name": "Revathi", "extension": "0602417430016"},
+			{"type": "Agent", "dialst": "Answered", "name": "Revathi", "extension": "0602417430016"},
+			{"type": "Agent", "dialst": "Dialed", "name": "Om Gupta", "extension": "0602417430014"},
+			{"type": "Agent", "dialst": "Answered", "name": "Om Gupta", "extension": "0602417430014"},
+		]
+		seats = [a["number"] for a in reconcile._agents_from_flow({"call_flow": flow})]
+		self.assertEqual(seats, ["0602417430016", "0602417430014"])
+		self.assertEqual(seats[-1], "0602417430014", "the rep who handled it is the LAST to answer")
+
+	def test_a_missed_call_credits_nobody(self):
+		"""It rang, he did not pick up. `answered_agent` is empty on the webhook for exactly this, so
+		the pull must not invent a rep the push would never have named."""
+		flow = [{"type": "Agent", "dialst": "Dialed", "name": "Md Shaqib", "extension": "0602417430021"}]
+		self.assertEqual(reconcile._agents_from_flow({"call_flow": flow}), [])
+
 	def test_the_agent_resolves_from_the_call_flow(self):
 		"""The record has no agent-email field, but its `call_flow` carries one — and the email is the
 		only identifier that resolves to a CRM user. A reconciled call attributes its rep or the pull

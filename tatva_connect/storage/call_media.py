@@ -119,7 +119,8 @@ def recording_file_name(provider, call, content_type, when=None):
 
 
 def _extension_for(content_type):
-	kind = (content_type or "").split(";")[0].strip().lower()
+	# A provider may answer with a LIST of synonyms in one header ("audio/mp3, audio/x-mpeg, ..."), and the whole string names no type, so both separators are cut.
+	kind = (content_type or "").split(";")[0].split(",")[0].strip().lower()
 	return _EXTENSIONS.get(kind) or mimetypes.guess_extension(kind) or _FALLBACK_EXTENSION
 
 

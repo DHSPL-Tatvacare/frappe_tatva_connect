@@ -36,8 +36,9 @@ def build(
 	did_number,
 	status,
 	connected=False,
-	correlation_key=None,
+	correlation_keys=(),
 	agent_key=None,
+	agent_extension=None,
 	agent_name=None,
 	started_at=None,
 	ended_at=None,
@@ -56,10 +57,11 @@ def build(
 		did_number=did_number,
 		status=status,
 		connected=bool(connected),
-		# The id handed to a provider on an outbound call and echoed back on its CDR. Acefone echoes
-		# nothing (empty on all 179 captured CDRs); Ozonetel echoes `uui`.
-		correlation_key=correlation_key,
+		# Every id that could name the row the bridge minted for this outbound call, best first — a provider may echo the id we sent, its own, or both.
+		correlation_keys=tuple(correlation_keys or ()),
 		agent_key=agent_key,
+		# The provider's own seat id for the agent, when it names them by seat rather than by email.
+		agent_extension=agent_extension,
 		agent_name=agent_name,
 		started_at=started_at,
 		ended_at=ended_at,

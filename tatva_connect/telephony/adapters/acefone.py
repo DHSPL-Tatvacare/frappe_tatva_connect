@@ -7,14 +7,14 @@ Every mapping is grounded in a 363-CDR live capture across both directions. Wher
 backed by a captured payload it says so, because the first version of this adapter was written from
 Acefone's documentation and the capture disproved three of its assumptions:
 
-  * `answered_agent_email` is not an Acefone variable. The email sits inside `answered_agent`, an
-    array of objects, and was present on every answered call.
+  * `answered_agent_email` is not an Acefone variable. Where an email exists at all it sits inside
+    `answered_agent`; on the 2026 tenant that object carries only a seat, so the seat identifies the rep.
   * `answered_agent_number` is an extension ("Extension-0602141810347"), not a phone. The old code
     fed it to a phone matcher, which could never resolve and could collide on a 10-digit suffix.
   * `hangup_cause` never carries "busy" or "cancel", so both status branches were unreachable.
 
 Observed vocabularies, and nothing outside them:
-  direction    : inbound · Dialer (inbound) · Dialer (outbound)   -- only Dialer calls are answered
+  direction    : see `_DIRECTIONS` -- an unlisted word defers to the URL trigger, never to a guess
   call_status  : missed · answered                                -- lowercase, despite the docs
   hangup_cause : NormalClearing · destination_hangup · destination_not_set
                  disconnected_by_caller · disconnected_by_callee · hangup_as_per_destination
@@ -131,10 +131,9 @@ def normalize(payload: dict, event=None, account=None):
 		status=status,
 		connected=str(payload.get("call_connected") or "").strip() == "1",
 		recording_ref=recording_ref(payload, status, account),
-		# Read from both candidates, though neither ever returns: `custom_identifier` is not an
-		# Acefone webhook variable and `ref_id` was empty on all 363 captured CDRs.
-		correlation_key=(payload.get("custom_identifier") or payload.get("ref_id") or "").strip() or None,
+		correlation_keys=_correlation_keys(payload),
 		agent_key=_agent_email(payload),
+		agent_extension=_agent_extension(payload),
 		agent_name=(payload.get("answered_agent_name") or "").strip() or None,
 		started_at=env.parse_timestamp(payload.get("start_stamp")),
 		ended_at=env.parse_timestamp(payload.get("end_stamp")),
@@ -197,23 +196,37 @@ def _account_doc(account):
 	return frappe.get_cached_doc(ACCOUNT_DT, account)
 
 
+# Acefone's own words for direction, each mapped to (direction, channel). `clicktocall` is undocumented and was found on a live outbound CDR: agent-dialled, so Dialer.
+_DIRECTIONS = {
+	"inbound": ("inbound", "IVR"),
+	"dialer (inbound)": ("inbound", "Dialer"),
+	"outbound": ("outbound", "IVR"),
+	"dialer (outbound)": ("outbound", "Dialer"),
+	"clicktocall": ("outbound", "Dialer"),
+}
+
+
 def _direction_channel(payload: dict, event):
 	"""Direction and channel, read from the payload's own `direction` field.
 
 	Acefone qualifies direction with the routing channel — "inbound" against "Dialer (inbound)" — and
 	the two are genuinely different payload shapes, so the channel is carried: it is what the capture
-	policy filters on. The URL trigger is a cross-check only.
+	policy filters on.
+
+	A word outside the table falls back to the URL trigger, which names the direction outright. The
+	old code assumed anything without "outbound" in it was inbound, so the undocumented `clicktocall`
+	read as inbound, `_numbers` swapped customer and DID, and every click-to-call was declined as an
+	unmapped DID. An unknown word must never silently pick a direction.
 	"""
 	raw = (payload.get("direction") or "").strip().casefold()
-	if raw:
-		direction = "outbound" if "outbound" in raw else "inbound"
-		channel = "Dialer" if "dialer" in raw else "IVR"
+	known = _DIRECTIONS.get(raw)
+	if known:
+		direction, channel = known
 	else:
-		# Absent from the body, so the URL trigger is used rather than dropping the call.
 		direction = "outbound" if (event or "").startswith("outbound") else "inbound"
-		channel = "IVR"
+		channel = "Dialer" if "dialer" in raw else "IVR"
 		frappe.logger("telephony").warning(
-			f"Acefone CDR without `direction`; inferred {direction!r} from event {event!r}"
+			f"Acefone CDR direction {raw!r} is not a known word; inferred {direction!r} from event {event!r}"
 		)
 
 	if event and not event.startswith(direction):
@@ -266,21 +279,54 @@ def _status(payload: dict, event) -> str:
 	return _ANSWERED_LIVE if live else "Failed"
 
 
-def _agent_email(payload: dict):
-	"""The agent's email, taken from the `answered_agent` array. The only identifier that resolves.
+def _correlation_keys(payload: dict) -> tuple:
+	"""Every id that could name the row the bridge minted, best first, de-duplicated.
 
-	The last entry is used: on a transfer the array carries every agent that touched the call, and the
-	final one handled it.
+	Both return on a call WE placed: `custom_identifier` is the one we sent, `ref_id` is Acefone's own
+	and comes back from the click-to-call POST as well as on the CDR. Neither appears on a call placed
+	from Acefone's softphone, which is why the writer still keeps a window fallback behind this.
+	"""
+	seen = (payload.get("custom_identifier"), payload.get("ref_id"))
+	return tuple(dict.fromkeys(k.strip() for k in seen if isinstance(k, str) and k.strip()))
+
+
+def _answered_agents(payload: dict) -> list:
+	"""The `answered_agent` entries as a list, whatever shape the tenant sent.
+
+	One parser, because the object carries BOTH identifiers and each was normalising it separately.
+	A form-urlencoded body delivers it as a JSON string; a single agent arrives as a bare object.
 	"""
 	agents = payload.get("answered_agent")
 	if isinstance(agents, str):
-		# A form-urlencoded body delivers the array as a JSON string.
-		agents = parse_json(agents) if agents.strip().startswith("[") else None
+		agents = parse_json(agents) if agents.strip().startswith(("[", "{")) else None
 	if isinstance(agents, dict):
 		agents = [agents]
-	if not isinstance(agents, list):
-		return None
-	for entry in reversed(agents):
-		if isinstance(entry, dict) and (entry.get("email") or "").strip():
-			return entry["email"].strip().casefold()
+	return agents if isinstance(agents, list) else []
+
+
+def _last_agent_value(payload: dict, key: str):
+	"""The last agent's `key`, or None. Last because on a transfer it is the agent who handled the call."""
+	for entry in reversed(_answered_agents(payload)):
+		if isinstance(entry, dict) and (entry.get(key) or "").strip():
+			return entry[key].strip()
 	return None
+
+
+def _agent_extension(payload: dict):
+	"""The agent's Acefone seat ("0602417430016"), or None. What identifies them when no email is sent.
+
+	Taken WHOLE and never digit-matched: a seat is not a phone number, and suffix-matching one against
+	a phone column is the collision this adapter was already burned by. It is the same value the
+	operator already stores on `CRM Telephony Agent` to place that rep's calls, so nothing new is configured.
+	"""
+	seat = (payload.get("answered_agent_number") or "").strip() or _last_agent_value(payload, "number")
+	if not seat:
+		return None
+	# The webhook writes it bare; a CDR row writes the same value as "Extension-0602417430016".
+	return seat.rsplit("-", 1)[-1].strip() or None
+
+
+def _agent_email(payload: dict):
+	"""The agent's email, or None. The identifier that resolves directly to a CRM user where a tenant sends one."""
+	email = _last_agent_value(payload, "email")
+	return email.casefold() if email else None
