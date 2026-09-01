@@ -6,7 +6,7 @@
    "label": "Push Devices Registered"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every channel the CRM speaks on \\u2014 WhatsApp, telephony, AI voice, transcription and push \\u2014 is configured here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"An account holds the provider credential, and a routing rule decides which account a lead is reached on. Push messaging and the notification catalogue are set alongside.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Call log and WhatsApp messages hold the delivered traffic; enrolled devices are listed under push.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"AI Voice Accounts\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transcription Accounts\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Mapping\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}, \"id\": \"b18\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every channel the CRM speaks on \\u2014 WhatsApp, telephony, AI voice, transcription and push \\u2014 is configured here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"An account holds the provider credential, and a routing rule decides which account a lead is reached on. A telephony agent carries the rep's line: it is the phone the CRM rings for them, and the name a call they answer is recorded under. Push messaging and the notification catalogue are set alongside.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Call log and WhatsApp messages hold the delivered traffic; enrolled devices are listed under push.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"AI Voice Accounts\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transcription Accounts\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Agents\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Mapping\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}, \"id\": \"b19\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -18,7 +18,7 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-08-16 12:00:00.000000",
+ "modified": "2026-09-02 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
@@ -81,6 +81,13 @@
    "label": "Telephony Routing",
    "link_to": "CRM Telephony Routing",
    "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Telephony Agents",
+   "link_to": "CRM Telephony Agent",
    "type": "DocType"
   },
   {
