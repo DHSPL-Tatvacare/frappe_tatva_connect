@@ -126,13 +126,13 @@ class TestDeclaredWriteTarget(FrappeTestCase):
 	the first write, so `save()` inserts, and the name after that, so `save()` updates. One node, one call, and
 	the author configures neither.
 
-	Skipped when nothing is declared: an empty tuple is the shipped default and must stay a free no-op.
+	Skipped when nothing is declared: an empty catalog is the shipped default and must stay a free no-op.
 	"""
 
 	def setUp(self):
 		if not subjects.WRITE_TARGETS:
 			self.skipTest("no write target declared — the feature is dormant, which is its own contract")
-		self.target = subjects.WRITE_TARGETS[0]
+		self.target = next(iter(subjects.WRITE_TARGETS))
 		self.lead = frappe.db.get_value(_LEAD, {}, "name")
 		self.state = refs.Values(buckets={})
 		self.ctx = self.state.writing_as("n1")

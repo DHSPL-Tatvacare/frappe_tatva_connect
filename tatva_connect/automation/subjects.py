@@ -31,7 +31,28 @@ SUBJECTS = {
 
 # What a workflow may WRITE beyond the lead and the doc that fired it — SUBJECTS' twin, and code for the
 # same reason: participation needs a deploy anyway, and a one-line PR is visible in review where a row is not.
-WRITE_TARGETS = ("HD Ticket",)
+#
+# `lead_field` is where the engine stamps the patient, and the key it reads back to find a record this
+# workflow already raised for them — a journey is per-save, so without it a patient who writes five times
+# collects five tickets. It holds the lead's NAME as Data and is deliberately not a Link: a Link from a
+# write target back to CRM Lead would make frappe refuse to delete a lead that has one (breaking bulk
+# delete), and would bind that target's visibility to any User Permission ever created on CRM Lead. The
+# engine stores its own back-references this way already (CRM Task.custom_workflow_token).
+# `status_doctype` names the master whose `category` says whether a record is still
+# open; the categories are READ off it, never a list of status names typed here, because an operator adds
+# their own statuses and a typed copy would silently stop recognising them. A target may declare neither,
+# and is then simply raised anew each time.
+WRITE_TARGETS = {
+	"HD Ticket": {"lead_field": "custom_lead", "status_doctype": "HD Ticket Status"},
+}
+
+# Which statuses mean FINISHED — named as the terminal set, not the open one, and that direction is the
+# whole point. Helpdesk's category vocabulary is Open / Paused / Resolved today; listing the two open ones
+# would mean a category added tomorrow falls outside the list, every record in it reads as finished, and
+# the patient collects a second record — the exact defect this reuse exists to prevent. Named this way an
+# unknown category reads as still open, so the failure is a reuse nobody asked for rather than a duplicate.
+# (Paused is not terminal: a record waiting on somebody is still owed an answer.)
+TERMINAL_CATEGORIES = ("Resolved",)
 
 
 def is_subject(doctype):

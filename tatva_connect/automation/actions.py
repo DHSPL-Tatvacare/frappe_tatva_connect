@@ -200,11 +200,66 @@ def resolve_target(action, lead_name, trigger_doc, context=None):
 	# because a handler's `context` is a `_WriterView` scoped to its own node (refs.py:365): a bare key
 	# would land at `<node_id>.<slug>` and the next node could never see it.
 	if doctype in subjects.WRITE_TARGETS:
-		return doctype, wrote_name(context, doctype)
+		return doctype, wrote_name(context, doctype) or _open_record_for(doctype, action, lead_name)
 	raise ValueError(
 		f"{action.action_type} target {doctype} is not in this rule's scope "
 		f"(the Lead or the triggering {trigger_doc.doctype if trigger_doc else '—'})."
 	)
+
+
+def _open_record_for(doctype, action, lead_name):
+	"""The record of `doctype` this patient already has OPEN, or None — the second half of "which record
+	does this node act on", for a target the journey itself has not made yet.
+
+	`wrote_name` answers within one run, and a run is per-save: a patient who writes five times starts five
+	journeys, each with an empty bucket, and each would raise its own ticket. So a target that declares
+	where it stamps the patient is asked one more question — is one still open for them — and the fifth
+	message lands on the ticket the first one raised.
+
+	This is `raise_followup_task`'s throttle, in the shape this seam already has. It is a SECOND
+	implementation of that idea and deliberately so: the task helper is CRM Task all the way down (it
+	grain-gates a task type, it narrows on a node token), and generalising a helper the whole automation
+	estate depends on, to serve one write target, would put every existing rule at risk to save forty lines.
+
+	Whether a record is still open is READ off its status master's `category`, never a list of status names
+	typed here — an operator adds their own statuses, and a typed copy would quietly stop recognising them.
+	The status FIELD is read off the meta for the same reason: it is the Link that points at that master.
+	The question asked is "not finished" rather than "open", so a category nobody has declared terminal
+	counts as still open; see `subjects.TERMINAL_CATEGORIES` for why that direction is the safe one.
+	"""
+	if action.get("allow_duplicate_tickets"):
+		return None  # the author asked for one per fire, which is what LeadSquared does
+	spec = subjects.WRITE_TARGETS.get(doctype) or {}
+	lead_field, status_doctype = spec.get("lead_field"), spec.get("status_doctype")
+	if not (lead_name and lead_field and status_doctype):
+		return None
+	status_field = next(
+		(df.fieldname for df in frappe.get_meta(doctype).get("fields")
+		 if df.fieldtype == "Link" and df.options == status_doctype),
+		None,
+	)
+	open_states = frappe.get_all(
+		status_doctype, filters={"category": ["not in", subjects.TERMINAL_CATEGORIES]}, pluck="name"
+	)
+	if not (status_field and open_states):
+		return None
+	# Newest first: if a site somehow holds two open ones, the live conversation is the recent one.
+	return frappe.db.get_value(
+		doctype, {lead_field: lead_name, status_field: ["in", open_states]}, "name", order_by="creation desc"
+	)
+
+
+def _stamp_lead(tdoc, lead_name):
+	"""Tie a write target back to the patient it was raised for, so `_open_record_for` can find it again.
+
+	Engine bookkeeping, written the way `_stamp_workflow_token` writes a task's: only where there is none,
+	never moved. A record already stamped belongs to the patient it was raised for, and a later node
+	re-pointing it would hand one patient's ticket to another.
+	"""
+	spec = subjects.WRITE_TARGETS.get(tdoc.doctype) or {}
+	field = spec.get("lead_field")
+	if field and lead_name and tdoc.meta.get_field(field) and not tdoc.get(field):
+		tdoc.set(field, lead_name)
 
 
 def _save_target(tdoc, touched=None):
@@ -555,6 +610,9 @@ def _action_set_field(action, lead, context, axes, trigger_doc):
 	# Read BEFORE the save: a new doc has no name until `save()` inserts it, so afterwards the two legs
 	# are indistinguishable. The WRITE still does not branch — this is the audit's question, not the path's.
 	raised = not tdoc.get("name")
+	# After the author's rows, so a config that names the stamp field cannot point this record at
+	# somebody else; before the save, so it costs no second write.
+	_stamp_lead(tdoc, lead)
 	_save_target(tdoc)
 	# AFTER the save, because an insert has no name before it — which is what makes the next write an update.
 	if action.target_doctype in subjects.WRITE_TARGETS:
@@ -1143,6 +1201,11 @@ VERBS = {
 			{"name": "updates", "label": "Fields to set", "help": "One row per field. Only fields an operator has allowed automation to write are offered; the rest are set up under Automation Fields.", "type": "Field Map", "reqd": True,
 			 "doctype_from": "target_doctype",
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
+			# Duplicate suppression, exposed — Create Task's `allow_duplicate_tasks` twin, worded the same
+			# because it is the same idea: off, an open record is reused; on, every fire raises another.
+			# Only a helpdesk ticket can be raised this way, so it is shown only when one is the target.
+			{"name": "allow_duplicate_tickets", "label": "Allow duplicate tickets", "help": "Off (the default): if the patient already has an open ticket, it is updated instead of raising another. On: every fire raises a new ticket, even when one is still open.", "type": "Check",
+			 "depends_on_value": {"target_doctype": ["HD Ticket"]}},
 		],
 	},
 	# W8.3 — authored exactly like Update Field: `child_table` names a CRM Lead Section, its columns are rows.
