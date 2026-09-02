@@ -34,9 +34,15 @@ _BROAD, _NARROW = "_TC Route Broad Account", "_TC Route Narrow Account"
 class _RoutingCase(FrappeTestCase):
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
-		for dt, name in (("CRM Vertical", _V), ("CRM Group", _G), ("CRM Program", _P)):
+		# Each grain master autonames from its own `<x>_name`, which is also `reqd` — so the name is set
+		# BY that field, never passed as `name`.
+		for dt, field, name in (
+			("CRM Vertical", "vertical_name", _V),
+			("CRM Group", "group_name", _G),
+			("CRM Program", "program_name", _P),
+		):
 			if not frappe.db.exists(dt, name):
-				frappe.get_doc({"doctype": dt, "name": name}).insert(
+				frappe.get_doc({"doctype": dt, field: name}).insert(
 					ignore_permissions=True, ignore_if_duplicate=True
 				)
 		for account in (_BROAD, _NARROW):
@@ -94,9 +100,17 @@ class TestTheSendPathPicksTheRightAccount(_RoutingCase):
 			self._rule(_BROAD)
 
 	def test_a_duplicate_triple_is_refused(self):
-		"""The guard that makes an ambiguous tie unreachable through the UI."""
+		"""The guard that makes an ambiguous tie unreachable through the UI.
+
+		TWO enforcers, and which one speaks depends on the path. The name IS the triple
+		(`format:{vertical}::{psp_group}::{program}`), so on INSERT the primary key refuses first and
+		raises `DuplicateEntryError` — the controller's own check never gets to run. That check is not
+		redundant: it guards the EDIT path, where a rule is renamed onto an existing triple and no
+		insert happens. Both are accepted here because the RULE is "a duplicate triple cannot exist",
+		not "this particular exception class is raised".
+		"""
 		self._rule(_BROAD, vertical=_V, group=_G)
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaises((frappe.ValidationError, frappe.DuplicateEntryError)):
 			self._rule(_NARROW, vertical=_V, group=_G)
 
 
@@ -111,7 +125,8 @@ class TestSpecificityIsOneRule(_RoutingCase):
 			{"vertical": _V, "psp_group": _G}, {"vertical": _V, "program": _P},
 			{"psp_group": _G, "program": _P}, {"vertical": _V, "psp_group": _G, "program": _P},
 		):
-			rule = frappe._dict(vertical=None, psp_group=None, program=None, **axes)
+			rule = frappe._dict(vertical=None, psp_group=None, program=None)
+			rule.update(axes)
 			score = engine._specificity(rule)
 			self.assertNotIn(score, seen, f"{axes} and {seen.get(score)} share a score")
 			seen[score] = axes
@@ -126,9 +141,20 @@ class TestSpecificityIsOneRule(_RoutingCase):
 		self.assertIsNone(routing.grain_for_account(_BROAD))
 
 	def test_two_equally_broad_rules_declare_no_single_grain(self):
-		"""Two catchments; picking one would be the guess reading the rules exists to avoid."""
+		"""Two catchments; picking one would be the guess reading the rules exists to avoid.
+
+		EQUALLY BROAD means the same axes SET, not merely two rules that each set one axis: vertical
+		weighs 1 and group weighs 2, so a vertical-only rule is strictly broader than a group-only one
+		and there is nothing ambiguous about that pair. A real tie is one account serving two product
+		lines — which is an ordinary thing to configure, and the case that must refuse.
+		"""
+		other = "_TC Route Line Two"
+		if not frappe.db.exists("CRM Vertical", other):
+			frappe.get_doc({"doctype": "CRM Vertical", "vertical_name": other}).insert(
+				ignore_permissions=True, ignore_if_duplicate=True
+			)
 		self._rule(_BROAD, vertical=_V)
-		self._rule(_BROAD, psp_group=_G)
+		self._rule(_BROAD, vertical=other)
 		self.assertIsNone(routing.grain_for_account(_BROAD))
 
 	def test_an_inactive_account_declares_no_grain(self):

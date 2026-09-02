@@ -35,7 +35,7 @@ from frappe.tests.utils import FrappeTestCase
 from unittest.mock import patch
 
 from tatva_connect.channels import event as event_mod
-from tatva_connect.whatsapp import enrol, ingest, routing
+from tatva_connect.whatsapp import channel, enrol, ingest, routing
 
 _ACCOUNT = "_TC Enrol Probe Account"
 _VERTICAL, _GROUP = "_TC Enrol Line", "_TC Enrol Group"
@@ -63,9 +63,10 @@ class _EnrolmentCase(FrappeTestCase):
 
 	def setUp(self):
 		self.addCleanup(frappe.db.rollback)
-		for dt, name in (("CRM Vertical", _VERTICAL), ("CRM Group", _GROUP)):
+		# Each grain master autonames from its own `<x>_name`, which is also `reqd`.
+		for dt, field, name in (("CRM Vertical", "vertical_name", _VERTICAL), ("CRM Group", "group_name", _GROUP)):
 			if not frappe.db.exists(dt, name):
-				frappe.get_doc({"doctype": dt, "name": name, dt.split()[-1].lower() + "_name": name}).insert(
+				frappe.get_doc({"doctype": dt, field: name}).insert(
 					ignore_permissions=True, ignore_if_duplicate=True
 				)
 		if not frappe.db.exists("WhatsApp Account", _ACCOUNT):
@@ -86,10 +87,35 @@ class _EnrolmentCase(FrappeTestCase):
 		frappe.db.set_value("WhatsApp Account", _ACCOUNT, enrol.ACCOUNT_FLAG, 1 if on else 0)
 
 	def _leads_on(self, number):
-		return frappe.get_all("CRM Lead", filters={"mobile_no": ["in", ["+" + number, number]]}, pluck="name")
+		"""Leads on this number IN THIS TEST'S GRAIN.
+
+		Scoped, not global: a bench carries real leads, and one of them already held the first number
+		this file picked. `_upsert_one` dedups on (phone, product line, group), so a lead on the same
+		number in another grain is a DIFFERENT lead by the product's own rule — counting it would make
+		the assertion wrong rather than strict.
+		"""
+		return frappe.get_all(
+			"CRM Lead",
+			filters={
+				"mobile_no": ["in", ["+" + number, number]],
+				"custom_vertical": _VERTICAL,
+				"custom_group": _GROUP,
+			},
+			pluck="name",
+		)
 
 	def _targets(self, event, switch=True, **kw):
-		with patch("tatva_connect.automation.is_enabled", return_value=switch):
+		"""Arm the enrolment switch and NOTHING ELSE.
+
+		`return_value=True` would arm every switch in the app, including the workflow engine — and a
+		lead insert then starts a journey inline (`enqueue ... now=in_test`), which COMMITS, so rows
+		escaped the rollback and leaked into the next test. Keying on the switch under test is both the
+		fix and the better assertion: it proves enrolment needs no other switch armed.
+		"""
+		with patch(
+			"tatva_connect.automation.is_enabled",
+			side_effect=lambda key: switch and key == channel.SWITCH_ENROLMENT,
+		):
 			return ingest._targets(event, **kw)
 
 
