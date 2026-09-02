@@ -30,9 +30,10 @@ the tuple we just passed in — that would only prove the test can copy a variab
 Nothing reaches a provider: no transport is touched, media is never fetched (no media on these events),
 and every row is rolled back.
 """
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from unittest.mock import patch
 
 from tatva_connect.channels import event as event_mod
 from tatva_connect.whatsapp import channel, enrol, ingest, routing
