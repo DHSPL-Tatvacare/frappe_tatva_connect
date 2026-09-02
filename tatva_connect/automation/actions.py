@@ -221,14 +221,18 @@ def _open_record_for(doctype, action, lead_name):
 	grain-gates a task type, it narrows on a node token), and generalising a helper the whole automation
 	estate depends on, to serve one write target, would put every existing rule at risk to save forty lines.
 
+	It is NOT exposed as an author control, unlike Create Task's `allow_duplicate_tasks`. W8.1 deleted
+	Update Field's four params and three gates precisely so the node stops looking different depending on
+	what the author picked (`test_update_field_rows.TestTheNodeNoLongerChangesShape`), and a per-fire
+	escape hatch nobody has asked for is not worth re-opening that. Reuse is the whole point of the
+	feature; a workflow that wants a record per fire is a request, not a checkbox waiting for one.
+
 	Whether a record is still open is READ off its status master's `category`, never a list of status names
 	typed here — an operator adds their own statuses, and a typed copy would quietly stop recognising them.
 	The status FIELD is read off the meta for the same reason: it is the Link that points at that master.
 	The question asked is "not finished" rather than "open", so a category nobody has declared terminal
 	counts as still open; see `subjects.TERMINAL_CATEGORIES` for why that direction is the safe one.
 	"""
-	if action.get("allow_duplicate_tickets"):
-		return None  # the author asked for one per fire, which is what LeadSquared does
 	spec = subjects.WRITE_TARGETS.get(doctype) or {}
 	lead_field, status_doctype = spec.get("lead_field"), spec.get("status_doctype")
 	if not (lead_name and lead_field and status_doctype):
@@ -1201,11 +1205,6 @@ VERBS = {
 			{"name": "updates", "label": "Fields to set", "help": "One row per field. Only fields an operator has allowed automation to write are offered; the rest are set up under Automation Fields.", "type": "Field Map", "reqd": True,
 			 "doctype_from": "target_doctype",
 			 "modes": [refs.LITERAL, refs.FROM_CONTEXT, refs.EXPRESSION, refs.INCREMENT]},
-			# Duplicate suppression, exposed — Create Task's `allow_duplicate_tasks` twin, worded the same
-			# because it is the same idea: off, an open record is reused; on, every fire raises another.
-			# Only a helpdesk ticket can be raised this way, so it is shown only when one is the target.
-			{"name": "allow_duplicate_tickets", "label": "Allow duplicate tickets", "help": "Off (the default): if the patient already has an open ticket, it is updated instead of raising another. On: every fire raises a new ticket, even when one is still open.", "type": "Check",
-			 "depends_on_value": {"target_doctype": ["HD Ticket"]}},
 		],
 	},
 	# W8.3 — authored exactly like Update Field: `child_table` names a CRM Lead Section, its columns are rows.

@@ -19,7 +19,7 @@ WHAT THE RULE IS
   * open, same patient          -> reused, no second record
   * finished (a category in `TERMINAL_CATEGORIES`) -> a new one; a closed ticket is not reopened months on
   * a different patient         -> never shared, whatever is open elsewhere
-  * `allow_duplicate_tickets`   -> one per fire, which is what LeadSquared does
+  * no author control at all    -> W8.1 deleted this node's gates; reuse must not re-open them
   * within one run              -> `wrote_name` still wins, so two nodes write ONE record as before
 
 The terminal set and the status field are READ (the master's `category`, the Link that points at it),
@@ -107,11 +107,15 @@ class TestOneOpenTicketPerPatient(_ThrottleCase):
 		theirs = self._raise(lead=self.other_lead, ctx=self._fresh_run())
 		self.assertNotEqual(mine, theirs)
 
-	def test_the_author_can_ask_for_one_ticket_per_fire(self):
-		"""`allow_duplicate_tickets` — Create Task's `allow_duplicate_tasks`, same word, same effect."""
-		first = self._raise(allow_duplicate_tickets=1)
-		second = self._raise(ctx=self._fresh_run(), allow_duplicate_tickets=1)
-		self.assertNotEqual(first, second)
+	def test_the_node_gained_no_new_control(self):
+		"""W8.1 made Update Field a node that does not change shape; reuse must not re-open that.
+
+		Locked here as well as in `test_update_field_rows`, because the temptation to expose a
+		per-fire escape hatch belongs to THIS feature and would be re-added from this file's side.
+		"""
+		self.assertEqual(
+			[p["name"] for p in actions.VERBS["Update Field"]["params"]], ["target_doctype", "updates"]
+		)
 
 	def test_two_nodes_in_one_run_still_write_the_same_record(self):
 		"""`wrote_name` is asked first and still wins — the shipped within-a-run behaviour is unchanged."""
