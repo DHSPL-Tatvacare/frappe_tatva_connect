@@ -6,8 +6,8 @@ The DID map decides WHETHER a call is kept. An unmapped number is dropped. This 
 gate, and it is what makes a shared provider account safe: a live capture found TatvaCare, Visit,
 ICICI and Quest on one Acefone tenant with DIDs interleaved.
 
-The agent map decides WHO is credited. It never drops a call. A missed call carries no agent at all
-(161 of 179 inbound CDRs were never answered) and must still reach the lead.
+The agent identity decides WHO is credited. It never drops a call. A missed call carries no agent at
+all (161 of 179 inbound CDRs were never answered) and must still reach the lead.
 
 A dropped call is not a lost call. The spine persists every raw payload before any of this runs, so
 anything dropped stays auditable and replayable once its DID is mapped.
@@ -23,7 +23,6 @@ from tatva_connect.telephony import envelope as env
 
 ROUTING_DOCTYPE = "CRM Telephony Routing"
 DID_CHILD = "CRM Telephony Routing DID"
-AGENT_MAP_DOCTYPE = "CRM Telephony Agent Map"
 # crm's own agent table and the seat column we add to it. ONE owner: the seat answers both "whose phone
 # do we ring" (outbound) and "who answered" (inbound), and two readers of one column would drift.
 AGENT_DOCTYPE = "CRM Telephony Agent"
@@ -185,22 +184,20 @@ def lead_for(cdr, grain):
 def user_for(cdr, grain=None):
 	"""The rep who handled a call, or None.
 
-	Resolved in three steps: the provider's agent email is a CRM user; else an operator declared the
-	translation in the agent map; else the provider named the agent only by SEAT, and the extension
-	the operator already stores to place that rep's calls identifies them. Failing all three the rep
-	is left blank and the call is still logged.
+	Two identifiers, asked in the order a provider is likely to send them: the agent's email, which is a
+	CRM login on its own, else the SEAT, which the operator already stores to place that rep's calls.
+	Neither resolving leaves the rep blank and the call still logged — relevance and attribution are
+	separate questions, and a missed call has no agent at all.
 
-	The map is not optional in practice. Of 24 agents in a live capture, one used a corporate
-	address, twenty a partner company's domain, and three personal Gmail accounts — nothing can
-	infer a CRM user from the last of those. The seat step is not optional either: a tenant may send
-	no email at all, and on the 2026 Acefone account `answered_agent` carries a seat and nothing else.
+	The seat is what carries this account: `answered_agent` sends no email on any of 1,195 answered
+	calls, and the seat named the same rep Acefone's own `agent_name` did on all 1,195.
 	"""
 	email = (cdr.get("agent_key") or "").strip().casefold()
 	seat = (cdr.get("agent_extension") or "").strip()
 	if not email and not seat:
 		return None  # Nobody answered. A missed call has no agent, and that is not an error.
 
-	user = _user_by_email(email, cdr, grain) or user_for_seat(seat)
+	user = _user_by_email(email) or user_for_seat(seat)
 	if not user:
 		frappe.logger("telephony").warning(
 			f"telephony: agent {email or seat} on account {cdr.get('account')} maps to no CRM user; "
@@ -209,30 +206,15 @@ def user_for(cdr, grain=None):
 	return user
 
 
-def _user_by_email(email, cdr, grain):
-	"""The rep whose provider email this is — a CRM user directly, else through the operator's agent map."""
+def _user_by_email(email):
+	"""The CRM user whose login this provider email is, or None.
+
+	A provider that names its agents by their corporate address resolves here and needs no config at all.
+	One that names them by anything else resolves by SEAT instead — there is no third translation table.
+	"""
 	if not email:
 		return None
-
-	user = frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
-	if user:
-		return user
-
-	mapping = frappe.db.get_value(
-		AGENT_MAP_DOCTYPE,
-		{"agent_email": email, "telephony_account": cdr.get("account"), "enabled": 1},
-		["user", "vertical", "psp_group", "program"],
-		as_dict=True,
-	)
-	if not mapping:
-		return None
-
-	if grain and _grain_mismatch(mapping, grain):
-		# Not fatal — the call belongs to the lead either way — but an agent outside their grain is worth surfacing on a shared account.
-		frappe.logger("telephony").warning(
-			f"telephony: agent {email} answered on grain {grain} but is mapped elsewhere; attributed anyway"
-		)
-	return mapping["user"]
+	return frappe.db.get_value("User", {"name": email, "enabled": 1}, "name")
 
 
 def seat_for_user(user):
@@ -247,11 +229,3 @@ def user_for_seat(seat):
 	if not seat:
 		return None
 	return frappe.db.get_value(AGENT_DOCTYPE, {SEAT_FIELD: seat}, "user")
-
-
-def _grain_mismatch(mapping, grain) -> bool:
-	"""True when an agent declares an axis that the call's grain contradicts. Declaring none matches all."""
-	return any(
-		mapping.get(axis) and grain.get(axis) and mapping[axis] != grain[axis]
-		for axis, _ in _GRAIN_AXES
-	)

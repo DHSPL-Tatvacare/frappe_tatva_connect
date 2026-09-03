@@ -442,7 +442,6 @@ _TATVA = {
 	"CRM Derived Field": "PLATFORM",
 	"CRM Trusted Fetch Host": "PLATFORM",
 	"CRM Telephony Account": "PLATFORM",
-	"CRM Telephony Agent Map": "PLATFORM",
 	"CRM Telephony Routing": "PLATFORM",
 	"CRM Telephony Settings": "PLATFORM",
 	"CRM AI Voice Account": "PLATFORM",

@@ -67,9 +67,12 @@ written.
   attribution, ever — that is what keeps another company's customer PII out of this CRM.
 - The **lead** is matched on `(DID -> grain) + phone`, so one phone number across several leads still
   attributes to the right one.
-- The **agent** is matched on email: a corporate address auto-resolves, anything else needs a
-  `CRM Telephony Agent Map` row. An unmapped agent leaves the rep **blank** and the call is still kept —
-  relevance and attribution are separate questions. Answered-but-unattributed renders as **External**.
+- The **agent** is matched on two identifiers, in the order a provider is likely to send them: a
+  corporate **email** auto-resolves to that CRM user, else the **seat** (`0602417430016`) is matched
+  whole against `CRM Telephony Agent.acefone_number` — the same value the operator already fills to place
+  that rep's calls, so nothing extra is configured. An unresolvable agent leaves the rep **blank** and the
+  call is still kept — relevance and attribution are separate questions. Answered-but-unattributed renders
+  as **External**.
 - **`CRM Telephony Capture Rule`** decides which direction/channel combinations are captured at all. An
   empty rule table captures nothing.
 
@@ -112,7 +115,7 @@ that reads a provider's payload when the provider calls us. Different questions,
 |---|---|
 | `CRM Telephony Account` | One per provider account: creds, `webhook_token`, HMAC/IP settings. |
 | `CRM Telephony Routing` | **The one map.** Grain -> account (outbound), plus the grain's **DIDs** as a child table (inbound). A number listed nowhere is dropped. |
-| `CRM Telephony Agent Map` | Agent email -> CRM user, for agents whose email does not auto-resolve. |
+| `CRM Telephony Agent` | crm's own. `acefone_number` is the rep's **seat**: the phone we ring for them, and the identity a call they answer is credited to. |
 | `CRM Telephony Capture Rule` | Which direction/channel is captured. Child of Settings. Empty = nothing. |
 | `CRM Telephony Settings` | The kill-switch, rate limits, capture rules. |
 
@@ -145,19 +148,33 @@ No Exotel call is ever placed. `get_call_log` delegates to crm's and only augmen
 
 ## What the live traffic proved (and the docs got wrong)
 
-The first adapter was written from Acefone's documentation and a 363-CDR capture disproved it:
+The first adapter was written from Acefone's documentation and a 363-CDR capture (2026-07) disproved it.
+A second pull of 3,236 live CDRs (2026-09, account 241743) then disproved three findings of the first —
+each line below says which capture it comes from, because a tenant's own config moves under you:
 
-- **`answered_agent_email` does not exist.** The email sits inside `answered_agent`, an **array**. The
-  old code resolved zero agents.
+- **`answered_agent_email` does not exist.** Where an email exists at all it sits inside `answered_agent`,
+  an **array**. (2026-07)
+- **This account sends NO agent email.** Zero of 1,195 answered calls carry one; `answered_agent` holds a
+  seat and nothing else. Email-only resolution attributes nothing here, which is why the seat is the
+  identity — and it named the same rep Acefone's own `agent_name` did on all 1,195. (2026-09)
 - **`answered_agent_number` is an extension** (`Extension-0602141810277`), not a phone. It was being fed
   to a phone matcher, where it could never match and could collide on a 10-digit suffix.
-- **`custom_identifier` and `ref_id` are empty on every payload.** There is **no correlation key** from a
-  placed call back to its CDR. Outbound-from-CRM cannot be built on one.
+- **`custom_identifier` and `ref_id` DO return on a call we place** — both were echoed on a live
+  click-to-call CDR. The 2026-07 reading of "empty on every payload" was drawn from a corpus of calls
+  placed on Acefone's own softphone, which echo neither. The envelope therefore carries every id a
+  provider offers and the writer tries each, rather than betting on one. (2026-09)
 - **`hangup_cause` never says "busy" or "cancel"** — both documented status branches were unreachable.
 - **`call_status` is lowercase** despite the docs.
 - **Acefone speaks two dialects on one webhook.** IVR `inbound` and `Dialer (inbound)` differ in
   timestamp format, phone format and hangup vocabulary. One provider already needs normalization — which
-  is the whole argument for the envelope.
+  is the whole argument for the envelope. (2026-07)
+- **`direction` on an outbound CDR is `clicktocall`** — a word in neither the docs nor the 2026-07
+  corpus. Matching on the substring "outbound" read it as INBOUND, swapped customer and DID, and declined
+  every click-to-call as an unmapped DID. The words are a table now (`_DIRECTIONS`) and one outside it
+  defers to the URL trigger. (2026-09)
+- **A queue rings several agents and `call_flow` records every one.** Only entries marked `Answered`
+  identify a rep: reading the whole flow credited 84 of 348 inbound calls to someone who never picked up.
+  On a transfer the LAST answerer is credited, which is what `agent_name` says on 127 of 127. (2026-09)
 - **Every call a human answered was a Dialer call.** Plain IVR inbound has a 0% answer rate.
 - **Duration is not talk time.** `duration` includes IVR time; `billsec` is empty on answered calls.
   Acefone exposes **no agent talk-time field**.
@@ -166,14 +183,12 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
 
 ## Known open items
 
-- **Recordings do not play, and the fault is Acefone's.** `recording_url` returns **404 HTML
-  server-side** — unauthenticated, with a Bearer token, and even when the URL is handed to us by
-  Acefone's own authenticated API. Six URLs tested, all 404. Call recording is most likely not enabled on
-  the account. With the provider. The app no longer hides this: the CDR's URL goes to
-  `storage.call_media`, which fetches once, retries on the ladder and then settles the media row
-  `Abandoned` with the provider's own error on it — so an operator reads why there is no audio instead of
-  meeting a play button that 404s. The moment recording is enabled on the account, the same path stores
-  the bytes in Azure with no code change.
+- **Recordings work.** The 2026-07 finding of a server-side 404 was recording not being enabled on the
+  account; it is now. 2,779 of 3,000 CDRs carry a `recording_url` on `console.acefone.in`, and a fetch
+  returns **200 with real MPEG audio** — with or without a bearer token, since the token rides in the
+  query string. That is the argument for storing the bytes rather than serving the provider's link.
+  A fetch that does fail still settles the media row `Abandoned` with the provider's own error on it, so
+  an operator reads why there is no audio instead of meeting a play button that 404s.
 - **The outbound `normalize()` branch has never seen a live payload.** No outbound webhook event was ever
   captured. It is written from the inbound corpus and the record API, not proven.
 - **`scheduled_reconcile` is not wired** to `hooks.scheduler_events`, deliberately: anything that runs by
@@ -191,5 +206,5 @@ The first adapter was written from Acefone's documentation and a 363-CDR capture
    the **Numbers** table. **A number listed on no rule is dropped**, and a grain with no rule has no
    reconcile.
 4. **CRM Telephony Capture Rule** — say what to capture. **Empty captures nothing.**
-5. **CRM Telephony Agent Map** — only for agents whose email does not auto-resolve.
+5. **CRM Telephony Agent** — each rep's `acefone_number` (their provider **seat**, not a phone).
 6. Turn on the **`Telephony::Channel::calls`** switch. For outbound, also enable the Exotel slot.

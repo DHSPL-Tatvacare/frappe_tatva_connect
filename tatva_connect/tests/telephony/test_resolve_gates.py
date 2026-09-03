@@ -10,6 +10,7 @@ import os
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from tatva_connect.telephony import resolve
 from tatva_connect.telephony.adapters import acefone
 from tatva_connect.tests.telephony.fixtures import config
 
@@ -24,6 +25,7 @@ GRAIN = config.GRAIN
 # this a CRM user; the map is proven by an address that deliberately is not one.
 REP = "rep@example.com"
 FOREIGN = "_test_tel_foreign@example.com"
+SEAT = "0600000000042"          # a provider seat: not a phone, never digit-matched
 
 
 def _corpus():
@@ -50,7 +52,7 @@ class TestTelephonyGates(FrappeTestCase):
 	def setUp(self):
 		_set_rules([])
 		_clear_dids()
-		_clear("CRM Telephony Agent Map")
+		_clear_seat()
 		_clear_calls()
 
 	def tearDown(self):
@@ -127,13 +129,16 @@ class TestTelephonyGates(FrappeTestCase):
 		self.assertTrue(name)
 		self.assertIsNone(frappe.db.get_value("CRM Call Log", name, "receiver"))
 
-	def test_the_agent_map_resolves_what_the_auto_match_cannot(self):
-		"""The declared translation. Nothing can infer a CRM user from a personal address."""
+	def test_the_seat_resolves_what_the_email_cannot(self):
+		"""The provider names an agent by a SEAT, which is the value the operator already stores to place
+		that rep's calls. It carries this account outright: `answered_agent` sends no email on any of 1,195
+		answered calls pulled live, and the seat named the same rep Acefone's own `agent_name` did on all
+		of them. Retired with it: a second table translating an email the provider no longer sends."""
 		_set_rules([_rule("Inbound", "Dialer")])
 		_map_did(BUSY_DID)
-		_map_agent(FOREIGN, REP)
+		_seat(SEAT, REP)
 
-		name = acefone.process(_foreign_payload(), event="inbound_complete", account=ACCOUNT)
+		name = acefone.process(_seat_payload(), event="inbound_complete", account=ACCOUNT)
 		self.assertEqual(frappe.db.get_value("CRM Call Log", name, "receiver"), REP)
 
 	def test_replay_and_reconcile_resolve_the_same_account_as_the_live_delivery(self):
@@ -189,10 +194,12 @@ _map_did = config.map_did
 _clear_dids = config.clear_dids
 
 
-def _map_agent(agent_email, user):
-	doc = frappe.new_doc("CRM Telephony Agent Map")
-	doc.update({"agent_email": agent_email, "user": user, "telephony_account": ACCOUNT, "enabled": 1})
-	doc.insert(ignore_permissions=True)
+def _seat(seat, user):
+	"""Give a rep their provider seat — crm's own agent row, the one an operator fills to place calls."""
+	name = frappe.db.get_value(resolve.AGENT_DOCTYPE, {"user": user})
+	doc = frappe.get_doc(resolve.AGENT_DOCTYPE, name) if name else frappe.new_doc(resolve.AGENT_DOCTYPE)
+	doc.update({"user": user, resolve.SEAT_FIELD: seat})
+	doc.save(ignore_permissions=True) if name else doc.insert(ignore_permissions=True)
 	frappe.db.commit()
 
 
@@ -208,12 +215,21 @@ def _foreign_payload():
 	return payload
 
 
-def _clear(doctype):
-	"""Drop only the rows this suite owns. An unfiltered delete here would take the operator's DID and
-	agent maps with it, and the whole point of the DID map is that losing it drops live calls."""
-	for name in frappe.get_all(doctype, filters={"telephony_account": ACCOUNT}, pluck="name"):
-		frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
-	frappe.db.commit()
+def _seat_payload():
+	"""The same answered CDR as this account really sends it: a seat, and no email anywhere."""
+	payload = _foreign_payload()
+	payload["call_id"] = "_test-seat-agent"
+	payload["answered_agent"] = [{"name": "Redacted", "number": SEAT}]
+	payload["answered_agent_number"] = SEAT
+	return payload
+
+
+def _clear_seat():
+	"""Drop only the seat this suite sets. The row is crm's and may be an operator's."""
+	name = frappe.db.get_value(resolve.AGENT_DOCTYPE, {resolve.SEAT_FIELD: SEAT})
+	if name:
+		frappe.db.set_value(resolve.AGENT_DOCTYPE, name, resolve.SEAT_FIELD, None)
+		frappe.db.commit()
 
 
 def _clear_calls():

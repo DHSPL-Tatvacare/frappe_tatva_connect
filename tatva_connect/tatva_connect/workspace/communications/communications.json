@@ -2,11 +2,39 @@
  "app": "tatva_connect",
  "charts": [
   {
+   "chart_name": "Calls per Day",
+   "label": "Calls per Day"
+  },
+  {
+   "chart_name": "Call Outcomes",
+   "label": "Call Outcomes"
+  },
+  {
+   "chart_name": "Calls by Medium",
+   "label": "Calls by Medium"
+  },
+  {
+   "chart_name": "WhatsApp Sent per Day",
+   "label": "WhatsApp Sent per Day"
+  },
+  {
+   "chart_name": "WhatsApp Failed per Day",
+   "label": "WhatsApp Failed per Day"
+  },
+  {
+   "chart_name": "Sends by Template",
+   "label": "Sends by Template"
+  },
+  {
+   "chart_name": "WhatsApp Faults by Type",
+   "label": "WhatsApp Faults by Type"
+  },
+  {
    "chart_name": "Push Devices Registered",
    "label": "Push Devices Registered"
   }
  ],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every channel the CRM speaks on \\u2014 WhatsApp, telephony, AI voice, transcription and push \\u2014 is configured here.\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"An account holds the provider credential, and a routing rule decides which account a lead is reached on. A telephony agent carries the rep's line: it is the phone the CRM rings for them, and the name a call they answer is recorded under. Push messaging and the notification catalogue are set alongside.\", \"col\": 12}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Call log and WhatsApp messages hold the delivered traffic; enrolled devices are listed under push.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Accounts\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Accounts\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"AI Voice Accounts\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transcription Accounts\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Push Settings\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Notification Settings\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Routing\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Telephony Agents\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"User Mapping\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Call Log\", \"col\": 4}, \"id\": \"b17\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"WhatsApp Messages\", \"col\": 4}, \"id\": \"b18\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}, \"id\": \"b19\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Communications</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every channel the CRM speaks on \\u2014 WhatsApp, telephony, AI voice, transcription and push. The counts below are split by direction, because a call we placed and a call we received fail for opposite reasons: one means the patient could not be reached, the other means nobody here picked up.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls we placed</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed Today\", \"col\": 4}, \"id\": \"b3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 7d\", \"col\": 4}, \"id\": \"b4\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Placed 30d\", \"col\": 4}, \"id\": \"b5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls we received</b></span>\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received Today\", \"col\": 4}, \"id\": \"b7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 7d\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Received 30d\", \"col\": 4}, \"id\": \"b9\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp messages we sent</b></span>\", \"col\": 12}, \"id\": \"b10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent Today\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 7d\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sent 30d\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls that never joined</b></span>\", \"col\": 12}, \"id\": \"b14\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Rang out, engaged, refused or cancelled \\u2014 every terminal state except Completed. Left is the patient we could not get to; right is the patient who tried us and got nobody.\", \"col\": 12}, \"id\": \"b15\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Outbound Calls Not Connected 30d\", \"col\": 6}, \"id\": \"b16\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Inbound Calls We Missed 30d\", \"col\": 6}, \"id\": \"b17\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp that did not land</b></span>\", \"col\": 12}, \"id\": \"b18\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Failed means the provider refused it. Never confirmed means the provider took it and no delivered or read receipt ever came back, so nobody can say whether the patient saw it.\", \"col\": 12}, \"id\": \"b19\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Failed 30d\", \"col\": 6}, \"id\": \"b20\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Never Confirmed 30d\", \"col\": 6}, \"id\": \"b21\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Sent to the patient, missing from the CRM</b></span>\", \"col\": 12}, \"id\": \"b22\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"The WhatsApp left and the patient has it, but no message row was written on the lead. The rep's chat tab looks empty, so they may send the same thing again, and a workflow waiting on a reply to that message never resumes. On the right is the mirror image: a delivery receipt arrived for a message the CRM never stored.\", \"col\": 12}, \"id\": \"b23\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"WhatsApp Sends With No Row 30d\", \"col\": 6}, \"id\": \"b24\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Receipts With No Message 30d\", \"col\": 6}, \"id\": \"b25\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Calls</b></span>\", \"col\": 12}, \"id\": \"b26\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls per Day\", \"col\": 6}, \"id\": \"b27\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Call Outcomes\", \"col\": 6}, \"id\": \"b28\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Calls by Medium\", \"col\": 12}, \"id\": \"b29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>WhatsApp</b></span>\", \"col\": 12}, \"id\": \"b30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Sent per Day\", \"col\": 6}, \"id\": \"b31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Failed per Day\", \"col\": 6}, \"id\": \"b32\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Sends by Template\", \"col\": 6}, \"id\": \"b33\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"WhatsApp Faults by Type\", \"col\": 6}, \"id\": \"b34\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Push</b></span>\", \"col\": 12}, \"id\": \"b35\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Push Devices Registered\", \"col\": 12}, \"id\": \"b36\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b37\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b38\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"An account holds the provider credential, and a routing rule decides which account a lead is reached on. Capture rules decide which calls are kept at all, and the agent map names whose phone rings.\", \"col\": 12}, \"id\": \"b39\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b40\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Call log and WhatsApp messages hold the traffic that was recorded; enrolled devices are listed under push. Error log carries the sends that left without one.\", \"col\": 12}, \"id\": \"b41\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b42\"}]",
  "creation": "2026-06-18 23:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -18,11 +46,72 @@
  "is_hidden": 0,
  "label": "Communications",
  "links": [],
- "modified": "2026-09-02 09:00:00.000000",
+ "modified": "2026-09-04 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Tatva Connect",
  "name": "Communications",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Calls Placed Today",
+   "number_card_name": "Calls Placed Today"
+  },
+  {
+   "label": "Calls Placed 7d",
+   "number_card_name": "Calls Placed 7d"
+  },
+  {
+   "label": "Calls Placed 30d",
+   "number_card_name": "Calls Placed 30d"
+  },
+  {
+   "label": "Calls Received Today",
+   "number_card_name": "Calls Received Today"
+  },
+  {
+   "label": "Calls Received 7d",
+   "number_card_name": "Calls Received 7d"
+  },
+  {
+   "label": "Calls Received 30d",
+   "number_card_name": "Calls Received 30d"
+  },
+  {
+   "label": "WhatsApp Sent Today",
+   "number_card_name": "WhatsApp Sent Today"
+  },
+  {
+   "label": "WhatsApp Sent 7d",
+   "number_card_name": "WhatsApp Sent 7d"
+  },
+  {
+   "label": "WhatsApp Sent 30d",
+   "number_card_name": "WhatsApp Sent 30d"
+  },
+  {
+   "label": "Outbound Calls Not Connected 30d",
+   "number_card_name": "Outbound Calls Not Connected 30d"
+  },
+  {
+   "label": "Inbound Calls We Missed 30d",
+   "number_card_name": "Inbound Calls We Missed 30d"
+  },
+  {
+   "label": "WhatsApp Failed 30d",
+   "number_card_name": "WhatsApp Failed 30d"
+  },
+  {
+   "label": "WhatsApp Never Confirmed 30d",
+   "number_card_name": "WhatsApp Never Confirmed 30d"
+  },
+  {
+   "label": "WhatsApp Sends With No Row 30d",
+   "number_card_name": "WhatsApp Sends With No Row 30d"
+  },
+  {
+   "label": "Receipts With No Message 30d",
+   "number_card_name": "Receipts With No Message 30d"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -88,14 +177,6 @@
    "doc_view": "List",
    "label": "Telephony Agents",
    "link_to": "CRM Telephony Agent",
-   "type": "DocType"
-  },
-  {
-   "color": "Grey",
-   "doc_view": "List",
-   "label": "User Mapping",
-   "link_to": "CRM Telephony Agent Map",
-   "stats_filter": "[]",
    "type": "DocType"
   },
   {
