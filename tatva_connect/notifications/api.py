@@ -12,14 +12,31 @@
 import json
 
 import frappe
-from frappe.rate_limiter import rate_limit
 from frappe.utils import now_datetime
 
 from tatva_connect.notifications import catalog, sender
+from tatva_connect.utils import spend_rate_limit
 
 PREFERENCE = "CRM Notification Preference"
 SETTINGS = "CRM Push Settings"
 SUBSCRIPTION = "CRM Push Subscription"
+
+_RATE_LIMIT_MESSAGE = "Too many requests. Please try again in a minute."
+
+
+def _throttle(counter, limit):
+	"""One push counter, through the app's one identity-keyed limiter, keyed on the CALLER.
+
+	These three endpoints are signed in, so the caller has a name. frappe's own decorator keys on the
+	request IP whatever else it is given, which on a shared office line is one budget for the whole
+	floor — the reason `spend_rate_limit` exists. The refusal class is the same either way, so what a
+	browser sees on a refusal does not change.
+
+	Silent outside an HTTP request, exactly as the decorator was: a job or a test calling one of these
+	directly is not a caller with a budget."""
+	if frappe.request:
+		spend_rate_limit(f"push-rl:{counter}", frappe.session.user, limit, 60, _RATE_LIMIT_MESSAGE)
+
 
 
 # ── Per-user prefs ────────────────────────────────────────────────────────────────────
@@ -164,7 +181,6 @@ def save_my_email_prefs(prefs):
 
 
 @frappe.whitelist()
-@rate_limit(limit=20, seconds=60)
 def register_token(fcm_token, device_label=None):
 	"""Bind this browser's FCM token to the caller.
 
@@ -178,6 +194,7 @@ def register_token(fcm_token, device_label=None):
 	out (CRM Push Subscription is System Manager only, and the token is never logged); knowing one means
 	already holding the browser. The cap here only stops a scripted sweep.
 	"""
+	_throttle("register", 20)
 	user = frappe.session.user
 	if not fcm_token or user == "Guest":
 		return {"ok": False}
@@ -213,7 +230,6 @@ def unregister_token(fcm_token):
 
 
 @frappe.whitelist(methods=["POST"])
-@rate_limit(limit=10, seconds=60)
 def validate_push_config():
 	"""Is the push config real, and would a send actually work? Checked against Firebase, not guessed.
 
@@ -222,6 +238,7 @@ def validate_push_config():
 	than in a silent no-op at 2am. The cached token is dropped first, or a stale one would vouch for a
 	credential that has since been replaced.
 	"""
+	_throttle("validate", 10)
 	frappe.only_for("System Manager")
 	settings = frappe.get_cached_doc(SETTINGS)
 	report = {"ok": False, "checks": []}
@@ -272,9 +289,9 @@ def validate_push_config():
 
 
 @frappe.whitelist(methods=["POST"])
-@rate_limit(limit=5, seconds=60)
 def send_test_push():
 	"""Push a real message to the caller's own devices, through the SAME sender every event uses."""
+	_throttle("test-send", 5)
 	frappe.only_for("System Manager")
 	tokens = frappe.get_all(SUBSCRIPTION, filters={"user": frappe.session.user}, pluck="fcm_token")
 	if not tokens:

@@ -14,6 +14,7 @@ that it is never handed out: CRM Push Subscription is System Manager only and th
 so knowing one means already holding the browser.
 """
 import unittest
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -90,3 +91,40 @@ class TestPushDeviceRegistration(FrappeTestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestPushThrottle(unittest.TestCase):
+	"""The three push endpoints count per CALLER, not per IP — an office NATs to one address.
+
+	They were on frappe's `@rate_limit`, which keys on the request IP whatever else it is given, so one
+	rep on a shared line could exhaust the budget for the whole floor. The refusal class is identical
+	either way (`RateLimitExceededError`), so what a browser sees on a refusal does not change.
+	"""
+
+	def setUp(self):
+		self.counter = f"test-{frappe.generate_hash(length=6)}"
+		self.key = f"push-rl:{self.counter}:{frappe.session.user}"
+		frappe.cache.delete_value(self.key)
+		self.addCleanup(frappe.cache.delete_value, self.key)
+
+	def _with_request(self):
+		"""Bind something for `bool(frappe.request)` to see — frappe's own init() tests it the same way."""
+		frappe.local.request = object()
+		self.addCleanup(lambda: setattr(frappe.local, "request", None))
+
+	def test_it_is_silent_when_there_is_no_http_request(self):
+		"""A job or a test calling one of these directly is not a caller with a budget."""
+		self.assertFalse(frappe.request)
+		for _ in range(50):
+			api._throttle(self.counter, 1)
+
+	def test_it_refuses_with_the_same_error_the_decorator_raised(self):
+		self._with_request()
+		api._throttle(self.counter, 1)
+		with self.assertRaises(frappe.RateLimitExceededError):
+			api._throttle(self.counter, 1)
+
+	def test_the_budget_belongs_to_the_caller_not_to_their_address(self):
+		self._with_request()
+		api._throttle(self.counter, 5)
+		self.assertEqual(int(frappe.cache.get(frappe.cache.make_key(self.key))), 1)
