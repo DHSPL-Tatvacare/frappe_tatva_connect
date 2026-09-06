@@ -1136,6 +1136,22 @@ AUTOMATIONS = [
 		activator="tatva_connect.observability.capture.apply_logging",
 	),
 	Auto(
+		key="Notify::Partner::silence",
+		fires_on="Schedule",
+		trigger_detail="hourly · a watched contract that has sent no leads for the configured period",
+		purpose=(
+			"An operator is emailed when a partner API stops sending leads. The period and the "
+			"recipients are set in CRM Partner API Settings, and each contract is watched only if its "
+			"own Alert When Silent tick is on, so a partner that is quiet by design says nothing. One "
+			"email per quiet spell, and it re-arms when the partner sends again. Off, a partner that "
+			"stops is noticed by someone looking.\n"
+			"Example: an integration breaks at 2am and is reported by 3am rather than at the next "
+			"morning's review."
+		),
+		requires="Observability::Requests::logging",
+		backs=["tatva_connect.observability.silence.sweep"],
+	),
+	Auto(
 		key="Observability::Metrics::rollup",
 		fires_on="Schedule",
 		trigger_detail="every 6h",
@@ -1233,6 +1249,24 @@ AUTOMATIONS = [
 			"narrowed to that vertical before the name is matched."
 		),
 		requires="Search::Index::indexing",
+	),
+	Auto(
+		key="MCP::Docs::server",
+		fires_on="Provider call",
+		trigger_detail="mcp/server · endpoint gate",
+		purpose=(
+			"The read-only documentation server is opened up, so a member of staff can point their own AI "
+			"assistant at this site and be talked through a task using the real handbook, the real field "
+			"names and the real Desk pages. It reads the published handbook, doctype structure and the "
+			"workspace map on the read replica, under the caller's own permissions, and it can return no "
+			"record of any kind and change nothing. Off, which is how it ships, the endpoint answers every "
+			"call saying it is not enabled and runs no query at all.\n"
+			"Example: a manager asks their assistant how to route a new phone number to a team, and is "
+			"given the handbook's own answer, the mandatory fields, and the exact page to open."
+		),
+		# A gate inside mcp/server (the endpoint preamble), NOT a doc_event/scheduler — like
+		# Partner::RateLimit::enforcement, so backs stays empty and drift never looks for it.
+		backs=[],
 	),
 ]
 

@@ -60,6 +60,9 @@ APP_ENDPOINTS = [
 	EndpointSpec("linked-docs", "frappe.desk.form.linked_with.get_linked_docs", "POST", "read", "B1",
 	             "CRM Lead", "docname"),
 	EndpointSpec("installed-apps", "frappe.apps.get_apps", "GET", "info", "B4"),
+	# The MCP documentation server: ONE endpoint, read-only, and it must be unreachable to a hostile
+	# principal even though it names no doctype — a Guest reaching it at all is the finding.
+	EndpointSpec("mcp-endpoint", "tatva_connect.mcp.server.endpoint", "POST", "info", "B4"),
 	# VAPT Jul — LMS assessment surface. These carry the quiz id (not a doctype-derived name), so they are
 	# APP endpoints. The row/action sweep judges REACHABILITY here; the answer-key FIELD strip (N4/N5) and
 	# the race/timer LOGIC (N2/N6) are judged by the field oracle + the integrity module — a row oracle

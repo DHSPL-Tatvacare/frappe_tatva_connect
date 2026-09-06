@@ -1,0 +1,114 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-05 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-05 21:42:34.702273",
+ "modified_by": "Administrator",
+ "module": "MCP",
+ "name": "CRM MCP Settings",
+ "owner": "Administrator",
+ "field_order": [
+  "section_rate",
+  "window_seconds",
+  "per_user_rate",
+  "global_rate",
+  "section_size",
+  "search_max_hits",
+  "schema_max_hits",
+  "page_characters"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_rate",
+   "fieldtype": "Section Break",
+   "label": "Rate limits",
+   "description": "Two fixed-window counters guard this server. One is per person, so a runaway agent cannot starve anyone else. One is shared by everyone, so the site itself cannot be hammered. A refusal is answered with a Retry-After and costs nothing further. Every read this server makes goes to the read replica, so a burst never touches the database the CRM writes to."
+  },
+  {
+   "fieldname": "window_seconds",
+   "fieldtype": "Int",
+   "label": "Window (seconds)",
+   "description": "The period both counts are expressed over. A count resets when the window rolls over.",
+   "default": "60",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "per_user_rate",
+   "fieldtype": "Int",
+   "label": "Per-person calls per window",
+   "description": "How many calls one person's assistant may make in a window. An agent answering one question typically makes three or four. 0 removes this limit.",
+   "default": "120",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "global_rate",
+   "fieldtype": "Int",
+   "label": "Total calls per window",
+   "description": "How many calls everyone together may make in a window \u2014 the ceiling that protects the site. 0 removes this limit, which is not recommended on a live site.",
+   "default": "600",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_size",
+   "fieldtype": "Section Break",
+   "label": "Answer size",
+   "description": "How much one answer may carry. These bound what a single call can cost to build and to read: an assistant asks again for the next page rather than being handed everything at once."
+  },
+  {
+   "fieldname": "search_max_hits",
+   "fieldtype": "Int",
+   "label": "Handbook results per search",
+   "description": "How many pages a handbook search returns. Each carries a title, a route and a short snippet.",
+   "default": "8",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "schema_max_hits",
+   "fieldtype": "Int",
+   "label": "Schema results per search",
+   "description": "How many doctypes, and how many fields, a schema search returns.",
+   "default": "15",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "page_characters",
+   "fieldtype": "Int",
+   "label": "Characters per page of a document",
+   "description": "How much of a long handbook page comes back at once. The answer says how many pages there are, and the assistant asks for the next one by number.",
+   "default": "12000",
+   "non_negative": 1
+  }
+ ],
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Automation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

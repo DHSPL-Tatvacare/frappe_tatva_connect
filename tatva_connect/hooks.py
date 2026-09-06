@@ -1001,6 +1001,8 @@ before_request = [
 # Rewrite framework-layer errors on partner-API paths into the unified error contract, then log one raw row per partner-API/webhook hit (runs last); both no-op for other endpoints.
 after_request = [
 	"tatva_connect.api._base.normalise_partner_response",
+	# An unauthenticated MCP call must answer 401 with a challenge; frappe refuses a Guest with 403 before the endpoint runs.
+	"tatva_connect.mcp.server.challenge_unauthenticated",
 	"tatva_connect.observability.capture.log_request",
 	# M2: delete the temp copies get_full_path() hydrated for this request — the other half of "cached per request".
 	"tatva_connect.storage.file_override.discard_hydrated",

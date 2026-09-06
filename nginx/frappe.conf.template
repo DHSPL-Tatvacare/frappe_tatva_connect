@@ -76,6 +76,12 @@ server {
 		rewrite ^ /api/method/tatva_connect.telephony.handler.$tel_event?token=$tel_token last;
 	}
 
+	# --- TATVA MCP: the protocol wants ONE endpoint path, so /mcp is the address and the method is ours ---
+
+	location = /mcp {
+		rewrite ^ /api/method/tatva_connect.mcp.server.endpoint last;
+	}
+
 	# --- Everything else ---
 
 	location / {
