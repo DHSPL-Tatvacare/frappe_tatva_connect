@@ -239,12 +239,17 @@ def held_by_lead(lead, event) -> bool:
 	all carry it, so it is the single identity that spans every route in. The correlation id is the
 	other half of the same question — it is what a row WE sent stores.
 
+	And on the wamid, because the provider's id is a DELIVERY identity and not a message one: WATI delivered one image twice under two ids 0.8s apart while the wamid stayed 1:1 across nine.
+
 	Nothing else is consulted. Keying on the name meant a history row, which carries no wamid, had no
 	key at all and inserted unconditionally; a composite guess on sender and text read two genuine
 	replies in one thread as one message and dropped the second.
 	"""
 	wid = event.provider_message_id
 	if wid and frappe.db.exists("WhatsApp Message", {"custom_provider_message_id": wid, "reference_name": lead}):
+		return True
+	wam = event.wamid
+	if wam and frappe.db.exists("WhatsApp Message", {"message_id": wam, "reference_name": lead}):
 		return True
 	cid = event.correlation_id
 	if cid and frappe.db.exists("WhatsApp Message", {"message_id": cid, "reference_name": lead}):
