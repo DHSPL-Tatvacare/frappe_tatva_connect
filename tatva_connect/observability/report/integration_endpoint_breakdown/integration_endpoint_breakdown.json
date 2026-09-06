@@ -1,0 +1,50 @@
+{
+ "add_total_row": 1,
+ "columns": [],
+ "creation": "2026-09-03 04:00:00.000000",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "from_datetime",
+   "label": "From",
+   "fieldtype": "Datetime",
+   "default": "frappe.datetime.add_to_date(frappe.datetime.now_datetime(), {days: -1})",
+   "reqd": 1
+  },
+  {
+   "fieldname": "integration",
+   "label": "Integration",
+   "fieldtype": "Data",
+   "description": "Blank for all. e.g. partner-api-gfis@tatvacare.in, WhatsApp"
+  },
+  {
+   "fieldname": "lane",
+   "label": "Lane",
+   "fieldtype": "Select",
+   "options": "\nPartner API\nInbound Webhook"
+  }
+ ],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": null,
+ "modified": "2026-09-03 04:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Integration Endpoint Breakdown",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "query": "SELECT\n\tendpoint                                              AS \"Endpoint:Data:230\",\n\tCOUNT(*)                                              AS \"Calls:Int:80\",\n\tSUM(is_error)                                         AS \"Errors:Int:80\",\n\tSUM(error_code = 'rate_limited')                      AS \"Rate limited:Int:110\",\n\tSUM(error_code IN ('validation_error','bad_request')) AS \"Bad payload:Int:110\",\n\tSUM(error_code IN ('unauthorized','forbidden'))       AS \"Auth:Int:80\",\n\tSUM(error_code IN ('server_error','server_busy'))     AS \"Our fault:Int:100\",\n\tSUM(error_code = 'not_found')                         AS \"Not found:Int:100\",\n\tROUND(AVG(duration_ms))                               AS \"Avg ms:Int:80\",\n\tMAX(duration_ms)                                      AS \"Slowest ms:Int:100\",\n\tMIN(request_time)                                     AS \"First call:Datetime:170\",\n\tMAX(request_time)                                     AS \"Last call:Datetime:170\"\nFROM `tabCRM API Request Log`\nWHERE request_time >= %(from_datetime)s\n\tAND (%(integration)s = '' OR source = %(integration)s)\n\tAND (%(lane)s = '' OR channel = %(lane)s)\nGROUP BY endpoint\nORDER BY COUNT(*) DESC",
+ "ref_doctype": "CRM API Request Log",
+ "report_name": "Integration Endpoint Breakdown",
+ "report_type": "Query Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  }
+ ]
+}

@@ -1,109 +1,207 @@
 {
-  "app": "tatva_connect",
-  "charts": [
-    {
-      "chart_name": "API Requests by Endpoint",
-      "label": "API Requests by Endpoint"
-    }
-  ],
-  "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Requests (24h)\", \"col\": 3}, \"id\": \"b1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Errors (24h)\", \"col\": 3}, \"id\": \"b2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 3}, \"id\": \"b3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 3}, \"id\": \"b4\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests by Endpoint\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Every request the CRM serves or sends is measured here, and the rows behind each number are one click away.\", \"col\": 12}, \"id\": \"b6\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b7\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Retention and the granularity metrics are rolled up at are set on Metric Settings.\", \"col\": 12}, \"id\": \"b8\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Traffic, error rate and latency are charted daily; the request log, error log and integration requests hold the individual rows.\", \"col\": 12}, \"id\": \"b10\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b11\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metrics (raw)\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Request Log\", \"col\": 4}, \"id\": \"b13\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metric Settings\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Error Log\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Integration Requests\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Webhook Log\", \"col\": 4}, \"id\": \"b17\"}]",
-  "creation": "2026-06-18 23:00:00.000000",
-  "custom_blocks": [],
-  "docstatus": 0,
-  "doctype": "Workspace",
-  "for_user": "",
-  "hide_custom": 0,
-  "icon": "gauge",
-  "idx": 6,
-  "is_hidden": 0,
-  "label": "Observability",
-  "links": [],
-  "modified": "2026-08-16 12:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "Observability",
-  "name": "Observability",
-  "number_cards": [
-    {
-      "number_card_name": "API Requests (24h)",
-      "label": "API Requests (24h)"
-    },
-    {
-      "number_card_name": "API Errors (24h)",
-      "label": "API Errors (24h)"
-    },
-    {
-      "number_card_name": "API Error Rate (24h)",
-      "label": "API Error Rate (24h)"
-    },
-    {
-      "number_card_name": "API p95 Latency (24h)",
-      "label": "API p95 Latency (24h)"
-    }
-  ],
-  "owner": "Administrator",
-  "parent_page": "",
-  "public": 1,
-  "quick_lists": [],
-  "restrict_to_domain": "",
-  "roles": [
-    {
-      "role": "System Manager"
-    },
-    {
-      "role": "Automation Manager"
-    }
-  ],
-  "sequence_id": 6.0,
-  "shortcuts": [
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Metrics (raw)",
-      "link_to": "CRM API Metric",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Request Log",
-      "link_to": "CRM API Request Log",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Metric Settings",
-      "link_to": "CRM API Metric Settings",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Error Log",
-      "link_to": "Error Log",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Integration Requests",
-      "link_to": "Integration Request",
-      "stats_filter": "[]",
-      "type": "DocType"
-    },
-    {
-      "color": "Grey",
-      "doc_view": "List",
-      "label": "Webhook Log",
-      "link_to": "Webhook Request Log",
-      "stats_filter": "[]",
-      "type": "DocType"
-    }
-  ],
-  "title": "Observability",
-  "type": "Workspace"
+ "app": "tatva_connect",
+ "charts": [
+  {
+   "chart_name": "API Requests per Day",
+   "label": "API Requests per Day"
+  },
+  {
+   "chart_name": "API Errors per Day",
+   "label": "API Errors per Day"
+  },
+  {
+   "chart_name": "Hits by partner",
+   "label": "Hits by partner"
+  },
+  {
+   "chart_name": "Errors by partner",
+   "label": "Errors by partner"
+  },
+  {
+   "chart_name": "Webhook Hits per Day",
+   "label": "Webhook Hits per Day"
+  },
+  {
+   "chart_name": "Webhook Errors per Day",
+   "label": "Webhook Errors per Day"
+  },
+  {
+   "chart_name": "Hits by provider",
+   "label": "Hits by provider"
+  },
+  {
+   "chart_name": "Errors by provider",
+   "label": "Errors by provider"
+  },
+  {
+   "chart_name": "API p95 Latency (Daily)",
+   "label": "API p95 Latency (Daily)"
+  },
+  {
+   "chart_name": "API p95 Latency (Hourly)",
+   "label": "API p95 Latency (Hourly)"
+  },
+  {
+   "chart_name": "Errors by Endpoint",
+   "label": "Errors by Endpoint"
+  },
+  {
+   "chart_name": "Quota Refusals by Partner",
+   "label": "Quota Refusals by Partner"
+  }
+ ],
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Observability</b></span>\", \"col\": 12}, \"id\": \"b0\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Two lanes reach the CRM. On one, a partner calls our API \\u2014 a failure there is usually their payload, and they fix it. On the other, a provider delivers to a webhook \\u2014 a failure there is ours, and a patient's message or call is lost. Each lane is counted on its own below.\", \"col\": 12}, \"id\": \"b1\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Still talking to us</b></span>\", \"col\": 12}, \"id\": \"b2\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Silence raises no error and writes no log line, so it is counted here instead. Anything above zero means an integration has sent nothing for a day \\u2014 open Integration Last Seen, which lists the quietest first.\", \"col\": 12}, \"id\": \"b3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Integrations Silent (24h)\", \"col\": 4}, \"id\": \"b4\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Partner API</b></span>\", \"col\": 12}, \"id\": \"b5\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits Today\", \"col\": 4}, \"id\": \"b6\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 7d\", \"col\": 4}, \"id\": \"b7\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Hits 30d\", \"col\": 4}, \"id\": \"b8\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound webhooks</b></span>\", \"col\": 12}, \"id\": \"b9\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits Today\", \"col\": 4}, \"id\": \"b10\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 7d\", \"col\": 4}, \"id\": \"b11\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Hits 30d\", \"col\": 4}, \"id\": \"b12\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Failing (404 excluded)</b></span>\", \"col\": 12}, \"id\": \"b13\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API Error Rate (24h)\", \"col\": 4}, \"id\": \"b14\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Partner Errors 30d\", \"col\": 4}, \"id\": \"b15\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Webhook Errors 30d\", \"col\": 4}, \"id\": \"b16\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Refused for quota</b></span>\", \"col\": 12}, \"id\": \"b17\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Not a fault \\u2014 our own rate limit turning a partner away. Their data did not arrive, so it is counted; it needs a quota conversation, not an engineer, which is why it is not mixed into the errors above.\", \"col\": 12}, \"id\": \"b18\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Quota Refusals 30d\", \"col\": 4}, \"id\": \"b19\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Quota Refusals by Partner\", \"col\": 8}, \"id\": \"b20\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Slow</b></span>\", \"col\": 12}, \"id\": \"b21\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"API p95 Latency (24h)\", \"col\": 4}, \"id\": \"b22\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Slowest Call (24h)\", \"col\": 4}, \"id\": \"b23\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Calls Over 5s (24h)\", \"col\": 4}, \"id\": \"b24\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Partner API</b></span>\", \"col\": 12}, \"id\": \"b25\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Requests per Day\", \"col\": 6}, \"id\": \"b26\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API Errors per Day\", \"col\": 6}, \"id\": \"b27\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by partner\", \"col\": 6}, \"id\": \"b28\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by partner\", \"col\": 6}, \"id\": \"b29\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Inbound webhooks</b></span>\", \"col\": 12}, \"id\": \"b30\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Hits per Day\", \"col\": 6}, \"id\": \"b31\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Webhook Errors per Day\", \"col\": 6}, \"id\": \"b32\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Hits by provider\", \"col\": 6}, \"id\": \"b33\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by provider\", \"col\": 6}, \"id\": \"b34\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Latency</b></span>\", \"col\": 12}, \"id\": \"b35\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Daily)\", \"col\": 6}, \"id\": \"b36\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"API p95 Latency (Hourly)\", \"col\": 6}, \"id\": \"b37\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>What refused</b></span>\", \"col\": 12}, \"id\": \"b38\"}, {\"type\": \"chart\", \"data\": {\"chart_name\": \"Errors by Endpoint\", \"col\": 12}, \"id\": \"b39\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b40\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configured here</b></span>\", \"col\": 12}, \"id\": \"b41\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Metric Settings holds how long fine-grained buckets are kept and how far behind live traffic a bucket is finalised. The two automations that feed this page \\u2014 request logging and the rollup \\u2014 are armed under Engine Switches.\", \"col\": 12}, \"id\": \"b42\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watched here</b></span>\", \"col\": 12}, \"id\": \"b43\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Request log is every hit as it happened, and is the row behind each number above. Error log carries the tracebacks. Integration Requests and Webhook Log hold the raw deliveries a provider sent, replayable from the Desk when one fails.\", \"col\": 12}, \"id\": \"b44\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"b45\"}]",
+ "creation": "2026-06-18 23:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "gauge",
+ "idx": 6,
+ "is_hidden": 0,
+ "label": "Observability",
+ "links": [],
+ "modified": "2026-09-03 08:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Observability",
+ "name": "Observability",
+ "number_cards": [
+  {
+   "number_card_name": "Integrations Silent (24h)",
+   "label": "Integrations Silent (24h)"
+  },
+  {
+   "number_card_name": "Partner Hits Today",
+   "label": "Partner Hits Today"
+  },
+  {
+   "number_card_name": "Partner Hits 7d",
+   "label": "Partner Hits 7d"
+  },
+  {
+   "number_card_name": "Partner Hits 30d",
+   "label": "Partner Hits 30d"
+  },
+  {
+   "number_card_name": "Webhook Hits Today",
+   "label": "Webhook Hits Today"
+  },
+  {
+   "number_card_name": "Webhook Hits 7d",
+   "label": "Webhook Hits 7d"
+  },
+  {
+   "number_card_name": "Webhook Hits 30d",
+   "label": "Webhook Hits 30d"
+  },
+  {
+   "number_card_name": "API Error Rate (24h)",
+   "label": "API Error Rate (24h)"
+  },
+  {
+   "number_card_name": "Partner Errors 30d",
+   "label": "Partner Errors 30d"
+  },
+  {
+   "number_card_name": "Webhook Errors 30d",
+   "label": "Webhook Errors 30d"
+  },
+  {
+   "number_card_name": "API p95 Latency (24h)",
+   "label": "API p95 Latency (24h)"
+  },
+  {
+   "number_card_name": "Slowest Call (24h)",
+   "label": "Slowest Call (24h)"
+  },
+  {
+   "number_card_name": "Calls Over 5s (24h)",
+   "label": "Calls Over 5s (24h)"
+  },
+  {
+   "number_card_name": "Quota Refusals 30d",
+   "label": "Quota Refusals 30d"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Automation Manager"
+  }
+ ],
+ "sequence_id": 6.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Integration Last Seen",
+   "link_to": "Integration Last Seen",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Endpoint Breakdown",
+   "link_to": "Integration Endpoint Breakdown",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Metrics (raw)",
+   "link_to": "CRM API Metric",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Request Log",
+   "link_to": "CRM API Request Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Metric Settings",
+   "link_to": "CRM API Metric Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Error Log",
+   "link_to": "Error Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Integration Requests",
+   "link_to": "Integration Request",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Webhook Log",
+   "link_to": "Webhook Request Log",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Observability",
+ "type": "Workspace"
 }
