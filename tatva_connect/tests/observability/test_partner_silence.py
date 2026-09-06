@@ -8,7 +8,8 @@ from tatva_connect.observability import silence
 
 def _settings_json():
 	"""The Settings doctype as it ships on disk — the source of truth, and readable before a migrate has run."""
-	import json, os
+	import json
+	import os
 
 	path = os.path.join(os.path.dirname(silence.__file__), "..", "partner_api", "doctype",
 	                    "crm_partner_api_settings", "crm_partner_api_settings.json")

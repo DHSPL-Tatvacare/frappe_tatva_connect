@@ -619,7 +619,7 @@ fixtures = [
 		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
 		"Sync Failures 30d", "Stuck Inbound", "Parked Now",
 		"Stuck Webhooks", "Active Flows",
-	
+
 		# Observability: hits per lane, the two triplets the page opens with.
 		"Partner Hits Today", "Partner Hits 7d", "Partner Hits 30d",
 		"Partner Errors 30d", "Webhook Errors 30d",
