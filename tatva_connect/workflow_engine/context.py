@@ -37,6 +37,7 @@ save first would leave it empty at exactly the moment it matters.
 import frappe
 from frappe import _
 
+from tatva_connect.automation.actions import CALL_API_SERVICE as _CALL_API_SERVICE
 from tatva_connect.taxonomy.grain import AXES as _GRAIN_AXES
 from tatva_connect.workflow_engine import ENGINE_SWITCH, registry, upstream
 
@@ -159,10 +160,6 @@ def for_node(answer, node_id):
 		"operators_by_type": answer["operators_by_type"],
 		"operator_shapes": answer["operator_shapes"],
 	}
-
-
-# The service name `_call_endpoint` stamps on its Integration Request — the row `_payload_sent` reads back.
-_CALL_API_SERVICE = "Workflow Call API"
 
 
 @frappe.whitelist()

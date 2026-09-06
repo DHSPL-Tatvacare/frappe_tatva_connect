@@ -115,6 +115,24 @@ class TestCallApi(FrappeTestCase):
 			"the payload must serialise: this failing means the request never left the process",
 		)
 
+	def test_the_call_does_not_commit_the_transaction_it_runs_in(self):
+		"""A Call API runs INSIDE the journey's segment — it has to, because the journey routes on the reply.
+
+		So it may not commit. `create_request_log` ends in `frappe.db.commit()`, which published the
+		caller's pending writes and dropped the savepoints `_run_verb` and `run_inline` roll back to; the
+		Integration Request is built here instead. Proven by writing a row, calling out, then rolling
+		back: if the call committed, the row survives.
+		"""
+		probe = frappe.get_doc({"doctype": "CRM Lead", "first_name": "CommitProbe",
+		                        "lead_name": "Commit Probe"}).insert(ignore_permissions=True)
+		from tatva_connect.automation import actions
+
+		actions._call_endpoint(_ENDPOINT, frappe.get_doc("CRM Lead", self.lead.name))
+		frappe.db.rollback()
+
+		self.assertFalse(frappe.db.exists("CRM Lead", probe.name),
+		                 "the outbound call committed the caller's pending write")
+
 	# --- the author writes the body ---------------------------------------------------------------------
 
 	_BODY = json.dumps({

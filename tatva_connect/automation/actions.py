@@ -21,7 +21,6 @@ import json
 
 import frappe
 from frappe import _
-from frappe.integrations.utils import create_request_log
 from frappe.utils import get_request_session, validate_url
 
 from tatva_connect.automation import fields, sends, subjects
@@ -74,6 +73,8 @@ class _ParkSignal(Exception):
 
 # A workflow must not hang on an endpoint that never answers; a timeout is the `failed` output. 120s is safe because a journey runs on the `workflow` queue, whose job timeout is 1500s, and never inside a user's save — a reasoning model on a long prompt simply outlives 30s and read as a broken pipeline.
 _API_TIMEOUT_SECONDS = 120
+# The service name the Integration Request carries — read back by `workflow_engine.context._payload_sent`.
+CALL_API_SERVICE = "Workflow Call API"
 _LOG_LIMIT = 10000  # an Integration Request records the shape of an answer, never an unbounded body
 
 
@@ -800,11 +801,15 @@ def _call_endpoint(endpoint, payload_doc, body=None):
 	headers = {h.key: h.value for h in (hook.get("webhook_headers") or []) if h.get("key")}
 	# The authored body when there is one, else the record itself — the request log records what really went.
 	payload = payload_doc.as_dict() if body is None else body
-	log = create_request_log(
-		payload, is_remote_request=1, service_name="Workflow Call API", url=url,
-		request_headers=headers or None,
-		reference_doctype=payload_doc.doctype, reference_docname=payload_doc.name,
-	)
+	# Built here rather than through `create_request_log`, which ends in `frappe.db.commit()` — this runs
+	# inside the journey's segment, so that commit publishes the caller's pending writes and drops its savepoints.
+	log = frappe.get_doc({
+		"doctype": "Integration Request", "integration_request_service": CALL_API_SERVICE,
+		"is_remote_request": 1, "url": url,
+		"request_headers": frappe.as_json(headers) if headers else None,
+		"data": frappe.as_json(payload),
+		"reference_doctype": payload_doc.doctype, "reference_docname": payload_doc.name,
+	}).insert(ignore_permissions=True)  # authz-ok: tier-a — workflow engine, operator-curated endpoint
 	# `frappe.as_json` like Frappe's own enqueue_webhook: `as_dict()` returns datetimes and `json=` raises.
 	headers.setdefault("Content-Type", "application/json")
 	try:
