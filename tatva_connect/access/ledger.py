@@ -641,6 +641,9 @@ OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, *
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
 EXTRA_PTYPES = {
+	# A Dashboard Chart is a REPORT-level read, so the Observability tiles refused without this; r/w/c/d stay the bucket's.
+	"CRM API Request Log": ("report",),
+	"CRM API Metric": ("report",),
 	"CRM Lead": ("email", "export"),
 	"CRM Deal": ("email", "export"),
 	"CRM Task": ("export",),
