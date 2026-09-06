@@ -21,13 +21,13 @@ A handler takes the call's arguments dict and returns a string or a JSON-able st
 protocol asks for — a tool that refuses is a RESULT, not a transport fault.
 """
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from tatva_connect.mcp import ToolError, desk, docs, schema
 
 # Re-exported so `server.py` catches one name and this module stays the only thing it talks to.
-__all__ = ["ToolError", "Tool", "VERBS", "ARGUMENTS", "REGISTRY", "listing", "find", "instructions", "as_text"]
+__all__ = ["ARGUMENTS", "REGISTRY", "VERBS", "Tool", "ToolError", "as_text", "find", "instructions", "listing"]
 
 VERBS = frozenset({"list", "search", "get"})
 

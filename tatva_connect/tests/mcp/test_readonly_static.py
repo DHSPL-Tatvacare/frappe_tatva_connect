@@ -10,7 +10,6 @@ The scan walks the ABSTRACT SYNTAX TREE, not the text, so the package can go on 
 docstrings exactly which calls it refuses to make without tripping its own guard.
 """
 import ast
-import io
 import os
 import unittest
 
@@ -29,7 +28,7 @@ def _modules():
 	folder = os.path.dirname(package.__file__)
 	for name in sorted(os.listdir(folder)):
 		if name.endswith(".py"):
-			yield name, ast.parse(io.open(os.path.join(folder, name), encoding="utf-8").read())
+			yield name, ast.parse(open(os.path.join(folder, name), encoding="utf-8").read())
 
 
 def _called_name(node):
@@ -74,7 +73,7 @@ class TestMCPIsReadOnly(unittest.TestCase):
 	def test_the_endpoint_is_switched_to_the_replica(self):
 		from tatva_connect.mcp import server
 
-		source = io.open(server.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
+		source = open(server.__file__.replace(".pyc", ".py"), encoding="utf-8").read()
 		tree = ast.parse(source)
 		endpoint = next(n for n in ast.walk(tree)
 		                if isinstance(n, ast.FunctionDef) and n.name == "endpoint")

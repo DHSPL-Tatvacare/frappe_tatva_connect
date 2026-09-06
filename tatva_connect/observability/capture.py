@@ -26,9 +26,9 @@ from tatva_connect.api._base import _PARTNER_PATH, request_error
 from tatva_connect.mcp import server as _mcp_server
 from tatva_connect.storage import transcription_channel as _transcription_webhook
 from tatva_connect.telephony import handler as _telephony_handler
-from tatva_connect.voice import webhook as _voice_webhook
 from tatva_connect.telephony.adapters.acefone import TELEPHONY_MEDIUM
 from tatva_connect.utils import mask_secrets
+from tatva_connect.voice import webhook as _voice_webhook
 from tatva_connect.whatsapp import webhook as _whatsapp_webhook
 
 _LOGGING_KEY = "Observability::Requests::logging"

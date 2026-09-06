@@ -21,6 +21,7 @@ from frappe.utils import get_url, slug
 
 from tatva_connect.mcp import ToolError
 
+
 def list_url(doctype):
 	"""Where the records of a doctype are listed."""
 	return f"{get_url()}/app/{slug(doctype)}"
