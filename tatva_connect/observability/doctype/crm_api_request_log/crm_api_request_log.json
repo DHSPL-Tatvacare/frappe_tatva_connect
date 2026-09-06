@@ -39,7 +39,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-07 00:42:35.379121",
+ "modified": "2026-09-06 21:53:49.415587",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "CRM API Request Log",
@@ -47,7 +47,6 @@
  "owner": "Administrator",
  "permissions": [
   {"read": 1, "report": 1, "export": 1, "role": "Sales Manager"},
-  {"read": 1, "report": 1, "export": 1, "role": "Automation Manager"},
   {"create": 1, "delete": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
  ],
  "row_format": "Dynamic",
