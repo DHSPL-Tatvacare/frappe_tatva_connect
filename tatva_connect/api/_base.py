@@ -268,7 +268,7 @@ def _as_table(value):
 
 def _as_structured(value):
 	"""A JSON / Geolocation column legitimately holds an object or an array."""
-	return frappe.parse_json(value) if isinstance(value, str) else value
+	return frappe.parse_json(value) if isinstance(value, str) and value.strip() else value
 
 
 def _as_text(value):
@@ -788,8 +788,6 @@ if hasattr(frappe, "QueryDeadlockError"):
 	_ERROR_MAP[frappe.QueryDeadlockError] = ("server_busy", 503)
 if hasattr(frappe, "QueryTimeoutError"):
 	_ERROR_MAP[frappe.QueryTimeoutError] = ("server_busy", 503)
-if hasattr(frappe, "DuplicateEntryError"):
-	_ERROR_MAP[frappe.DuplicateEntryError] = ("duplicate", 409)
 if hasattr(frappe, "RateLimitExceededError"):
 	_ERROR_MAP[frappe.RateLimitExceededError] = ("rate_limited", 429)
 # The SITE is unavailable, not the request wrong: both declare 503 and both derive from ValidationError, so they answered 400 "your body was invalid" while the site was read-only or its queue was full. Registerable only because the lookup is by MRO.
@@ -843,6 +841,13 @@ def _classify(e, fn_name):
 		return "cannot_delete", 409, _(
 			"This record still has records linked to it, so it cannot be deleted. Delete the records "
 			"that hang off it first, then delete this one."
+		), None, None
+	# A unique-index violation, in either of frappe's two spellings: UniqueValidationError is a ValidationError, so the MRO answered 400 "your body was invalid" for a dedup race the caller must simply retry. Handled here and not in _ERROR_MAP because `str(e)` is a ('CRM Lead', 'name', IntegrityError(...)) tuple — the same leak LinkExistsError sits here to avoid.
+	if isinstance(e, (frappe.UniqueValidationError, frappe.DuplicateEntryError)):
+		return "duplicate", 409, _(
+			"This record already exists. Another write for the same record landed first, so nothing was "
+			"saved by this call. Re-send the identical request: it will find the existing record and "
+			"update it."
 		), None, None
 	# The MRO is already ordered most-derived-first, so walking it asks the questions in the TYPE's order rather than the map's — the scan it replaces asked them in the map's.
 	for exc_type in type(e).__mro__:

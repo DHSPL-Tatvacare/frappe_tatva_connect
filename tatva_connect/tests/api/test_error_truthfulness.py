@@ -169,6 +169,17 @@ class TestErrorTruthfulness(unittest.TestCase):
 					f"{exc_type.__name__} must classify as its OWN entry, never an ancestor's",
 				)
 
+	def test_a_dedup_race_is_a_retryable_duplicate_and_leaks_no_row_id(self):
+		"""UniqueValidationError derives from ValidationError, so the MRO answered 400 "your body was invalid" for a race the caller must simply retry — and `str(e)` on it is a ('CRM Lead', 'name', IntegrityError(...)) tuple, which put an internal id and the index name in front of a partner."""
+		for exc in (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+			with self.subTest(exc=exc.__name__):
+				raised = exc("CRM Lead", "t4ds4qfj52", Exception("Duplicate entry for key 'ix_lead_dedup_unique'"))
+				code, http, message, _f, _d = _base._classify(raised, "lead_create")
+				self.assertEqual((code, http), ("duplicate", 409), "a duplicate is not the caller's body being wrong")
+				self.assertIn("Re-send the identical request", message, "the caller must be told the action that works")
+				self.assertNotIn("t4ds4qfj52", message, "no internal row id reaches a partner")
+				self.assertNotIn("ix_lead_dedup_unique", message, "no index name reaches a partner")
+
 	def test_the_failure_path_degrades_on_an_undeclared_code_instead_of_detonating(self):
 		"""`checked_code` raised in developer_mode — from inside `_fail`, which `@_api` calls in its own
 		`except`. The raise escaped the wrapper, so the partner got a bare traceback instead of the
