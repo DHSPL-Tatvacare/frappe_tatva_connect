@@ -243,3 +243,84 @@ def _ensure_endpoint():
 		"webhook_docevent": "on_update",
 	}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 	frappe.db.commit()
+
+
+
+class TestCallApiSuccessWhen(FrappeTestCase):
+	"""`success_when` speaks the same vocabulary as every other predicate control.
+
+	It did not: the picker offered what ran before the node plus the subject's fields, while the box was
+	judged against the response alone. The two sets never overlapped, so every reference an author could
+	pick killed the journey and the two that worked were not offered. Driven through real graphs — the
+	defect lived in the gap between the halves, and a direct call reproduces neither.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		assert_masters_exist()
+		fx.arm_engine(True, cls)
+		cls.lead = fx.make_lead(status="New")
+		_ensure_endpoint()
+		cls.built = []
+
+	@classmethod
+	def tearDownClass(cls):
+		fx.purge(*cls.built)
+		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
+		frappe.db.commit()
+
+	def _land(self, name, success_when, response):
+		"""Where a journey ended and how. `status` matters as much as the node: the defect killed runs."""
+		fx.purge(name)
+		workflow = fx.make_workflow(name, [
+			fx.trigger(to="call"),
+			fx.node("call", "Call API", config={
+				"webhook_endpoint": _ENDPOINT,
+				"capture": [{"path": "body.data.id", "variable": "patient_id"}],
+				"success_when": success_when,
+			}, edges={"succeeded": "won", "failed": "lost"}),
+			fx.node("won", "Terminal"),
+			fx.node("lost", "Terminal"),
+		])
+		self.built.append(name)
+		frappe.db.commit()
+		with patch(_HANDLER, return_value=response):
+			run = fx.start_journey(workflow, self.lead.name, "start")
+			interpreter.advance(frappe.get_doc(fx.JOURNEY_DT, run.name))
+		frappe.db.commit()
+		return frappe.db.get_value(fx.JOURNEY_DT, run.name, ["status", "current_node"], as_dict=True)
+
+	def test_a_lead_field_decides_success_instead_of_killing_the_journey(self):
+		"""The likeliest pick, and the one that used to be fatal — the lead is the subject."""
+		row = self._land(
+			"call-api-when-lead", {"type": "rule", "field": "crm_lead.status", "operator": "is", "value": "New"},
+			_response(200, True, {"data": {"id": "P-1"}}),
+		)
+		self.assertEqual(row.status, "Done", "a predicate on the subject must not fail the journey")
+		self.assertEqual(row.current_node, "won")
+
+	def test_a_captured_variable_decides_success(self):
+		"""`capture` is the declared way to read a body, and its names are offered here — now judged too."""
+		row = self._land(
+			"call-api-when-capture", {"type": "rule", "field": "call.patient_id", "operator": "is set"},
+			_response(200, True, {"data": {"id": "P-1"}}),
+		)
+		self.assertEqual(row.status, "Done")
+		self.assertEqual(row.current_node, "won")
+
+	def test_a_captured_variable_that_did_not_arrive_takes_the_failed_edge(self):
+		"""A 200 carrying nothing useful is the failure the author declared, still not an exception."""
+		row = self._land(
+			"call-api-when-capture-empty", {"type": "rule", "field": "call.patient_id", "operator": "is set"},
+			_response(200, True, {"data": {}}),
+		)
+		self.assertEqual(row.status, "Done", "a declared failure is data, not a dead journey")
+		self.assertEqual(row.current_node, "lost")
+
+	def test_the_response_itself_still_decides(self):
+		"""The one shape that always worked, kept working."""
+		row = self._land(
+			"call-api-when-status", {"type": "rule", "field": "call.status", "operator": "is", "value": 201},
+			_response(201, True, {"data": {"id": "P-1"}}),
+		)
+		self.assertEqual(row.current_node, "won")

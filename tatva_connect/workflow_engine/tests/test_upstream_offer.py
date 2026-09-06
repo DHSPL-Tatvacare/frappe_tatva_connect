@@ -309,3 +309,52 @@ class TestBothPickersHangOnTheWIRE(FrappeTestCase):
 		payload = context.node_context(json.dumps(self._wired()), _WAIT)
 		self.assertIn(_UP, [e["node_id"] for e in payload["emitters"]])
 		self.assertTrue([v for v in payload["variables"] if v["ref"].startswith("api-up.")])
+
+
+def _judging_graph():
+	"""Trigger → assign → call → End. `call` is the one verb that judges its own result."""
+	return [
+		_node("trigger-1", "Trigger", {"subject_doctype": "CRM Lead", "event": "Created"}, {"next": "assign"}),
+		_node("assign", "Assign to User", {"assignee_mode": "User"}, {"assigned": "call", "nobody": "call"}),
+		_node("call", "Call API", {"capture": [{"path": "body.data.id", "variable": "patient_id"}]},
+		      {"succeeded": "end", "failed": "end"}),
+		_node("end", "Terminal"),
+	]
+
+
+def _values_at(node_id):
+	return {v["ref"] for v in upstream.emitted_at(_judging_graph(), node_id)}
+
+
+class TestAVerbThatJudgesItsOwnResult(FrappeTestCase):
+	"""The VALUE picker's one exception, and why it is not a hole in the rule above.
+
+	A node is offered what ran before it, never its own — offering a value it has not produced is the lie
+	this module exists to stop. A Call API is the exception `actions.judges_own_result` declares: it acts,
+	writes its response into state, and only then reads `success_when` to pick its edge. Withholding its
+	own values there left that box offering exactly the references that raise at run time, and none of the
+	ones that work. `available_map` has always allowed them; this is the picker catching up.
+	"""
+
+	def test_it_is_offered_the_response_it_will_judge(self):
+		at_call = _values_at("call")
+		self.assertIn("call.status", at_call)
+		self.assertIn("call.ok", at_call)
+		self.assertIn("call.patient_id", at_call, "a capture row is a value this node will really have")
+
+	def test_it_is_still_offered_what_ran_before_it(self):
+		"""The direction a blunt fix breaks: swapping ancestors for own values passes the test above."""
+		self.assertIn("assign.assigned_to", _values_at("call"))
+
+	def test_every_other_node_is_still_withheld_its_own(self):
+		self.assertNotIn("assign.assigned_to", _values_at("assign"))
+
+	def test_the_picker_never_offers_more_than_publish_accepts(self):
+		"""The lock. The gate is the superset by design, and the offer must stay inside it — a picker wider
+		than the gate is a control that builds workflows publish then refuses."""
+		available, _opaque = upstream.available_map(_judging_graph())
+		for node_id in ("call", "assign"):
+			self.assertLessEqual(
+				_values_at(node_id), available[node_id],
+				f"{node_id} is offered a value the publish gate does not accept",
+			)

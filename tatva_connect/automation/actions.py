@@ -880,27 +880,19 @@ def _dig(value, path):
 	return value
 
 
-def _api_succeeded(success_when, response, context=None):
+def _api_succeeded(success_when, response, context):
 	"""Did this call succeed? The author's predicate decides; without one, the HTTP status does.
 
-	The predicate is judged in the NODE'S OWN namespace — `api.status`, `api.body.customer_id` — because
-	that is where the values it tests really live and where `upstream` offers them. It used to be judged
-	against a private flat dict, so `success_when` was the one predicate control in the product that spoke
-	a different language from every other one: an author who picked `status` from the picker got
-	`crm_lead.status` and it never matched anything here.
-
-	The node id comes from the writer view the interpreter already scoped this handler with, so the verb
-	still never has to know it. A caller with no view (a direct unit call) gets the response alone.
+	Judged against journey state like every other predicate — `_write_response_state` has already put this
+	call's `status`, `ok`, `error` and captures under this node's id, so one vocabulary reads everywhere.
+	A private dict here meant the box could read neither the lead, nor an upstream node, nor its own
+	captures, and every reference the picker offered raised `PredicateError` on the first live record.
 	"""
 	if not success_when:
 		return bool(response["ok"])
 	from tatva_connect.automation import rules
 
-	flat = _response_state(response)
-	if isinstance(response.get("body"), dict):
-		flat.update({f"body.{k}": v for k, v in response["body"].items()})
-	writer = getattr(context, "writer_id", None)
-	return rules.predicate_match(success_when, refs.Values(buckets={writer or refs.ENGINE: flat}), None)
+	return rules.predicate_match(success_when, context, None)
 
 
 
@@ -1235,6 +1227,8 @@ VERBS = {
 		"label": "Call API",
 		"description": "Calls a curated endpoint and captures its response into named variables.",
 		"outputs": ["succeeded", "failed"],
+		# This verb decides its own edge AFTER it has acted, so its own emitted values are readable at it — see `judges_own_result`.
+		"judges_own_result": True,
 		# The shape of the answer, always written; plus one variable per `capture` row the author adds.
 		"emits": [
 			{"name": "status", "type": "Int", "about": "HTTP status code"},
@@ -1447,6 +1441,15 @@ def emits_of(verb, config=None):
 			if name:
 				found.append({"name": name, "type": "Data", "about": _("captured from the response")})
 	return found
+
+
+def judges_own_result(verb):
+	"""Does this verb pick its edge AFTER acting, from what it just produced? Read by `upstream.emitted_at`.
+
+	A Call API's own `status`/`ok`/captures really exist by the time `success_when` is read, so the picker
+	must offer them — `available_map` already allows them. Declared on the verb, never inferred by name.
+	"""
+	return bool((VERBS.get(verb) or {}).get("judges_own_result"))
 
 
 def outcomes_of(verb):

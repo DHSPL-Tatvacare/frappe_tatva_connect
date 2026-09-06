@@ -58,7 +58,13 @@ def emitted_at(nodes, node_id):
 	Split out because it is the only half that depends on where the node sits: the other half is the
 	subject's own schema, which is a fact about the graph's Trigger and identical at every node. The
 	canvas asks for both once per graph rather than the whole answer once per click.
+
+	A verb declaring `judges_own_result` is offered its OWN values too, and nothing else is: it acts before
+	its edge is chosen, so they exist by then. `available_map` has always allowed them; the picker did not,
+	which left every reference it offered raising at run time.
 	"""
+	from tatva_connect.automation import actions
+
 	nodes = rows_of(nodes)
 	by_id = {n.get("node_id"): n for n in nodes if n.get("node_id")}
 	if node_id not in by_id:
@@ -66,8 +72,10 @@ def emitted_at(nodes, node_id):
 
 	found = []
 	seen = set()
-	for ancestor_id in _ancestors(by_id, node_id):
-		for value in _emitted_by(by_id[ancestor_id]):
+	# Own values lead, then ancestors — `_ancestors` is nearest-first and this node is nearer than any of them.
+	own = [node_id] if actions.judges_own_result(by_id[node_id].get("node_type")) else []
+	for source_id in [*own, *_ancestors(by_id, node_id)]:
+		for value in _emitted_by(by_id[source_id]):
 			if value["ref"] not in seen:
 				seen.add(value["ref"])
 				found.append(value)
