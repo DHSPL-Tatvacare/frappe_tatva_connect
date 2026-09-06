@@ -1,5 +1,6 @@
 """Read the contract a lead source is created against — grain and ticked field_keys, nothing local."""
 import frappe
+from frappe.utils import cint
 
 from tatva_connect.api.partner import _catalog
 
@@ -56,9 +57,39 @@ def stage(item, field_key, value, question=None, label=None, form=None):
 			"form": form,
 		})
 	elif child_table:
-		item.setdefault(child_table, [{}])[0][fieldname] = value
+		item.setdefault(child_table, [{}])[0][fieldname] = _fit(cat, section, fieldname, value)
 	else:
-		item[fieldname] = value
+		item[fieldname] = _fit(cat, section, fieldname, value)
+
+
+def _fit(cat, section, fieldname, value):
+	"""A Data value trimmed to the width its own column declares; everything else returned untouched.
+
+	`_validate_length` (frappe base_document.py) refuses the WHOLE record when a varchar field is one
+	character over, so a patient who typed 200 characters into City was not a lead with a long city —
+	they were no lead at all, and their name, phone and disease went with it. Five did in the sixteen
+	days after go-live: a Tamil sentence, a keyboard mash, and a pasted ad URL.
+
+	Only `Data`, because only free text can be trimmed and still mean what it meant. A Link or a Select
+	cut to 140 is a DIFFERENT row or an invalid option — a wrong answer, where the whole point here is
+	that a wrong answer is worse than a short one. Those keep today's behaviour exactly.
+
+	The width comes from the field and frappe's own type_map, never a literal: 140 is the column's to
+	declare, and a field that declares its own `length` is already the exception this reads correctly.
+
+	Both doors into `stage` are UNCONTROLLED HUMAN INPUT — a patient typing into a Facebook form, an
+	operator uploading a spreadsheet — and neither can be asked to try again. The partner API never
+	reaches here (it collects through `cast_declared_row`), so a machine caller still gets its 400."""
+	if not isinstance(value, str):
+		return value
+	doctype = cat["section_doctype"].get(section)
+	if not doctype:
+		return value
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	if not df or df.fieldtype != "Data":
+		return value
+	width = cint(df.get("length")) or cint(frappe.db.type_map["Data"][1])
+	return value[:width] if width and len(value) > width else value
 
 
 def screening_key():
