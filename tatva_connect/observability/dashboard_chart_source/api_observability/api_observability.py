@@ -49,7 +49,7 @@ def _get(
 	heatmap_year=None,
 	**kwargs,
 ):
-	filters = frappe.parse_json(filters) if isinstance(filters, str) else filters
+	filters = analytics.parse_filters(filters)  # an empty string is 'no filters', not a parse error
 	if not filters and chart_name:
 		filters = frappe.parse_json(frappe.db.get_value("Dashboard Chart", chart_name, "filters_json") or "{}")
 	filters = _as_dict(filters)

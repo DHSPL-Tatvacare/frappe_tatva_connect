@@ -80,13 +80,28 @@ def series(metric, granularity, frm, to, filters=None):
 	return labels, values
 
 
+def parse_filters(filters):
+	"""Whatever the caller sent, as a dict — including nothing at all.
+
+	A number card and a dashboard chart both post `filters: null`, which arrives as the empty STRING.
+	`frappe.parse_json("")` raises JSONDecodeError, so every custom tile on the page rendered
+	"Loading..." for ever and the traceback named this app. Carrying no filters is the NORMAL state of
+	a page-level tile, not a caller error, so it is answered here rather than guarded at four call
+	sites that each got it wrong the same way.
+	"""
+	if isinstance(filters, str):
+		filters = filters.strip()
+		return frappe.parse_json(filters) if filters else None
+	return filters
+
+
 # ── Custom Number Cards (rolling window over hourly rows) ─────────────────────────────
 
 def _card(metric, filters, hours, fieldtype):
 	# One gate for all four number-card endpoints (they all funnel here): reads CRM API Metric, so
 	# require read on it — matches the doctype matrix (Sales Manager / System Manager).
 	frappe.has_permission("CRM API Metric", "read", throw=True)
-	conds, params = _where("hour", frappe.parse_json(filters) if isinstance(filters, str) else filters)
+	conds, params = _where("hour", parse_filters(filters))
 	params["frm"] = add_to_date(now_datetime(), hours=-hours)
 	row = frappe.db.sql(  # sqli-ok: constant AGG table + _SUMS/DIMENSIONS identifiers; filter values bound via %()s
 		f"SELECT {_SUMS} FROM `{AGG}` WHERE {' AND '.join(conds)} AND bucket_start >= %(frm)s",
