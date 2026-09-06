@@ -12,7 +12,7 @@ fails `bench migrate` if it doesn't.
 """
 from dataclasses import dataclass
 
-CHANNELS = ("live",)  # known channels; "email" lands in Phase 4. Drift asserts membership.
+CHANNELS = ("live",)  # the ONLY channel this plane delivers; per-user EMAIL prefs are a view onto frappe's own Notification Settings (notifications/api.py, shipped) — never add "email" here.
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class NotifiableEvent:
 	channels: tuple       # subset of CHANNELS
 	default_optin: bool   # push events ship False — explicit opt-in
 	urgency: str          # "presence_routed" (default) | "always_push"
-	source: str           # "tatva" (we send) | "core" (Frappe core sends — Phase 4)
+	source: str           # "tatva" (we send) — what every event is today; "core" is reserved for a moment frappe itself raises
 	bell_type: str = ""   # crm CRM Notification `type` when WE must write the bell row; "" when crm already writes one (assignment, inbound WhatsApp) — never both
 
 

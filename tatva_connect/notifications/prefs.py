@@ -11,7 +11,7 @@ SUBSCRIPTION = "CRM Notification Subscription"
 
 
 def subscribers(event_key: str, users) -> list:
-	"""Return the subset of `users` opted into `event_key` (any enabled channel).
+	"""Return the subset of `users` opted into `event_key` (the live channel — the only one).
 
 	One batched query over the child table joined to its parent — no per-user read.
 	"""
