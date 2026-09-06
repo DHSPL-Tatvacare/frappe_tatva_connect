@@ -75,8 +75,8 @@ def run_or_queue(action, doctype, docnames, params=None):
 	feature off; otherwise records a `CRM List Action Job` and returns its name for the tab to watch."""
 	if action not in _EXECUTORS:
 		frappe.throw(_("Unknown bulk action {0}.").format(action))
-	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) else list(docnames)
-	params = frappe.parse_json(params) if isinstance(params, str) else (params or {})
+	docnames = frappe.parse_json(docnames) if isinstance(docnames, str) and docnames.strip() else list(docnames)
+	params = frappe.parse_json(params) if isinstance(params, str) and params.strip() else (params or {})
 
 	if len(docnames) > MAX_ROWS:
 		frappe.throw(_("Bulk operations only support up to {0} documents.").format(MAX_ROWS))

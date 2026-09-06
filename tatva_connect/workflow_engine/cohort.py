@@ -88,7 +88,7 @@ def preview(config, cap=PREVIEW_CAP):
 	judged by `rules.predicate_match` — the SAME call `triggers._predicate_holds` makes. Capped, because a
 	preview is not allowed to become the outage it exists to prevent.
 	"""
-	config = frappe.parse_json(config) if isinstance(config, str) else (config or {})
+	config = frappe.parse_json(config) if isinstance(config, str) and config.strip() else (config or {})
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	if config.get("mode") != registry.MODE_SCHEDULE:

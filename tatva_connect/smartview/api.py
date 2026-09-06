@@ -743,7 +743,7 @@ def get_data(view, filters=None, sort=None, search=None, columns=None, page=1, p
 		frappe.write_only()(frappe.log_error)(title="smartview: bad predicate JSON")
 		predicate = None
 	if isinstance(filters, str):
-		filters = frappe.parse_json(filters) or []
+		filters = (frappe.parse_json(filters) if str(filters).strip() else None) or []
 
 	# Only join children referenced by columns OR predicate (lean).
 	needed = set(col_keys)
@@ -1130,7 +1130,7 @@ def set_column_widths(view, widths):
 	d = frappe.get_doc("CRM Smart View", view)
 	if not sv_perms.can_write(d):
 		return {"saved": False}
-	widths = frappe.parse_json(widths) if isinstance(widths, str) else (widths or {})
+	widths = frappe.parse_json(widths) if isinstance(widths, str) and widths.strip() else (widths or {})
 	if not isinstance(widths, dict):
 		frappe.throw(_("Column widths must be an object of {field_key: width}."))
 	# Bounded and sanitised: only keys this view actually projects, and only a plain CSS length. A width

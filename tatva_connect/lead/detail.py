@@ -754,7 +754,7 @@ def update_lead_detail(lead, changes, new_observation=False):
 	on a NEW row: a second payment is a second purchase, not an edit of the first. 30% of paying patients
 	have more than one payment, and updating the latest silently destroyed the earlier one."""
 	posture.require("CRM Lead", "write", doc=lead)
-	changes = frappe.parse_json(changes) if isinstance(changes, str) else (changes or {})
+	changes = frappe.parse_json(changes) if isinstance(changes, str) and changes.strip() else (changes or {})
 	if not isinstance(changes, dict):
 		frappe.throw(_("Invalid changes payload"))
 	doc = frappe.get_doc("CRM Lead", lead)
