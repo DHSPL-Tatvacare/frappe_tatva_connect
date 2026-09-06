@@ -642,7 +642,7 @@ def email_template_preview(template, values=None, lead=None):
 		return {"lead": doc.name, "error": frappe._("That template no longer exists.")}
 	# Same reason as WhatsApp: an unmapped slot is author state, not a server error.
 	try:
-		filled, blank = _slot_values(template, email_template_slots(template), rows, ctx)
+		filled, blank = _slot_values(template, _email_slots(template), rows, ctx)
 	except ValueError as unmapped:
 		return {"lead": doc.name, "error": str(unmapped)}
 	body = row.response_html if row.use_html else row.response
@@ -655,8 +655,26 @@ def email_template_preview(template, values=None, lead=None):
 	}
 
 
+@frappe.whitelist()
 def email_template_slots(template):
-	"""The named slots an `Email Template` really has — the EMAIL TWIN of `template_slots`, not a branch.
+	"""The author's mapping control and the publish gate — the EMAIL TWIN of `template_slots`.
+
+	Whitelisted because the control fetches it BY THIS PATH (`actions.VERBS` declares it as `slots_method`
+	and `ValueMap` calls it as a url), which without the decorator answers nothing and leaves the author
+	with no rows to map and a graph publish then refuses for the slots they could not see.
+	"""
+	if not frappe.has_permission("CRM Workflow", "read"):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+	return _email_slots(template)
+
+
+def _email_slots(template):
+	"""The non-whitelisted core the wrapper above and the SEND path both read, so author-time refusal and
+	send-time fill can never see two different lists — `whatsapp_template_slots` exactly.
+
+	The send path may not ask the wrapper's question: a journey runs as whoever saved the record (frappe
+	carries the session user onto the job), and a rep holds no `CRM Workflow` read, so a permission check
+	here refused the send itself — before the dormant gate, so even a switched-off bench raised.
 
 	A WhatsApp template carries positional `{{1}}` slots the provider declares; an Email Template carries
 	NAMED Jinja variables in its subject and its body. Same mapping control for the author, two readers,
@@ -667,8 +685,6 @@ def email_template_slots(template):
 	`frappe.render_template` will look up. A regex would drift from the renderer the first time a template
 	used a filter or a block.
 	"""
-	if not frappe.has_permission("CRM Workflow", "read"):
-		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	row = frappe.db.get_value("Email Template", template, ["subject", "use_html", "response_html", "response"], as_dict=True)
 	if not row:
 		return []
@@ -702,7 +718,7 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 	if not address:
 		return FAILED, f"failed: {contact_email or 'no recipient'} resolved to no address for lead {subject_lead}"
 
-	slots = email_template_slots(template_name)
+	slots = _email_slots(template_name)
 	filled, blank = _slot_values(template_name, slots, values, context if context is not None else {})
 	if blank:
 		return FAILED, "failed: {} resolved to nothing, so the email would have gone out with a blank in it".format(
