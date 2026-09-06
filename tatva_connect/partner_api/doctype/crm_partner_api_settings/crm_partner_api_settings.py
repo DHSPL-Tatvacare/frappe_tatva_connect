@@ -14,9 +14,8 @@ class CRMPartnerAPISettings(Document):
 	back to the DEFAULTS in `tatva_connect.api._base`; the `0`-rules live in `_cfg()`.
 
 	This form is wired straight to the live API — `_cfg()` re-reads it on every request, so a save
-	takes effect on the very next call. It is therefore the one place every limit in the API can be
-	undone from, and it shipped with no validation at all. The save is now guarded: a limit may be
-	TIGHTENED freely, but only loosened inside the band `_base.assert_within_ceiling` allows."""
+	takes effect on the very next call. Every knob takes any value; the only one
+	`_base.assert_within_ceiling` still refuses is `bulk_burst`, a correctness invariant."""
 
 	def validate(self):
 		assert_within_ceiling(self)

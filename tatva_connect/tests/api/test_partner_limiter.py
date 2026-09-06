@@ -369,39 +369,40 @@ class TestPartnerLimiter(unittest.TestCase):
 			self._settings(bulk_burst=100).validate()
 		self._settings(bulk_burst=1).validate()  # the shipped value saves
 
-	def test_the_form_cannot_set_a_limit_to_unlimited(self):
-		"""0 means UNLIMITED in _cfg — the loosest setting there is, and one keystroke away."""
+	def test_a_budget_may_be_set_to_unlimited(self):
+		"""0 means UNLIMITED in _cfg, and that is the operator's call to make. It used to be refused,
+		which meant an unmetered dimension needed a deploy."""
 		for field in ("per_token_rate", "global_rate", "bulk_rate", "per_token_write_records"):
 			with self.subTest(field=field):
-				with self.assertRaises(frappe.ValidationError):
-					self._settings(**{field: 0}).validate()
+				self._settings(**{field: 0}).validate()
 
-	def test_the_form_cannot_restore_the_old_loose_limits(self):
-		"""The values this site actually ran before — a form save must not be able to bring them back."""
-		for field, was in (("per_token_rate", 1200), ("global_rate", 6000),
-		                   ("per_token_write_records", 25000), ("bulk_max_records", 100)):
+	def test_a_budget_has_no_upper_bound(self):
+		"""The 2x tuning band is gone: capacity is the operator's to set, at any value, without a
+		deploy. The DEFAULTS are what a blank field falls back to, never a ceiling."""
+		for field, value in (("per_token_rate", 1200), ("global_rate", 6000),
+		                     ("per_token_read_records", 250_000),
+		                     ("per_token_write_records", 25000), ("bulk_max_records", 100)):
 			with self.subTest(field=field):
-				with self.assertRaises(frappe.ValidationError):
-					self._settings(**{field: was}).validate()
+				self._settings(**{field: value}).validate()
 
-	def test_the_form_allows_tuning_up_to_twice_the_default_and_no_further(self):
-		"""Ops can accommodate a busy partner without a deploy, but only inside the band."""
-		self._settings(per_token_rate=_base.DEFAULTS["per_token_rate"] * 2).validate()
-		with self.assertRaises(frappe.ValidationError):
-			self._settings(per_token_rate=_base.DEFAULTS["per_token_rate"] * 2 + 1).validate()
-
-	def test_the_form_cannot_loosen_a_window_by_shortening_it(self):
-		"""For a WINDOW the loose direction is downward: a shorter window refills the bucket faster.
-		Guarding it with a ceiling like the rates would have left it wide open."""
-		with self.assertRaises(frappe.ValidationError):
-			self._settings(window_seconds=1).validate()
-		with self.assertRaises(frappe.ValidationError):
-			self._settings(bulk_window_seconds=1).validate()
+	def test_a_window_may_be_shortened(self):
+		"""A shorter window refills the bucket faster, so it loosens the limit — and that too is the
+		operator's call. The floor that used to refuse it is gone."""
+		self._settings(window_seconds=1).validate()
+		self._settings(bulk_window_seconds=1).validate()
 		self._settings(bulk_window_seconds=_base.DEFAULTS["bulk_window_seconds"] * 4).validate()
 
 	def test_tightening_is_always_allowed(self):
-		"""A limit may be made stricter freely — only loosening is capped."""
+		"""A limit may be made stricter freely — as it always could."""
 		self._settings(per_token_rate=10, bulk_max_records=5, per_token_write_records=100).validate()
+
+	def test_the_defaults_are_a_fallback_and_not_a_bound(self):
+		"""The shipped DEFAULTS still govern a blank field. Removing the band changed what a SAVE may
+		carry, never what the code falls back to."""
+		self.assertEqual(_base.DEFAULTS["per_token_read_records"], 10000)
+		self.assertEqual(_base.DEFAULTS["per_token_rate"], 120)
+		self.assertEqual(_base.DEFAULTS["bulk_max_records"], 25)
+		self.assertFalse(hasattr(_base, "_CEILING_FACTOR"))
 
 	# -- exemption ------------------------------------------------------------
 
