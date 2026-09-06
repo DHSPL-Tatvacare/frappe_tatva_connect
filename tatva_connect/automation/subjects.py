@@ -2,9 +2,10 @@
 resolves to its grain-bearing CRM Lead.
 
 A subject is a doctype a Field-Changed rule may watch and whose grain the engine can resolve. Adding a
-subject = one entry here + its `on_update` hook in hooks.py (the migrate drift gate,
-`automation.drift`, fails the build if the hook is missing). Nothing else — no config table: you cannot
-watch a doctype without a code-level hook + deploy anyway, so participation is intrinsically code.
+subject = one entry here. Nothing else — no config table and no per-doctype hook: every doctype is
+already covered by the wildcard front-door (`hooks.doc_events["*"]`, asserted by
+`drift._assert_engine_wired`), and a doctype only acts because a workflow names it. Participation is
+intrinsically code because this map is code.
 
 This map is the single source of truth for: the catalog doctype gate (a can_watch row must name a
 subject), the drift gate's doctype list, and `watch._subject`'s Lead resolution. No parallel list.
@@ -26,6 +27,10 @@ SUBJECTS = {
 	"WhatsApp Message": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 	# A call carries the same dynamic pair a Task does, so it resolves the same way and needs the same guard.
 	"CRM Call Log": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
+	# An email. A reply to one a rep sent from the CRM inherits the parent's reference (frappe's receiver,
+	# `email/receive.py`), which is what puts it on a patient; a cold email from a stranger references
+	# nothing and resolves to no lead, so no workflow can act on it. Same dynamic pair, same guard.
+	"Communication": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 }
 
 

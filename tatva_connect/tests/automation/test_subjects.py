@@ -45,6 +45,24 @@ class TestSubjects(FrappeTestCase):
 			"reference_doctype": "CRM Deal", "reference_docname": "nope", "status": "Todo"})
 		self.assertIsNone(subjects.resolve_lead_name(task))
 
+	# (c2) an email resolves to the patient it is filed against — the inbound-email trigger's whole seam.
+	def test_communication_resolves_to_the_lead_it_references(self):
+		comm = frappe.get_doc({
+			"doctype": "Communication", "communication_type": "Communication",
+			"sent_or_received": "Received", "subject": "Re: your visit", "content": "thanks",
+			"reference_doctype": "CRM Lead", "reference_docname": self.lead.name,
+			"reference_name": self.lead.name,
+		})
+		self.assertEqual(subjects.resolve_lead_name(comm), self.lead.name)
+
+	# (c3) a cold email references nothing, so no workflow can act on it.
+	def test_communication_with_no_lead_reference_resolves_none(self):
+		comm = frappe.get_doc({
+			"doctype": "Communication", "communication_type": "Communication",
+			"sent_or_received": "Received", "subject": "hello", "content": "hi",
+		})
+		self.assertIsNone(subjects.resolve_lead_name(comm))
+
 	# (d) an unknown doctype resolves to None.
 	def test_unknown_doctype_resolves_none(self):
 		self.assertIsNone(subjects.resolve_lead_name(frappe._dict({"doctype": "Customer", "name": "X"})))
