@@ -24,7 +24,7 @@
  ],
  "fields": [
   {"fieldname": "request_time", "fieldtype": "Datetime", "label": "Request Time", "in_list_view": 1, "read_only": 1, "search_index": 1},
-  {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Partner API\nInbound Webhook", "in_list_view": 1, "in_standard_filter": 1, "read_only": 1},
+  {"fieldname": "channel", "fieldtype": "Select", "label": "Channel", "options": "Partner API\nInbound Webhook\nMCP", "in_list_view": 1, "in_standard_filter": 1, "read_only": 1},
   {"fieldname": "endpoint", "fieldtype": "Data", "label": "Endpoint", "in_list_view": 1, "in_standard_filter": 1, "read_only": 1},
   {"fieldname": "source", "fieldtype": "Data", "label": "Source", "in_list_view": 1, "in_standard_filter": 1, "read_only": 1},
   {"fieldname": "http_method", "fieldtype": "Data", "label": "HTTP Method", "read_only": 1},
@@ -39,7 +39,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-24 12:00:00.000000",
+ "modified": "2026-09-06 21:53:49.415587",
  "modified_by": "Administrator",
  "module": "Observability",
  "name": "CRM API Request Log",

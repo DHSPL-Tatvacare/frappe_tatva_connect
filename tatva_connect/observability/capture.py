@@ -23,7 +23,10 @@ from frappe.utils import now_datetime
 
 from tatva_connect import automation
 from tatva_connect.api._base import _PARTNER_PATH, request_error
+from tatva_connect.mcp import server as _mcp_server
+from tatva_connect.storage import transcription_channel as _transcription_webhook
 from tatva_connect.telephony import handler as _telephony_handler
+from tatva_connect.voice import webhook as _voice_webhook
 from tatva_connect.telephony.adapters.acefone import TELEPHONY_MEDIUM
 from tatva_connect.utils import mask_secrets
 from tatva_connect.whatsapp import webhook as _whatsapp_webhook
@@ -70,6 +73,10 @@ _WATCH = (
 	(_PARTNER_PATH, "Partner API", None),
 	(_method_prefix(_whatsapp_webhook), "Inbound Webhook", "WhatsApp"),
 	(_method_prefix(_telephony_handler), "Inbound Webhook", TELEPHONY_MEDIUM),
+	# All four spine channels are watched: an unlogged webhook is a provider outage nobody can see.
+	(_method_prefix(_voice_webhook), "Inbound Webhook", "Voice"),
+	(_method_prefix(_transcription_webhook), "Inbound Webhook", "Transcription"),
+	(_method_prefix(_mcp_server), "MCP", None),
 )
 
 
