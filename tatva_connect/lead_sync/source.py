@@ -64,12 +64,14 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 			item = {}
 			keys = []
 			refused = []
+			answered = set()
 			for question, value in answers(lead):
 				field_key = mapping.get(question)
 				if field_key:
 					# A mapped question is a contact field the contract decides; not ticked means dropped, never re-routed.
 					if field_key in allowed:
 						keys.append(field_key)
+						answered.add(field_key)
 						stage(item, field_key, value)
 					else:
 						refused.append(field_key)
@@ -84,16 +86,24 @@ class TatvaFacebookSyncSource(FacebookSyncSource):
 
 			# Keyed by Meta's submission time, so a re-crawl updates the same touch instead of minting another.
 			touched_at = self.site_time(lead.get("created_time")) or now_datetime()
+			# What Facebook itself tells us about the touch. Never a form answer's to override.
 			for field_key, value in (
 				("lead:facebook_lead_id", lead["id"]),
 				("lead:facebook_form_id", self.form_id),
 				("lead:custom_source_origin", f"Facebook form: {self.form_id}"),
 				("acq:touch_at", touched_at),
 				("acq:utm_source", "facebook"),
-				("acq:utm_campaign", self.form_name() or self.form_id),
 			):
 				keys.append(field_key)
 				stage(item, field_key, value)
+
+			# The form name is the campaign's DEFAULT, not its value. Meta prefills the real campaign from
+			# the ad URL, and a form that maps it is saying so — on prod the two agreed on 0 of 2,318 leads
+			# ("GLP-1 - v4 - 220526" against "GLP 1st In-lead campaign"), so a stamp over a mapped answer
+			# replaced the campaign with the form's own label every time.
+			if "acq:utm_campaign" not in answered:
+				keys.append("acq:utm_campaign")
+				stage(item, "acq:utm_campaign", self.form_name() or self.form_id)
 
 			parent_fields, child_allow = _split_keys(keys)
 			mp = frappe._dict(
