@@ -659,9 +659,8 @@ def email_template_preview(template, values=None, lead=None):
 def email_template_slots(template):
 	"""The author's mapping control and the publish gate — the EMAIL TWIN of `template_slots`.
 
-	Whitelisted because the control fetches it BY THIS PATH (`actions.VERBS` declares it as `slots_method`
-	and `ValueMap` calls it as a url), which without the decorator answers nothing and leaves the author
-	with no rows to map and a graph publish then refuses for the slots they could not see.
+	Whitelisted because `ValueMap` fetches this very path as a url (`actions.VERBS` declares it as
+	`slots_method`); without the decorator it answered nothing and the author had no rows to map.
 	"""
 	if not frappe.has_permission("CRM Workflow", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
@@ -669,12 +668,10 @@ def email_template_slots(template):
 
 
 def _email_slots(template):
-	"""The non-whitelisted core the wrapper above and the SEND path both read, so author-time refusal and
-	send-time fill can never see two different lists — `whatsapp_template_slots` exactly.
+	"""The non-whitelisted core the wrapper and the SEND path both read — `whatsapp_template_slots` exactly.
 
-	The send path may not ask the wrapper's question: a journey runs as whoever saved the record (frappe
-	carries the session user onto the job), and a rep holds no `CRM Workflow` read, so a permission check
-	here refused the send itself — before the dormant gate, so even a switched-off bench raised.
+	It asks no permission because a journey runs as whoever saved the record, and a rep holds no
+	`CRM Workflow` read: asking here refused the send itself, before the dormant gate could suppress it.
 
 	A WhatsApp template carries positional `{{1}}` slots the provider declares; an Email Template carries
 	NAMED Jinja variables in its subject and its body. Same mapping control for the author, two readers,

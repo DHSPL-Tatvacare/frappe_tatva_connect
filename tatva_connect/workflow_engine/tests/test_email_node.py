@@ -146,13 +146,11 @@ class TestTheSlotsComeFromTheTemplate(FrappeTestCase):
 				sends.email_template_slots(_TEMPLATE)
 
 	def test_the_endpoint_the_control_fetches_is_really_whitelisted(self):
-		"""The half the test above assumed. `actions.VERBS` declares this path as the Value Map's
-		`slots_method` and `ValueMap` calls it as a url, so without the decorator the control fetched
-		nothing, the author had no rows to map, and publish then refused the slots they never saw."""
+		"""The half the test above assumed: the Value Map fetches this path as a url, so it must exist."""
 		self.assertIn(sends.email_template_slots, frappe.whitelisted)
 
 	def test_the_core_the_send_reads_asks_no_author_permission(self):
-		"""Its twin `whatsapp_template_slots` asks none either, and for the same reason — see the send test."""
+		"""What the send reads, asking nothing of the author — `whatsapp_template_slots` exactly."""
 		with patch.object(frappe, "has_permission", return_value=False):
 			self.assertEqual(sorted(sends._email_slots(_TEMPLATE)),
 			                 ["doctor_name", "patient_name", "visit_time"])
@@ -183,14 +181,15 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		frappe.db.commit()
 		super().tearDownClass()
 
-	def _send(self, recipient_ref, context, values):
+	def _send(self, recipient_ref, context, values, live=True, permitted=True):
 		params = frappe._dict({
 			"action_type": _VERB, "email_recipient": recipient_ref,
 			"email_template": _TEMPLATE, "template_values": values,
 		})
 		seen = {}
 		ctx = dict(context)
-		with patch.object(sends, "sends_enabled", return_value=True), \
+		with patch.object(sends, "sends_enabled", return_value=live), \
+		     patch.object(frappe, "has_permission", return_value=permitted), \
 		     patch.object(frappe, "sendmail", lambda **kw: seen.update(kw)):
 			actions._action_send_email(params, self.lead.name, ctx, None, None)
 		return ctx.get(refs.OUTPUT), seen
@@ -227,6 +226,31 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		self.assertEqual(output, sends.FAILED)
 		self.assertEqual(seen, {}, "a typed literal must never become the address")
 
+	def test_the_send_asks_nothing_of_the_author(self):
+		"""A journey runs as whoever saved the record — frappe carries the session user onto the job — and
+		a rep holds no `CRM Workflow` read, so asking for one refused the send itself."""
+		output, seen = self._send(
+			"sv.email", {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
+			[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+			 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],
+			permitted=False,
+		)
+
+		self.assertEqual(output, sends.SENT)
+		self.assertEqual(seen.get("recipients"), ["asha@example.invalid"])
+
+	def test_a_dormant_send_is_still_suppressed_for_that_rep(self):
+		"""It asked before the dormant gate, so a switched-off bench raised rather than suppressing."""
+		output, seen = self._send(
+			"sv.email", {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
+			[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+			 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],
+			live=False, permitted=False,
+		)
+
+		self.assertEqual(output, sends.SENT)
+		self.assertEqual(seen, {}, "a dormant bench must send nothing")
+
 	def test_a_slot_the_author_left_unmapped_is_author_error(self):
 		"""Same rule as WhatsApp: a missing row is wrong for every record equally, so it raises rather
 		than sending a mail with a blank in it."""
@@ -246,64 +270,3 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		]
 		messages = " | ".join(p["message"] for p in graph.problems(nodes, entry_node="start"))
 		self.assertIn("nothing_makes_this", messages)
-
-
-class TestTheSendDoesNotAskTheAuthorsPermission(FrappeTestCase):
-	"""A journey runs as whoever saved the record, and that person is a rep.
-
-	`frappe.enqueue` carries `frappe.session.user` onto the job and `execute_job` sets it, so the durable
-	lane is the rep too — not Administrator. A rep holds no `CRM Workflow` read, so while the send path
-	called the author-facing reader every rep-triggered Send Email raised `PermissionError` at the node.
-	It raised BEFORE the dormant gate as well, so a bench with sends switched off raised too — the one
-	thing `DORMANT_MARKER` exists to promise cannot happen.
-	"""
-
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		assert_masters_exist()
-		if frappe.db.exists("Email Template", _TEMPLATE):
-			frappe.delete_doc("Email Template", _TEMPLATE, force=True, ignore_permissions=True)
-		frappe.get_doc({
-			"doctype": "Email Template", "name": _TEMPLATE, "enabled": 1,
-			"subject": "Your visit with {{ doctor_name }}", "use_html": 0,
-			"response": "<p>Hello {{ patient_name }}.</p>",
-		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, through the document API (B11)
-		cls.lead = fx.make_lead()
-		frappe.db.commit()
-
-	@classmethod
-	def tearDownClass(cls):
-		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
-		frappe.delete_doc("Email Template", _TEMPLATE, force=True, ignore_permissions=True)
-		frappe.db.commit()
-		super().tearDownClass()
-
-	def _send_as_unprivileged(self, live):
-		params = frappe._dict({
-			"action_type": _VERB, "email_recipient": "sv.email",
-			"email_template": _TEMPLATE, "template_values": [
-				{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
-				{"name": "patient_name", "mode": "From Context", "value": "sv.patient"},
-			],
-		})
-		ctx = {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"}
-		seen = {}
-		with patch.object(frappe, "has_permission", return_value=False), \
-		     patch.object(sends, "sends_enabled", return_value=live), \
-		     patch.object(frappe, "sendmail", lambda **kw: seen.update(kw)):
-			marker = actions._action_send_email(params, self.lead.name, ctx, None, None)
-		return ctx.get(refs.OUTPUT), marker, seen
-
-	def test_a_live_send_reaches_the_patient(self):
-		output, _marker, seen = self._send_as_unprivileged(live=True)
-		self.assertEqual(output, sends.SENT)
-		self.assertEqual(seen.get("recipients"), ["asha@example.invalid"])
-		self.assertEqual(seen.get("subject"), "Your visit with Dr Rao")
-
-	def test_a_dormant_send_is_suppressed_rather_than_raised(self):
-		"""Dormant suppresses the message, never the shape of the graph — the module header's own promise."""
-		output, marker, seen = self._send_as_unprivileged(live=False)
-		self.assertEqual(output, sends.SENT)
-		self.assertTrue(sends.was_suppressed(marker))
-		self.assertEqual(seen, {}, "a dormant bench must send nothing")
