@@ -505,6 +505,8 @@ scheduler_events = {
 		],
 		# Nightly, offset off :00 so it never queues alongside SWEEP_CRON: re-read Facebook Pages and lead forms, so a newly published form and a changed question set are both picked up without a button press.
 		"3 1 * * *": ["tatva_connect.lead_sync.discovery.refresh_all_sources"],
+		# Hourly at :41, clear of SWEEP_CRON and every other entry above: email when a watched partner API has gone quiet (dormant — gated on Notify::Partner::silence, itself gated on request logging). The cadence IS the window width, so moving this minute is free but changing the hour is not.
+		"41 * * * *": ["tatva_connect.observability.silence.sweep"],
 	},
 }
 
@@ -592,12 +594,18 @@ fixtures = [
 		"File Scans by Verdict", "Push Devices Registered",
 		# ADR 03 — the External Leads + Automations desk cut (docs/plans/desk-dashboards/).
 		"API Requests per Day", "API Errors per Day", "FB Leads per Day",
-		"FB Sync Failures per Day", "Web Form Leads per Day", "Web Form Rejections per Day",
+		"FB Sync Failures per Day", "Web Form Leads per Day", "Intake Errors per Day",
 		"External Leads by Source", "Errors by Endpoint", "Journeys per Day",
 		"Failed Journeys per Day", "Tasks Raised per Day", "WhatsApp Sent per Day",
 		"WhatsApp Failed per Day", "Sends by Template", "Runs by Flow",
 		"Node Outcomes",
 		"Failed Journeys by Flow",
+		# Observability: the two inbound lanes, and who is on each of them.
+		"Webhook Hits per Day", "Webhook Errors per Day",
+		"Hits by partner", "Errors by partner",
+		"Hits by provider", "Errors by provider", "Quota Refusals by Partner",
+		# Communications: what left, and whether it arrived.
+		"Calls per Day", "Call Outcomes", "Calls by Medium", "WhatsApp Faults by Type",
 	]]]},
 	{"dt": "Number Card", "filters": [["name", "in", [
 		"API Requests (24h)", "API Errors (24h)", "API Error Rate (24h)", "API p95 Latency (24h)",
@@ -611,6 +619,20 @@ fixtures = [
 		"Journeys Failed Today", "Journeys Failed 7d", "Journeys Failed 30d",
 		"Sync Failures 30d", "Stuck Inbound", "Parked Now",
 		"Stuck Webhooks", "Active Flows",
+	
+		# Observability: hits per lane, the two triplets the page opens with.
+		"Partner Hits Today", "Partner Hits 7d", "Partner Hits 30d",
+		"Partner Errors 30d", "Webhook Errors 30d",
+		"Slowest Call (24h)", "Calls Over 5s (24h)",
+		# Silence has no log line, so it is counted: how many integrations have gone quiet.
+		"Integrations Silent (24h)", "Quota Refusals 30d",
+		"Calls Placed Today", "Calls Placed 7d", "Calls Placed 30d",
+		"Calls Received Today", "Calls Received 7d", "Calls Received 30d",
+		"WhatsApp Sent Today", "WhatsApp Sent 7d", "WhatsApp Sent 30d",
+		"Outbound Calls Not Connected 30d", "Inbound Calls We Missed 30d",
+		"WhatsApp Failed 30d", "WhatsApp Never Confirmed 30d",
+		"WhatsApp Sends With No Row 30d", "Receipts With No Message 30d",
+		"Webhook Hits Today", "Webhook Hits 7d", "Webhook Hits 30d",
 	]]]},
 	# Workspace-P2: the grain x log-source heatmap was a Custom HTML Block; retired. Health-by-grain
 	# is now a native Dashboard Chart (chart_type=Custom, source "Automation Health by Grain").

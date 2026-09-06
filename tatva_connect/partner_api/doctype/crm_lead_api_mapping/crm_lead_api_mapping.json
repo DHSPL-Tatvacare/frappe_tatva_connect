@@ -20,6 +20,7 @@
   "program",
   "allowed_programs",
   "program_optional",
+  "alert_on_silence",
   "fields_section",
   "allowed_fields"
  ],
@@ -37,11 +38,12 @@
   {"fieldname": "allowed_programs", "fieldtype": "Table", "options": "CRM Lead API Mapping Program", "label": "Allowed Programs", "description": "Used only when Programme above is blank. The programmes this contract may set."},
   {"default": "0", "fieldname": "program_optional", "fieldtype": "Check", "label": "Program Optional At Create", "depends_on": "eval:!doc.program", "description": "Used only when Programme above is blank. On, a lead may arrive with no programme and have one chosen later in the CRM; off, it is refused."},
   {"fieldname": "fields_section", "fieldtype": "Section Break", "label": "Allowed Fields (empty = full catalog)"},
+  {"default": "0", "fieldname": "alert_on_silence", "fieldtype": "Check", "label": "Alert When Silent", "description": "Watch this contract and email when it stops sending leads for the period set in CRM Partner API Settings. Off, this contract is never reported quiet."},
   {"fieldname": "allowed_fields", "fieldtype": "Table", "options": "CRM Lead API Mapping Field", "label": "Allowed Fields", "description": "The fields this contract may send and read. Leave empty to allow all of them. The phone number is always allowed."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 20:52:06.767561",
+ "modified": "2026-09-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Partner API",
  "name": "CRM Lead API Mapping",
