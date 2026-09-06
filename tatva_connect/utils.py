@@ -116,10 +116,22 @@ def _block(url: str, field: "str | None", cause: str, next_step: str) -> NoRetur
 	            [field] if field else [])
 
 
-def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: str) -> None:
-	"""One fixed-window redis counter keyed by ANY identity; frappe's own rate_limit keys on IP only, and an office NATs to one address."""
+def spend_rate_limit(scope: str, ident: str, limit: int, window: int, message: str,
+                     exc=None) -> None:
+	"""THE fixed-window redis counter for a NAMED subject — a user, a phone line, a phone number.
+
+	Frappe's own `@rate_limit` keys on the request IP or a form field and nothing else, so it cannot
+	express any of those (an office NATs to one address, and a telephony account is not in form_dict).
+	It stays the right tool on a guest door, where an IP is the only identity there is; this is the
+	right tool everywhere a subject has a name.
+
+	Scope names follow `<area>-rl:<subject>` — `intake-rl:ip`, `telephony-rl:account`, `mcp-rl:user`.
+
+	`exc` overrides the refusal class for a caller whose surface reads only certain statuses: intake
+	throws a 417 because frappe's uploader shows the server message on 403/417 alone, and a 429 there
+	reaches the visitor as "the file might be corrupted". Everyone else gets the 429 the name implies."""
 	key = frappe.cache.make_key(f"{scope}:{ident}")
 	if not frappe.cache.get(key):
 		frappe.cache.setex(key, window, 0)
 	if frappe.cache.incrby(key, 1) > limit:
-		frappe.throw(message, exc=frappe.RateLimitExceededError)
+		frappe.throw(message, exc=exc or frappe.RateLimitExceededError)

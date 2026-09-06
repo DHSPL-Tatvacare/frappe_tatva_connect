@@ -34,6 +34,7 @@ from frappe import _
 from frappe.utils import add_to_date, format_duration, now_datetime
 
 from tatva_connect import automation
+from tatva_connect.utils import spend_rate_limit
 from tatva_connect.whatsapp.phone import to_e164
 
 _ACCEPT_CMD = "frappe.website.doctype.web_form.web_form.accept"
@@ -131,13 +132,16 @@ def _reject_stale_attachments(sink):
 
 
 def _bump(scope, ident, limit, window):
-	"""Fixed-window counter in redis, mirroring frappe's own rate_limiter primitives."""
-	key = frappe.cache.make_key(f"intake-rl:{scope}:{ident}")
-	if not frappe.cache.get(key):
-		frappe.cache.setex(key, window, 0)
-	if frappe.cache.incrby(key, 1) > limit:
-		# Plain throw (417): frappe's uploader reads the server message only on 403/417, so a 429 reaches the rep as "the file might be corrupted"; the wait is formatted from `window`, never typed.
-		frappe.throw(_("Too many enrolment submissions — please try again in {0}.").format(format_duration(window)))
+	"""One intake counter, through the app's one identity-keyed limiter. Holds only what is intake's.
+
+	417, not the limiter's own 429: frappe's uploader reads the server message on 403/417 alone, so a
+	429 reaches the visitor as "the file might be corrupted". The wait is formatted from `window`,
+	never typed."""
+	spend_rate_limit(
+		f"intake-rl:{scope}", ident, limit, window,
+		_("Too many enrolment submissions — please try again in {0}.").format(format_duration(window)),
+		exc=frappe.ValidationError,
+	)
 
 
 def _submitted_phone(intake_form):
