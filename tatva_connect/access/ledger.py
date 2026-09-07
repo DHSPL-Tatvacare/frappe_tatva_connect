@@ -34,8 +34,10 @@ WHAT THIS FILE IS NOT. It does not decide which ROWS of a doctype a role may see
 `visibility.py` + `permission_query_conditions`), nor which FIELDS (that is `entitlement.py` and
 `lockdown.FIELD_LEVELS`). This is the doctype-level gate only, exactly as `lockdown.py` always was.
 
-WHAT A ROW GRANTS. read/write/create/delete (+ if_owner, + submit, + share) and nothing else, so print,
-report, select and import are 0 everywhere; the two rights that ride a reader live in `EXTRA_PTYPES`.
+WHAT A ROW GRANTS. read/write/create/delete (+ if_owner, + submit, + share), so print, select and import
+are 0 everywhere. `report` is not among them: it returns the SAME rows a read returns, grouped, through the
+same query conditions and permlevels, so `lockdown` gives it to every reader and no doctype declares it.
+The rights that do differ per doctype — the ones that send or remove data — live in `EXTRA_PTYPES`.
 `TIER0` is a watchlist, not a grant.
 """
 
@@ -640,27 +642,11 @@ _INSIGHTS = {
 OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, **_LMS, **_PLATFORM_USER}
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
-# `report` here is not a widening of WHAT a role sees — row visibility still decides that — it is the
-# right to ask the question in aggregate. Every doctype a dashboard tile reads needs it, and
-# `tests/access/test_tiles_can_be_drawn.py` derives that list from the fixtures so a new tile on a new
-# doctype fails the build instead of failing the page.
 EXTRA_PTYPES = {
-	"CRM API Request Log": ("report",),
-	"CRM API Metric": ("report",),
-	"CRM Workflow Journey": ("report",),
-	"CRM Workflow Step Log": ("report",),
-	"CRM Workflow": ("report",),
-	"Error Log": ("report",),
-	"Failed Lead Sync Log": ("report",),
-	"Integration Request": ("report",),
-	"CRM Visit Audit": ("report",),
-	"CRM File Scan Log": ("report",),
-	"CRM Push Subscription": ("report",),
-	"WhatsApp Message": ("report",),
-	"CRM Lead": ("email", "export", "report"),
+	"CRM Lead": ("email", "export"),
 	"CRM Deal": ("email", "export"),
-	"CRM Task": ("export", "report"),
-	"CRM Call Log": ("export", "report"),
+	"CRM Task": ("export",),
+	"CRM Call Log": ("export",),
 	"FCRM Note": ("export",),
 	"CRM Organization": ("export",),
 	"Contact": ("export",),

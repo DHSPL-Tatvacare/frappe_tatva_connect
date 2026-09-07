@@ -63,6 +63,35 @@ class TestSubjects(FrappeTestCase):
 		})
 		self.assertIsNone(subjects.resolve_lead_name(comm))
 
+	# (c4) a file the patient emailed in is the patient's, through the email — `file_access.root_of`.
+	def test_file_on_a_communication_resolves_through_it_to_the_lead(self):
+		comm = frappe.get_doc({
+			"doctype": "Communication", "communication_type": "Communication",
+			"sent_or_received": "Received", "subject": "Probe: report", "content": "attached",
+			"reference_doctype": "CRM Lead", "reference_name": self.lead.name,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		self.addCleanup(frappe.delete_doc, "Communication", comm.name, force=True, ignore_permissions=True)
+		f = frappe.get_doc({"doctype": "File", "file_name": "report.txt", "content": "x",
+		                    "attached_to_doctype": "Communication", "attached_to_name": comm.name})
+		self.assertEqual(subjects.resolve_lead_name(f), self.lead.name)
+
+	# (c5) the second hop is guarded too: a surface that is not a patient's still resolves to nothing.
+	def test_file_on_a_communication_about_nobody_resolves_none(self):
+		comm = frappe.get_doc({
+			"doctype": "Communication", "communication_type": "Communication",
+			"sent_or_received": "Received", "subject": "Probe: stray", "content": "hi",
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		self.addCleanup(frappe.delete_doc, "Communication", comm.name, force=True, ignore_permissions=True)
+		f = frappe.get_doc({"doctype": "File", "file_name": "stray.txt", "content": "x",
+		                    "attached_to_doctype": "Communication", "attached_to_name": comm.name})
+		self.assertIsNone(subjects.resolve_lead_name(f))
+
+	# (c6) a file on a doctype no surface map names is still nothing — the old guard, unchanged.
+	def test_file_on_an_unmapped_surface_resolves_none(self):
+		f = frappe.get_doc({"doctype": "File", "file_name": "x.txt", "content": "x",
+		                    "attached_to_doctype": "CRM Vertical", "attached_to_name": "nope"})
+		self.assertIsNone(subjects.resolve_lead_name(f))
+
 	# (d) an unknown doctype resolves to None.
 	def test_unknown_doctype_resolves_none(self):
 		self.assertIsNone(subjects.resolve_lead_name(frappe._dict({"doctype": "Customer", "name": "X"})))

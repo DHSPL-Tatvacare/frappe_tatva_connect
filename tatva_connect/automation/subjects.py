@@ -11,17 +11,25 @@ This map is the single source of truth for: the catalog doctype gate (a can_watc
 subject), the drift gate's doctype list, and `watch._subject`'s Lead resolution. No parallel list.
 """
 
+import frappe
+
+LEAD_DT = "CRM Lead"
+
 # link=None → the doc IS the lead. Otherwise `link` is the fieldname pointing at the CRM Lead; a
 # dynamic link (CRM Task's reference_doctype/reference_docname) adds a guard_field/guard_value pair so
-# we only resolve when it actually points at a CRM Lead.
+# we only resolve when it actually points at a CRM Lead; `through` is a declared second hop for a doc
+# whose own parent is a surface (a file on an email) rather than the patient.
 SUBJECTS = {
 	"CRM Lead": {"link": None},
 	"CRM Task": {"link": "reference_docname", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
 	# A Deal is the customer a Lead became and names it in `lead`; a Link to CRM Lead needs no guard.
 	"CRM Deal": {"link": "lead"},
-	# A File resolves to the lead it is attached to (attached_to_doctype/attached_to_name) — the guard
-	# keeps a File attached to anything else (a Task, a Note) from ever resolving to a lead.
-	"File": {"link": "attached_to_name", "guard_field": "attached_to_doctype", "guard_value": "CRM Lead"},
+	# A File attached straight to the lead resolves by the guard; one attached to a SURFACE the lead owns —
+	# an email, a comment, a task, a WhatsApp message — resolves through `file_access.root_of`, which is
+	# already the ONE brain for "the record a surface-parented file really belongs to". An emailed document
+	# is the patient's whether it arrived on the lead or on the reply, and `through` is what says so.
+	"File": {"link": "attached_to_name", "guard_field": "attached_to_doctype", "guard_value": "CRM Lead",
+	         "through": "tatva_connect.storage.file_access.root_of"},
 	# A WhatsApp Message resolves to its linked lead via reference_name (NOT reference_docname — the
 	# WhatsApp Message field is reference_name); the guard pins it to a CRM Lead reference only.
 	"WhatsApp Message": {"link": "reference_name", "guard_field": "reference_doctype", "guard_value": "CRM Lead"},
@@ -78,12 +86,25 @@ def subject_doctypes():
 def resolve_lead_name(doc):
 	"""The CRM Lead name a subject doc resolves to, or None (fail-closed — no lead ⇒ no rule fires).
 	Lead → itself; Task → its parent lead (only when reference_doctype is CRM Lead). One resolver, no
-	per-doctype if/else scattered across the engine."""
+	per-doctype if/else scattered across the engine — a subject that reaches its lead some other way
+	declares `through` rather than earning a branch here."""
 	spec = SUBJECTS.get(doc.doctype)
 	if spec is None:
 		return None
 	if spec["link"] is None:
 		return doc.name
 	if spec.get("guard_field") and doc.get(spec["guard_field"]) != spec.get("guard_value"):
-		return None
+		return _through(spec, doc)
 	return doc.get(spec["link"]) or None
+
+
+def _through(spec, doc):
+	"""The declared second hop, for a subject whose own parent is a surface rather than the patient.
+
+	Fail-closed twice over: no `through` and there is no second hop, and a root that is not a CRM Lead —
+	a file on a helpdesk ticket, a comment on a deal — resolves to nothing exactly as before.
+	"""
+	if not spec.get("through"):
+		return None
+	root = frappe.get_attr(spec["through"])(doc)
+	return root[1] if root and root[0] == LEAD_DT else None

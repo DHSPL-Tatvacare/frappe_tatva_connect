@@ -17,6 +17,7 @@ from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
 _WORKFLOW = "inbound-email-probe"
+_FILE_WORKFLOW = "inbound-attachment-probe"
 
 
 class TestAnInboundEmailStartsAWorkflow(FrappeTestCase):
@@ -96,3 +97,87 @@ class TestAnInboundEmailStartsAWorkflow(FrappeTestCase):
 		self._email(on_lead=False)
 
 		self.assertEqual(self._runs(), [], "an email on nobody must not start a journey")
+
+
+class TestAnEmailedAttachmentStartsAWorkflow(FrappeTestCase):
+	"""The attachment half, and it is a DIFFERENT event on purpose.
+
+	Frappe files an email's attachments AFTER inserting the Communication and then saves it again
+	(`email/receive.py`), so a Created trigger on the email sees no files at all. The File's own insert
+	is the moment the file exists, and `File` was already a subject — it just could not see past its own
+	parent. It resolves through `file_access.root_of` now, so an emailed document is the patient's.
+
+	Nothing is derived for this: the trigger doc IS the File, so its own columns are the vocabulary.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		assert_masters_exist()
+		fx.purge(_FILE_WORKFLOW)
+		fx.arm_engine(True, cls)
+		cls.lead = fx.make_lead()
+		cls.workflow = fx.make_workflow(_FILE_WORKFLOW, [
+			fx.trigger(to="end", subject_doctype="File", event="Created", predicate={
+				"type": "rule", "field": "file.attached_to_doctype", "operator": "is",
+				"value": "Communication",
+			}),
+			fx.node("end", "Terminal"),
+		])
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		fx.purge(_FILE_WORKFLOW)
+		frappe.db.delete("Communication", {"subject": ("like", "Attach probe%")})
+		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
+		frappe.db.commit()
+
+	def tearDown(self):
+		for run in frappe.get_all(fx.JOURNEY_DT, filters={"workflow": _FILE_WORKFLOW}, pluck="name"):
+			frappe.db.delete(fx.STEP_LOG_DT, {"journey": run})
+		frappe.db.delete(fx.JOURNEY_DT, {"workflow": _FILE_WORKFLOW})
+		frappe.db.commit()
+
+	def _emailed_file(self, on_lead=True, name="report.txt"):
+		"""An email, then the file frappe attaches to it — the receiver's own order."""
+		doc = {
+			"doctype": "Communication", "communication_type": "Communication",
+			"sent_or_received": "Received", "subject": "Attach probe", "content": "see attached",
+			"sender": "asha@example.invalid",
+		}
+		if on_lead:
+			doc.update({"reference_doctype": "CRM Lead", "reference_name": self.lead.name})
+		comm = frappe.get_doc(doc).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+		return frappe.get_doc({
+			"doctype": "File", "file_name": name, "content": "report bytes", "is_private": 1,
+			"attached_to_doctype": "Communication", "attached_to_name": comm.name,
+		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
+
+	def _runs(self):
+		return frappe.get_all(fx.JOURNEY_DT, filters={"workflow": _FILE_WORKFLOW},
+		                      fields=["name", "subject_name", "status", "state_json"])
+
+	def test_a_file_emailed_in_starts_a_journey_about_the_patient(self):
+		"""THE red — the File subject stopped at its own parent, so an emailed document reached nobody."""
+		self._emailed_file()
+
+		runs = self._runs()
+		self.assertEqual(len(runs), 1)
+		self.assertEqual(runs[0].subject_name, self.lead.name)
+		self.assertEqual(runs[0].status, "Done")
+
+	def test_the_file_itself_is_the_vocabulary(self):
+		"""No derived keys: the File's own columns are what a downstream node reads, and its NAME is the
+		handle `Send WhatsApp.document_file` already takes."""
+		attached = self._emailed_file(name="scan.txt")
+
+		state = frappe.parse_json(self._runs()[0].state_json or "{}").get("file", {})
+		self.assertEqual(state.get("name"), attached.name)
+		self.assertEqual(state.get("file_name"), "scan.txt")
+		self.assertEqual(state.get("attached_to_doctype"), "Communication")
+
+	def test_a_file_on_an_email_about_nobody_starts_nothing(self):
+		"""The second hop is guarded: a stray email names no patient, so its file reaches none either."""
+		self._emailed_file(on_lead=False)
+
+		self.assertEqual(self._runs(), [])

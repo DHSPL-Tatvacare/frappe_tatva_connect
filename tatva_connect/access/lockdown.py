@@ -292,9 +292,14 @@ def rebuild_targets():
 	return {dt: rows for dt, rows in targets.items() if frappe.db.exists("DocType", dt)}
 
 
+# Bump when `apply()` changes the SHAPE of a row it writes: the hash below covers what the ledger declares, not how it is written, so without this a writer change reaches only the doctypes whose declaration happened to move.
+ROW_SHAPE = 2
+
+
 def declaration_hash(doctype):
 	"""A doctype's declared rows as one stable string — the key `apply()` decides on."""
-	declared = {"rows": ledger.rows_for(doctype), "extras": ledger.extra_ptypes_for(doctype)}
+	declared = {"shape": ROW_SHAPE, "rows": ledger.rows_for(doctype),
+	            "extras": ledger.extra_ptypes_for(doctype)}
 	return hashlib.sha256(json.dumps(declared, sort_keys=True, default=list).encode()).hexdigest()
 
 
@@ -334,6 +339,8 @@ def apply(*_args, **_kwargs):
 					"cancel": submittable,
 					"amend": submittable,
 					"share": shareable,
+					# `report` rides EVERY reader: it is the same rows grouped, filtered by the same query conditions and the same permlevels. Withholding it hides a view, never a record.
+					"report": 1 if r else 0,
 					# tail rights ride the role that already reads; everything unnamed stays 0
 					**{ptype: (1 if r else 0) for ptype in extras},
 				}
