@@ -67,13 +67,20 @@ class TestUpstream(FrappeTestCase):
 	# --- what a node must NOT see -----------------------------------------------------------------------
 
 	def test_a_node_is_not_offered_its_own_output(self):
-		"""A Call API cannot test its own response while configuring the call that produces it.
+		"""A node is offered what ran BEFORE it, never what it has not produced yet.
 
-		Probed with `ok` and the author's own `patient_id`, never with `status`: `status` is ALSO a real
-		CRM Lead column, so it is legitimately offered as a subject field and proves nothing here.
+		The Create Note on the failed leg is the probe rather than the Call API: a verb declaring
+		`judges_own_result` picks its edge AFTER acting, so its own values really do exist by the time its
+		`success_when` is read and it is the one declared exception — see
+		`test_upstream_offer.TestAVerbThatJudgesItsOwnResult`. Probing the exception here would have locked
+		in the opposite rule for every other verb.
 		"""
-		self.assertNotIn("api.patient_id", _keys("api"))
-		self.assertNotIn("api.ok", _keys("api"))
+		note_keys = _keys("note")
+		self.assertFalse(
+			[k for k in note_keys if k.startswith("note.")],
+			"a Create Note has not run when it is configured, so it may offer nothing of its own",
+		)
+		self.assertIn("api.patient_id", note_keys, "what ran before it is still offered")
 
 	def test_a_node_emit_does_not_shadow_a_subject_field_of_the_same_name(self):
 		"""THE COLLISION, now impossible by construction.
