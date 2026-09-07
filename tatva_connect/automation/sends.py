@@ -706,8 +706,13 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 	reused: it treated anything that did not look namespaced as a literal address, so a typed string was
 	mailed as-is. That is the same hole as the typed phone number that reached the wrong subscriber.
 
-	No `now=True`: `frappe.sendmail` only inserts an Email Queue row, a normal DB write that rides the
-	rule's own segment transaction, so a rolled-back segment sends nothing.
+	SENT THROUGH `communication.email.make`, which is the SAME call a rep's own send from the lead makes.
+	`frappe.sendmail` only queues the mail; it writes no `Communication`, and the lead's Emails tab and the
+	activity rail read exactly that — so an automated email really reached the patient and no rep looking at
+	the record could see it had. One call answers both, and the mail is queued by the same machinery.
+
+	It still rides the segment: `make` inserts a Communication and an Email Queue row and commits neither,
+	so a rolled-back segment sends nothing, which is why `now=True` stays absent.
 	"""
 	if not template_name:
 		raise ValueError("Send Email action has no Email Template configured")
@@ -727,13 +732,24 @@ def send_email(subject_lead, contact_email, template_name, context=None, values=
 
 	row = frappe.db.get_value("Email Template", template_name, ["subject", "use_html", "response_html", "response"], as_dict=True)
 	body = row.response_html if row.use_html else row.response
-	frappe.sendmail(
-		recipients=[address],
-		subject=frappe.render_template(row.subject or "", filled),
-		message=frappe.render_template(body or "", filled),
-		reference_doctype="CRM Lead",
-		reference_name=subject_lead,
-	)
+	# `_make`, not the whitelisted `make`: that wrapper's whole body is this call plus
+	# `has_permission(ptype="email", throw=True)`, and a journey runs as whoever saved the record — a rep,
+	# who holds no email permission on the lead. The same split this module makes for `email_template_slots`,
+	# and frappe's own. `add_signature=False` is what `make` passes: a templated send carries no rep's sign-off.
+	from frappe.core.doctype.communication.email import _make
+
+	try:
+		_make(
+			doctype="CRM Lead", name=subject_lead, recipients=address, send_email=1,
+			subject=frappe.render_template(row.subject or "", filled),
+			content=frappe.render_template(body or "", filled),
+			email_template=template_name, add_signature=False,
+		)
+	except frappe.OutgoingEmailError as unconfigured:
+		# The site has no outgoing account — the environment, like a switched-off channel, so it ROUTES.
+		return FAILED, f"failed: {unconfigured}"
+	# LAST, as WhatsApp records its own: only a send that really left names who it reached.
+	_record_contact(context, EMAIL, address)
 	return SENT, f"queued: to={address}"
 
 

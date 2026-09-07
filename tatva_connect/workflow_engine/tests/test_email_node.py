@@ -24,6 +24,7 @@ import json
 from unittest.mock import patch
 
 import frappe
+import frappe.core.doctype.communication.communication
 from frappe.tests.utils import FrappeTestCase
 
 from tatva_connect.automation import actions, sends
@@ -31,6 +32,8 @@ from tatva_connect.tests.authz.grains import assert_masters_exist
 from tatva_connect.workflow_engine import graph, refs, registry
 from tatva_connect.workflow_engine.tests import fixtures as fx
 
+# A rep, made here rather than borrowed: a real person's address does not belong in a public repo.
+_REP = "authz.email.rep@example.test"
 _TEMPLATE = "W2 Email Probe Template"
 _VERB = "Send Email"
 
@@ -172,25 +175,38 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 			"response": "<p>Hello {{ patient_name }}.</p>",
 		}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, through the document API (B11)
 		cls.lead = fx.make_lead()
+		if not frappe.db.exists("User", _REP):
+			frappe.get_doc({
+				"doctype": "User", "email": _REP, "first_name": "Email Rep",
+				"roles": [{"role": "Sales User"}],
+			}).insert(ignore_permissions=True)  # authz-ok: tier-c — test fixture, no user input
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.delete_doc("CRM Lead", cls.lead.name, force=True, ignore_permissions=True)
 		frappe.delete_doc("Email Template", _TEMPLATE, force=True, ignore_permissions=True)
+		frappe.delete_doc("User", _REP, force=True, ignore_permissions=True)
 		frappe.db.commit()
 		super().tearDownClass()
 
-	def _send(self, recipient_ref, context, values, live=True, permitted=True):
+	def _send(self, recipient_ref, context, values, live=True, permitted=True, boom=None):
 		params = frappe._dict({
 			"action_type": _VERB, "email_recipient": recipient_ref,
 			"email_template": _TEMPLATE, "template_values": values,
 		})
 		seen = {}
-		ctx = dict(context)
+		ctx = context  # the verb's writes (the edge, the channel, who it reached) must be observable
+		import frappe.core.doctype.communication.email as email_api
+
+		def _capture(**kw):
+			seen.update(kw)
+			if boom:
+				raise boom
+
 		with patch.object(sends, "sends_enabled", return_value=live), \
 		     patch.object(frappe, "has_permission", return_value=permitted), \
-		     patch.object(frappe, "sendmail", lambda **kw: seen.update(kw)):
+		     patch.object(email_api, "_make", _capture):
 			actions._action_send_email(params, self.lead.name, ctx, None, None)
 		return ctx.get(refs.OUTPUT), seen
 
@@ -207,9 +223,9 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		)
 
 		self.assertEqual(output, sends.SENT)
-		self.assertEqual(seen.get("recipients"), ["asha@example.invalid"])
+		self.assertEqual(seen.get("recipients"), "asha@example.invalid")
 		self.assertEqual(seen.get("subject"), "Your visit with Dr Rao")
-		self.assertIn("Hello Asha", seen.get("message"))
+		self.assertIn("Hello Asha", seen.get("content"))
 
 	def test_a_recipient_that_resolves_to_nothing_routes_to_failed(self):
 		"""DATA, not an exception — the journey must not die because one record has no address."""
@@ -237,7 +253,7 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 		)
 
 		self.assertEqual(output, sends.SENT)
-		self.assertEqual(seen.get("recipients"), ["asha@example.invalid"])
+		self.assertEqual(seen.get("recipients"), "asha@example.invalid")
 
 	def test_a_dormant_send_is_still_suppressed_for_that_rep(self):
 		"""It asked before the dormant gate, so a switched-off bench raised rather than suppressing."""
@@ -250,6 +266,67 @@ class TestTheEmailSendResolvesAndRenders(FrappeTestCase):
 
 		self.assertEqual(output, sends.SENT)
 		self.assertEqual(seen, {}, "a dormant bench must send nothing")
+
+	def test_the_send_is_filed_on_the_lead_so_a_rep_can_see_it(self):
+		"""The Emails tab and the activity rail read `Communication`; `frappe.sendmail` writes none, so an
+		automated email reached the patient and the record showed nothing. `make` is the rep's own call."""
+		_output, seen = self._send(
+			"sv.email", {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
+			[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+			 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],
+		)
+
+		self.assertEqual(seen.get("doctype"), "CRM Lead")
+		self.assertEqual(seen.get("name"), self.lead.name)
+		self.assertTrue(seen.get("send_email"), "the mail must still be queued, not merely filed")
+
+	def test_a_site_with_no_outgoing_account_routes_to_failed(self):
+		"""The environment, not the author — the same class as a switched-off channel, so it ROUTES. Raising
+		would mark the journey Failed for a reason that has nothing to do with this patient."""
+		output, _seen = self._send(
+			"sv.email", {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
+			[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+			 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],
+			boom=frappe.OutgoingEmailError("no outgoing account"),
+		)
+
+		self.assertEqual(output, sends.FAILED)
+
+	def test_the_step_log_names_who_the_email_reached(self):
+		"""WhatsApp and voice record theirs; email declared the channel word and recorded nothing, so the
+		audit said a send happened and not to whom."""
+		ctx = {"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"}
+		self._send("sv.email", ctx, [
+			{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+			{"name": "patient_name", "mode": "From Context", "value": "sv.patient"},
+		])
+
+		self.assertEqual(ctx.get(refs.CHANNEL), sends.EMAIL)
+		self.assertEqual(ctx.get(refs.CONTACT), "asha@example.invalid")
+
+	def test_the_real_send_path_asks_the_rep_for_no_permission(self):
+		"""The gap the mocked tests cannot see. They patch `_make`, so a permission check INSIDE it never
+		runs — and the whitelisted `make` carries exactly one (`ptype="email"`, which a rep does not hold on
+		a lead). Driven against the real function with only the mail boundary stubbed, as the rep.
+		"""
+		sent = {}
+		with patch.object(sends, "sends_enabled", return_value=True), \
+		     patch.object(frappe, "sendmail", lambda **kw: sent.update(kw)), \
+		     patch.object(frappe.core.doctype.communication.communication.Communication, "send_email",
+		                  lambda self, **kw: sent.update({"sent": True})):
+			frappe.set_user(_REP)
+			self.addCleanup(frappe.set_user, "Administrator")
+			output, marker = sends.send_email(
+				self.lead.name, "sv.email", _TEMPLATE,
+				{"sv.email": "asha@example.invalid", "sv.doctor": "Dr Rao", "sv.patient": "Asha"},
+				[{"name": "doctor_name", "mode": "From Context", "value": "sv.doctor"},
+				 {"name": "patient_name", "mode": "From Context", "value": "sv.patient"}],
+			)
+
+		self.assertEqual(output, sends.SENT, f"a rep-triggered send must not be refused ({marker})")
+		comm = frappe.get_all("Communication", filters={"reference_doctype": "CRM Lead",
+		                                               "reference_name": self.lead.name}, pluck="name")
+		self.assertTrue(comm, "the send must be filed on the lead a rep can see")
 
 	def test_a_slot_the_author_left_unmapped_is_author_error(self):
 		"""Same rule as WhatsApp: a missing row is wrong for every record equally, so it raises rather
