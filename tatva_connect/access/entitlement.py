@@ -55,9 +55,12 @@ def _partner_grain(user):
 
 def _direct_reports(user):
 	"""Users whose reports_to is `user` (one rung of the management chain). `reports_to` is an
-	HRMS/Employee field, NOT present on User in a stock CRM — so this is guarded by the caller
-	(`_can_rollup`) and is a no-op until a reporting field exists. Full hierarchy roll-up via
-	CRM Sales Hierarchy is deferred (Q4); a manager meanwhile gets their own rule grains."""
+	HRMS/Employee field, NOT present on User in a stock CRM, so `_internal_grains` guards this with
+	`has_column` and it no-ops where the column is absent — a manager then gets their own rule grains.
+
+	This chain answers WHICH GRAINS a manager inherits, and is not the org chart. Which RECORDS a
+	manager may read comes from `CRM Sales Hierarchy` through crm's own subtree query, read here in
+	`record_access.readers` and `search.index`."""
 	return frappe.get_all("User", filters={"reports_to": user}, pluck="name")
 
 

@@ -465,6 +465,22 @@ def _require_platform():
 		frappe.throw(_("Only a System Manager may administer users."), frappe.PermissionError)
 
 
+def _require_user_admin(*manager_roles):
+	"""Deny unless the caller administers users — a platform administrator, or the manager of that app.
+
+	The second spelling beside `_require_platform`, and it exists because the two are different acts.
+	Deleting an account or reshaping the site's navigation is platform work. ADDING a colleague is
+	ordinary management, and blocking it made every new joiner wait on an administrator.
+
+	It softens the tier and nothing else: each native call still runs its own gate underneath, and
+	crm's already caps a Sales Manager at inviting a `Sales User`, so what a manager may hand out is
+	still decided upstream and not restated here."""
+	if not visibility.is_privileged() and not set(manager_roles) & set(frappe.get_roles()):
+		frappe.throw(
+			_("Only a manager or a System Manager may add users."), frappe.PermissionError
+		)
+
+
 @frappe.whitelist()
 def save_role(user: str, role: str, value: int):
 	"""Native writes `Has Role` with ignore_permissions, so a Moderator could grant themselves any LMS role."""
@@ -515,8 +531,9 @@ def sent_invites(emails, send_welcome_mail_to_user: bool = True):
 	"""Helpdesk's Add Agent dialog, which INSERTS a `User` — an account, reached from an agent screen.
 
 	Native gates it on `is_agent`, so any agent could ask; the insert then failed on the `User` matrix with a
-	raw permission error and a dead button. The tier is named here so the refusal says what is actually wrong."""
-	_require_platform()
+	raw permission error and a dead button. The tier is named here so the refusal says what is actually wrong.
+	An Agent Manager staffs their own desk; an agent still cannot."""
+	_require_user_admin("Agent Manager")
 	from helpdesk.api.agent import sent_invites as _native
 
 	return _native(emails, send_welcome_mail_to_user)
@@ -537,8 +554,10 @@ def invite_by_email(emails, roles, redirect_to_path, app_name: str = "frappe", *
 
 @frappe.whitelist()
 def crm_invite_by_email(emails: str, role: str):
-	"""crm's own invite. Native admits a `Sales Manager` and caps them at inviting a `Sales User`."""
-	_require_platform()
+	"""crm's own invite. Native admits a `Sales Manager` and caps them at inviting a `Sales User`, which is
+	the policy — a manager staffs their own team and cannot hand out a manager role, and the invitation row
+	is inserted with ignore_permissions so no doctype grant rides on this."""
+	_require_user_admin("Sales Manager")
 	from crm.api import invite_by_email as _native
 
 	return _native(emails, role)

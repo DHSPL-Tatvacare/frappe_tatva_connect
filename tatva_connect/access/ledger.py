@@ -179,6 +179,13 @@ TIER0 = (
 # The Tier 0 entries reviewed and deliberately opened — "without review" above is what this records.
 TIER0_REVIEWED = {
 	"User": "directory READ; credentials and PII sit at permlevel 1 (lockdown._PERMLEVEL_1_FIELDS)",
+	"User Permission": (
+		"grain scoping, which a manager sets on every person they bring in — the axes are "
+		"entitlement._UP_AXES and nothing else is granted this way. Opened to Sales Manager because it "
+		"is an ordinary act of staffing a team, not an administrative one. It is Tier 0 for a real "
+		"reason: a row DELETED is a widening, so a manager can lift their own scope. That is accepted — "
+		"a manager already reads their whole line — and it is why the grant stops at Sales Manager."
+	),
 }
 
 # --- R2 · executable by contract, so authorship is the only control ------------------------------
@@ -273,7 +280,9 @@ _CRM_CORE = {
 	"CRM Group": "PLATFORM_READ",
 	"CRM Program": "PLATFORM_READ",
 	"CRM Grain": "PLATFORM_READ",
-	"CRM Sales Hierarchy": "PLATFORM_READ",
+	# A manager owns their own org chart: they place and re-parent people. Derived from the bucket, never
+	# a copy of its rows — the readers stay whatever PLATFORM_READ says they are.
+	"CRM Sales Hierarchy": {**BUCKETS["PLATFORM_READ"], SALES_MANAGER: (1, 1, 1, 0)},
 	# The SPA loads these through a list resource (`data/script.js`), so a rep's read is load-bearing.
 	"CRM Form Script": "PLATFORM_READ",
 	# Brand/General/Home Actions — platform config an admin owns; every session reads it on boot for branding.
@@ -284,7 +293,9 @@ _CRM_CORE = {
 	"CRM Telephony Agent": "OPERATIONAL",
 	# Credentials and site wiring; every runtime reader goes through db.get_value, which asks nothing.
 	"ERPNext CRM Settings": "PLATFORM",
-	"CRM Invitation": "PLATFORM",
+	# Grain scoping. A manager sets it on every person they add, so it rides with the invite rather than
+	# waiting on an administrator. Tier 0 and deliberately opened — see TIER0_REVIEWED.
+	"User Permission": {**BUCKETS["PLATFORM"], SALES_MANAGER: (1, 1, 1, 1)},
 	# VAPT P1 IDOR — edit/delete only your OWN comment; create/read run elsewhere.
 	"Comment": {
 		SYSTEM_MANAGER: (1, 1, 1, 1),
@@ -643,6 +654,8 @@ OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, *
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
 EXTRA_PTYPES = {
+	# Granted by hand on prod 2026-08-21 and declared here so a rebuild keeps it — an undeclared right is one the next rebuild silently drops.
+	"CRM Visit Audit": ("import",),
 	"CRM Lead": ("email", "export"),
 	"CRM Deal": ("email", "export"),
 	"CRM Task": ("export",),
