@@ -48,13 +48,18 @@ class _CohortCase(FrappeTestCase):
 		fx.arm_engine(True, cls)
 		# The marker is set AT INSERT: a predicate reads through `frappe.get_doc`, so a bare column write
 		# afterwards can be judged against a cached document that still says otherwise.
-		cls.leads = [fx.make_lead(first_name=cls.marker) for _ in range(_LEADS)]
+		# ON `custom_external_id`, NOT `first_name`: the criteria are what isolate this suite, so they have to
+		# name a field nothing else writes. A live `TP New Lead Task Creation` on this very grain sets
+		# `first_name = "Dr. " + first_name`, so an exact match on it found none of these leads and the whole
+		# cohort walked empty. `custom_external_id` is the caller's own label — indexed, not unique, and by
+		# `api/partner.py`'s contract "never interpreted, never used to find a lead".
+		cls.leads = [fx.make_lead(custom_external_id=cls.marker) for _ in range(_LEADS)]
 		cls.workflow = fx.make_workflow(cls.workflow_name, [
 			fx.node("start", "Trigger", config={
 				"mode": registry.MODE_SCHEDULE, "subject_doctype": "CRM Lead",
 				"schedule": "Daily", "schedule_time": "09:00",
 				"vertical": fx.GRAIN["vertical"], "group": fx.GRAIN["group"], "program": fx.GRAIN["program"],
-				"predicate": {"type": "rule", "field": "crm_lead.first_name", "operator": "is",
+				"predicate": {"type": "rule", "field": "crm_lead.custom_external_id", "operator": "is",
 				              "value": cls.marker},
 			}, edges={"next": "w1"}),
 			fx.node("w1", "Wait", config={"mode": registry.UNTIL_EVENT, "event_name": "task.completed"},
@@ -159,7 +164,7 @@ class TestACohortIsNotTruncatedByLeadsItDoesNotWant(_CohortCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		# Same grain, deliberately NOT matching the criteria, and named to sort first.
-		cls.decoys = [fx.make_lead(first_name="decoy", name=f"0000-decoy-{i}") for i in range(5)]
+		cls.decoys = [fx.make_lead(custom_external_id="decoy", name=f"0000-decoy-{i}") for i in range(5)]
 		frappe.db.commit()
 
 	@classmethod
@@ -568,7 +573,12 @@ class TestAClaimWhoseWalkerDiedIsHandedBack(_CohortCase):
 		"""What the reaper must NOT do now that a job is one chunk: date an interrupted cohort tomorrow.
 
 		The cursor says leads remain, so rescheduling silently drops every one the walk had not reached. It
-		releases WITHOUT the clock instead, leaving the row due for the very next sweep to resume.
+		releases WITHOUT the clock instead, leaving the row due to be resumed.
+
+		RESUMED BY THIS SWEEP, not the next one, and that is why the state below reads `Draining`. `sweep`
+		reaps and then claims on the one tick: released without the clock the row is still due, so the loop
+		that follows `_reap_stranded` picks it straight back up and carries on from the cursor. The promise
+		is the cursor and the clock, asserted underneath; idling was never it.
 		"""
 		frappe.db.set_value("CRM Workflow", self.workflow_name, {
 			"cohort_state": drain.DRAINING, "cohort_cursor": self.leads[0].name,
@@ -581,7 +591,8 @@ class TestAClaimWhoseWalkerDiedIsHandedBack(_CohortCase):
 
 		row = frappe.db.get_value("CRM Workflow", self.workflow_name,
 		                          ["cohort_state", "cohort_cursor", "trigger_next_run_at"], as_dict=True)
-		self.assertEqual(row.cohort_state, drain.IDLE)
+		self.assertEqual(row.cohort_state, drain.DRAINING,
+		                 "the row was released still due, so this same sweep must have resumed it")
 		self.assertEqual(row.cohort_cursor, self.leads[0].name, "the resume point was thrown away")
 		self.assertLessEqual(row.trigger_next_run_at, frappe.utils.now_datetime(),
 		                     "an unfinished cohort was dated tomorrow, so the leads it never reached are lost")
