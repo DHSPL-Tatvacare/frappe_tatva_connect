@@ -199,7 +199,14 @@ def _stranded():
 	dead_before = add_to_date(now_datetime(), minutes=-thresholds.DRAIN_DEAD_AFTER_MINUTES)
 	overdue = frappe.get_all(  # authz-ok: tier-a — workflow engine, scheduler context
 		_WORKFLOW_DT,
-		filters={"cohort_state": DRAINING, "cohort_next_chunk_at": ["<", dead_before]},
+		# `is set` is LOAD-BEARING: frappe compiles `<` to `coalesce(col,'0001-01-01') < …`, so without it a
+		# claim that has not booked its next chunk yet reads as infinitely overdue and every LIVE walker is
+		# reaped mid-chunk. That is the other branch's question, and it asks it of the heartbeat.
+		filters=[
+			[_WORKFLOW_DT, "cohort_state", "=", DRAINING],
+			[_WORKFLOW_DT, "cohort_next_chunk_at", "is", "set"],
+			[_WORKFLOW_DT, "cohort_next_chunk_at", "<", dead_before],
+		],
 		pluck="name",
 		limit=thresholds.MAX_DUE_PER_SWEEP,
 	)
