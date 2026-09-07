@@ -640,14 +640,27 @@ _INSIGHTS = {
 OPEN = {**_CRM_CORE, **_TATVA, **_HELPDESK, **_WHATSAPP, **_WIKI, **_INSIGHTS, **_LMS, **_PLATFORM_USER}
 
 # Tail rights that ride any role which reads: `email` for communication.email.make, `export` for can_export.
+# `report` here is not a widening of WHAT a role sees — row visibility still decides that — it is the
+# right to ask the question in aggregate. Every doctype a dashboard tile reads needs it, and
+# `tests/access/test_tiles_can_be_drawn.py` derives that list from the fixtures so a new tile on a new
+# doctype fails the build instead of failing the page.
 EXTRA_PTYPES = {
-	# A Dashboard Chart is a REPORT-level read, so the Observability tiles refused without this; r/w/c/d stay the bucket's.
 	"CRM API Request Log": ("report",),
 	"CRM API Metric": ("report",),
-	"CRM Lead": ("email", "export"),
+	"CRM Workflow Journey": ("report",),
+	"CRM Workflow Step Log": ("report",),
+	"CRM Workflow": ("report",),
+	"Error Log": ("report",),
+	"Failed Lead Sync Log": ("report",),
+	"Integration Request": ("report",),
+	"CRM Visit Audit": ("report",),
+	"CRM File Scan Log": ("report",),
+	"CRM Push Subscription": ("report",),
+	"WhatsApp Message": ("report",),
+	"CRM Lead": ("email", "export", "report"),
 	"CRM Deal": ("email", "export"),
-	"CRM Task": ("export",),
-	"CRM Call Log": ("export",),
+	"CRM Task": ("export", "report"),
+	"CRM Call Log": ("export", "report"),
 	"FCRM Note": ("export",),
 	"CRM Organization": ("export",),
 	"Contact": ("export",),
