@@ -280,9 +280,20 @@ def step_dast(args, outdir: Path) -> dict:
 
 
 def step_secrets_baseline(args, outdir: Path) -> int:
-	"""Generate/refresh tatva_connect/tests/security/.secrets.baseline from the tracked tree."""
+	"""Generate/refresh tatva_connect/tests/security/.secrets.baseline from the tracked tree.
+
+	EXCLUDES WHAT THE SCANNER EXCLUDES. `static_checks.SECRETS_EXCLUDE` keeps `tatva_connect/tests/`
+	out of the scan on purpose — those files hold deliberate attack payloads and fake secrets, and the
+	baseline holds its own hashes. Generating without it wrote 41 entries the scanner will never look
+	at, the baseline listing itself among them, and every regeneration would have grown the file
+	further. The two sides read the same constant now, which is the promise the static lane already
+	makes everywhere else.
+	"""
 	tracked = subprocess.run(["git", "ls-files"], cwd=str(REPO_ROOT), capture_output=True, text=True).stdout.split()
-	out = subprocess.run([tool("detect-secrets"), "scan", *tracked], cwd=str(REPO_ROOT), capture_output=True, text=True)
+	out = subprocess.run(
+		[tool("detect-secrets"), "scan", "--exclude-files", static_checks.SECRETS_EXCLUDE, *tracked],
+		cwd=str(REPO_ROOT), capture_output=True, text=True,
+	)
 	if out.returncode != 0:
 		console.print(out.stderr)
 		return out.returncode
